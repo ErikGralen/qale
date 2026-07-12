@@ -1,0 +1,19 @@
+node_modules/
+dist/
+out/
+.turbo/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Electron build output
+apps/desktop/out/
+apps/desktop/dist/
+
+# Local vault / runtime data used in dev
+.vault-dev/
+*.db
+*.db-shm
+*.db-wal

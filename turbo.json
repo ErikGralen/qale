@@ -1,0 +1,31 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "tui",
+  "globalEnv": ["ANTHROPIC_API_KEY"],
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["out/**", "dist/**"]
+    },
+    "desktop#package": {
+      "cache": false,
+      "dependsOn": ["^build"]
+    },
+    "lint": {
+      "dependsOn": ["^topo"]
+    },
+    "check-types": {
+      "dependsOn": ["^topo"]
+    },
+    "topo": {
+      "dependsOn": ["^topo"]
+    },
+    "test": {
+      "dependsOn": ["^topo"]
+    }
+  }
+}

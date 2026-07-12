@@ -1,0 +1,15 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+allowBuilds:
+  electron-winstaller: false
+  esbuild: true
+
+# Without this, pnpm blocks the postinstall build scripts for these native/binary
+# deps and Electron never downloads its binary — nothing runs. See PLAN §6.1.
+onlyBuiltDependencies:
+  - electron
+  - better-sqlite3
+  - esbuild
+  - electron-winstaller

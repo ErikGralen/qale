@@ -1,0 +1,23 @@
+appId: io.leveret.pm
+productName: pm
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+# Native modules and sqlite-vec must be unpacked from the asar so they load at
+# runtime (PLAN §6). --dir builds are unsigned prototype artifacts.
+asarUnpack:
+  - '**/*.node'
+  - '**/node_modules/better-sqlite3/**'
+  - '**/node_modules/sqlite-vec*/**'
+mac:
+  target:
+    - dir
+win:
+  target:
+    - dir
+linux:
+  target:
+    - dir

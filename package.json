@@ -1,0 +1,23 @@
+{
+  "name": "pm-workspace-os",
+  "private": true,
+  "version": "0.0.1",
+  "packageManager": "pnpm@11.12.0",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "check-types": "turbo check-types",
+    "test": "turbo test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
+    "desktop": "turbo dev --filter=@pm/desktop"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "turbo": "^2.10.4",
+    "typescript": "~5.9.2"
+  }
+}

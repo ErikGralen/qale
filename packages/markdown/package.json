@@ -1,0 +1,27 @@
+{
+  "name": "@pm/markdown",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./plugins": "./src/plugins.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@pm/domain": "workspace:*",
+    "mdast-util-to-string": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.0.0",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@pm/typescript-config": "workspace:*",
+    "@types/mdast": "^4.0.4",
+    "typescript": "~5.9.2"
+  }
+}

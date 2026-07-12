@@ -1,0 +1,26 @@
+{
+  "name": "@pm/vault",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@pm/application": "workspace:*",
+    "@pm/domain": "workspace:*",
+    "@pm/markdown": "workspace:*",
+    "better-sqlite3": "^12.11.1",
+    "chokidar": "^5.0.0",
+    "simple-git": "^3.36.0"
+  },
+  "devDependencies": {
+    "@pm/typescript-config": "workspace:*",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^24.0.0",
+    "typescript": "~5.9.2"
+  }
+}

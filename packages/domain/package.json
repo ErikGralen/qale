@@ -1,0 +1,24 @@
+{
+  "name": "@pm/domain",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./notes": "./src/notes/index.ts",
+    "./themes": "./src/themes/index.ts",
+    "./signals": "./src/signals/index.ts",
+    "./proposals": "./src/proposals/index.ts",
+    "./search": "./src/search/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@pm/typescript-config": "workspace:*",
+    "typescript": "~5.9.2"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "extends": "@pm/typescript-config/base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "src",
+    "types": []
+  },
+  "include": ["src"]
+}

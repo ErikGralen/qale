@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button, Input } from '@pm/ui';
-import { Check, KeyRound } from 'lucide-react';
+import { Check, KeyRound, Boxes } from 'lucide-react';
 import type { ModelInfoDTO, SettingsDTO } from '@pm/ipc';
 import { invoke } from '../lib/ipc';
 
@@ -9,6 +9,8 @@ export function SettingsView() {
   const [models, setModels] = useState<ModelInfoDTO[]>([]);
   const [key, setKey] = useState('');
   const [savedKey, setSavedKey] = useState(false);
+  const [atl, setAtl] = useState({ baseUrl: '', email: '', token: '' });
+  const [savedAtl, setSavedAtl] = useState(false);
 
   const reload = async () => {
     const [s, m] = await Promise.all([invoke['settings:get'](), invoke['models:list']()]);
@@ -33,6 +35,15 @@ export function SettingsView() {
   const pickModel = async (id: string) => {
     const s = await invoke['settings:setModel'](id);
     setSettings(s);
+  };
+
+  const saveAtlassian = async () => {
+    if (!atl.baseUrl || !atl.email || !atl.token) return;
+    const s = await invoke['settings:setAtlassian'](atl);
+    setSettings(s);
+    setAtl({ baseUrl: '', email: '', token: '' });
+    setSavedAtl(true);
+    setTimeout(() => setSavedAtl(false), 2000);
   };
 
   return (
@@ -92,6 +103,45 @@ export function SettingsView() {
               })}
             </div>
           )}
+        </section>
+
+        <section className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Boxes className="size-4 text-muted-foreground" />
+            <h2 className="font-serif text-lg font-semibold">Atlassian (Jira + Confluence)</h2>
+            {settings?.hasAtlassianCreds && (
+              <span className="flex items-center gap-1 text-xs text-brand">
+                <Check className="size-3.5" /> connected
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Read-only tracker seam for the Ask session. Create an <em>unscoped</em> API token. Stored
+            encrypted (safeStorage).
+          </p>
+          <div className="flex flex-col gap-2">
+            <Input
+              value={atl.baseUrl}
+              onChange={(e) => setAtl((a) => ({ ...a, baseUrl: e.target.value }))}
+              placeholder="https://your-domain.atlassian.net"
+            />
+            <Input
+              value={atl.email}
+              onChange={(e) => setAtl((a) => ({ ...a, email: e.target.value }))}
+              placeholder="you@company.com"
+            />
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                value={atl.token}
+                onChange={(e) => setAtl((a) => ({ ...a, token: e.target.value }))}
+                placeholder="Atlassian API token (unscoped)"
+              />
+              <Button size="sm" onClick={saveAtlassian} disabled={!atl.baseUrl || !atl.email || !atl.token}>
+                {savedAtl ? 'Saved' : 'Connect'}
+              </Button>
+            </div>
+          </div>
         </section>
       </div>
     </div>

@@ -1,5 +1,5 @@
 {
-  "name": "@pm/agent",
+  "name": "@pm/atlassian",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -10,17 +10,12 @@
     "check-types": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@pm/application": "workspace:*",
-    "@pm/atlassian": "workspace:*",
-    "@pm/domain": "workspace:*",
-    "@earendil-works/pi-coding-agent": "0.80.6",
-    "@earendil-works/pi-ai": "0.80.6",
-    "ai": "^7.0.22",
-    "typebox": "1.1.38"
+    "turndown": "^7.2.0"
   },
   "devDependencies": {
     "@pm/typescript-config": "workspace:*",
     "@types/node": "^24.0.0",
+    "@types/turndown": "^5.0.5",
     "typescript": "~5.9.2"
   }
 }

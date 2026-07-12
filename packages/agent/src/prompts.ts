@@ -27,9 +27,12 @@ questions and vault_read to pull exact wording.`;
 
 const ASK = `${SHARED}
 
-Mode: ask. Answer the PM's question with citations. Start by searching the vault; read the most
-relevant notes; then answer with the note paths you used. State your confidence honestly based on
-how much evidence you found and how concentrated it is.`;
+Mode: ask (find across tools). Answer the PM's question with citations. Search the vault first; if
+Jira/Confluence tools are available, also search there (jira_search with JQL, confluence_search with
+CQL) and read the most relevant items. Answer with the sources you used: cite vault notes by path
+(themes/…md) and Jira/Confluence by their deep link (markdown link). If there's no evidence, say so.
+State honest confidence based on how much evidence you found and how concentrated it is
+(e.g. "2 signals, both from one account — thin").`;
 
 const TRIAGE = `${SHARED}
 

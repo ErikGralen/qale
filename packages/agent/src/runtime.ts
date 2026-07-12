@@ -10,7 +10,13 @@ import {
   type AgentSession,
 } from '@earendil-works/pi-coding-agent';
 import type { UseCaseContext } from '@pm/application';
-import { createVaultTools, createProposeTools } from './tools.js';
+import { AtlassianClient } from '@pm/atlassian';
+import {
+  createVaultTools,
+  createProposeTools,
+  createAtlassianTools,
+  ATLASSIAN_TOOL_NAMES,
+} from './tools.js';
 import { SESSION_TYPES, type SessionType } from './prompts.js';
 import { PiUiBridge, type Chunk } from './bridge.js';
 
@@ -20,6 +26,7 @@ export interface AgentRuntimeConfig {
   userDataDir: string;
   modelId: string;
   apiKey: string | null;
+  atlassian?: { baseUrl: string; email: string; token: string } | null;
 }
 
 export interface RunInput {
@@ -57,6 +64,7 @@ export class AgentRuntime {
   private config: AgentRuntimeConfig | null = null;
   private authStorage: AuthStorage | null = null;
   private modelRegistry: ModelRegistry | null = null;
+  private atlassian: AtlassianClient | null = null;
   private readonly sessions = new Map<string, SessionState>();
   private readonly streamToSession = new Map<string, string>();
 
@@ -68,7 +76,10 @@ export class AgentRuntime {
       this.authStorage.setRuntimeApiKey('anthropic', config.apiKey);
     }
     this.modelRegistry = ModelRegistry.create(this.authStorage, join(config.userDataDir, 'pi', 'models.json'));
-    // A model change invalidates existing sessions (they were built with the old model).
+    this.atlassian = config.atlassian
+      ? new AtlassianClient(config.atlassian)
+      : null;
+    // A config change invalidates existing sessions (built with the old model/tools).
     this.disposeSessions();
   }
 
@@ -99,6 +110,15 @@ export class AgentRuntime {
     const cfg = SESSION_TYPES[type];
     const model = this.resolveModel();
 
+    // The ask session gains the tracker seam (Jira/Confluence) when configured.
+    const atlassianActive = type === 'ask' && this.atlassian;
+    const toolNames = atlassianActive ? [...cfg.tools, ...ATLASSIAN_TOOL_NAMES] : cfg.tools;
+    const customTools = [
+      ...createVaultTools(ctx),
+      ...createProposeTools(ctx, id),
+      ...(atlassianActive ? createAtlassianTools(this.atlassian!) : []),
+    ];
+
     const loader = new DefaultResourceLoader({
       cwd: this.config.vaultDir,
       agentDir: join(this.config.userDataDir, 'pi', 'agent'),
@@ -118,8 +138,8 @@ export class AgentRuntime {
       cwd: this.config.vaultDir,
       model,
       noTools: 'all',
-      tools: cfg.tools,
-      customTools: [...createVaultTools(ctx), ...createProposeTools(ctx, id)],
+      tools: toolNames,
+      customTools,
       authStorage: this.authStorage,
       modelRegistry: this.modelRegistry,
       resourceLoader: loader,

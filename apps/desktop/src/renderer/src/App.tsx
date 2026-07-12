@@ -50,7 +50,7 @@ function Shell() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
-        showChat();
+        showChat('ask');
       }
     };
     window.addEventListener('keydown', onKey);

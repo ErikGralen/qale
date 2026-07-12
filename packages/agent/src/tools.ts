@@ -3,6 +3,7 @@ import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent
 import type { UseCaseContext } from '@pm/application';
 import { createProposal, searchNotes, contentHash } from '@pm/application';
 import { validateEvidence, zTriagePayload, zNotePayload, zUpdatePayload, THEME_STANCES } from '@pm/domain';
+import type { AtlassianClient } from '@pm/atlassian';
 
 /**
  * Vault-scoped custom tools — the core trust mechanic (PLAN §3.3). pi's built-in
@@ -237,6 +238,65 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string): Tool
   });
 
   return [proposeTriage, proposeNote, proposeUpdate];
+}
+
+export const ATLASSIAN_TOOL_NAMES = ['jira_search', 'jira_get_issue', 'confluence_search', 'confluence_get_page'];
+
+/**
+ * The tracker seam (PLAN §3.3): read-only references into Jira/Confluence. Jira
+ * stays the system of execution — we point at the *what*, hold the *why*. Results
+ * are normalized to markdown with deep links so ask-answers can cite them.
+ */
+export function createAtlassianTools(client: AtlassianClient): ToolDefinition[] {
+  const jiraSearch = defineTool({
+    name: 'jira_search',
+    label: 'Search Jira',
+    description: 'Search Jira issues with a JQL query. Returns key, summary, status, assignee and a deep link.',
+    parameters: Type.Object({ jql: Type.String({ description: 'A JQL query.' }) }),
+    async execute(_id, params: { jql: string }) {
+      const issues = await client.searchIssues(params.jql);
+      if (issues.length === 0) return text('No matching Jira issues.');
+      return text(
+        issues.map((i) => `- ${i.key} [${i.status}] ${i.summary}${i.assignee ? ` (@${i.assignee})` : ''}\n    ${i.url}`).join('\n'),
+      );
+    },
+  });
+
+  const jiraGetIssue = defineTool({
+    name: 'jira_get_issue',
+    label: 'Get Jira issue',
+    description: 'Fetch a single Jira issue by key (e.g. ENG-214), including its description as markdown.',
+    parameters: Type.Object({ key: Type.String() }),
+    async execute(_id, params: { key: string }) {
+      const i = await client.getIssue(params.key);
+      return text(`# ${i.key}: ${i.summary}\nStatus: ${i.status}${i.assignee ? ` · @${i.assignee}` : ''}\n${i.url}\n\n${i.description}`);
+    },
+  });
+
+  const confluenceSearch = defineTool({
+    name: 'confluence_search',
+    label: 'Search Confluence',
+    description: 'Search Confluence pages with a CQL query. Returns title, deep link and an excerpt.',
+    parameters: Type.Object({ cql: Type.String({ description: 'A CQL query, e.g. text ~ "SSO".' }) }),
+    async execute(_id, params: { cql: string }) {
+      const results = await client.searchConfluence(params.cql);
+      if (results.length === 0) return text('No matching Confluence pages.');
+      return text(results.map((r) => `- [${r.id}] ${r.title}\n    ${r.url}\n    ${r.excerpt}`).join('\n'));
+    },
+  });
+
+  const confluenceGetPage = defineTool({
+    name: 'confluence_get_page',
+    label: 'Get Confluence page',
+    description: 'Fetch a Confluence page by id, converted to markdown.',
+    parameters: Type.Object({ id: Type.String() }),
+    async execute(_id, params: { id: string }) {
+      const page = await client.getPage(params.id);
+      return text(`# ${page.title}\n${page.url}\n\n${page.body}`);
+    },
+  });
+
+  return [jiraSearch, jiraGetIssue, confluenceSearch, confluenceGetPage];
 }
 
 function stripLink(ref: string): string {

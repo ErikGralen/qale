@@ -79,6 +79,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
       userDataDir: app.getPath('userData'),
       modelId: s.modelId,
       apiKey: settings.getAnthropicKey(),
+      atlassian: settings.getAtlassian(),
     });
   };
 
@@ -107,6 +108,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   });
   handle('settings:setAtlassian', async (creds) => {
     await settings.setAtlassian(creds.baseUrl, creds.email, creds.token);
+    reconfigureAgent();
     return settingsDTO();
   });
   handle('models:list', () => {

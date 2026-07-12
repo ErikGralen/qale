@@ -107,7 +107,7 @@ export function Sidebar() {
         <div className="flex flex-col gap-0.5 px-2 pb-1">
           <button
             className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent"
-            onClick={() => showChat()}
+            onClick={() => showChat('ask')}
           >
             <Sparkles className="size-4 text-brand" />
             Ask the brain

@@ -6,11 +6,13 @@ import {
   createProposal,
   type UseCaseContext,
   captureSignal,
+  captureTranscript,
   getBacklinks,
   getNote,
   getThemesByHeat,
   getVaultTree,
   listProposals,
+  previewProposal,
   rebuild,
   rejectProposal,
   resolveLink,
@@ -170,6 +172,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     const note = await captureSignal(vaultService.requireContext(), input);
     return noteToDTO(note);
   });
+  handle('transcript:capture', async (input) => {
+    const note = await captureTranscript(vaultService.requireContext(), input);
+    return noteToDTO(note);
+  });
 
   handle('search:query', (query, limit) =>
     searchNotes(vaultService.requireContext(), query, limit).map(hitToDTO),
@@ -186,6 +192,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   handle('proposals:list', (status) =>
     listProposals(vaultService.requireContext(), status).map(proposalToDTO),
   );
+  handle('proposals:preview', (id) => previewProposal(vaultService.requireContext(), id));
   handle('proposals:accept', async (id, edited) => {
     const result = await acceptProposal(vaultService.requireContext(), id, edited);
     notifyProposals();

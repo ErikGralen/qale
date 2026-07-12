@@ -55,9 +55,10 @@ export function ChatView({
   sessionType = 'chat',
   initialPrompt,
 }: {
-  sessionType?: 'chat' | 'ask' | 'triage';
+  sessionType?: 'chat' | 'ask' | 'triage' | 'ingest-transcript';
   initialPrompt?: string;
 }) {
+  const proposesWrites = sessionType === 'triage' || sessionType === 'ingest-transcript';
   const { openNote, refreshProposals, showReview, pendingCount } = useApp();
   const transport = useMemo(() => new IpcChatTransport(sessionType), [sessionType]);
   const { messages, sendMessage, status, stop, error } = useChat({ transport });
@@ -79,10 +80,10 @@ export function ChatView({
     }
   }, [initialPrompt, sendMessage]);
 
-  // After a triage turn settles, refresh the review queue (new proposals may exist).
+  // After a proposing turn settles, refresh the review queue.
   useEffect(() => {
-    if (status === 'ready' && sessionType === 'triage') void refreshProposals();
-  }, [status, sessionType, refreshProposals]);
+    if (status === 'ready' && proposesWrites) void refreshProposals();
+  }, [status, proposesWrites, refreshProposals]);
 
   const submit = () => {
     const text = input.trim();
@@ -94,7 +95,13 @@ export function ChatView({
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-11 items-center px-5 text-sm font-medium text-muted-foreground" style={{ WebkitAppRegion: 'drag' } as never}>
-        {sessionType === 'ask' ? 'Ask the brain' : 'Chat'}
+        {sessionType === 'ask'
+          ? 'Ask the brain'
+          : sessionType === 'triage'
+            ? 'Triage'
+            : sessionType === 'ingest-transcript'
+              ? 'Ingest transcript'
+              : 'Chat'}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6">
@@ -133,7 +140,7 @@ export function ChatView({
         </div>
       </div>
 
-      {sessionType === 'triage' && pendingCount > 0 && (
+      {proposesWrites && pendingCount > 0 && (
         <div className="mx-6 mb-2">
           <button
             className="mx-auto flex max-w-2xl w-full items-center gap-2 rounded-lg border border-brand/40 bg-brand/8 px-3 py-2 text-sm text-brand"

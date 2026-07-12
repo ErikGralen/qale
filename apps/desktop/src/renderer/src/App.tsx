@@ -8,6 +8,7 @@ import { ChatView } from './app/ChatView';
 import { SettingsView } from './app/SettingsView';
 import { ReviewView } from './app/ReviewView';
 import { ThemesView } from './app/ThemesView';
+import { IngestView } from './app/IngestView';
 import { RightPanel } from './app/RightPanel';
 import { QuickSwitcher } from './app/QuickSwitcher';
 import { QuickCapture } from './app/QuickCapture';
@@ -23,6 +24,8 @@ function Center() {
       return <ReviewView />;
     case 'themes':
       return <ThemesView />;
+    case 'ingest':
+      return <IngestView />;
     case 'settings':
       return <SettingsView />;
     default:

@@ -112,6 +112,18 @@ export interface SaveNoteInput {
   body: string;
 }
 
+export interface CaptureTranscriptInput {
+  title: string;
+  body: string;
+  source?: SourceRefDTO;
+}
+
+export interface ProposalPreviewDTO {
+  before: string;
+  after: string;
+  stale: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Proposals (Phases 3–5) — the only write path for the agent.
 // ---------------------------------------------------------------------------

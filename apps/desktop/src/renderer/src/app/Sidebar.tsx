@@ -15,6 +15,7 @@ import {
   Settings,
   Inbox,
   Wand2,
+  FileUp,
   type LucideIcon,
 } from 'lucide-react';
 import { useApp } from '../state/app-state';
@@ -80,6 +81,7 @@ export function Sidebar() {
     showSettings,
     showReview,
     showThemes,
+    showIngest,
     startTriage,
     pendingCount,
   } = useApp();
@@ -136,6 +138,13 @@ export function Sidebar() {
           >
             <Wand2 className="size-4 text-muted-foreground" />
             Triage new signals
+          </button>
+          <button
+            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent"
+            onClick={showIngest}
+          >
+            <FileUp className="size-4 text-muted-foreground" />
+            Ingest transcript
           </button>
         </div>
       )}

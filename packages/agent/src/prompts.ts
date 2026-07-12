@@ -50,10 +50,24 @@ export interface SessionTypeConfig {
   tools: string[];
 }
 
+const INGEST = `${SHARED}
+
+Mode: ingest-transcript. The PM dropped a meeting transcript into the vault. Read it (vault_read),
+then extract, each as a PROPOSAL the PM will review:
+- Signals: verbatim customer quotes worth keeping — propose_note type "signal" (or link via triage
+  if you also see matching new signals).
+- Decisions: what was decided, by whom, and why — propose_note type "decision" citing the transcript.
+- Actions: recommended next steps — propose_note type "action". Ticket keys (e.g. ENG-214) appear as
+  plain text; do not invent links.
+- Updates to existing notes: answer an open question, add evidence to a theme, or flag a
+  contradiction — propose_update with exact search/replace anchors.
+- A meeting-summary (derived) note that cites the transcript and links the extracted notes.
+Every propose_note/propose_update must cite real sources (the transcript path + any referenced
+notes). You never write the vault directly.`;
+
 export const SESSION_TYPES: Record<SessionType, SessionTypeConfig> = {
   chat: { systemPrompt: CHAT, tools: VAULT_TOOL_NAMES },
   ask: { systemPrompt: ASK, tools: VAULT_TOOL_NAMES },
   triage: { systemPrompt: TRIAGE, tools: [...VAULT_TOOL_NAMES, ...PROPOSE_TOOL_NAMES] },
-  // ingest-transcript gains propose_note/propose_update in Phase 4.
-  'ingest-transcript': { systemPrompt: CHAT, tools: VAULT_TOOL_NAMES },
+  'ingest-transcript': { systemPrompt: INGEST, tools: [...VAULT_TOOL_NAMES, ...PROPOSE_TOOL_NAMES] },
 };

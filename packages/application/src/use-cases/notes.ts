@@ -2,9 +2,12 @@ import {
   draftSignal,
   isBodyEditable,
   normalizeLinkTarget,
+  dirForType,
+  fileSlug,
   type Note,
   type SourceRef,
   type ThemeStance,
+  type TranscriptFrontmatter,
 } from '@pm/domain';
 import type { BacklinkRow, IndexedNote, UseCaseContext } from '../ports.js';
 
@@ -41,6 +44,39 @@ export async function captureSignal(
   const note = await ctx.vault.writeNote(path, draft.frontmatter, draft.body);
   ctx.index.reindex(note);
   await ctx.git.commitPaths([note.path], `capture: ${draft.frontmatter.summary}`);
+  return note;
+}
+
+export interface CaptureTranscriptInput {
+  title: string;
+  body: string;
+  source?: SourceRef;
+}
+
+/** Drop/paste a transcript → transcripts/…md (raw), ready for ingest (Phase 4). */
+export async function captureTranscript(
+  ctx: UseCaseContext,
+  input: CaptureTranscriptInput,
+): Promise<Note> {
+  const now = ctx.clock.now();
+  const date = now.slice(0, 10);
+  const summary = input.title.slice(0, 200) || 'transcript';
+  let path = `${dirForType('transcript')}/${fileSlug(summary, date)}.md`;
+  let n = 2;
+  while (await ctx.vault.exists(path)) {
+    path = `${dirForType('transcript')}/${fileSlug(summary, date)}-${n}.md`;
+    n++;
+  }
+  const frontmatter: TranscriptFrontmatter = {
+    type: 'transcript',
+    summary,
+    status: 'new',
+    ...(input.source ? { source: input.source } : {}),
+    captured: now,
+  };
+  const note = await ctx.vault.writeNote(path, frontmatter, input.body.trim());
+  ctx.index.reindex(note);
+  await ctx.git.commitPaths([note.path], `transcript: ${summary}`);
   return note;
 }
 

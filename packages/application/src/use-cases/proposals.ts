@@ -1,9 +1,13 @@
 import {
   zTriagePayload,
+  zNotePayload,
+  zUpdatePayload,
+  parseFrontmatter,
   type TriagePayload,
   type ThemeStance,
   dirForType,
   fileSlug,
+  type Frontmatter,
   type ThemeFrontmatter,
 } from '@pm/domain';
 import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../ports.js';
@@ -30,6 +34,31 @@ export function listProposals(ctx: UseCaseContext, status?: string): ProposalRec
   return ctx.proposals.list(status);
 }
 
+export interface ProposalPreview {
+  before: string;
+  after: string;
+  stale: boolean;
+}
+
+/** Compute the review-time diff for a proposal against CURRENT file content. */
+export async function previewProposal(ctx: UseCaseContext, id: string): Promise<ProposalPreview | null> {
+  const rec = ctx.proposals.get(id);
+  if (!rec) return null;
+  if (rec.kind === 'note') {
+    const payload = rec.payload as { body?: string };
+    return { before: '', after: payload.body ?? '', stale: false };
+  }
+  if (rec.kind === 'update') {
+    const payload = rec.payload as { path: string; patch: { search: string; replace: string }[] };
+    const note = await ctx.vault.readNote(payload.path);
+    if (!note) return { before: '', after: '', stale: true };
+    const stale = !!rec.baseHash && contentHash(note.body) !== rec.baseHash;
+    const applied = applyPatch(note.body, payload.patch);
+    return { before: note.body, after: applied ?? note.body, stale: stale || applied === null };
+  }
+  return null;
+}
+
 export function rejectProposal(ctx: UseCaseContext, id: string): { ok: boolean } {
   const rec = ctx.proposals.get(id);
   if (!rec || rec.status !== 'pending') return { ok: false };
@@ -51,11 +80,60 @@ export async function acceptProposal(
   const rec = ctx.proposals.get(id);
   if (!rec || rec.status !== 'pending') return { ok: false };
 
-  if (rec.kind === 'triage') {
-    return acceptTriage(ctx, rec, edited);
-  }
-  // note/update kinds land in Phase 4.
+  if (rec.kind === 'triage') return acceptTriage(ctx, rec, edited);
+  if (rec.kind === 'note') return acceptNote(ctx, rec, edited);
+  if (rec.kind === 'update') return acceptUpdate(ctx, rec, edited);
   return { ok: false };
+}
+
+async function acceptNote(ctx: UseCaseContext, rec: ProposalRecord, edited?: unknown): Promise<AcceptResult> {
+  const parsed = zNotePayload.safeParse(edited ?? rec.payload);
+  if (!parsed.success) return { ok: false };
+  const { path, frontmatter, body } = parsed.data;
+  const fm = parseFrontmatter(frontmatter);
+  if (!fm.ok || !fm.data) return { ok: false };
+  const written = await ctx.vault.writeNote(path, fm.data as Frontmatter, body);
+  ctx.index.reindex(written);
+  await ctx.git.commitPaths([path], `note: ${written.slug}`);
+  ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
+  return { ok: true };
+}
+
+async function acceptUpdate(ctx: UseCaseContext, rec: ProposalRecord, edited?: unknown): Promise<AcceptResult> {
+  const parsed = zUpdatePayload.safeParse(edited ?? rec.payload);
+  if (!parsed.success) return { ok: false };
+  const { path, patch } = parsed.data;
+  const note = await ctx.vault.readNote(path);
+  if (!note) return { ok: false };
+  // Staleness: the target may have been edited in Obsidian since the proposal.
+  if (rec.baseHash && contentHash(note.body) !== rec.baseHash) {
+    ctx.proposals.setStatus(rec.id, 'stale', Date.now());
+    return { ok: false, stale: true };
+  }
+  const applied = applyPatch(note.body, patch);
+  if (applied === null) {
+    ctx.proposals.setStatus(rec.id, 'stale', Date.now());
+    return { ok: false, stale: true };
+  }
+  const written = await ctx.vault.writeNote(path, note.frontmatter, applied);
+  ctx.index.reindex(written);
+  await ctx.git.commitPaths([path], `update: ${written.slug}`);
+  ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
+  return { ok: true };
+}
+
+/**
+ * Apply search/replace blocks (the format LLMs produce reliably, PLAN §3.5).
+ * Returns null if any block's search text isn't found (→ stale, don't clobber).
+ */
+export function applyPatch(body: string, patch: { search: string; replace: string }[]): string | null {
+  let result = body;
+  for (const block of patch) {
+    const idx = result.indexOf(block.search);
+    if (idx === -1) return null;
+    result = result.slice(0, idx) + block.replace + result.slice(idx + block.search.length);
+  }
+  return result;
 }
 
 async function acceptTriage(

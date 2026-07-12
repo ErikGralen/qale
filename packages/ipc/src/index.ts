@@ -3,7 +3,9 @@ import type {
   AgentRunHandle,
   BacklinkDTO,
   CaptureSignalInput,
+  CaptureTranscriptInput,
   ModelInfoDTO,
+  ProposalPreviewDTO,
   NoteDTO,
   ProposalDTO,
   ThemeHeatDTO,
@@ -57,10 +59,12 @@ export interface InvokeMap {
 
   // Capture / search
   'signal:capture': { args: [input: CaptureSignalInput]; result: NoteDTO };
+  'transcript:capture': { args: [input: CaptureTranscriptInput]; result: NoteDTO };
   'search:query': { args: [query: string, limit?: number]; result: SearchHitDTO[] };
 
   // Proposals
   'proposals:list': { args: [status?: string]; result: ProposalDTO[] };
+  'proposals:preview': { args: [id: string]; result: ProposalPreviewDTO | null };
   'proposals:accept': { args: [id: string, edited?: unknown]; result: { ok: boolean; stale?: boolean } };
   'proposals:reject': { args: [id: string]; result: { ok: boolean } };
 
@@ -96,8 +100,10 @@ export const INVOKE_CHANNELS = [
   'note:setThemeStance',
   'themes:byHeat',
   'signal:capture',
+  'transcript:capture',
   'search:query',
   'proposals:list',
+  'proposals:preview',
   'proposals:accept',
   'proposals:reject',
   'agent:run',

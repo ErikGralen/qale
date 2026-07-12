@@ -20,7 +20,7 @@ import type {
 } from '@pm/ipc';
 import { invoke, onEvent } from '../lib/ipc';
 
-export type ChatSessionType = 'chat' | 'ask' | 'triage';
+export type ChatSessionType = 'chat' | 'ask' | 'triage' | 'ingest-transcript';
 
 export type CenterView =
   | { kind: 'landing' }
@@ -28,6 +28,7 @@ export type CenterView =
   | { kind: 'chat'; sessionType: ChatSessionType; initialPrompt?: string }
   | { kind: 'review' }
   | { kind: 'themes' }
+  | { kind: 'ingest' }
   | { kind: 'settings' };
 
 interface AppState {
@@ -45,8 +46,11 @@ interface AppState {
   showChat: (sessionType?: ChatSessionType, initialPrompt?: string) => void;
   showReview: () => void;
   showThemes: () => void;
+  showIngest: () => void;
   showSettings: () => void;
   startTriage: () => void;
+  ingestTranscript: (title: string, body: string) => Promise<void>;
+  previewProposal: (id: string) => Promise<{ before: string; after: string; stale: boolean } | null>;
   refreshProposals: () => Promise<void>;
   acceptProposal: (id: string, edited?: unknown) => Promise<{ ok: boolean; stale?: boolean }>;
   rejectProposal: (id: string) => Promise<void>;
@@ -107,9 +111,28 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
   const showReview = useCallback(() => setView({ kind: 'review' }), []);
   const showThemes = useCallback(() => setView({ kind: 'themes' }), []);
+  const showIngest = useCallback(() => setView({ kind: 'ingest' }), []);
   const showSettings = useCallback(() => setView({ kind: 'settings' }), []);
   const startTriage = useCallback(
     () => setView({ kind: 'chat', sessionType: 'triage', initialPrompt: 'Triage my new signals.' }),
+    [],
+  );
+
+  const ingestTranscript = useCallback(
+    async (title: string, body: string) => {
+      const note = await invoke['transcript:capture']({ title, body });
+      await refreshTree();
+      setView({
+        kind: 'chat',
+        sessionType: 'ingest-transcript',
+        initialPrompt: `Ingest the transcript at ${note.path}: propose signals, decisions, actions, updates to existing notes, and a meeting summary.`,
+      });
+    },
+    [refreshTree],
+  );
+
+  const previewProposal = useCallback(
+    (id: string) => invoke['proposals:preview'](id),
     [],
   );
 
@@ -206,6 +229,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       else if (info && open === '__chat') setView({ kind: 'chat', sessionType: 'chat' });
       else if (info && open === '__review') setView({ kind: 'review' });
       else if (info && open === '__themes') setView({ kind: 'themes' });
+      else if (info && open === '__ingest') setView({ kind: 'ingest' });
       else if (info && open) void openNote(open);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -241,8 +265,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       showChat,
       showReview,
       showThemes,
+      showIngest,
       showSettings,
       startTriage,
+      ingestTranscript,
+      previewProposal,
       refreshProposals,
       acceptProposal,
       rejectProposal,
@@ -252,7 +279,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       search,
       refresh,
     }),
-    [vault, tree, view, currentNote, backlinks, pendingCount, proposals, themes, openVaultDialog, openNote, showLanding, showChat, showReview, showThemes, showSettings, startTriage, refreshProposals, acceptProposal, rejectProposal, setThemeStance, captureSignal, saveNote, search, refresh],
+    [vault, tree, view, currentNote, backlinks, pendingCount, proposals, themes, openVaultDialog, openNote, showLanding, showChat, showReview, showThemes, showIngest, showSettings, startTriage, ingestTranscript, previewProposal, refreshProposals, acceptProposal, rejectProposal, setThemeStance, captureSignal, saveNote, search, refresh],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

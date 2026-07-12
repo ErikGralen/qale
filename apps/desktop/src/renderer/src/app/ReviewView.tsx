@@ -76,7 +76,14 @@ export function ReviewView() {
             onOpen={openNote}
           />
         ) : (
-          <GenericCard proposal={current} busy={busy} onAccept={onAccept} onReject={onReject} />
+          <WriteCard
+            key={current.id}
+            proposal={current}
+            busy={busy}
+            onAccept={onAccept}
+            onReject={onReject}
+            onSkip={advance}
+          />
         )}
       </div>
     </div>
@@ -161,29 +168,92 @@ function TriageCard({
   );
 }
 
-function GenericCard({
+/** Note + update proposals: rationale, evidence, inference badge, review-time diff. */
+function WriteCard({
   proposal,
   busy,
   onAccept,
   onReject,
+  onSkip,
 }: {
   proposal: ProposalDTO;
   busy: boolean;
   onAccept: () => void;
   onReject: () => void;
+  onSkip: () => void;
 }) {
+  const { previewProposal } = useApp();
+  const [preview, setPreview] = useState<{ before: string; after: string; stale: boolean } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void previewProposal(proposal.id).then((p) => alive && setPreview(p));
+    return () => {
+      alive = false;
+    };
+  }, [proposal.id, previewProposal]);
+
+  const target = proposal.targetPath ?? (proposal.payload as { path?: string }).path ?? '';
+
   return (
     <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-      <Badge variant="secondary">{proposal.kind}</Badge>
-      <p className="my-3 text-sm">{proposal.rationale}</p>
+      <div className="mb-3 flex items-center gap-2">
+        <Badge variant="secondary">{proposal.kind === 'note' ? 'new note' : 'update'}</Badge>
+        <span className="truncate font-mono text-xs text-muted-foreground">{target}</span>
+        {proposal.inference && <Badge>inference</Badge>}
+      </div>
+
+      <p className="mb-3 text-sm text-muted-foreground">{proposal.rationale}</p>
+
+      {proposal.evidence.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1">
+          {proposal.evidence.map((e) => (
+            <span key={e.ref} className="rounded bg-brand/8 px-1.5 py-0.5 font-mono text-xs text-brand">
+              {e.ref}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {preview && (
+        <pre className="mb-4 max-h-60 overflow-y-auto rounded-lg bg-muted/60 p-3 text-xs whitespace-pre-wrap">
+          {proposal.kind === 'note' ? preview.after : renderDiff(preview.before, preview.after)}
+        </pre>
+      )}
+
+      {preview?.stale && (
+        <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
+          The target changed since this was proposed — re-run ingest to regenerate.
+        </div>
+      )}
+
       <div className="flex gap-2">
-        <Button size="sm" onClick={onAccept} disabled={busy}>
-          Accept
+        <Button size="sm" onClick={onAccept} disabled={busy || preview?.stale}>
+          <Check className="size-3.5" /> Accept
         </Button>
         <Button size="sm" variant="outline" onClick={onReject} disabled={busy}>
-          Dismiss
+          <X className="size-3.5" /> Dismiss
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onSkip} disabled={busy}>
+          Skip
         </Button>
       </div>
     </div>
   );
+}
+
+/** A minimal line diff for the update preview. */
+function renderDiff(before: string, after: string): string {
+  const b = before.split('\n');
+  const a = after.split('\n');
+  const out: string[] = [];
+  const max = Math.max(b.length, a.length);
+  for (let i = 0; i < max; i++) {
+    if (b[i] === a[i]) out.push(`  ${a[i] ?? ''}`);
+    else {
+      if (b[i] !== undefined) out.push(`- ${b[i]}`);
+      if (a[i] !== undefined) out.push(`+ ${a[i]}`);
+    }
+  }
+  return out.join('\n');
 }

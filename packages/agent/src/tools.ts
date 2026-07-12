@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import type { UseCaseContext } from '@pm/application';
 import { createProposal, searchNotes, contentHash } from '@pm/application';
-import { validateEvidence, zTriagePayload, THEME_STANCES } from '@pm/domain';
+import { validateEvidence, zTriagePayload, zNotePayload, zUpdatePayload, THEME_STANCES } from '@pm/domain';
 
 /**
  * Vault-scoped custom tools — the core trust mechanic (PLAN §3.3). pi's built-in
@@ -103,7 +103,7 @@ export function createVaultTools(ctx: UseCaseContext): ToolDefinition[] {
   return [vaultRead, vaultList, vaultGrep, searchVault];
 }
 
-export const PROPOSE_TOOL_NAMES = ['propose_triage'];
+export const PROPOSE_TOOL_NAMES = ['propose_triage', 'propose_note', 'propose_update'];
 
 /**
  * Write-path tools — the agent PROPOSES, never writes (PLAN §3.3). Handlers
@@ -165,7 +165,78 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string): Tool
     },
   });
 
-  return [proposeTriage];
+  const proposeNote = defineTool({
+    name: 'propose_note',
+    label: 'Propose note',
+    description:
+      'Propose a NEW note (decision, action, open-question, meeting-summary, or note). frontmatter must include type + summary; derived notes must list sources[] (wikilinks). Every source must resolve unless inference:true.',
+    parameters: Type.Object({
+      path: Type.String({ description: 'Vault path, e.g. "decisions/adopt-workos.md".' }),
+      frontmatter: Type.Record(Type.String(), Type.Any()),
+      body: Type.String(),
+      rationale: Type.String(),
+      sources: Type.Optional(Type.Array(Type.String())),
+      inference: Type.Optional(Type.Boolean()),
+    }),
+    async execute(_id, params: unknown) {
+      const parsed = zNotePayload.safeParse(params);
+      if (!parsed.success) return text(`Rejected: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
+      const p = params as { sources?: string[]; inference?: boolean };
+      const sources = p.sources ?? [];
+      const check = validateEvidence(sources, !!p.inference, (ref) => !!ctx.index.resolve(stripLink(ref)));
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const rec = createProposal(ctx, {
+        kind: 'note',
+        sessionId,
+        targetPath: parsed.data.path,
+        baseHash: null,
+        payload: parsed.data,
+        rationale: parsed.data.rationale,
+        evidence: sources.map((s) => ({ ref: s, resolved: true })),
+        inference: !!p.inference,
+      });
+      return text(`Proposed new note (${rec.id}): ${parsed.data.path}. Awaiting review.`);
+    },
+  });
+
+  const proposeUpdate = defineTool({
+    name: 'propose_update',
+    label: 'Propose update',
+    description:
+      'Propose an edit to an EXISTING authored/derived note using search/replace blocks (exact anchor text + replacement). Use for answering an open question, adding evidence to a theme, or flagging a contradiction.',
+    parameters: Type.Object({
+      path: Type.String(),
+      patch: Type.Array(Type.Object({ search: Type.String(), replace: Type.String() })),
+      rationale: Type.String(),
+      sources: Type.Optional(Type.Array(Type.String())),
+      inference: Type.Optional(Type.Boolean()),
+    }),
+    async execute(_id, params: unknown) {
+      const parsed = zUpdatePayload.safeParse(params);
+      if (!parsed.success) return text(`Rejected: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
+      const target = ctx.index.resolve(stripLink(parsed.data.path));
+      if (!target) return text(`Rejected: target note not found: ${parsed.data.path}`);
+      const note = await ctx.vault.readNote(target);
+      if (!note) return text(`Rejected: cannot read ${target}`);
+      const p = params as { sources?: string[]; inference?: boolean };
+      const sources = p.sources ?? [];
+      const check = validateEvidence(sources, !!p.inference, (ref) => !!ctx.index.resolve(stripLink(ref)));
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const rec = createProposal(ctx, {
+        kind: 'update',
+        sessionId,
+        targetPath: target,
+        baseHash: contentHash(note.body),
+        payload: { ...parsed.data, path: target },
+        rationale: parsed.data.rationale,
+        evidence: sources.map((s) => ({ ref: s, resolved: true })),
+        inference: !!p.inference,
+      });
+      return text(`Proposed update (${rec.id}) to ${target}. Awaiting review.`);
+    },
+  });
+
+  return [proposeTriage, proposeNote, proposeUpdate];
 }
 
 function stripLink(ref: string): string {

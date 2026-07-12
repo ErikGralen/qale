@@ -1,4 +1,4 @@
-import { VAULT_TOOL_NAMES } from './tools.js';
+import { VAULT_TOOL_NAMES, PROPOSE_TOOL_NAMES } from './tools.js';
 
 /**
  * Session types differ only in system prompt + tool allowlist — a registry like
@@ -31,6 +31,20 @@ Mode: ask. Answer the PM's question with citations. Start by searching the vault
 relevant notes; then answer with the note paths you used. State your confidence honestly based on
 how much evidence you found and how concentrated it is.`;
 
+const TRIAGE = `${SHARED}
+
+Mode: triage. The PM has new signals to triage. Your job:
+1. List new signals with vault_list (type: signal, status: new).
+2. Read the theme index (vault_list type: theme) to know what already exists.
+3. GROUP signals that are "the same thing" — propose ONE decision per group, not per signal.
+4. For each group, call propose_triage exactly once with the action:
+   - "link" to an existing theme (themeRef) when it fits,
+   - "new-theme" (with a crisp summary + stance, usually "watching" or "exploring") when it's genuinely new,
+   - "discard" only for noise.
+5. Open with a one-line digest, e.g. "10 signals → 3 groups: 2 match existing themes, 1 looks new."
+Every propose_triage must cite real signal paths and, for link, a real theme. You never write the
+vault — each proposal waits for the PM to accept.`;
+
 export interface SessionTypeConfig {
   systemPrompt: string;
   tools: string[];
@@ -39,7 +53,7 @@ export interface SessionTypeConfig {
 export const SESSION_TYPES: Record<SessionType, SessionTypeConfig> = {
   chat: { systemPrompt: CHAT, tools: VAULT_TOOL_NAMES },
   ask: { systemPrompt: ASK, tools: VAULT_TOOL_NAMES },
-  // Placeholders until Phases 3–4 add the propose_* tools.
-  triage: { systemPrompt: CHAT, tools: VAULT_TOOL_NAMES },
+  triage: { systemPrompt: TRIAGE, tools: [...VAULT_TOOL_NAMES, ...PROPOSE_TOOL_NAMES] },
+  // ingest-transcript gains propose_note/propose_update in Phase 4.
   'ingest-transcript': { systemPrompt: CHAT, tools: VAULT_TOOL_NAMES },
 };

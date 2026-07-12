@@ -6,6 +6,8 @@ import { Landing } from './app/Landing';
 import { NoteView } from './app/NoteView';
 import { ChatView } from './app/ChatView';
 import { SettingsView } from './app/SettingsView';
+import { ReviewView } from './app/ReviewView';
+import { ThemesView } from './app/ThemesView';
 import { RightPanel } from './app/RightPanel';
 import { QuickSwitcher } from './app/QuickSwitcher';
 import { QuickCapture } from './app/QuickCapture';
@@ -16,7 +18,11 @@ function Center() {
     case 'note':
       return <NoteView />;
     case 'chat':
-      return <ChatView />;
+      return <ChatView key={view.sessionType} sessionType={view.sessionType} initialPrompt={view.initialPrompt} />;
+    case 'review':
+      return <ReviewView />;
+    case 'themes':
+      return <ThemesView />;
     case 'settings':
       return <SettingsView />;
     default:

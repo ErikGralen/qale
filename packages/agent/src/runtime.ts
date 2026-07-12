@@ -10,7 +10,7 @@ import {
   type AgentSession,
 } from '@earendil-works/pi-coding-agent';
 import type { UseCaseContext } from '@pm/application';
-import { createVaultTools } from './tools.js';
+import { createVaultTools, createProposeTools } from './tools.js';
 import { SESSION_TYPES, type SessionType } from './prompts.js';
 import { PiUiBridge, type Chunk } from './bridge.js';
 
@@ -119,7 +119,7 @@ export class AgentRuntime {
       model,
       noTools: 'all',
       tools: cfg.tools,
-      customTools: createVaultTools(ctx),
+      customTools: [...createVaultTools(ctx), ...createProposeTools(ctx, id)],
       authStorage: this.authStorage,
       modelRegistry: this.modelRegistry,
       resourceLoader: loader,

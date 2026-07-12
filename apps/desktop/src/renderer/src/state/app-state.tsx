@@ -11,16 +11,23 @@ import type {
   BacklinkDTO,
   CaptureSignalInput,
   NoteDTO,
+  ProposalDTO,
   SearchHitDTO,
+  ThemeHeatDTO,
+  ThemeStance,
   VaultInfoDTO,
   VaultTreeDTO,
 } from '@pm/ipc';
 import { invoke, onEvent } from '../lib/ipc';
 
+export type ChatSessionType = 'chat' | 'ask' | 'triage';
+
 export type CenterView =
   | { kind: 'landing' }
   | { kind: 'note'; path: string }
-  | { kind: 'chat' }
+  | { kind: 'chat'; sessionType: ChatSessionType; initialPrompt?: string }
+  | { kind: 'review' }
+  | { kind: 'themes' }
   | { kind: 'settings' };
 
 interface AppState {
@@ -30,10 +37,20 @@ interface AppState {
   currentNote: NoteDTO | null;
   backlinks: BacklinkDTO[];
   openVaultDialog: () => Promise<void>;
+  pendingCount: number;
+  proposals: ProposalDTO[];
+  themes: ThemeHeatDTO[];
   openNote: (path: string) => Promise<void>;
   showLanding: () => void;
-  showChat: () => void;
+  showChat: (sessionType?: ChatSessionType, initialPrompt?: string) => void;
+  showReview: () => void;
+  showThemes: () => void;
   showSettings: () => void;
+  startTriage: () => void;
+  refreshProposals: () => Promise<void>;
+  acceptProposal: (id: string, edited?: unknown) => Promise<{ ok: boolean; stale?: boolean }>;
+  rejectProposal: (id: string) => Promise<void>;
+  setThemeStance: (path: string, stance: ThemeStance) => Promise<void>;
   captureSignal: (input: CaptureSignalInput) => Promise<NoteDTO>;
   saveNote: (path: string, body: string) => Promise<void>;
   search: (query: string) => Promise<SearchHitDTO[]>;
@@ -48,6 +65,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<CenterView>({ kind: 'landing' });
   const [currentNote, setCurrentNote] = useState<NoteDTO | null>(null);
   const [backlinks, setBacklinks] = useState<BacklinkDTO[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [proposals, setProposals] = useState<ProposalDTO[]>([]);
+  const [themes, setThemes] = useState<ThemeHeatDTO[]>([]);
 
   const refreshTree = useCallback(async () => {
     try {
@@ -80,15 +100,69 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setBacklinks([]);
   }, []);
 
-  const showChat = useCallback(() => setView({ kind: 'chat' }), []);
+  const showChat = useCallback(
+    (sessionType: ChatSessionType = 'chat', initialPrompt?: string) =>
+      setView({ kind: 'chat', sessionType, initialPrompt }),
+    [],
+  );
+  const showReview = useCallback(() => setView({ kind: 'review' }), []);
+  const showThemes = useCallback(() => setView({ kind: 'themes' }), []);
   const showSettings = useCallback(() => setView({ kind: 'settings' }), []);
+  const startTriage = useCallback(
+    () => setView({ kind: 'chat', sessionType: 'triage', initialPrompt: 'Triage my new signals.' }),
+    [],
+  );
+
+  const refreshProposals = useCallback(async () => {
+    try {
+      const list = await invoke['proposals:list']('pending');
+      setProposals(list);
+      setPendingCount(list.length);
+    } catch {
+      setProposals([]);
+      setPendingCount(0);
+    }
+  }, []);
+
+  const refreshThemes = useCallback(async () => {
+    try {
+      setThemes(await invoke['themes:byHeat']());
+    } catch {
+      setThemes([]);
+    }
+  }, []);
+
+  const acceptProposal = useCallback(
+    async (id: string, edited?: unknown) => {
+      const result = await invoke['proposals:accept'](id, edited);
+      await Promise.all([refreshProposals(), refreshTree(), refreshThemes()]);
+      return result;
+    },
+    [refreshProposals, refreshTree, refreshThemes],
+  );
+
+  const rejectProposal = useCallback(
+    async (id: string) => {
+      await invoke['proposals:reject'](id);
+      await refreshProposals();
+    },
+    [refreshProposals],
+  );
+
+  const setThemeStance = useCallback(
+    async (path: string, stance: ThemeStance) => {
+      await invoke['note:setThemeStance'](path, stance);
+      await Promise.all([refreshThemes(), refreshTree()]);
+    },
+    [refreshThemes, refreshTree],
+  );
 
   const bootVault = useCallback(
     async (info: VaultInfoDTO | null) => {
       setVault(info);
-      if (info) await refreshTree();
+      if (info) await Promise.all([refreshTree(), refreshProposals(), refreshThemes()]);
     },
-    [refreshTree],
+    [refreshTree, refreshProposals, refreshThemes],
   );
 
   const openVaultDialog = useCallback(async () => {
@@ -129,7 +203,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       await bootVault(info);
       const open = new URLSearchParams(window.location.search).get('open');
       if (info && open === '__settings') setView({ kind: 'settings' });
-      else if (info && open === '__chat') setView({ kind: 'chat' });
+      else if (info && open === '__chat') setView({ kind: 'chat', sessionType: 'chat' });
+      else if (info && open === '__review') setView({ kind: 'review' });
+      else if (info && open === '__themes') setView({ kind: 'themes' });
       else if (info && open) void openNote(open);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -140,10 +216,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return onEvent((event) => {
       if (event.channel === 'vault:changed') {
         void refreshTree();
+        void refreshThemes();
         if (view.kind === 'note' && event.paths.includes(view.path)) void loadNote(view.path);
+      } else if (event.channel === 'proposals:changed') {
+        setPendingCount(event.pendingCount);
+        void refreshProposals();
       }
     });
-  }, [refreshTree, loadNote, view]);
+  }, [refreshTree, refreshThemes, refreshProposals, loadNote, view]);
 
   const value = useMemo<AppState>(
     () => ({
@@ -153,16 +233,26 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       currentNote,
       backlinks,
       openVaultDialog,
+      pendingCount,
+      proposals,
+      themes,
       openNote,
       showLanding,
       showChat,
+      showReview,
+      showThemes,
       showSettings,
+      startTriage,
+      refreshProposals,
+      acceptProposal,
+      rejectProposal,
+      setThemeStance,
       captureSignal,
       saveNote,
       search,
       refresh,
     }),
-    [vault, tree, view, currentNote, backlinks, openVaultDialog, openNote, showLanding, showChat, showSettings, captureSignal, saveNote, search, refresh],
+    [vault, tree, view, currentNote, backlinks, pendingCount, proposals, themes, openVaultDialog, openNote, showLanding, showChat, showReview, showThemes, showSettings, startTriage, refreshProposals, acceptProposal, rejectProposal, setThemeStance, captureSignal, saveNote, search, refresh],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

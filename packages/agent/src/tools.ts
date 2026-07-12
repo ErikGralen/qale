@@ -1,7 +1,8 @@
 import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import type { UseCaseContext } from '@pm/application';
-import { searchNotes } from '@pm/application';
+import { createProposal, searchNotes, contentHash } from '@pm/application';
+import { validateEvidence, zTriagePayload, THEME_STANCES } from '@pm/domain';
 
 /**
  * Vault-scoped custom tools — the core trust mechanic (PLAN §3.3). pi's built-in
@@ -100,4 +101,73 @@ export function createVaultTools(ctx: UseCaseContext): ToolDefinition[] {
   });
 
   return [vaultRead, vaultList, vaultGrep, searchVault];
+}
+
+export const PROPOSE_TOOL_NAMES = ['propose_triage'];
+
+/**
+ * Write-path tools — the agent PROPOSES, never writes (PLAN §3.3). Handlers
+ * validate before persisting: signal/theme targets must resolve against the
+ * index, else the call fails (unless flagged inference). Proposals persist as
+ * rows and return an id; the review queue applies accepted ones.
+ */
+export function createProposeTools(ctx: UseCaseContext, sessionId: string): ToolDefinition[] {
+  const proposeTriage = defineTool({
+    name: 'propose_triage',
+    label: 'Propose triage',
+    description:
+      'Propose a cluster-level triage decision for one or more NEW signals: link them to an existing theme, create a new theme, or discard. The group is the unit — propose one decision per cluster of duplicates. themeRef is a wikilink like "[[themes/sso-onboarding]]".',
+    parameters: Type.Object({
+      signalPaths: Type.Array(Type.String(), { description: 'Vault paths of the signals in this group.' }),
+      action: Type.Union([Type.Literal('link'), Type.Literal('new-theme'), Type.Literal('discard')]),
+      themeRef: Type.Optional(Type.String({ description: 'For "link": the existing theme wikilink.' })),
+      newTheme: Type.Optional(
+        Type.Object({
+          summary: Type.String(),
+          stance: Type.Union(THEME_STANCES.map((s) => Type.Literal(s))),
+        }),
+      ),
+      rationale: Type.String({ description: 'One-line reason for this decision.' }),
+    }),
+    async execute(_id, params: unknown) {
+      const parsed = zTriagePayload.safeParse(params);
+      if (!parsed.success) {
+        return text(`Rejected: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
+      }
+      const payload = parsed.data;
+
+      // Trust check: every signal (and the theme, for link) must resolve.
+      const refs = [...payload.signalPaths, ...(payload.themeRef ? [payload.themeRef] : [])];
+      const check = validateEvidence(refs, false, (ref) => !!ctx.index.resolve(stripLink(ref)));
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+
+      let targetPath: string | null = null;
+      let baseHash: string | null = null;
+      if (payload.action === 'link' && payload.themeRef) {
+        targetPath = ctx.index.resolve(stripLink(payload.themeRef));
+        const theme = targetPath ? await ctx.vault.readNote(targetPath) : null;
+        if (theme) baseHash = contentHash(theme.body + JSON.stringify(theme.frontmatter));
+      }
+
+      const rec = createProposal(ctx, {
+        kind: 'triage',
+        sessionId,
+        targetPath,
+        baseHash,
+        payload,
+        rationale: payload.rationale,
+        evidence: refs.map((r) => ({ ref: r, resolved: true })),
+        inference: false,
+      });
+      return text(
+        `Proposed (${rec.id}): ${payload.action} for ${payload.signalPaths.length} signal(s). Awaiting the PM's review.`,
+      );
+    },
+  });
+
+  return [proposeTriage];
+}
+
+function stripLink(ref: string): string {
+  return ref.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.split('#')[0]!.replace(/\.md$/, '');
 }

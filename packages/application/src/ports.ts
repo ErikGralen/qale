@@ -90,11 +90,49 @@ export interface Clock {
   now(): string;
 }
 
+/** A persisted proposal row (app.db — primary state, never dropped, PLAN §3.5). */
+export interface ProposalRecord {
+  id: string;
+  kind: string;
+  sessionId: string;
+  targetPath: string | null;
+  /** Content hash of the target at proposal time — for staleness detection. */
+  baseHash: string | null;
+  payload: unknown;
+  rationale: string;
+  evidence: { ref: string; label?: string; resolved: boolean }[];
+  inference: boolean;
+  status: string;
+  created: number;
+  resolved: number | null;
+}
+
+export interface CreateProposalInput {
+  kind: string;
+  sessionId: string;
+  targetPath: string | null;
+  baseHash: string | null;
+  payload: unknown;
+  rationale: string;
+  evidence: { ref: string; label?: string; resolved: boolean }[];
+  inference: boolean;
+}
+
+/** Proposal store (app.db) — the durable proposal queue + accept/reject log. */
+export interface ProposalPort {
+  create(input: CreateProposalInput, now: number): ProposalRecord;
+  list(status?: string): ProposalRecord[];
+  get(id: string): ProposalRecord | null;
+  setStatus(id: string, status: string, resolved: number | null): void;
+  pendingCount(): number;
+}
+
 export interface UseCaseContext {
   vault: VaultPort;
   index: IndexPort;
   git: GitPort;
   clock: Clock;
+  proposals: ProposalPort;
 }
 
 export type { Note, SearchHit, ThemeStance, NoteType, Frontmatter };

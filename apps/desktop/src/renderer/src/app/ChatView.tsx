@@ -51,18 +51,38 @@ function ToolPart({ part }: { part: AnyPart }) {
   );
 }
 
-export function ChatView({ sessionType = 'chat' as const }: { sessionType?: 'chat' | 'ask' }) {
-  const { openNote } = useApp();
+export function ChatView({
+  sessionType = 'chat',
+  initialPrompt,
+}: {
+  sessionType?: 'chat' | 'ask' | 'triage';
+  initialPrompt?: string;
+}) {
+  const { openNote, refreshProposals, showReview, pendingCount } = useApp();
   const transport = useMemo(() => new IpcChatTransport(sessionType), [sessionType]);
   const { messages, sendMessage, status, stop, error } = useChat({ transport });
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const sentInitial = useRef(false);
 
   const busy = status === 'submitted' || status === 'streaming';
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, status]);
+
+  // Auto-send the initial prompt once (e.g. triage kickoff).
+  useEffect(() => {
+    if (initialPrompt && !sentInitial.current) {
+      sentInitial.current = true;
+      void sendMessage({ text: initialPrompt });
+    }
+  }, [initialPrompt, sendMessage]);
+
+  // After a triage turn settles, refresh the review queue (new proposals may exist).
+  useEffect(() => {
+    if (status === 'ready' && sessionType === 'triage') void refreshProposals();
+  }, [status, sessionType, refreshProposals]);
 
   const submit = () => {
     const text = input.trim();
@@ -112,6 +132,18 @@ export function ChatView({ sessionType = 'chat' as const }: { sessionType?: 'cha
           {error && <div className="text-sm text-destructive">Error: {error.message}</div>}
         </div>
       </div>
+
+      {sessionType === 'triage' && pendingCount > 0 && (
+        <div className="mx-6 mb-2">
+          <button
+            className="mx-auto flex max-w-2xl w-full items-center gap-2 rounded-lg border border-brand/40 bg-brand/8 px-3 py-2 text-sm text-brand"
+            onClick={showReview}
+          >
+            <span className="font-medium">{pendingCount} proposal{pendingCount === 1 ? '' : 's'} to review</span>
+            <span className="ml-auto">Open review queue →</span>
+          </button>
+        </div>
+      )}
 
       <div className="px-6 pb-5">
         <div className="mx-auto flex max-w-2xl items-end gap-2 rounded-xl border border-border bg-card p-2 shadow-sm">

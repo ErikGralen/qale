@@ -13,6 +13,8 @@ import {
   Mic,
   Sparkles,
   Settings,
+  Inbox,
+  Wand2,
   type LucideIcon,
 } from 'lucide-react';
 import { useApp } from '../state/app-state';
@@ -69,7 +71,18 @@ function Group({ dir, type, notes }: { dir: string; type: NoteType; notes: { pat
 }
 
 export function Sidebar() {
-  const { vault, tree, openVaultDialog, showLanding, showChat, showSettings } = useApp();
+  const {
+    vault,
+    tree,
+    openVaultDialog,
+    showLanding,
+    showChat,
+    showSettings,
+    showReview,
+    showThemes,
+    startTriage,
+    pendingCount,
+  } = useApp();
 
   return (
     <div className="flex h-full flex-col">
@@ -89,14 +102,42 @@ export function Sidebar() {
       </div>
 
       {vault && (
-        <button
-          className="mx-2 mb-1 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent"
-          onClick={showChat}
-        >
-          <Sparkles className="size-4 text-brand" />
-          Ask the brain
-          <span className="ml-auto text-[11px] text-muted-foreground">⌘↵</span>
-        </button>
+        <div className="flex flex-col gap-0.5 px-2 pb-1">
+          <button
+            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent"
+            onClick={() => showChat()}
+          >
+            <Sparkles className="size-4 text-brand" />
+            Ask the brain
+            <span className="ml-auto text-[11px] text-muted-foreground">⌘↵</span>
+          </button>
+          <button
+            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent"
+            onClick={showReview}
+          >
+            <Inbox className="size-4 text-muted-foreground" />
+            Inbox
+            {pendingCount > 0 && (
+              <span className="ml-auto rounded-full bg-brand/15 px-1.5 text-xs font-semibold text-brand">
+                {pendingCount}
+              </span>
+            )}
+          </button>
+          <button
+            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent"
+            onClick={showThemes}
+          >
+            <Lightbulb className="size-4 text-muted-foreground" />
+            Themes
+          </button>
+          <button
+            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent"
+            onClick={startTriage}
+          >
+            <Wand2 className="size-4 text-muted-foreground" />
+            Triage new signals
+          </button>
+        </div>
       )}
 
       {!vault ? (

@@ -6,6 +6,7 @@ import type {
   ModelInfoDTO,
   NoteDTO,
   ProposalDTO,
+  ThemeHeatDTO,
   SaveNoteInput,
   SearchHitDTO,
   SessionRefDTO,
@@ -52,6 +53,7 @@ export interface InvokeMap {
   'note:backlinks': { args: [path: string]; result: BacklinkDTO[] };
   'note:resolveLink': { args: [target: string]; result: string | null };
   'note:setThemeStance': { args: [path: string, stance: ThemeStance]; result: NoteDTO };
+  'themes:byHeat': { args: []; result: ThemeHeatDTO[] };
 
   // Capture / search
   'signal:capture': { args: [input: CaptureSignalInput]; result: NoteDTO };
@@ -92,6 +94,7 @@ export const INVOKE_CHANNELS = [
   'note:backlinks',
   'note:resolveLink',
   'note:setThemeStance',
+  'themes:byHeat',
   'signal:capture',
   'search:query',
   'proposals:list',

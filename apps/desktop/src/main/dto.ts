@@ -1,10 +1,20 @@
 import type { Note } from '@pm/domain';
-import type { Backlink, IndexedNote, ThemeHeatRow, VaultInfo, VaultTreeGroup } from '@pm/application';
+import type {
+  Backlink,
+  IndexedNote,
+  ProposalRecord,
+  ThemeHeatRow,
+  VaultInfo,
+  VaultTreeGroup,
+} from '@pm/application';
 import type {
   BacklinkDTO,
   NoteDTO,
   NoteRefDTO,
+  ProposalDTO,
   SearchHitDTO,
+  ThemeHeatDTO,
+  ThemeStance,
   VaultInfoDTO,
   VaultTreeDTO,
 } from '@pm/ipc';
@@ -71,18 +81,28 @@ export function vaultInfoToDTO(info: VaultInfo): VaultInfoDTO {
   return { path: info.path, name: info.name, git: info.git, noteCount: info.noteCount };
 }
 
-export interface ThemeHeatDTO extends NoteRefDTO {
-  stance: string;
-  evidenceCount: number;
-  newest: string | null;
-}
-
 export function themeHeatToDTO(row: ThemeHeatRow): ThemeHeatDTO {
   return {
     ...indexedToRefDTO(row.note),
-    stance: (row.note.frontmatter['stance'] as string) ?? 'exploring',
+    stance: ((row.note.frontmatter['stance'] as string) ?? 'exploring') as ThemeStance,
     evidenceCount: row.count,
     newest: row.newest,
+  };
+}
+
+export function proposalToDTO(rec: ProposalRecord): ProposalDTO {
+  return {
+    id: rec.id,
+    kind: rec.kind as ProposalDTO['kind'],
+    sessionId: rec.sessionId,
+    targetPath: rec.targetPath,
+    payload: rec.payload as ProposalDTO['payload'],
+    rationale: rec.rationale,
+    evidence: rec.evidence,
+    inference: rec.inference,
+    status: rec.status as ProposalDTO['status'],
+    created: rec.created,
+    resolved: rec.resolved,
   };
 }
 

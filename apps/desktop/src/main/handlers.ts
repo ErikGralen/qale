@@ -2,11 +2,17 @@ import { app, BrowserWindow, dialog } from 'electron';
 import type { ModelInfoDTO, SettingsDTO } from '@pm/ipc';
 import { AgentRuntime } from '@pm/agent';
 import {
+  acceptProposal,
+  createProposal,
+  type UseCaseContext,
   captureSignal,
   getBacklinks,
   getNote,
+  getThemesByHeat,
   getVaultTree,
+  listProposals,
   rebuild,
+  rejectProposal,
   resolveLink,
   saveAuthoredNote,
   searchNotes,
@@ -15,7 +21,38 @@ import {
 import { handle, pushEvent } from './ipc.js';
 import { SettingsService } from './services/settings-service.js';
 import { VaultService } from './services/vault-service.js';
-import { backlinkToDTO, hitToDTO, noteToDTO, treeToDTO, vaultInfoToDTO } from './dto.js';
+import {
+  backlinkToDTO,
+  hitToDTO,
+  noteToDTO,
+  proposalToDTO,
+  themeHeatToDTO,
+  treeToDTO,
+  vaultInfoToDTO,
+} from './dto.js';
+
+/** Dev-only: seed a triage proposal so the review stepper is demoable without a key. */
+function seedDemoProposal(ctx: UseCaseContext): void {
+  if (ctx.proposals.pendingCount() > 0) return;
+  const newSignals = ctx.index.all().filter((n) => n.type === 'signal' && n.status === 'new');
+  if (newSignals.length === 0) return;
+  const theme = ctx.index.listByType('theme')[0];
+  createProposal(ctx, {
+    kind: 'triage',
+    sessionId: 'seed',
+    targetPath: theme?.path ?? null,
+    baseHash: null,
+    payload: {
+      signalPaths: newSignals.slice(0, 2).map((n) => n.path),
+      action: theme ? 'link' : 'new-theme',
+      ...(theme ? { themeRef: `[[${theme.slug}]]` } : { newTheme: { summary: 'New theme', stance: 'watching' } }),
+      rationale: 'These signals describe the same enterprise SSO/SCIM pain — group and link.',
+    },
+    rationale: 'seed',
+    evidence: newSignals.slice(0, 2).map((n) => ({ ref: `[[${n.slug}]]`, resolved: true })),
+    inference: false,
+  });
+}
 
 // Placeholder model list until the pi ModelRegistry lands in Phase 2.
 const MODELS: ModelInfoDTO[] = [
@@ -138,10 +175,27 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     searchNotes(vaultService.requireContext(), query, limit).map(hitToDTO),
   );
 
-  // --- Not yet implemented (later phases) ---
-  handle('proposals:list', () => []);
-  handle('proposals:accept', () => ({ ok: false }));
-  handle('proposals:reject', () => ({ ok: false }));
+  handle('themes:byHeat', () => getThemesByHeat(vaultService.requireContext()).map(themeHeatToDTO));
+
+  const notifyProposals = (): void => {
+    const ctx = vaultService.context();
+    if (!ctx) return;
+    pushEvent(getWindow(), { channel: 'proposals:changed', pendingCount: ctx.proposals.pendingCount() });
+  };
+
+  handle('proposals:list', (status) =>
+    listProposals(vaultService.requireContext(), status).map(proposalToDTO),
+  );
+  handle('proposals:accept', async (id, edited) => {
+    const result = await acceptProposal(vaultService.requireContext(), id, edited);
+    notifyProposals();
+    return result;
+  });
+  handle('proposals:reject', (id) => {
+    const result = rejectProposal(vaultService.requireContext(), id);
+    notifyProposals();
+    return result;
+  });
   handle('agent:run', async (input) => {
     const ctx = vaultService.requireContext();
     return agent.run(input, ctx, (streamId, chunk) => {
@@ -161,6 +215,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
           const info = await vaultService.open(saved);
           reconfigureAgent();
           console.log(`[pm] opened vault "${info.name}" — ${info.noteCount} notes, git=${info.git}`);
+          if (process.env['PM_SEED_PROPOSAL']) seedDemoProposal(vaultService.requireContext());
         } catch (err) {
           console.error('[pm] failed to open vault:', err);
         }

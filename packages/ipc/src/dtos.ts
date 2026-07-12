@@ -94,6 +94,12 @@ export interface SearchHitDTO {
   score: number;
 }
 
+export interface ThemeHeatDTO extends NoteRefDTO {
+  stance: ThemeStance;
+  evidenceCount: number;
+  newest: string | null;
+}
+
 export interface CaptureSignalInput {
   /** Free text body of the signal. */
   body: string;

@@ -11,6 +11,8 @@ import {
   FileText,
   StickyNote,
   Mic,
+  Sparkles,
+  Settings,
   type LucideIcon,
 } from 'lucide-react';
 import { useApp } from '../state/app-state';
@@ -67,7 +69,7 @@ function Group({ dir, type, notes }: { dir: string; type: NoteType; notes: { pat
 }
 
 export function Sidebar() {
-  const { vault, tree, openVaultDialog, showLanding } = useApp();
+  const { vault, tree, openVaultDialog, showLanding, showChat, showSettings } = useApp();
 
   return (
     <div className="flex h-full flex-col">
@@ -76,7 +78,26 @@ export function Sidebar() {
           <Logo className="size-5 text-brand" />
           <span className="font-serif text-[15px] font-semibold tracking-tight">product brain</span>
         </button>
+        <button
+          className="ml-auto rounded-md p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+          style={{ WebkitAppRegion: 'no-drag' } as never}
+          onClick={showSettings}
+          title="Settings"
+        >
+          <Settings className="size-4" />
+        </button>
       </div>
+
+      {vault && (
+        <button
+          className="mx-2 mb-1 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent"
+          onClick={showChat}
+        >
+          <Sparkles className="size-4 text-brand" />
+          Ask the brain
+          <span className="ml-auto text-[11px] text-muted-foreground">⌘↵</span>
+        </button>
+      )}
 
       {!vault ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">

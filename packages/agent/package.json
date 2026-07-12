@@ -1,0 +1,25 @@
+{
+  "name": "@pm/agent",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@pm/application": "workspace:*",
+    "@pm/domain": "workspace:*",
+    "@earendil-works/pi-coding-agent": "0.80.6",
+    "@earendil-works/pi-ai": "0.80.6",
+    "ai": "^7.0.22",
+    "typebox": "1.1.38"
+  },
+  "devDependencies": {
+    "@pm/typescript-config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "~5.9.2"
+  }
+}

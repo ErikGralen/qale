@@ -4,18 +4,30 @@ import { AppStateProvider, useApp } from './state/app-state';
 import { Sidebar } from './app/Sidebar';
 import { Landing } from './app/Landing';
 import { NoteView } from './app/NoteView';
+import { ChatView } from './app/ChatView';
+import { SettingsView } from './app/SettingsView';
 import { RightPanel } from './app/RightPanel';
 import { QuickSwitcher } from './app/QuickSwitcher';
 import { QuickCapture } from './app/QuickCapture';
 
 function Center() {
   const { view } = useApp();
-  return view.kind === 'note' ? <NoteView /> : <Landing />;
+  switch (view.kind) {
+    case 'note':
+      return <NoteView />;
+    case 'chat':
+      return <ChatView />;
+    case 'settings':
+      return <SettingsView />;
+    default:
+      return <Landing />;
+  }
 }
 
 function Shell() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
+  const { showChat } = useApp();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -27,10 +39,14 @@ function Shell() {
         e.preventDefault();
         setCaptureOpen(true);
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        showChat();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [showChat]);
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-background text-foreground">

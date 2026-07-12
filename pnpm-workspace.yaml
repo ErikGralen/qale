@@ -3,9 +3,11 @@ packages:
   - "packages/*"
 
 allowBuilds:
+  '@google/genai': false
   better-sqlite3: true
   electron-winstaller: false
   esbuild: true
+  protobufjs: false
 
 # Without this, pnpm blocks the postinstall build scripts for these native/binary
 # deps and Electron never downloads its binary — nothing runs. See PLAN §6.1.

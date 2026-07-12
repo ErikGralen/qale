@@ -17,7 +17,11 @@ import type {
 } from '@pm/ipc';
 import { invoke, onEvent } from '../lib/ipc';
 
-export type CenterView = { kind: 'landing' } | { kind: 'note'; path: string };
+export type CenterView =
+  | { kind: 'landing' }
+  | { kind: 'note'; path: string }
+  | { kind: 'chat' }
+  | { kind: 'settings' };
 
 interface AppState {
   vault: VaultInfoDTO | null;
@@ -28,6 +32,8 @@ interface AppState {
   openVaultDialog: () => Promise<void>;
   openNote: (path: string) => Promise<void>;
   showLanding: () => void;
+  showChat: () => void;
+  showSettings: () => void;
   captureSignal: (input: CaptureSignalInput) => Promise<NoteDTO>;
   saveNote: (path: string, body: string) => Promise<void>;
   search: (query: string) => Promise<SearchHitDTO[]>;
@@ -74,6 +80,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setBacklinks([]);
   }, []);
 
+  const showChat = useCallback(() => setView({ kind: 'chat' }), []);
+  const showSettings = useCallback(() => setView({ kind: 'settings' }), []);
+
   const bootVault = useCallback(
     async (info: VaultInfoDTO | null) => {
       setVault(info);
@@ -119,7 +128,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     void invoke['vault:current']().then(async (info) => {
       await bootVault(info);
       const open = new URLSearchParams(window.location.search).get('open');
-      if (info && open) void openNote(open);
+      if (info && open === '__settings') setView({ kind: 'settings' });
+      else if (info && open === '__chat') setView({ kind: 'chat' });
+      else if (info && open) void openNote(open);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootVault]);
@@ -144,12 +155,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openVaultDialog,
       openNote,
       showLanding,
+      showChat,
+      showSettings,
       captureSignal,
       saveNote,
       search,
       refresh,
     }),
-    [vault, tree, view, currentNote, backlinks, openVaultDialog, openNote, showLanding, captureSignal, saveNote, search, refresh],
+    [vault, tree, view, currentNote, backlinks, openVaultDialog, openNote, showLanding, showChat, showSettings, captureSignal, saveNote, search, refresh],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

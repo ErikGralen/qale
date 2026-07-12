@@ -13,11 +13,16 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@pm/agent": "workspace:*",
     "@pm/application": "workspace:*",
     "@pm/domain": "workspace:*",
     "@pm/ipc": "workspace:*",
     "@pm/markdown": "workspace:*",
     "@pm/vault": "workspace:*",
+    "@ai-sdk/react": "^4.0.23",
+    "@earendil-works/pi-ai": "0.80.6",
+    "@earendil-works/pi-coding-agent": "0.80.6",
+    "ai": "^7.0.22",
     "better-sqlite3": "^12.11.1",
     "chokidar": "^5.0.0",
     "lucide-react": "^1.24.0",

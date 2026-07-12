@@ -1,5 +1,6 @@
-import { BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import type { ModelInfoDTO, SettingsDTO } from '@pm/ipc';
+import { AgentRuntime } from '@pm/agent';
 import {
   captureSignal,
   getBacklinks,
@@ -28,6 +29,19 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   const vaultService = new VaultService((paths) => {
     pushEvent(getWindow(), { channel: 'vault:changed', paths });
   });
+  const agent = new AgentRuntime();
+
+  const reconfigureAgent = (): void => {
+    const ctx = vaultService.context();
+    if (!ctx) return;
+    const s = settings.get();
+    agent.configure({
+      vaultDir: ctx.vault.root(),
+      userDataDir: app.getPath('userData'),
+      modelId: s.modelId,
+      apiKey: settings.getAnthropicKey(),
+    });
+  };
 
   const settingsDTO = (): SettingsDTO => {
     const s = settings.get();
@@ -44,17 +58,22 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   handle('settings:get', () => settingsDTO());
   handle('settings:setModel', async (modelId) => {
     await settings.setModel(modelId);
+    reconfigureAgent();
     return settingsDTO();
   });
   handle('settings:setAnthropicKey', async (key) => {
     await settings.setAnthropicKey(key);
+    reconfigureAgent();
     return settingsDTO();
   });
   handle('settings:setAtlassian', async (creds) => {
     await settings.setAtlassian(creds.baseUrl, creds.email, creds.token);
     return settingsDTO();
   });
-  handle('models:list', () => MODELS);
+  handle('models:list', () => {
+    const live = agent.listModels();
+    return live.length > 0 ? live : MODELS;
+  });
 
   handle('vault:pick', async () => {
     const win = getWindow();
@@ -66,12 +85,14 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     const path = result.filePaths[0]!;
     const info = await vaultService.open(path);
     await settings.setVaultPath(info.path);
+    reconfigureAgent();
     return vaultInfoToDTO(info);
   });
 
   handle('vault:open', async (path) => {
     const info = await vaultService.open(path);
     await settings.setVaultPath(info.path);
+    reconfigureAgent();
     return vaultInfoToDTO(info);
   });
 
@@ -121,10 +142,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   handle('proposals:list', () => []);
   handle('proposals:accept', () => ({ ok: false }));
   handle('proposals:reject', () => ({ ok: false }));
-  handle('agent:run', () => {
-    throw new Error('agent runtime lands in Phase 2');
+  handle('agent:run', async (input) => {
+    const ctx = vaultService.requireContext();
+    return agent.run(input, ctx, (streamId, chunk) => {
+      pushEvent(getWindow(), { channel: 'agent:event', streamId, chunk });
+    });
   });
-  handle('agent:abort', () => undefined);
+  handle('agent:abort', (streamId) => agent.abort(streamId));
   handle('sessions:list', () => []);
 
   return {
@@ -135,6 +159,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
       if (saved) {
         try {
           const info = await vaultService.open(saved);
+          reconfigureAgent();
           console.log(`[pm] opened vault "${info.name}" — ${info.noteCount} notes, git=${info.git}`);
         } catch (err) {
           console.error('[pm] failed to open vault:', err);

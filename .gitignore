@@ -17,3 +17,6 @@ apps/desktop/dist/
 *.db
 *.db-shm
 *.db-wal
+
+# TS incremental
+*.tsbuildinfo

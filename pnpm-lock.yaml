@@ -20,12 +20,36 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@pm/application':
+        specifier: workspace:*
+        version: link:../../packages/application
+      '@pm/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@pm/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
+      '@pm/markdown':
+        specifier: workspace:*
+        version: link:../../packages/markdown
+      '@pm/vault':
+        specifier: workspace:*
+        version: link:../../packages/vault
+      better-sqlite3:
+        specifier: ^12.11.1
+        version: 12.11.1
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
       lucide-react:
         specifier: ^1.24.0
         version: 1.24.0(react@19.2.7)
+      react-markdown:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/react@19.2.17)(react@19.2.7)
+      simple-git:
+        specifier: ^3.36.0
+        version: 3.36.0
     devDependencies:
       '@electron-toolkit/utils':
         specifier: ^4.0.0
@@ -3974,6 +3998,12 @@ packages:
     resolution: {integrity: sha512-t0BRVXvbiE/o20Hfw669rLbMCDWtYZLvmJigy2f0MxsXF+71pxhR3xOkspmsO8h3ZlNzyibAmtCa3l4lYKk6gQ==}
     peerDependencies:
       react: ^19.2.7
+
+  react-markdown@10.1.0:
+    resolution: {integrity: sha512-qKxVopLT/TyA6BX3Ue5NwabOsAzm0Q7kAPwq6L+wWDwisYs7R8vZ0nRXqq6rkueboxpkjvLGU9fWifiX/ZZFxQ==}
+    peerDependencies:
+      '@types/react': '>=18'
+      react: '>=18'
 
   react-refresh@0.18.0:
     resolution: {integrity: sha512-QgT5//D3jfjJb6Gsjxv0Slpj23ip+HtOpnNgnb2S5zU3CB26G/IDPGoy4RJB42wzFE46DRsstbW6tKHoKbhAxw==}
@@ -8899,6 +8929,24 @@ snapshots:
     dependencies:
       react: 19.2.7
       scheduler: 0.27.0
+
+  react-markdown@10.1.0(@types/react@19.2.17)(react@19.2.7):
+    dependencies:
+      '@types/hast': 3.0.5
+      '@types/mdast': 4.0.4
+      '@types/react': 19.2.17
+      devlop: 1.1.0
+      hast-util-to-jsx-runtime: 2.3.6
+      html-url-attributes: 3.0.1
+      mdast-util-to-hast: 13.2.1
+      react: 19.2.7
+      remark-parse: 11.0.0
+      remark-rehype: 11.1.2
+      unified: 11.0.5
+      unist-util-visit: 5.1.0
+      vfile: 6.0.3
+    transitivePeerDependencies:
+      - supports-color
 
   react-refresh@0.18.0: {}
 

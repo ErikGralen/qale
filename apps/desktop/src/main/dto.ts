@@ -1,0 +1,92 @@
+import type { Note } from '@pm/domain';
+import type { Backlink, IndexedNote, ThemeHeatRow, VaultInfo, VaultTreeGroup } from '@pm/application';
+import type {
+  BacklinkDTO,
+  NoteDTO,
+  NoteRefDTO,
+  SearchHitDTO,
+  VaultInfoDTO,
+  VaultTreeDTO,
+} from '@pm/ipc';
+import type { SearchHit } from '@pm/domain';
+
+/** Map domain/application entities to structured-clone-safe IPC DTOs. */
+
+export function noteToDTO(note: Note): NoteDTO {
+  return {
+    path: note.path,
+    slug: note.slug,
+    type: note.type,
+    layer: note.layer,
+    title: (note.frontmatter as Record<string, unknown>)['title'] as string ?? deriveTitle(note.slug),
+    summary: note.frontmatter.summary,
+    frontmatter: note.frontmatter as Record<string, unknown>,
+    body: note.body,
+    mtime: note.mtime,
+  };
+}
+
+export function indexedToRefDTO(n: IndexedNote): NoteRefDTO {
+  return {
+    path: n.path,
+    slug: n.slug,
+    type: n.type,
+    title: n.title,
+    summary: n.summary,
+    mtime: n.mtime,
+  };
+}
+
+export function treeToDTO(groups: VaultTreeGroup[]): VaultTreeDTO {
+  return {
+    groups: groups.map((g) => ({
+      dir: g.dir,
+      type: g.type,
+      layer: g.layer as 'raw' | 'derived' | 'authored',
+      notes: g.notes.map(indexedToRefDTO),
+    })),
+  };
+}
+
+export function backlinkToDTO(b: Backlink): BacklinkDTO {
+  return {
+    from: indexedToRefDTO(b.from),
+    context: b.line !== undefined ? `line ${b.line}` : undefined,
+  };
+}
+
+export function hitToDTO(h: SearchHit): SearchHitDTO {
+  return {
+    path: h.path,
+    slug: h.slug,
+    type: h.type,
+    title: h.title,
+    summary: h.summary,
+    snippet: h.snippet,
+    score: h.score,
+  };
+}
+
+export function vaultInfoToDTO(info: VaultInfo): VaultInfoDTO {
+  return { path: info.path, name: info.name, git: info.git, noteCount: info.noteCount };
+}
+
+export interface ThemeHeatDTO extends NoteRefDTO {
+  stance: string;
+  evidenceCount: number;
+  newest: string | null;
+}
+
+export function themeHeatToDTO(row: ThemeHeatRow): ThemeHeatDTO {
+  return {
+    ...indexedToRefDTO(row.note),
+    stance: (row.note.frontmatter['stance'] as string) ?? 'exploring',
+    evidenceCount: row.count,
+    newest: row.newest,
+  };
+}
+
+function deriveTitle(slug: string): string {
+  const name = slug.split('/').pop() ?? slug;
+  return name.replace(/^\d{4}-\d{2}-\d{2}-/, '').replace(/[-_]+/g, ' ');
+}

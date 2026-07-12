@@ -27,22 +27,44 @@ function createWindow(): void {
     },
   });
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show());
+  mainWindow.on('ready-to-show', () => {
+    mainWindow?.show();
+    // Dev-only self-screenshot for verification (no desktop capture involved).
+    const shot = process.env['PM_SCREENSHOT'];
+    if (shot) {
+      setTimeout(async () => {
+        try {
+          const image = await mainWindow!.webContents.capturePage();
+          const { writeFile } = await import('node:fs/promises');
+          await writeFile(shot, image.toPNG());
+          console.log(`[pm] screenshot → ${shot}`);
+        } catch (err) {
+          console.error('[pm] screenshot failed', err);
+        }
+        app.quit();
+      }, 2500);
+    }
+  });
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     void shell.openExternal(details.url);
     return { action: 'deny' };
   });
 
+  const open = process.env['PM_OPEN'];
+  const search = open ? `open=${encodeURIComponent(open)}` : undefined;
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']);
+    const url = new URL(process.env['ELECTRON_RENDERER_URL']);
+    if (search) url.search = search;
+    void mainWindow.loadURL(url.toString());
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'), search ? { search } : undefined);
   }
 }
 
-app.whenReady().then(() => {
-  registerHandlers(() => mainWindow);
+app.whenReady().then(async () => {
+  const { onReady } = registerHandlers(() => mainWindow);
+  await onReady();
   createWindow();
 
   app.on('activate', () => {

@@ -13,8 +13,16 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@pm/application": "workspace:*",
+    "@pm/domain": "workspace:*",
     "@pm/ipc": "workspace:*",
-    "lucide-react": "^1.24.0"
+    "@pm/markdown": "workspace:*",
+    "@pm/vault": "workspace:*",
+    "better-sqlite3": "^12.11.1",
+    "chokidar": "^5.0.0",
+    "lucide-react": "^1.24.0",
+    "react-markdown": "^10.1.0",
+    "simple-git": "^3.36.0"
   },
   "devDependencies": {
     "@electron-toolkit/utils": "^4.0.0",

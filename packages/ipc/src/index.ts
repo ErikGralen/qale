@@ -50,6 +50,7 @@ export interface InvokeMap {
   'note:get': { args: [path: string]; result: NoteDTO | null };
   'note:save': { args: [input: SaveNoteInput]; result: NoteDTO };
   'note:backlinks': { args: [path: string]; result: BacklinkDTO[] };
+  'note:resolveLink': { args: [target: string]; result: string | null };
   'note:setThemeStance': { args: [path: string, stance: ThemeStance]; result: NoteDTO };
 
   // Capture / search
@@ -89,6 +90,7 @@ export const INVOKE_CHANNELS = [
   'note:get',
   'note:save',
   'note:backlinks',
+  'note:resolveLink',
   'note:setThemeStance',
   'signal:capture',
   'search:query',

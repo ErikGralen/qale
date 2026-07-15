@@ -6,6 +6,7 @@ import type {
   CaptureMeetingInput,
   GoldenAnswerInput,
   HealthDTO,
+  MaintenanceReportDTO,
   NoteQueryDTO,
   NoteRefDTO,
   ModelInfoDTO,
@@ -57,6 +58,8 @@ export interface InvokeMap {
   'vault:health': { args: []; result: HealthDTO };
   'vault:refreshIndexes': { args: []; result: { written: number } };
   'vault:query': { args: [query: NoteQueryDTO]; result: NoteRefDTO[] };
+  'librarian:sweep': { args: []; result: { created: number } };
+  'librarian:report': { args: []; result: MaintenanceReportDTO };
 
   // Notes
   'note:get': { args: [path: string]; result: NoteDTO | null };
@@ -108,6 +111,8 @@ export const INVOKE_CHANNELS = [
   'vault:health',
   'vault:refreshIndexes',
   'vault:query',
+  'librarian:sweep',
+  'librarian:report',
   'note:get',
   'note:save',
   'note:saveFrontmatter',

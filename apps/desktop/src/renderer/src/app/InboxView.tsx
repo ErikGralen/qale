@@ -17,6 +17,10 @@ export function InboxView() {
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<{ accepted: number; rejected: number }>({ accepted: 0, rejected: 0 });
   const [stats, setStats] = useState<ProposalStatsDTO | null>(null);
+  const [streak, setStreak] = useState(0);
+  const [audit, setAudit] = useState(false);
+
+  const SPOT_AUDIT_EVERY = 5;
 
   const loadStats = () => void invoke['proposals:stats']().then(setStats).catch(() => setStats(null));
   useEffect(() => {
@@ -26,11 +30,21 @@ export function InboxView() {
 
   const queue = useMemo(() => proposals.filter((p) => p.status === 'pending'), [proposals]);
 
+  const bumpStreak = () =>
+    setStreak((s) => {
+      const next = s + 1;
+      if (next % SPOT_AUDIT_EVERY === 0) setAudit(true);
+      return next;
+    });
+
   const onAccept = async (id: string) => {
     setBusy(true);
     const r = await acceptProposal(id);
     setBusy(false);
-    if (!r.stale) setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
+    if (!r.stale) {
+      setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
+      bumpStreak();
+    }
     loadStats();
   };
   const onReject = async (id: string) => {
@@ -38,16 +52,28 @@ export function InboxView() {
     await rejectProposal(id);
     setBusy(false);
     setReceipt((x) => ({ ...x, rejected: x.rejected + 1 }));
+    setStreak(0);
     loadStats();
   };
   const acceptAll = async () => {
     setBusy(true);
+    let local = streak;
     for (const p of queue) {
+      // Anti-rubber-stamping: pause the batch for a spot-audit every N accepts.
+      if (local > 0 && local % SPOT_AUDIT_EVERY === 0) {
+        setAudit(true);
+        break;
+      }
       // eslint-disable-next-line no-await-in-loop
       const r = await acceptProposal(p.id);
-      if (!r.stale) setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
+      if (!r.stale) {
+        local++;
+        setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
+      }
     }
+    setStreak(local);
     setBusy(false);
+    loadStats();
   };
 
   return (
@@ -63,6 +89,16 @@ export function InboxView() {
       </div>
 
       <div className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-8 py-5">
+        {audit && queue.length > 0 && (
+          <div className="mb-3 flex items-center gap-3 rounded-lg border border-chart-4/40 bg-chart-4/8 px-3 py-2 text-sm">
+            <span className="flex-1 text-foreground">
+              You've approved {streak} in a row — take a closer look at this one before continuing.
+            </span>
+            <Button size="sm" variant="ghost" onClick={() => setAudit(false)}>
+              Got it
+            </Button>
+          </div>
+        )}
         {queue.length === 0 ? (
           <div className="mt-16 flex flex-col items-center gap-3 text-center">
             <div className="flex size-12 items-center justify-center rounded-full bg-brand/10">

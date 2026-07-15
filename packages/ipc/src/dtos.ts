@@ -126,6 +126,12 @@ export interface HealthDTO {
   score: number;
 }
 
+export interface MaintenanceReportDTO {
+  stale: number;
+  orphans: { path: string; title: string }[];
+  danglingLinks: { from: string; target: string }[];
+}
+
 /** Structured smart-view filter over the files table (no query syntax). */
 export interface NoteQueryDTO {
   types?: NoteType[];

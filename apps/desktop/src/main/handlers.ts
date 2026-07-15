@@ -11,10 +11,12 @@ import {
   getBacklinks,
   getNote,
   getProblemsByHeat,
+  getMaintenanceReport,
   getProposalStats,
   getVaultTree,
   getWorkspaceHealth,
   queryNotes,
+  runFreshnessSweep,
   listProposals,
   previewProposal,
   rebuild,
@@ -103,7 +105,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
 
   const afterOpen = async (): Promise<void> => {
     const ctx = vaultService.context();
-    if (ctx) await ensureDefaultSkills(ctx, DEFAULT_SKILLS);
+    if (!ctx) return;
+    await ensureDefaultSkills(ctx, DEFAULT_SKILLS);
+    // App-open cron (PLAN-V2 §3.5): catch up the freshness sweep on launch.
+    await runFreshnessSweep(ctx);
   };
 
   const reconfigureAgent = (): void => {
@@ -259,6 +264,12 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     return result;
   });
   handle('proposals:stats', () => getProposalStats(vaultService.requireContext()));
+  handle('librarian:sweep', async () => {
+    const r = await runFreshnessSweep(vaultService.requireContext());
+    notifyProposals();
+    return r;
+  });
+  handle('librarian:report', () => getMaintenanceReport(vaultService.requireContext()));
   handle('golden:save', (input) => {
     const rec = saveGoldenAnswer(vaultService.requireContext(), input);
     notifyProposals();

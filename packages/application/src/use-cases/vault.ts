@@ -9,6 +9,7 @@ import {
 } from '@pm/domain';
 import type { IndexedNote, UseCaseContext } from '../ports.js';
 import { reconcileIndex, rebuildIndex } from './reconcile.js';
+import { createProposal } from './proposals.js';
 
 export interface VaultInfo {
   path: string;
@@ -150,6 +151,77 @@ export function getStaleNotes(ctx: UseCaseContext): StaleRow[] {
   }
   rows.sort((a, b) => (b.ageDays ?? 0) - (a.ageDays ?? 0));
   return rows;
+}
+
+/**
+ * The nightly (app-open) freshness sweep (PLAN-V2 §3.5, Phase 6): stale claims
+ * become "needs re-verification" cards in the Inbox. A re-verify card echoes the
+ * note's current content; approving it re-stamps `last_verified` (via the normal
+ * accept path). Deduped against pending librarian cards so the sweep is idempotent.
+ */
+export async function runFreshnessSweep(ctx: UseCaseContext, limit = 20): Promise<{ created: number }> {
+  const pending = ctx.proposals.list('pending');
+  const alreadyCarded = new Set(
+    pending.filter((p) => p.sessionId === 'librarian').map((p) => p.targetPath),
+  );
+  const stale = getStaleNotes(ctx).slice(0, limit);
+  let created = 0;
+  for (const row of stale) {
+    if (alreadyCarded.has(row.note.path)) continue;
+    const note = await ctx.vault.readNote(row.note.path);
+    if (!note) continue;
+    const sources = collectRefs(note.frontmatter as Record<string, unknown>);
+    createProposal(ctx, {
+      kind: 'note',
+      sessionId: 'librarian',
+      targetPath: note.path,
+      baseHash: null,
+      payload: {
+        path: note.path,
+        frontmatter: note.frontmatter as Record<string, unknown>,
+        body: note.body,
+        rationale: `Stale — last verified ${row.ageDays}d ago (clock ${row.freshForDays}d). Still true? Approve to re-verify.`,
+      },
+      rationale: `Stale ${note.type}: re-verify "${note.frontmatter.summary}"`,
+      evidence: sources.map((r) => ({ ref: r, resolved: true })),
+      inference: false,
+    });
+    created++;
+  }
+  return { created };
+}
+
+export interface MaintenanceReport {
+  stale: number;
+  /** Notes with no inbound and no outbound links (candidates for adoption). */
+  orphans: { path: string; title: string }[];
+  /** Links whose target does not resolve (link repair candidates). */
+  danglingLinks: { from: string; target: string }[];
+}
+
+/** Librarian maintenance scan (PLAN-V2 §3.5): orphans + dangling links + stale. */
+export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
+  const all = ctx.index.all().filter((n) => !n.path.endsWith('/index.md'));
+  const orphans: { path: string; title: string }[] = [];
+  const danglingLinks: { from: string; target: string }[] = [];
+  for (const n of all) {
+    const hasOut = n.links.length > 0;
+    const hasIn = ctx.index.backlinks(n.slug).length > 0;
+    if (!hasOut && !hasIn && n.type !== 'skill') orphans.push({ path: n.path, title: n.title });
+    for (const link of n.links) {
+      if (!ctx.index.resolve(link.target)) danglingLinks.push({ from: n.path, target: link.target });
+    }
+  }
+  return { stale: getStaleNotes(ctx).length, orphans, danglingLinks };
+}
+
+function collectRefs(fm: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const key of ['evidence', 'sources']) {
+    const v = fm[key];
+    if (Array.isArray(v)) for (const r of v) if (typeof r === 'string') out.push(r);
+  }
+  return out;
 }
 
 /**

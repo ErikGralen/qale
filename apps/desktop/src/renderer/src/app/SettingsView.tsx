@@ -1,21 +1,27 @@
 import { useEffect, useState } from 'react';
 import { Button, Input } from '@pm/ui';
-import { Check, KeyRound, Boxes } from 'lucide-react';
-import type { ModelInfoDTO, SettingsDTO } from '@pm/ipc';
+import { Check, KeyRound, Boxes, Gauge } from 'lucide-react';
+import type { ModelInfoDTO, ProposalStatsDTO, SettingsDTO } from '@pm/ipc';
 import { invoke } from '../lib/ipc';
 
 export function SettingsView() {
   const [settings, setSettings] = useState<SettingsDTO | null>(null);
   const [models, setModels] = useState<ModelInfoDTO[]>([]);
+  const [stats, setStats] = useState<ProposalStatsDTO | null>(null);
   const [key, setKey] = useState('');
   const [savedKey, setSavedKey] = useState(false);
   const [atl, setAtl] = useState({ baseUrl: '', email: '', token: '' });
   const [savedAtl, setSavedAtl] = useState(false);
 
   const reload = async () => {
-    const [s, m] = await Promise.all([invoke['settings:get'](), invoke['models:list']()]);
+    const [s, m, st] = await Promise.all([
+      invoke['settings:get'](),
+      invoke['models:list'](),
+      invoke['proposals:stats']().catch(() => null),
+    ]);
     setSettings(s);
     setModels(m);
+    setStats(st);
   };
 
   useEffect(() => {
@@ -105,6 +111,39 @@ export function SettingsView() {
           )}
         </section>
 
+        {stats && stats.accepted + stats.rejected > 0 && (
+          <section className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Gauge className="size-4 text-muted-foreground" />
+              <h2 className="font-serif text-lg font-semibold">Approval telemetry</h2>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Verification cost — the north-star metric. Trending down at stable accuracy is the goal.
+            </p>
+            <div className="grid grid-cols-3 gap-2 text-sm">
+              <Stat label="Approval rate" value={stats.approvalRate !== null ? `${Math.round(stats.approvalRate * 100)}%` : '—'} />
+              <Stat label="Avg to approve" value={stats.avgApproveMs !== null ? `${Math.round(stats.avgApproveMs / 1000)}s` : '—'} />
+              <Stat label="Edited before approve" value={`${stats.edited}`} />
+            </div>
+            <div className="mt-1 flex flex-col gap-1">
+              {Object.entries(stats.byType).map(([kind, t]) => {
+                const total = t.accepted + t.rejected;
+                return (
+                  <div key={kind} className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="w-20 capitalize">{kind}</span>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-brand" style={{ width: `${total ? (t.accepted / total) * 100 : 0}%` }} />
+                    </div>
+                    <span className="tabular-nums">
+                      {t.accepted}/{total}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         <section className="space-y-2">
           <div className="flex items-center gap-2">
             <Boxes className="size-4 text-muted-foreground" />
@@ -116,8 +155,8 @@ export function SettingsView() {
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Read-only tracker seam for the Ask session. Create an <em>unscoped</em> API token. Stored
-            encrypted (safeStorage).
+            Tracker seam for Ask (read) and outbound drafts (write on approval). Create an{' '}
+            <em>unscoped</em> API token. Stored encrypted (safeStorage).
           </p>
           <div className="flex flex-col gap-2">
             <Input
@@ -144,6 +183,15 @@ export function SettingsView() {
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-2.5">
+      <div className="text-lg font-semibold tabular-nums">{value}</div>
+      <div className="text-[11px] text-muted-foreground">{label}</div>
     </div>
   );
 }

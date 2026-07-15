@@ -1,10 +1,20 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { Button, Spinner } from '@pm/ui';
-import { ArrowUp, Square, Wrench, Brain, ChevronDown } from 'lucide-react';
+import { ArrowUp, Square, Wrench, Brain, ChevronDown, Star } from 'lucide-react';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { Markdown } from '../components/Markdown';
 import { useApp } from '../state/app-state';
+import { invoke } from '../lib/ipc';
+
+/** Pull citation refs from an answer: wikilinks, bare note paths, and URLs. */
+function extractCitations(text: string): string[] {
+  const refs = new Set<string>();
+  for (const m of text.matchAll(/\[\[([^\]]+)\]\]/g)) refs.add(`[[${m[1]!.split('|')[0]!.split('#')[0]!.trim()}]]`);
+  for (const m of text.matchAll(/(?:^|[\s(])([a-z][\w-]*\/[\w./-]+\.md)/gim)) refs.add(`[[${m[1]!.replace(/\.md$/, '')}]]`);
+  for (const m of text.matchAll(/https?:\/\/[^\s)]+/g)) refs.add(m[0]!);
+  return [...refs];
+}
 
 interface AnyPart {
   type: string;
@@ -29,6 +39,29 @@ function ReasoningPart({ text }: { text: string }) {
       </button>
       {open && <div className="whitespace-pre-wrap px-2 pb-2 text-muted-foreground">{text}</div>}
     </div>
+  );
+}
+
+/** Turn an approved ask answer into a golden-answer insight card (PLAN-V2 §4). */
+function GoldenButton({ question, answer }: { question: string; answer: string }) {
+  const { openInbox, refreshProposals } = useApp();
+  const [saved, setSaved] = useState(false);
+  const citations = useMemo(() => extractCitations(answer), [answer]);
+  const save = async () => {
+    await invoke['golden:save']({ question: question || answer.slice(0, 80), answer, sources: citations });
+    setSaved(true);
+    await refreshProposals();
+    openInbox();
+  };
+  return (
+    <button
+      className="mt-2 flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
+      onClick={save}
+      disabled={saved}
+      title={citations.length ? `Cites ${citations.length} source(s)` : 'No citations — will be flagged as inference'}
+    >
+      <Star className="size-3.5" /> {saved ? 'Saved to Inbox' : 'Save as golden answer'}
+    </button>
   );
 }
 
@@ -121,31 +154,44 @@ export function ChatView({
               Ask about a decision, a customer, or what you know about a problem.
             </p>
           )}
-          {messages.map((message) => (
-            <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : ''}>
-              <div
-                className={
-                  message.role === 'user'
-                    ? 'max-w-[85%] rounded-2xl bg-brand px-3.5 py-2 text-[15px] text-brand-foreground'
-                    : 'w-full'
-                }
-              >
-                {(message.parts as AnyPart[]).map((part, i) => {
-                  if (part.type === 'text') {
-                    return message.role === 'user' ? (
-                      <span key={i} className="whitespace-pre-wrap">{part.text}</span>
-                    ) : (
-                      <Markdown key={i} content={part.text ?? ''} onOpenNote={openDoc} />
-                    );
+          {messages.map((message, mi) => {
+            const answerText = (message.parts as AnyPart[])
+              .filter((p) => p.type === 'text')
+              .map((p) => p.text ?? '')
+              .join('\n');
+            const prevUser = [...messages.slice(0, mi)].reverse().find((m) => m.role === 'user');
+            const question = prevUser
+              ? (prevUser.parts as AnyPart[]).filter((p) => p.type === 'text').map((p) => p.text).join(' ')
+              : '';
+            const canGolden =
+              sessionType === 'ask' && message.role === 'assistant' && status === 'ready' && answerText.trim().length > 0;
+            return (
+              <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : ''}>
+                <div
+                  className={
+                    message.role === 'user'
+                      ? 'max-w-[85%] rounded-2xl bg-brand px-3.5 py-2 text-[15px] text-brand-foreground'
+                      : 'w-full'
                   }
-                  if (part.type === 'reasoning') return <ReasoningPart key={i} text={part.text ?? ''} />;
-                  if (part.type.startsWith('tool-') || part.type === 'dynamic-tool')
-                    return <ToolPart key={i} part={part} />;
-                  return null;
-                })}
+                >
+                  {(message.parts as AnyPart[]).map((part, i) => {
+                    if (part.type === 'text') {
+                      return message.role === 'user' ? (
+                        <span key={i} className="whitespace-pre-wrap">{part.text}</span>
+                      ) : (
+                        <Markdown key={i} content={part.text ?? ''} onOpenNote={openDoc} />
+                      );
+                    }
+                    if (part.type === 'reasoning') return <ReasoningPart key={i} text={part.text ?? ''} />;
+                    if (part.type.startsWith('tool-') || part.type === 'dynamic-tool')
+                      return <ToolPart key={i} part={part} />;
+                    return null;
+                  })}
+                  {canGolden && <GoldenButton question={question} answer={answerText} />}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {error && <div className="text-sm text-destructive">Error: {error.message}</div>}
         </div>
       </div>

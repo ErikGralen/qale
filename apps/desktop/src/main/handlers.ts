@@ -21,6 +21,7 @@ import {
   refreshFolderIndexes,
   rejectProposal,
   resolveLink,
+  saveGoldenAnswer,
   saveAuthoredNote,
   saveFrontmatter,
   searchNotes,
@@ -236,6 +237,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     return result;
   });
   handle('proposals:stats', () => getProposalStats(vaultService.requireContext()));
+  handle('golden:save', (input) => {
+    const rec = saveGoldenAnswer(vaultService.requireContext(), input);
+    notifyProposals();
+    return proposalToDTO(rec);
+  });
   handle('agent:run', async (input) => {
     const ctx = vaultService.requireContext();
     return agent.run(input, ctx, (streamId, chunk) => {

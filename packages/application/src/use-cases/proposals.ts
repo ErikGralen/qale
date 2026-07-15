@@ -39,6 +39,50 @@ export function getProposalStats(ctx: UseCaseContext): ProposalStats {
   return ctx.proposals.stats();
 }
 
+export interface GoldenAnswerInput {
+  question: string;
+  answer: string;
+  /** Citation refs the answer relied on (wikilinks/paths/URLs). */
+  sources: string[];
+}
+
+/**
+ * Save-as-golden-answer (PLAN-V2 §4): turn an approved ask answer into memory —
+ * an insight card citing its sources (or a note when uncited). It goes through
+ * the same approval card as everything else; nothing is written silently.
+ */
+export function saveGoldenAnswer(ctx: UseCaseContext, input: GoldenAnswerInput): ProposalRecord {
+  const date = ctx.clock.now().slice(0, 10);
+  const cited = input.sources.filter((s) => s.trim().length > 0);
+  const slugBase = input.question
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .slice(0, 48)
+    .replace(/-+$/, '') || 'golden-answer';
+  const path = `insights/${slugBase}.md`;
+  const summary = input.question.replace(/\s+/g, ' ').trim().slice(0, 200);
+  const body = `> ${summary}\n\n${input.answer.trim()}\n\n# Citations\n${
+    cited.length ? cited.map((s) => `- ${s}`).join('\n') : '_uncited — flagged as inference_'
+  }\n`;
+
+  const frontmatter = cited.length
+    ? { type: 'insight', summary, evidence: cited, confidence: 'med', last_verified: date }
+    : { type: 'note', summary, sources: [], last_verified: date };
+
+  return createProposal(ctx, {
+    kind: 'note',
+    sessionId: 'golden',
+    targetPath: path,
+    baseHash: null,
+    payload: { path, frontmatter, body, rationale: `Golden answer to "${summary}"` },
+    rationale: `Golden answer to "${summary}"`,
+    evidence: cited.map((s) => ({ ref: s, resolved: true })),
+    inference: cited.length === 0,
+  });
+}
+
 /**
  * A cheap edit-distance proxy for telemetry (not a true Levenshtein — length
  * delta plus positional mismatch, which is O(n) and good enough to trend).

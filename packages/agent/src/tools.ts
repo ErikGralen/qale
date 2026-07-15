@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import type { UseCaseContext } from '@pm/application';
 import { createProposal, searchNotes, contentHash } from '@pm/application';
-import { validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload } from '@pm/domain';
+import { validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload, computeFreshness, type Frontmatter } from '@pm/domain';
 import type { SessionHarness } from '@pm/sessions';
 import type { AtlassianClient } from '@pm/atlassian';
 
@@ -97,8 +97,9 @@ export function createVaultTools(ctx: UseCaseContext, harness?: SessionHarness):
       const hits = searchNotes(ctx, params.query, params.k ?? 8);
       for (const h of hits) harness?.recordRead(h.path);
       if (hits.length === 0) return text(`No results for "${params.query}".`);
+      const now = ctx.clock.now();
       const body = hits
-        .map((h) => `- ${h.path} (${h.type}, score ${h.score.toFixed(2)}) — ${h.summary}\n    ${h.snippet}`)
+        .map((h) => `- ${h.path} (${h.type}${freshnessNote(ctx, h.path, now)}) — ${h.summary}\n    ${h.snippet}`)
         .join('\n');
       return text(body);
     },
@@ -318,4 +319,16 @@ export function createAtlassianTools(client: AtlassianClient): ToolDefinition[] 
 
 function stripLink(ref: string): string {
   return ref.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.split('#')[0]!.replace(/\.md$/, '');
+}
+
+/** A short freshness suffix for search results so answers can weigh staleness. */
+function freshnessNote(ctx: UseCaseContext, path: string, now: string): string {
+  const rec = ctx.index.get(path);
+  if (!rec) return '';
+  const f = computeFreshness(rec.frontmatter as Frontmatter, now);
+  if (!f.tracked) return '';
+  if (f.stale) return `, STALE — last verified ${f.lastVerified ?? 'never'}, ${f.ageDays}d ago`;
+  if (f.unverified) return ', unverified';
+  if (f.lastVerified) return `, verified ${f.lastVerified}`;
+  return '';
 }

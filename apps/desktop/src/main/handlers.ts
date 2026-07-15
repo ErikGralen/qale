@@ -36,6 +36,7 @@ import { SettingsService } from './services/settings-service.js';
 import { VaultService } from './services/vault-service.js';
 import { makeOutbound } from './services/outbound-service.js';
 import { SchedulerService } from './services/scheduler-service.js';
+import { McpService } from './services/mcp-service.js';
 import {
   backlinkToDTO,
   hitToDTO,
@@ -136,6 +137,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
       hasAtlassianCreds: !!settings.getAtlassian(),
       schedules: s.schedules,
       autoApplyTypes: s.autoApplyTypes,
+      mcp: { enabled: s.mcpEnabled, port: s.mcpPort, token: s.mcpToken, running: mcp.isRunning() },
     };
   };
 
@@ -155,6 +157,12 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     () => vaultService.context(),
     settings,
     fireSession,
+    notifyProposalsFor,
+  );
+
+  const mcp = new McpService(
+    () => vaultService.context(),
+    () => settings.get().mcpToken,
     notifyProposalsFor,
   );
 
@@ -187,6 +195,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   handle('schedule:runNow', async (sessionType) => {
     await scheduler.runNow(sessionType);
     return { ok: true };
+  });
+  handle('settings:setMcp', async (patch) => {
+    await settings.setMcp(patch);
+    const s = settings.get();
+    if (s.mcpEnabled) mcp.restart(s.mcpPort);
+    else mcp.stop();
+    return settingsDTO();
   });
   handle('models:list', () => {
     const live = agent.listModels();
@@ -336,6 +351,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
       }
       // Start the app-open scheduler (idempotent; ticks no-op until a vault opens).
       scheduler.start();
+      if (settings.get().mcpEnabled || process.env['PM_MCP']) {
+        mcp.start(settings.get().mcpPort);
+        if (process.env['PM_MCP']) console.log(`[pm] MCP token: ${settings.get().mcpToken}`);
+      }
     },
   };
 }

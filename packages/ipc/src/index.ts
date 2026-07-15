@@ -52,6 +52,7 @@ export interface InvokeMap {
     result: SettingsDTO;
   };
   'settings:setAutoApply': { args: [sessionType: string, on: boolean]; result: SettingsDTO };
+  'settings:setMcp': { args: [patch: { enabled?: boolean; port?: number }]; result: SettingsDTO };
   'schedule:runNow': { args: [sessionType: string]; result: { ok: boolean } };
   'models:list': { args: []; result: ModelInfoDTO[] };
 
@@ -110,6 +111,7 @@ export const INVOKE_CHANNELS = [
   'settings:setModel',
   'settings:setSchedule',
   'settings:setAutoApply',
+  'settings:setMcp',
   'schedule:runNow',
   'models:list',
   'vault:pick',

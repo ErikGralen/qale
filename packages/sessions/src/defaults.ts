@@ -155,6 +155,88 @@ Everything is held in the Inbox for approval — nothing is sent. Approved messa
 the relevant people/customers; Confluence drafts push on approval with the deep link filed back.
 `;
 
+export const SPRINT_REVIEW_SKILL = `---
+type: skill
+skill_kind: session
+session_type: sprint-review
+summary: Sprint Review — walk shipped/slipped/why, draft release notes per audience
+tier: outbound
+checkpoints: [scan, outline, draft]
+gate_output: true
+completion_bar: Every shipped/slipped item links its decision or release; nothing uncited.
+red_flags:
+  - "Slipped" with no reason — find the why before drafting.
+---
+
+## When
+End of sprint, or on demand.
+
+## Read
+The sprint's Jira delta (jira_search), the sprint's meetings and the decisions that touched them.
+
+## Produce
+A walkthrough of shipped / slipped / why, and release notes per audience — as approval cards
+(propose_note for a release, draft_confluence_update for the release page, draft_message per audience).
+
+## Then
+Approved cards update the release page and file per-audience notes. Nothing is sent.
+`;
+
+export const INTERVIEW_SYNTHESIS_SKILL = `---
+type: skill
+skill_kind: session
+session_type: interview-synthesis
+summary: Interview Synthesis — turn a customer call into insights, flag contradictions
+tier: suggest
+checkpoints: [digest, outline, draft]
+gate_output: true
+completion_bar: Every insight cites the transcript; contradictions with existing beliefs are flagged.
+red_flags:
+  - An insight that contradicts an existing insight or decision — flag it, never overwrite.
+---
+
+## When
+A customer-call transcript is dropped.
+
+## Read
+The transcript, the customer page, and the problems it touches (search_vault).
+
+## Produce
+Signals and insights as approval cards (propose_note type insight), each citing the transcript and a
+confidence level. Where a finding contradicts an existing belief, flag it as an update to the relevant
+insight/problem (propose_update) — never resolve silently.
+
+## Then
+Approved cards update the customer and insight pages; contradictions surface for the PM to resolve.
+`;
+
+export const SPEC_REVIEW_SKILL = `---
+type: skill
+skill_kind: session
+session_type: spec-review
+summary: Spec Review — requirements draft + gap list from everything that touched an epic
+tier: suggest
+checkpoints: [gather, outline, draft]
+gate_output: true
+completion_bar: Every requirement line is cited by a meeting, decision or thread; gaps are explicit.
+red_flags:
+  - A requirement with no source — move it to the open-questions list instead of asserting it.
+---
+
+## When
+An epic is linked for review.
+
+## Read
+The epic (jira_get_issue) and every meeting, thread and decision that touched it (search_vault).
+
+## Produce
+A requirements draft + a gap list + open questions, every line cited (propose_note or a
+draft_jira_comment on the epic). Unsourced items go to open questions, not requirements.
+
+## Then
+Approved cards draft the epic comment and file the requirements note. Nothing is asserted uncited.
+`;
+
 export const VOICE_EXEC = `---
 type: skill
 skill_kind: voice
@@ -193,6 +275,9 @@ export const DEFAULT_SKILLS: DefaultSkill[] = [
   { file: 'skills/ask.md', content: ASK_SKILL },
   { file: 'skills/chat.md', content: CHAT_SKILL },
   { file: 'skills/weekly-update.md', content: WEEKLY_UPDATE_SKILL },
+  { file: 'skills/sprint-review.md', content: SPRINT_REVIEW_SKILL },
+  { file: 'skills/interview-synthesis.md', content: INTERVIEW_SYNTHESIS_SKILL },
+  { file: 'skills/spec-review.md', content: SPEC_REVIEW_SKILL },
   { file: 'skills/_filing-rules.md', content: FILING_RULES },
   { file: 'skills/voice-exec.md', content: VOICE_EXEC },
   { file: 'skills/voice-cs.md', content: VOICE_CS },
@@ -204,4 +289,7 @@ export const DEFAULT_SKILL_BY_TYPE: Record<string, string> = {
   ask: ASK_SKILL,
   chat: CHAT_SKILL,
   'weekly-update': WEEKLY_UPDATE_SKILL,
+  'sprint-review': SPRINT_REVIEW_SKILL,
+  'interview-synthesis': INTERVIEW_SYNTHESIS_SKILL,
+  'spec-review': SPEC_REVIEW_SKILL,
 };

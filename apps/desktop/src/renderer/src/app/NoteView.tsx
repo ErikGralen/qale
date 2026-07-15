@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Separator } from '@pm/ui';
-import { Pencil, Link2, FileText, Save, X, Clock, AlertTriangle } from 'lucide-react';
+import { Pencil, Link2, FileText, Save, X, Clock, AlertTriangle, Play } from 'lucide-react';
 import { useApp } from '../state/app-state';
 import { Markdown } from '../components/Markdown';
 
 export function NoteView({ path }: { path: string }) {
-  const { docData, openDoc, saveNote } = useApp();
+  const { docData, openDoc, saveNote, openSession } = useApp();
   const data = docData[path];
   const currentNote = data?.note ?? null;
   const backlinks = data?.backlinks ?? [];
@@ -28,6 +28,10 @@ export function NoteView({ path }: { path: string }) {
   const editable = currentNote.bodyEditable;
   const stance = currentNote.frontmatter['stance'] as string | undefined;
   const f = currentNote.freshness;
+  const sessionSkill =
+    currentNote.type === 'skill' && currentNote.frontmatter['skill_kind'] === 'session'
+      ? (currentNote.frontmatter['session_type'] as string | undefined)
+      : undefined;
 
   return (
     <div className="flex h-full flex-col">
@@ -35,6 +39,11 @@ export function NoteView({ path }: { path: string }) {
         <FileText className="size-4 text-muted-foreground" />
         <span className="truncate font-mono text-xs text-muted-foreground">{currentNote.path}</span>
         <div className="ml-auto flex items-center gap-2">
+          {sessionSkill && (
+            <Button size="sm" onClick={() => openSession(sessionSkill, { title: currentNote.title })}>
+              <Play className="size-3.5" /> Start session
+            </Button>
+          )}
           {editable && !editing && (
             <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
               <Pencil className="size-3.5" /> Edit

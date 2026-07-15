@@ -1,5 +1,6 @@
 import { app, safeStorage } from 'electron';
 import { promises as fs } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 /**
@@ -27,6 +28,10 @@ export interface PersistedSettings {
   schedules: ScheduleEntry[];
   /** Session types the PM has earned + enabled auto-apply for (internal writes). */
   autoApplyTypes: string[];
+  /** Local MCP server: token-gated so the customer's Claude can query the memory. */
+  mcpEnabled: boolean;
+  mcpPort: number;
+  mcpToken: string | null;
 }
 
 const DEFAULTS: PersistedSettings = {
@@ -36,6 +41,9 @@ const DEFAULTS: PersistedSettings = {
   atlassian: null,
   schedules: [{ sessionType: 'weekly-update', dayOfWeek: 5, hour: 15, enabled: false, lastRun: null }],
   autoApplyTypes: [],
+  mcpEnabled: false,
+  mcpPort: 7717,
+  mcpToken: null,
 };
 
 export class SettingsService {
@@ -53,6 +61,17 @@ export class SettingsService {
     } catch {
       this.data = { ...DEFAULTS };
     }
+    // Mint the MCP token on first run (bearer secret for the local server).
+    if (!this.data.mcpToken) {
+      this.data.mcpToken = randomUUID().replace(/-/g, '');
+      await this.persist();
+    }
+  }
+
+  async setMcp(patch: { enabled?: boolean; port?: number }): Promise<void> {
+    if (patch.enabled !== undefined) this.data.mcpEnabled = patch.enabled;
+    if (patch.port !== undefined) this.data.mcpPort = patch.port;
+    await this.persist();
   }
 
   private async persist(): Promise<void> {

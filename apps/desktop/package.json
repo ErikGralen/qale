@@ -30,7 +30,9 @@
     "simple-git": "^3.36.0",
     "turndown": "^7.2.0",
     "@pm/sessions": "workspace:*",
-    "@pm/atlassian": "workspace:*"
+    "@pm/atlassian": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@electron-toolkit/utils": "^4.0.0",

@@ -30,7 +30,7 @@ export type ChatSessionType = 'chat' | 'ask' | 'after-meeting' | 'weekly-update'
 /** A tab holds a document or a session interchangeably (PLAN-V2 §3.3). */
 export type Tab =
   | { id: string; kind: 'doc'; path: string; title: string }
-  | { id: string; kind: 'session'; sessionType: ChatSessionType; sessionId?: string; initialPrompt?: string; title: string }
+  | { id: string; kind: 'session'; sessionType: string; sessionId?: string; initialPrompt?: string; title: string }
   | { id: string; kind: 'inbox'; title: string }
   | { id: string; kind: 'smartview'; viewId: SmartViewId; title: string }
   | { id: string; kind: 'folder'; dir: string; title: string }
@@ -56,7 +56,7 @@ interface AppState {
   health: HealthDTO | null;
   // navigation
   openDoc: (path: string) => Promise<void>;
-  openSession: (sessionType: ChatSessionType, opts?: { initialPrompt?: string; title?: string; fresh?: boolean }) => void;
+  openSession: (sessionType: string, opts?: { initialPrompt?: string; title?: string; fresh?: boolean }) => void;
   openInbox: () => void;
   openSmartView: (id: SmartViewId) => void;
   openFolder: (dir: string) => void;
@@ -160,8 +160,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const openSession = useCallback(
-    (sessionType: ChatSessionType, opts?: { initialPrompt?: string; title?: string; fresh?: boolean }) => {
-      const title = opts?.title ?? (sessionType === 'ask' ? 'Ask' : sessionType === 'after-meeting' ? 'After-Meeting' : 'Chat');
+    (sessionType: string, opts?: { initialPrompt?: string; title?: string; fresh?: boolean }) => {
+      const title =
+        opts?.title ??
+        (sessionType === 'ask'
+          ? 'Ask'
+          : sessionType === 'after-meeting'
+            ? 'After-Meeting'
+            : sessionType === 'chat'
+              ? 'Chat'
+              : sessionType.replace(/-/g, ' '));
       const tab: Tab = { id: nextId(), kind: 'session', sessionType, initialPrompt: opts?.initialPrompt, title };
       if (opts?.fresh) {
         setTabs((prev) => [...prev, tab]);

@@ -259,10 +259,14 @@ export interface ProposalDTO {
 // Agent / chat / sessions
 // ---------------------------------------------------------------------------
 
-export type SessionType = 'chat' | 'ask' | 'after-meeting' | 'weekly-update';
+/**
+ * Session types are open strings — a session type is a skill file, so new ones
+ * ship as content with zero code change (PLAN-V2 §8). These are the built-ins.
+ */
+export type SessionType = 'chat' | 'ask' | 'after-meeting' | 'weekly-update' | (string & {});
 
 export interface AgentRunInput {
-  sessionType: SessionType;
+  sessionType: string;
   /** Existing pi session id to resume, or omit to start fresh. */
   sessionId?: string;
   /** The user's message (plain text for now). */
@@ -276,7 +280,7 @@ export interface AgentRunHandle {
 
 export interface SessionRefDTO {
   id: string;
-  type: SessionType;
+  type: string;
   title: string;
   updated: number;
   state: 'working' | 'waiting' | 'done';
@@ -297,6 +301,7 @@ export interface SettingsDTO {
   hasAtlassianCreds: boolean;
   schedules: ScheduleDTO[];
   autoApplyTypes: string[];
+  mcp: { enabled: boolean; port: number; token: string | null; running: boolean };
 }
 
 export interface ModelInfoDTO {

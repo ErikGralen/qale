@@ -23,7 +23,7 @@ import {
   DRAFT_TOOL_NAMES,
   CHECKPOINT_TOOL_NAME,
 } from './tools.js';
-import { SHARED_PREAMBLE, type SessionType } from './prompts.js';
+import { SHARED_PREAMBLE } from './prompts.js';
 import {
   parseSkill,
   buildSystemPrompt,
@@ -44,7 +44,7 @@ export interface AgentRuntimeConfig {
 }
 
 export interface RunInput {
-  sessionType: SessionType;
+  sessionType: string;
   sessionId?: string;
   prompt: string;
 }
@@ -61,7 +61,7 @@ export interface ModelInfo {
 
 interface SessionState {
   id: string;
-  type: SessionType;
+  type: string;
   session: AgentSession;
   harness: SessionHarness;
   unsubscribe: () => void;
@@ -119,7 +119,7 @@ export class AgentRuntime {
   }
 
   /** Resolve a session's skill: the workspace's `skills/<type>.md`, else built-in. */
-  private async resolveSkill(type: SessionType, ctx: UseCaseContext): Promise<SkillConfig> {
+  private async resolveSkill(type: string, ctx: UseCaseContext): Promise<SkillConfig> {
     const raw = (await ctx.vault.readRaw(`skills/${type}.md`)) ?? DEFAULT_SKILL_BY_TYPE[type] ?? '';
     return parseSkill(raw, type);
   }
@@ -144,7 +144,7 @@ export class AgentRuntime {
     return bodies.length ? `\n\n## Voice guides (apply to outbound drafts)\n${bodies.join('\n\n')}` : '';
   }
 
-  private async createSession(type: SessionType, id: string, ctx: UseCaseContext): Promise<SessionState> {
+  private async createSession(type: string, id: string, ctx: UseCaseContext): Promise<SessionState> {
     if (!this.config || !this.authStorage || !this.modelRegistry) {
       throw new Error('agent runtime not configured');
     }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button, Input } from '@pm/ui';
-import { Check, KeyRound, Boxes, Gauge, CalendarClock, Play } from 'lucide-react';
+import { Check, KeyRound, Boxes, Gauge, CalendarClock, Play, Server } from 'lucide-react';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 import type { ModelInfoDTO, ProposalStatsDTO, SettingsDTO } from '@pm/ipc';
@@ -56,6 +56,10 @@ export function SettingsView() {
     await invoke['schedule:runNow'](type);
     setRan(type);
     setTimeout(() => setRan(null), 2500);
+  };
+
+  const setMcp = async (patch: { enabled?: boolean; port?: number }) => {
+    setSettings(await invoke['settings:setMcp'](patch));
   };
 
   const saveAtlassian = async () => {
@@ -190,6 +194,45 @@ export function SettingsView() {
                 </div>
               );
             })}
+          </section>
+        )}
+
+        {settings && (
+          <section className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Server className="size-4 text-muted-foreground" />
+              <h2 className="font-serif text-lg font-semibold">MCP server (localhost)</h2>
+              {settings.mcp.running && (
+                <span className="flex items-center gap-1 text-xs text-brand">
+                  <Check className="size-3.5" /> running
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Expose the memory to your own Claude/Cursor via three tools —{' '}
+              <code>ask_product</code>, <code>log_decision</code>, <code>draft_writeback</code> — all
+              routed through the same approval cards. Token-gated; localhost only.
+            </p>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-sm">
+                <input type="checkbox" checked={settings.mcp.enabled} onChange={(e) => setMcp({ enabled: e.target.checked })} />
+                enabled
+              </label>
+              <span className="text-xs text-muted-foreground">port</span>
+              <input
+                type="number"
+                value={settings.mcp.port}
+                onChange={(e) => setMcp({ port: Number(e.target.value) })}
+                className="w-20 rounded-md border border-input bg-card px-1.5 py-1 text-xs"
+              />
+            </div>
+            {settings.mcp.enabled && settings.mcp.token && (
+              <pre className="overflow-x-auto rounded-lg bg-muted/60 p-3 text-[11px] whitespace-pre-wrap">
+{`Point Claude/Cursor at this MCP server:
+  url:    http://127.0.0.1:${settings.mcp.port}/mcp
+  header: Authorization: Bearer ${settings.mcp.token}`}
+              </pre>
+            )}
           </section>
         )}
 

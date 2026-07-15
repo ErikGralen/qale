@@ -89,12 +89,12 @@ export function ChatView({
   initialPrompt,
   scopeHint,
 }: {
-  sessionType?: 'chat' | 'ask' | 'after-meeting' | 'weekly-update';
+  sessionType?: string;
   initialPrompt?: string;
   /** Prepended to the first user message to scope the read (side chat). */
   scopeHint?: string;
 }) {
-  const proposesWrites = sessionType === 'after-meeting' || sessionType === 'weekly-update';
+  const proposesWrites = sessionType !== 'chat' && sessionType !== 'ask';
   const { openDoc, refreshProposals, openInbox, pendingCount } = useApp();
   const transport = useMemo(() => new IpcChatTransport(sessionType), [sessionType]);
   const { messages, sendMessage, status, stop, error } = useChat({ transport });
@@ -142,11 +142,9 @@ export function ChatView({
       <div className="flex h-11 items-center px-5 text-sm font-medium text-muted-foreground" style={{ WebkitAppRegion: 'drag' } as never}>
         {sessionType === 'ask'
           ? 'Ask your product memory'
-          : sessionType === 'after-meeting'
-            ? 'After-Meeting'
-            : sessionType === 'weekly-update'
-              ? 'Weekly Update'
-              : 'Chat'}
+          : sessionType === 'chat'
+            ? 'Chat'
+            : sessionType.replace(/(^|\s|-)\w/g, (c) => c.toUpperCase()).replace(/-/g, ' ')}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6">

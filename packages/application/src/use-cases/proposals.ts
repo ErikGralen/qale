@@ -1,21 +1,22 @@
 import {
-  zTriagePayload,
   zNotePayload,
   zUpdatePayload,
+  zDecisionPayload,
   parseFrontmatter,
-  type TriagePayload,
-  type ThemeStance,
-  dirForType,
-  fileSlug,
+  hasFreshness,
+  checkSupersede,
+  refToSlug,
+  type DecisionNode,
+  type DecisionFrontmatter,
   type Frontmatter,
-  type ThemeFrontmatter,
 } from '@pm/domain';
 import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../ports.js';
 
 /**
- * Proposals are the only write path for the agent (PLAN §3.3). Tools persist
- * proposal rows here; the review layer applies accepted ones through these use
- * cases, which write files + git-commit. Accept is staleness-safe via base_hash.
+ * Proposals (approval cards) are the only write path for the agent (PLAN-V2 §3.3).
+ * Tools persist card rows here; the Inbox applies accepted ones through these use
+ * cases, which write files + git-commit and stamp `last_verified`. Accept is
+ * staleness-safe via base_hash; decisions supersede rather than overwrite.
  */
 
 /** Cheap, stable content hash for staleness detection (no node dep). */
@@ -26,8 +27,7 @@ export function contentHash(text: string): string {
 }
 
 export function createProposal(ctx: UseCaseContext, input: CreateProposalInput): ProposalRecord {
-  const rec = ctx.proposals.create(input, Date.now());
-  return rec;
+  return ctx.proposals.create(input, Date.now());
 }
 
 export function listProposals(ctx: UseCaseContext, status?: string): ProposalRecord[] {
@@ -44,7 +44,7 @@ export interface ProposalPreview {
 export async function previewProposal(ctx: UseCaseContext, id: string): Promise<ProposalPreview | null> {
   const rec = ctx.proposals.get(id);
   if (!rec) return null;
-  if (rec.kind === 'note') {
+  if (rec.kind === 'note' || rec.kind === 'decision') {
     const payload = rec.payload as { body?: string };
     return { before: '', after: payload.body ?? '', stale: false };
   }
@@ -69,9 +69,10 @@ export function rejectProposal(ctx: UseCaseContext, id: string): { ok: boolean }
 export interface AcceptResult {
   ok: boolean;
   stale?: boolean;
+  error?: string;
 }
 
-/** Apply an accepted proposal to the vault, dispatching by kind. */
+/** Apply an accepted proposal to the workspace, dispatching by kind. */
 export async function acceptProposal(
   ctx: UseCaseContext,
   id: string,
@@ -80,19 +81,26 @@ export async function acceptProposal(
   const rec = ctx.proposals.get(id);
   if (!rec || rec.status !== 'pending') return { ok: false };
 
-  if (rec.kind === 'triage') return acceptTriage(ctx, rec, edited);
   if (rec.kind === 'note') return acceptNote(ctx, rec, edited);
   if (rec.kind === 'update') return acceptUpdate(ctx, rec, edited);
+  if (rec.kind === 'decision') return acceptDecision(ctx, rec, edited);
   return { ok: false };
+}
+
+/** Stamp `last_verified` on freshness-tracked types when a human approves. */
+function stampVerified(fm: Frontmatter, now: string): Frontmatter {
+  if (!hasFreshness(fm.type)) return fm;
+  return { ...fm, last_verified: now.slice(0, 10) } as Frontmatter;
 }
 
 async function acceptNote(ctx: UseCaseContext, rec: ProposalRecord, edited?: unknown): Promise<AcceptResult> {
   const parsed = zNotePayload.safeParse(edited ?? rec.payload);
-  if (!parsed.success) return { ok: false };
+  if (!parsed.success) return { ok: false, error: 'invalid note payload' };
   const { path, frontmatter, body } = parsed.data;
   const fm = parseFrontmatter(frontmatter);
-  if (!fm.ok || !fm.data) return { ok: false };
-  const written = await ctx.vault.writeNote(path, fm.data as Frontmatter, body);
+  if (!fm.ok || !fm.data) return { ok: false, error: fm.error };
+  const stamped = stampVerified(fm.data, ctx.clock.now());
+  const written = await ctx.vault.writeNote(path, stamped, body);
   ctx.index.reindex(written);
   await ctx.git.commitPaths([path], `note: ${written.slug}`);
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
@@ -101,10 +109,10 @@ async function acceptNote(ctx: UseCaseContext, rec: ProposalRecord, edited?: unk
 
 async function acceptUpdate(ctx: UseCaseContext, rec: ProposalRecord, edited?: unknown): Promise<AcceptResult> {
   const parsed = zUpdatePayload.safeParse(edited ?? rec.payload);
-  if (!parsed.success) return { ok: false };
+  if (!parsed.success) return { ok: false, error: 'invalid update payload' };
   const { path, patch } = parsed.data;
   const note = await ctx.vault.readNote(path);
-  if (!note) return { ok: false };
+  if (!note) return { ok: false, error: 'target not found' };
   // Staleness: the target may have been edited in Obsidian since the proposal.
   if (rec.baseHash && contentHash(note.body) !== rec.baseHash) {
     ctx.proposals.setStatus(rec.id, 'stale', Date.now());
@@ -115,7 +123,8 @@ async function acceptUpdate(ctx: UseCaseContext, rec: ProposalRecord, edited?: u
     ctx.proposals.setStatus(rec.id, 'stale', Date.now());
     return { ok: false, stale: true };
   }
-  const written = await ctx.vault.writeNote(path, note.frontmatter, applied);
+  const nextFm = stampVerified(note.frontmatter, ctx.clock.now());
+  const written = await ctx.vault.writeNote(path, nextFm, applied);
   ctx.index.reindex(written);
   await ctx.git.commitPaths([path], `update: ${written.slug}`);
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
@@ -123,7 +132,58 @@ async function acceptUpdate(ctx: UseCaseContext, rec: ProposalRecord, edited?: u
 }
 
 /**
- * Apply search/replace blocks (the format LLMs produce reliably, PLAN §3.5).
+ * Accept a decision card: write the new decision (append-only spine) and, when it
+ * supersedes an existing one, flip the old file's status + set the forward pointer
+ * — never editing the old body. Cycle/lineage guarded (PLAN-V2 §5.6).
+ */
+async function acceptDecision(ctx: UseCaseContext, rec: ProposalRecord, edited?: unknown): Promise<AcceptResult> {
+  const parsed = zDecisionPayload.safeParse(edited ?? rec.payload);
+  if (!parsed.success) return { ok: false, error: 'invalid decision payload' };
+  const { path, frontmatter, body, supersedes } = parsed.data;
+  const fm = parseFrontmatter({ ...frontmatter, type: 'decision' });
+  if (!fm.ok || !fm.data) return { ok: false, error: fm.error };
+
+  const newSlug = path.replace(/\.md$/, '');
+  const resolveDecision = (slug: string): DecisionNode | null => {
+    const p = ctx.index.resolve(slug);
+    const rc = p ? ctx.index.get(p) : null;
+    if (!rc || rc.type !== 'decision') return null;
+    return { slug: rc.slug, frontmatter: rc.frontmatter as unknown as DecisionFrontmatter };
+  };
+
+  const committed: string[] = [];
+  const targetSlug = refToSlug(supersedes);
+  let newFm = fm.data as Frontmatter;
+
+  if (targetSlug) {
+    const check = checkSupersede(newSlug, targetSlug, resolveDecision);
+    if (!check.allowed) return { ok: false, error: check.reason };
+    const targetPath = ctx.index.resolve(targetSlug);
+    const target = targetPath ? await ctx.vault.readNote(targetPath) : null;
+    if (!target || !targetPath) return { ok: false, error: `supersede target not found: ${targetSlug}` };
+    // Flip the old decision: status → superseded, forward pointer set. Body frozen.
+    const oldFm = {
+      ...target.frontmatter,
+      status: 'superseded',
+      superseded_by: `[[${newSlug}]]`,
+    } as Frontmatter;
+    const writtenOld = await ctx.vault.writeNote(targetPath, oldFm, target.body);
+    ctx.index.reindex(writtenOld);
+    committed.push(targetPath);
+    newFm = { ...newFm, supersedes: `[[${targetSlug}]]` } as Frontmatter;
+  }
+
+  const stamped = stampVerified(newFm, ctx.clock.now());
+  const written = await ctx.vault.writeNote(path, stamped, body);
+  ctx.index.reindex(written);
+  committed.push(path);
+  await ctx.git.commitPaths(committed, `decision: ${written.slug}${targetSlug ? ` (supersedes ${targetSlug})` : ''}`);
+  ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
+  return { ok: true };
+}
+
+/**
+ * Apply search/replace blocks (the format LLMs produce reliably, PLAN-V2 §3.1).
  * Returns null if any block's search text isn't found (→ stale, don't clobber).
  */
 export function applyPatch(body: string, patch: { search: string; replace: string }[]): string | null {
@@ -134,83 +194,4 @@ export function applyPatch(body: string, patch: { search: string; replace: strin
     result = result.slice(0, idx) + block.replace + result.slice(idx + block.search.length);
   }
   return result;
-}
-
-async function acceptTriage(
-  ctx: UseCaseContext,
-  rec: ProposalRecord,
-  edited?: unknown,
-): Promise<AcceptResult> {
-  const parsed = zTriagePayload.safeParse(edited ?? rec.payload);
-  if (!parsed.success) return { ok: false };
-  const payload: TriagePayload = parsed.data;
-
-  const committed: string[] = [];
-
-  if (payload.action === 'link') {
-    const themePath = ctx.index.resolve(stripWikilink(payload.themeRef ?? ''));
-    if (!themePath) return { ok: false };
-    const theme = await ctx.vault.readNote(themePath);
-    if (!theme) return { ok: false };
-    // Staleness: the theme may have been edited in Obsidian since the proposal.
-    if (rec.baseHash && contentHash(theme.body + JSON.stringify(theme.frontmatter)) !== rec.baseHash) {
-      ctx.proposals.setStatus(rec.id, 'stale', Date.now());
-      return { ok: false, stale: true };
-    }
-    const themeFm = theme.frontmatter as Record<string, unknown>;
-    const evidence = new Set<string>(
-      Array.isArray(themeFm['evidence']) ? (themeFm['evidence'] as string[]) : [],
-    );
-    for (const sig of payload.signalPaths) evidence.add(toWikilink(sig));
-    const nextFm = { ...theme.frontmatter, evidence: [...evidence] } as ThemeFrontmatter;
-    const written = await ctx.vault.writeNote(themePath, nextFm, theme.body);
-    ctx.index.reindex(written);
-    committed.push(themePath);
-    await markSignals(ctx, payload.signalPaths, 'linked', committed);
-  } else if (payload.action === 'new-theme') {
-    if (!payload.newTheme) return { ok: false };
-    const date = ctx.clock.now().slice(0, 10);
-    const path = `${dirForType('theme')}/${fileSlug(payload.newTheme.summary, date).replace(/^\d{4}-\d{2}-\d{2}-/, '')}.md`;
-    const fm: ThemeFrontmatter = {
-      type: 'theme',
-      summary: payload.newTheme.summary,
-      stance: payload.newTheme.stance as ThemeStance,
-      evidence: payload.signalPaths.map(toWikilink),
-    };
-    const written = await ctx.vault.writeNote(path, fm, `${payload.rationale}\n`);
-    ctx.index.reindex(written);
-    committed.push(path);
-    await markSignals(ctx, payload.signalPaths, 'linked', committed);
-  } else {
-    await markSignals(ctx, payload.signalPaths, 'discarded', committed);
-  }
-
-  await ctx.git.commitPaths(committed, `triage: ${payload.action} (${payload.signalPaths.length} signal(s))`);
-  ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
-  return { ok: true };
-}
-
-async function markSignals(
-  ctx: UseCaseContext,
-  paths: string[],
-  status: 'linked' | 'discarded',
-  committed: string[],
-): Promise<void> {
-  for (const path of paths) {
-    const signal = await ctx.vault.readNote(path);
-    if (!signal) continue;
-    // Raw invariant: only `status` may change on a signal.
-    const nextFm = { ...signal.frontmatter, status } as typeof signal.frontmatter;
-    const written = await ctx.vault.writeNote(path, nextFm, signal.body);
-    ctx.index.reindex(written);
-    committed.push(path);
-  }
-}
-
-function stripWikilink(ref: string): string {
-  return ref.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.split('#')[0]!.replace(/\.md$/, '');
-}
-
-function toWikilink(path: string): string {
-  return `[[${path.replace(/\.md$/, '')}]]`;
 }

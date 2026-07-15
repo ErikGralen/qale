@@ -4,11 +4,11 @@ import { FileUp } from 'lucide-react';
 import { useApp } from '../state/app-state';
 
 /**
- * Transcript ingest (PLAN §5, Phase 4): drop/paste a transcript → transcripts/…md
- * (raw), then kick off an ingest-transcript session that proposes extractions.
+ * Meeting drop (PLAN-V2 §3.2): drop/paste a transcript → meetings/…md, then kick
+ * off an After-Meeting session that produces the truth delta as approval cards.
  */
 export function IngestView() {
-  const { ingestTranscript } = useApp();
+  const { dropMeeting } = useApp();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
@@ -23,7 +23,7 @@ export function IngestView() {
     if (!body.trim()) return;
     setBusy(true);
     try {
-      await ingestTranscript(title.trim() || 'Meeting transcript', body.trim());
+      await dropMeeting(title.trim() || 'Meeting transcript', body.trim());
     } finally {
       setBusy(false);
     }
@@ -32,7 +32,7 @@ export function IngestView() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-11 items-center gap-2 px-5 text-sm font-medium text-muted-foreground" style={{ WebkitAppRegion: 'drag' } as never}>
-        <FileUp className="size-4" /> Ingest a transcript
+        <FileUp className="size-4" /> Drop a meeting transcript
       </div>
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-3 px-8 py-4">
         <Input
@@ -58,10 +58,10 @@ export function IngestView() {
         </div>
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">
-            Lands in transcripts/ (raw), then the agent proposes signals, decisions, actions & a summary.
+            Lands in meetings/, then the After-Meeting session proposes decisions, insights & a summary.
           </span>
           <Button size="sm" onClick={submit} disabled={!body.trim() || busy}>
-            Ingest & extract
+            Drop & run session
           </Button>
         </div>
       </div>

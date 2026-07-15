@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Badge } from '@pm/ui';
-import { Check, X, ChevronRight, Inbox, Link2, Sparkles, Trash2 } from 'lucide-react';
-import type { ProposalDTO, TriagePayloadDTO } from '@pm/ipc';
+import { Check, X, Inbox } from 'lucide-react';
+import type { ProposalDTO } from '@pm/ipc';
 import { useApp } from '../state/app-state';
 
 /**
- * The review queue as a triage stepper (PLAN §3, Phase 3): one proposal at a
- * time, the GROUP is the unit of accept. Accept applies to all member signals;
- * reject drops it; skip defers. Ends with a receipt.
+ * The Inbox as a card stepper (PLAN-V2 §3.3): one approval card at a time.
+ * Accept applies it (write + commit); reject drops it; skip defers. Ends with a
+ * receipt. Phase 2 recycles this mechanic inside the full Inbox view.
  */
 export function ReviewView() {
-  const { proposals, acceptProposal, rejectProposal, refreshProposals, openNote } = useApp();
+  const { proposals, acceptProposal, rejectProposal, refreshProposals } = useApp();
   const [cursor, setCursor] = useState(0);
   const [receipt, setReceipt] = useState<{ accepted: number; rejected: number } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -48,7 +48,7 @@ export function ReviewView() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-11 items-center gap-2 px-5 text-sm font-medium text-muted-foreground" style={{ WebkitAppRegion: 'drag' } as never}>
-        <Inbox className="size-4" /> Review queue
+        <Inbox className="size-4" /> Inbox
         {queue.length > 0 && <span className="text-xs">· {Math.min(cursor + 1, queue.length)} of {queue.length}</span>}
       </div>
 
@@ -65,16 +65,6 @@ export function ReviewView() {
               </p>
             )}
           </div>
-        ) : current.kind === 'triage' ? (
-          <TriageCard
-            proposal={current}
-            stale={current.status === 'stale'}
-            busy={busy}
-            onAccept={onAccept}
-            onReject={onReject}
-            onSkip={advance}
-            onOpen={openNote}
-          />
         ) : (
           <WriteCard
             key={current.id}
@@ -90,85 +80,13 @@ export function ReviewView() {
   );
 }
 
-function TriageCard({
-  proposal,
-  stale,
-  busy,
-  onAccept,
-  onReject,
-  onSkip,
-  onOpen,
-}: {
-  proposal: ProposalDTO;
-  stale: boolean;
-  busy: boolean;
-  onAccept: () => void;
-  onReject: () => void;
-  onSkip: () => void;
-  onOpen: (path: string) => void;
-}) {
-  const payload = proposal.payload as TriagePayloadDTO;
-  const ActionIcon = payload.action === 'link' ? Link2 : payload.action === 'new-theme' ? Sparkles : Trash2;
-  const actionLabel =
-    payload.action === 'link'
-      ? `Link to ${payload.themeRef}`
-      : payload.action === 'new-theme'
-        ? `New theme: “${payload.newTheme?.summary}”`
-        : 'Discard as noise';
+const KIND_LABEL: Record<string, string> = {
+  note: 'new note',
+  decision: 'decision',
+  update: 'update',
+};
 
-  return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-      <div className="mb-3 flex items-center gap-2">
-        <Badge variant="secondary">triage</Badge>
-        <span className="text-xs text-muted-foreground">
-          {payload.signalPaths.length} signal{payload.signalPaths.length === 1 ? '' : 's'} · same thing
-        </span>
-        {proposal.inference && <Badge>inference</Badge>}
-      </div>
-
-      <div className="mb-3 flex items-center gap-2 text-[15px] font-medium">
-        <ActionIcon className="size-4 text-brand" />
-        {actionLabel}
-      </div>
-
-      <ul className="mb-4 flex flex-col gap-1 rounded-lg bg-muted/50 p-2">
-        {payload.signalPaths.map((path) => (
-          <li key={path}>
-            <button
-              className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-sm hover:bg-accent"
-              onClick={() => onOpen(path)}
-            >
-              <ChevronRight className="size-3.5 text-muted-foreground" />
-              <span className="truncate font-mono text-xs">{path}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      <p className="mb-4 text-sm text-muted-foreground">{payload.rationale}</p>
-
-      {stale && (
-        <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-          The theme changed since this was proposed — re-run triage to regenerate.
-        </div>
-      )}
-
-      <div className="flex gap-2">
-        <Button size="sm" onClick={onAccept} disabled={busy}>
-          <Check className="size-3.5" /> Accept group
-        </Button>
-        <Button size="sm" variant="outline" onClick={onReject} disabled={busy}>
-          <X className="size-3.5" /> Dismiss
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onSkip} disabled={busy}>
-          Skip
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/** Note + update proposals: rationale, evidence, inference badge, review-time diff. */
+/** Note/decision/update cards: rationale, evidence, inference badge, review-time diff. */
 function WriteCard({
   proposal,
   busy,
@@ -198,7 +116,7 @@ function WriteCard({
   return (
     <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
       <div className="mb-3 flex items-center gap-2">
-        <Badge variant="secondary">{proposal.kind === 'note' ? 'new note' : 'update'}</Badge>
+        <Badge variant="secondary">{KIND_LABEL[proposal.kind] ?? proposal.kind}</Badge>
         <span className="truncate font-mono text-xs text-muted-foreground">{target}</span>
         {proposal.inference && <Badge>inference</Badge>}
       </div>
@@ -217,13 +135,13 @@ function WriteCard({
 
       {preview && (
         <pre className="mb-4 max-h-60 overflow-y-auto rounded-lg bg-muted/60 p-3 text-xs whitespace-pre-wrap">
-          {proposal.kind === 'note' ? preview.after : renderDiff(preview.before, preview.after)}
+          {proposal.kind === 'update' ? renderDiff(preview.before, preview.after) : preview.after}
         </pre>
       )}
 
       {preview?.stale && (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-          The target changed since this was proposed — re-run ingest to regenerate.
+          The target changed since this was proposed — re-run the session to regenerate.
         </div>
       )}
 

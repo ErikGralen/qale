@@ -2,18 +2,20 @@ import type {
   AgentRunInput,
   AgentRunHandle,
   BacklinkDTO,
-  CaptureSignalInput,
-  CaptureTranscriptInput,
+  CaptureNoteInput,
+  CaptureMeetingInput,
+  HealthDTO,
   ModelInfoDTO,
   ProposalPreviewDTO,
   NoteDTO,
   ProposalDTO,
-  ThemeHeatDTO,
+  ProblemHeatDTO,
   SaveNoteInput,
+  SaveFrontmatterInput,
   SearchHitDTO,
   SessionRefDTO,
   SettingsDTO,
-  ThemeStance,
+  ProblemStance,
   VaultInfoDTO,
   VaultTreeDTO,
 } from './dtos.js';
@@ -48,18 +50,21 @@ export interface InvokeMap {
   'vault:current': { args: []; result: VaultInfoDTO | null };
   'vault:tree': { args: []; result: VaultTreeDTO };
   'vault:rebuildIndex': { args: []; result: { indexed: number } };
+  'vault:health': { args: []; result: HealthDTO };
+  'vault:refreshIndexes': { args: []; result: { written: number } };
 
   // Notes
   'note:get': { args: [path: string]; result: NoteDTO | null };
   'note:save': { args: [input: SaveNoteInput]; result: NoteDTO };
+  'note:saveFrontmatter': { args: [input: SaveFrontmatterInput]; result: NoteDTO };
   'note:backlinks': { args: [path: string]; result: BacklinkDTO[] };
   'note:resolveLink': { args: [target: string]; result: string | null };
-  'note:setThemeStance': { args: [path: string, stance: ThemeStance]; result: NoteDTO };
-  'themes:byHeat': { args: []; result: ThemeHeatDTO[] };
+  'note:setProblemStance': { args: [path: string, stance: ProblemStance]; result: NoteDTO };
+  'problems:byHeat': { args: []; result: ProblemHeatDTO[] };
 
   // Capture / search
-  'signal:capture': { args: [input: CaptureSignalInput]; result: NoteDTO };
-  'transcript:capture': { args: [input: CaptureTranscriptInput]; result: NoteDTO };
+  'note:capture': { args: [input: CaptureNoteInput]; result: NoteDTO };
+  'meeting:capture': { args: [input: CaptureMeetingInput]; result: NoteDTO };
   'search:query': { args: [query: string, limit?: number]; result: SearchHitDTO[] };
 
   // Proposals
@@ -93,14 +98,17 @@ export const INVOKE_CHANNELS = [
   'vault:current',
   'vault:tree',
   'vault:rebuildIndex',
+  'vault:health',
+  'vault:refreshIndexes',
   'note:get',
   'note:save',
+  'note:saveFrontmatter',
   'note:backlinks',
   'note:resolveLink',
-  'note:setThemeStance',
-  'themes:byHeat',
-  'signal:capture',
-  'transcript:capture',
+  'note:setProblemStance',
+  'problems:byHeat',
+  'note:capture',
+  'meeting:capture',
   'search:query',
   'proposals:list',
   'proposals:preview',

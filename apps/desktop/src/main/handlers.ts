@@ -5,21 +5,25 @@ import {
   acceptProposal,
   createProposal,
   type UseCaseContext,
-  captureSignal,
-  captureTranscript,
+  captureNote,
+  captureMeeting,
   getBacklinks,
   getNote,
-  getThemesByHeat,
+  getProblemsByHeat,
   getVaultTree,
+  getWorkspaceHealth,
   listProposals,
   previewProposal,
   rebuild,
+  refreshFolderIndexes,
   rejectProposal,
   resolveLink,
   saveAuthoredNote,
+  saveFrontmatter,
   searchNotes,
-  setThemeStance,
+  setProblemStance,
 } from '@pm/application';
+import { parseFrontmatter, type Frontmatter } from '@pm/domain';
 import { handle, pushEvent } from './ipc.js';
 import { SettingsService } from './services/settings-service.js';
 import { VaultService } from './services/vault-service.js';
@@ -27,36 +31,35 @@ import {
   backlinkToDTO,
   hitToDTO,
   noteToDTO,
+  problemHeatToDTO,
   proposalToDTO,
-  themeHeatToDTO,
   treeToDTO,
   vaultInfoToDTO,
 } from './dto.js';
 
-/** Dev-only: seed a triage proposal so the review stepper is demoable without a key. */
+/** Dev-only: seed an insight card so the Inbox is demoable without an API key. */
 function seedDemoProposal(ctx: UseCaseContext): void {
   if (ctx.proposals.pendingCount() > 0) return;
-  const newSignals = ctx.index.all().filter((n) => n.type === 'signal' && n.status === 'new');
-  if (newSignals.length === 0) return;
-  const theme = ctx.index.listByType('theme')[0];
+  const meeting = ctx.index.listByType('meeting')[0];
+  if (!meeting) return;
   createProposal(ctx, {
-    kind: 'triage',
+    kind: 'note',
     sessionId: 'seed',
-    targetPath: theme?.path ?? null,
+    targetPath: 'insights/seed-demo.md',
     baseHash: null,
     payload: {
-      signalPaths: newSignals.slice(0, 2).map((n) => n.path),
-      action: theme ? 'link' : 'new-theme',
-      ...(theme ? { themeRef: `[[${theme.slug}]]` } : { newTheme: { summary: 'New theme', stance: 'watching' } }),
-      rationale: 'These signals describe the same enterprise SSO/SCIM pain — group and link.',
+      path: 'insights/seed-demo.md',
+      frontmatter: { type: 'insight', summary: 'Seed insight from the demo meeting', evidence: [`[[${meeting.slug}]]`], confidence: 'med' },
+      body: 'A demo insight showing the approval-card flow.\n',
+      rationale: 'Demonstrates the Inbox card without a live model.',
     },
     rationale: 'seed',
-    evidence: newSignals.slice(0, 2).map((n) => ({ ref: `[[${n.slug}]]`, resolved: true })),
+    evidence: [{ ref: `[[${meeting.slug}]]`, resolved: true }],
     inference: false,
   });
 }
 
-// Placeholder model list until the pi ModelRegistry lands in Phase 2.
+// Placeholder model list until the pi ModelRegistry has a live key.
 const MODELS: ModelInfoDTO[] = [
   { id: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
   { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
@@ -69,6 +72,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     pushEvent(getWindow(), { channel: 'vault:changed', paths });
   });
   const agent = new AgentRuntime();
+
+  const now = (): string => vaultService.context()?.clock.now() ?? new Date().toISOString();
 
   const reconfigureAgent = (): void => {
     const ctx = vaultService.context();
@@ -119,7 +124,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   handle('vault:pick', async () => {
     const win = getWindow();
     const result = await dialog.showOpenDialog(win ?? undefined!, {
-      title: 'Open a vault',
+      title: 'Open a workspace',
       properties: ['openDirectory', 'createDirectory'],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
@@ -150,40 +155,50 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     return null;
   });
 
-  handle('vault:tree', () => treeToDTO(getVaultTree(vaultService.requireContext())));
+  handle('vault:tree', () => treeToDTO(getVaultTree(vaultService.requireContext()), now()));
   handle('vault:rebuildIndex', () => rebuild(vaultService.requireContext()));
+  handle('vault:health', () => getWorkspaceHealth(vaultService.requireContext()));
+  handle('vault:refreshIndexes', () => refreshFolderIndexes(vaultService.requireContext()));
 
   handle('note:get', async (path) => {
     const note = await getNote(vaultService.requireContext(), path);
-    return note ? noteToDTO(note) : null;
+    return note ? noteToDTO(note, now()) : null;
   });
   handle('note:save', async (input) => {
     const note = await saveAuthoredNote(vaultService.requireContext(), input.path, input.body);
-    return noteToDTO(note);
+    return noteToDTO(note, now());
+  });
+  handle('note:saveFrontmatter', async (input) => {
+    const parsed = parseFrontmatter(input.frontmatter);
+    if (!parsed.ok || !parsed.data) throw new Error(`invalid frontmatter: ${parsed.error}`);
+    const note = await saveFrontmatter(vaultService.requireContext(), input.path, parsed.data as Frontmatter);
+    return noteToDTO(note, now());
   });
   handle('note:backlinks', (path) =>
     getBacklinks(vaultService.requireContext(), path).map(backlinkToDTO),
   );
   handle('note:resolveLink', (target) => resolveLink(vaultService.requireContext(), target));
-  handle('note:setThemeStance', async (path, stance) => {
-    const note = await setThemeStance(vaultService.requireContext(), path, stance);
-    return noteToDTO(note);
+  handle('note:setProblemStance', async (path, stance) => {
+    const note = await setProblemStance(vaultService.requireContext(), path, stance);
+    return noteToDTO(note, now());
   });
 
-  handle('signal:capture', async (input) => {
-    const note = await captureSignal(vaultService.requireContext(), input);
-    return noteToDTO(note);
+  handle('note:capture', async (input) => {
+    const note = await captureNote(vaultService.requireContext(), input);
+    return noteToDTO(note, now());
   });
-  handle('transcript:capture', async (input) => {
-    const note = await captureTranscript(vaultService.requireContext(), input);
-    return noteToDTO(note);
+  handle('meeting:capture', async (input) => {
+    const note = await captureMeeting(vaultService.requireContext(), input);
+    return noteToDTO(note, now());
   });
 
   handle('search:query', (query, limit) =>
     searchNotes(vaultService.requireContext(), query, limit).map(hitToDTO),
   );
 
-  handle('themes:byHeat', () => getThemesByHeat(vaultService.requireContext()).map(themeHeatToDTO));
+  handle('problems:byHeat', () =>
+    getProblemsByHeat(vaultService.requireContext()).map((r) => problemHeatToDTO(r, now())),
+  );
 
   const notifyProposals = (): void => {
     const ctx = vaultService.context();
@@ -217,16 +232,16 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   return {
     async onReady() {
       await settings.load();
-      // Dev affordance: PM_VAULT opens a vault without the picker.
+      // Dev affordance: PM_VAULT opens a workspace without the picker.
       const saved = process.env['PM_VAULT'] ?? settings.get().vaultPath;
       if (saved) {
         try {
           const info = await vaultService.open(saved);
           reconfigureAgent();
-          console.log(`[pm] opened vault "${info.name}" — ${info.noteCount} notes, git=${info.git}`);
+          console.log(`[pm] opened workspace "${info.name}" — ${info.noteCount} notes, git=${info.git}`);
           if (process.env['PM_SEED_PROPOSAL']) seedDemoProposal(vaultService.requireContext());
         } catch (err) {
-          console.error('[pm] failed to open vault:', err);
+          console.error('[pm] failed to open workspace:', err);
         }
       }
     },

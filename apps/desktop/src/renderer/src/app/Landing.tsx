@@ -4,7 +4,7 @@ import { ArrowRight, FolderOpen } from 'lucide-react';
 import { useApp } from '../state/app-state';
 
 export function Landing() {
-  const { vault, openVaultDialog, captureSignal, openNote } = useApp();
+  const { vault, openVaultDialog, captureNote, openNote } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -12,7 +12,7 @@ export function Landing() {
     if (!text.trim() || !vault) return;
     setBusy(true);
     try {
-      const note = await captureSignal({ body: text.trim() });
+      const note = await captureNote({ body: text.trim() });
       setText('');
       await openNote(note.path);
     } finally {
@@ -27,8 +27,8 @@ export function Landing() {
         <div className="space-y-1.5">
           <h1 className="font-serif text-3xl font-semibold tracking-tight">What did we just learn?</h1>
           <p className="text-[15px] text-muted-foreground">
-            Capture a signal, drop a transcript, or ask across the brain. The agent proposes — you
-            dispose.
+            Drop a meeting, capture a note, or ask across your product memory. The agent proposes —
+            you dispose.
           </p>
         </div>
 
@@ -41,13 +41,13 @@ export function Landing() {
                 onKeyDown={(e) => {
                   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') void capture();
                 }}
-                placeholder="Paste a signal, a quote, a customer note…  (⌘↵ to capture)"
+                placeholder="Paste a quote, a customer note, a thought…  (⌘↵ to capture)"
                 rows={4}
                 className="w-full resize-none bg-transparent text-[15px] leading-relaxed outline-none placeholder:text-muted-foreground/70"
                 autoFocus
               />
               <div className="flex items-center justify-between border-t border-border/60 pt-2.5">
-                <span className="text-xs text-muted-foreground">Lands in signals/ as status: new</span>
+                <span className="text-xs text-muted-foreground">Lands in notes/</span>
                 <Button size="sm" onClick={capture} disabled={!text.trim() || busy}>
                   Capture
                   <ArrowRight className="size-3.5" />

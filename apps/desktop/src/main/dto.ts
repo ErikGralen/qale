@@ -1,20 +1,21 @@
-import type { Note } from '@pm/domain';
+import { computeFreshness, isBodyEditable, type Frontmatter, type Note } from '@pm/domain';
 import type {
   Backlink,
   IndexedNote,
+  ProblemHeatRow,
   ProposalRecord,
-  ThemeHeatRow,
   VaultInfo,
   VaultTreeGroup,
 } from '@pm/application';
 import type {
   BacklinkDTO,
+  HealthDTO,
   NoteDTO,
   NoteRefDTO,
+  ProblemHeatDTO,
+  ProblemStance,
   ProposalDTO,
   SearchHitDTO,
-  ThemeHeatDTO,
-  ThemeStance,
   VaultInfoDTO,
   VaultTreeDTO,
 } from '@pm/ipc';
@@ -22,7 +23,8 @@ import type { SearchHit } from '@pm/domain';
 
 /** Map domain/application entities to structured-clone-safe IPC DTOs. */
 
-export function noteToDTO(note: Note): NoteDTO {
+export function noteToDTO(note: Note, now: string): NoteDTO {
+  const f = computeFreshness(note.frontmatter, now);
   return {
     path: note.path,
     slug: note.slug,
@@ -33,10 +35,20 @@ export function noteToDTO(note: Note): NoteDTO {
     frontmatter: note.frontmatter as Record<string, unknown>,
     body: note.body,
     mtime: note.mtime,
+    bodyEditable: isBodyEditable(note.type),
+    freshness: {
+      tracked: f.tracked,
+      freshForDays: f.freshForDays,
+      lastVerified: f.lastVerified,
+      ageDays: f.ageDays,
+      stale: f.stale,
+      unverified: f.unverified,
+    },
   };
 }
 
-export function indexedToRefDTO(n: IndexedNote): NoteRefDTO {
+export function indexedToRefDTO(n: IndexedNote, now?: string): NoteRefDTO {
+  const stale = now ? computeFreshness(n.frontmatter as Frontmatter, now).stale : undefined;
   return {
     path: n.path,
     slug: n.slug,
@@ -44,16 +56,18 @@ export function indexedToRefDTO(n: IndexedNote): NoteRefDTO {
     title: n.title,
     summary: n.summary,
     mtime: n.mtime,
+    status: n.status,
+    stale,
   };
 }
 
-export function treeToDTO(groups: VaultTreeGroup[]): VaultTreeDTO {
+export function treeToDTO(groups: VaultTreeGroup[], now: string): VaultTreeDTO {
   return {
     groups: groups.map((g) => ({
       dir: g.dir,
       type: g.type,
       layer: g.layer as 'raw' | 'derived' | 'authored',
-      notes: g.notes.map(indexedToRefDTO),
+      notes: g.notes.map((n) => indexedToRefDTO(n, now)),
     })),
   };
 }
@@ -81,13 +95,17 @@ export function vaultInfoToDTO(info: VaultInfo): VaultInfoDTO {
   return { path: info.path, name: info.name, git: info.git, noteCount: info.noteCount };
 }
 
-export function themeHeatToDTO(row: ThemeHeatRow): ThemeHeatDTO {
+export function problemHeatToDTO(row: ProblemHeatRow, now: string): ProblemHeatDTO {
   return {
-    ...indexedToRefDTO(row.note),
-    stance: ((row.note.frontmatter['stance'] as string) ?? 'exploring') as ThemeStance,
+    ...indexedToRefDTO(row.note, now),
+    stance: ((row.note.frontmatter['stance'] as string) ?? 'exploring') as ProblemStance,
     evidenceCount: row.count,
     newest: row.newest,
   };
+}
+
+export function healthToDTO(h: HealthDTO): HealthDTO {
+  return h;
 }
 
 export function proposalToDTO(rec: ProposalRecord): ProposalDTO {

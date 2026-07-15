@@ -10,9 +10,9 @@ import {
 } from '@pm/ui';
 import { useApp } from '../state/app-state';
 
-/** ⌘N quick capture — drops a signal into the vault so real data accrues. */
+/** ⌘N quick capture — drops a note into the workspace so real data accrues. */
 export function QuickCapture({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const { captureSignal, openNote, vault } = useApp();
+  const { captureNote, openNote, vault } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -20,7 +20,7 @@ export function QuickCapture({ open, onOpenChange }: { open: boolean; onOpenChan
     if (!text.trim() || !vault) return;
     setBusy(true);
     try {
-      const note = await captureSignal({ body: text.trim() });
+      const note = await captureNote({ body: text.trim() });
       setText('');
       onOpenChange(false);
       await openNote(note.path);
@@ -35,7 +35,7 @@ export function QuickCapture({ open, onOpenChange }: { open: boolean; onOpenChan
         <DialogHeader>
           <DialogTitle>Quick capture</DialogTitle>
           <DialogDescription>
-            {vault ? 'Lands in signals/ as status: new.' : 'Open a vault first.'}
+            {vault ? 'Lands in notes/.' : 'Open a workspace first.'}
           </DialogDescription>
         </DialogHeader>
         <textarea
@@ -44,7 +44,7 @@ export function QuickCapture({ open, onOpenChange }: { open: boolean; onOpenChan
           onKeyDown={(e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') void submit();
           }}
-          placeholder="Paste a signal, a quote, a customer note…"
+          placeholder="Paste a quote, a customer note, a thought…"
           rows={5}
           disabled={!vault}
           className="w-full resize-none rounded-md border border-input bg-card p-3 text-[15px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/40"

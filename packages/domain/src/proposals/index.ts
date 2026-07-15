@@ -1,39 +1,17 @@
 import { z } from 'zod';
-import { THEME_STANCES } from '../notes/frontmatter.js';
 
 /**
- * Proposals are the ONLY write path for the agent (PLAN §3.3). The trust
- * mechanic — evidence must resolve, or the proposal is flagged inference — is
- * validated structurally here (domain), then enforced at the tool layer.
+ * Proposals (approval cards) are the ONLY write path for the agent (PLAN-V2 §3.3).
+ * The trust mechanic — evidence must resolve, or the card is flagged inference — is
+ * validated structurally here (domain), then enforced at the tool layer. Card kinds
+ * grow per phase: note/update now, decision/outbound land in Phases 3 & 5.
  */
 
-export const PROPOSAL_KINDS = ['triage', 'note', 'update'] as const;
+export const PROPOSAL_KINDS = ['note', 'update', 'decision'] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 
 export const PROPOSAL_STATUSES = ['pending', 'accepted', 'rejected', 'stale'] as const;
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
-
-export const TRIAGE_ACTIONS = ['link', 'new-theme', 'discard'] as const;
-export type TriageAction = (typeof TRIAGE_ACTIONS)[number];
-
-export const zTriagePayload = z
-  .object({
-    signalPaths: z.array(z.string().min(1)).min(1),
-    action: z.enum(TRIAGE_ACTIONS),
-    themeRef: z.string().optional(),
-    newTheme: z
-      .object({ summary: z.string().min(1), stance: z.enum(THEME_STANCES).default('exploring') })
-      .optional(),
-    groupId: z.string().optional(),
-    rationale: z.string().min(1),
-  })
-  .refine((p) => (p.action === 'link' ? !!p.themeRef : true), {
-    message: 'link triage requires a themeRef',
-  })
-  .refine((p) => (p.action === 'new-theme' ? !!p.newTheme : true), {
-    message: 'new-theme triage requires newTheme',
-  });
-export type TriagePayload = z.infer<typeof zTriagePayload>;
 
 export const zSearchReplace = z.object({ search: z.string().min(1), replace: z.string() });
 
@@ -52,6 +30,17 @@ export const zUpdatePayload = z.object({
 });
 export type UpdatePayload = z.infer<typeof zUpdatePayload>;
 
+/** A decision card carries the new decision plus an optional supersede target. */
+export const zDecisionPayload = z.object({
+  path: z.string().min(1),
+  frontmatter: z.record(z.string(), z.unknown()),
+  body: z.string(),
+  rationale: z.string().min(1),
+  /** Slug of an existing decision this one supersedes (flips its status). */
+  supersedes: z.string().optional(),
+});
+export type DecisionPayload = z.infer<typeof zDecisionPayload>;
+
 export interface EvidenceValidation {
   ok: boolean;
   reason?: string;
@@ -60,7 +49,7 @@ export interface EvidenceValidation {
 /**
  * Evidence must be present and resolvable unless explicitly flagged inference.
  * `resolve` reports whether a given wikilink/URL target exists in the index or a
- * tool result from this session (PLAN §3.3).
+ * tool result from this session (PLAN-V2 §3.3 — cite or decline).
  */
 export function validateEvidence(
   sources: string[],

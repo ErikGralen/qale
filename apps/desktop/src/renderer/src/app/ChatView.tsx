@@ -55,10 +55,10 @@ export function ChatView({
   sessionType = 'chat',
   initialPrompt,
 }: {
-  sessionType?: 'chat' | 'ask' | 'triage' | 'ingest-transcript';
+  sessionType?: 'chat' | 'ask' | 'after-meeting';
   initialPrompt?: string;
 }) {
-  const proposesWrites = sessionType === 'triage' || sessionType === 'ingest-transcript';
+  const proposesWrites = sessionType === 'after-meeting';
   const { openNote, refreshProposals, showReview, pendingCount } = useApp();
   const transport = useMemo(() => new IpcChatTransport(sessionType), [sessionType]);
   const { messages, sendMessage, status, stop, error } = useChat({ transport });
@@ -96,12 +96,10 @@ export function ChatView({
     <div className="flex h-full flex-col">
       <div className="flex h-11 items-center px-5 text-sm font-medium text-muted-foreground" style={{ WebkitAppRegion: 'drag' } as never}>
         {sessionType === 'ask'
-          ? 'Ask the brain'
-          : sessionType === 'triage'
-            ? 'Triage'
-            : sessionType === 'ingest-transcript'
-              ? 'Ingest transcript'
-              : 'Chat'}
+          ? 'Ask your product memory'
+          : sessionType === 'after-meeting'
+            ? 'After-Meeting'
+            : 'Chat'}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6">

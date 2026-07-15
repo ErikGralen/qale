@@ -3,7 +3,7 @@ import type {
   Note,
   NoteType,
   SearchHit,
-  ThemeStance,
+  ProblemStance,
 } from '@pm/domain';
 
 /**
@@ -135,4 +135,4 @@ export interface UseCaseContext {
   proposals: ProposalPort;
 }
 
-export type { Note, SearchHit, ThemeStance, NoteType, Frontmatter };
+export type { Note, SearchHit, ProblemStance, NoteType, Frontmatter };

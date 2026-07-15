@@ -3,18 +3,18 @@ import { Logo, Button } from '@pm/ui';
 import {
   FolderOpen,
   ChevronRight,
-  Radio,
-  Lightbulb,
+  Target,
   GitBranch,
-  CheckSquare,
-  HelpCircle,
-  FileText,
+  Sparkles,
+  Building2,
+  Rocket,
+  User,
+  History,
+  Wand2,
   StickyNote,
   Mic,
-  Sparkles,
   Settings,
   Inbox,
-  Wand2,
   FileUp,
   type LucideIcon,
 } from 'lucide-react';
@@ -22,13 +22,15 @@ import { useApp } from '../state/app-state';
 import type { NoteType } from '@pm/ipc';
 
 const TYPE_ICON: Record<string, LucideIcon> = {
-  signal: Radio,
-  transcript: Mic,
-  'meeting-summary': FileText,
-  theme: Lightbulb,
+  meeting: Mic,
   decision: GitBranch,
-  action: CheckSquare,
-  'open-question': HelpCircle,
+  insight: Sparkles,
+  customer: Building2,
+  problem: Target,
+  release: Rocket,
+  person: User,
+  session: History,
+  skill: Wand2,
   note: StickyNote,
 };
 
@@ -80,9 +82,8 @@ export function Sidebar() {
     showChat,
     showSettings,
     showReview,
-    showThemes,
-    showIngest,
-    startTriage,
+    showProblems,
+    showMeetingDrop,
     pendingCount,
   } = useApp();
 
@@ -127,24 +128,17 @@ export function Sidebar() {
           </button>
           <button
             className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent"
-            onClick={showThemes}
-          >
-            <Lightbulb className="size-4 text-muted-foreground" />
-            Themes
-          </button>
-          <button
-            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent"
-            onClick={startTriage}
-          >
-            <Wand2 className="size-4 text-muted-foreground" />
-            Triage new signals
-          </button>
-          <button
-            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent"
-            onClick={showIngest}
+            onClick={showMeetingDrop}
           >
             <FileUp className="size-4 text-muted-foreground" />
-            Ingest transcript
+            After-Meeting
+          </button>
+          <button
+            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent"
+            onClick={showProblems}
+          >
+            <Target className="size-4 text-muted-foreground" />
+            Problems
           </button>
         </div>
       )}
@@ -152,9 +146,9 @@ export function Sidebar() {
       {!vault ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
           <FolderOpen className="size-6 text-muted-foreground/60" />
-          <p className="text-sm text-muted-foreground">No vault open.</p>
+          <p className="text-sm text-muted-foreground">No workspace open.</p>
           <Button variant="outline" size="sm" onClick={openVaultDialog}>
-            Open vault…
+            Open workspace…
           </Button>
         </div>
       ) : (
@@ -170,7 +164,7 @@ export function Sidebar() {
                 <Group key={g.dir} dir={g.dir} type={g.type} notes={g.notes} />
               ))
             ) : (
-              <p className="px-2 py-4 text-sm text-muted-foreground">Empty vault — capture a signal (⌘N).</p>
+              <p className="px-2 py-4 text-sm text-muted-foreground">Empty workspace — drop a meeting or capture a note (⌘N).</p>
             )}
           </div>
         </>

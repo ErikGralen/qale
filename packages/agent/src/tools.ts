@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import type { UseCaseContext } from '@pm/application';
 import { createProposal, searchNotes, contentHash } from '@pm/application';
-import { validateEvidence, zTriagePayload, zNotePayload, zUpdatePayload, THEME_STANCES } from '@pm/domain';
+import { validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload } from '@pm/domain';
 import type { AtlassianClient } from '@pm/atlassian';
 
 /**
@@ -39,7 +39,7 @@ export function createVaultTools(ctx: UseCaseContext): ToolDefinition[] {
     name: 'vault_list',
     label: 'List notes',
     description:
-      'List notes in the vault, optionally filtered by type (signal, theme, decision, …) and/or status. Returns path, type, status and one-line summary.',
+      'List notes in the workspace, optionally filtered by type (meeting, decision, insight, customer, problem, release, person, …) and/or status. Returns path, type, status and one-line summary.',
     parameters: Type.Object({
       type: Type.Optional(Type.String({ description: 'Filter by note type.' })),
       status: Type.Optional(Type.String({ description: 'Filter by status (e.g. "new").' })),
@@ -104,75 +104,22 @@ export function createVaultTools(ctx: UseCaseContext): ToolDefinition[] {
   return [vaultRead, vaultList, vaultGrep, searchVault];
 }
 
-export const PROPOSE_TOOL_NAMES = ['propose_triage', 'propose_note', 'propose_update'];
+export const PROPOSE_TOOL_NAMES = ['propose_note', 'propose_update', 'propose_decision'];
 
 /**
- * Write-path tools — the agent PROPOSES, never writes (PLAN §3.3). Handlers
- * validate before persisting: signal/theme targets must resolve against the
- * index, else the call fails (unless flagged inference). Proposals persist as
- * rows and return an id; the review queue applies accepted ones.
+ * Write-path tools — the agent PROPOSES, never writes (PLAN-V2 §3.3). Every card
+ * is validated before persisting: cited evidence must resolve against the index or
+ * a tool result, else the call fails (unless flagged inference). Cards persist as
+ * rows and return an id; the Inbox applies accepted ones.
  */
 export function createProposeTools(ctx: UseCaseContext, sessionId: string): ToolDefinition[] {
-  const proposeTriage = defineTool({
-    name: 'propose_triage',
-    label: 'Propose triage',
-    description:
-      'Propose a cluster-level triage decision for one or more NEW signals: link them to an existing theme, create a new theme, or discard. The group is the unit — propose one decision per cluster of duplicates. themeRef is a wikilink like "[[themes/sso-onboarding]]".',
-    parameters: Type.Object({
-      signalPaths: Type.Array(Type.String(), { description: 'Vault paths of the signals in this group.' }),
-      action: Type.Union([Type.Literal('link'), Type.Literal('new-theme'), Type.Literal('discard')]),
-      themeRef: Type.Optional(Type.String({ description: 'For "link": the existing theme wikilink.' })),
-      newTheme: Type.Optional(
-        Type.Object({
-          summary: Type.String(),
-          stance: Type.Union(THEME_STANCES.map((s) => Type.Literal(s))),
-        }),
-      ),
-      rationale: Type.String({ description: 'One-line reason for this decision.' }),
-    }),
-    async execute(_id, params: unknown) {
-      const parsed = zTriagePayload.safeParse(params);
-      if (!parsed.success) {
-        return text(`Rejected: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
-      }
-      const payload = parsed.data;
-
-      // Trust check: every signal (and the theme, for link) must resolve.
-      const refs = [...payload.signalPaths, ...(payload.themeRef ? [payload.themeRef] : [])];
-      const check = validateEvidence(refs, false, (ref) => !!ctx.index.resolve(stripLink(ref)));
-      if (!check.ok) return text(`Rejected: ${check.reason}`);
-
-      let targetPath: string | null = null;
-      let baseHash: string | null = null;
-      if (payload.action === 'link' && payload.themeRef) {
-        targetPath = ctx.index.resolve(stripLink(payload.themeRef));
-        const theme = targetPath ? await ctx.vault.readNote(targetPath) : null;
-        if (theme) baseHash = contentHash(theme.body + JSON.stringify(theme.frontmatter));
-      }
-
-      const rec = createProposal(ctx, {
-        kind: 'triage',
-        sessionId,
-        targetPath,
-        baseHash,
-        payload,
-        rationale: payload.rationale,
-        evidence: refs.map((r) => ({ ref: r, resolved: true })),
-        inference: false,
-      });
-      return text(
-        `Proposed (${rec.id}): ${payload.action} for ${payload.signalPaths.length} signal(s). Awaiting the PM's review.`,
-      );
-    },
-  });
-
   const proposeNote = defineTool({
     name: 'propose_note',
     label: 'Propose note',
     description:
-      'Propose a NEW note (decision, action, open-question, meeting-summary, or note). frontmatter must include type + summary; derived notes must list sources[] (wikilinks). Every source must resolve unless inference:true.',
+      'Propose a NEW note (insight, meeting summary, customer/problem hub, release, person, or generic note). frontmatter must include type + summary; claim-like notes must list evidence/sources[] (wikilinks). Every source must resolve unless inference:true. For decisions use propose_decision.',
     parameters: Type.Object({
-      path: Type.String({ description: 'Vault path, e.g. "decisions/adopt-workos.md".' }),
+      path: Type.String({ description: 'Workspace path, e.g. "insights/acme-wants-scim.md".' }),
       frontmatter: Type.Record(Type.String(), Type.Any()),
       body: Type.String(),
       rationale: Type.String(),
@@ -200,11 +147,49 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string): Tool
     },
   });
 
+  const proposeDecision = defineTool({
+    name: 'propose_decision',
+    label: 'Propose decision',
+    description:
+      'Propose a NEW decision for the append-only decision spine. frontmatter must include type:"decision" + summary; cite sources[] (the meeting + any evidence). To record that this replaces an earlier decision, pass "supersedes" with that decision\'s slug (e.g. "decisions/use-firebase-auth") — the old decision is never edited, only marked superseded on approval.',
+    parameters: Type.Object({
+      path: Type.String({ description: 'Workspace path, e.g. "decisions/adopt-workos.md".' }),
+      frontmatter: Type.Record(Type.String(), Type.Any()),
+      body: Type.String(),
+      rationale: Type.String(),
+      supersedes: Type.Optional(Type.String({ description: 'Slug of the decision this replaces.' })),
+      sources: Type.Optional(Type.Array(Type.String())),
+      inference: Type.Optional(Type.Boolean()),
+    }),
+    async execute(_id, params: unknown) {
+      const parsed = zDecisionPayload.safeParse(params);
+      if (!parsed.success) return text(`Rejected: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
+      const p = params as { sources?: string[]; inference?: boolean; supersedes?: string };
+      const sources = p.sources ?? [];
+      const check = validateEvidence(sources, !!p.inference, (ref) => !!ctx.index.resolve(stripLink(ref)));
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      if (p.supersedes && !ctx.index.resolve(stripLink(p.supersedes))) {
+        return text(`Rejected: supersedes target not found: ${p.supersedes}`);
+      }
+      const rec = createProposal(ctx, {
+        kind: 'decision',
+        sessionId,
+        targetPath: parsed.data.path,
+        baseHash: null,
+        payload: { ...parsed.data, ...(p.supersedes ? { supersedes: stripLink(p.supersedes) } : {}) },
+        rationale: parsed.data.rationale,
+        evidence: sources.map((s) => ({ ref: s, resolved: true })),
+        inference: !!p.inference,
+      });
+      return text(`Proposed decision (${rec.id}): ${parsed.data.path}. Awaiting review.`);
+    },
+  });
+
   const proposeUpdate = defineTool({
     name: 'propose_update',
     label: 'Propose update',
     description:
-      'Propose an edit to an EXISTING authored/derived note using search/replace blocks (exact anchor text + replacement). Use for answering an open question, adding evidence to a theme, or flagging a contradiction.',
+      'Propose an edit to an EXISTING authored/derived note using search/replace blocks (exact anchor text + replacement). Use for answering an open question, adding evidence to a problem/customer hub, updating a meeting page, or flagging a contradiction.',
     parameters: Type.Object({
       path: Type.String(),
       patch: Type.Array(Type.Object({ search: Type.String(), replace: Type.String() })),
@@ -237,7 +222,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string): Tool
     },
   });
 
-  return [proposeTriage, proposeNote, proposeUpdate];
+  return [proposeNote, proposeUpdate, proposeDecision];
 }
 
 export const ATLASSIAN_TOOL_NAMES = ['jira_search', 'jira_get_issue', 'confluence_search', 'confluence_get_page'];

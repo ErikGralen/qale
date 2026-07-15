@@ -22,9 +22,9 @@ function Center() {
       return <ChatView key={view.sessionType} sessionType={view.sessionType} initialPrompt={view.initialPrompt} />;
     case 'review':
       return <ReviewView />;
-    case 'themes':
+    case 'problems':
       return <ThemesView />;
-    case 'ingest':
+    case 'meeting-drop':
       return <IngestView />;
     case 'settings':
       return <SettingsView />;

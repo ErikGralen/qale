@@ -9,26 +9,27 @@ import {
 } from 'react';
 import type {
   BacklinkDTO,
-  CaptureSignalInput,
+  CaptureNoteInput,
+  HealthDTO,
   NoteDTO,
+  ProblemHeatDTO,
+  ProblemStance,
   ProposalDTO,
   SearchHitDTO,
-  ThemeHeatDTO,
-  ThemeStance,
   VaultInfoDTO,
   VaultTreeDTO,
 } from '@pm/ipc';
 import { invoke, onEvent } from '../lib/ipc';
 
-export type ChatSessionType = 'chat' | 'ask' | 'triage' | 'ingest-transcript';
+export type ChatSessionType = 'chat' | 'ask' | 'after-meeting';
 
 export type CenterView =
   | { kind: 'landing' }
   | { kind: 'note'; path: string }
   | { kind: 'chat'; sessionType: ChatSessionType; initialPrompt?: string }
   | { kind: 'review' }
-  | { kind: 'themes' }
-  | { kind: 'ingest' }
+  | { kind: 'problems' }
+  | { kind: 'meeting-drop' }
   | { kind: 'settings' };
 
 interface AppState {
@@ -40,22 +41,22 @@ interface AppState {
   openVaultDialog: () => Promise<void>;
   pendingCount: number;
   proposals: ProposalDTO[];
-  themes: ThemeHeatDTO[];
+  problems: ProblemHeatDTO[];
+  health: HealthDTO | null;
   openNote: (path: string) => Promise<void>;
   showLanding: () => void;
   showChat: (sessionType?: ChatSessionType, initialPrompt?: string) => void;
   showReview: () => void;
-  showThemes: () => void;
-  showIngest: () => void;
+  showProblems: () => void;
+  showMeetingDrop: () => void;
   showSettings: () => void;
-  startTriage: () => void;
-  ingestTranscript: (title: string, body: string) => Promise<void>;
+  dropMeeting: (title: string, body: string) => Promise<void>;
   previewProposal: (id: string) => Promise<{ before: string; after: string; stale: boolean } | null>;
   refreshProposals: () => Promise<void>;
   acceptProposal: (id: string, edited?: unknown) => Promise<{ ok: boolean; stale?: boolean }>;
   rejectProposal: (id: string) => Promise<void>;
-  setThemeStance: (path: string, stance: ThemeStance) => Promise<void>;
-  captureSignal: (input: CaptureSignalInput) => Promise<NoteDTO>;
+  setProblemStance: (path: string, stance: ProblemStance) => Promise<void>;
+  captureNote: (input: CaptureNoteInput) => Promise<NoteDTO>;
   saveNote: (path: string, body: string) => Promise<void>;
   search: (query: string) => Promise<SearchHitDTO[]>;
   refresh: () => Promise<void>;
@@ -71,7 +72,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [backlinks, setBacklinks] = useState<BacklinkDTO[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [proposals, setProposals] = useState<ProposalDTO[]>([]);
-  const [themes, setThemes] = useState<ThemeHeatDTO[]>([]);
+  const [problems, setProblems] = useState<ProblemHeatDTO[]>([]);
+  const [health, setHealth] = useState<HealthDTO | null>(null);
 
   const refreshTree = useCallback(async () => {
     try {
@@ -110,31 +112,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [],
   );
   const showReview = useCallback(() => setView({ kind: 'review' }), []);
-  const showThemes = useCallback(() => setView({ kind: 'themes' }), []);
-  const showIngest = useCallback(() => setView({ kind: 'ingest' }), []);
+  const showProblems = useCallback(() => setView({ kind: 'problems' }), []);
+  const showMeetingDrop = useCallback(() => setView({ kind: 'meeting-drop' }), []);
   const showSettings = useCallback(() => setView({ kind: 'settings' }), []);
-  const startTriage = useCallback(
-    () => setView({ kind: 'chat', sessionType: 'triage', initialPrompt: 'Triage my new signals.' }),
-    [],
-  );
 
-  const ingestTranscript = useCallback(
+  const dropMeeting = useCallback(
     async (title: string, body: string) => {
-      const note = await invoke['transcript:capture']({ title, body });
+      const note = await invoke['meeting:capture']({ title, body });
       await refreshTree();
       setView({
         kind: 'chat',
-        sessionType: 'ingest-transcript',
-        initialPrompt: `Ingest the transcript at ${note.path}: propose signals, decisions, actions, updates to existing notes, and a meeting summary.`,
+        sessionType: 'after-meeting',
+        initialPrompt: `Run the After-Meeting session on ${note.path}: read the transcript and related memory, then produce the truth delta as approval cards.`,
       });
     },
     [refreshTree],
   );
 
-  const previewProposal = useCallback(
-    (id: string) => invoke['proposals:preview'](id),
-    [],
-  );
+  const previewProposal = useCallback((id: string) => invoke['proposals:preview'](id), []);
 
   const refreshProposals = useCallback(async () => {
     try {
@@ -147,21 +142,29 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const refreshThemes = useCallback(async () => {
+  const refreshProblems = useCallback(async () => {
     try {
-      setThemes(await invoke['themes:byHeat']());
+      setProblems(await invoke['problems:byHeat']());
     } catch {
-      setThemes([]);
+      setProblems([]);
+    }
+  }, []);
+
+  const refreshHealth = useCallback(async () => {
+    try {
+      setHealth(await invoke['vault:health']());
+    } catch {
+      setHealth(null);
     }
   }, []);
 
   const acceptProposal = useCallback(
     async (id: string, edited?: unknown) => {
       const result = await invoke['proposals:accept'](id, edited);
-      await Promise.all([refreshProposals(), refreshTree(), refreshThemes()]);
+      await Promise.all([refreshProposals(), refreshTree(), refreshProblems(), refreshHealth()]);
       return result;
     },
-    [refreshProposals, refreshTree, refreshThemes],
+    [refreshProposals, refreshTree, refreshProblems, refreshHealth],
   );
 
   const rejectProposal = useCallback(
@@ -172,20 +175,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [refreshProposals],
   );
 
-  const setThemeStance = useCallback(
-    async (path: string, stance: ThemeStance) => {
-      await invoke['note:setThemeStance'](path, stance);
-      await Promise.all([refreshThemes(), refreshTree()]);
+  const setProblemStance = useCallback(
+    async (path: string, stance: ProblemStance) => {
+      await invoke['note:setProblemStance'](path, stance);
+      await Promise.all([refreshProblems(), refreshTree()]);
     },
-    [refreshThemes, refreshTree],
+    [refreshProblems, refreshTree],
   );
 
   const bootVault = useCallback(
     async (info: VaultInfoDTO | null) => {
       setVault(info);
-      if (info) await Promise.all([refreshTree(), refreshProposals(), refreshThemes()]);
+      if (info) await Promise.all([refreshTree(), refreshProposals(), refreshProblems(), refreshHealth()]);
     },
-    [refreshTree, refreshProposals, refreshThemes],
+    [refreshTree, refreshProposals, refreshProblems, refreshHealth],
   );
 
   const openVaultDialog = useCallback(async () => {
@@ -193,9 +196,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (info) await bootVault(info);
   }, [bootVault]);
 
-  const captureSignal = useCallback(
-    async (input: CaptureSignalInput) => {
-      const note = await invoke['signal:capture'](input);
+  const captureNote = useCallback(
+    async (input: CaptureNoteInput) => {
+      const note = await invoke['note:capture'](input);
       await refreshTree();
       return note;
     },
@@ -220,7 +223,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (view.kind === 'note') await loadNote(view.path);
   }, [refreshTree, loadNote, view]);
 
-  // Initial load: any vault opened on startup by main.
+  // Initial load: any workspace opened on startup by main.
   useEffect(() => {
     void invoke['vault:current']().then(async (info) => {
       await bootVault(info);
@@ -228,26 +231,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (info && open === '__settings') setView({ kind: 'settings' });
       else if (info && open === '__chat') setView({ kind: 'chat', sessionType: 'chat' });
       else if (info && open === '__review') setView({ kind: 'review' });
-      else if (info && open === '__themes') setView({ kind: 'themes' });
-      else if (info && open === '__ingest') setView({ kind: 'ingest' });
+      else if (info && open === '__problems') setView({ kind: 'problems' });
+      else if (info && open === '__meeting') setView({ kind: 'meeting-drop' });
       else if (info && open) void openNote(open);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootVault]);
 
-  // Live refresh when the vault changes on disk (external Obsidian edits).
+  // Live refresh when the workspace changes on disk (external Obsidian edits).
   useEffect(() => {
     return onEvent((event) => {
       if (event.channel === 'vault:changed') {
         void refreshTree();
-        void refreshThemes();
+        void refreshProblems();
+        void refreshHealth();
         if (view.kind === 'note' && event.paths.includes(view.path)) void loadNote(view.path);
       } else if (event.channel === 'proposals:changed') {
         setPendingCount(event.pendingCount);
         void refreshProposals();
       }
     });
-  }, [refreshTree, refreshThemes, refreshProposals, loadNote, view]);
+  }, [refreshTree, refreshProblems, refreshHealth, refreshProposals, loadNote, view]);
 
   const value = useMemo<AppState>(
     () => ({
@@ -259,27 +263,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openVaultDialog,
       pendingCount,
       proposals,
-      themes,
+      problems,
+      health,
       openNote,
       showLanding,
       showChat,
       showReview,
-      showThemes,
-      showIngest,
+      showProblems,
+      showMeetingDrop,
       showSettings,
-      startTriage,
-      ingestTranscript,
+      dropMeeting,
       previewProposal,
       refreshProposals,
       acceptProposal,
       rejectProposal,
-      setThemeStance,
-      captureSignal,
+      setProblemStance,
+      captureNote,
       saveNote,
       search,
       refresh,
     }),
-    [vault, tree, view, currentNote, backlinks, pendingCount, proposals, themes, openVaultDialog, openNote, showLanding, showChat, showReview, showThemes, showIngest, showSettings, startTriage, ingestTranscript, previewProposal, refreshProposals, acceptProposal, rejectProposal, setThemeStance, captureSignal, saveNote, search, refresh],
+    [vault, tree, view, currentNote, backlinks, pendingCount, proposals, problems, health, openVaultDialog, openNote, showLanding, showChat, showReview, showProblems, showMeetingDrop, showSettings, dropMeeting, previewProposal, refreshProposals, acceptProposal, rejectProposal, setProblemStance, captureNote, saveNote, search, refresh],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

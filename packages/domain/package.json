@@ -6,19 +6,20 @@
   "exports": {
     ".": "./src/index.ts",
     "./notes": "./src/notes/index.ts",
-    "./themes": "./src/themes/index.ts",
-    "./signals": "./src/signals/index.ts",
+    "./problems": "./src/problems/index.ts",
     "./proposals": "./src/proposals/index.ts",
     "./search": "./src/search/index.ts"
   },
   "scripts": {
-    "check-types": "tsc --noEmit -p tsconfig.json"
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@pm/typescript-config": "workspace:*",
+    "tsx": "^4.23.1",
     "typescript": "~5.9.2"
   }
 }

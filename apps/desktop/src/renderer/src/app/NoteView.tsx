@@ -4,8 +4,6 @@ import { Pencil, Link2, FileText, Save, X } from 'lucide-react';
 import { useApp } from '../state/app-state';
 import { Markdown } from '../components/Markdown';
 
-const RAW_TYPES = new Set(['signal', 'transcript']);
-
 export function NoteView() {
   const { currentNote, backlinks, openNote, saveNote } = useApp();
   const [editing, setEditing] = useState(false);
@@ -24,7 +22,7 @@ export function NoteView() {
     );
   }
 
-  const editable = !RAW_TYPES.has(currentNote.type);
+  const editable = currentNote.bodyEditable;
   const stance = currentNote.frontmatter['stance'] as string | undefined;
 
   return (

@@ -2,26 +2,29 @@
  * DTOs — the leaf contract between main, preload and renderer.
  *
  * Everything here MUST be structured-clone-safe: plain objects, arrays and
- * primitives only. No class instances, functions, Dates, or streams (PLAN §6.11).
- * Domain entities map to these at the IPC boundary; the renderer never sees a
- * domain object.
+ * primitives only. No class instances, functions, Dates, or streams. Domain
+ * entities map to these at the IPC boundary; the renderer never sees a domain
+ * object.
  */
 
 export type NoteLayer = 'raw' | 'derived' | 'authored';
 
 export type NoteType =
-  | 'signal'
-  | 'transcript'
-  | 'meeting-summary'
-  | 'theme'
+  | 'meeting'
   | 'decision'
-  | 'action'
-  | 'open-question'
+  | 'insight'
+  | 'customer'
+  | 'problem'
+  | 'release'
+  | 'person'
+  | 'session'
+  | 'skill'
   | 'note';
 
-export type ThemeStance = 'exploring' | 'watching' | 'committed' | 'wont-do';
+export type ProblemStance = 'exploring' | 'watching' | 'committed' | 'wont-do';
 
-export type SignalStatus = 'new' | 'linked' | 'discarded';
+export type DecisionStatus = 'active' | 'superseded';
+export type ConfidenceLevel = 'high' | 'med' | 'low';
 
 /** A source reference stored in frontmatter (raw provenance). */
 export interface SourceRefDTO {
@@ -30,9 +33,19 @@ export interface SourceRefDTO {
   url?: string;
 }
 
+/** Computed freshness for a note (decay clock), sent alongside the note. */
+export interface FreshnessDTO {
+  tracked: boolean;
+  freshForDays: number | null;
+  lastVerified: string | null;
+  ageDays: number | null;
+  stale: boolean;
+  unverified: boolean;
+}
+
 /** A note as the renderer sees it — frontmatter flattened + raw markdown body. */
 export interface NoteDTO {
-  /** Vault-relative path, e.g. "signals/2026-07-12-gong-sso.md". */
+  /** Workspace-relative path, e.g. "decisions/adopt-workos.md". */
   path: string;
   /** Slug = path without extension, used as wikilink target. */
   slug: string;
@@ -45,6 +58,9 @@ export interface NoteDTO {
   /** Raw markdown body (no frontmatter). */
   body: string;
   mtime: number;
+  freshness: FreshnessDTO;
+  /** Whether this note type's body may be edited (false for decisions/sessions). */
+  bodyEditable: boolean;
 }
 
 /** Lightweight note reference for lists/trees (no body). */
@@ -55,6 +71,8 @@ export interface NoteRefDTO {
   title: string;
   summary: string;
   mtime: number;
+  status?: string | null;
+  stale?: boolean;
 }
 
 export interface VaultInfoDTO {
@@ -66,7 +84,7 @@ export interface VaultInfoDTO {
 }
 
 export interface VaultTreeGroupDTO {
-  /** Folder name = layer bucket, e.g. "signals", "themes". */
+  /** Folder name, e.g. "meetings", "decisions". */
   dir: string;
   type: NoteType;
   layer: NoteLayer;
@@ -94,17 +112,32 @@ export interface SearchHitDTO {
   score: number;
 }
 
-export interface ThemeHeatDTO extends NoteRefDTO {
-  stance: ThemeStance;
+export interface ProblemHeatDTO extends NoteRefDTO {
+  stance: ProblemStance;
   evidenceCount: number;
   newest: string | null;
 }
 
-export interface CaptureSignalInput {
-  /** Free text body of the signal. */
+export interface HealthDTO {
+  total: number;
+  fresh: number;
+  stale: number;
+  unverified: number;
+  score: number;
+}
+
+export interface CaptureNoteInput {
   body: string;
   summary?: string;
   source?: SourceRefDTO;
+}
+
+export interface CaptureMeetingInput {
+  title: string;
+  body: string;
+  source?: SourceRefDTO;
+  participants?: string[];
+  safeSpace?: boolean;
 }
 
 export interface SaveNoteInput {
@@ -112,10 +145,9 @@ export interface SaveNoteInput {
   body: string;
 }
 
-export interface CaptureTranscriptInput {
-  title: string;
-  body: string;
-  source?: SourceRefDTO;
+export interface SaveFrontmatterInput {
+  path: string;
+  frontmatter: Record<string, unknown>;
 }
 
 export interface ProposalPreviewDTO {
@@ -125,29 +157,17 @@ export interface ProposalPreviewDTO {
 }
 
 // ---------------------------------------------------------------------------
-// Proposals (Phases 3–5) — the only write path for the agent.
+// Proposals (approval cards) — the only write path for the agent.
 // ---------------------------------------------------------------------------
 
-export type ProposalKind = 'triage' | 'note' | 'update';
+export type ProposalKind = 'note' | 'update' | 'decision';
 export type ProposalStatus = 'pending' | 'accepted' | 'rejected' | 'stale';
-export type TriageAction = 'link' | 'new-theme' | 'discard';
 
 export interface EvidenceRefDTO {
-  /** Wikilink target or external URL supporting the proposal. */
+  /** Wikilink target or external URL supporting the card. */
   ref: string;
   label?: string;
   resolved: boolean;
-}
-
-export interface TriagePayloadDTO {
-  signalPaths: string[];
-  action: TriageAction;
-  /** Existing theme wikilink for `link`. */
-  themeRef?: string;
-  /** New theme spec for `new-theme`. */
-  newTheme?: { summary: string; stance: ThemeStance };
-  groupId?: string;
-  rationale: string;
 }
 
 export interface NotePayloadDTO {
@@ -157,9 +177,17 @@ export interface NotePayloadDTO {
   rationale: string;
 }
 
+export interface DecisionPayloadDTO {
+  path: string;
+  frontmatter: Record<string, unknown>;
+  body: string;
+  rationale: string;
+  supersedes?: string;
+}
+
 export interface UpdatePayloadDTO {
   path: string;
-  /** Search/replace blocks (LLM-reliable patch format, PLAN §3.5). */
+  /** Search/replace blocks (LLM-reliable patch format, PLAN-V2 §3.1). */
   patch: { search: string; replace: string }[];
   rationale: string;
 }
@@ -169,7 +197,7 @@ export interface ProposalDTO {
   kind: ProposalKind;
   sessionId: string;
   targetPath: string | null;
-  payload: TriagePayloadDTO | NotePayloadDTO | UpdatePayloadDTO;
+  payload: NotePayloadDTO | DecisionPayloadDTO | UpdatePayloadDTO;
   rationale: string;
   evidence: EvidenceRefDTO[];
   inference: boolean;
@@ -179,10 +207,10 @@ export interface ProposalDTO {
 }
 
 // ---------------------------------------------------------------------------
-// Agent / chat
+// Agent / chat / sessions
 // ---------------------------------------------------------------------------
 
-export type SessionType = 'chat' | 'triage' | 'ingest-transcript' | 'ask';
+export type SessionType = 'chat' | 'ask' | 'after-meeting';
 
 export interface AgentRunInput {
   sessionType: SessionType;

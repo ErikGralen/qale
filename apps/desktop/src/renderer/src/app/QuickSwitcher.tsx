@@ -13,7 +13,7 @@ import { useApp } from '../state/app-state';
 
 /** ⌘K quick switcher — backed by the FTS5 index over IPC (no second search engine). */
 export function QuickSwitcher({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const { search, openNote } = useApp();
+  const { search, openDoc } = useApp();
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<SearchHitDTO[]>([]);
 
@@ -50,7 +50,7 @@ export function QuickSwitcher({ open, onOpenChange }: { open: boolean; onOpenCha
                   value={h.path}
                   onSelect={() => {
                     onOpenChange(false);
-                    void openNote(h.path);
+                    void openDoc(h.path);
                   }}
                 >
                   <div className="flex min-w-0 flex-col">

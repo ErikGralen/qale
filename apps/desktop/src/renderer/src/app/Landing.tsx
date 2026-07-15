@@ -4,7 +4,7 @@ import { ArrowRight, FolderOpen } from 'lucide-react';
 import { useApp } from '../state/app-state';
 
 export function Landing() {
-  const { vault, openVaultDialog, captureNote, openNote } = useApp();
+  const { vault, openVaultDialog, captureNote, openDoc } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -14,7 +14,7 @@ export function Landing() {
     try {
       const note = await captureNote({ body: text.trim() });
       setText('');
-      await openNote(note.path);
+      await openDoc(note.path);
     } finally {
       setBusy(false);
     }

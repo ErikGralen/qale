@@ -12,6 +12,7 @@ import {
   getProblemsByHeat,
   getVaultTree,
   getWorkspaceHealth,
+  queryNotes,
   listProposals,
   previewProposal,
   rebuild,
@@ -30,6 +31,7 @@ import { VaultService } from './services/vault-service.js';
 import {
   backlinkToDTO,
   hitToDTO,
+  indexedToRefDTO,
   noteToDTO,
   problemHeatToDTO,
   proposalToDTO,
@@ -159,6 +161,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   handle('vault:rebuildIndex', () => rebuild(vaultService.requireContext()));
   handle('vault:health', () => getWorkspaceHealth(vaultService.requireContext()));
   handle('vault:refreshIndexes', () => refreshFolderIndexes(vaultService.requireContext()));
+  handle('vault:query', (query) =>
+    queryNotes(vaultService.requireContext(), query).map((n) => indexedToRefDTO(n, now())),
+  );
 
   handle('note:get', async (path) => {
     const note = await getNote(vaultService.requireContext(), path);

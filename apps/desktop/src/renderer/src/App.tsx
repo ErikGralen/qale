@@ -6,24 +6,35 @@ import { Landing } from './app/Landing';
 import { NoteView } from './app/NoteView';
 import { ChatView } from './app/ChatView';
 import { SettingsView } from './app/SettingsView';
-import { ReviewView } from './app/ReviewView';
-import { ThemesView } from './app/ThemesView';
+import { InboxView } from './app/InboxView';
+import { SmartViewPage } from './app/SmartViewPage';
+import { FolderView } from './app/FolderView';
 import { IngestView } from './app/IngestView';
 import { RightPanel } from './app/RightPanel';
+import { TabStrip } from './app/TabStrip';
 import { QuickSwitcher } from './app/QuickSwitcher';
 import { QuickCapture } from './app/QuickCapture';
 
 function Center() {
-  const { view } = useApp();
-  switch (view.kind) {
-    case 'note':
-      return <NoteView />;
-    case 'chat':
-      return <ChatView key={view.sessionType} sessionType={view.sessionType} initialPrompt={view.initialPrompt} />;
-    case 'review':
-      return <ReviewView />;
-    case 'problems':
-      return <ThemesView />;
+  const { activeTab } = useApp();
+  if (!activeTab) return <Landing />;
+  switch (activeTab.kind) {
+    case 'doc':
+      return <NoteView key={activeTab.path} path={activeTab.path} />;
+    case 'session':
+      return (
+        <ChatView
+          key={activeTab.id}
+          sessionType={activeTab.sessionType}
+          initialPrompt={activeTab.initialPrompt}
+        />
+      );
+    case 'inbox':
+      return <InboxView />;
+    case 'smartview':
+      return <SmartViewPage key={activeTab.viewId} viewId={activeTab.viewId} />;
+    case 'folder':
+      return <FolderView key={activeTab.dir} dir={activeTab.dir} />;
     case 'meeting-drop':
       return <IngestView />;
     case 'settings':
@@ -36,7 +47,7 @@ function Center() {
 function Shell() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
-  const { showChat } = useApp();
+  const { openSession, activeTab } = useApp();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -50,12 +61,14 @@ function Shell() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
-        showChat('ask');
+        openSession('ask');
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showChat]);
+  }, [openSession]);
+
+  const showRight = activeTab?.kind === 'doc';
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-background text-foreground">
@@ -64,13 +77,22 @@ function Shell() {
           <Sidebar />
         </ResizablePanel>
         <ResizableHandle />
-        <ResizablePanel defaultSize="52%" minSize="30%">
-          <Center />
+        <ResizablePanel defaultSize={showRight ? '52%' : '80%'} minSize="30%">
+          <div className="flex h-full flex-col">
+            <TabStrip />
+            <div className="min-h-0 flex-1">
+              <Center />
+            </div>
+          </div>
         </ResizablePanel>
-        <ResizableHandle />
-        <ResizablePanel defaultSize="28%" minSize="18%" maxSize="40%">
-          <RightPanel />
-        </ResizablePanel>
+        {showRight && (
+          <>
+            <ResizableHandle />
+            <ResizablePanel defaultSize="28%" minSize="18%" maxSize="40%">
+              <RightPanel />
+            </ResizablePanel>
+          </>
+        )}
       </ResizablePanelGroup>
 
       <QuickSwitcher open={switcherOpen} onOpenChange={setSwitcherOpen} />

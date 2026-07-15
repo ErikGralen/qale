@@ -23,7 +23,9 @@ function write(rel: string, frontmatter: Record<string, unknown>, body: string):
 
 function fmt(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map((x) => JSON.stringify(x)).join(', ')}]`;
-  if (typeof v === 'string') return v.includes(':') || v.includes('#') ? JSON.stringify(v) : v;
+  // Always quote string scalars: wikilinks ("[[…]]") would otherwise parse as
+  // nested YAML sequences, and colons/hashes break the scalar.
+  if (typeof v === 'string') return JSON.stringify(v);
   return String(v);
 }
 

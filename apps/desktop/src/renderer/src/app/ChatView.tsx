@@ -54,17 +54,21 @@ function ToolPart({ part }: { part: AnyPart }) {
 export function ChatView({
   sessionType = 'chat',
   initialPrompt,
+  scopeHint,
 }: {
   sessionType?: 'chat' | 'ask' | 'after-meeting';
   initialPrompt?: string;
+  /** Prepended to the first user message to scope the read (side chat). */
+  scopeHint?: string;
 }) {
   const proposesWrites = sessionType === 'after-meeting';
-  const { openNote, refreshProposals, showReview, pendingCount } = useApp();
+  const { openDoc, refreshProposals, openInbox, pendingCount } = useApp();
   const transport = useMemo(() => new IpcChatTransport(sessionType), [sessionType]);
   const { messages, sendMessage, status, stop, error } = useChat({ transport });
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentInitial = useRef(false);
+  const firstMsg = useRef(true);
 
   const busy = status === 'submitted' || status === 'streaming';
 
@@ -72,15 +76,23 @@ export function ChatView({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, status]);
 
-  // Auto-send the initial prompt once (e.g. triage kickoff).
+  const send = (raw: string) => {
+    let text = raw;
+    if (firstMsg.current && scopeHint) text = `${scopeHint}\n\n${raw}`;
+    firstMsg.current = false;
+    void sendMessage({ text });
+  };
+
+  // Auto-send the initial prompt once (e.g. After-Meeting kickoff).
   useEffect(() => {
     if (initialPrompt && !sentInitial.current) {
       sentInitial.current = true;
-      void sendMessage({ text: initialPrompt });
+      send(initialPrompt);
     }
-  }, [initialPrompt, sendMessage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPrompt]);
 
-  // After a proposing turn settles, refresh the review queue.
+  // After a proposing turn settles, refresh the Inbox.
   useEffect(() => {
     if (status === 'ready' && proposesWrites) void refreshProposals();
   }, [status, proposesWrites, refreshProposals]);
@@ -89,7 +101,7 @@ export function ChatView({
     const text = input.trim();
     if (!text || busy) return;
     setInput('');
-    void sendMessage({ text });
+    send(text);
   };
 
   return (
@@ -106,7 +118,7 @@ export function ChatView({
         <div className="mx-auto flex max-w-2xl flex-col gap-4 py-4">
           {messages.length === 0 && (
             <p className="mt-16 text-center text-sm text-muted-foreground">
-              Ask about onboarding, a theme, or what you know about a customer.
+              Ask about a decision, a customer, or what you know about a problem.
             </p>
           )}
           {messages.map((message) => (
@@ -123,7 +135,7 @@ export function ChatView({
                     return message.role === 'user' ? (
                       <span key={i} className="whitespace-pre-wrap">{part.text}</span>
                     ) : (
-                      <Markdown key={i} content={part.text ?? ''} onOpenNote={openNote} />
+                      <Markdown key={i} content={part.text ?? ''} onOpenNote={openDoc} />
                     );
                   }
                   if (part.type === 'reasoning') return <ReasoningPart key={i} text={part.text ?? ''} />;
@@ -142,10 +154,10 @@ export function ChatView({
         <div className="mx-6 mb-2">
           <button
             className="mx-auto flex max-w-2xl w-full items-center gap-2 rounded-lg border border-brand/40 bg-brand/8 px-3 py-2 text-sm text-brand"
-            onClick={showReview}
+            onClick={openInbox}
           >
             <span className="font-medium">{pendingCount} proposal{pendingCount === 1 ? '' : 's'} to review</span>
-            <span className="ml-auto">Open review queue →</span>
+            <span className="ml-auto">Open Inbox →</span>
           </button>
         </div>
       )}
@@ -161,7 +173,7 @@ export function ChatView({
                 submit();
               }
             }}
-            placeholder="Ask the brain…"
+            placeholder="Ask your product memory…"
             rows={1}
             className="max-h-40 flex-1 resize-none bg-transparent px-1.5 py-1 text-[15px] outline-none"
           />

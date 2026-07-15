@@ -126,6 +126,17 @@ export interface HealthDTO {
   score: number;
 }
 
+/** Structured smart-view filter over the files table (no query syntax). */
+export interface NoteQueryDTO {
+  types?: NoteType[];
+  status?: string;
+  stale?: boolean;
+  unverified?: boolean;
+  recentDays?: number;
+  customer?: string;
+  limit?: number;
+}
+
 export interface CaptureNoteInput {
   body: string;
   summary?: string;

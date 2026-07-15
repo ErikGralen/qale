@@ -93,6 +93,47 @@ export function getWorkspaceHealth(ctx: UseCaseContext) {
   return computeHealth(all, ctx.clock.now());
 }
 
+export interface NoteQuery {
+  types?: NoteType[];
+  status?: string;
+  /** Only freshness-tracked notes that are past their decay window. */
+  stale?: boolean;
+  /** Only freshness-tracked notes never verified. */
+  unverified?: boolean;
+  /** Notes touched (mtime) within the last N days. */
+  recentDays?: number;
+  /** Notes whose `customer` frontmatter ref resolves to this slug. */
+  customer?: string;
+  limit?: number;
+}
+
+/**
+ * Smart-view queries (PLAN-V2 §3.3) — structured filters over the files table,
+ * no user-facing query syntax. Powers the left-panel saved views.
+ */
+export function queryNotes(ctx: UseCaseContext, q: NoteQuery): IndexedNote[] {
+  const now = ctx.clock.now();
+  const cutoff = q.recentDays ? Date.now() - q.recentDays * 24 * 60 * 60 * 1000 : null;
+  let rows = ctx.index.all().filter((n) => !n.path.endsWith('/index.md'));
+  if (q.types) rows = rows.filter((n) => q.types!.includes(n.type));
+  if (q.status) rows = rows.filter((n) => n.status === q.status);
+  if (cutoff !== null) rows = rows.filter((n) => n.mtime >= cutoff);
+  if (q.customer) {
+    rows = rows.filter((n) => {
+      const c = n.frontmatter['customer'];
+      return typeof c === 'string' && stripBrackets(c).replace(/\.md$/, '').endsWith(q.customer!);
+    });
+  }
+  if (q.stale || q.unverified) {
+    rows = rows.filter((n) => {
+      const f = computeFreshness(n.frontmatter as Frontmatter, now);
+      return (q.stale && f.stale) || (q.unverified && f.unverified);
+    });
+  }
+  rows.sort((a, b) => b.mtime - a.mtime);
+  return q.limit ? rows.slice(0, q.limit) : rows;
+}
+
 export interface StaleRow {
   note: IndexedNote;
   ageDays: number | null;

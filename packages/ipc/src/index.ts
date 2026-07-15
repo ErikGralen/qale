@@ -5,6 +5,8 @@ import type {
   CaptureNoteInput,
   CaptureMeetingInput,
   HealthDTO,
+  NoteQueryDTO,
+  NoteRefDTO,
   ModelInfoDTO,
   ProposalPreviewDTO,
   NoteDTO,
@@ -52,6 +54,7 @@ export interface InvokeMap {
   'vault:rebuildIndex': { args: []; result: { indexed: number } };
   'vault:health': { args: []; result: HealthDTO };
   'vault:refreshIndexes': { args: []; result: { written: number } };
+  'vault:query': { args: [query: NoteQueryDTO]; result: NoteRefDTO[] };
 
   // Notes
   'note:get': { args: [path: string]; result: NoteDTO | null };
@@ -100,6 +103,7 @@ export const INVOKE_CHANNELS = [
   'vault:rebuildIndex',
   'vault:health',
   'vault:refreshIndexes',
+  'vault:query',
   'note:get',
   'note:save',
   'note:saveFrontmatter',

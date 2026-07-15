@@ -12,7 +12,7 @@ import { useApp } from '../state/app-state';
 
 /** ⌘N quick capture — drops a note into the workspace so real data accrues. */
 export function QuickCapture({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const { captureNote, openNote, vault } = useApp();
+  const { captureNote, openDoc, vault } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -23,7 +23,7 @@ export function QuickCapture({ open, onOpenChange }: { open: boolean; onOpenChan
       const note = await captureNote({ body: text.trim() });
       setText('');
       onOpenChange(false);
-      await openNote(note.path);
+      await openDoc(note.path);
     } finally {
       setBusy(false);
     }

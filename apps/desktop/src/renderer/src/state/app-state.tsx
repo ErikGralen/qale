@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -12,6 +13,8 @@ import type {
   CaptureNoteInput,
   HealthDTO,
   NoteDTO,
+  NoteQueryDTO,
+  NoteRefDTO,
   ProblemHeatDTO,
   ProblemStance,
   ProposalDTO,
@@ -20,36 +23,49 @@ import type {
   VaultTreeDTO,
 } from '@pm/ipc';
 import { invoke, onEvent } from '../lib/ipc';
+import { SMART_VIEWS, type SmartViewId } from './smart-views';
 
 export type ChatSessionType = 'chat' | 'ask' | 'after-meeting';
 
-export type CenterView =
-  | { kind: 'landing' }
-  | { kind: 'note'; path: string }
-  | { kind: 'chat'; sessionType: ChatSessionType; initialPrompt?: string }
-  | { kind: 'review' }
-  | { kind: 'problems' }
-  | { kind: 'meeting-drop' }
-  | { kind: 'settings' };
+/** A tab holds a document or a session interchangeably (PLAN-V2 §3.3). */
+export type Tab =
+  | { id: string; kind: 'doc'; path: string; title: string }
+  | { id: string; kind: 'session'; sessionType: ChatSessionType; sessionId?: string; initialPrompt?: string; title: string }
+  | { id: string; kind: 'inbox'; title: string }
+  | { id: string; kind: 'smartview'; viewId: SmartViewId; title: string }
+  | { id: string; kind: 'folder'; dir: string; title: string }
+  | { id: string; kind: 'meeting-drop'; title: string }
+  | { id: string; kind: 'settings'; title: string };
+
+interface DocData {
+  note: NoteDTO | null;
+  backlinks: BacklinkDTO[];
+}
 
 interface AppState {
   vault: VaultInfoDTO | null;
   tree: VaultTreeDTO | null;
-  view: CenterView;
-  currentNote: NoteDTO | null;
-  backlinks: BacklinkDTO[];
+  tabs: Tab[];
+  activeTabId: string | null;
+  activeTab: Tab | null;
+  docData: Record<string, DocData>;
   openVaultDialog: () => Promise<void>;
   pendingCount: number;
   proposals: ProposalDTO[];
   problems: ProblemHeatDTO[];
   health: HealthDTO | null;
-  openNote: (path: string) => Promise<void>;
-  showLanding: () => void;
-  showChat: (sessionType?: ChatSessionType, initialPrompt?: string) => void;
-  showReview: () => void;
-  showProblems: () => void;
-  showMeetingDrop: () => void;
-  showSettings: () => void;
+  // navigation
+  openDoc: (path: string) => Promise<void>;
+  openSession: (sessionType: ChatSessionType, opts?: { initialPrompt?: string; title?: string; fresh?: boolean }) => void;
+  openInbox: () => void;
+  openSmartView: (id: SmartViewId) => void;
+  openFolder: (dir: string) => void;
+  openMeetingDrop: () => void;
+  openSettings: () => void;
+  closeTab: (id: string) => void;
+  setActiveTab: (id: string) => void;
+  // data
+  query: (q: NoteQueryDTO) => Promise<NoteRefDTO[]>;
   dropMeeting: (title: string, body: string) => Promise<void>;
   previewProposal: (id: string) => Promise<{ before: string; after: string; stale: boolean } | null>;
   refreshProposals: () => Promise<void>;
@@ -58,22 +74,53 @@ interface AppState {
   setProblemStance: (path: string, stance: ProblemStance) => Promise<void>;
   captureNote: (input: CaptureNoteInput) => Promise<NoteDTO>;
   saveNote: (path: string, body: string) => Promise<void>;
+  saveFrontmatter: (path: string, frontmatter: Record<string, unknown>) => Promise<void>;
   search: (query: string) => Promise<SearchHitDTO[]>;
-  refresh: () => Promise<void>;
 }
 
 const Ctx = createContext<AppState | null>(null);
 
+let tabSeq = 0;
+const nextId = (): string => `t${Date.now().toString(36)}_${tabSeq++}`;
+
+const TABS_KEY = 'pm.tabs.v2';
+
+function loadPersistedTabs(): { tabs: Tab[]; activeTabId: string | null } {
+  try {
+    const raw = localStorage.getItem(TABS_KEY);
+    if (!raw) return { tabs: [], activeTabId: null };
+    const parsed = JSON.parse(raw) as { tabs: Tab[]; activeTabId: string | null };
+    // Drop live sessions on restart (pi resume is Phase 3); keep docs/views/folders.
+    const tabs = (parsed.tabs ?? []).filter((t) => t.kind !== 'session');
+    const activeTabId = tabs.some((t) => t.id === parsed.activeTabId) ? parsed.activeTabId : tabs[0]?.id ?? null;
+    return { tabs, activeTabId };
+  } catch {
+    return { tabs: [], activeTabId: null };
+  }
+}
+
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [vault, setVault] = useState<VaultInfoDTO | null>(null);
   const [tree, setTree] = useState<VaultTreeDTO | null>(null);
-  const [view, setView] = useState<CenterView>({ kind: 'landing' });
-  const [currentNote, setCurrentNote] = useState<NoteDTO | null>(null);
-  const [backlinks, setBacklinks] = useState<BacklinkDTO[]>([]);
+  const initial = useRef(loadPersistedTabs());
+  const [tabs, setTabs] = useState<Tab[]>(initial.current.tabs);
+  const [activeTabId, setActiveTabId] = useState<string | null>(initial.current.activeTabId);
+  const [docData, setDocData] = useState<Record<string, DocData>>({});
   const [pendingCount, setPendingCount] = useState(0);
   const [proposals, setProposals] = useState<ProposalDTO[]>([]);
   const [problems, setProblems] = useState<ProblemHeatDTO[]>([]);
   const [health, setHealth] = useState<HealthDTO | null>(null);
+
+  const activeTab = useMemo(() => tabs.find((t) => t.id === activeTabId) ?? null, [tabs, activeTabId]);
+
+  // Persist tabs across restarts.
+  useEffect(() => {
+    try {
+      localStorage.setItem(TABS_KEY, JSON.stringify({ tabs, activeTabId }));
+    } catch {
+      /* ignore quota */
+    }
+  }, [tabs, activeTabId]);
 
   const refreshTree = useCallback(async () => {
     try {
@@ -83,48 +130,101 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loadNote = useCallback(async (path: string) => {
-    const [note, links] = await Promise.all([
+  const loadDoc = useCallback(async (path: string) => {
+    const [note, backlinks] = await Promise.all([
       invoke['note:get'](path),
       invoke['note:backlinks'](path),
     ]);
-    setCurrentNote(note);
-    setBacklinks(links);
+    setDocData((d) => ({ ...d, [path]: { note, backlinks } }));
   }, []);
 
-  const openNote = useCallback(
+  const focusOrAddTab = useCallback((tab: Tab, isSame: (t: Tab) => boolean) => {
+    setTabs((prev) => {
+      const existing = prev.find(isSame);
+      if (existing) {
+        setActiveTabId(existing.id);
+        return prev;
+      }
+      setActiveTabId(tab.id);
+      return [...prev, tab];
+    });
+  }, []);
+
+  const openDoc = useCallback(
     async (path: string) => {
-      setView({ kind: 'note', path });
-      await loadNote(path);
+      const title = path.split('/').pop()?.replace(/\.md$/, '') ?? path;
+      focusOrAddTab({ id: nextId(), kind: 'doc', path, title }, (t) => t.kind === 'doc' && t.path === path);
+      await loadDoc(path);
     },
-    [loadNote],
+    [focusOrAddTab, loadDoc],
   );
 
-  const showLanding = useCallback(() => {
-    setView({ kind: 'landing' });
-    setCurrentNote(null);
-    setBacklinks([]);
+  const openSession = useCallback(
+    (sessionType: ChatSessionType, opts?: { initialPrompt?: string; title?: string; fresh?: boolean }) => {
+      const title = opts?.title ?? (sessionType === 'ask' ? 'Ask' : sessionType === 'after-meeting' ? 'After-Meeting' : 'Chat');
+      const tab: Tab = { id: nextId(), kind: 'session', sessionType, initialPrompt: opts?.initialPrompt, title };
+      if (opts?.fresh) {
+        setTabs((prev) => [...prev, tab]);
+        setActiveTabId(tab.id);
+      } else {
+        focusOrAddTab(tab, (t) => t.kind === 'session' && t.sessionType === sessionType && !t.initialPrompt && !opts?.initialPrompt);
+      }
+    },
+    [focusOrAddTab],
+  );
+
+  const openInbox = useCallback(
+    () => focusOrAddTab({ id: nextId(), kind: 'inbox', title: 'Inbox' }, (t) => t.kind === 'inbox'),
+    [focusOrAddTab],
+  );
+  const openSmartView = useCallback(
+    (id: SmartViewId) =>
+      focusOrAddTab(
+        { id: nextId(), kind: 'smartview', viewId: id, title: SMART_VIEWS[id].label },
+        (t) => t.kind === 'smartview' && t.viewId === id,
+      ),
+    [focusOrAddTab],
+  );
+  const openFolder = useCallback(
+    (dir: string) => focusOrAddTab({ id: nextId(), kind: 'folder', dir, title: dir }, (t) => t.kind === 'folder' && t.dir === dir),
+    [focusOrAddTab],
+  );
+  const openMeetingDrop = useCallback(
+    () => focusOrAddTab({ id: nextId(), kind: 'meeting-drop', title: 'After-Meeting' }, (t) => t.kind === 'meeting-drop'),
+    [focusOrAddTab],
+  );
+  const openSettings = useCallback(
+    () => focusOrAddTab({ id: nextId(), kind: 'settings', title: 'Settings' }, (t) => t.kind === 'settings'),
+    [focusOrAddTab],
+  );
+
+  const closeTab = useCallback((id: string) => {
+    setTabs((prev) => {
+      const idx = prev.findIndex((t) => t.id === id);
+      if (idx === -1) return prev;
+      const next = prev.filter((t) => t.id !== id);
+      setActiveTabId((cur) => (cur === id ? next[Math.max(0, idx - 1)]?.id ?? null : cur));
+      return next;
+    });
   }, []);
 
-  const showChat = useCallback(
-    (sessionType: ChatSessionType = 'chat', initialPrompt?: string) =>
-      setView({ kind: 'chat', sessionType, initialPrompt }),
-    [],
-  );
-  const showReview = useCallback(() => setView({ kind: 'review' }), []);
-  const showProblems = useCallback(() => setView({ kind: 'problems' }), []);
-  const showMeetingDrop = useCallback(() => setView({ kind: 'meeting-drop' }), []);
-  const showSettings = useCallback(() => setView({ kind: 'settings' }), []);
+  const setActiveTab = useCallback((id: string) => setActiveTabId(id), []);
+
+  const query = useCallback((q: NoteQueryDTO) => invoke['vault:query'](q), []);
 
   const dropMeeting = useCallback(
     async (title: string, body: string) => {
       const note = await invoke['meeting:capture']({ title, body });
       await refreshTree();
-      setView({
-        kind: 'chat',
+      const tab: Tab = {
+        id: nextId(),
+        kind: 'session',
         sessionType: 'after-meeting',
         initialPrompt: `Run the After-Meeting session on ${note.path}: read the transcript and related memory, then produce the truth delta as approval cards.`,
-      });
+        title: `After-Meeting: ${note.title}`,
+      };
+      setTabs((prev) => [...prev, tab]);
+      setActiveTabId(tab.id);
     },
     [refreshTree],
   );
@@ -178,9 +278,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const setProblemStance = useCallback(
     async (path: string, stance: ProblemStance) => {
       await invoke['note:setProblemStance'](path, stance);
-      await Promise.all([refreshProblems(), refreshTree()]);
+      await Promise.all([refreshProblems(), refreshTree(), loadDoc(path)]);
     },
-    [refreshProblems, refreshTree],
+    [refreshProblems, refreshTree, loadDoc],
   );
 
   const bootVault = useCallback(
@@ -208,35 +308,40 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const saveNote = useCallback(
     async (path: string, body: string) => {
       await invoke['note:save']({ path, body });
-      await Promise.all([refreshTree(), loadNote(path)]);
+      await Promise.all([refreshTree(), loadDoc(path)]);
     },
-    [refreshTree, loadNote],
+    [refreshTree, loadDoc],
   );
 
-  const search = useCallback(async (query: string) => {
-    if (!query.trim()) return [];
-    return invoke['search:query'](query, 20);
-  }, []);
+  const saveFrontmatter = useCallback(
+    async (path: string, frontmatter: Record<string, unknown>) => {
+      await invoke['note:saveFrontmatter']({ path, frontmatter });
+      await Promise.all([refreshTree(), refreshProblems(), refreshHealth(), loadDoc(path)]);
+    },
+    [refreshTree, refreshProblems, refreshHealth, loadDoc],
+  );
 
-  const refresh = useCallback(async () => {
-    await refreshTree();
-    if (view.kind === 'note') await loadNote(view.path);
-  }, [refreshTree, loadNote, view]);
+  const search = useCallback(async (q: string) => {
+    if (!q.trim()) return [];
+    return invoke['search:query'](q, 20);
+  }, []);
 
   // Initial load: any workspace opened on startup by main.
   useEffect(() => {
     void invoke['vault:current']().then(async (info) => {
       await bootVault(info);
+      // Reload the active doc tab's content after restart.
+      const active = initial.current.tabs.find((t) => t.id === initial.current.activeTabId);
+      if (info && active?.kind === 'doc') void loadDoc(active.path);
       const open = new URLSearchParams(window.location.search).get('open');
-      if (info && open === '__settings') setView({ kind: 'settings' });
-      else if (info && open === '__chat') setView({ kind: 'chat', sessionType: 'chat' });
-      else if (info && open === '__review') setView({ kind: 'review' });
-      else if (info && open === '__problems') setView({ kind: 'problems' });
-      else if (info && open === '__meeting') setView({ kind: 'meeting-drop' });
-      else if (info && open) void openNote(open);
+      if (info && open === '__settings') openSettings();
+      else if (info && open === '__chat') openSession('chat');
+      else if (info && open === '__review') openInbox();
+      else if (info && open === '__meeting') openMeetingDrop();
+      else if (info && open) void openDoc(open);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bootVault]);
+  }, []);
 
   // Live refresh when the workspace changes on disk (external Obsidian edits).
   useEffect(() => {
@@ -245,33 +350,37 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         void refreshTree();
         void refreshProblems();
         void refreshHealth();
-        if (view.kind === 'note' && event.paths.includes(view.path)) void loadNote(view.path);
+        for (const path of event.paths) if (docData[path]) void loadDoc(path);
       } else if (event.channel === 'proposals:changed') {
         setPendingCount(event.pendingCount);
         void refreshProposals();
       }
     });
-  }, [refreshTree, refreshProblems, refreshHealth, refreshProposals, loadNote, view]);
+  }, [refreshTree, refreshProblems, refreshHealth, refreshProposals, loadDoc, docData]);
 
   const value = useMemo<AppState>(
     () => ({
       vault,
       tree,
-      view,
-      currentNote,
-      backlinks,
+      tabs,
+      activeTabId,
+      activeTab,
+      docData,
       openVaultDialog,
       pendingCount,
       proposals,
       problems,
       health,
-      openNote,
-      showLanding,
-      showChat,
-      showReview,
-      showProblems,
-      showMeetingDrop,
-      showSettings,
+      openDoc,
+      openSession,
+      openInbox,
+      openSmartView,
+      openFolder,
+      openMeetingDrop,
+      openSettings,
+      closeTab,
+      setActiveTab,
+      query,
       dropMeeting,
       previewProposal,
       refreshProposals,
@@ -280,10 +389,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setProblemStance,
       captureNote,
       saveNote,
+      saveFrontmatter,
       search,
-      refresh,
     }),
-    [vault, tree, view, currentNote, backlinks, pendingCount, proposals, problems, health, openVaultDialog, openNote, showLanding, showChat, showReview, showProblems, showMeetingDrop, showSettings, dropMeeting, previewProposal, refreshProposals, acceptProposal, rejectProposal, setProblemStance, captureNote, saveNote, search, refresh],
+    [vault, tree, tabs, activeTabId, activeTab, docData, openVaultDialog, pendingCount, proposals, problems, health, openDoc, openSession, openInbox, openSmartView, openFolder, openMeetingDrop, openSettings, closeTab, setActiveTab, query, dropMeeting, previewProposal, refreshProposals, acceptProposal, rejectProposal, setProblemStance, captureNote, saveNote, saveFrontmatter, search],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

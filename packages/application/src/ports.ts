@@ -118,13 +118,30 @@ export interface CreateProposalInput {
   inference: boolean;
 }
 
+/** Card telemetry — the kill-criteria metric + future eval signal (PLAN-V2 §4). */
+export interface ProposalStats {
+  pending: number;
+  accepted: number;
+  rejected: number;
+  stale: number;
+  /** Cards accepted with an edit before approval. */
+  edited: number;
+  /** Mean time-to-approve for accepted cards, milliseconds (null if none). */
+  avgApproveMs: number | null;
+  /** Approval rate = accepted / (accepted + rejected), null if none resolved. */
+  approvalRate: number | null;
+  byType: Record<string, { accepted: number; rejected: number }>;
+}
+
 /** Proposal store (app.db) — the durable proposal queue + accept/reject log. */
 export interface ProposalPort {
   create(input: CreateProposalInput, now: number): ProposalRecord;
   list(status?: string): ProposalRecord[];
   get(id: string): ProposalRecord | null;
   setStatus(id: string, status: string, resolved: number | null): void;
+  setEditDistance(id: string, distance: number): void;
   pendingCount(): number;
+  stats(): ProposalStats;
 }
 
 export interface UseCaseContext {

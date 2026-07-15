@@ -10,7 +10,7 @@ import {
   type DecisionFrontmatter,
   type Frontmatter,
 } from '@pm/domain';
-import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../ports.js';
+import type { CreateProposalInput, ProposalRecord, ProposalStats, UseCaseContext } from '../ports.js';
 
 /**
  * Proposals (approval cards) are the only write path for the agent (PLAN-V2 §3.3).
@@ -32,6 +32,22 @@ export function createProposal(ctx: UseCaseContext, input: CreateProposalInput):
 
 export function listProposals(ctx: UseCaseContext, status?: string): ProposalRecord[] {
   return ctx.proposals.list(status);
+}
+
+/** Card telemetry — approval rate + time-to-approve (the kill-criteria metric). */
+export function getProposalStats(ctx: UseCaseContext): ProposalStats {
+  return ctx.proposals.stats();
+}
+
+/**
+ * A cheap edit-distance proxy for telemetry (not a true Levenshtein — length
+ * delta plus positional mismatch, which is O(n) and good enough to trend).
+ */
+export function editDistance(a: string, b: string): number {
+  const min = Math.min(a.length, b.length);
+  let diff = Math.abs(a.length - b.length);
+  for (let i = 0; i < min; i++) if (a[i] !== b[i]) diff++;
+  return diff;
 }
 
 export interface ProposalPreview {
@@ -81,10 +97,17 @@ export async function acceptProposal(
   const rec = ctx.proposals.get(id);
   if (!rec || rec.status !== 'pending') return { ok: false };
 
-  if (rec.kind === 'note') return acceptNote(ctx, rec, edited);
-  if (rec.kind === 'update') return acceptUpdate(ctx, rec, edited);
-  if (rec.kind === 'decision') return acceptDecision(ctx, rec, edited);
-  return { ok: false };
+  let result: AcceptResult;
+  if (rec.kind === 'note') result = await acceptNote(ctx, rec, edited);
+  else if (rec.kind === 'update') result = await acceptUpdate(ctx, rec, edited);
+  else if (rec.kind === 'decision') result = await acceptDecision(ctx, rec, edited);
+  else return { ok: false };
+
+  // Telemetry: record how far the human edited the card before approving.
+  if (result.ok && edited !== undefined) {
+    ctx.proposals.setEditDistance(id, editDistance(JSON.stringify(rec.payload), JSON.stringify(edited)));
+  }
+  return result;
 }
 
 /** Stamp `last_verified` on freshness-tracked types when a human approves. */

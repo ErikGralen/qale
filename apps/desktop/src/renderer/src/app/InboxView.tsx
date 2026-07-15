@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Badge } from '@pm/ui';
 import { Check, X, Inbox, Layers } from 'lucide-react';
-import type { ProposalDTO } from '@pm/ipc';
+import type { ProposalDTO, ProposalStatsDTO } from '@pm/ipc';
 import { useApp } from '../state/app-state';
+import { invoke } from '../lib/ipc';
 
 const KIND_LABEL: Record<string, string> = { note: 'new note', decision: 'decision', update: 'update' };
 
@@ -15,9 +16,12 @@ export function InboxView() {
   const { proposals, acceptProposal, rejectProposal, refreshProposals, openDoc } = useApp();
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<{ accepted: number; rejected: number }>({ accepted: 0, rejected: 0 });
+  const [stats, setStats] = useState<ProposalStatsDTO | null>(null);
 
+  const loadStats = () => void invoke['proposals:stats']().then(setStats).catch(() => setStats(null));
   useEffect(() => {
     void refreshProposals();
+    loadStats();
   }, [refreshProposals]);
 
   const queue = useMemo(() => proposals.filter((p) => p.status === 'pending'), [proposals]);
@@ -27,12 +31,14 @@ export function InboxView() {
     const r = await acceptProposal(id);
     setBusy(false);
     if (!r.stale) setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
+    loadStats();
   };
   const onReject = async (id: string) => {
     setBusy(true);
     await rejectProposal(id);
     setBusy(false);
     setReceipt((x) => ({ ...x, rejected: x.rejected + 1 }));
+    loadStats();
   };
   const acceptAll = async () => {
     setBusy(true);
@@ -87,6 +93,19 @@ export function InboxView() {
           </ul>
         )}
       </div>
+
+      {stats && stats.accepted + stats.rejected > 0 && (
+        <div className="flex items-center gap-3 border-t border-border px-6 py-1.5 text-[11px] text-muted-foreground">
+          {stats.approvalRate !== null && (
+            <span>approval {Math.round(stats.approvalRate * 100)}%</span>
+          )}
+          {stats.avgApproveMs !== null && <span>· ~{Math.round(stats.avgApproveMs / 1000)}s to approve</span>}
+          <span>· {stats.edited} edited</span>
+          <span className="ml-auto">
+            {stats.accepted} accepted · {stats.rejected} dismissed all-time
+          </span>
+        </div>
+      )}
     </div>
   );
 }

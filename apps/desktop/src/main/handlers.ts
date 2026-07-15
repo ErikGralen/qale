@@ -7,9 +7,11 @@ import {
   type UseCaseContext,
   captureNote,
   captureMeeting,
+  ensureDefaultSkills,
   getBacklinks,
   getNote,
   getProblemsByHeat,
+  getProposalStats,
   getVaultTree,
   getWorkspaceHealth,
   queryNotes,
@@ -25,6 +27,7 @@ import {
   setProblemStance,
 } from '@pm/application';
 import { parseFrontmatter, type Frontmatter } from '@pm/domain';
+import { DEFAULT_SKILLS } from '@pm/sessions';
 import { handle, pushEvent } from './ipc.js';
 import { SettingsService } from './services/settings-service.js';
 import { VaultService } from './services/vault-service.js';
@@ -76,6 +79,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   const agent = new AgentRuntime();
 
   const now = (): string => vaultService.context()?.clock.now() ?? new Date().toISOString();
+
+  const afterOpen = async (): Promise<void> => {
+    const ctx = vaultService.context();
+    if (ctx) await ensureDefaultSkills(ctx, DEFAULT_SKILLS);
+  };
 
   const reconfigureAgent = (): void => {
     const ctx = vaultService.context();
@@ -133,6 +141,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     const path = result.filePaths[0]!;
     const info = await vaultService.open(path);
     await settings.setVaultPath(info.path);
+    await afterOpen();
     reconfigureAgent();
     return vaultInfoToDTO(info);
   });
@@ -140,6 +149,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   handle('vault:open', async (path) => {
     const info = await vaultService.open(path);
     await settings.setVaultPath(info.path);
+    await afterOpen();
     reconfigureAgent();
     return vaultInfoToDTO(info);
   });
@@ -225,6 +235,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     notifyProposals();
     return result;
   });
+  handle('proposals:stats', () => getProposalStats(vaultService.requireContext()));
   handle('agent:run', async (input) => {
     const ctx = vaultService.requireContext();
     return agent.run(input, ctx, (streamId, chunk) => {
@@ -242,6 +253,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
       if (saved) {
         try {
           const info = await vaultService.open(saved);
+          await afterOpen();
           reconfigureAgent();
           console.log(`[pm] opened workspace "${info.name}" — ${info.noteCount} notes, git=${info.git}`);
           if (process.env['PM_SEED_PROPOSAL']) seedDemoProposal(vaultService.requireContext());

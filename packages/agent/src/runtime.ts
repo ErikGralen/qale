@@ -14,10 +14,22 @@ import { AtlassianClient } from '@pm/atlassian';
 import {
   createVaultTools,
   createProposeTools,
+  createCheckpointTool,
   createAtlassianTools,
   ATLASSIAN_TOOL_NAMES,
+  VAULT_TOOL_NAMES,
+  PROPOSE_TOOL_NAMES,
+  CHECKPOINT_TOOL_NAME,
 } from './tools.js';
-import { SESSION_TYPES, type SessionType } from './prompts.js';
+import { SHARED_PREAMBLE, type SessionType } from './prompts.js';
+import {
+  parseSkill,
+  buildSystemPrompt,
+  buildSessionReceipt,
+  SessionHarness,
+  DEFAULT_SKILL_BY_TYPE,
+  type SkillConfig,
+} from '@pm/sessions';
 import { PiUiBridge, type Chunk } from './bridge.js';
 
 export interface AgentRuntimeConfig {
@@ -49,6 +61,7 @@ interface SessionState {
   id: string;
   type: SessionType;
   session: AgentSession;
+  harness: SessionHarness;
   unsubscribe: () => void;
   bridge: PiUiBridge | null;
   activeStreamId: string | null;
@@ -103,19 +116,38 @@ export class AgentRuntime {
     return available.find((m) => m.id === this.config!.modelId) ?? available[0]!;
   }
 
+  /** Resolve a session's skill: the workspace's `skills/<type>.md`, else built-in. */
+  private async resolveSkill(type: SessionType, ctx: UseCaseContext): Promise<SkillConfig> {
+    const raw = (await ctx.vault.readRaw(`skills/${type}.md`)) ?? DEFAULT_SKILL_BY_TYPE[type] ?? '';
+    return parseSkill(raw, type);
+  }
+
+  private toolNamesFor(config: SkillConfig, atlassianActive: boolean): string[] {
+    const names = [...VAULT_TOOL_NAMES];
+    if (config.tier === 'suggest' || config.tier === 'outbound') names.push(...PROPOSE_TOOL_NAMES);
+    if (config.checkpoints.length > 0) names.push(CHECKPOINT_TOOL_NAME);
+    if (atlassianActive) names.push(...ATLASSIAN_TOOL_NAMES);
+    return names;
+  }
+
   private async createSession(type: SessionType, id: string, ctx: UseCaseContext): Promise<SessionState> {
     if (!this.config || !this.authStorage || !this.modelRegistry) {
       throw new Error('agent runtime not configured');
     }
-    const cfg = SESSION_TYPES[type];
     const model = this.resolveModel();
+
+    // A session type is a skill file (PLAN-V2 §3.2): prompt + tool tier + gate.
+    const skillConfig = await this.resolveSkill(type, ctx);
+    const harness = new SessionHarness(id, skillConfig, ctx.clock.now());
+    const systemPrompt = buildSystemPrompt(SHARED_PREAMBLE, skillConfig);
 
     // The ask session gains the tracker seam (Jira/Confluence) when configured.
     const atlassianActive = type === 'ask' && this.atlassian;
-    const toolNames = atlassianActive ? [...cfg.tools, ...ATLASSIAN_TOOL_NAMES] : cfg.tools;
+    const toolNames = this.toolNamesFor(skillConfig, !!atlassianActive);
     const customTools = [
-      ...createVaultTools(ctx),
-      ...createProposeTools(ctx, id),
+      ...createVaultTools(ctx, harness),
+      ...(skillConfig.tier !== 'observe' ? createProposeTools(ctx, id, harness) : []),
+      ...(skillConfig.checkpoints.length > 0 ? [createCheckpointTool(harness)] : []),
       ...(atlassianActive ? createAtlassianTools(this.atlassian!) : []),
     ];
 
@@ -123,13 +155,13 @@ export class AgentRuntime {
       cwd: this.config.vaultDir,
       agentDir: join(this.config.userDataDir, 'pi', 'agent'),
       // Full control: don't load the user's ~/.pi resources or the vault's AGENTS.md.
-      systemPrompt: cfg.systemPrompt,
+      systemPrompt,
       noSkills: true,
       noPromptTemplates: true,
       noContextFiles: true,
       noThemes: true,
       noExtensions: true,
-      systemPromptOverride: () => cfg.systemPrompt,
+      systemPromptOverride: () => systemPrompt,
       agentsFilesOverride: () => ({ agentsFiles: [] }),
     });
     await loader.reload();
@@ -151,6 +183,7 @@ export class AgentRuntime {
       id,
       type,
       session,
+      harness,
       bridge: null,
       activeStreamId: null,
       unsubscribe: () => undefined,
@@ -160,6 +193,19 @@ export class AgentRuntime {
     });
     this.sessions.set(id, state);
     return state;
+  }
+
+  /** File the session receipt to sessions/ — the human-auditable reads/writes ledger. */
+  private async fileReceipt(state: SessionState, ctx: UseCaseContext): Promise<void> {
+    if (state.harness.turns.length === 0 && state.harness.writes.length === 0) return;
+    try {
+      const receipt = buildSessionReceipt(state.harness, ctx.clock.now());
+      const note = await ctx.vault.writeNote(receipt.path, receipt.frontmatter, receipt.body);
+      ctx.index.reindex(note);
+      await ctx.git.commitPaths([receipt.path], `session: ${state.harness.config.name}`);
+    } catch (err) {
+      console.error('[pm] session receipt filing failed:', err);
+    }
   }
 
   /**
@@ -175,6 +221,7 @@ export class AgentRuntime {
     if (!this.config?.apiKey) throw new Error('Set an Anthropic API key in Settings to chat.');
     const sessionId = input.sessionId ?? randomUUID();
     const state = this.sessions.get(sessionId) ?? (await this.createSession(input.sessionType, sessionId, ctx));
+    state.harness.beginTurn(input.prompt, ctx.clock.now());
 
     const streamId = randomUUID();
     const bridge = new PiUiBridge((chunk) => emit(streamId, chunk));
@@ -195,6 +242,8 @@ export class AgentRuntime {
           state.bridge = null;
         }
         this.streamToSession.delete(streamId);
+        // File/refresh the session receipt after each settled turn.
+        void this.fileReceipt(state, ctx);
       });
 
     return { streamId, sessionId };

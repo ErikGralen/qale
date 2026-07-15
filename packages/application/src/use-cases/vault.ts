@@ -175,6 +175,29 @@ export async function refreshFolderIndexes(ctx: UseCaseContext): Promise<{ writt
   return { written };
 }
 
+/**
+ * Seed the built-in skill pack into `skills/` if absent (PLAN-V2 §3.2). Content is
+ * passed in so the application layer stays free of the sessions package. Existing
+ * files are never overwritten — editing a skill is how you customise it.
+ */
+export async function ensureDefaultSkills(
+  ctx: UseCaseContext,
+  skills: { file: string; content: string }[],
+): Promise<{ written: number }> {
+  let written = 0;
+  const committed: string[] = [];
+  for (const skill of skills) {
+    if (await ctx.vault.exists(skill.file)) continue;
+    await ctx.vault.writeRaw(skill.file, skill.content);
+    const note = await ctx.vault.readNote(skill.file);
+    if (note) ctx.index.reindex(note);
+    committed.push(skill.file);
+    written++;
+  }
+  if (committed.length > 0) await ctx.git.commitPaths(committed, 'skills: seed defaults');
+  return { written };
+}
+
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

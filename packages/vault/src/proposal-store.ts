@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { CreateProposalInput, ProposalPort, ProposalRecord } from '@pm/application';
+import type { CreateProposalInput, ProposalPort, ProposalRecord, ProposalStats } from '@pm/application';
 
 /**
  * Primary app state (PLAN §3.5): `app.db` is a SEPARATE file from the derived
@@ -45,6 +45,11 @@ export class ProposalStore implements ProposalPort {
       );
       CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status);
     `);
+    // Telemetry column (added post-v1); guard for existing databases.
+    const cols = this.db.prepare('PRAGMA table_info(proposals)').all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'edit_distance')) {
+      this.db.exec('ALTER TABLE proposals ADD COLUMN edit_distance INTEGER');
+    }
   }
 
   create(input: CreateProposalInput, now: number): ProposalRecord {
@@ -90,11 +95,55 @@ export class ProposalStore implements ProposalPort {
     this.db.prepare('UPDATE proposals SET status = ?, resolved = ? WHERE id = ?').run(status, resolved, id);
   }
 
+  setEditDistance(id: string, distance: number): void {
+    this.db.prepare('UPDATE proposals SET edit_distance = ? WHERE id = ?').run(distance, id);
+  }
+
   pendingCount(): number {
     const row = this.db.prepare("SELECT COUNT(*) AS c FROM proposals WHERE status = 'pending'").get() as {
       c: number;
     };
     return row.c;
+  }
+
+  stats(): ProposalStats {
+    const counts = this.db
+      .prepare('SELECT status, COUNT(*) AS c FROM proposals GROUP BY status')
+      .all() as { status: string; c: number }[];
+    const by = (s: string): number => counts.find((r) => r.status === s)?.c ?? 0;
+    const accepted = by('accepted');
+    const rejected = by('rejected');
+
+    const edited = (
+      this.db.prepare('SELECT COUNT(*) AS c FROM proposals WHERE edit_distance > 0').get() as { c: number }
+    ).c;
+    const avgRow = this.db
+      .prepare("SELECT AVG(resolved - created) AS a FROM proposals WHERE status = 'accepted' AND resolved IS NOT NULL")
+      .get() as { a: number | null };
+
+    const typeRows = this.db
+      .prepare(
+        `SELECT kind, status, COUNT(*) AS c FROM proposals
+          WHERE status IN ('accepted','rejected') GROUP BY kind, status`,
+      )
+      .all() as { kind: string; status: string; c: number }[];
+    const byType: Record<string, { accepted: number; rejected: number }> = {};
+    for (const r of typeRows) {
+      byType[r.kind] ??= { accepted: 0, rejected: 0 };
+      if (r.status === 'accepted') byType[r.kind]!.accepted = r.c;
+      else byType[r.kind]!.rejected = r.c;
+    }
+
+    return {
+      pending: by('pending'),
+      accepted,
+      rejected,
+      stale: by('stale'),
+      edited,
+      avgApproveMs: avgRow.a ?? null,
+      approvalRate: accepted + rejected > 0 ? accepted / (accepted + rejected) : null,
+      byType,
+    };
   }
 
   close(): void {

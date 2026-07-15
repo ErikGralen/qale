@@ -44,6 +44,9 @@ importers:
       '@pm/markdown':
         specifier: workspace:*
         version: link:../../packages/markdown
+      '@pm/sessions':
+        specifier: workspace:*
+        version: link:../../packages/sessions
       '@pm/vault':
         specifier: workspace:*
         version: link:../../packages/vault
@@ -141,6 +144,9 @@ importers:
       '@pm/domain':
         specifier: workspace:*
         version: link:../domain
+      '@pm/sessions':
+        specifier: workspace:*
+        version: link:../sessions
       ai:
         specifier: ^7.0.22
         version: 7.0.22(zod@4.4.3)
@@ -266,6 +272,25 @@ importers:
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
+      typescript:
+        specifier: ~5.9.2
+        version: 5.9.3
+
+  packages/sessions:
+    dependencies:
+      '@pm/domain':
+        specifier: workspace:*
+        version: link:../domain
+      yaml:
+        specifier: ^2.6.1
+        version: 2.9.0
+    devDependencies:
+      '@pm/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      tsx:
+        specifier: ^4.23.1
+        version: 4.23.1
       typescript:
         specifier: ~5.9.2
         version: 5.9.3

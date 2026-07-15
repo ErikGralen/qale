@@ -3,6 +3,7 @@ import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent
 import type { UseCaseContext } from '@pm/application';
 import { createProposal, searchNotes, contentHash } from '@pm/application';
 import { validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload } from '@pm/domain';
+import type { SessionHarness } from '@pm/sessions';
 import type { AtlassianClient } from '@pm/atlassian';
 
 /**
@@ -19,18 +20,19 @@ function text(s: string) {
 
 export const VAULT_TOOL_NAMES = ['vault_read', 'vault_list', 'vault_grep', 'search_vault'];
 
-export function createVaultTools(ctx: UseCaseContext): ToolDefinition[] {
+export function createVaultTools(ctx: UseCaseContext, harness?: SessionHarness): ToolDefinition[] {
   const vaultRead = defineTool({
     name: 'vault_read',
     label: 'Read note',
     description:
-      'Read a note from the vault by its relative path (e.g. "themes/sso-onboarding.md"). Read-only, confined to the vault.',
+      'Read a note from the workspace by its relative path (e.g. "decisions/adopt-workos.md"). Read-only, confined to the workspace.',
     parameters: Type.Object({
-      path: Type.String({ description: 'Vault-relative path to the note.' }),
+      path: Type.String({ description: 'Workspace-relative path to the note.' }),
     }),
     async execute(_id, params: { path: string }) {
-      if (!ctx.vault.contain(params.path)) return text(`Refused: "${params.path}" is outside the vault.`);
+      if (!ctx.vault.contain(params.path)) return text(`Refused: "${params.path}" is outside the workspace.`);
       const raw = await ctx.vault.readRaw(params.path);
+      if (raw !== null) harness?.recordRead(params.path);
       return text(raw ?? `Not found: ${params.path}`);
     },
   });
@@ -93,6 +95,7 @@ export function createVaultTools(ctx: UseCaseContext): ToolDefinition[] {
     }),
     async execute(_id, params: { query: string; k?: number }) {
       const hits = searchNotes(ctx, params.query, params.k ?? 8);
+      for (const h of hits) harness?.recordRead(h.path);
       if (hits.length === 0) return text(`No results for "${params.query}".`);
       const body = hits
         .map((h) => `- ${h.path} (${h.type}, score ${h.score.toFixed(2)}) — ${h.summary}\n    ${h.snippet}`)
@@ -112,7 +115,27 @@ export const PROPOSE_TOOL_NAMES = ['propose_note', 'propose_update', 'propose_de
  * a tool result, else the call fails (unless flagged inference). Cards persist as
  * rows and return an id; the Inbox applies accepted ones.
  */
-export function createProposeTools(ctx: UseCaseContext, sessionId: string): ToolDefinition[] {
+export const CHECKPOINT_TOOL_NAME = 'advance_checkpoint';
+
+/** Records a session's checkpoint progress; gated skills unlock output after it. */
+export function createCheckpointTool(harness: SessionHarness): ToolDefinition {
+  return defineTool({
+    name: CHECKPOINT_TOOL_NAME,
+    label: 'Advance checkpoint',
+    description: `Advance to a named session checkpoint (one of: ${harness.config.checkpoints.join(', ')}). Call it as you pass each stage — the digest, then the outline — before drafting. Proposing is unlocked once you have advanced.`,
+    parameters: Type.Object({
+      checkpoint: Type.String({ description: 'The checkpoint you have just reached.' }),
+    }),
+    async execute(_id, params: { checkpoint: string }) {
+      const r = harness.advanceCheckpoint(params.checkpoint);
+      if (!r.ok) return text(`Unknown checkpoint "${params.checkpoint}". Known: ${harness.config.checkpoints.join(', ')}.`);
+      return text(`Checkpoint "${params.checkpoint}" reached. Proposing is now ${harness.canPropose() ? 'unlocked' : 'still locked'}.`);
+    },
+  });
+}
+
+export function createProposeTools(ctx: UseCaseContext, sessionId: string, harness?: SessionHarness): ToolDefinition[] {
+  const gate = (): string | null => (harness && !harness.canPropose() ? harness.gateMessage() : null);
   const proposeNote = defineTool({
     name: 'propose_note',
     label: 'Propose note',
@@ -127,6 +150,8 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string): Tool
       inference: Type.Optional(Type.Boolean()),
     }),
     async execute(_id, params: unknown) {
+      const g = gate();
+      if (g) return text(g);
       const parsed = zNotePayload.safeParse(params);
       if (!parsed.success) return text(`Rejected: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
       const p = params as { sources?: string[]; inference?: boolean };
@@ -143,6 +168,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string): Tool
         evidence: sources.map((s) => ({ ref: s, resolved: true })),
         inference: !!p.inference,
       });
+      harness?.recordWrite(parsed.data.path, rec.id, 'note');
       return text(`Proposed new note (${rec.id}): ${parsed.data.path}. Awaiting review.`);
     },
   });
@@ -162,6 +188,8 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string): Tool
       inference: Type.Optional(Type.Boolean()),
     }),
     async execute(_id, params: unknown) {
+      const g = gate();
+      if (g) return text(g);
       const parsed = zDecisionPayload.safeParse(params);
       if (!parsed.success) return text(`Rejected: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
       const p = params as { sources?: string[]; inference?: boolean; supersedes?: string };
@@ -181,6 +209,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string): Tool
         evidence: sources.map((s) => ({ ref: s, resolved: true })),
         inference: !!p.inference,
       });
+      harness?.recordWrite(parsed.data.path, rec.id, 'decision');
       return text(`Proposed decision (${rec.id}): ${parsed.data.path}. Awaiting review.`);
     },
   });
@@ -198,6 +227,8 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string): Tool
       inference: Type.Optional(Type.Boolean()),
     }),
     async execute(_id, params: unknown) {
+      const g = gate();
+      if (g) return text(g);
       const parsed = zUpdatePayload.safeParse(params);
       if (!parsed.success) return text(`Rejected: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
       const target = ctx.index.resolve(stripLink(parsed.data.path));
@@ -218,6 +249,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string): Tool
         evidence: sources.map((s) => ({ ref: s, resolved: true })),
         inference: !!p.inference,
       });
+      harness?.recordWrite(target, rec.id, 'update');
       return text(`Proposed update (${rec.id}) to ${target}. Awaiting review.`);
     },
   });

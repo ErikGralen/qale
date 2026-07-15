@@ -11,6 +11,7 @@ import type {
   ProposalPreviewDTO,
   NoteDTO,
   ProposalDTO,
+  ProposalStatsDTO,
   ProblemHeatDTO,
   SaveNoteInput,
   SaveFrontmatterInput,
@@ -75,6 +76,7 @@ export interface InvokeMap {
   'proposals:preview': { args: [id: string]; result: ProposalPreviewDTO | null };
   'proposals:accept': { args: [id: string, edited?: unknown]; result: { ok: boolean; stale?: boolean } };
   'proposals:reject': { args: [id: string]; result: { ok: boolean } };
+  'proposals:stats': { args: []; result: ProposalStatsDTO };
 
   // Agent / sessions
   'agent:run': { args: [input: AgentRunInput]; result: AgentRunHandle };
@@ -118,6 +120,7 @@ export const INVOKE_CHANNELS = [
   'proposals:preview',
   'proposals:accept',
   'proposals:reject',
+  'proposals:stats',
   'agent:run',
   'agent:abort',
   'sessions:list',

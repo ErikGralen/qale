@@ -13,6 +13,7 @@
     "@pm/application": "workspace:*",
     "@pm/atlassian": "workspace:*",
     "@pm/domain": "workspace:*",
+    "@pm/sessions": "workspace:*",
     "@earendil-works/pi-coding-agent": "0.80.6",
     "@earendil-works/pi-ai": "0.80.6",
     "ai": "^7.0.22",

@@ -203,6 +203,17 @@ export interface UpdatePayloadDTO {
   rationale: string;
 }
 
+export interface ProposalStatsDTO {
+  pending: number;
+  accepted: number;
+  rejected: number;
+  stale: number;
+  edited: number;
+  avgApproveMs: number | null;
+  approvalRate: number | null;
+  byType: Record<string, { accepted: number; rejected: number }>;
+}
+
 export interface ProposalDTO {
   id: string;
   kind: ProposalKind;

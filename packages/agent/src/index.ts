@@ -5,9 +5,11 @@ export {
   createVaultTools,
   createProposeTools,
   createCheckpointTool,
+  createDraftTools,
   createAtlassianTools,
   VAULT_TOOL_NAMES,
   PROPOSE_TOOL_NAMES,
+  DRAFT_TOOL_NAMES,
   CHECKPOINT_TOOL_NAME,
   ATLASSIAN_TOOL_NAMES,
 } from './tools.js';

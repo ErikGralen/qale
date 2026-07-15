@@ -7,8 +7,35 @@ import { z } from 'zod';
  * grow per phase: note/update now, decision/outbound land in Phases 3 & 5.
  */
 
-export const PROPOSAL_KINDS = ['note', 'update', 'decision'] as const;
+export const PROPOSAL_KINDS = ['note', 'update', 'decision', 'outbound'] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
+
+export const OUTBOUND_SYSTEMS = ['jira', 'confluence', 'message'] as const;
+export type OutboundSystem = (typeof OUTBOUND_SYSTEMS)[number];
+
+/**
+ * Outbound card (PLAN-V2 §3.4) — a draft addressed to an external system or a
+ * human. This tier is draft-and-approve forever: there is no auto-apply path. The
+ * exact payload is stored; the resulting link is built from the API response only.
+ */
+export const zOutboundPayload = z.object({
+  system: z.enum(OUTBOUND_SYSTEMS),
+  /** create_issue | add_comment | update_page | message */
+  action: z.string(),
+  projectKey: z.string().optional(),
+  issueType: z.string().optional(),
+  issueKey: z.string().optional(),
+  pageId: z.string().optional(),
+  /** Jira issue summary / message subject. */
+  title: z.string().optional(),
+  /** The drafted body (markdown), shown verbatim in the card preview. */
+  body: z.string().min(1),
+  audience: z.string().optional(),
+  /** Workspace note to append the resulting deterministic link back to. */
+  linkBackPath: z.string().optional(),
+  rationale: z.string().min(1),
+});
+export type OutboundPayload = z.infer<typeof zOutboundPayload>;
 
 export const PROPOSAL_STATUSES = ['pending', 'accepted', 'rejected', 'stale'] as const;
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];

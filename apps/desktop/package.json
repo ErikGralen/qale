@@ -29,7 +29,8 @@
     "react-markdown": "^10.1.0",
     "simple-git": "^3.36.0",
     "turndown": "^7.2.0",
-    "@pm/sessions": "workspace:*"
+    "@pm/sessions": "workspace:*",
+    "@pm/atlassian": "workspace:*"
   },
   "devDependencies": {
     "@electron-toolkit/utils": "^4.0.0",

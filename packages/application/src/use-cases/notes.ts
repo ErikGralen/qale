@@ -78,7 +78,10 @@ export async function captureMeeting(ctx: UseCaseContext, input: CaptureMeetingI
     ...(input.source ? { source: input.source } : {}),
     ...(input.safeSpace ? { safe_space: true } : {}),
   };
-  const body = `## Transcript\n\n${input.body.trim()}\n`;
+  // Safe-space (PLAN-V2 §3.4): capture off — the transcript is NOT retained.
+  const body = input.safeSpace
+    ? `_Safe-space meeting — capture off, transcript not retained. Nothing is formalized from this meeting._\n`
+    : `## Transcript\n\n${input.body.trim()}\n`;
   const note = await ctx.vault.writeNote(path, frontmatter, body);
   ctx.index.reindex(note);
   await ctx.git.commitPaths([note.path], `meeting: ${summary}`);

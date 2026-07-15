@@ -15,4 +15,6 @@ export {
   ASK_SKILL,
   CHAT_SKILL,
   FILING_RULES,
+  VOICE_EXEC,
+  VOICE_CS,
 } from './defaults.js';

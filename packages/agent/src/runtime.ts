@@ -15,10 +15,12 @@ import {
   createVaultTools,
   createProposeTools,
   createCheckpointTool,
+  createDraftTools,
   createAtlassianTools,
   ATLASSIAN_TOOL_NAMES,
   VAULT_TOOL_NAMES,
   PROPOSE_TOOL_NAMES,
+  DRAFT_TOOL_NAMES,
   CHECKPOINT_TOOL_NAME,
 } from './tools.js';
 import { SHARED_PREAMBLE, type SessionType } from './prompts.js';
@@ -125,9 +127,21 @@ export class AgentRuntime {
   private toolNamesFor(config: SkillConfig, atlassianActive: boolean): string[] {
     const names = [...VAULT_TOOL_NAMES];
     if (config.tier === 'suggest' || config.tier === 'outbound') names.push(...PROPOSE_TOOL_NAMES);
+    if (config.tier === 'outbound') names.push(...DRAFT_TOOL_NAMES);
     if (config.checkpoints.length > 0) names.push(CHECKPOINT_TOOL_NAME);
     if (atlassianActive) names.push(...ATLASSIAN_TOOL_NAMES);
     return names;
+  }
+
+  /** Voice guides (skills/voice-*.md) injected when a session drafts outbound. */
+  private async voiceGuides(ctx: UseCaseContext): Promise<string> {
+    const guides = ctx.index.all().filter((n) => n.type === 'skill' && /(^|\/)voice-/.test(n.path));
+    const bodies: string[] = [];
+    for (const g of guides) {
+      const note = await ctx.vault.readNote(g.path);
+      if (note) bodies.push(`### ${note.frontmatter.summary}\n${note.body.trim()}`);
+    }
+    return bodies.length ? `\n\n## Voice guides (apply to outbound drafts)\n${bodies.join('\n\n')}` : '';
   }
 
   private async createSession(type: SessionType, id: string, ctx: UseCaseContext): Promise<SessionState> {
@@ -139,7 +153,8 @@ export class AgentRuntime {
     // A session type is a skill file (PLAN-V2 §3.2): prompt + tool tier + gate.
     const skillConfig = await this.resolveSkill(type, ctx);
     const harness = new SessionHarness(id, skillConfig, ctx.clock.now());
-    const systemPrompt = buildSystemPrompt(SHARED_PREAMBLE, skillConfig);
+    const voice = skillConfig.tier === 'outbound' ? await this.voiceGuides(ctx) : '';
+    const systemPrompt = buildSystemPrompt(SHARED_PREAMBLE, skillConfig) + voice;
 
     // The ask session gains the tracker seam (Jira/Confluence) when configured.
     const atlassianActive = type === 'ask' && this.atlassian;
@@ -147,6 +162,7 @@ export class AgentRuntime {
     const customTools = [
       ...createVaultTools(ctx, harness),
       ...(skillConfig.tier !== 'observe' ? createProposeTools(ctx, id, harness) : []),
+      ...(skillConfig.tier === 'outbound' ? createDraftTools(ctx, id, harness) : []),
       ...(skillConfig.checkpoints.length > 0 ? [createCheckpointTool(harness)] : []),
       ...(atlassianActive ? createAtlassianTools(this.atlassian!) : []),
     ];

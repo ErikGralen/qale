@@ -171,8 +171,9 @@ export interface ProposalPreviewDTO {
 // Proposals (approval cards) — the only write path for the agent.
 // ---------------------------------------------------------------------------
 
-export type ProposalKind = 'note' | 'update' | 'decision';
+export type ProposalKind = 'note' | 'update' | 'decision' | 'outbound';
 export type ProposalStatus = 'pending' | 'accepted' | 'rejected' | 'stale';
+export type OutboundSystem = 'jira' | 'confluence' | 'message';
 
 export interface EvidenceRefDTO {
   /** Wikilink target or external URL supporting the card. */
@@ -220,12 +221,26 @@ export interface ProposalStatsDTO {
   byType: Record<string, { accepted: number; rejected: number }>;
 }
 
+export interface OutboundPayloadDTO {
+  system: OutboundSystem;
+  action: string;
+  projectKey?: string;
+  issueType?: string;
+  issueKey?: string;
+  pageId?: string;
+  title?: string;
+  body: string;
+  audience?: string;
+  linkBackPath?: string;
+  rationale: string;
+}
+
 export interface ProposalDTO {
   id: string;
   kind: ProposalKind;
   sessionId: string;
   targetPath: string | null;
-  payload: NotePayloadDTO | DecisionPayloadDTO | UpdatePayloadDTO;
+  payload: NotePayloadDTO | DecisionPayloadDTO | UpdatePayloadDTO | OutboundPayloadDTO;
   rationale: string;
   evidence: EvidenceRefDTO[];
   inference: boolean;

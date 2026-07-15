@@ -9,7 +9,7 @@ type: skill
 skill_kind: session
 session_type: after-meeting
 summary: After-Meeting — turn a meeting into the truth delta as approval cards
-tier: suggest
+tier: outbound
 checkpoints: [digest, outline, draft]
 gate_output: true
 completion_bar: Every truth-delta item cites the transcript or prior memory; nothing asserted uncited.
@@ -38,9 +38,17 @@ The truth delta, each item as one approval card citing its evidence:
 - **Who-needs-to-know** — update the relevant people pages' last_told ledger (propose_update).
 - A **meeting summary** on the meeting page (propose_update) linking the decisions and insights.
 
+Then, for the actions and who-needs-to-know items, draft the outbound follow-ups as cards:
+- **Jira drafts** — actions become draft_jira_issue cards (never created until approved), citing the
+  meeting; set linkBack to the meeting page so the deep link files back on approval.
+- **Confluence / per-audience** — a meeting summary can become a draft_confluence_update; who-needs-to-
+  know items become draft_message cards per audience (CS/sales/exec), filed under the person/customer.
+Apply the voice guides when drafting outbound. Outbound is draft-and-approve, forever.
+
 ## Then
-Approved cards write the decision spine and insights, update the customer/problem/meeting hubs, and
-advance the people last_told ledgers. Nothing reaches Jira/Confluence here — that is the outbound tier.
+Approved internal cards write the decision spine and insights and update the customer/problem/meeting
+hubs; approved outbound cards create the Jira issue / Confluence update and file the deterministic link
+back. Who-needs-to-know updates the people last_told ledger.
 `;
 
 export const ASK_SKILL = `---
@@ -114,6 +122,34 @@ Every derived note lists its \`sources\`/\`evidence\` as wikilinks. Prefer linki
 over creating a new file. Ticket keys and URLs are cited, never invented.
 `;
 
+export const VOICE_EXEC = `---
+type: skill
+skill_kind: voice
+summary: Exec voice — outcomes and decisions, no process
+---
+
+# Voice: executive
+
+- Lead with the outcome and the decision, not the process.
+- Three sentences max. No hedging, no jargon.
+- Quantify when you can (dates, counts, revenue at risk).
+- Banned phrases: "just wanted to", "circle back", "synergy", "leverage" (as a verb), "touch base".
+`;
+
+export const VOICE_CS = `---
+type: skill
+skill_kind: voice
+summary: CS voice — what changes for the customer, and when
+---
+
+# Voice: customer success
+
+- Say what changes for the customer and by when. Be concrete about commitments.
+- Warm but precise; never over-promise. If a date is uncertain, say so.
+- Always link the decision or release that backs the claim.
+- Banned phrases: "should be fine", "soon", "we're working on it" (without a date).
+`;
+
 export interface DefaultSkill {
   file: string;
   content: string;
@@ -124,6 +160,8 @@ export const DEFAULT_SKILLS: DefaultSkill[] = [
   { file: 'skills/ask.md', content: ASK_SKILL },
   { file: 'skills/chat.md', content: CHAT_SKILL },
   { file: 'skills/_filing-rules.md', content: FILING_RULES },
+  { file: 'skills/voice-exec.md', content: VOICE_EXEC },
+  { file: 'skills/voice-cs.md', content: VOICE_CS },
 ];
 
 /** Built-in skill content keyed by session_type (the runtime fallback). */

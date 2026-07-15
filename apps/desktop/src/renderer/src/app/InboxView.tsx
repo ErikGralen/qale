@@ -5,7 +5,7 @@ import type { ProposalDTO, ProposalStatsDTO } from '@pm/ipc';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 
-const KIND_LABEL: Record<string, string> = { note: 'new note', decision: 'decision', update: 'update' };
+const KIND_LABEL: Record<string, string> = { note: 'new note', decision: 'decision', update: 'update', outbound: 'outbound draft' };
 
 /**
  * The Inbox (PLAN-V2 §3.3) — home, not a dashboard. A unified list of approval
@@ -135,16 +135,23 @@ function CardItem({
     };
   }, [proposal.id, previewProposal]);
 
-  const target = proposal.targetPath ?? (proposal.payload as { path?: string }).path ?? '';
+  const ob = proposal.kind === 'outbound' ? (proposal.payload as { system?: string; action?: string; projectKey?: string; issueKey?: string; pageId?: string; audience?: string }) : null;
+  const target = ob
+    ? `${ob.system} · ${ob.action}${ob.projectKey ? ` → ${ob.projectKey}` : ob.issueKey ? ` → ${ob.issueKey}` : ob.pageId ? ` → page ${ob.pageId}` : ob.audience ? ` → ${ob.audience}` : ''}`
+    : proposal.targetPath ?? (proposal.payload as { path?: string }).path ?? '';
   const supersedes = (proposal.payload as { supersedes?: string }).supersedes;
 
   return (
     <li className="rounded-xl border border-border bg-card p-4 shadow-sm">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Badge variant="secondary">{KIND_LABEL[proposal.kind] ?? proposal.kind}</Badge>
-        <button className="truncate font-mono text-xs text-muted-foreground hover:text-foreground" onClick={() => onOpen(target)}>
-          {target}
-        </button>
+        {ob ? (
+          <span className="truncate font-mono text-xs text-muted-foreground">{target}</span>
+        ) : (
+          <button className="truncate font-mono text-xs text-muted-foreground hover:text-foreground" onClick={() => onOpen(target)}>
+            {target}
+          </button>
+        )}
         {supersedes && <Badge variant="outline">supersedes {supersedes.split('/').pop()}</Badge>}
         {proposal.inference && <Badge className="bg-chart-4/15 text-chart-4">inference</Badge>}
       </div>

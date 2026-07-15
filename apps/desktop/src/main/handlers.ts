@@ -32,6 +32,7 @@ import { DEFAULT_SKILLS } from '@pm/sessions';
 import { handle, pushEvent } from './ipc.js';
 import { SettingsService } from './services/settings-service.js';
 import { VaultService } from './services/vault-service.js';
+import { makeOutbound } from './services/outbound-service.js';
 import {
   backlinkToDTO,
   hitToDTO,
@@ -63,6 +64,25 @@ function seedDemoProposal(ctx: UseCaseContext): void {
     evidence: [{ ref: `[[${meeting.slug}]]`, resolved: true }],
     inference: false,
   });
+  // A demo outbound draft card (message tier — no external write needed).
+  createProposal(ctx, {
+    kind: 'outbound',
+    sessionId: 'seed',
+    targetPath: null,
+    baseHash: null,
+    payload: {
+      system: 'message',
+      action: 'message',
+      audience: 'exec',
+      title: 'Acme SSO on track',
+      body: 'WorkOS SSO is live in staging; SCIM lands Q3. Acme renewal unblocked.',
+      linkBackPath: `${meeting.path}`,
+      rationale: 'Exec update drafted from the QBR.',
+    },
+    rationale: 'Exec update drafted from the QBR.',
+    evidence: [{ ref: `[[${meeting.slug}]]`, resolved: true }],
+    inference: false,
+  });
 }
 
 // Placeholder model list until the pi ModelRegistry has a live key.
@@ -90,6 +110,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     const ctx = vaultService.context();
     if (!ctx) return;
     const s = settings.get();
+    // The card-application layer writes outbound only when Atlassian is configured.
+    ctx.outbound = makeOutbound(settings.getAtlassian());
     agent.configure({
       vaultDir: ctx.vault.root(),
       userDataDir: app.getPath('userData'),

@@ -12,7 +12,7 @@ import {
 test('parseSkill reads frontmatter + When/Read/Produce/Then', () => {
   const c = parseSkill(AFTER_MEETING_SKILL, 'after-meeting');
   assert.equal(c.name, 'after-meeting');
-  assert.equal(c.tier, 'suggest');
+  assert.equal(c.tier, 'outbound');
   assert.deepEqual(c.checkpoints, ['digest', 'outline', 'draft']);
   assert.equal(c.gateOutput, true);
   assert.ok(c.when && /transcript is dropped/i.test(c.when));

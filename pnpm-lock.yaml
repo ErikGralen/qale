@@ -35,6 +35,9 @@ importers:
       '@pm/application':
         specifier: workspace:*
         version: link:../../packages/application
+      '@pm/atlassian':
+        specifier: workspace:*
+        version: link:../../packages/atlassian
       '@pm/domain':
         specifier: workspace:*
         version: link:../../packages/domain

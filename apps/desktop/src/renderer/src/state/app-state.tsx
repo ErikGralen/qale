@@ -66,7 +66,7 @@ interface AppState {
   setActiveTab: (id: string) => void;
   // data
   query: (q: NoteQueryDTO) => Promise<NoteRefDTO[]>;
-  dropMeeting: (title: string, body: string) => Promise<void>;
+  dropMeeting: (title: string, body: string, safeSpace?: boolean) => Promise<void>;
   previewProposal: (id: string) => Promise<{ before: string; after: string; stale: boolean } | null>;
   refreshProposals: () => Promise<void>;
   acceptProposal: (id: string, edited?: unknown) => Promise<{ ok: boolean; stale?: boolean }>;
@@ -213,9 +213,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const query = useCallback((q: NoteQueryDTO) => invoke['vault:query'](q), []);
 
   const dropMeeting = useCallback(
-    async (title: string, body: string) => {
-      const note = await invoke['meeting:capture']({ title, body });
+    async (title: string, body: string, safeSpace?: boolean) => {
+      const note = await invoke['meeting:capture']({ title, body, safeSpace });
       await refreshTree();
+      // A safe-space meeting is never formalized — just open the (stub) note.
+      if (safeSpace) {
+        focusOrAddTab({ id: nextId(), kind: 'doc', path: note.path, title: note.title }, (t) => t.kind === 'doc' && t.path === note.path);
+        await loadDoc(note.path);
+        return;
+      }
       const tab: Tab = {
         id: nextId(),
         kind: 'session',
@@ -226,7 +232,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setTabs((prev) => [...prev, tab]);
       setActiveTabId(tab.id);
     },
-    [refreshTree],
+    [refreshTree, focusOrAddTab, loadDoc],
   );
 
   const previewProposal = useCallback((id: string) => invoke['proposals:preview'](id), []);

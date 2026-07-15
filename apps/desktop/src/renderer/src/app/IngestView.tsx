@@ -11,6 +11,7 @@ export function IngestView() {
   const { dropMeeting } = useApp();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [safeSpace, setSafeSpace] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const onFile = async (file: File) => {
@@ -20,10 +21,10 @@ export function IngestView() {
   };
 
   const submit = async () => {
-    if (!body.trim()) return;
+    if (!body.trim() && !safeSpace) return;
     setBusy(true);
     try {
-      await dropMeeting(title.trim() || 'Meeting transcript', body.trim());
+      await dropMeeting(title.trim() || 'Meeting transcript', body.trim(), safeSpace);
     } finally {
       setBusy(false);
     }
@@ -56,12 +57,18 @@ export function IngestView() {
             className="h-full min-h-72 w-full resize-none rounded-lg border border-input bg-card p-3 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           />
         </div>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input type="checkbox" checked={safeSpace} onChange={(e) => setSafeSpace(e.target.checked)} />
+          Safe space — private meeting: capture off, transcript not retained, nothing formalized.
+        </label>
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">
-            Lands in meetings/, then the After-Meeting session proposes decisions, insights & a summary.
+            {safeSpace
+              ? 'Files a stub meeting note only — no transcript, no session.'
+              : 'Lands in meetings/, then the After-Meeting session proposes decisions, insights & a summary.'}
           </span>
-          <Button size="sm" onClick={submit} disabled={!body.trim() || busy}>
-            Drop & run session
+          <Button size="sm" onClick={submit} disabled={(!body.trim() && !safeSpace) || busy}>
+            {safeSpace ? 'Record safe-space meeting' : 'Drop & run session'}
           </Button>
         </div>
       </div>

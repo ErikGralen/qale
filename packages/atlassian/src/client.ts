@@ -115,6 +115,65 @@ export class AtlassianClient {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Writes (PLAN-V2 §3.4) — invoked ONLY by the card-application layer on
+  // approval, never by an agent tool. Links are built from the API response.
+  // ---------------------------------------------------------------------------
+
+  /** Create a Jira issue from a markdown description. Returns the deterministic link. */
+  async createIssue(input: {
+    projectKey: string;
+    issueType?: string;
+    summary: string;
+    descriptionMarkdown?: string;
+  }): Promise<{ key: string; url: string }> {
+    const data = await this.request<{ key: string }>('/rest/api/3/issue', {
+      method: 'POST',
+      body: JSON.stringify({
+        fields: {
+          project: { key: input.projectKey },
+          issuetype: { name: input.issueType ?? 'Task' },
+          summary: input.summary,
+          description: markdownToAdf(input.descriptionMarkdown ?? ''),
+        },
+      }),
+    });
+    return { key: data.key, url: `${this.base()}/browse/${data.key}` };
+  }
+
+  async addComment(key: string, bodyMarkdown: string): Promise<{ id: string; url: string }> {
+    const data = await this.request<{ id: string }>(
+      `/rest/api/3/issue/${encodeURIComponent(key)}/comment`,
+      { method: 'POST', body: JSON.stringify({ body: markdownToAdf(bodyMarkdown) }) },
+    );
+    return { id: data.id, url: `${this.base()}/browse/${key}?focusedCommentId=${data.id}` };
+  }
+
+  /** Append a markdown section to a Confluence page (fetch → bump version → PUT). */
+  async updatePage(id: string, appendMarkdown: string): Promise<{ id: string; url: string }> {
+    const page = await this.request<RawPage & { version?: { number?: number }; spaceId?: string }>(
+      `/wiki/api/v2/pages/${encodeURIComponent(id)}?body-format=storage`,
+    );
+    const currentBody = page.body?.storage?.value ?? '';
+    const nextBody = `${currentBody}${markdownToStorage(appendMarkdown)}`;
+    const nextVersion = (page.version?.number ?? 1) + 1;
+    const data = await this.request<RawPage>(`/wiki/api/v2/pages/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        id,
+        status: 'current',
+        title: page.title,
+        body: { representation: 'storage', value: nextBody },
+        version: { number: nextVersion, message: 'Produktminnet update' },
+      }),
+    });
+    return { id: data.id, url: `${this.base()}/wiki${data._links?.webui ?? ''}` };
+  }
+
+  private base(): string {
+    return this.creds.baseUrl.replace(/\/$/, '');
+  }
+
   private toIssue(raw: RawIssue): JiraIssue {
     return {
       key: raw.key,
@@ -152,6 +211,99 @@ interface RawPage {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Minimal markdown → ADF (Atlassian Document Format) for Jira writes. Handles
+ * paragraphs, `#`/`##` headings and `-` bullet lists — enough for a decision
+ * rationale or an action description. Anything richer degrades to a paragraph.
+ */
+export function markdownToAdf(md: string): AdfDoc {
+  const content: AdfNode[] = [];
+  const lines = md.split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    if (heading) {
+      content.push({
+        type: 'heading',
+        attrs: { level: heading[1]!.length },
+        content: [{ type: 'text', text: heading[2]! }],
+      });
+      i++;
+      continue;
+    }
+    if (/^[-*]\s+/.test(line)) {
+      const items: AdfNode[] = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i]!)) {
+        items.push({
+          type: 'listItem',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: lines[i]!.replace(/^[-*]\s+/, '') }] }],
+        });
+        i++;
+      }
+      content.push({ type: 'bulletList', content: items });
+      continue;
+    }
+    content.push({ type: 'paragraph', content: [{ type: 'text', text: line }] });
+    i++;
+  }
+  if (content.length === 0) content.push({ type: 'paragraph', content: [] });
+  return { type: 'doc', version: 1, content };
+}
+
+interface AdfNode {
+  type: string;
+  attrs?: Record<string, unknown>;
+  content?: AdfNode[];
+  text?: string;
+}
+interface AdfDoc {
+  type: 'doc';
+  version: 1;
+  content: AdfNode[];
+}
+
+/** Minimal markdown → Confluence storage XHTML for page appends. */
+export function markdownToStorage(md: string): string {
+  const out: string[] = [];
+  const lines = md.split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    if (heading) {
+      const level = heading[1]!.length + 1;
+      out.push(`<h${level}>${escapeXml(heading[2]!)}</h${level}>`);
+      i++;
+      continue;
+    }
+    if (/^[-*]\s+/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i]!)) {
+        items.push(`<li>${escapeXml(lines[i]!.replace(/^[-*]\s+/, ''))}</li>`);
+        i++;
+      }
+      out.push(`<ul>${items.join('')}</ul>`);
+      continue;
+    }
+    out.push(`<p>${escapeXml(line)}</p>`);
+    i++;
+  }
+  return out.join('');
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function stripTags(html: string): string {

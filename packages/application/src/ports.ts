@@ -144,12 +144,31 @@ export interface ProposalPort {
   stats(): ProposalStats;
 }
 
+/** The deterministic result of an outbound write — the link is from the API. */
+export interface OutboundResult {
+  url: string;
+  ref?: string;
+}
+
+/**
+ * Outbound port (PLAN-V2 §3.4) — the seam the card-application layer calls on
+ * approval to write to Jira/Confluence. Implemented in the composition root over
+ * the Atlassian client; absent when no integration is configured.
+ */
+export interface OutboundPort {
+  createJiraIssue(input: { projectKey: string; issueType?: string; summary: string; body: string }): Promise<OutboundResult>;
+  addJiraComment(input: { issueKey: string; body: string }): Promise<OutboundResult>;
+  updateConfluencePage(input: { pageId: string; body: string }): Promise<OutboundResult>;
+}
+
 export interface UseCaseContext {
   vault: VaultPort;
   index: IndexPort;
   git: GitPort;
   clock: Clock;
   proposals: ProposalPort;
+  /** Present only when an outbound integration (Atlassian) is configured. */
+  outbound?: OutboundPort;
 }
 
 export type { Note, SearchHit, ProblemStance, NoteType, Frontmatter };

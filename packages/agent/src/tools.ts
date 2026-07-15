@@ -258,6 +258,142 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
   return [proposeNote, proposeUpdate, proposeDecision];
 }
 
+export const DRAFT_TOOL_NAMES = ['draft_jira_issue', 'draft_jira_comment', 'draft_confluence_update', 'draft_message'];
+
+/**
+ * Outbound draft tools (PLAN-V2 §3.4) — the agent DRAFTS, the human approves. These
+ * only ever create outbound cards; the actual Jira/Confluence write happens in the
+ * card-application layer on approval. There is no auto-apply path here, ever.
+ */
+export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness?: SessionHarness): ToolDefinition[] {
+  const gate = (): string | null => (harness && !harness.canPropose() ? harness.gateMessage() : null);
+  const mkCard = (payload: Record<string, unknown>, rationale: string, sources: string[], label: string) => {
+    const rec = createProposal(ctx, {
+      kind: 'outbound',
+      sessionId,
+      targetPath: null,
+      baseHash: null,
+      payload,
+      rationale,
+      evidence: sources.map((s) => ({ ref: s, resolved: true })),
+      inference: false,
+    });
+    harness?.recordWrite(String(payload['linkBackPath'] ?? label), rec.id, 'outbound');
+    return rec;
+  };
+
+  const draftJiraIssue = defineTool({
+    name: 'draft_jira_issue',
+    label: 'Draft Jira issue',
+    description:
+      'Draft a NEW Jira issue as an approval card (never created until approved). Give the projectKey, a summary, and a markdown description. Cite sources[] (the meeting/decision it came from). Optionally linkBack: a workspace note path to append the resulting Jira link to on approval.',
+    parameters: Type.Object({
+      projectKey: Type.String(),
+      issueType: Type.Optional(Type.String()),
+      summary: Type.String(),
+      description: Type.String(),
+      sources: Type.Array(Type.String()),
+      linkBack: Type.Optional(Type.String()),
+      rationale: Type.String(),
+    }),
+    async execute(_id, params: { projectKey: string; issueType?: string; summary: string; description: string; sources: string[]; linkBack?: string; rationale: string }) {
+      const g = gate();
+      if (g) return text(g);
+      const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const rec = mkCard(
+        { system: 'jira', action: 'create_issue', projectKey: params.projectKey, issueType: params.issueType, title: params.summary, body: params.description, linkBackPath: params.linkBack, rationale: params.rationale },
+        params.rationale,
+        params.sources,
+        'jira-issue',
+      );
+      return text(`Drafted Jira issue card (${rec.id}) in ${params.projectKey}. Awaiting approval.`);
+    },
+  });
+
+  const draftJiraComment = defineTool({
+    name: 'draft_jira_comment',
+    label: 'Draft Jira comment',
+    description: 'Draft a comment on an existing Jira issue (issueKey) as an approval card. Cite sources[].',
+    parameters: Type.Object({
+      issueKey: Type.String(),
+      body: Type.String(),
+      sources: Type.Array(Type.String()),
+      linkBack: Type.Optional(Type.String()),
+      rationale: Type.String(),
+    }),
+    async execute(_id, params: { issueKey: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
+      const g = gate();
+      if (g) return text(g);
+      const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const rec = mkCard(
+        { system: 'jira', action: 'add_comment', issueKey: params.issueKey, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale },
+        params.rationale,
+        params.sources,
+        'jira-comment',
+      );
+      return text(`Drafted Jira comment card (${rec.id}) on ${params.issueKey}. Awaiting approval.`);
+    },
+  });
+
+  const draftConfluenceUpdate = defineTool({
+    name: 'draft_confluence_update',
+    label: 'Draft Confluence update',
+    description: 'Draft an append to a Confluence page (pageId) as an approval card. Cite sources[].',
+    parameters: Type.Object({
+      pageId: Type.String(),
+      body: Type.String(),
+      sources: Type.Array(Type.String()),
+      linkBack: Type.Optional(Type.String()),
+      rationale: Type.String(),
+    }),
+    async execute(_id, params: { pageId: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
+      const g = gate();
+      if (g) return text(g);
+      const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const rec = mkCard(
+        { system: 'confluence', action: 'update_page', pageId: params.pageId, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale },
+        params.rationale,
+        params.sources,
+        'confluence-update',
+      );
+      return text(`Drafted Confluence update card (${rec.id}) on page ${params.pageId}. Awaiting approval.`);
+    },
+  });
+
+  const draftMessage = defineTool({
+    name: 'draft_message',
+    label: 'Draft message',
+    description:
+      'Draft a per-audience update (CS/sales/exec) as an approval card — saved to the workspace on approval (not sent; Slack/email are out of scope). Give the audience, a markdown body, and cite sources[]. linkBack is the person/customer note to file it under.',
+    parameters: Type.Object({
+      audience: Type.String(),
+      title: Type.Optional(Type.String()),
+      body: Type.String(),
+      sources: Type.Array(Type.String()),
+      linkBack: Type.Optional(Type.String()),
+      rationale: Type.String(),
+    }),
+    async execute(_id, params: { audience: string; title?: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
+      const g = gate();
+      if (g) return text(g);
+      const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const rec = mkCard(
+        { system: 'message', action: 'message', audience: params.audience, title: params.title, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale },
+        params.rationale,
+        params.sources,
+        'message',
+      );
+      return text(`Drafted ${params.audience} update card (${rec.id}). Awaiting approval.`);
+    },
+  });
+
+  return [draftJiraIssue, draftJiraComment, draftConfluenceUpdate, draftMessage];
+}
+
 export const ATLASSIAN_TOOL_NAMES = ['jira_search', 'jira_get_issue', 'confluence_search', 'confluence_get_page'];
 
 /**

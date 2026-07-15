@@ -47,6 +47,12 @@ export interface InvokeMap {
     result: SettingsDTO;
   };
   'settings:setModel': { args: [modelId: string]; result: SettingsDTO };
+  'settings:setSchedule': {
+    args: [sessionType: string, patch: { dayOfWeek?: number; hour?: number; enabled?: boolean }];
+    result: SettingsDTO;
+  };
+  'settings:setAutoApply': { args: [sessionType: string, on: boolean]; result: SettingsDTO };
+  'schedule:runNow': { args: [sessionType: string]; result: { ok: boolean } };
   'models:list': { args: []; result: ModelInfoDTO[] };
 
   // Vault
@@ -102,6 +108,9 @@ export const INVOKE_CHANNELS = [
   'settings:setAnthropicKey',
   'settings:setAtlassian',
   'settings:setModel',
+  'settings:setSchedule',
+  'settings:setAutoApply',
+  'schedule:runNow',
   'models:list',
   'vault:pick',
   'vault:open',

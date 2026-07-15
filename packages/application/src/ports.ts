@@ -95,6 +95,7 @@ export interface ProposalRecord {
   id: string;
   kind: string;
   sessionId: string;
+  sessionType: string | null;
   targetPath: string | null;
   /** Content hash of the target at proposal time — for staleness detection. */
   baseHash: string | null;
@@ -110,6 +111,8 @@ export interface ProposalRecord {
 export interface CreateProposalInput {
   kind: string;
   sessionId: string;
+  /** The session TYPE (skill name) that produced this card — for auto-apply policy. */
+  sessionType?: string;
   targetPath: string | null;
   baseHash: string | null;
   payload: unknown;

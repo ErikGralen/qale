@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Button, Input } from '@pm/ui';
-import { Check, KeyRound, Boxes, Gauge } from 'lucide-react';
+import { Check, KeyRound, Boxes, Gauge, CalendarClock, Play } from 'lucide-react';
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 import type { ModelInfoDTO, ProposalStatsDTO, SettingsDTO } from '@pm/ipc';
 import { invoke } from '../lib/ipc';
 
@@ -41,6 +43,19 @@ export function SettingsView() {
   const pickModel = async (id: string) => {
     const s = await invoke['settings:setModel'](id);
     setSettings(s);
+  };
+
+  const [ran, setRan] = useState<string | null>(null);
+  const setSchedule = async (type: string, patch: { dayOfWeek?: number; hour?: number; enabled?: boolean }) => {
+    setSettings(await invoke['settings:setSchedule'](type, patch));
+  };
+  const setAutoApply = async (type: string, on: boolean) => {
+    setSettings(await invoke['settings:setAutoApply'](type, on));
+  };
+  const runNow = async (type: string) => {
+    await invoke['schedule:runNow'](type);
+    setRan(type);
+    setTimeout(() => setRan(null), 2500);
   };
 
   const saveAtlassian = async () => {
@@ -110,6 +125,73 @@ export function SettingsView() {
             </div>
           )}
         </section>
+
+        {settings && settings.schedules.length > 0 && (
+          <section className="space-y-2">
+            <div className="flex items-center gap-2">
+              <CalendarClock className="size-4 text-muted-foreground" />
+              <h2 className="font-serif text-lg font-semibold">Scheduled sessions</h2>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Run while the app is open; missed slots catch up on launch. Dry-run first — everything
+              lands in the Inbox as cards, nothing is sent.
+            </p>
+            {settings.schedules.map((sc) => {
+              const earned =
+                stats && stats.approvalRate !== null && stats.approvalRate >= 0.9 && stats.accepted >= 5;
+              const autoOn = settings.autoApplyTypes.includes(sc.sessionType);
+              return (
+                <div key={sc.sessionType} className="rounded-lg border border-border bg-card p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 font-medium capitalize">{sc.sessionType.replace('-', ' ')}</span>
+                    <select
+                      className="rounded-md border border-input bg-card px-1.5 py-1 text-xs"
+                      value={sc.dayOfWeek}
+                      onChange={(e) => setSchedule(sc.sessionType, { dayOfWeek: Number(e.target.value) })}
+                    >
+                      {DAYS.map((d, i) => (
+                        <option key={d} value={i}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={sc.hour}
+                      onChange={(e) => setSchedule(sc.sessionType, { hour: Number(e.target.value) })}
+                      className="w-14 rounded-md border border-input bg-card px-1.5 py-1 text-xs"
+                    />
+                    <label className="flex items-center gap-1 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={sc.enabled}
+                        onChange={(e) => setSchedule(sc.sessionType, { enabled: e.target.checked })}
+                      />
+                      enabled
+                    </label>
+                    <Button size="sm" variant="outline" onClick={() => runNow(sc.sessionType)}>
+                      <Play className="size-3.5" /> {ran === sc.sessionType ? 'Running…' : 'Dry-run'}
+                    </Button>
+                  </div>
+                  <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={autoOn}
+                      disabled={!earned && !autoOn}
+                      onChange={(e) => setAutoApply(sc.sessionType, e.target.checked)}
+                    />
+                    Auto-apply internal cards
+                    {earned
+                      ? ` — earned (accepted ${stats!.accepted}, ${Math.round((stats!.approvalRate ?? 0) * 100)}%). Internal writes only, revocable.`
+                      : ' — unlocks after a strong track record.'}
+                  </label>
+                </div>
+              );
+            })}
+          </section>
+        )}
 
         {stats && stats.accepted + stats.rejected > 0 && (
           <section className="space-y-2">

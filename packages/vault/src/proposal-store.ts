@@ -10,6 +10,7 @@ interface Row {
   id: string;
   kind: string;
   session_id: string;
+  session_type: string | null;
   target_path: string | null;
   base_hash: string | null;
   payload_json: string;
@@ -45,10 +46,13 @@ export class ProposalStore implements ProposalPort {
       );
       CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status);
     `);
-    // Telemetry column (added post-v1); guard for existing databases.
+    // Columns added post-v1; guard for existing databases.
     const cols = this.db.prepare('PRAGMA table_info(proposals)').all() as { name: string }[];
     if (!cols.some((c) => c.name === 'edit_distance')) {
       this.db.exec('ALTER TABLE proposals ADD COLUMN edit_distance INTEGER');
+    }
+    if (!cols.some((c) => c.name === 'session_type')) {
+      this.db.exec('ALTER TABLE proposals ADD COLUMN session_type TEXT');
     }
   }
 
@@ -58,6 +62,7 @@ export class ProposalStore implements ProposalPort {
       id,
       kind: input.kind,
       session_id: input.sessionId,
+      session_type: input.sessionType ?? null,
       target_path: input.targetPath,
       base_hash: input.baseHash,
       payload_json: JSON.stringify(input.payload),
@@ -70,9 +75,9 @@ export class ProposalStore implements ProposalPort {
     };
     this.db
       .prepare(
-        `INSERT INTO proposals (id, kind, session_id, target_path, base_hash, payload_json,
+        `INSERT INTO proposals (id, kind, session_id, session_type, target_path, base_hash, payload_json,
            rationale, evidence_json, inference, status, created, resolved)
-         VALUES (@id, @kind, @session_id, @target_path, @base_hash, @payload_json,
+         VALUES (@id, @kind, @session_id, @session_type, @target_path, @base_hash, @payload_json,
            @rationale, @evidence_json, @inference, @status, @created, @resolved)`,
       )
       .run(row);
@@ -155,6 +160,7 @@ export class ProposalStore implements ProposalPort {
       id: row.id,
       kind: row.kind,
       sessionId: row.session_id,
+      sessionType: row.session_type ?? null,
       targetPath: row.target_path,
       baseHash: row.base_hash,
       payload: JSON.parse(row.payload_json),

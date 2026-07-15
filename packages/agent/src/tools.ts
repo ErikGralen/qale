@@ -162,6 +162,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const rec = createProposal(ctx, {
         kind: 'note',
         sessionId,
+        sessionType: harness?.config.name,
         targetPath: parsed.data.path,
         baseHash: null,
         payload: parsed.data,
@@ -203,6 +204,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const rec = createProposal(ctx, {
         kind: 'decision',
         sessionId,
+        sessionType: harness?.config.name,
         targetPath: parsed.data.path,
         baseHash: null,
         payload: { ...parsed.data, ...(p.supersedes ? { supersedes: stripLink(p.supersedes) } : {}) },
@@ -243,6 +245,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const rec = createProposal(ctx, {
         kind: 'update',
         sessionId,
+        sessionType: harness?.config.name,
         targetPath: target,
         baseHash: contentHash(note.body),
         payload: { ...parsed.data, path: target },
@@ -271,6 +274,7 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
     const rec = createProposal(ctx, {
       kind: 'outbound',
       sessionId,
+      sessionType: harness?.config.name,
       targetPath: null,
       baseHash: null,
       payload,

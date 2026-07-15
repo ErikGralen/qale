@@ -25,7 +25,7 @@ import type {
 import { invoke, onEvent } from '../lib/ipc';
 import { SMART_VIEWS, type SmartViewId } from './smart-views';
 
-export type ChatSessionType = 'chat' | 'ask' | 'after-meeting';
+export type ChatSessionType = 'chat' | 'ask' | 'after-meeting' | 'weekly-update';
 
 /** A tab holds a document or a session interchangeably (PLAN-V2 §3.3). */
 export type Tab =

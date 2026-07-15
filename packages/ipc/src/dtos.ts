@@ -259,7 +259,7 @@ export interface ProposalDTO {
 // Agent / chat / sessions
 // ---------------------------------------------------------------------------
 
-export type SessionType = 'chat' | 'ask' | 'after-meeting';
+export type SessionType = 'chat' | 'ask' | 'after-meeting' | 'weekly-update';
 
 export interface AgentRunInput {
   sessionType: SessionType;
@@ -282,11 +282,21 @@ export interface SessionRefDTO {
   state: 'working' | 'waiting' | 'done';
 }
 
+export interface ScheduleDTO {
+  sessionType: string;
+  dayOfWeek: number;
+  hour: number;
+  enabled: boolean;
+  lastRun: string | null;
+}
+
 export interface SettingsDTO {
   vaultPath: string | null;
   modelId: string;
   hasAnthropicKey: boolean;
   hasAtlassianCreds: boolean;
+  schedules: ScheduleDTO[];
+  autoApplyTypes: string[];
 }
 
 export interface ModelInfoDTO {

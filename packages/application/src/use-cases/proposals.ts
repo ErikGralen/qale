@@ -41,6 +41,38 @@ export function getProposalStats(ctx: UseCaseContext): ProposalStats {
   return ctx.proposals.stats();
 }
 
+/**
+ * Earned auto-apply (PLAN-V2 §3.5, Phase 7): for session types the PM has enabled
+ * on track record, auto-accept eligible pending cards — INTERNAL writes only
+ * (never outbound), revocable, with a change-log entry per application. Called by
+ * the scheduler; the offer is surfaced by the product, not assumed.
+ */
+export async function applyAutoPolicy(
+  ctx: UseCaseContext,
+  autoApplyTypes: string[],
+): Promise<{ applied: number }> {
+  if (autoApplyTypes.length === 0) return { applied: 0 };
+  const eligible = ctx.proposals
+    .list('pending')
+    .filter((p) => p.sessionType && autoApplyTypes.includes(p.sessionType) && p.kind !== 'outbound');
+  const log: string[] = [];
+  let applied = 0;
+  for (const p of eligible) {
+    const r = await acceptProposal(ctx, p.id);
+    if (r.ok) {
+      applied++;
+      log.push(`- ${ctx.clock.now().slice(0, 10)} auto-applied ${p.kind} \`${p.targetPath ?? ''}\` (${p.sessionType})`);
+    }
+  }
+  if (log.length > 0) {
+    const path = 'sessions/auto-apply-log.md';
+    const prev = (await ctx.vault.readRaw(path)) ?? '# Auto-apply change log\n\n';
+    await ctx.vault.writeRaw(path, `${prev}${log.join('\n')}\n`);
+    await ctx.git.commitPaths([path], `auto-apply: ${applied} card(s)`);
+  }
+  return { applied };
+}
+
 export interface GoldenAnswerInput {
   question: string;
   answer: string;

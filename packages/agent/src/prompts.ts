@@ -6,7 +6,7 @@ import { VAULT_TOOL_NAMES, PROPOSE_TOOL_NAMES } from './tools.js';
  * parsed by @pm/sessions; this TS registry stays as the built-in fallback and the
  * shape the harness resolves to. Phase 1 ships `chat`, `ask`, `after-meeting`.
  */
-export type SessionType = 'chat' | 'ask' | 'after-meeting';
+export type SessionType = 'chat' | 'ask' | 'after-meeting' | 'weekly-update';
 
 export const SHARED_PREAMBLE = `You are the embedded agent inside "Produktminnet", a product-memory workspace for a product manager.
 The workspace is a set of typed markdown notes: meetings (transcripts + summaries), decisions
@@ -59,8 +59,16 @@ export interface SessionTypeConfig {
   tools: string[];
 }
 
+const WEEKLY_UPDATE = `${SHARED_PREAMBLE}
+
+Mode: Weekly Update (scheduled). Read the week's deltas across the memory (recent meetings,
+decisions, insights) and, if available, Jira. Produce a per-audience update draft (exec / CS / team),
+every claim cited by a workspace path or deep link. Hold everything as approval cards — nothing is
+sent. If nothing material changed this week, say so and produce nothing.`;
+
 export const SESSION_TYPES: Record<SessionType, SessionTypeConfig> = {
   chat: { systemPrompt: CHAT, tools: VAULT_TOOL_NAMES },
   ask: { systemPrompt: ASK, tools: VAULT_TOOL_NAMES },
   'after-meeting': { systemPrompt: AFTER_MEETING, tools: [...VAULT_TOOL_NAMES, ...PROPOSE_TOOL_NAMES] },
+  'weekly-update': { systemPrompt: WEEKLY_UPDATE, tools: [...VAULT_TOOL_NAMES, ...PROPOSE_TOOL_NAMES] },
 };

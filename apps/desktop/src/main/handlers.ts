@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog } from 'electron';
-import type { ModelInfoDTO, SettingsDTO } from '@pm/ipc';
+import type { AgentRunInput, ModelInfoDTO, SettingsDTO } from '@pm/ipc';
 import { AgentRuntime } from '@pm/agent';
 import {
   acceptProposal,
@@ -35,6 +35,7 @@ import { handle, pushEvent } from './ipc.js';
 import { SettingsService } from './services/settings-service.js';
 import { VaultService } from './services/vault-service.js';
 import { makeOutbound } from './services/outbound-service.js';
+import { SchedulerService } from './services/scheduler-service.js';
 import {
   backlinkToDTO,
   hitToDTO,
@@ -133,8 +134,29 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
       modelId: s.modelId,
       hasAnthropicKey: !!settings.getAnthropicKey(),
       hasAtlassianCreds: !!settings.getAtlassian(),
+      schedules: s.schedules,
+      autoApplyTypes: s.autoApplyTypes,
     };
   };
+
+  const notifyProposalsFor = (): void => {
+    const ctx = vaultService.context();
+    if (ctx) pushEvent(getWindow(), { channel: 'proposals:changed', pendingCount: ctx.proposals.pendingCount() });
+  };
+
+  const fireSession = async (sessionType: string, prompt: string): Promise<void> => {
+    const ctx = vaultService.context();
+    if (!ctx) return;
+    await agent.run({ sessionType: sessionType as AgentRunInput['sessionType'], prompt }, ctx, () => {});
+    setTimeout(notifyProposalsFor, 3000);
+  };
+
+  const scheduler = new SchedulerService(
+    () => vaultService.context(),
+    settings,
+    fireSession,
+    notifyProposalsFor,
+  );
 
   handle('app:ping', (message) => `pong: ${message}`);
 
@@ -153,6 +175,18 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     await settings.setAtlassian(creds.baseUrl, creds.email, creds.token);
     reconfigureAgent();
     return settingsDTO();
+  });
+  handle('settings:setSchedule', async (sessionType, patch) => {
+    await settings.setSchedule(sessionType, patch);
+    return settingsDTO();
+  });
+  handle('settings:setAutoApply', async (sessionType, on) => {
+    await settings.setAutoApply(sessionType, on);
+    return settingsDTO();
+  });
+  handle('schedule:runNow', async (sessionType) => {
+    await scheduler.runNow(sessionType);
+    return { ok: true };
   });
   handle('models:list', () => {
     const live = agent.listModels();
@@ -300,6 +334,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
           console.error('[pm] failed to open workspace:', err);
         }
       }
+      // Start the app-open scheduler (idempotent; ticks no-op until a vault opens).
+      scheduler.start();
     },
   };
 }

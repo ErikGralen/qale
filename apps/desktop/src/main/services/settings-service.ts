@@ -7,11 +7,26 @@ import { join } from 'node:path';
  * Atlassian token) are encrypted at rest with Electron safeStorage and only ever
  * decrypted in the main process — never sent to the renderer.
  */
+/** A scheduled session slot (PLAN-V2 §3.5): fires on a weekly day/hour. */
+export interface ScheduleEntry {
+  sessionType: string;
+  /** 0–6 (Sun–Sat). */
+  dayOfWeek: number;
+  /** 0–23 local hour. */
+  hour: number;
+  enabled: boolean;
+  /** ISO of the last time this slot fired (for catch-up + due checks). */
+  lastRun: string | null;
+}
+
 export interface PersistedSettings {
   vaultPath: string | null;
   modelId: string;
   anthropicKeyEnc: string | null;
   atlassian: { baseUrl: string; email: string; tokenEnc: string } | null;
+  schedules: ScheduleEntry[];
+  /** Session types the PM has earned + enabled auto-apply for (internal writes). */
+  autoApplyTypes: string[];
 }
 
 const DEFAULTS: PersistedSettings = {
@@ -19,6 +34,8 @@ const DEFAULTS: PersistedSettings = {
   modelId: 'claude-opus-4-8',
   anthropicKeyEnc: null,
   atlassian: null,
+  schedules: [{ sessionType: 'weekly-update', dayOfWeek: 5, hour: 15, enabled: false, lastRun: null }],
+  autoApplyTypes: [],
 };
 
 export class SettingsService {
@@ -77,6 +94,21 @@ export class SettingsService {
       email: this.data.atlassian.email,
       token: this.decrypt(this.data.atlassian.tokenEnc),
     };
+  }
+
+  async setSchedule(sessionType: string, patch: Partial<ScheduleEntry>): Promise<void> {
+    const existing = this.data.schedules.find((s) => s.sessionType === sessionType);
+    if (existing) Object.assign(existing, patch);
+    else this.data.schedules.push({ sessionType, dayOfWeek: 5, hour: 15, enabled: false, lastRun: null, ...patch });
+    await this.persist();
+  }
+
+  async setAutoApply(sessionType: string, on: boolean): Promise<void> {
+    const set = new Set(this.data.autoApplyTypes);
+    if (on) set.add(sessionType);
+    else set.delete(sessionType);
+    this.data.autoApplyTypes = [...set];
+    await this.persist();
   }
 
   private encrypt(value: string): string {

@@ -89,12 +89,12 @@ export function ChatView({
   initialPrompt,
   scopeHint,
 }: {
-  sessionType?: 'chat' | 'ask' | 'after-meeting';
+  sessionType?: 'chat' | 'ask' | 'after-meeting' | 'weekly-update';
   initialPrompt?: string;
   /** Prepended to the first user message to scope the read (side chat). */
   scopeHint?: string;
 }) {
-  const proposesWrites = sessionType === 'after-meeting';
+  const proposesWrites = sessionType === 'after-meeting' || sessionType === 'weekly-update';
   const { openDoc, refreshProposals, openInbox, pendingCount } = useApp();
   const transport = useMemo(() => new IpcChatTransport(sessionType), [sessionType]);
   const { messages, sendMessage, status, stop, error } = useChat({ transport });
@@ -144,7 +144,9 @@ export function ChatView({
           ? 'Ask your product memory'
           : sessionType === 'after-meeting'
             ? 'After-Meeting'
-            : 'Chat'}
+            : sessionType === 'weekly-update'
+              ? 'Weekly Update'
+              : 'Chat'}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6">

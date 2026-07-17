@@ -18,11 +18,3 @@ Report-first pitch: "your Monday numbers in your inbox, no dashboards to babysit
 Full enterprise suite: SSO, SCIM, SOC 2, the works. Wins on compliance checklists, loses on price and deployment time — their implementations run quarters, ours run weeks. When we lose enterprise deals on missing checkboxes, this is who wins them. SSO + SCIM shipping this quarter closes most of that gap for Nordic mid-enterprise.
 
 We lose down-market on price and delivery format (Insikt), up-market on checkbox completeness (Corvid). Q3 plan attacks both ends: exports v1 and enterprise auth.
-
-
-
-# hello
-
-
-
-&nbsp;

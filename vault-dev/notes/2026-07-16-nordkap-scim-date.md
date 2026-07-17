@@ -5,5 +5,5 @@ sources: []
 ---
 
 From the renewal call — [[jonas-palm]] says [[nordcap-payments]] won't sign the
-renewal without a committed SCIM date. Check with [[sara]] on the rollout
+renewal without a committed SCIM date. Check with [[people/sara-lindqvist]] on the rollout
 runbook; full context in [[nordkap-renewal-call]].

@@ -1,33 +1,102 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Badge, Button, Separator } from '@pm/ui';
-import { Pencil, Link2, FileText, Save, X, Clock, AlertTriangle, Play } from 'lucide-react';
+import { Link2, FileText, Star, Play, Sparkles } from 'lucide-react';
 import { useApp } from '../state/app-state';
 import { Markdown } from '../components/Markdown';
+import { NoteEditor } from '../components/NoteEditor';
+import { PropertiesBlock } from '../components/PropertiesBlock';
+import { beforeMeetingSeed } from '../lib/agent-nudges';
+
+/** "today 14:00" / "tomorrow" / "in 3d" — when the meeting starts, or null if past. */
+function upcomingLabel(frontmatter: Record<string, unknown>): string | null {
+  const date = typeof frontmatter['date'] === 'string' ? frontmatter['date'] : null;
+  if (!date) return null;
+  const time = typeof frontmatter['time'] === 'string' ? frontmatter['time'] : null;
+  const iso = time && !date.includes('T') ? `${date}T${time}` : date;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t) || t <= Date.now()) return null;
+  if (new Date(t).toDateString() === new Date().toDateString()) return time ? `today ${time}` : 'today';
+  const days = Math.ceil((t - Date.now()) / 86_400_000);
+  return days === 1 ? 'tomorrow' : `in ${days} days`;
+}
+
+/**
+ * The note's display name — an input styled as the page h1. Commits on blur or
+ * Enter (which hands focus to the body); Escape reverts. A fresh untitled note
+ * arrives with the title selected, so typing replaces it immediately.
+ */
+function TitleEditor({
+  value,
+  autoFocus,
+  onCommit,
+}: {
+  value: string;
+  autoFocus: boolean;
+  onCommit: (title: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  return (
+    <input
+      className="mb-1 w-full rounded-md bg-transparent font-serif text-2xl font-semibold tracking-tight placeholder:text-muted-foreground/40 focus-visible:outline-none"
+      value={draft}
+      placeholder="Untitled"
+      autoFocus={autoFocus}
+      onFocus={(e) => {
+        if (autoFocus) e.currentTarget.select();
+      }}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.currentTarget.blur();
+        } else if (e.key === 'Escape') {
+          setDraft(value);
+          e.currentTarget.blur();
+        }
+      }}
+      onBlur={() => {
+        const next = draft.trim();
+        if (next && next !== value) onCommit(next);
+        else setDraft(value);
+      }}
+      aria-label="Note title"
+    />
+  );
+}
 
 export function NoteView({ path }: { path: string }) {
-  const { docData, openDoc, saveNote, openSession } = useApp();
+  const { docData, openDoc, loadDoc, saveNote, renameNote, openSession, activeTabId, keepTab, favorites, toggleFavorite } =
+    useApp();
   const data = docData[path];
   const currentNote = data?.note ?? null;
   const backlinks = data?.backlinks ?? [];
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-
-  useEffect(() => {
-    setEditing(false);
-    setDraft(currentNote?.body ?? '');
-  }, [currentNote?.path, currentNote?.body]);
 
   if (!currentNote) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading…
+      <div className="flex h-full flex-col">
+        <div className="h-10 border-b border-border" />
+        <div className="mx-auto w-full max-w-2xl flex-1 px-8 py-6">
+          <div className="mb-3 h-4 w-24 animate-pulse rounded bg-muted" />
+          <div className="mb-4 h-7 w-2/3 animate-pulse rounded bg-muted" />
+          <div className="space-y-2">
+            <div className="h-4 w-full animate-pulse rounded bg-muted/70" />
+            <div className="h-4 w-5/6 animate-pulse rounded bg-muted/70" />
+            <div className="h-4 w-3/4 animate-pulse rounded bg-muted/70" />
+          </div>
+        </div>
       </div>
     );
   }
 
   const editable = currentNote.bodyEditable;
   const stance = currentNote.frontmatter['stance'] as string | undefined;
-  const f = currentNote.freshness;
+  // An upcoming, non-safe-space meeting without prep gets the brief offer here,
+  // on the page it would write to — never as an inbox item.
+  const upcoming = currentNote.type === 'meeting' ? upcomingLabel(currentNote.frontmatter) : null;
+  const offerBrief =
+    upcoming !== null &&
+    currentNote.frontmatter['safe_space'] !== true &&
+    !/^## Prep\b/m.test(currentNote.body);
   const sessionSkill =
     currentNote.type === 'skill' && currentNote.frontmatter['skill_kind'] === 'session'
       ? (currentNote.frontmatter['session_type'] as string | undefined)
@@ -35,18 +104,26 @@ export function NoteView({ path }: { path: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-9 items-center gap-2 border-b border-border px-5">
+      <div className="flex h-10 items-center gap-2 border-b border-border px-5">
         <FileText className="size-4 text-muted-foreground" />
         <span className="truncate font-mono text-xs text-muted-foreground">{currentNote.path}</span>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            onClick={() => {
+              toggleFavorite(currentNote.path);
+              // Pinning commits the tab — it stops being a throwaway preview.
+              if (activeTabId) keepTab(activeTabId);
+            }}
+            aria-pressed={favorites.includes(currentNote.path)}
+            aria-label={favorites.includes(currentNote.path) ? 'Remove from favourites' : 'Add to favourites'}
+            title={favorites.includes(currentNote.path) ? 'Remove from favourites' : 'Add to favourites'}
+          >
+            <Star className={`size-4 ${favorites.includes(currentNote.path) ? 'fill-brand text-brand' : ''}`} />
+          </button>
           {sessionSkill && (
             <Button size="sm" onClick={() => openSession(sessionSkill, { title: currentNote.title })}>
               <Play className="size-3.5" /> Start session
-            </Button>
-          )}
-          {editable && !editing && (
-            <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-              <Pencil className="size-3.5" /> Edit
             </Button>
           )}
         </div>
@@ -60,61 +137,80 @@ export function NoteView({ path }: { path: string }) {
             </Badge>
             {stance && <Badge className="capitalize">{stance}</Badge>}
             {currentNote.frontmatter['status'] === 'superseded' && <Badge variant="outline">superseded</Badge>}
-            {f.stale && (
-              <Badge className="gap-1 bg-chart-4/15 text-chart-4">
-                <AlertTriangle className="size-3" /> stale
-              </Badge>
-            )}
-            {f.unverified && (
-              <Badge variant="outline" className="gap-1 text-muted-foreground">
-                <Clock className="size-3" /> unverified
-              </Badge>
-            )}
-            {!f.stale && !f.unverified && f.lastVerified && (
-              <span className="text-[11px] text-muted-foreground">verified {f.lastVerified}</span>
-            )}
           </div>
-          <h1 className="mb-1 font-serif text-2xl font-semibold tracking-tight">{currentNote.title}</h1>
-          <p className="mb-4 text-[15px] text-muted-foreground">{currentNote.summary}</p>
+          {currentNote.type === 'session' ? (
+            <h1 className="mb-1 font-serif text-2xl font-semibold tracking-tight">{currentNote.title}</h1>
+          ) : (
+            <TitleEditor
+              key={`${currentNote.path}:${currentNote.title}`}
+              value={currentNote.title}
+              autoFocus={currentNote.title.toLowerCase() === 'untitled' && !currentNote.body.trim()}
+              onCommit={(title) => {
+                // Rejected rename (immutable title, main-side error) → resync to
+                // file truth so the input never lies about what was saved.
+                renameNote(currentNote.path, title).catch(() => void loadDoc(currentNote.path));
+                // Retitling commits the tab — it stops being a throwaway preview.
+                if (activeTabId) keepTab(activeTabId);
+              }}
+            />
+          )}
+          <PropertiesBlock
+            key={currentNote.path}
+            note={currentNote}
+            onDirty={() => {
+              // Editing commits the tab — it stops being a throwaway preview.
+              if (activeTabId) keepTab(activeTabId);
+            }}
+          />
+
+          {offerBrief && (
+            <div className="mb-4 flex items-center gap-2.5 rounded-lg bg-brand/6 px-3 py-2 ring-1 ring-brand/20">
+              <Sparkles className="size-4 shrink-0 text-brand" aria-hidden />
+              <p className="min-w-0 flex-1 text-sm">
+                Happening {upcoming} — the memory can brief you: what changed since these people were
+                last told, open questions, loose ends. One approval card writes it here.
+              </p>
+              <Button
+                size="sm"
+                onClick={() =>
+                  openSession('before-meeting', {
+                    initialPrompt: beforeMeetingSeed(currentNote.path),
+                    title: `Brief — ${currentNote.title}`,
+                    fresh: true,
+                  })
+                }
+              >
+                Get the brief
+              </Button>
+            </div>
+          )}
 
           {!editable && (
             <div className="mb-4 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
               {currentNote.type === 'decision'
                 ? 'Decisions are append-only — the body is never edited. To change course, supersede this decision; only its status flips.'
-                : `This is a ${currentNote.type} — its body is immutable. Edit metadata via the properties panel.`}
+                : `This is a ${currentNote.type} — its body is immutable. Edit metadata via the properties above.`}
             </div>
           )}
 
-          {editing ? (
-            <div className="space-y-2">
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                className="min-h-80 w-full resize-y rounded-md border border-input bg-card p-3 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                autoFocus
-              />
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  onClick={async () => {
-                    await saveNote(currentNote.path, draft);
-                    setEditing(false);
-                  }}
-                >
-                  <Save className="size-3.5" /> Save
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
-                  <X className="size-3.5" /> Cancel
-                </Button>
-              </div>
-            </div>
+          {editable ? (
+            <NoteEditor
+              key={currentNote.path}
+              body={currentNote.body}
+              onSave={(body) => saveNote(currentNote.path, body)}
+              onOpenNote={openDoc}
+              onDirty={() => {
+                // Editing commits the tab — it stops being a throwaway preview.
+                if (activeTabId) keepTab(activeTabId);
+              }}
+            />
           ) : (
             <Markdown content={currentNote.body} onOpenNote={openDoc} />
           )}
 
           <Separator className="my-6" />
 
-          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <Link2 className="size-3.5" /> Linked from ({backlinks.length})
           </div>
           {backlinks.length === 0 ? (

@@ -35,6 +35,9 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -75,6 +78,11 @@
   --accent: oklch(0.94 0.012 68);
   --accent-foreground: oklch(0.3 0.01 60);
   --destructive: oklch(0.577 0.2 27.325);
+  /* Freshness/caution voice — stays in the warm family but reads as a flag (AA on paper). */
+  --warning: oklch(0.5 0.11 72);
+  --warning-foreground: oklch(0.99 0.01 70);
+  /* Diff-added / sent-receipt voice. Used only where change itself is the subject. */
+  --success: oklch(0.52 0.1 150);
   --border: oklch(0.9 0.008 68);
   --input: oklch(0.9 0.008 68);
   --ring: oklch(0.62 0.13 42);
@@ -112,6 +120,9 @@
   --accent: oklch(0.305 0.008 68);
   --accent-foreground: oklch(0.92 0.006 75);
   --destructive: oklch(0.704 0.16 22.216);
+  --warning: oklch(0.78 0.11 78);
+  --warning-foreground: oklch(0.2 0.02 70);
+  --success: oklch(0.72 0.12 150);
   --border: oklch(0.31 0.007 68);
   --input: oklch(0.33 0.008 68);
   --ring: oklch(0.66 0.13 44);
@@ -185,6 +196,40 @@
   }
   .note-body a {
     @apply text-brand underline-offset-2 hover:underline;
+  }
+  .note-body pre {
+    @apply my-2 overflow-x-auto rounded-md bg-muted p-3;
+  }
+  .note-body pre code {
+    @apply rounded-none bg-transparent p-0;
+  }
+  .note-body table {
+    @apply my-2 w-full border-collapse text-sm;
+  }
+  .note-body th,
+  .note-body td {
+    @apply border border-border px-2 py-1 text-left align-top;
+  }
+  .note-body th {
+    @apply bg-muted/40 font-semibold;
+  }
+
+  /* WYSIWYG editor (TipTap) — same .note-body class as the read view. */
+  .note-body p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    @apply pointer-events-none float-left h-0 text-muted-foreground/60;
+  }
+  .note-body ul[data-type='taskList'] {
+    @apply list-none pl-1;
+  }
+  .note-body ul[data-type='taskList'] li {
+    @apply flex items-start gap-2;
+  }
+  .note-body ul[data-type='taskList'] li > label {
+    @apply mt-1 shrink-0;
+  }
+  .note-body ul[data-type='taskList'] li > div {
+    @apply min-w-0 flex-1;
   }
 
   /* Obsidian-style wikilink reference. */

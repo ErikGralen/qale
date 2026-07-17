@@ -48,14 +48,18 @@ export function titleFromSlug(slug: string): string {
     .trim();
 }
 
-/** A YYYY-MM-DD-slugified filename from a summary line, for capture. */
-export function fileSlug(text: string, date: string): string {
-  const slugged = text
+/** Lowercase-kebab, filename-safe slug of a title/summary line. */
+export function slugify(text: string): string {
+  return text
     .toLowerCase()
     .replace(/[^\w\s-]/g, '')
     .trim()
     .replace(/\s+/g, '-')
     .slice(0, 48)
     .replace(/-+$/, '');
-  return `${date}-${slugged || 'note'}`;
+}
+
+/** A YYYY-MM-DD-slugified filename from a summary line, for capture. */
+export function fileSlug(text: string, date: string): string {
+  return `${date}-${slugify(text) || 'note'}`;
 }

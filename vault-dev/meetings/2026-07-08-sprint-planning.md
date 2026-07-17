@@ -2,6 +2,8 @@
 type: meeting
 summary: Sprint 14 planning — SSO on track for 2026-07-28, exports v1 pilot with Kranelund greenlit, no mobile work in Q3
 date: 2026-07-08
+time: "09:30"
+duration_minutes: 60
 participants:
   - me
   - Tom Devlin

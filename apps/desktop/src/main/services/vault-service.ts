@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import { join } from 'node:path';
-import { FsVault, SqliteIndex, VaultWatcher, GitAdapter, ProposalStore, type VaultChange } from '@pm/vault';
+import { FsVault, SqliteIndex, VaultWatcher, GitAdapter, ProposalStore, PingStore, type VaultChange } from '@pm/vault';
 import { openVault, type UseCaseContext, type VaultInfo } from '@pm/application';
 
 /**
@@ -13,6 +13,7 @@ export class VaultService {
   private ctx: UseCaseContext | null = null;
   private index: SqliteIndex | null = null;
   private proposals: ProposalStore | null = null;
+  private pings: PingStore | null = null;
   private watcher: VaultWatcher | null = null;
   private currentPath: string | null = null;
   private readonly indexPath = join(app.getPath('userData'), 'index.db');
@@ -39,12 +40,13 @@ export class VaultService {
     const vault = new FsVault(path);
     if (!this.index) this.index = new SqliteIndex(this.indexPath);
     if (!this.proposals) this.proposals = new ProposalStore(this.appDbPath);
+    if (!this.pings) this.pings = new PingStore(this.appDbPath);
     // Switching to a different vault: the shared index must be rebuilt for it.
     if (this.currentPath && this.currentPath !== vault.root()) this.index.clear();
 
     const git = new GitAdapter(path);
     const clock = { now: () => new Date().toISOString() };
-    this.ctx = { vault, index: this.index, git, clock, proposals: this.proposals };
+    this.ctx = { vault, index: this.index, git, clock, proposals: this.proposals, pings: this.pings };
     this.currentPath = vault.root();
 
     const info = await openVault(this.ctx);

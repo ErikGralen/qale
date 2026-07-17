@@ -1,10 +1,14 @@
-import { app, shell, BrowserWindow } from 'electron';
+import { app, shell, BrowserWindow, Menu } from 'electron';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { is } from '@electron-toolkit/utils';
 import { registerHandlers } from './handlers.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
+
+// Dev-only: sandbox all app state (settings, app.db, pi sessions, localStorage)
+// into a scratch dir so verification runs never touch the real profile.
+if (process.env['PM_USERDATA']) app.setPath('userData', process.env['PM_USERDATA']);
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -62,7 +66,36 @@ function createWindow(): void {
   }
 }
 
+/**
+ * Custom menu: Close Window moves to ⌘⇧W so ⌘W reaches the renderer and closes
+ * the active tab (default menus swallow it). Edit/View/Window roles kept so the
+ * standard clipboard, zoom, and devtools accelerators still work.
+ */
+function buildMenu(): void {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
+    {
+      label: 'File',
+      submenu: [{ role: 'close', accelerator: 'CmdOrCtrl+Shift+W' }],
+    },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(process.platform === 'darwin'
+          ? [{ type: 'separator' as const }, { role: 'front' as const }]
+          : []),
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 app.whenReady().then(async () => {
+  buildMenu();
   const { onReady } = registerHandlers(() => mainWindow);
   await onReady();
   createWindow();

@@ -98,6 +98,13 @@ export class FsVault implements VaultPort {
     await fs.writeFile(abs, content, 'utf8');
   }
 
+  async writeBinary(relPath: string, data: Uint8Array): Promise<void> {
+    const abs = this.contain(relPath);
+    if (!abs) throw new Error(`path escapes vault: ${relPath}`);
+    await fs.mkdir(dirname(abs), { recursive: true });
+    await fs.writeFile(abs, data);
+  }
+
   async remove(relPath: string): Promise<void> {
     const abs = this.contain(relPath);
     if (!abs) return;

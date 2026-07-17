@@ -12,8 +12,8 @@ The librarian follows these when proposing paths and links (PLAN-V2 §3.1):
   `## Transcript`; the derived summary above it. Links to the decisions and insights it produced.
 - **decisions/** — the append-only spine: `YYYY-MM-DD-<slug>.md`. Never edit a decision's body;
   supersede it (new file + `supersedes`, old file flipped to `status: superseded`).
-- **insights/** — cited claims: `<slug>.md`, `evidence[]` required, a `confidence` level, a
-  freshness clock. Link to the customer and problem they concern.
+- **insights/** — cited claims: `<slug>.md`, `evidence[]` required, a `confidence` level.
+  Link to the customer and problem they concern.
 - **customers/** — one hub per account: commitments, signals, the what-they-were-told ledger.
 - **problems/** — durable problem hubs; carry a `stance`; accrue evidence even when `wont-do`.
 - **releases/** — what shipped, notes per audience.

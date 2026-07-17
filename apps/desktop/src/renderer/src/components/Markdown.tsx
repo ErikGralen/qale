@@ -22,7 +22,14 @@ export function Markdown({
         remarkPlugins={remarkPlugins}
         components={{
           a: (props: ComponentProps<'a'> & { 'data-target'?: string }) => {
-            const target = props['data-target'];
+            // Wikilinks carry data-target; a relative href is a note path too
+            // (e.g. a chat answer's [label](decisions/x.md)). Both route in-app.
+            const href = props.href ?? '';
+            const target =
+              props['data-target'] ??
+              (href && !/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith('#')
+                ? decodeURIComponent(href)
+                : undefined);
             if (target) {
               return (
                 <a

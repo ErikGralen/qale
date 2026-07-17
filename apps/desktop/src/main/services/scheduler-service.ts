@@ -15,6 +15,8 @@ export class SchedulerService {
     private readonly settings: SettingsService,
     private readonly fireSession: (sessionType: string, prompt: string) => Promise<void>,
     private readonly onChanged: () => void,
+    /** Librarian maintenance pass (ping sweep) — runs each tick, errors swallowed. */
+    private readonly maintenance?: () => void,
   ) {}
 
   start(): void {
@@ -50,6 +52,11 @@ export class SchedulerService {
     }
     const { applied } = await applyAutoPolicy(ctx, this.settings.get().autoApplyTypes).catch(() => ({ applied: 0 }));
     if (applied > 0) this.onChanged();
+    try {
+      this.maintenance?.();
+    } catch (err) {
+      console.error('[pm] ping sweep failed:', err);
+    }
   }
 }
 

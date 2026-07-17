@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   createAgentSession,
@@ -33,6 +34,7 @@ import {
   type SkillConfig,
 } from '@pm/sessions';
 import { PiUiBridge, type Chunk } from './bridge.js';
+import { entriesToUiMessages, type UiMessage } from './history.js';
 
 export interface AgentRuntimeConfig {
   vaultDir: string;
@@ -59,15 +61,59 @@ export interface ModelInfo {
   label: string;
 }
 
+/**
+ * User-set shelf state: `active` (default), `done` (outcome landed), or
+ * `dismissed` (won't be useful). Stored off the pi files in a sidecar map;
+ * a new message on a closed conversation flips it back to active.
+ */
+export type SessionLifecycle = 'active' | 'done' | 'dismissed';
+
+/** A past (or live) conversation, listed from the pi JSONL store. */
+export interface ChatRef {
+  id: string;
+  sessionType: string;
+  title: string;
+  created: number;
+  updated: number;
+  messageCount: number;
+  preview: string;
+  lifecycle: SessionLifecycle;
+}
+
+/** Lifecycle signal — fired when a run starts and when it settles (any outcome). */
+export interface SessionStatus {
+  sessionId: string;
+  sessionType: string;
+  title: string;
+  status: 'running' | 'settled';
+  updated: number;
+}
+
+/** A session with a turn in flight right now. */
+export interface LiveSession {
+  sessionId: string;
+  sessionType: string;
+  title: string;
+  streamId: string;
+  startedAt: number;
+}
+
 interface SessionState {
   id: string;
   type: string;
   session: AgentSession;
   harness: SessionHarness;
+  manager: SessionManager;
   unsubscribe: () => void;
   bridge: PiUiBridge | null;
   activeStreamId: string | null;
+  /** First user prompt, truncated — the session's display title everywhere. */
+  title: string;
+  runStartedAt: number;
 }
+
+/** Marker entry stamped into each pi session file so listings know the skill. */
+const META_ENTRY_TYPE = 'pm.session';
 
 /**
  * Embeds pi in the main process in full-control mode (PLAN §3.3): its own
@@ -82,9 +128,14 @@ export class AgentRuntime {
   private atlassian: AtlassianClient | null = null;
   private readonly sessions = new Map<string, SessionState>();
   private readonly streamToSession = new Map<string, string>();
+  /** sessionId → shelf state; only non-active entries are stored. */
+  private lifecycles: Record<string, SessionLifecycle> = {};
+  /** Lifecycle hook — main pushes these to the renderer as `session:status`. */
+  onStatus: ((status: SessionStatus) => void) | null = null;
 
   configure(config: AgentRuntimeConfig): void {
     this.config = config;
+    this.lifecycles = this.loadLifecycles();
     this.authStorage = AuthStorage.create(join(config.userDataDir, 'pi', 'auth.json'));
     if (config.apiKey) {
       // In-memory only — never written to disk (PLAN §2).
@@ -144,6 +195,74 @@ export class AgentRuntime {
     return bodies.length ? `\n\n## Voice guides (apply to outbound drafts)\n${bodies.join('\n\n')}` : '';
   }
 
+  /** Where the pi JSONL transcripts live — the machine replay store (off the vault). */
+  private sessionsDir(): string {
+    if (!this.config) throw new Error('agent runtime not configured');
+    return join(this.config.userDataDir, 'sessions');
+  }
+
+  /** Shelf-state sidecar (off the pi files, so pi's store stays untouched). */
+  private lifecycleFile(): string {
+    if (!this.config) throw new Error('agent runtime not configured');
+    return join(this.config.userDataDir, 'session-lifecycle.json');
+  }
+
+  private loadLifecycles(): Record<string, SessionLifecycle> {
+    try {
+      const parsed = JSON.parse(readFileSync(this.lifecycleFile(), 'utf8')) as Record<string, unknown>;
+      const out: Record<string, SessionLifecycle> = {};
+      for (const [id, v] of Object.entries(parsed)) {
+        if (v === 'done' || v === 'dismissed') out[id] = v;
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
+  getLifecycle(sessionId: string): SessionLifecycle {
+    return this.lifecycles[sessionId] ?? 'active';
+  }
+
+  setLifecycle(sessionId: string, lifecycle: SessionLifecycle): void {
+    if (lifecycle === 'active') delete this.lifecycles[sessionId];
+    else this.lifecycles[sessionId] = lifecycle;
+    try {
+      writeFileSync(this.lifecycleFile(), JSON.stringify(this.lifecycles));
+    } catch (err) {
+      console.error('[pm] session lifecycle save failed:', err);
+    }
+  }
+
+  /** pi names session files `<timestamp>_<id>.jsonl`; find by id, newest first. */
+  private findSessionFile(sessionId: string): string | null {
+    try {
+      const files = readdirSync(this.sessionsDir())
+        .filter((f) => f.endsWith(`_${sessionId}.jsonl`))
+        .sort()
+        .reverse();
+      return files[0] ? join(this.sessionsDir(), files[0]) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Read the pm.session marker stamped at creation (line 2 of the JSONL). */
+  private readSessionType(file: string): string {
+    try {
+      for (const line of readFileSync(file, 'utf8').split('\n').slice(0, 6)) {
+        if (!line.trim()) continue;
+        const entry = JSON.parse(line) as { type?: string; customType?: string; data?: { sessionType?: string } };
+        if (entry.type === 'custom' && entry.customType === META_ENTRY_TYPE && entry.data?.sessionType) {
+          return entry.data.sessionType;
+        }
+      }
+    } catch {
+      /* unreadable file — fall through */
+    }
+    return 'chat';
+  }
+
   private async createSession(type: string, id: string, ctx: UseCaseContext): Promise<SessionState> {
     if (!this.config || !this.authStorage || !this.modelRegistry) {
       throw new Error('agent runtime not configured');
@@ -182,6 +301,14 @@ export class AgentRuntime {
     });
     await loader.reload();
 
+    // The JSONL is keyed by our session id: a chat survives restarts, and
+    // resuming reopens the same file with its full model context (PLAN §Phase 3).
+    const existingFile = this.findSessionFile(id);
+    const manager = existingFile
+      ? SessionManager.open(existingFile, this.sessionsDir(), this.config.vaultDir)
+      : SessionManager.create(this.config.vaultDir, this.sessionsDir(), { id });
+    if (!existingFile) manager.appendCustomEntry(META_ENTRY_TYPE, { sessionType: type });
+
     const { session } = await createAgentSession({
       cwd: this.config.vaultDir,
       model,
@@ -191,7 +318,7 @@ export class AgentRuntime {
       authStorage: this.authStorage,
       modelRegistry: this.modelRegistry,
       resourceLoader: loader,
-      sessionManager: SessionManager.create(this.config.vaultDir, join(this.config.userDataDir, 'sessions')),
+      sessionManager: manager,
       settingsManager: SettingsManager.inMemory(),
     });
 
@@ -200,8 +327,11 @@ export class AgentRuntime {
       type,
       session,
       harness,
+      manager,
       bridge: null,
       activeStreamId: null,
+      title: '',
+      runStartedAt: 0,
       unsubscribe: () => undefined,
     };
     state.unsubscribe = session.subscribe((event) => {
@@ -237,14 +367,19 @@ export class AgentRuntime {
     if (!this.config?.apiKey) throw new Error('Set an Anthropic API key in Settings to chat.');
     const sessionId = input.sessionId ?? randomUUID();
     const state = this.sessions.get(sessionId) ?? (await this.createSession(input.sessionType, sessionId, ctx));
+    // A new message on a done/dismissed conversation reopens it.
+    if (this.getLifecycle(sessionId) !== 'active') this.setLifecycle(sessionId, 'active');
     state.harness.beginTurn(input.prompt, ctx.clock.now());
+    if (!state.title) state.title = truncate(input.prompt, 60) ?? state.type;
 
     const streamId = randomUUID();
     const bridge = new PiUiBridge((chunk) => emit(streamId, chunk));
     state.bridge = bridge;
     state.activeStreamId = streamId;
+    state.runStartedAt = Date.now();
     this.streamToSession.set(streamId, sessionId);
     bridge.start();
+    this.emitStatus(state, 'running');
 
     void state.session
       .prompt(input.prompt)
@@ -258,11 +393,86 @@ export class AgentRuntime {
           state.bridge = null;
         }
         this.streamToSession.delete(streamId);
+        this.emitStatus(state, 'settled');
         // File/refresh the session receipt after each settled turn.
         void this.fileReceipt(state, ctx);
       });
 
     return { streamId, sessionId };
+  }
+
+  private emitStatus(state: SessionState, status: SessionStatus['status']): void {
+    this.onStatus?.({
+      sessionId: state.id,
+      sessionType: state.type,
+      title: state.title,
+      status,
+      updated: Date.now(),
+    });
+  }
+
+  /** Sessions with a turn in flight — the sidebar rail's running rows. */
+  listLive(): LiveSession[] {
+    const live: LiveSession[] = [];
+    for (const state of this.sessions.values()) {
+      if (!state.activeStreamId) continue;
+      live.push({
+        sessionId: state.id,
+        sessionType: state.type,
+        title: state.title,
+        streamId: state.activeStreamId,
+        startedAt: state.runStartedAt,
+      });
+    }
+    return live;
+  }
+
+  /** All stored conversations for this vault, newest first. */
+  async listChats(): Promise<ChatRef[]> {
+    if (!this.config) return [];
+    let infos;
+    try {
+      infos = await SessionManager.list(this.config.vaultDir, this.sessionsDir());
+    } catch {
+      return [];
+    }
+    return infos
+      .filter((info) => info.messageCount > 0)
+      .map((info) => ({
+        id: info.id,
+        sessionType: this.readSessionType(info.path),
+        title: info.name ?? truncate(info.firstMessage, 64) ?? 'Untitled chat',
+        created: info.created.getTime(),
+        updated: info.modified.getTime(),
+        messageCount: info.messageCount,
+        preview: truncate(info.allMessagesText, 140) ?? '',
+        lifecycle: this.getLifecycle(info.id),
+      }));
+  }
+
+  /** Replay a stored conversation as UI messages (live sessions read their open manager). */
+  chatHistory(sessionId: string): UiMessage[] {
+    const live = this.sessions.get(sessionId);
+    if (live) return entriesToUiMessages(live.manager.buildContextEntries());
+    const file = this.findSessionFile(sessionId);
+    if (!file || !this.config) return [];
+    const manager = SessionManager.open(file, this.sessionsDir(), this.config.vaultDir);
+    return entriesToUiMessages(manager.buildContextEntries());
+  }
+
+  async deleteChat(sessionId: string): Promise<void> {
+    const live = this.sessions.get(sessionId);
+    if (live) {
+      await live.session.abort().catch(() => undefined);
+      live.bridge?.finish();
+      live.unsubscribe();
+      live.session.dispose();
+      this.sessions.delete(sessionId);
+      if (live.activeStreamId) this.streamToSession.delete(live.activeStreamId);
+    }
+    const file = this.findSessionFile(sessionId);
+    if (file) rmSync(file, { force: true });
+    if (this.lifecycles[sessionId]) this.setLifecycle(sessionId, 'active');
   }
 
   async abort(streamId: string): Promise<void> {
@@ -286,4 +496,10 @@ export class AgentRuntime {
   dispose(): void {
     this.disposeSessions();
   }
+}
+
+function truncate(s: string | undefined, n: number): string | undefined {
+  const flat = s?.replace(/\s+/g, ' ').trim();
+  if (!flat) return undefined;
+  return flat.length > n ? `${flat.slice(0, n)}…` : flat;
 }

@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import type { UseCaseContext } from '@pm/application';
 import { createProposal, searchNotes, contentHash } from '@pm/application';
-import { validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload, computeFreshness, type Frontmatter } from '@pm/domain';
+import { fileSlug, validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload } from '@pm/domain';
 import type { SessionHarness } from '@pm/sessions';
 import type { AtlassianClient } from '@pm/atlassian';
 
@@ -97,9 +97,8 @@ export function createVaultTools(ctx: UseCaseContext, harness?: SessionHarness):
       const hits = searchNotes(ctx, params.query, params.k ?? 8);
       for (const h of hits) harness?.recordRead(h.path);
       if (hits.length === 0) return text(`No results for "${params.query}".`);
-      const now = ctx.clock.now();
       const body = hits
-        .map((h) => `- ${h.path} (${h.type}${freshnessNote(ctx, h.path, now)}) — ${h.summary}\n    ${h.snippet}`)
+        .map((h) => `- ${h.path} (${h.type}) — ${h.summary}\n    ${h.snippet}`)
         .join('\n');
       return text(body);
     },
@@ -108,7 +107,7 @@ export function createVaultTools(ctx: UseCaseContext, harness?: SessionHarness):
   return [vaultRead, vaultList, vaultGrep, searchVault];
 }
 
-export const PROPOSE_TOOL_NAMES = ['propose_note', 'propose_update', 'propose_decision'];
+export const PROPOSE_TOOL_NAMES = ['propose_note', 'propose_update', 'propose_decision', 'propose_todo'];
 
 /**
  * Write-path tools — the agent PROPOSES, never writes (PLAN-V2 §3.3). Every card
@@ -141,7 +140,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
     name: 'propose_note',
     label: 'Propose note',
     description:
-      'Propose a NEW note (insight, meeting summary, customer/problem hub, release, person, or generic note). frontmatter must include type + summary; claim-like notes must list evidence/sources[] (wikilinks). Every source must resolve unless inference:true. For decisions use propose_decision.',
+      'Propose a NEW note (insight, meeting summary, customer/problem hub, release, person, or generic note). frontmatter must include type + summary; claim-like notes must list evidence/sources[] (wikilinks). Include tags[] with 1-2 contexts (kebab-case project/product/area, e.g. "pricing") drawn from tags already in use; name any brand-new context in the rationale. Every source must resolve unless inference:true. For decisions use propose_decision.',
     parameters: Type.Object({
       path: Type.String({ description: 'Workspace path, e.g. "insights/acme-wants-scim.md".' }),
       frontmatter: Type.Record(Type.String(), Type.Any()),
@@ -179,7 +178,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
     name: 'propose_decision',
     label: 'Propose decision',
     description:
-      'Propose a NEW decision for the append-only decision spine. frontmatter must include type:"decision" + summary; cite sources[] (the meeting + any evidence). To record that this replaces an earlier decision, pass "supersedes" with that decision\'s slug (e.g. "decisions/use-firebase-auth") — the old decision is never edited, only marked superseded on approval.',
+      'Propose a NEW decision for the append-only decision spine. frontmatter must include type:"decision" + summary; cite sources[] (the meeting + any evidence). Include tags[] with 1-2 contexts (kebab-case project/product/area, e.g. "pricing") drawn from tags already in use; name any brand-new context in the rationale. To record that this replaces an earlier decision, pass "supersedes" with that decision\'s slug (e.g. "decisions/use-firebase-auth") — the old decision is never edited, only marked superseded on approval.',
     parameters: Type.Object({
       path: Type.String({ description: 'Workspace path, e.g. "decisions/adopt-workos.md".' }),
       frontmatter: Type.Record(Type.String(), Type.Any()),
@@ -258,7 +257,67 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
     },
   });
 
-  return [proposeNote, proposeUpdate, proposeDecision];
+  const proposeTodo = defineTool({
+    name: 'propose_todo',
+    label: 'Propose todo',
+    description:
+      'Propose a tracked commitment (todo) heard in a meeting or found in a note. Use it when the PO committed to something ("I\'ll get back to you on that") OR when someone else did ("I\'ll update the docs" — then set owner to that person). Give a concrete imperative title, a due date only if one was named or clearly implied, and cite sources[] (the meeting/note where it was said). Include the verbatim quote when you have it. Check existing todos first (vault_list type "todo") and skip anything already tracked.',
+    parameters: Type.Object({
+      title: Type.String({ description: 'The commitment, concrete and imperative, e.g. "Send Nordkap the SSO rollout dates".' }),
+      due: Type.Optional(Type.String({ description: 'Due date "YYYY-MM-DD", only if named or clearly implied.' })),
+      owner: Type.Optional(Type.String({ description: 'ONLY for someone else\'s commitment: who owes it — a "[[people/…]]" ref or their name. Omit for the PO\'s own todos.' })),
+      quote: Type.Optional(Type.String({ description: 'The verbatim line where the commitment was made.' })),
+      sources: Type.Array(Type.String({ description: 'Wikilinks to where the commitment was made, e.g. "[[meetings/2026-07-08-sprint-planning]]".' })),
+      rationale: Type.String(),
+      inference: Type.Optional(Type.Boolean()),
+    }),
+    async execute(_id, params: { title: string; due?: string; owner?: string; quote?: string; sources: string[]; rationale: string; inference?: boolean }) {
+      const g = gate();
+      if (g) return text(g);
+      const title = params.title.trim();
+      if (!title) return text('Rejected: todo needs a title.');
+      if (params.due && !/^\d{4}-\d{2}-\d{2}$/.test(params.due)) {
+        return text(`Rejected: due must be "YYYY-MM-DD", got "${params.due}".`);
+      }
+      const sources = params.sources ?? [];
+      const check = validateEvidence(sources, !!params.inference, (ref) => !!ctx.index.resolve(stripLink(ref)));
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const today = ctx.clock.now().slice(0, 10);
+      const path = `todos/${fileSlug(title.slice(0, 200), today)}.md`;
+      const body = params.quote
+        ? `> ${params.quote.trim()}\n> — ${sources[0] ?? 'source'}\n`
+        : '';
+      const rec = createProposal(ctx, {
+        kind: 'note',
+        sessionId,
+        sessionType: harness?.config.name,
+        targetPath: path,
+        baseHash: null,
+        payload: {
+          path,
+          frontmatter: {
+            type: 'todo',
+            summary: title.slice(0, 200),
+            title: title.slice(0, 200),
+            status: 'open',
+            sources,
+            ...(params.due ? { due: params.due } : {}),
+            ...(params.owner?.trim() ? { owner: params.owner.trim() } : {}),
+          },
+          body,
+          rationale: params.rationale,
+        },
+        rationale: params.rationale,
+        evidence: sources.map((s) => ({ ref: s, resolved: true })),
+        inference: !!params.inference,
+      });
+      harness?.recordWrite(path, rec.id, 'note');
+      const who = params.owner?.trim() ? ` (waiting on ${params.owner.trim()})` : '';
+      return text(`Proposed todo (${rec.id}): ${title}${who}. Awaiting review.`);
+    },
+  });
+
+  return [proposeNote, proposeUpdate, proposeDecision, proposeTodo];
 }
 
 export const DRAFT_TOOL_NAMES = ['draft_jira_issue', 'draft_jira_comment', 'draft_confluence_update', 'draft_message'];
@@ -459,16 +518,4 @@ export function createAtlassianTools(client: AtlassianClient): ToolDefinition[] 
 
 function stripLink(ref: string): string {
   return ref.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.split('#')[0]!.replace(/\.md$/, '');
-}
-
-/** A short freshness suffix for search results so answers can weigh staleness. */
-function freshnessNote(ctx: UseCaseContext, path: string, now: string): string {
-  const rec = ctx.index.get(path);
-  if (!rec) return '';
-  const f = computeFreshness(rec.frontmatter as Frontmatter, now);
-  if (!f.tracked) return '';
-  if (f.stale) return `, STALE — last verified ${f.lastVerified ?? 'never'}, ${f.ageDays}d ago`;
-  if (f.unverified) return ', unverified';
-  if (f.lastVerified) return `, verified ${f.lastVerified}`;
-  return '';
 }

@@ -1,21 +1,46 @@
-import { X, Plus, Inbox, FileText, MessageSquare, Filter, Folder, FileUp, Settings } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
+import { X, Plus, PanelLeft, Inbox, History, MessageSquare, FileText, Filter, Folder, Hash, Settings, Pin, Building2, User, Mic, GitBranch, Sparkles, Target, Rocket, Wand2, StickyNote, FileInput, ListTodo, SquareCheck, Library } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { Spinner } from '@pm/ui';
+import type { NoteType } from '@pm/ipc';
 import { useApp, type Tab } from '../state/app-state';
+
+const NOTE_TYPE_ICONS: Record<NoteType, LucideIcon> = {
+  source: FileInput,
+  meeting: Mic,
+  decision: GitBranch,
+  insight: Sparkles,
+  customer: Building2,
+  problem: Target,
+  release: Rocket,
+  person: User,
+  session: History,
+  skill: Wand2,
+  todo: SquareCheck,
+  note: StickyNote,
+};
 
 function iconFor(tab: Tab): LucideIcon {
   switch (tab.kind) {
     case 'doc':
-      return FileText;
+      return tab.noteType ? (NOTE_TYPE_ICONS[tab.noteType] ?? FileText) : FileText;
     case 'session':
       return MessageSquare;
+    case 'chats':
+      return History;
     case 'inbox':
       return Inbox;
+    case 'todos':
+      return ListTodo;
+    case 'memory':
+      return Library;
     case 'smartview':
       return Filter;
     case 'folder':
       return Folder;
-    case 'meeting-drop':
-      return FileUp;
+    case 'context':
+      return Hash;
     case 'settings':
       return Settings;
     default:
@@ -23,54 +48,406 @@ function iconFor(tab: Tab): LucideIcon {
   }
 }
 
-/** The tab strip — documents and sessions interchangeably (PLAN-V2 §3.3). */
-export function TabStrip() {
-  const { tabs, activeTabId, setActiveTab, closeTab, openSession } = useApp();
+// Clear the macOS traffic lights when the collapsed sidebar no longer does.
+const isMac = navigator.userAgent.includes('Macintosh');
+
+const MENU_WIDTH = 208;
+/** gap-0.5 between tabs — used to compute how far neighbours shift during a drag. */
+const TAB_GAP = 2;
+/** Pointer must travel this far before a press becomes a drag. */
+const DRAG_THRESHOLD = 4;
+/** Dragging within this distance of the strip edge auto-scrolls. */
+const EDGE_SCROLL_ZONE = 36;
+
+function TabMenu({ tabId, x, y, onClose }: { tabId: string; x: number; y: number; onClose: () => void }) {
+  const { tabs, closeTab, closeOtherTabs, closeAllTabs, closeTabsBefore, closeTabsAfter, keepTab } = useApp();
+  const idx = tabs.findIndex((t) => t.id === tabId);
+  const tab = tabs[idx];
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  if (!tab) return null;
+
+  const run = (action: () => void) => () => {
+    action();
+    onClose();
+  };
+
+  const items: { label: string; action: () => void; disabled?: boolean; hint?: string; icon?: LucideIcon }[] = [
+    ...(tab.preview ? [{ label: 'Keep Tab', action: () => keepTab(tab.id), icon: Pin }] : []),
+    { label: 'Close', action: () => closeTab(tab.id), hint: '⌘W' },
+    { label: 'Close Other Tabs', action: () => closeOtherTabs(tab.id), disabled: tabs.length <= 1 },
+    { label: 'Close All Tabs', action: closeAllTabs },
+    { label: 'Close Tabs to the Left', action: () => closeTabsBefore(tab.id), disabled: idx === 0 },
+    { label: 'Close Tabs to the Right', action: () => closeTabsAfter(tab.id), disabled: idx === tabs.length - 1 },
+  ];
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-50"
+        onClick={onClose}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+      />
+      <div
+        role="menu"
+        aria-label={`Tab actions for ${tab.title}`}
+        className="fixed z-50 rounded-md border border-border bg-card py-1 shadow-md"
+        style={{
+          width: MENU_WIDTH,
+          left: Math.min(x, window.innerWidth - MENU_WIDTH - 8),
+          top: Math.min(y, window.innerHeight - items.length * 30 - 16),
+        }}
+      >
+        {items.map((item) => (
+          <button
+            key={item.label}
+            role="menuitem"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
+            onClick={run(item.action)}
+            disabled={item.disabled}
+          >
+            {item.icon && <item.icon className="size-3.5 text-muted-foreground" aria-hidden />}
+            {item.label}
+            {item.hint && <span className="ml-auto text-xs text-muted-foreground">{item.hint}</span>}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** Mutable per-drag bookkeeping; positions are in scroller content coordinates so mid-drag auto-scroll doesn't invalidate them. */
+interface DragDetails {
+  id: string;
+  index: number;
+  pointerId: number;
+  startClientX: number;
+  startContentX: number;
+  lastClientX: number;
+  rects: { left: number; width: number }[];
+  moved: boolean;
+  lastTarget: number;
+  raf: number;
+}
+
+/** Render-facing drag snapshot: dragged tab follows the pointer, neighbours shift by `width + gap`. */
+interface DragState {
+  id: string;
+  index: number;
+  dx: number;
+  target: number;
+  width: number;
+}
+
+/**
+ * The tab strip — documents and sessions interchangeably (PLAN-V2 §3.3).
+ * Sidebar navigation reuses a single preview tab (italic title) so browsing
+ * doesn't pile up tabs; double-click or editing keeps a tab permanently.
+ * Fully keyboard-operable: roving tabindex, ←/→ move focus, ⌥←/→ reorder,
+ * ↵/space activate, ⌫ closes, ⌘W closes the active tab (shell shortcut).
+ * Right-click for close/keep actions. Tabs reorder by pointer drag; the strip
+ * scrolls on vertical wheel, fades at overflowed edges, and keeps the active
+ * tab in view.
+ */
+export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolean; onToggleSidebar: () => void }) {
+  const { tabs, activeTabId, setActiveTab, closeTab, keepTab, moveTab, openSession, sessions } = useApp();
+  const [menu, setMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const [fades, setFades] = useState({ left: false, right: false });
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<DragDetails | null>(null);
+
+  const updateFades = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const left = el.scrollLeft > 1;
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    setFades((f) => (f.left === left && f.right === right ? f : { left, right }));
+  }, []);
+
+  useEffect(() => {
+    updateFades();
+    const el = scrollerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(updateFades);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [updateFades, tabs.length]);
+
+  // Vertical wheel scrolls the strip horizontally; native listener because
+  // React's synthetic wheel can't preventDefault (passive on the root).
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // Keep the active tab in view — smooth unless the user prefers reduced motion.
+  useEffect(() => {
+    if (!activeTabId) return;
+    const el = document.getElementById(`tab-${activeTabId}`);
+    if (!el) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
+  }, [activeTabId, tabs.length]);
+
+  /** Recompute drag position/target from the last pointer x and current scroll. */
+  const applyDrag = useCallback(() => {
+    const d = dragRef.current;
+    const scroller = scrollerRef.current;
+    if (!d || !d.moved || !scroller) return;
+    const own = d.rects[d.index];
+    if (!own) return;
+    const sRect = scroller.getBoundingClientRect();
+    const contentX = d.lastClientX - sRect.left + scroller.scrollLeft;
+    const dx = contentX - d.startContentX;
+    const centers = d.rects.map((r) => r.left + r.width / 2);
+    const draggedCenter = own.left + own.width / 2 + dx;
+    let target = d.index;
+    if (dx > 0) {
+      for (let j = d.index + 1; j < centers.length; j++) if (draggedCenter > (centers[j] ?? Infinity)) target = j;
+    } else {
+      for (let j = d.index - 1; j >= 0; j--) if (draggedCenter < (centers[j] ?? -Infinity)) target = j;
+    }
+    d.lastTarget = target;
+    setDrag({ id: d.id, index: d.index, dx, target, width: own.width });
+  }, []);
+
+  /** rAF loop: holding a dragged tab near either edge scrolls the strip. */
+  const edgeScrollStep = useCallback(() => {
+    const d = dragRef.current;
+    const scroller = scrollerRef.current;
+    if (!d || !d.moved || !scroller) return;
+    const sRect = scroller.getBoundingClientRect();
+    let delta = 0;
+    if (d.lastClientX < sRect.left + EDGE_SCROLL_ZONE) delta = -Math.ceil((sRect.left + EDGE_SCROLL_ZONE - d.lastClientX) / 4);
+    else if (d.lastClientX > sRect.right - EDGE_SCROLL_ZONE) delta = Math.ceil((d.lastClientX - (sRect.right - EDGE_SCROLL_ZONE)) / 4);
+    if (delta !== 0) {
+      const before = scroller.scrollLeft;
+      scroller.scrollLeft += delta;
+      if (scroller.scrollLeft !== before) applyDrag();
+    }
+    d.raf = requestAnimationFrame(edgeScrollStep);
+  }, [applyDrag]);
+
+  const endDrag = useCallback(
+    (commit: boolean) => {
+      const d = dragRef.current;
+      if (!d) return;
+      cancelAnimationFrame(d.raf);
+      dragRef.current = null;
+      // moveTab and setDrag(null) land in the same commit: transforms clear
+      // exactly as layout takes over, so the drop is seamless.
+      if (commit && d.moved) moveTab(d.id, d.lastTarget);
+      setDrag(null);
+    },
+    [moveTab],
+  );
+
+  const onTabPointerDown = (e: React.PointerEvent<HTMLDivElement>, tab: Tab, index: number) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
+    setActiveTab(tab.id);
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const sRect = scroller.getBoundingClientRect();
+    const rects = tabs.map((t) => {
+      const r = document.getElementById(`tab-${t.id}`)?.getBoundingClientRect();
+      return r
+        ? { left: r.left - sRect.left + scroller.scrollLeft, width: r.width }
+        : { left: 0, width: 0 };
+    });
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      id: tab.id,
+      index,
+      pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startContentX: e.clientX - sRect.left + scroller.scrollLeft,
+      lastClientX: e.clientX,
+      rects,
+      moved: false,
+      lastTarget: index,
+      raf: 0,
+    };
+  };
+
+  const onTabPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (!d || e.pointerId !== d.pointerId) return;
+    d.lastClientX = e.clientX;
+    if (!d.moved) {
+      if (Math.abs(e.clientX - d.startClientX) < DRAG_THRESHOLD) return;
+      d.moved = true;
+      d.raf = requestAnimationFrame(edgeScrollStep);
+    }
+    applyDrag();
+  };
+
+  const moveFocus = (from: number, dir: 1 | -1) => {
+    const next = tabs[(from + dir + tabs.length) % tabs.length];
+    if (next) document.getElementById(`tab-${next.id}`)?.focus();
+  };
 
   return (
     <div
-      className="flex h-9 items-center gap-0.5 overflow-x-auto border-b border-border bg-background/60 px-1.5"
+      className={`relative flex h-9 items-stretch bg-sidebar ${!sidebarOpen && isMac ? 'pl-[70px]' : ''}`}
       style={{ WebkitAppRegion: 'drag' } as never}
     >
-      {tabs.map((tab) => {
-        const Icon = iconFor(tab);
-        const active = tab.id === activeTabId;
-        return (
-          <div
-            key={tab.id}
-            className={`group flex h-7 max-w-52 min-w-0 shrink-0 items-center gap-1.5 rounded-md px-2 text-[13px] ${
-              active ? 'bg-card font-medium shadow-sm' : 'text-muted-foreground hover:bg-card/60'
-            }`}
-            style={{ WebkitAppRegion: 'no-drag' } as never}
-            onClick={() => setActiveTab(tab.id)}
-            onAuxClick={(e) => {
-              if (e.button === 1) closeTab(tab.id);
-            }}
-            role="tab"
-          >
-            <Icon className="size-3.5 shrink-0 opacity-70" />
-            <span className="truncate">{tab.title}</span>
-            <button
-              className="ml-0.5 shrink-0 rounded p-0.5 opacity-0 hover:bg-accent group-hover:opacity-70"
-              onClick={(e) => {
-                e.stopPropagation();
-                closeTab(tab.id);
-              }}
-              title="Close tab"
-            >
-              <X className="size-3" />
-            </button>
-          </div>
-        );
-      })}
-      <button
-        className="ml-0.5 shrink-0 rounded-md p-1 text-muted-foreground hover:bg-card/60"
-        style={{ WebkitAppRegion: 'no-drag' } as never}
-        onClick={() => openSession('chat', { fresh: true })}
-        title="New chat"
-      >
-        <Plus className="size-4" />
-      </button>
+      <div className="flex shrink-0 items-center gap-1 pl-1.5" style={{ WebkitAppRegion: 'no-drag' } as never}>
+        <button
+          className="rounded-md p-1.5 text-muted-foreground transition-colors duration-150 hover:bg-card/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={onToggleSidebar}
+          aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+          aria-expanded={sidebarOpen}
+          title={`${sidebarOpen ? 'Hide' : 'Show'} sidebar (⌘\\)`}
+        >
+          <PanelLeft className="size-4" />
+        </button>
+        <div aria-hidden className="h-4 w-px bg-border" />
+      </div>
+      <div className="relative min-w-0 flex-1">
+        <div
+          ref={scrollerRef}
+          onScroll={updateFades}
+          className="flex h-full items-stretch gap-0.5 overflow-x-auto overscroll-x-contain px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+          aria-label="Open tabs"
+        >
+          {tabs.map((tab, i) => {
+            const Icon = iconFor(tab);
+            const active = tab.id === activeTabId;
+            const dragged = drag?.id === tab.id;
+            let style: CSSProperties | undefined;
+            if (drag) {
+              if (dragged) {
+                style = { transform: `translateX(${drag.dx}px)` };
+              } else {
+                const shiftWidth = drag.width + TAB_GAP;
+                if (drag.index < drag.target && i > drag.index && i <= drag.target) style = { transform: `translateX(${-shiftWidth}px)` };
+                else if (drag.target < drag.index && i >= drag.target && i < drag.index) style = { transform: `translateX(${shiftWidth}px)` };
+              }
+            }
+            return (
+              <div
+                key={tab.id}
+                id={`tab-${tab.id}`}
+                className={`group relative flex h-full max-w-52 min-w-0 shrink-0 items-center gap-1.5 rounded-t-md px-2.5 text-[13px] outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset ${
+                  active
+                    ? 'z-10 border-x border-t border-border bg-background font-medium text-foreground'
+                    : 'text-foreground/75 hover:bg-card/60 hover:text-foreground'
+                } ${
+                  dragged
+                    ? 'cursor-grabbing shadow-md'
+                    : drag
+                      ? 'cursor-default transition-transform duration-150 ease-out motion-reduce:transition-none'
+                      : 'cursor-default'
+                }`}
+                style={{ WebkitAppRegion: 'no-drag', ...style } as never}
+                onPointerDown={(e) => onTabPointerDown(e, tab, i)}
+                onPointerMove={onTabPointerMove}
+                onPointerUp={() => endDrag(true)}
+                onPointerCancel={() => endDrag(false)}
+                onDoubleClick={() => keepTab(tab.id)}
+                onAuxClick={(e) => {
+                  if (e.button === 1) closeTab(tab.id);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setActiveTab(tab.id);
+                  } else if (e.key === 'Backspace' || e.key === 'Delete') {
+                    e.preventDefault();
+                    closeTab(tab.id);
+                  } else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && e.altKey) {
+                    e.preventDefault();
+                    moveTab(tab.id, i + (e.key === 'ArrowRight' ? 1 : -1));
+                    requestAnimationFrame(() => document.getElementById(`tab-${tab.id}`)?.focus());
+                  } else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    moveFocus(i, 1);
+                  } else if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    moveFocus(i, -1);
+                  }
+                }}
+                role="tab"
+                aria-selected={active}
+                tabIndex={active ? 0 : -1}
+                title={tab.preview ? `${tab.title} — preview; double-click to keep open` : undefined}
+              >
+                {(() => {
+                  // Session tabs carry their live status: spinning while the
+                  // agent works, a terracotta dot once it needs the PO.
+                  const s = tab.kind === 'session' && tab.sessionId ? sessions.find((x) => x.id === tab.sessionId) : undefined;
+                  if (s?.running) return <Spinner className="size-3.5 shrink-0 text-muted-foreground" aria-label="running" />;
+                  return <Icon className="size-3.5 shrink-0 opacity-70" aria-hidden />;
+                })()}
+                <span className={`truncate ${tab.preview ? 'italic' : ''}`}>{tab.title}</span>
+                {tab.kind === 'session' &&
+                  tab.sessionId &&
+                  (() => {
+                    const s = sessions.find((x) => x.id === tab.sessionId);
+                    return s && !s.running && (s.pendingCards > 0 || s.unread) ? (
+                      <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-label="needs you" />
+                    ) : null;
+                  })()}
+                <button
+                  className="ml-0.5 shrink-0 rounded p-0.5 opacity-0 group-focus-within:opacity-70 group-hover:opacity-70 hover:bg-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTab(tab.id);
+                  }}
+                  tabIndex={-1}
+                  aria-label={`Close ${tab.title}`}
+                  title="Close tab (⌘W)"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        {fades.left && (
+          <div aria-hidden className="pointer-events-none absolute top-0 bottom-px left-0 z-20 w-8 bg-gradient-to-r from-sidebar to-transparent" />
+        )}
+        {fades.right && (
+          <div aria-hidden className="pointer-events-none absolute top-0 right-0 bottom-px z-20 w-8 bg-gradient-to-l from-sidebar to-transparent" />
+        )}
+      </div>
+      <div className="flex shrink-0 items-center px-1.5" style={{ WebkitAppRegion: 'no-drag' } as never}>
+        <button
+          className="rounded-md p-1.5 text-muted-foreground transition-colors duration-150 hover:bg-card/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={() => openSession('chat', { fresh: true })}
+          aria-label="New chat"
+          title="New chat"
+        >
+          <Plus className="size-4" />
+        </button>
+      </div>
+      {/* Bottom hairline lives above the inactive tabs (browser-style) but below the
+          z-raised active tab, whose background bridges it into the content area. */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-border" />
+      {menu && <TabMenu tabId={menu.tabId} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />}
     </div>
   );
 }

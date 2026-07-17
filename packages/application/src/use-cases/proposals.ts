@@ -4,7 +4,6 @@ import {
   zDecisionPayload,
   zOutboundPayload,
   parseFrontmatter,
-  hasFreshness,
   checkSupersede,
   refToSlug,
   type DecisionNode,
@@ -17,8 +16,8 @@ import type { CreateProposalInput, ProposalRecord, ProposalStats, UseCaseContext
 /**
  * Proposals (approval cards) are the only write path for the agent (PLAN-V2 §3.3).
  * Tools persist card rows here; the Inbox applies accepted ones through these use
- * cases, which write files + git-commit and stamp `last_verified`. Accept is
- * staleness-safe via base_hash; decisions supersede rather than overwrite.
+ * cases, which write files + git-commit. Accept is staleness-safe via base_hash;
+ * decisions supersede rather than overwrite.
  */
 
 /** Cheap, stable content hash for staleness detection (no node dep). */
@@ -86,7 +85,6 @@ export interface GoldenAnswerInput {
  * the same approval card as everything else; nothing is written silently.
  */
 export function saveGoldenAnswer(ctx: UseCaseContext, input: GoldenAnswerInput): ProposalRecord {
-  const date = ctx.clock.now().slice(0, 10);
   const cited = input.sources.filter((s) => s.trim().length > 0);
   const slugBase = input.question
     .toLowerCase()
@@ -102,8 +100,8 @@ export function saveGoldenAnswer(ctx: UseCaseContext, input: GoldenAnswerInput):
   }\n`;
 
   const frontmatter = cited.length
-    ? { type: 'insight', summary, evidence: cited, confidence: 'med', last_verified: date }
-    : { type: 'note', summary, sources: [], last_verified: date };
+    ? { type: 'insight', summary, evidence: cited, confidence: 'med' }
+    : { type: 'note', summary, sources: [] };
 
   return createProposal(ctx, {
     kind: 'note',
@@ -191,24 +189,50 @@ export async function acceptProposal(
   return result;
 }
 
-/** Stamp `last_verified` on freshness-tracked types when a human approves. */
-function stampVerified(fm: Frontmatter, now: string): Frontmatter {
-  if (!hasFreshness(fm.type)) return fm;
-  return { ...fm, last_verified: now.slice(0, 10) } as Frontmatter;
-}
-
 async function acceptNote(ctx: UseCaseContext, rec: ProposalRecord, edited?: unknown): Promise<AcceptResult> {
   const parsed = zNotePayload.safeParse(edited ?? rec.payload);
   if (!parsed.success) return { ok: false, error: 'invalid note payload' };
   const { path, frontmatter, body } = parsed.data;
   const fm = parseFrontmatter(frontmatter);
   if (!fm.ok || !fm.data) return { ok: false, error: fm.error };
-  const stamped = stampVerified(fm.data, ctx.clock.now());
-  const written = await ctx.vault.writeNote(path, stamped, body);
+  const written = await ctx.vault.writeNote(path, fm.data, body);
   ctx.index.reindex(written);
   await ctx.git.commitPaths([path], `note: ${written.slug}`);
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
+  await markCitedSourcesProcessed(ctx, fm.data);
   return { ok: true };
+}
+
+/**
+ * When an approved derived note cites raw material (`evidence`/`sources` refs),
+ * the analysis has landed: flip cited sources and unprocessed meetings from
+ * `new`/`stale` to `processed`. Best-effort — a bad ref never blocks the accept.
+ */
+async function markCitedSourcesProcessed(ctx: UseCaseContext, fm: Frontmatter): Promise<void> {
+  const rec = fm as Record<string, unknown>;
+  const refs = [
+    ...(Array.isArray(rec['evidence']) ? (rec['evidence'] as string[]) : []),
+    ...(Array.isArray(rec['sources']) ? (rec['sources'] as string[]) : []),
+  ];
+  for (const ref of refs) {
+    const slug = refToSlug(ref);
+    if (!slug) continue;
+    const path = ctx.index.resolve(slug);
+    const indexed = path ? ctx.index.get(path) : null;
+    if (!indexed || !path) continue;
+    if (indexed.type !== 'source' && indexed.type !== 'meeting') continue;
+    const status = (indexed.frontmatter as Record<string, unknown>)['status'];
+    if (status !== 'new' && status !== 'stale') continue;
+    const note = await ctx.vault.readNote(path);
+    if (!note) continue;
+    const written = await ctx.vault.writeNote(
+      path,
+      { ...note.frontmatter, status: 'processed' } as Frontmatter,
+      note.body,
+    );
+    ctx.index.reindex(written);
+    await ctx.git.commitPaths([path], `status: ${written.slug} → processed`);
+  }
 }
 
 async function acceptUpdate(ctx: UseCaseContext, rec: ProposalRecord, edited?: unknown): Promise<AcceptResult> {
@@ -227,8 +251,7 @@ async function acceptUpdate(ctx: UseCaseContext, rec: ProposalRecord, edited?: u
     ctx.proposals.setStatus(rec.id, 'stale', Date.now());
     return { ok: false, stale: true };
   }
-  const nextFm = stampVerified(note.frontmatter, ctx.clock.now());
-  const written = await ctx.vault.writeNote(path, nextFm, applied);
+  const written = await ctx.vault.writeNote(path, note.frontmatter, applied);
   ctx.index.reindex(written);
   await ctx.git.commitPaths([path], `update: ${written.slug}`);
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
@@ -277,12 +300,12 @@ async function acceptDecision(ctx: UseCaseContext, rec: ProposalRecord, edited?:
     newFm = { ...newFm, supersedes: `[[${targetSlug}]]` } as Frontmatter;
   }
 
-  const stamped = stampVerified(newFm, ctx.clock.now());
-  const written = await ctx.vault.writeNote(path, stamped, body);
+  const written = await ctx.vault.writeNote(path, newFm, body);
   ctx.index.reindex(written);
   committed.push(path);
   await ctx.git.commitPaths(committed, `decision: ${written.slug}${targetSlug ? ` (supersedes ${targetSlug})` : ''}`);
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
+  await markCitedSourcesProcessed(ctx, newFm);
   return { ok: true };
 }
 
@@ -351,6 +374,36 @@ async function acceptOutbound(ctx: UseCaseContext, rec: ProposalRecord, edited?:
 
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
   return { ok: true, url: out.url };
+}
+
+/**
+ * Meeting-review closure: when the LAST card of an after-meeting session is
+ * resolved (accepted or rejected), the review is done and the meeting flips
+ * `new` → `processed`. Evidence-citation flips may have landed it earlier; this
+ * is the backstop that also covers all-discarded reviews. Best-effort.
+ */
+export async function completeMeetingReview(
+  ctx: UseCaseContext,
+  sessionId: string,
+): Promise<{ completed: string | null }> {
+  const mine = ctx.proposals.list().filter((p) => p.sessionId === sessionId);
+  if (mine.length === 0) return { completed: null };
+  if (mine[0]!.sessionType !== 'after-meeting') return { completed: null };
+  if (mine.some((p) => p.status === 'pending')) return { completed: null };
+  const meetingPath = mine.map((p) => p.targetPath).find((t) => t?.startsWith('meetings/'));
+  if (!meetingPath) return { completed: null };
+  const note = await ctx.vault.readNote(meetingPath);
+  if (!note || note.type !== 'meeting') return { completed: null };
+  const status = (note.frontmatter as Record<string, unknown>)['status'];
+  if (status !== 'new' && status !== 'stale') return { completed: null };
+  const written = await ctx.vault.writeNote(
+    meetingPath,
+    { ...note.frontmatter, status: 'processed' } as Frontmatter,
+    note.body,
+  );
+  ctx.index.reindex(written);
+  await ctx.git.commitPaths([meetingPath], `status: ${written.slug} → processed`);
+  return { completed: meetingPath };
 }
 
 /**

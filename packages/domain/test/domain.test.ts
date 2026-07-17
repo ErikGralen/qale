@@ -2,10 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseFrontmatter,
-  computeFreshness,
-  computeHealth,
-  parseDuration,
-  daysBetween,
   checkFrontmatterMutation,
   buildChain,
   checkSupersede,
@@ -13,6 +9,10 @@ import {
   refToSlug,
   zTruthDelta,
   truthDeltaSize,
+  todoLane,
+  isOverdueTodo,
+  isExternalTodo,
+  byDue,
   type DecisionNode,
   type Frontmatter,
 } from '../src/index.js';
@@ -30,56 +30,62 @@ test('insight requires evidence', () => {
   assert.equal(r.ok, false);
 });
 
-test('parseDuration + daysBetween', () => {
-  assert.equal(parseDuration('90d'), 90);
-  assert.equal(parseDuration('2w'), 14);
-  assert.equal(parseDuration('3m'), 90);
-  assert.equal(parseDuration('1y'), 365);
-  assert.equal(parseDuration('nonsense'), null);
-  assert.equal(daysBetween('2026-01-01', '2026-01-11'), 10);
+test('source: defaults to status new, rejects free-text status', () => {
+  const r = parseFrontmatter({ type: 'source', summary: 'article dump' });
+  assert.equal(r.ok, true);
+  assert.equal((r.data as Record<string, unknown>)['status'], 'new');
+
+  const bad = parseFrontmatter({ type: 'source', summary: 'x', status: 'kinda-fresh' });
+  assert.equal(bad.ok, false); // status is an enum, never free text
 });
 
-test('computeFreshness: untracked, unverified, fresh, stale', () => {
-  const now = '2026-07-14T00:00:00Z';
-  // meetings do not decay
-  assert.equal(computeFreshness({ type: 'meeting', summary: 'm' } as Frontmatter, now).tracked, false);
-  // insight never verified → unverified
-  const unv = computeFreshness({ type: 'insight', summary: 'i', evidence: ['[[x]]'] } as Frontmatter, now);
-  assert.equal(unv.unverified, true);
-  assert.equal(unv.stale, false);
-  // fresh: verified 10 days ago, 90d clock
-  const fresh = computeFreshness(
-    { type: 'insight', summary: 'i', evidence: ['[[x]]'], last_verified: '2026-07-04' } as Frontmatter,
-    now,
-  );
-  assert.equal(fresh.stale, false);
-  // stale: verified 200 days ago, 90d clock
-  const stale = computeFreshness(
-    { type: 'insight', summary: 'i', evidence: ['[[x]]'], last_verified: '2025-12-01' } as Frontmatter,
-    now,
-  );
-  assert.equal(stale.stale, true);
-  // fresh_for override extends the window
-  const overridden = computeFreshness(
-    { type: 'insight', summary: 'i', evidence: ['[[x]]'], last_verified: '2025-12-01', fresh_for: '2y' } as Frontmatter,
-    now,
-  );
-  assert.equal(overridden.stale, false);
+test('source: body immutable, only workflow fields may change', () => {
+  const prev = { type: 'source', summary: 's', status: 'new' } as Frontmatter;
+  const okChange = { ...prev, status: 'processed' } as Frontmatter;
+  assert.equal(checkFrontmatterMutation('source', prev, okChange).allowed, true);
+  const badChange = { ...prev, source: { system: 'web' } } as Frontmatter;
+  assert.equal(checkFrontmatterMutation('source', prev, badChange).allowed, false);
 });
 
-test('computeHealth ignores superseded + untracked, scores fresh share', () => {
-  const now = '2026-07-14T00:00:00Z';
-  const notes: Frontmatter[] = [
-    { type: 'insight', summary: 'a', evidence: ['[[x]]'], last_verified: '2026-07-10' } as Frontmatter, // fresh
-    { type: 'insight', summary: 'b', evidence: ['[[x]]'], last_verified: '2025-01-01' } as Frontmatter, // stale
-    { type: 'meeting', summary: 'c' } as Frontmatter, // untracked → ignored
-    { type: 'decision', summary: 'd', status: 'superseded', last_verified: '2020-01-01' } as Frontmatter, // dead → ignored
-  ];
-  const h = computeHealth(notes, now);
-  assert.equal(h.total, 2);
-  assert.equal(h.fresh, 1);
-  assert.equal(h.stale, 1);
-  assert.equal(h.score, 0.5);
+test('meeting: carries linked transcript + series; both mutable post-creation', () => {
+  const r = parseFrontmatter({
+    type: 'meeting',
+    summary: 'nordkap check-in',
+    date: '2026-07-21',
+    transcript: '[[sources/2026-07-21-nordkap-checkin-transcript]]',
+    series: 'nordkap-checkin',
+  });
+  assert.equal(r.ok, true);
+
+  // A transcript can be matched to a pre-created meeting after the fact.
+  const prev = { type: 'meeting', summary: 'm', date: '2026-07-21' } as Frontmatter;
+  const attach = { ...prev, transcript: '[[sources/t]]', series: 'x' } as Frontmatter;
+  assert.equal(checkFrontmatterMutation('meeting', prev, attach).allowed, true);
+  // Provenance stays immutable.
+  const badChange = { ...prev, date: '2026-07-22' } as Frontmatter;
+  assert.equal(checkFrontmatterMutation('meeting', prev, badChange).allowed, false);
+});
+
+test('source: origin marks an external meeting transcript (signal, not meeting)', () => {
+  const r = parseFrontmatter({
+    type: 'source',
+    summary: 'Nordkap sales call',
+    origin: 'Jonas Palm',
+    customer: '[[customers/nordkap-payments]]',
+  });
+  assert.equal(r.ok, true);
+  assert.equal((r.data as Record<string, unknown>)['origin'], 'Jonas Palm');
+
+  // origin/customer are workflow fields — settable after filing.
+  const prev = { type: 'source', summary: 's', status: 'new' } as Frontmatter;
+  const okChange = { ...prev, origin: 'Jonas Palm' } as Frontmatter;
+  assert.equal(checkFrontmatterMutation('source', prev, okChange).allowed, true);
+});
+
+test('lifecycle status is enum-validated on meetings and notes too', () => {
+  assert.equal(parseFrontmatter({ type: 'meeting', summary: 'm', status: 'new' }).ok, true);
+  assert.equal(parseFrontmatter({ type: 'meeting', summary: 'm', status: 'whatever' }).ok, false);
+  assert.equal(parseFrontmatter({ type: 'note', summary: 'n', status: 'stale' }).ok, true);
 });
 
 test('checkFrontmatterMutation: decision body-frozen fields immutable, status mutable', () => {
@@ -115,6 +121,38 @@ test('refToSlug normalizes wikilinks', () => {
   assert.equal(refToSlug('decisions/d1.md'), 'decisions/d1');
   assert.equal(refToSlug('[[decisions/d1|Alias]]'), 'decisions/d1');
   assert.equal(refToSlug(undefined), null);
+});
+
+test('todo: defaults to open, status is enum, owner marks external', () => {
+  const r = parseFrontmatter({ type: 'todo', summary: 'Email Åsa about rollout' });
+  assert.equal(r.ok, true);
+  const fm = r.data as Record<string, unknown>;
+  assert.equal(fm['status'], 'open');
+  assert.deepEqual(fm['sources'], []);
+  assert.equal(parseFrontmatter({ type: 'todo', summary: 'x', status: 'maybe-later' }).ok, false);
+  assert.equal(isExternalTodo({ owner: '[[people/jonas-bergman]]' }), true);
+  assert.equal(isExternalTodo({ owner: '  ' }), false);
+  assert.equal(isExternalTodo({}), false);
+});
+
+test('todoLane: buckets by status, owner and due date', () => {
+  const today = '2026-07-17';
+  assert.equal(todoLane({ due: '2026-07-10' }, today), 'overdue');
+  assert.equal(todoLane({ due: '2026-07-17' }, today), 'today');
+  assert.equal(todoLane({ due: '2026-08-01' }, today), 'upcoming');
+  assert.equal(todoLane({}, today), 'someday');
+  // external commitments always land in waiting, even overdue ones
+  assert.equal(todoLane({ owner: 'Jonas', due: '2026-07-01' }, today), 'waiting');
+  assert.equal(todoLane({ status: 'done', due: '2026-07-10' }, today), 'closed');
+  assert.equal(todoLane({ status: 'dropped' }, today), 'closed');
+  // overdue predicate still fires for external items (drives the librarian ping)
+  assert.equal(isOverdueTodo({ owner: 'Jonas', due: '2026-07-01' }, today), true);
+  assert.equal(isOverdueTodo({ status: 'done', due: '2026-07-01' }, today), false);
+});
+
+test('byDue: dated before undated, earlier first', () => {
+  const sorted = [{ due: undefined }, { due: '2026-07-20' }, { due: '2026-07-18' }].sort(byDue);
+  assert.deepEqual(sorted.map((t) => t.due), ['2026-07-18', '2026-07-20', undefined]);
 });
 
 test('truth delta parses + counts items', () => {

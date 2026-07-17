@@ -9,7 +9,7 @@ completion_bar: Every proposed link or note cites the capture or existing memory
 stopping_conditions:
   - The capture is empty or content-free — say so and propose nothing.
 red_flags:
-  - A capture that is actually a meeting transcript — say so and suggest running it as a meeting instead.
+  - A capture that is actually a meeting transcript — participation decides its path. If the PO was in the room, suggest re-filing it as a meeting (After-Meeting). If not, it stays a source; suggest the External-Transcript session instead.
   - A claim from an article or screenshot asserted as product truth — file it as a cited signal with its source and an honest confidence, never as fact.
 ---
 

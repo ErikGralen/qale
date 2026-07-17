@@ -4,7 +4,6 @@ summary: Competitor notes — Insikt (cheap, report-first, weak governance) and 
 tags:
   - competition
 sources: []
-last_verified: 2026-06-30
 ---
 
 # Competitors

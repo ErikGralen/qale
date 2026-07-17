@@ -27,6 +27,7 @@ export function buildSessionReceipt(
     type: 'session',
     summary: `${harness.config.name} session — ${harness.writes.length} card(s) proposed`,
     session_type: harness.config.name,
+    session_id: harness.sessionId,
     started: harness.started,
     ended: now,
     reads: reads.map((r) => `[[${r.replace(/\.md$/, '')}]]`),

@@ -27,14 +27,20 @@ export interface TypeRule {
  * fully immutable once filed. Decisions are append-only. Everything else is open.
  */
 export const TYPE_RULES: Record<NoteType, TypeRule> = {
+  source: {
+    bodyEditable: false,
+    mutableFields: ['status', 'summary', 'title', 'tags', 'updated', 'origin', 'customer'],
+  },
   meeting: {
     bodyEditable: true,
-    mutableFields: ['summary', 'title', 'tags', 'safe_space', 'customer'],
+    // `transcript` is mutable so a transcript can be matched to a pre-created
+    // meeting note after the fact; the transcript source itself stays immutable.
+    mutableFields: ['status', 'summary', 'title', 'tags', 'safe_space', 'customer', 'transcript', 'series'],
   },
   decision: {
     bodyEditable: false,
     appendOnly: true,
-    mutableFields: ['status', 'superseded_by', 'last_verified', 'title', 'tags'],
+    mutableFields: ['status', 'superseded_by', 'title', 'tags'],
   },
   insight: { bodyEditable: true, mutableFields: 'all' },
   customer: { bodyEditable: true, mutableFields: 'all' },
@@ -43,6 +49,7 @@ export const TYPE_RULES: Record<NoteType, TypeRule> = {
   person: { bodyEditable: true, mutableFields: 'all' },
   session: { bodyEditable: false, mutableFields: [] },
   skill: { bodyEditable: true, mutableFields: 'all' },
+  todo: { bodyEditable: true, mutableFields: 'all' },
   note: { bodyEditable: true, mutableFields: 'all' },
 };
 

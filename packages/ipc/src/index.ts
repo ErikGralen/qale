@@ -2,10 +2,12 @@ import type {
   AgentRunInput,
   AgentRunHandle,
   BacklinkDTO,
+  CaptureClassificationDTO,
   CaptureNoteInput,
-  CaptureMeetingInput,
+  CaptureTodoInputDTO,
   GoldenAnswerInput,
-  HealthDTO,
+  IngestCaptureInputDTO,
+  IngestCaptureResultDTO,
   MaintenanceReportDTO,
   NoteQueryDTO,
   NoteRefDTO,
@@ -15,12 +17,19 @@ import type {
   ProposalDTO,
   ProposalStatsDTO,
   ProblemHeatDTO,
+  RenameNoteInput,
   SaveNoteInput,
   SaveFrontmatterInput,
   SearchHitDTO,
-  SessionRefDTO,
+  AgentPingDTO,
+  PingResolveActionDTO,
+  ChatRefDTO,
+  ChatHistoryDTO,
+  SessionLifecycle,
+  LiveSessionDTO,
   SettingsDTO,
   ProblemStance,
+  TodoStatus,
   VaultInfoDTO,
   VaultTreeDTO,
 } from './dtos.js';
@@ -62,24 +71,28 @@ export interface InvokeMap {
   'vault:current': { args: []; result: VaultInfoDTO | null };
   'vault:tree': { args: []; result: VaultTreeDTO };
   'vault:rebuildIndex': { args: []; result: { indexed: number } };
-  'vault:health': { args: []; result: HealthDTO };
   'vault:refreshIndexes': { args: []; result: { written: number } };
   'vault:query': { args: [query: NoteQueryDTO]; result: NoteRefDTO[] };
-  'librarian:sweep': { args: []; result: { created: number } };
   'librarian:report': { args: []; result: MaintenanceReportDTO };
 
   // Notes
   'note:get': { args: [path: string]; result: NoteDTO | null };
   'note:save': { args: [input: SaveNoteInput]; result: NoteDTO };
   'note:saveFrontmatter': { args: [input: SaveFrontmatterInput]; result: NoteDTO };
+  'note:rename': { args: [input: RenameNoteInput]; result: NoteDTO };
   'note:backlinks': { args: [path: string]; result: BacklinkDTO[] };
   'note:resolveLink': { args: [target: string]; result: string | null };
   'note:setProblemStance': { args: [path: string, stance: ProblemStance]; result: NoteDTO };
   'problems:byHeat': { args: []; result: ProblemHeatDTO[] };
 
+  // Todos (the commitment ledger)
+  'todos:capture': { args: [input: CaptureTodoInputDTO]; result: NoteDTO };
+  'todos:setStatus': { args: [path: string, status: TodoStatus]; result: NoteDTO };
+
   // Capture / search
   'note:capture': { args: [input: CaptureNoteInput]; result: NoteDTO };
-  'meeting:capture': { args: [input: CaptureMeetingInput]; result: NoteDTO };
+  'capture:classify': { args: [text: string, fileName?: string]; result: CaptureClassificationDTO };
+  'capture:ingest': { args: [input: IngestCaptureInputDTO]; result: IngestCaptureResultDTO };
   'search:query': { args: [query: string, limit?: number]; result: SearchHitDTO[] };
 
   // Proposals
@@ -93,7 +106,25 @@ export interface InvokeMap {
   // Agent / sessions
   'agent:run': { args: [input: AgentRunInput]; result: AgentRunHandle };
   'agent:abort': { args: [streamId: string]; result: void };
-  'sessions:list': { args: []; result: SessionRefDTO[] };
+  // Stored conversations (pi JSONL replay store)
+  'chats:list': { args: []; result: ChatRefDTO[] };
+  'chats:history': { args: [sessionId: string]; result: ChatHistoryDTO };
+  'chats:delete': { args: [sessionId: string]; result: { ok: boolean } };
+  'chats:setLifecycle': {
+    args: [sessionId: string, lifecycle: SessionLifecycle];
+    result: { ok: boolean };
+  };
+  'chats:forNote': { args: [path: string]; result: ChatRefDTO[] };
+  // Live session state (the sidebar rail) + agent-initiated pings
+  'sessions:live': { args: []; result: LiveSessionDTO[] };
+  'pings:list': { args: []; result: AgentPingDTO[] };
+  'pings:open': { args: [id: string]; result: AgentPingDTO | null };
+  'pings:dismiss': { args: [id: string]; result: { ok: boolean } };
+  /** Apply/skip one suggestion item on a ping — the click IS the approval. */
+  'pings:resolveItem': {
+    args: [pingId: string, itemId: string, action: PingResolveActionDTO];
+    result: AgentPingDTO | null;
+  };
 }
 
 export type InvokeChannel = keyof InvokeMap;
@@ -119,20 +150,22 @@ export const INVOKE_CHANNELS = [
   'vault:current',
   'vault:tree',
   'vault:rebuildIndex',
-  'vault:health',
   'vault:refreshIndexes',
   'vault:query',
-  'librarian:sweep',
   'librarian:report',
   'note:get',
   'note:save',
   'note:saveFrontmatter',
+  'note:rename',
   'note:backlinks',
   'note:resolveLink',
   'note:setProblemStance',
   'problems:byHeat',
+  'todos:capture',
+  'todos:setStatus',
   'note:capture',
-  'meeting:capture',
+  'capture:classify',
+  'capture:ingest',
   'search:query',
   'proposals:list',
   'proposals:preview',
@@ -142,7 +175,16 @@ export const INVOKE_CHANNELS = [
   'golden:save',
   'agent:run',
   'agent:abort',
-  'sessions:list',
+  'chats:list',
+  'chats:history',
+  'chats:delete',
+  'chats:setLifecycle',
+  'chats:forNote',
+  'sessions:live',
+  'pings:list',
+  'pings:open',
+  'pings:dismiss',
+  'pings:resolveItem',
 ] as const satisfies readonly InvokeChannel[];
 
 // Compile-time completeness guard: every InvokeMap key must appear above.

@@ -1,0 +1,144 @@
+import Database from 'better-sqlite3';
+import type { CreatePingInput, PingPayload, PingPort, PingRecord } from '@pm/application';
+
+/**
+ * Agent-ping queue — lives in app.db beside the proposals table (primary state,
+ * never dropped). A ping is an agent-opened conversation waiting in the Inbox;
+ * its status log (opened/dismissed) doubles as the proactivity eval signal.
+ */
+interface Row {
+  id: string;
+  key: string;
+  title: string;
+  body: string;
+  evidence_json: string;
+  session_type: string;
+  seed_prompt: string;
+  target_path: string | null;
+  payload_json: string | null;
+  status: string;
+  created: number;
+  resolved: number | null;
+}
+
+export class PingStore implements PingPort {
+  private db: Database.Database;
+
+  constructor(dbPath: string) {
+    this.db = new Database(dbPath);
+    this.db.pragma('journal_mode = WAL');
+    this.db.pragma('busy_timeout = 5000');
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS pings (
+        id TEXT PRIMARY KEY,
+        key TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        evidence_json TEXT NOT NULL,
+        session_type TEXT NOT NULL,
+        seed_prompt TEXT NOT NULL,
+        target_path TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created INTEGER NOT NULL,
+        resolved INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_pings_status ON pings(status);
+      CREATE INDEX IF NOT EXISTS idx_pings_key ON pings(key);
+    `);
+    // Suggestion payloads arrived after v1 — add the column to existing DBs.
+    const cols = this.db.prepare('PRAGMA table_info(pings)').all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'payload_json')) {
+      this.db.exec('ALTER TABLE pings ADD COLUMN payload_json TEXT');
+    }
+  }
+
+  create(input: CreatePingInput, now: number): PingRecord {
+    const row: Row = {
+      id: `g_${now.toString(36)}_${Math.abs(hash(input.key + input.title)).toString(36)}`,
+      key: input.key,
+      title: input.title,
+      body: input.body,
+      evidence_json: JSON.stringify(input.evidence),
+      session_type: input.sessionType,
+      seed_prompt: input.seedPrompt,
+      target_path: input.targetPath,
+      payload_json: input.payload ? JSON.stringify(input.payload) : null,
+      status: 'pending',
+      created: now,
+      resolved: null,
+    };
+    this.db
+      .prepare(
+        `INSERT INTO pings (id, key, title, body, evidence_json, session_type, seed_prompt,
+           target_path, payload_json, status, created, resolved)
+         VALUES (@id, @key, @title, @body, @evidence_json, @session_type, @seed_prompt,
+           @target_path, @payload_json, @status, @created, @resolved)`,
+      )
+      .run(row);
+    return this.toRecord(row);
+  }
+
+  list(status?: string): PingRecord[] {
+    const rows = status
+      ? (this.db.prepare('SELECT * FROM pings WHERE status = ? ORDER BY created DESC').all(status) as Row[])
+      : (this.db.prepare('SELECT * FROM pings ORDER BY created DESC').all() as Row[]);
+    return rows.map((r) => this.toRecord(r));
+  }
+
+  get(id: string): PingRecord | null {
+    const row = this.db.prepare('SELECT * FROM pings WHERE id = ?').get(id) as Row | undefined;
+    return row ? this.toRecord(row) : null;
+  }
+
+  setStatus(id: string, status: string, resolved: number | null): void {
+    this.db.prepare('UPDATE pings SET status = ?, resolved = ? WHERE id = ?').run(status, resolved, id);
+  }
+
+  updatePayload(id: string, payload: PingPayload): void {
+    this.db.prepare('UPDATE pings SET payload_json = ? WHERE id = ?').run(JSON.stringify(payload), id);
+  }
+
+  pendingCount(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS c FROM pings WHERE status = 'pending'").get() as {
+      c: number;
+    };
+    return row.c;
+  }
+
+  hasRecent(key: string, since: number): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM pings
+          WHERE key = ? AND (status = 'pending' OR resolved IS NULL OR resolved >= ?)`,
+      )
+      .get(key, since) as { c: number };
+    return row.c > 0;
+  }
+
+  close(): void {
+    this.db.close();
+  }
+
+  private toRecord(row: Row): PingRecord {
+    return {
+      id: row.id,
+      key: row.key,
+      title: row.title,
+      body: row.body,
+      evidence: JSON.parse(row.evidence_json),
+      sessionType: row.session_type,
+      seedPrompt: row.seed_prompt,
+      targetPath: row.target_path,
+      payload: row.payload_json ? (JSON.parse(row.payload_json) as PingPayload) : null,
+      status: row.status,
+      created: row.created,
+      resolved: row.resolved,
+    };
+  }
+}
+
+function hash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  return h;
+}

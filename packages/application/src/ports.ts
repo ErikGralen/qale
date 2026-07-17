@@ -54,6 +54,8 @@ export interface VaultPort {
   /** Write frontmatter + body, creating parent dirs. Returns the written Note. */
   writeNote(relPath: string, frontmatter: Frontmatter, body: string): Promise<Note>;
   writeRaw(relPath: string, content: string): Promise<void>;
+  /** Write a non-markdown asset (dropped image, etc.), creating parent dirs. */
+  writeBinary(relPath: string, data: Uint8Array): Promise<void>;
   remove(relPath: string): Promise<void>;
   exists(relPath: string): Promise<boolean>;
   /** Every `.md` file under the vault. */
@@ -147,6 +149,85 @@ export interface ProposalPort {
   stats(): ProposalStats;
 }
 
+/**
+ * A structured suggestion attached to a ping — the librarian's prepared answer
+ * to its own finding, so the Inbox offers one-tap resolutions instead of
+ * opening a conversation. Items resolve independently; the ping retires when
+ * every item is fixed or skipped.
+ */
+export interface PingLinkChoiceItem {
+  /** Stable per-item id within the ping. */
+  id: string;
+  /** Note whose body carries the dangling link. */
+  from: string;
+  /** The dangling wikilink target text. */
+  target: string;
+  /** Ranked "did you mean…?" candidates. */
+  options: { slug: string; title: string }[];
+  resolution?: { action: 'fixed'; slug: string } | { action: 'skipped' };
+}
+
+export interface PingOrphanItem {
+  id: string;
+  /** The unlinked note. */
+  path: string;
+  title: string;
+  /** Notes that mention this orphan as plain text — link-it-there options. */
+  mentions: { host: string; hostTitle: string; line: string }[];
+  resolution?: { action: 'fixed'; host: string } | { action: 'skipped' };
+}
+
+export type PingPayload =
+  | { kind: 'link-choices'; items: PingLinkChoiceItem[] }
+  | { kind: 'orphans'; items: PingOrphanItem[] };
+
+/**
+ * An agent-initiated finding ("noticed X — here's a prepared answer"). Pings
+ * live in app.db beside proposals; the payload carries one-tap suggestions,
+ * `seedPrompt` seeds the chat-about-this escape hatch, dismissing is cheap
+ * and logged.
+ */
+export interface PingRecord {
+  id: string;
+  /** Stable dedupe key (e.g. `broken-links`, `orphans`) — one live ping per finding. */
+  key: string;
+  title: string;
+  body: string;
+  evidence: { ref: string; label?: string; resolved: boolean }[];
+  sessionType: string;
+  seedPrompt: string;
+  targetPath: string | null;
+  /** One-tap suggestions; null when the finding genuinely needs a conversation. */
+  payload: PingPayload | null;
+  status: string;
+  created: number;
+  resolved: number | null;
+}
+
+export interface CreatePingInput {
+  key: string;
+  title: string;
+  body: string;
+  evidence: { ref: string; label?: string; resolved: boolean }[];
+  sessionType: string;
+  seedPrompt: string;
+  targetPath: string | null;
+  payload?: PingPayload | null;
+}
+
+/** Agent-ping store (app.db) — the durable queue of agent-opened conversations. */
+export interface PingPort {
+  create(input: CreatePingInput, now: number): PingRecord;
+  list(status?: string): PingRecord[];
+  get(id: string): PingRecord | null;
+  setStatus(id: string, status: string, resolved: number | null): void;
+  /** Persist per-item resolution state as the PO works through a suggestion. */
+  updatePayload(id: string, payload: PingPayload): void;
+  pendingCount(): number;
+  /** True if a ping with this key is pending or was resolved after `since` (dedupe). */
+  hasRecent(key: string, since: number): boolean;
+}
+
 /** The deterministic result of an outbound write — the link is from the API. */
 export interface OutboundResult {
   url: string;
@@ -170,6 +251,8 @@ export interface UseCaseContext {
   git: GitPort;
   clock: Clock;
   proposals: ProposalPort;
+  /** Agent-ping queue; absent in contexts that don't surface an Inbox (tests, scripts). */
+  pings?: PingPort;
   /** Present only when an outbound integration (Atlassian) is configured. */
   outbound?: OutboundPort;
 }

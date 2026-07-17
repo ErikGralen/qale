@@ -17,7 +17,7 @@ red_flags:
 Scheduled (Friday 15:00), or on demand. Also runs as a dry-run against last week before enabling.
 
 ## Read
-The week's deltas across memory — recent meetings, new/superseded decisions, fresh insights — and,
+The week's deltas across memory — recent meetings, new/superseded decisions, new insights — and,
 when configured, the Jira sprint delta. Use search_vault and the "This week" lens as your scope.
 
 ## Produce

@@ -1,12 +1,13 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, Notification } from 'electron';
 import type { AgentRunInput, ModelInfoDTO, SettingsDTO } from '@pm/ipc';
 import { AgentRuntime } from '@pm/agent';
 import {
   acceptProposal,
+  completeMeetingReview,
   createProposal,
   type UseCaseContext,
   captureNote,
-  captureMeeting,
+  captureTodo,
   ensureDefaultSkills,
   getBacklinks,
   getNote,
@@ -14,22 +15,28 @@ import {
   getMaintenanceReport,
   getProposalStats,
   getVaultTree,
-  getWorkspaceHealth,
   queryNotes,
-  runFreshnessSweep,
+  runLibrarianSweep,
+  listPings,
+  openPing,
+  dismissPing,
+  resolvePingItem,
   listProposals,
   previewProposal,
   rebuild,
   refreshFolderIndexes,
   rejectProposal,
+  ingestCapture,
+  renameNote,
   resolveLink,
   saveGoldenAnswer,
   saveAuthoredNote,
   saveFrontmatter,
   searchNotes,
   setProblemStance,
+  setTodoStatus,
 } from '@pm/application';
-import { parseFrontmatter, type Frontmatter } from '@pm/domain';
+import { classifyCapture, parseFrontmatter, type Frontmatter } from '@pm/domain';
 import { DEFAULT_SKILLS } from '@pm/sessions';
 import { handle, pushEvent } from './ipc.js';
 import { SettingsService } from './services/settings-service.js';
@@ -42,6 +49,7 @@ import {
   hitToDTO,
   indexedToRefDTO,
   noteToDTO,
+  pingToDTO,
   problemHeatToDTO,
   proposalToDTO,
   treeToDTO,
@@ -64,10 +72,26 @@ function seedDemoProposal(ctx: UseCaseContext): void {
       body: 'A demo insight showing the approval-card flow.\n',
       rationale: 'Demonstrates the Inbox card without a live model.',
     },
-    rationale: 'seed',
+    rationale: 'File a new insight heard in the demo meeting — this is what an approval card looks like.',
     evidence: [{ ref: `[[${meeting.slug}]]`, resolved: true }],
     inference: false,
   });
+  // A demo agent ping so the "Agent noticed" inbox section is demoable too.
+  if (ctx.pings && ctx.pings.pendingCount() === 0) {
+    ctx.pings.create(
+      {
+        key: 'demo-ping',
+        title: 'Release page still says v2.2 — two meetings mention v2.3',
+        body: 'Two meetings mention v2.3 shipping, but the release page still describes v2.2. Want to reconcile them together?',
+        evidence: [{ ref: `[[${meeting.slug}]]`, resolved: true }],
+        sessionType: 'librarian',
+        seedPrompt:
+          'The release page and recent meetings disagree: the meetings mention a newer ship (v2.3) than the release page describes (v2.2). Read the release page and the recent meetings, then propose updates for what changed.',
+        targetPath: null,
+      },
+      Date.now(),
+    );
+  }
   // A demo outbound draft card (message tier — no external write needed).
   createProposal(ctx, {
     kind: 'outbound',
@@ -78,8 +102,8 @@ function seedDemoProposal(ctx: UseCaseContext): void {
       system: 'message',
       action: 'message',
       audience: 'exec',
-      title: 'Acme SSO on track',
-      body: 'WorkOS SSO is live in staging; SCIM lands Q3. Acme renewal unblocked.',
+      title: 'Nordkap SSO on track',
+      body: 'WorkOS SSO is live in staging; SCIM lands in September. Nordkap renewal unblocked.',
       linkBackPath: `${meeting.path}`,
       rationale: 'Exec update drafted from the QBR.',
     },
@@ -103,14 +127,15 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   });
   const agent = new AgentRuntime();
 
-  const now = (): string => vaultService.context()?.clock.now() ?? new Date().toISOString();
-
   const afterOpen = async (): Promise<void> => {
     const ctx = vaultService.context();
     if (!ctx) return;
     await ensureDefaultSkills(ctx, DEFAULT_SKILLS);
-    // App-open cron (PLAN-V2 §3.5): catch up the freshness sweep on launch.
-    await runFreshnessSweep(ctx);
+    // App-open cron (PLAN-V2 §3.5): let the librarian work ahead on launch —
+    // prepared link fixes land as approval cards, judgment calls as pings.
+    await runLibrarianSweep(ctx);
+    notifyPings();
+    notifyProposalsFor();
   };
 
   const reconfigureAgent = (): void => {
@@ -146,11 +171,63 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     if (ctx) pushEvent(getWindow(), { channel: 'proposals:changed', pendingCount: ctx.proposals.pendingCount() });
   };
 
+  const notifyPings = (): void => {
+    const ctx = vaultService.context();
+    if (ctx?.pings) pushEvent(getWindow(), { channel: 'pings:changed', pendingCount: ctx.pings.pendingCount() });
+  };
+
   const fireSession = async (sessionType: string, prompt: string): Promise<void> => {
     const ctx = vaultService.context();
     if (!ctx) return;
+    // Proposal/badge refreshes ride on the session:status settle push (agent.onStatus).
     await agent.run({ sessionType: sessionType as AgentRunInput['sessionType'], prompt }, ctx, () => {});
-    setTimeout(notifyProposalsFor, 3000);
+  };
+
+  const SESSION_LABEL: Record<string, string> = {
+    chat: 'Chat',
+    ask: 'Ask',
+    'after-meeting': 'After-Meeting',
+    'before-meeting': 'Before-Meeting',
+    'external-transcript': 'External transcript',
+    intake: 'Intake',
+    'weekly-update': 'Weekly update',
+    'sprint-review': 'Sprint review',
+    librarian: 'Librarian',
+  };
+  const sessionLabel = (type: string): string => SESSION_LABEL[type] ?? type.replace(/-/g, ' ');
+
+  // Session lifecycle → renderer rail/badges, plus an OS notification when a
+  // background run finishes while the PO is elsewhere (nothing silent).
+  agent.onStatus = (s) => {
+    const ctx = vaultService.context();
+    const pendingCards = ctx
+      ? ctx.proposals.list('pending').filter((p) => p.sessionId === s.sessionId).length
+      : 0;
+    pushEvent(getWindow(), { channel: 'session:status', ...s, pendingCards });
+    if (s.status !== 'settled') return;
+    notifyProposalsFor();
+    const win = getWindow();
+    if ((win && win.isFocused()) || !Notification.isSupported()) return;
+    const notification = new Notification({
+      title: `${sessionLabel(s.sessionType)} ready`,
+      body: pendingCards > 0 ? `${pendingCards} proposal${pendingCards === 1 ? '' : 's'} to review` : s.title,
+      silent: true,
+    });
+    notification.on('click', () => {
+      const w = getWindow();
+      if (w) {
+        if (w.isMinimized()) w.restore();
+        w.show();
+        w.focus();
+      }
+      pushEvent(getWindow(), {
+        channel: 'session:focus',
+        sessionId: s.sessionId,
+        sessionType: s.sessionType,
+        title: s.title,
+      });
+    });
+    notification.show();
   };
 
   const scheduler = new SchedulerService(
@@ -158,6 +235,14 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     settings,
     fireSession,
     notifyProposalsFor,
+    () => {
+      const ctx = vaultService.context();
+      if (!ctx) return;
+      void runLibrarianSweep(ctx).then(({ pings, fixes }) => {
+        if (pings > 0) notifyPings();
+        if (fixes > 0) notifyProposalsFor();
+      });
+    },
   );
 
   const mcp = new McpService(
@@ -244,27 +329,30 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     return null;
   });
 
-  handle('vault:tree', () => treeToDTO(getVaultTree(vaultService.requireContext()), now()));
+  handle('vault:tree', () => treeToDTO(getVaultTree(vaultService.requireContext())));
   handle('vault:rebuildIndex', () => rebuild(vaultService.requireContext()));
-  handle('vault:health', () => getWorkspaceHealth(vaultService.requireContext()));
   handle('vault:refreshIndexes', () => refreshFolderIndexes(vaultService.requireContext()));
   handle('vault:query', (query) =>
-    queryNotes(vaultService.requireContext(), query).map((n) => indexedToRefDTO(n, now())),
+    queryNotes(vaultService.requireContext(), query).map((n) => indexedToRefDTO(n)),
   );
 
   handle('note:get', async (path) => {
     const note = await getNote(vaultService.requireContext(), path);
-    return note ? noteToDTO(note, now()) : null;
+    return note ? noteToDTO(note) : null;
   });
   handle('note:save', async (input) => {
     const note = await saveAuthoredNote(vaultService.requireContext(), input.path, input.body);
-    return noteToDTO(note, now());
+    return noteToDTO(note);
   });
   handle('note:saveFrontmatter', async (input) => {
     const parsed = parseFrontmatter(input.frontmatter);
     if (!parsed.ok || !parsed.data) throw new Error(`invalid frontmatter: ${parsed.error}`);
     const note = await saveFrontmatter(vaultService.requireContext(), input.path, parsed.data as Frontmatter);
-    return noteToDTO(note, now());
+    return noteToDTO(note);
+  });
+  handle('note:rename', async (input) => {
+    const note = await renameNote(vaultService.requireContext(), input);
+    return noteToDTO(note);
   });
   handle('note:backlinks', (path) =>
     getBacklinks(vaultService.requireContext(), path).map(backlinkToDTO),
@@ -272,16 +360,42 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   handle('note:resolveLink', (target) => resolveLink(vaultService.requireContext(), target));
   handle('note:setProblemStance', async (path, stance) => {
     const note = await setProblemStance(vaultService.requireContext(), path, stance);
-    return noteToDTO(note, now());
+    return noteToDTO(note);
+  });
+
+  handle('todos:capture', async (input) => {
+    const note = await captureTodo(vaultService.requireContext(), input);
+    return noteToDTO(note);
+  });
+  handle('todos:setStatus', async (path, status) => {
+    const note = await setTodoStatus(vaultService.requireContext(), path, status);
+    return noteToDTO(note);
   });
 
   handle('note:capture', async (input) => {
     const note = await captureNote(vaultService.requireContext(), input);
-    return noteToDTO(note, now());
+    return noteToDTO(note);
   });
-  handle('meeting:capture', async (input) => {
-    const note = await captureMeeting(vaultService.requireContext(), input);
-    return noteToDTO(note, now());
+  handle('capture:classify', (text, fileName) => classifyCapture(text, fileName));
+  handle('capture:ingest', async (input) => {
+    const { note, kind, followUp } = await ingestCapture(vaultService.requireContext(), {
+      ...input,
+      attachment: input.attachment
+        ? { name: input.attachment.name, data: Buffer.from(input.attachment.dataBase64, 'base64') }
+        : undefined,
+    });
+    // After-Meeting / External-Transcript run headlessly the moment the capture
+    // lands — the gate is the review, not the run. The PO's first touch is the
+    // cards in the Inbox (session:status settle pushes the badge + notification).
+    if (followUp?.background) {
+      void fireSession(followUp.sessionType, followUp.prompt);
+      return {
+        note: noteToDTO(note),
+        kind,
+        processing: { sessionType: followUp.sessionType, label: followUp.tabTitle },
+      };
+    }
+    return { note: noteToDTO(note), kind, followUp };
   });
 
   handle('search:query', (query, limit) =>
@@ -289,7 +403,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   );
 
   handle('problems:byHeat', () =>
-    getProblemsByHeat(vaultService.requireContext()).map((r) => problemHeatToDTO(r, now())),
+    getProblemsByHeat(vaultService.requireContext()).map((r) => problemHeatToDTO(r)),
   );
 
   const notifyProposals = (): void => {
@@ -302,22 +416,27 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     listProposals(vaultService.requireContext(), status).map(proposalToDTO),
   );
   handle('proposals:preview', (id) => previewProposal(vaultService.requireContext(), id));
+  // Resolving the last card of an after-meeting session closes the review:
+  // the meeting flips new → processed. Best-effort — never blocks the resolve.
+  const afterCardResolved = async (id: string): Promise<void> => {
+    const ctx = vaultService.context();
+    const rec = ctx?.proposals.get(id);
+    if (!ctx || !rec) return;
+    await completeMeetingReview(ctx, rec.sessionId).catch(() => {});
+  };
   handle('proposals:accept', async (id, edited) => {
     const result = await acceptProposal(vaultService.requireContext(), id, edited);
+    await afterCardResolved(id);
     notifyProposals();
     return result;
   });
-  handle('proposals:reject', (id) => {
+  handle('proposals:reject', async (id) => {
     const result = rejectProposal(vaultService.requireContext(), id);
+    await afterCardResolved(id);
     notifyProposals();
     return result;
   });
   handle('proposals:stats', () => getProposalStats(vaultService.requireContext()));
-  handle('librarian:sweep', async () => {
-    const r = await runFreshnessSweep(vaultService.requireContext());
-    notifyProposals();
-    return r;
-  });
   handle('librarian:report', () => getMaintenanceReport(vaultService.requireContext()));
   handle('golden:save', (input) => {
     const rec = saveGoldenAnswer(vaultService.requireContext(), input);
@@ -331,7 +450,58 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     });
   });
   handle('agent:abort', (streamId) => agent.abort(streamId));
-  handle('sessions:list', () => []);
+
+  handle('chats:list', () => agent.listChats());
+  handle('chats:history', (sessionId) => ({ id: sessionId, messages: agent.chatHistory(sessionId) }));
+  handle('chats:delete', async (sessionId) => {
+    await agent.deleteChat(sessionId);
+    return { ok: true };
+  });
+  handle('chats:setLifecycle', (sessionId, lifecycle) => {
+    agent.setLifecycle(sessionId, lifecycle);
+    return { ok: true };
+  });
+  handle('sessions:live', () => agent.listLive());
+
+  handle('pings:list', () => listPings(vaultService.requireContext()).map(pingToDTO));
+  handle('pings:open', (id) => {
+    const rec = openPing(vaultService.requireContext(), id);
+    notifyPings();
+    return rec ? pingToDTO(rec) : null;
+  });
+  handle('pings:dismiss', (id) => {
+    dismissPing(vaultService.requireContext(), id);
+    notifyPings();
+    return { ok: true };
+  });
+  handle('pings:resolveItem', async (pingId, itemId, action) => {
+    const rec = await resolvePingItem(vaultService.requireContext(), pingId, itemId, action);
+    notifyPings();
+    return rec ? pingToDTO(rec) : null;
+  });
+
+  // Chats that touched this note: session receipts link reads/writes as
+  // wikilinks, so the note's backlinks from sessions/ name the conversations.
+  handle('chats:forNote', async (path) => {
+    const ctx = vaultService.requireContext();
+    const receipts = getBacklinks(ctx, path)
+      .map((b) => b.from)
+      .filter((n) => n.type === 'session');
+    if (receipts.length === 0) return [];
+    const ids = new Set<string>();
+    const prefixes: string[] = [];
+    for (const r of receipts) {
+      const id = r.frontmatter['session_id'];
+      if (typeof id === 'string') ids.add(id);
+      else {
+        // Pre-session_id receipts: the filename ends in the id's first 8 chars.
+        const m = /-([0-9a-f]{8})\.md$/.exec(r.path);
+        if (m) prefixes.push(m[1]!);
+      }
+    }
+    const chats = await agent.listChats();
+    return chats.filter((c) => ids.has(c.id) || prefixes.some((p) => c.id.startsWith(p)));
+  });
 
   return {
     async onReady() {

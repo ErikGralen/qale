@@ -2,14 +2,10 @@ import {
   NOTE_TYPE_META,
   byHeat,
   computeHeat,
-  computeHealth,
-  computeFreshness,
-  type Frontmatter,
   type NoteType,
 } from '@pm/domain';
 import type { IndexedNote, UseCaseContext } from '../ports.js';
 import { reconcileIndex, rebuildIndex } from './reconcile.js';
-import { createProposal } from './proposals.js';
 
 export interface VaultInfo {
   path: string;
@@ -66,7 +62,7 @@ export interface ProblemHeatRow {
 /**
  * Problems (the durable hubs that absorbed themes) ranked by evidence heat —
  * count + newest evidence date. Evidence dates come from each referenced note's
- * `date`/`captured`/`last_verified` via the index.
+ * `date`/`captured` via the index.
  */
 export function getProblemsByHeat(ctx: UseCaseContext): ProblemHeatRow[] {
   const problems = ctx.index.listByType('problem');
@@ -78,7 +74,7 @@ export function getProblemsByHeat(ctx: UseCaseContext): ProblemHeatRow[] {
       const path = ctx.index.resolve(stripBrackets(ref));
       const rec = path ? ctx.index.get(path) : null;
       const fm = rec?.frontmatter ?? {};
-      const d = fm['date'] ?? fm['last_verified'] ?? fm['captured'];
+      const d = fm['date'] ?? fm['captured'];
       return typeof d === 'string' ? d : null;
     });
     const heat = computeHeat(dates);
@@ -88,19 +84,9 @@ export function getProblemsByHeat(ctx: UseCaseContext): ProblemHeatRow[] {
   return rows;
 }
 
-/** Overall workspace health — share of live, tracked claims still fresh. */
-export function getWorkspaceHealth(ctx: UseCaseContext) {
-  const all = ctx.index.all().map((n) => n.frontmatter as Frontmatter);
-  return computeHealth(all, ctx.clock.now());
-}
-
 export interface NoteQuery {
   types?: NoteType[];
   status?: string;
-  /** Only freshness-tracked notes that are past their decay window. */
-  stale?: boolean;
-  /** Only freshness-tracked notes never verified. */
-  unverified?: boolean;
   /** Notes touched (mtime) within the last N days. */
   recentDays?: number;
   /** Notes whose `customer` frontmatter ref resolves to this slug. */
@@ -113,7 +99,6 @@ export interface NoteQuery {
  * no user-facing query syntax. Powers the left-panel saved views.
  */
 export function queryNotes(ctx: UseCaseContext, q: NoteQuery): IndexedNote[] {
-  const now = ctx.clock.now();
   const cutoff = q.recentDays ? Date.now() - q.recentDays * 24 * 60 * 60 * 1000 : null;
   let rows = ctx.index.all().filter((n) => !n.path.endsWith('/index.md'));
   if (q.types) rows = rows.filter((n) => q.types!.includes(n.type));
@@ -125,81 +110,18 @@ export function queryNotes(ctx: UseCaseContext, q: NoteQuery): IndexedNote[] {
       return typeof c === 'string' && stripBrackets(c).replace(/\.md$/, '').endsWith(q.customer!);
     });
   }
-  if (q.stale || q.unverified) {
-    rows = rows.filter((n) => {
-      const f = computeFreshness(n.frontmatter as Frontmatter, now);
-      return (q.stale && f.stale) || (q.unverified && f.unverified);
-    });
-  }
   rows.sort((a, b) => b.mtime - a.mtime);
   return q.limit ? rows.slice(0, q.limit) : rows;
 }
 
-export interface StaleRow {
-  note: IndexedNote;
-  ageDays: number | null;
-  freshForDays: number | null;
-}
-
-/** Live, tracked notes that are past their decay window (for the nightly sweep). */
-export function getStaleNotes(ctx: UseCaseContext): StaleRow[] {
-  const now = ctx.clock.now();
-  const rows: StaleRow[] = [];
-  for (const n of ctx.index.all()) {
-    const f = computeFreshness(n.frontmatter as Frontmatter, now);
-    if (f.stale) rows.push({ note: n, ageDays: f.ageDays, freshForDays: f.freshForDays });
-  }
-  rows.sort((a, b) => (b.ageDays ?? 0) - (a.ageDays ?? 0));
-  return rows;
-}
-
-/**
- * The nightly (app-open) freshness sweep (PLAN-V2 §3.5, Phase 6): stale claims
- * become "needs re-verification" cards in the Inbox. A re-verify card echoes the
- * note's current content; approving it re-stamps `last_verified` (via the normal
- * accept path). Deduped against pending librarian cards so the sweep is idempotent.
- */
-export async function runFreshnessSweep(ctx: UseCaseContext, limit = 20): Promise<{ created: number }> {
-  const pending = ctx.proposals.list('pending');
-  const alreadyCarded = new Set(
-    pending.filter((p) => p.sessionId === 'librarian').map((p) => p.targetPath),
-  );
-  const stale = getStaleNotes(ctx).slice(0, limit);
-  let created = 0;
-  for (const row of stale) {
-    if (alreadyCarded.has(row.note.path)) continue;
-    const note = await ctx.vault.readNote(row.note.path);
-    if (!note) continue;
-    const sources = collectRefs(note.frontmatter as Record<string, unknown>);
-    createProposal(ctx, {
-      kind: 'note',
-      sessionId: 'librarian',
-      targetPath: note.path,
-      baseHash: null,
-      payload: {
-        path: note.path,
-        frontmatter: note.frontmatter as Record<string, unknown>,
-        body: note.body,
-        rationale: `Stale — last verified ${row.ageDays}d ago (clock ${row.freshForDays}d). Still true? Approve to re-verify.`,
-      },
-      rationale: `Stale ${note.type}: re-verify "${note.frontmatter.summary}"`,
-      evidence: sources.map((r) => ({ ref: r, resolved: true })),
-      inference: false,
-    });
-    created++;
-  }
-  return { created };
-}
-
 export interface MaintenanceReport {
-  stale: number;
   /** Notes with no inbound and no outbound links (candidates for adoption). */
   orphans: { path: string; title: string }[];
   /** Links whose target does not resolve (link repair candidates). */
   danglingLinks: { from: string; target: string }[];
 }
 
-/** Librarian maintenance scan (PLAN-V2 §3.5): orphans + dangling links + stale. */
+/** Librarian maintenance scan (PLAN-V2 §3.5): orphans + dangling links. */
 export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
   const all = ctx.index.all().filter((n) => !n.path.endsWith('/index.md'));
   const orphans: { path: string; title: string }[] = [];
@@ -212,16 +134,7 @@ export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
       if (!ctx.index.resolve(link.target)) danglingLinks.push({ from: n.path, target: link.target });
     }
   }
-  return { stale: getStaleNotes(ctx).length, orphans, danglingLinks };
-}
-
-function collectRefs(fm: Record<string, unknown>): string[] {
-  const out: string[] = [];
-  for (const key of ['evidence', 'sources']) {
-    const v = fm[key];
-    if (Array.isArray(v)) for (const r of v) if (typeof r === 'string') out.push(r);
-  }
-  return out;
+  return { orphans, danglingLinks };
 }
 
 /**

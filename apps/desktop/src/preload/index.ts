@@ -14,7 +14,14 @@ const invoke = Object.fromEntries(
   ]),
 ) as unknown as IpcApi;
 
-const PUSH_CHANNELS = ['agent:event', 'vault:changed', 'proposals:changed'] as const;
+const PUSH_CHANNELS = [
+  'agent:event',
+  'vault:changed',
+  'proposals:changed',
+  'session:status',
+  'pings:changed',
+  'session:focus',
+] as const;
 
 const bridge: PmBridge = {
   invoke,

@@ -10,6 +10,7 @@
 export type NoteLayer = 'raw' | 'derived' | 'authored';
 
 export type NoteType =
+  | 'source'
   | 'meeting'
   | 'decision'
   | 'insight'
@@ -19,28 +20,25 @@ export type NoteType =
   | 'person'
   | 'session'
   | 'skill'
+  | 'todo'
   | 'note';
 
 export type ProblemStance = 'exploring' | 'watching' | 'committed' | 'wont-do';
 
+/** Generic note lifecycle (sources/meetings/insights/notes) — always enum, never free text. */
+export type NoteStatus = 'new' | 'processed' | 'active' | 'stale';
+
 export type DecisionStatus = 'active' | 'superseded';
 export type ConfidenceLevel = 'high' | 'med' | 'low';
+
+/** Todo lifecycle — open until it lands; done/dropped stay on the ledger. */
+export type TodoStatus = 'open' | 'done' | 'dropped';
 
 /** A source reference stored in frontmatter (raw provenance). */
 export interface SourceRefDTO {
   system: string;
   author?: string;
   url?: string;
-}
-
-/** Computed freshness for a note (decay clock), sent alongside the note. */
-export interface FreshnessDTO {
-  tracked: boolean;
-  freshForDays: number | null;
-  lastVerified: string | null;
-  ageDays: number | null;
-  stale: boolean;
-  unverified: boolean;
 }
 
 /** A note as the renderer sees it — frontmatter flattened + raw markdown body. */
@@ -58,7 +56,6 @@ export interface NoteDTO {
   /** Raw markdown body (no frontmatter). */
   body: string;
   mtime: number;
-  freshness: FreshnessDTO;
   /** Whether this note type's body may be edited (false for decisions/sessions). */
   bodyEditable: boolean;
 }
@@ -72,7 +69,25 @@ export interface NoteRefDTO {
   summary: string;
   mtime: number;
   status?: string | null;
-  stale?: boolean;
+  /** Curated context tags (projects/products/areas) — the cross-cutting nav axis. */
+  tags?: string[];
+  /** Frontmatter date (decisions/meetings/releases), when present. */
+  date?: string;
+  /** Meeting clock time "HH:MM" (24h), when present. */
+  time?: string;
+  /** Meeting length in minutes, when present. */
+  durationMin?: number;
+  /** Wikilink ref this decision replaced — renders the spine inline in lists. */
+  supersedes?: string;
+  supersededBy?: string;
+  /** Todo due date "YYYY-MM-DD", when present. */
+  due?: string;
+  /** Todo owner — set only on external commitments (waiting-on items). */
+  owner?: string;
+  /** Todo close date "YYYY-MM-DD" (done/dropped), when present. */
+  resolvedOn?: string;
+  /** First `sources` ref (todos) — the note the commitment came from. */
+  sourceRef?: string;
 }
 
 export interface VaultInfoDTO {
@@ -118,16 +133,7 @@ export interface ProblemHeatDTO extends NoteRefDTO {
   newest: string | null;
 }
 
-export interface HealthDTO {
-  total: number;
-  fresh: number;
-  stale: number;
-  unverified: number;
-  score: number;
-}
-
 export interface MaintenanceReportDTO {
-  stale: number;
   orphans: { path: string; title: string }[];
   danglingLinks: { from: string; target: string }[];
 }
@@ -136,8 +142,6 @@ export interface MaintenanceReportDTO {
 export interface NoteQueryDTO {
   types?: NoteType[];
   status?: string;
-  stale?: boolean;
-  unverified?: boolean;
   recentDays?: number;
   customer?: string;
   limit?: number;
@@ -149,12 +153,60 @@ export interface CaptureNoteInput {
   source?: SourceRefDTO;
 }
 
-export interface CaptureMeetingInput {
+/** Quick-add todo — parsed renderer-side from the smart one-liner. */
+export interface CaptureTodoInputDTO {
   title: string;
-  body: string;
-  source?: SourceRefDTO;
-  participants?: string[];
+  /** "YYYY-MM-DD". */
+  due?: string;
+  /** External commitment: who owes it ("[[people/…]]" ref or plain name). */
+  owner?: string;
+  /** Ref to the note the commitment came from, e.g. "[[meetings/…]]". */
+  source?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Universal capture — dump anything; the system classifies, files, processes.
+// ---------------------------------------------------------------------------
+
+export type CaptureKind = 'transcript' | 'link' | 'screenshot' | 'note';
+
+/** The classifier's live guess, shown as an overridable chip in the capture UI. */
+export interface CaptureClassificationDTO {
+  kind: CaptureKind;
+  confidence: 'high' | 'low';
+  title: string;
+  url?: string;
+}
+
+export interface IngestCaptureInputDTO {
+  /** Omit to let the classifier decide (attachment present ⇒ screenshot). */
+  kind?: CaptureKind;
+  /** Transcript body, note text, link + comment, or a screenshot caption. */
+  text: string;
+  title?: string;
+  url?: string;
   safeSpace?: boolean;
+  /** Transcript only — someone else's meeting: filed as a source (signal), not a meeting. */
+  external?: boolean;
+  /** External transcript only — whose meeting it was (e.g. "Jonas Palm"). */
+  origin?: string;
+  attachment?: { name: string; dataBase64: string };
+}
+
+export interface IngestFollowUpDTO {
+  sessionType: string;
+  prompt: string;
+  tabTitle: string;
+  /** Runs headlessly on ingest — the review lands in the Inbox; no tab opens. */
+  background?: boolean;
+}
+
+export interface IngestCaptureResultDTO {
+  note: NoteDTO;
+  kind: CaptureKind;
+  followUp?: IngestFollowUpDTO;
+  /** A background session was fired for this capture (After-Meeting / External transcript). */
+  processing?: { sessionType: string; label: string };
 }
 
 export interface SaveNoteInput {
@@ -165,6 +217,11 @@ export interface SaveNoteInput {
 export interface SaveFrontmatterInput {
   path: string;
   frontmatter: Record<string, unknown>;
+}
+
+export interface RenameNoteInput {
+  path: string;
+  title: string;
 }
 
 export interface ProposalPreviewDTO {
@@ -245,6 +302,8 @@ export interface ProposalDTO {
   id: string;
   kind: ProposalKind;
   sessionId: string;
+  /** The skill that produced this card — lets the Inbox group cards by session. */
+  sessionType: string | null;
   targetPath: string | null;
   payload: NotePayloadDTO | DecisionPayloadDTO | UpdatePayloadDTO | OutboundPayloadDTO;
   rationale: string;
@@ -278,12 +337,93 @@ export interface AgentRunHandle {
   sessionId: string;
 }
 
-export interface SessionRefDTO {
+/**
+ * User-set shelf state for a conversation. `active` is the default; `done`
+ * means the outcome landed, `dismissed` means it won't be useful. Both closed
+ * states leave the active list but keep the transcript; a new message reopens.
+ */
+export type SessionLifecycle = 'active' | 'done' | 'dismissed';
+
+/** A stored conversation (pi JSONL) — what the chat history list shows. */
+export interface ChatRefDTO {
   id: string;
-  type: string;
+  sessionType: string;
   title: string;
+  created: number;
   updated: number;
-  state: 'working' | 'waiting' | 'done';
+  messageCount: number;
+  preview: string;
+  lifecycle: SessionLifecycle;
+}
+
+/**
+ * A replayed transcript. Messages are AI SDK UIMessage JSON — the renderer
+ * feeds them straight into useChat as initial messages.
+ */
+export interface ChatHistoryDTO {
+  id: string;
+  messages: unknown[];
+}
+
+/** A session with a turn currently in flight (the sidebar rail's live rows). */
+export interface LiveSessionDTO {
+  sessionId: string;
+  sessionType: string;
+  title: string;
+  /** The in-flight stream — lets any tab abort the run, not just the one that started it. */
+  streamId: string;
+  startedAt: number;
+}
+
+// ---------------------------------------------------------------------------
+// Agent pings — findings the librarian surfaces with a prepared answer
+// ("noticed X — here's the fix, or chat about it").
+// ---------------------------------------------------------------------------
+
+export type AgentPingStatus = 'pending' | 'opened' | 'dismissed' | 'resolved';
+
+/** One dangling link with ranked "did you mean…?" candidates. */
+export interface PingLinkChoiceItemDTO {
+  id: string;
+  /** Note whose body carries the dangling link. */
+  from: string;
+  /** The dangling wikilink target text. */
+  target: string;
+  options: { slug: string; title: string }[];
+  resolution?: { action: 'fixed'; slug: string } | { action: 'skipped' };
+}
+
+/** One unlinked note, with plain-text mentions found elsewhere as link-here options. */
+export interface PingOrphanItemDTO {
+  id: string;
+  path: string;
+  title: string;
+  mentions: { host: string; hostTitle: string; line: string }[];
+  resolution?: { action: 'fixed'; host: string } | { action: 'skipped' };
+}
+
+export type PingPayloadDTO =
+  | { kind: 'link-choices'; items: PingLinkChoiceItemDTO[] }
+  | { kind: 'orphans'; items: PingOrphanItemDTO[] };
+
+/** The PO's one-tap answer to a suggestion item: apply a choice, or skip it. */
+export type PingResolveActionDTO = { action: 'fix'; choice: string } | { action: 'skip' };
+
+export interface AgentPingDTO {
+  id: string;
+  title: string;
+  /** One-paragraph pitch: what was noticed and why it matters. */
+  body: string;
+  evidence: EvidenceRefDTO[];
+  /** Session type to open when the PO takes the conversation. */
+  sessionType: string;
+  /** First message of the seeded session — the ping's full context. */
+  seedPrompt: string;
+  targetPath: string | null;
+  /** One-tap suggestions; null when the finding genuinely needs a conversation. */
+  payload: PingPayloadDTO | null;
+  status: AgentPingStatus;
+  created: number;
 }
 
 export interface ScheduleDTO {

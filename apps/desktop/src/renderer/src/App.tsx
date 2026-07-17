@@ -1,22 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@pm/ui';
+import { FileUp } from 'lucide-react';
 import { AppStateProvider, useApp } from './state/app-state';
+import { CAPTURE_EVENT } from './lib/capture-event';
 import { Sidebar } from './app/Sidebar';
 import { Landing } from './app/Landing';
 import { NoteView } from './app/NoteView';
 import { ChatView } from './app/ChatView';
+import { ChatsView } from './app/ChatsView';
 import { SettingsView } from './app/SettingsView';
 import { InboxView } from './app/InboxView';
+import { TodosView } from './app/TodosView';
+import { MemoryView } from './app/MemoryView';
 import { SmartViewPage } from './app/SmartViewPage';
 import { FolderView } from './app/FolderView';
-import { IngestView } from './app/IngestView';
+import { ContextView } from './app/ContextView';
 import { RightPanel } from './app/RightPanel';
 import { TabStrip } from './app/TabStrip';
 import { QuickSwitcher } from './app/QuickSwitcher';
-import { QuickCapture } from './app/QuickCapture';
+import { CaptureDialog, type CaptureDraft } from './app/CaptureDialog';
 
 function Center() {
-  const { activeTab } = useApp();
+  const { activeTab, bindTabSession, openSession } = useApp();
   if (!activeTab) return <Landing />;
   switch (activeTab.kind) {
     case 'doc':
@@ -26,17 +31,26 @@ function Center() {
         <ChatView
           key={activeTab.id}
           sessionType={activeTab.sessionType}
+          sessionId={activeTab.sessionId}
           initialPrompt={activeTab.initialPrompt}
+          onSessionId={(sessionId) => bindTabSession(activeTab.id, sessionId)}
+          onNewChat={() => openSession(activeTab.sessionType, { fresh: true })}
         />
       );
+    case 'chats':
+      return <ChatsView />;
     case 'inbox':
       return <InboxView />;
+    case 'todos':
+      return <TodosView />;
+    case 'memory':
+      return <MemoryView />;
     case 'smartview':
       return <SmartViewPage key={activeTab.viewId} viewId={activeTab.viewId} />;
     case 'folder':
       return <FolderView key={activeTab.dir} dir={activeTab.dir} />;
-    case 'meeting-drop':
-      return <IngestView />;
+    case 'context':
+      return <ContextView key={activeTab.tag} tag={activeTab.tag} />;
     case 'settings':
       return <SettingsView />;
     default:
@@ -44,42 +58,167 @@ function Center() {
   }
 }
 
+/** True when the key event originates inside a text-editing element. */
+function inEditable(e: KeyboardEvent): boolean {
+  const t = e.target;
+  if (!(t instanceof HTMLElement)) return false;
+  return t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT';
+}
+
 function Shell() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
-  const { openSession, activeTab } = useApp();
+  const [captureDraft, setCaptureDraft] = useState<CaptureDraft | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      return localStorage.getItem('pm.sidebar.visible') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const dragDepth = useRef(0);
+  const { openSession, activeTab, tabs, activeTabId, setActiveTab, closeTab, vault, captureNote, openDoc } = useApp();
+
+  // ⌘N: a blank note straight into the editor — capture (⇧⌘N) keeps the dialog.
+  const newNote = useCallback(async () => {
+    if (!vault) return;
+    const note = await captureNote({ body: '', summary: 'Untitled' });
+    await openDoc(note.path, { preview: false });
+  }, [vault, captureNote, openDoc]);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((o) => {
+      try {
+        localStorage.setItem('pm.sidebar.visible', o ? '0' : '1');
+      } catch {
+        /* ignore quota */
+      }
+      return !o;
+    });
+  }, []);
+
+  const openCapture = useCallback((draft?: CaptureDraft) => {
+    setCaptureDraft(draft ?? null);
+    setCaptureOpen(true);
+  }, []);
+
+  // Landing, deep links, and anything outside the Shell request capture by event.
+  useEffect(() => {
+    const onCapture = () => openCapture();
+    window.addEventListener(CAPTURE_EVENT, onCapture);
+    return () => window.removeEventListener(CAPTURE_EVENT, onCapture);
+  }, [openCapture]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      if (key === 'k') {
         e.preventDefault();
         setSwitcherOpen((o) => !o);
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
+      } else if (key === 'n') {
         e.preventDefault();
-        setCaptureOpen(true);
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        if (e.shiftKey) openCapture();
+        else void newNote();
+      } else if (e.key === 'Enter') {
+        // ⌘↵ submits inside composers (capture, quick capture) — only open Ask
+        // from non-editable context, otherwise one keystroke does two things.
+        if (inEditable(e)) return;
         e.preventDefault();
         openSession('ask');
+      } else if (key === 'w') {
+        // Freed from the window menu (Close Window is ⌘⇧W).
+        if (activeTabId) {
+          e.preventDefault();
+          closeTab(activeTabId);
+        }
+      } else if (key === '\\') {
+        e.preventDefault();
+        toggleSidebar();
+      } else if (key >= '1' && key <= '9') {
+        const tab = tabs[Number(key) - 1];
+        if (tab) {
+          e.preventDefault();
+          setActiveTab(tab.id);
+        }
+      }
+    };
+    const onCycle = (e: KeyboardEvent) => {
+      // ctrl-tab / ctrl-shift-tab cycle tabs, matching browser muscle memory.
+      if (e.ctrlKey && e.key === 'Tab' && tabs.length > 0) {
+        e.preventDefault();
+        const idx = tabs.findIndex((t) => t.id === activeTabId);
+        const next = tabs[(idx + (e.shiftKey ? -1 : 1) + tabs.length) % tabs.length];
+        if (next) setActiveTab(next.id);
       }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [openSession]);
+    window.addEventListener('keydown', onCycle);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onCycle);
+    };
+  }, [openSession, openCapture, newNote, toggleSidebar, activeTabId, tabs, setActiveTab, closeTab]);
+
+  // Shell-wide drop: anything dragged anywhere opens the capture dialog
+  // prefilled — the classifier guesses, the user confirms. Never auto-run.
+  const onDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDragging(false);
+      const file = e.dataTransfer.files[0];
+      if (!file || !vault) return;
+      if (file.type.startsWith('image/')) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result as string);
+          r.onerror = () => reject(r.error);
+          r.readAsDataURL(file);
+        });
+        openCapture({ image: { name: file.name, dataUrl } });
+      } else {
+        openCapture({ text: await file.text(), fileName: file.name });
+      }
+    },
+    [openCapture, vault],
+  );
 
   const showRight = activeTab?.kind === 'doc';
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-background text-foreground">
+    <div
+      className="relative h-screen w-screen overflow-hidden bg-background text-foreground"
+      onDragEnter={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return;
+        dragDepth.current++;
+        setDragging(true);
+      }}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+      }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
+    >
       <ResizablePanelGroup orientation="horizontal">
-        <ResizablePanel defaultSize="20%" minSize="14%" maxSize="30%" className="bg-sidebar">
-          <Sidebar />
-        </ResizablePanel>
-        <ResizableHandle />
+        {sidebarOpen && (
+          <>
+            <ResizablePanel defaultSize="20%" minSize="14%" maxSize="30%" className="bg-sidebar">
+              <Sidebar
+                onSearch={() => setSwitcherOpen(true)}
+                onNewNote={() => void newNote()}
+                onIngest={() => openCapture()}
+              />
+            </ResizablePanel>
+            <ResizableHandle />
+          </>
+        )}
         <ResizablePanel defaultSize={showRight ? '52%' : '80%'} minSize="30%">
           <div className="flex h-full flex-col">
-            <TabStrip />
+            <TabStrip sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} />
             <div className="min-h-0 flex-1">
               <Center />
             </div>
@@ -95,8 +234,27 @@ function Shell() {
         )}
       </ResizablePanelGroup>
 
-      <QuickSwitcher open={switcherOpen} onOpenChange={setSwitcherOpen} />
-      <QuickCapture open={captureOpen} onOpenChange={setCaptureOpen} />
+      {dragging && vault && (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-background/80">
+          <div className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-brand bg-card px-10 py-8">
+            <FileUp className="size-8 text-brand" />
+            <div className="text-center">
+              <div className="text-sm font-semibold">Drop anything</div>
+              <div className="mt-0.5 text-sm text-muted-foreground">
+                A transcript, an article, a screenshot — you confirm before anything runs
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <QuickSwitcher
+        open={switcherOpen}
+        onOpenChange={setSwitcherOpen}
+        onOpenCapture={() => openCapture()}
+        onNewNote={() => void newNote()}
+      />
+      <CaptureDialog open={captureOpen} onOpenChange={setCaptureOpen} draft={captureDraft} />
     </div>
   );
 }

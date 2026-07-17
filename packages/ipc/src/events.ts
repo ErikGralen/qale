@@ -31,6 +31,42 @@ export interface ProposalsChangedEvent {
   pendingCount: number;
 }
 
-export type PushEvent = AgentStreamEvent | VaultChangedEvent | ProposalsChangedEvent;
+/**
+ * Session lifecycle push — fired when a run starts and when it settles, whether
+ * or not its tab is open. This is what makes background agents visible: the
+ * sidebar rail, badges, and Inbox all derive from it (nothing silent).
+ */
+export interface SessionStatusEvent {
+  channel: 'session:status';
+  sessionId: string;
+  sessionType: string;
+  title: string;
+  status: 'running' | 'settled';
+  /** Pending approval cards this session has open at emit time. */
+  pendingCards: number;
+  updated: number;
+}
+
+/** Fired when the agent-ping queue changes (created by a sweep, opened, dismissed). */
+export interface PingsChangedEvent {
+  channel: 'pings:changed';
+  pendingCount: number;
+}
+
+/** Fired when an OS notification is clicked — the renderer opens that session. */
+export interface SessionFocusEvent {
+  channel: 'session:focus';
+  sessionId: string;
+  sessionType: string;
+  title: string;
+}
+
+export type PushEvent =
+  | AgentStreamEvent
+  | VaultChangedEvent
+  | ProposalsChangedEvent
+  | SessionStatusEvent
+  | PingsChangedEvent
+  | SessionFocusEvent;
 
 export type PushChannel = PushEvent['channel'];

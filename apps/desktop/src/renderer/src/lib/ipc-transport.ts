@@ -13,7 +13,14 @@ import { invoke, onEvent } from './ipc';
 export class IpcChatTransport implements ChatTransport<UIMessage> {
   private sessionId: string | undefined;
 
-  constructor(private readonly sessionType: SessionType = 'chat') {}
+  constructor(
+    private readonly sessionType: SessionType = 'chat',
+    initialSessionId?: string,
+    /** Fired once when the main process assigns the conversation its id. */
+    private readonly onSessionId?: (sessionId: string) => void,
+  ) {
+    this.sessionId = initialSessionId;
+  }
 
   async sendMessages(
     options: Parameters<ChatTransport<UIMessage>['sendMessages']>[0],
@@ -54,6 +61,9 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
             prompt,
           });
           this.sessionId = handle.sessionId;
+          // Reported on every run, not just id changes — the shell also uses
+          // this as the "conversation has real content" signal for tabs.
+          this.onSessionId?.(handle.sessionId);
           streamId = handle.streamId;
 
           // Flush anything that arrived before we knew our streamId.

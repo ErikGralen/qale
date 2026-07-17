@@ -1,15 +1,16 @@
-import { computeFreshness, isBodyEditable, type Frontmatter, type Note } from '@pm/domain';
+import { isBodyEditable, titleFromSlug, type Note } from '@pm/domain';
 import type {
   Backlink,
   IndexedNote,
+  PingRecord,
   ProblemHeatRow,
   ProposalRecord,
   VaultInfo,
   VaultTreeGroup,
 } from '@pm/application';
 import type {
+  AgentPingDTO,
   BacklinkDTO,
-  HealthDTO,
   NoteDTO,
   NoteRefDTO,
   ProblemHeatDTO,
@@ -23,8 +24,7 @@ import type { SearchHit } from '@pm/domain';
 
 /** Map domain/application entities to structured-clone-safe IPC DTOs. */
 
-export function noteToDTO(note: Note, now: string): NoteDTO {
-  const f = computeFreshness(note.frontmatter, now);
+export function noteToDTO(note: Note): NoteDTO {
   return {
     path: note.path,
     slug: note.slug,
@@ -36,19 +36,14 @@ export function noteToDTO(note: Note, now: string): NoteDTO {
     body: note.body,
     mtime: note.mtime,
     bodyEditable: isBodyEditable(note.type),
-    freshness: {
-      tracked: f.tracked,
-      freshForDays: f.freshForDays,
-      lastVerified: f.lastVerified,
-      ageDays: f.ageDays,
-      stale: f.stale,
-      unverified: f.unverified,
-    },
   };
 }
 
-export function indexedToRefDTO(n: IndexedNote, now?: string): NoteRefDTO {
-  const stale = now ? computeFreshness(n.frontmatter as Frontmatter, now).stale : undefined;
+export function indexedToRefDTO(n: IndexedNote): NoteRefDTO {
+  const fm = n.frontmatter;
+  const tags = Array.isArray(fm['tags'])
+    ? (fm['tags'] as unknown[]).filter((t): t is string => typeof t === 'string')
+    : undefined;
   return {
     path: n.path,
     slug: n.slug,
@@ -57,17 +52,29 @@ export function indexedToRefDTO(n: IndexedNote, now?: string): NoteRefDTO {
     summary: n.summary,
     mtime: n.mtime,
     status: n.status,
-    stale,
+    tags: tags && tags.length > 0 ? tags : undefined,
+    date: typeof fm['date'] === 'string' ? fm['date'] : undefined,
+    time: typeof fm['time'] === 'string' ? fm['time'] : undefined,
+    durationMin: typeof fm['duration_minutes'] === 'number' ? fm['duration_minutes'] : undefined,
+    supersedes: typeof fm['supersedes'] === 'string' ? fm['supersedes'] : undefined,
+    supersededBy: typeof fm['superseded_by'] === 'string' ? fm['superseded_by'] : undefined,
+    due: typeof fm['due'] === 'string' ? fm['due'] : undefined,
+    owner: typeof fm['owner'] === 'string' ? fm['owner'] : undefined,
+    resolvedOn: typeof fm['resolved'] === 'string' ? fm['resolved'] : undefined,
+    sourceRef:
+      Array.isArray(fm['sources']) && typeof fm['sources'][0] === 'string'
+        ? (fm['sources'][0] as string)
+        : undefined,
   };
 }
 
-export function treeToDTO(groups: VaultTreeGroup[], now: string): VaultTreeDTO {
+export function treeToDTO(groups: VaultTreeGroup[]): VaultTreeDTO {
   return {
     groups: groups.map((g) => ({
       dir: g.dir,
       type: g.type,
       layer: g.layer as 'raw' | 'derived' | 'authored',
-      notes: g.notes.map((n) => indexedToRefDTO(n, now)),
+      notes: g.notes.map((n) => indexedToRefDTO(n)),
     })),
   };
 }
@@ -95,17 +102,13 @@ export function vaultInfoToDTO(info: VaultInfo): VaultInfoDTO {
   return { path: info.path, name: info.name, git: info.git, noteCount: info.noteCount };
 }
 
-export function problemHeatToDTO(row: ProblemHeatRow, now: string): ProblemHeatDTO {
+export function problemHeatToDTO(row: ProblemHeatRow): ProblemHeatDTO {
   return {
-    ...indexedToRefDTO(row.note, now),
+    ...indexedToRefDTO(row.note),
     stance: ((row.note.frontmatter['stance'] as string) ?? 'exploring') as ProblemStance,
     evidenceCount: row.count,
     newest: row.newest,
   };
-}
-
-export function healthToDTO(h: HealthDTO): HealthDTO {
-  return h;
 }
 
 export function proposalToDTO(rec: ProposalRecord): ProposalDTO {
@@ -113,6 +116,7 @@ export function proposalToDTO(rec: ProposalRecord): ProposalDTO {
     id: rec.id,
     kind: rec.kind as ProposalDTO['kind'],
     sessionId: rec.sessionId,
+    sessionType: rec.sessionType,
     targetPath: rec.targetPath,
     payload: rec.payload as ProposalDTO['payload'],
     rationale: rec.rationale,
@@ -124,7 +128,20 @@ export function proposalToDTO(rec: ProposalRecord): ProposalDTO {
   };
 }
 
-function deriveTitle(slug: string): string {
-  const name = slug.split('/').pop() ?? slug;
-  return name.replace(/^\d{4}-\d{2}-\d{2}-/, '').replace(/[-_]+/g, ' ');
+export function pingToDTO(rec: PingRecord): AgentPingDTO {
+  return {
+    id: rec.id,
+    title: rec.title,
+    body: rec.body,
+    evidence: rec.evidence,
+    sessionType: rec.sessionType,
+    seedPrompt: rec.seedPrompt,
+    targetPath: rec.targetPath,
+    payload: rec.payload as AgentPingDTO['payload'],
+    status: rec.status as AgentPingDTO['status'],
+    created: rec.created,
+  };
 }
+
+// Title-cased so legacy files without an explicit `title` don't read as raw slugs.
+const deriveTitle = titleFromSlug;

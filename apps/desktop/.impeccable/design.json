@@ -1,0 +1,246 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-17T11:55:18.000Z",
+  "title": "Design System: Produktminnet",
+  "extensions": {
+    "colorMeta": {
+      "terracotta": {
+        "role": "primary",
+        "displayName": "Terracotta",
+        "canonical": "oklch(0.62 0.13 42)",
+        "tonalRamp": [
+          "oklch(0.2 0.09 42)",
+          "oklch(0.3 0.11 42)",
+          "oklch(0.4 0.13 42)",
+          "oklch(0.5 0.13 42)",
+          "oklch(0.62 0.13 42)",
+          "oklch(0.72 0.11 42)",
+          "oklch(0.84 0.07 42)",
+          "oklch(0.95 0.03 42)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "oklch(0.987 0.003 70)",
+        "tonalRamp": [
+          "oklch(0.18 0.005 68)",
+          "oklch(0.28 0.007 68)",
+          "oklch(0.45 0.01 68)",
+          "oklch(0.62 0.01 69)",
+          "oklch(0.78 0.008 69)",
+          "oklch(0.9 0.008 68)",
+          "oklch(0.955 0.006 70)",
+          "oklch(0.987 0.003 70)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(0.24 0.008 60)",
+        "tonalRamp": [
+          "oklch(0.15 0.006 60)",
+          "oklch(0.24 0.008 60)",
+          "oklch(0.3 0.01 60)",
+          "oklch(0.42 0.011 61)",
+          "oklch(0.53 0.012 62)",
+          "oklch(0.66 0.01 72)",
+          "oklch(0.8 0.008 72)",
+          "oklch(0.9 0.006 75)"
+        ]
+      },
+      "stone": {
+        "role": "neutral",
+        "displayName": "Stone",
+        "canonical": "oklch(0.53 0.012 62)",
+        "tonalRamp": [
+          "oklch(0.2 0.008 62)",
+          "oklch(0.3 0.01 62)",
+          "oklch(0.4 0.011 62)",
+          "oklch(0.53 0.012 62)",
+          "oklch(0.64 0.011 64)",
+          "oklch(0.76 0.01 66)",
+          "oklch(0.87 0.008 68)",
+          "oklch(0.95 0.005 70)"
+        ]
+      },
+      "warning": {
+        "role": "tertiary",
+        "displayName": "Amber Flag",
+        "canonical": "oklch(0.5 0.11 72)",
+        "tonalRamp": [
+          "oklch(0.2 0.06 72)",
+          "oklch(0.3 0.08 72)",
+          "oklch(0.4 0.1 72)",
+          "oklch(0.5 0.11 72)",
+          "oklch(0.62 0.11 75)",
+          "oklch(0.78 0.11 78)",
+          "oklch(0.88 0.07 78)",
+          "oklch(0.95 0.03 78)"
+        ]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "Ledger Green",
+        "canonical": "oklch(0.52 0.1 150)",
+        "tonalRamp": [
+          "oklch(0.2 0.06 150)",
+          "oklch(0.3 0.08 150)",
+          "oklch(0.42 0.09 150)",
+          "oklch(0.52 0.1 150)",
+          "oklch(0.62 0.11 150)",
+          "oklch(0.72 0.12 150)",
+          "oklch(0.85 0.08 150)",
+          "oklch(0.95 0.03 150)"
+        ]
+      },
+      "destructive": {
+        "role": "tertiary",
+        "displayName": "Destructive Red",
+        "canonical": "oklch(0.577 0.2 27.325)",
+        "tonalRamp": [
+          "oklch(0.2 0.1 27)",
+          "oklch(0.3 0.14 27)",
+          "oklch(0.4 0.17 27)",
+          "oklch(0.5 0.19 27)",
+          "oklch(0.577 0.2 27.325)",
+          "oklch(0.704 0.16 22.216)",
+          "oklch(0.84 0.08 25)",
+          "oklch(0.95 0.03 25)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display (Fraunces)", "purpose": "Document titles inside note bodies and landing moments. Content only — never UI chrome (The Serif Boundary Rule)." },
+      "title": { "displayName": "Title", "purpose": "Panel headings, card titles, view headers." },
+      "body": { "displayName": "Body", "purpose": "Note and document prose at 15px/1.625, capped at 65–75ch." },
+      "ui": { "displayName": "UI", "purpose": "Buttons, menus, list rows — the default 14px instrument size." },
+      "dense": { "displayName": "Dense", "purpose": "13px chrome rows only — sidebar tree, view rows, tab labels. Never prose." },
+      "label": { "displayName": "Label", "purpose": "Uppercase tracked section labels inside documents and metadata group headers. Sparingly." }
+    },
+    "shadows": [
+      { "name": "resting-hint", "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)", "purpose": "Maximum for in-flow surfaces (composer bars, pinned headers). Rare." },
+      { "name": "floating", "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)", "purpose": "Dropdowns and menus — layers that detach from the page." },
+      { "name": "floating-high", "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)", "purpose": "Command palette and dialogs." }
+    ],
+    "motion": [
+      { "name": "state-transition", "value": "150ms ease-out", "purpose": "Default for hover, focus, press, selection. Never decorative; always a reduced-motion alternative." },
+      { "name": "collapse", "value": "200ms ease-out", "purpose": "Sidebar section fold/unfold via grid-template-rows. Suppressed under prefers-reduced-motion." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single terracotta action on a surface — approve, run, save.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Approve</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: 0.7rem; font-family: 'Inter Variable', Inter, sans-serif; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: all 150ms ease-out; outline: none; } .ds-btn:active { transform: translateY(1px); } .ds-btn:focus-visible { border-color: var(--ring, oklch(0.62 0.13 42)); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.62 0.13 42)) 50%, transparent); } .ds-btn-primary { background: var(--primary, oklch(0.62 0.13 42)); color: var(--primary-foreground, oklch(0.99 0.01 70)); } .ds-btn-primary:hover { background: color-mix(in oklch, var(--primary, oklch(0.62 0.13 42)) 80%, transparent); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary actions: hairline border on paper, clay-wash hover.",
+      "html": "<button class=\"ds-btn ds-btn-outline\">Edit</button>",
+      "css": ".ds-btn-outline { background: var(--background, oklch(0.987 0.003 70)); color: var(--foreground, oklch(0.24 0.008 60)); border-color: var(--border, oklch(0.9 0.008 68)); } .ds-btn-outline:hover { background: var(--muted, oklch(0.955 0.006 70)); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Toolbar and row-level actions; invisible until hover.",
+      "html": "<button class=\"ds-btn ds-btn-ghost\">Skip</button>",
+      "css": ".ds-btn-ghost { background: transparent; color: var(--foreground, oklch(0.24 0.008 60)); } .ds-btn-ghost:hover { background: var(--muted, oklch(0.955 0.006 70)); }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Discard/delete: soft red fill with full-strength red text — never a solid slab.",
+      "html": "<button class=\"ds-btn ds-btn-destructive\">Discard</button>",
+      "css": ".ds-btn-destructive { background: color-mix(in oklch, var(--destructive, oklch(0.577 0.2 27.325)) 10%, transparent); color: var(--destructive, oklch(0.577 0.2 27.325)); } .ds-btn-destructive:hover { background: color-mix(in oklch, var(--destructive, oklch(0.577 0.2 27.325)) 20%, transparent); }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "32px text field: hairline border, transparent fill, terracotta focus.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search the memory…\" />",
+      "css": ".ds-input { height: 32px; width: 100%; padding: 4px 10px; border: 1px solid var(--input, oklch(0.9 0.008 68)); border-radius: 0.7rem; background: transparent; color: var(--foreground, oklch(0.24 0.008 60)); font-family: 'Inter Variable', Inter, sans-serif; font-size: 0.875rem; transition: border-color 150ms ease-out, box-shadow 150ms ease-out; outline: none; } .ds-input::placeholder { color: var(--muted-foreground, oklch(0.53 0.012 62)); } .ds-input:focus-visible { border-color: var(--ring, oklch(0.62 0.13 42)); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.62 0.13 42)) 50%, transparent); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Resting content surface: card-white on paper, hairline ring, no shadow.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Decision · 2026-07-14</div><p class=\"ds-card-body\">Ship the After-Meeting flow as MVP1; kill criteria at week 4.</p></div>",
+      "css": ".ds-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 0.98rem; background: var(--card, oklch(1 0.002 70)); color: var(--card-foreground, oklch(0.24 0.008 60)); box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground, oklch(0.24 0.008 60)) 10%, transparent); } .ds-card-title { font-family: 'Inter Variable', Inter, sans-serif; font-size: 0.875rem; font-weight: 600; } .ds-card-body { margin: 0; font-family: 'Inter Variable', Inter, sans-serif; font-size: 0.9375rem; line-height: 1.625; color: color-mix(in oklch, var(--foreground, oklch(0.24 0.008 60)) 90%, transparent); }"
+    },
+    {
+      "name": "Sidebar Row",
+      "kind": "nav",
+      "refersTo": "button-ghost",
+      "description": "Navigation row on the sand surface; active row carries the accent tint.",
+      "html": "<nav class=\"ds-sidebar\"><a class=\"ds-nav-row ds-nav-row-active\" href=\"#\">Inbox</a><a class=\"ds-nav-row\" href=\"#\">Decisions</a><a class=\"ds-nav-row\" href=\"#\">Meetings</a></nav>",
+      "css": ".ds-sidebar { display: flex; flex-direction: column; gap: 2px; padding: 8px; background: var(--sidebar, oklch(0.965 0.005 70)); border-radius: 0.7rem; width: 200px; } .ds-nav-row { display: flex; align-items: center; height: 28px; padding: 0 8px; border-radius: 0.56rem; font-family: 'Inter Variable', Inter, sans-serif; font-size: 0.875rem; font-weight: 500; color: var(--sidebar-foreground, oklch(0.24 0.008 60)); text-decoration: none; transition: background 150ms ease-out; } .ds-nav-row:hover { background: var(--sidebar-accent, oklch(0.93 0.012 68)); } .ds-nav-row:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.62 0.13 42)) 50%, transparent); } .ds-nav-row-active { background: var(--sidebar-accent, oklch(0.93 0.012 68)); color: var(--sidebar-accent-foreground, oklch(0.3 0.01 60)); }"
+    },
+    {
+      "name": "Workspace Tab Strip",
+      "kind": "nav",
+      "refersTo": "button-ghost",
+      "description": "Browser-style join on the sand chrome: the active tab is paper with hairline top/side borders, its bottom edge bridging into the content surface. Documents and sessions share one tab vocabulary.",
+      "html": "<div class=\"ds-tabstrip\"><button class=\"ds-tab ds-tab-active\">sprint planning</button><button class=\"ds-tab\">Inbox</button><button class=\"ds-tab\">nordkap checkin</button></div>",
+      "css": ".ds-tabstrip { display: flex; align-items: flex-end; gap: 2px; padding: 6px 8px 0; background: var(--sidebar, oklch(0.965 0.005 70)); border-bottom: 1px solid var(--border, oklch(0.9 0.008 68)); } .ds-tab { position: relative; height: 30px; padding: 0 12px; border: 1px solid transparent; border-bottom: none; border-radius: 0.56rem 0.56rem 0 0; background: transparent; font-family: 'Inter Variable', Inter, sans-serif; font-size: 0.8125rem; font-weight: 500; color: var(--muted-foreground, oklch(0.53 0.012 62)); cursor: pointer; transition: background 150ms ease-out, color 150ms ease-out; outline: none; } .ds-tab:hover { background: color-mix(in oklch, var(--foreground, oklch(0.24 0.008 60)) 5%, transparent); color: var(--foreground, oklch(0.24 0.008 60)); } .ds-tab:focus-visible { box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.62 0.13 42)) 50%, transparent); } .ds-tab-active { background: var(--background, oklch(0.987 0.003 70)); border-color: var(--border, oklch(0.9 0.008 68)); color: var(--foreground, oklch(0.24 0.008 60)); margin-bottom: -1px; padding-bottom: 1px; }"
+    },
+    {
+      "name": "Amber Flag Chip",
+      "kind": "chip",
+      "refersTo": "card",
+      "description": "The Amber Flag Rule made visible: staleness and inference always render as icon + word in amber, never grey and never color-alone.",
+      "html": "<span class=\"ds-flag\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/></svg>inference</span>",
+      "css": ".ds-flag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 0.42rem; background: color-mix(in oklch, var(--warning, oklch(0.5 0.11 72)) 15%, transparent); color: var(--warning, oklch(0.5 0.11 72)); font-family: 'Inter Variable', Inter, sans-serif; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.025em; }"
+    },
+    {
+      "name": "Wikilink",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "Inline reference chip — the visible fiber of the product memory.",
+      "html": "<p class=\"ds-prose\">Decided in <span class=\"ds-wikilink\">meeting-2026-07-14</span>, supersedes <span class=\"ds-wikilink ds-wikilink-unresolved\">decision-011</span>.</p>",
+      "css": ".ds-prose { font-family: 'Inter Variable', Inter, sans-serif; font-size: 0.9375rem; line-height: 1.625; color: var(--foreground, oklch(0.24 0.008 60)); margin: 0; } .ds-wikilink { cursor: pointer; border-radius: 0.42rem; padding: 1px 4px; font-weight: 500; color: var(--brand, oklch(0.62 0.13 42)); background: color-mix(in oklch, var(--brand, oklch(0.62 0.13 42)) 8%, transparent); transition: background 150ms ease-out; } .ds-wikilink:hover { background: color-mix(in oklch, var(--brand, oklch(0.62 0.13 42)) 15%, transparent); } .ds-wikilink-unresolved { color: var(--destructive, oklch(0.577 0.2 27.325)); background: color-mix(in oklch, var(--destructive, oklch(0.577 0.2 27.325)) 8%, transparent); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Warm Instrument",
+    "overview": "Produktminnet is a precision tool built in warm materials — operator-grade speed and density rendered in clay and paper instead of gunmetal. The whole surface is a near-white warm paper (hue ~70, chroma barely above zero) with near-black ink; a single terracotta accent marks actions, selection, and provenance. The temperament is crisp, fast, operator-grade: compact 32px controls, instant state feedback, keyboard paths everywhere, density where the work is dense. The warmth lives in the material (the clay-tinted neutrals, the Fraunces serif reserved for document content); the speed lives in everything else. The system explicitly rejects the generic AI-SaaS dashboard — gradient accents, hero metrics, identical card grids, purple-on-dark \"AI product\" styling — and enterprise Jira grey: dense grey chrome, cramped tables, form-heavy screens with no character. It equally refuses to perform: no orchestrated entrances, no decorative motion, no glass. The tool disappears into the task.",
+    "keyCharacteristics": [
+      "One warm-paper surface family, one terracotta accent, near-black ink",
+      "Flat surfaces separated by hairline rings and background steps, not shadows",
+      "Inter carries all UI; Fraunces appears only inside document content",
+      "Compact, quick controls: 32px heights, 1px press-down, 150ms transitions",
+      "Provenance-forward: sources, dates, and pending writes are first-class visual citizens"
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "Terracotta is the only accent and it means something: action, selection, provenance. It never decorates. If terracotta covers more than ~10% of a screen, something is wrong.", "section": "colors" },
+      { "name": "The Same-Hue Rule", "body": "Every neutral sits at hue 60–70. Never introduce a cool grey; a mismatched neutral reads as a bug in this system.", "section": "colors" },
+      { "name": "The Amber Flag Rule", "body": "\"Don't trust this yet\" is never grey and never color-alone: staleness and inference always render in Amber Flag with an icon and a word. The quietest claim on screen must never be the one that needs verification.", "section": "colors" },
+      { "name": "The Serif Boundary Rule", "body": "Fraunces never appears in UI chrome — no serif buttons, labels, menus, or empty states. If it's interactive or part of the instrument, it's Inter.", "section": "typography" },
+      { "name": "The Floating-Only Rule", "body": "If it doesn't detach from the page, it doesn't cast a shadow. Cards rest on rings, not shadows.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep every neutral at hue 60–70 (The Same-Hue Rule) and every accent moment terracotta (The One Voice Rule).",
+      "Do hit WCAG AA: ≥4.5:1 body contrast (Ink on Paper is ~13:1; Stone is for metadata only), visible focus rings on every interactive element, full keyboard paths.",
+      "Do keep transitions 150–250ms, state-driven, with prefers-reduced-motion alternatives.",
+      "Do use skeletons for loading content and empty states that teach the interface.",
+      "Do show provenance: sources, dates, and pending-write indicators are part of the component, not an afterthought."
+    ],
+    "donts": [
+      "Don't build the generic AI-SaaS dashboard: no gradient accents, no hero metrics, no identical card grids, no purple-on-dark \"AI product\" styling.",
+      "Don't slide into enterprise Jira grey: no cool-grey chrome, no cramped form-heavy screens, no walls of same-weight text.",
+      "Don't put shadows on resting surfaces (The Floating-Only Rule) or use side-stripe borders (border-left > 1px) as card/callout accents.",
+      "Don't use Fraunces anywhere interactive (The Serif Boundary Rule) or uppercase-tracked eyebrows as section scaffolding outside document content.",
+      "Don't use gradient text, glassmorphism, decorative motion, or orchestrated page-load choreography — the PO is mid-task; the tool loads into work."
+    ]
+  }
+}

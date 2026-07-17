@@ -11,6 +11,7 @@ import { z } from 'zod';
  */
 
 export const NOTE_TYPES = [
+  'source',
   'meeting',
   'decision',
   'insight',
@@ -20,9 +21,22 @@ export const NOTE_TYPES = [
   'person',
   'session',
   'skill',
+  'todo',
   'note',
 ] as const;
 export type NoteType = (typeof NOTE_TYPES)[number];
+
+/**
+ * Generic note lifecycle — a small, enum-valued vocabulary for scripting and
+ * filtering (never free text):
+ * - `new` — just captured/synced, not yet analyzed;
+ * - `processed` — analyses ran, derived notes exist;
+ * - `active` — current and relied upon;
+ * - `stale` — needs review (a source it cites was superseded upstream).
+ * Types with their own lifecycle (decision/customer/release) keep their enums.
+ */
+export const NOTE_STATUSES = ['new', 'processed', 'active', 'stale'] as const;
+export type NoteStatus = (typeof NOTE_STATUSES)[number];
 
 /**
  * Layer governs edit permissions (see invariant.ts):
@@ -50,6 +64,13 @@ export type CustomerStatus = (typeof CUSTOMER_STATUSES)[number];
 export const RELEASE_STATUSES = ['planned', 'shipped'] as const;
 export type ReleaseStatus = (typeof RELEASE_STATUSES)[number];
 
+/**
+ * A todo's lifecycle: `open` until it lands. `done` and `dropped` both close it
+ * but stay in the workspace — the commitment ledger accretes, it never deletes.
+ */
+export const TODO_STATUSES = ['open', 'done', 'dropped'] as const;
+export type TodoStatus = (typeof TODO_STATUSES)[number];
+
 /** A wikilink string like "[[decisions/adopt-workos]]" or an external URL. */
 export const zRef = z.string().min(1);
 
@@ -68,30 +89,55 @@ const base = {
 };
 
 /**
- * Freshness fields (PLAN-V2 §3.1). Claim-like notes decay on a type-appropriate
- * clock; `fresh_for` (e.g. "90d") overrides the per-type default, `last_verified`
- * is stamped when a human approves/re-verifies. See freshness.ts for the maths.
+ * Raw source material — transcripts, PDF articles, Slack threads, Confluence
+ * pages. The body is never *edited* (by human or agent); it may be *updated*
+ * wholesale when the upstream changes (re-sync), which resets `status` to `new`
+ * so analyses know to re-run. Humans rarely read these; derived notes cite them.
  */
-const freshness = {
-  last_verified: z.string().optional(),
-  fresh_for: z.string().optional(),
-};
+export const zSourceNote = z.object({
+  type: z.literal('source'),
+  ...base,
+  status: z.enum(NOTE_STATUSES).default('new'),
+  source: zSource.optional(),
+  /** When the material was first captured. */
+  captured: z.string().optional(),
+  /** When the body was last re-synced from upstream. */
+  updated: z.string().optional(),
+  /**
+   * Where the material came from when the PO wasn't in the room — e.g. the
+   * colleague whose sales call this transcript records. External meetings are
+   * sources, not meetings: the PO is a reader, not a participant.
+   */
+  origin: z.string().optional(),
+  customer: zRef.optional(),
+});
 
 export const zMeeting = z.object({
   type: z.literal('meeting'),
   ...base,
+  status: z.enum(NOTE_STATUSES).optional(),
   date: z.string().optional(),
+  /** Clock time the meeting started, "HH:MM" (24h) — pairs with `date`. */
+  time: z.string().optional(),
+  /** Meeting length in minutes. */
+  duration_minutes: z.number().optional(),
   participants: z.array(z.string()).optional(),
   source: zSource.optional(),
   /** Private meeting — capture off, nothing formalized (PLAN-V2 §3.4). */
   safe_space: z.boolean().optional(),
   customer: zRef.optional(),
+  /**
+   * The immutable transcript, stored as a source note and linked — the meeting
+   * page itself stays the human-scale anchor (prep, notes, processed summary).
+   */
+  transcript: zRef.optional(),
+  /** Recurring-meeting series slug (e.g. "nordkap-checkin") — before-meeting prep reads the previous instance. */
+  series: z.string().optional(),
 });
 
 export const zDecision = z.object({
   type: z.literal('decision'),
   ...base,
-  ...freshness,
   status: z.enum(DECISION_STATUSES).default('active'),
   date: z.string().optional(),
   deciders: z.array(z.string()).optional(),
@@ -106,7 +152,7 @@ export const zDecision = z.object({
 export const zInsight = z.object({
   type: z.literal('insight'),
   ...base,
-  ...freshness,
+  status: z.enum(NOTE_STATUSES).optional(),
   evidence: z.array(zRef).min(1, 'insights must cite evidence'),
   confidence: z.enum(CONFIDENCE_LEVELS).default('med'),
   customer: zRef.optional(),
@@ -116,7 +162,6 @@ export const zInsight = z.object({
 export const zCustomer = z.object({
   type: z.literal('customer'),
   ...base,
-  ...freshness,
   status: z.enum(CUSTOMER_STATUSES).default('active'),
   segment: z.string().optional(),
 });
@@ -124,7 +169,6 @@ export const zCustomer = z.object({
 export const zProblem = z.object({
   type: z.literal('problem'),
   ...base,
-  ...freshness,
   stance: z.enum(PROBLEM_STANCES).default('exploring'),
   evidence: z.array(zRef).default([]),
   customer: zRef.optional(),
@@ -142,7 +186,6 @@ export const zRelease = z.object({
 export const zPerson = z.object({
   type: z.literal('person'),
   ...base,
-  ...freshness,
   role: z.string().optional(),
   cares_about: z.array(z.string()).optional(),
   /** The what-they-were-told ledger clock: when this person was last updated. */
@@ -155,6 +198,8 @@ export const zSession = z.object({
   type: z.literal('session'),
   ...base,
   session_type: z.string(),
+  /** Full pi session id — resolves this receipt back to the stored chat. */
+  session_id: z.string().optional(),
   started: z.string().optional(),
   ended: z.string().optional(),
   reads: z.array(zRef).default([]),
@@ -176,15 +221,36 @@ export const zSkill = z.object({
   skill_kind: z.enum(SKILL_KINDS).default('session'),
 });
 
+/**
+ * A tracked commitment — the PO's own ("email Åsa about rollout") or someone
+ * else's ("Jonas: update the SSO docs"). `owner` absent means the PO owns it;
+ * an `owner` ref/name marks an external commitment the PO is waiting on.
+ * `sources` cite where the commitment was made (usually a meeting).
+ */
+export const zTodo = z.object({
+  type: z.literal('todo'),
+  ...base,
+  status: z.enum(TODO_STATUSES).default('open'),
+  /** Due date "YYYY-MM-DD" — optional; undated todos land in "Someday". */
+  due: z.string().optional(),
+  /** Who committed: omitted = the PO; else "[[people/…]]" ref or a plain name. */
+  owner: zRef.optional(),
+  sources: z.array(zRef).default([]),
+  /** Stamped "YYYY-MM-DD" when status flips to done/dropped; cleared on reopen. */
+  resolved: z.string().optional(),
+  customer: zRef.optional(),
+});
+
 /** Generic authored note — the fallback so any markdown file still indexes. */
 export const zNote = z.object({
   type: z.literal('note'),
   ...base,
-  ...freshness,
+  status: z.enum(NOTE_STATUSES).optional(),
   sources: z.array(zRef).default([]),
 });
 
 export const zFrontmatter = z.discriminatedUnion('type', [
+  zSourceNote,
   zMeeting,
   zDecision,
   zInsight,
@@ -194,10 +260,12 @@ export const zFrontmatter = z.discriminatedUnion('type', [
   zPerson,
   zSession,
   zSkill,
+  zTodo,
   zNote,
 ]);
 
 export type Frontmatter = z.infer<typeof zFrontmatter>;
+export type SourceNoteFrontmatter = z.infer<typeof zSourceNote>;
 export type MeetingFrontmatter = z.infer<typeof zMeeting>;
 export type DecisionFrontmatter = z.infer<typeof zDecision>;
 export type InsightFrontmatter = z.infer<typeof zInsight>;
@@ -207,10 +275,12 @@ export type ReleaseFrontmatter = z.infer<typeof zRelease>;
 export type PersonFrontmatter = z.infer<typeof zPerson>;
 export type SessionFrontmatter = z.infer<typeof zSession>;
 export type SkillFrontmatter = z.infer<typeof zSkill>;
+export type TodoFrontmatter = z.infer<typeof zTodo>;
 export type NoteFrontmatter = z.infer<typeof zNote>;
 
 /** Which on-disk folder + layer a note type lives in (PLAN-V2 §3.1). */
 export const NOTE_TYPE_META: Record<NoteType, { dir: string; layer: NoteLayer }> = {
+  source: { dir: 'sources', layer: 'raw' },
   meeting: { dir: 'meetings', layer: 'derived' },
   decision: { dir: 'decisions', layer: 'authored' },
   insight: { dir: 'insights', layer: 'derived' },
@@ -220,6 +290,7 @@ export const NOTE_TYPE_META: Record<NoteType, { dir: string; layer: NoteLayer }>
   person: { dir: 'people', layer: 'authored' },
   session: { dir: 'sessions', layer: 'derived' },
   skill: { dir: 'skills', layer: 'authored' },
+  todo: { dir: 'todos', layer: 'authored' },
   note: { dir: 'notes', layer: 'authored' },
 };
 

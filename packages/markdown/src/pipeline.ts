@@ -20,10 +20,6 @@ export interface ParsedNote {
   frontmatter: Record<string, unknown>;
   /** Body markdown with frontmatter stripped. */
   body: string;
-  /** Wikilinks found in the body. */
-  links: WikiLinkData[];
-  /** Whether a frontmatter block was present. */
-  hasFrontmatter: boolean;
 }
 
 const linkProcessor = unified().use(remarkParse).use(remarkGfm).use(remarkWikiLink);
@@ -33,10 +29,8 @@ export function parseNote(raw: string): ParsedNote {
   const match = raw.match(FRONTMATTER_RE);
   let frontmatter: Record<string, unknown> = {};
   let body = raw;
-  let hasFrontmatter = false;
 
   if (match) {
-    hasFrontmatter = true;
     try {
       const parsed = parseYaml(match[1] ?? '');
       if (parsed && typeof parsed === 'object') frontmatter = parsed as Record<string, unknown>;
@@ -47,7 +41,7 @@ export function parseNote(raw: string): ParsedNote {
     body = raw.slice(match[0].length);
   }
 
-  return { frontmatter, body, links: extractLinks(body), hasFrontmatter };
+  return { frontmatter, body };
 }
 
 /** Extract wikilinks (with line numbers) from a body string. */

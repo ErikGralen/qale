@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { X, Plus, PanelLeft, Inbox, History, MessageSquare, FileText, Filter, Folder, Hash, Settings, Pin, Building2, User, Mic, GitBranch, Sparkles, Target, Rocket, Wand2, StickyNote, FileInput, ListTodo, SquareCheck, Library } from 'lucide-react';
+import { X, Plus, PanelLeft, Inbox, History, MessageSquare, FileText, Folder, Hash, Settings, Pin, Building2, User, Mic, GitBranch, Sparkles, Target, Rocket, Wand2, StickyNote, FileInput, ListTodo, SquareCheck, Library } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Spinner } from '@pm/ui';
 import type { NoteType } from '@pm/ipc';
@@ -35,8 +35,6 @@ function iconFor(tab: Tab): LucideIcon {
       return ListTodo;
     case 'memory':
       return Library;
-    case 'smartview':
-      return Filter;
     case 'folder':
       return Folder;
     case 'context':

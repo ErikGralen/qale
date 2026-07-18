@@ -114,14 +114,3 @@ export function checkSupersede(
   }
   return { allowed: true };
 }
-
-/** The current head of a decision's chain (its live, non-superseded tip). */
-export function chainHead(
-  slug: string,
-  resolve: (slug: string) => DecisionNode | null,
-): DecisionNode | null {
-  const { chain } = buildChain(slug, resolve);
-  if (chain.length === 0) return null;
-  const live = [...chain].reverse().find((n) => n.frontmatter.status !== 'superseded');
-  return live ?? chain[chain.length - 1] ?? null;
-}

@@ -9,8 +9,6 @@ export interface ParsedTodo {
   title: string;
   /** "YYYY-MM-DD". */
   due?: string;
-  /** The matched date phrase, for the preview chip ("tomorrow", "friday"…). */
-  duePhrase?: string;
   /** External commitment — who owes it. */
   owner?: string;
 }
@@ -97,16 +95,14 @@ export function parseTodoInput(raw: string, now: Date = new Date()): ParsedTodo 
   }
 
   let due: string | undefined;
-  let duePhrase: string | undefined;
   for (const rule of DUE_RULES) {
     const m = rule.re.exec(rest);
     if (m) {
       due = rule.resolve(m, now);
-      duePhrase = m[0].trim();
       rest = rest.replace(m[0], ' ');
       break;
     }
   }
 
-  return { title: tidy(rest), due, duePhrase, owner };
+  return { title: tidy(rest), due, owner };
 }

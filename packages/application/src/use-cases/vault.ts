@@ -138,29 +138,6 @@ export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
 }
 
 /**
- * Deterministic `index.md` per folder (PLAN-V2 §3.1): title + one-liner per entry,
- * progressive disclosure for humans and agents alike. Rewritten in place; never a
- * vector-DB second copy to drift. Skips empty folders and the derived sessions dir.
- */
-export async function refreshFolderIndexes(ctx: UseCaseContext): Promise<{ written: number }> {
-  const all = ctx.index.all();
-  let written = 0;
-  for (const type of Object.keys(NOTE_TYPE_META) as NoteType[]) {
-    const meta = NOTE_TYPE_META[type];
-    const notes = all
-      .filter((n) => n.type === type && !n.path.endsWith('/index.md'))
-      .sort((a, b) => a.title.localeCompare(b.title));
-    if (notes.length === 0) continue;
-    const lines = notes.map((n) => `- [[${n.slug}|${n.title}]] — ${n.summary}`);
-    const body = `# ${capitalize(meta.dir)}\n\n${notes.length} ${type}${notes.length === 1 ? '' : 's'}.\n\n${lines.join('\n')}\n`;
-    const path = `${meta.dir}/index.md`;
-    await ctx.vault.writeRaw(path, body);
-    written++;
-  }
-  return { written };
-}
-
-/**
  * Seed the built-in skill pack into `skills/` if absent (PLAN-V2 §3.2). Content is
  * passed in so the application layer stays free of the sessions package. Existing
  * files are never overwritten — editing a skill is how you customise it.
@@ -181,10 +158,6 @@ export async function ensureDefaultSkills(
   }
   if (committed.length > 0) await ctx.git.commitPaths(committed, 'skills: seed defaults');
   return { written };
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function stripBrackets(ref: string): string {

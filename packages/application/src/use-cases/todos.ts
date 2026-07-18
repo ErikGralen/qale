@@ -2,13 +2,12 @@ import {
   TODO_STATUSES,
   dirForType,
   fileSlug,
-  isOverdueTodo,
   type Frontmatter,
   type Note,
   type TodoFrontmatter,
   type TodoStatus,
 } from '@pm/domain';
-import type { IndexedNote, UseCaseContext } from '../ports.js';
+import type { UseCaseContext } from '../ports.js';
 
 /**
  * Todos — the commitment ledger. One file per commitment, like decisions and
@@ -80,31 +79,4 @@ export async function setTodoStatus(
   ctx.index.reindex(note);
   await ctx.git.commitPaths([note.path], `todo: ${note.slug} → ${status}`);
   return note;
-}
-
-export interface OverdueTodos {
-  /** The PO's own open todos past their due date. */
-  own: IndexedNote[];
-  /** External commitments past due — worth a nudge, not a work session. */
-  waiting: IndexedNote[];
-}
-
-/** Open todos past due, split mine/theirs — feeds the librarian ping sweep. */
-export function getOverdueTodos(ctx: UseCaseContext, today: string): OverdueTodos {
-  const own: IndexedNote[] = [];
-  const waiting: IndexedNote[] = [];
-  for (const n of ctx.index.listByType('todo')) {
-    const fm = n.frontmatter;
-    const shape = {
-      status: typeof fm['status'] === 'string' ? fm['status'] : 'open',
-      due: typeof fm['due'] === 'string' ? fm['due'] : null,
-      owner: typeof fm['owner'] === 'string' ? fm['owner'] : null,
-    };
-    if (!isOverdueTodo(shape, today)) continue;
-    (shape.owner ? waiting : own).push(n);
-  }
-  const due = (n: IndexedNote): string => String(n.frontmatter['due'] ?? '');
-  own.sort((a, b) => due(a).localeCompare(due(b)));
-  waiting.sort((a, b) => due(a).localeCompare(due(b)));
-  return { own, waiting };
 }

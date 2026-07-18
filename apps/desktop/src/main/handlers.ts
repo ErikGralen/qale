@@ -4,8 +4,6 @@ import { AgentRuntime } from '@pm/agent';
 import {
   acceptProposal,
   completeMeetingReview,
-  createProposal,
-  type UseCaseContext,
   captureNote,
   captureTodo,
   deleteNote,
@@ -27,7 +25,6 @@ import {
   listProposals,
   previewProposal,
   rebuild,
-  refreshFolderIndexes,
   rejectProposal,
   ingestCapture,
   renameNote,
@@ -36,12 +33,12 @@ import {
   saveAuthoredNote,
   saveFrontmatter,
   searchNotes,
-  setProblemStance,
   setTodoStatus,
 } from '@pm/application';
 import { classifyCapture, parseFrontmatter, type Frontmatter } from '@pm/domain';
 import { DEFAULT_SKILLS } from '@pm/sessions';
 import { handle, pushEvent } from './ipc.js';
+import { seedDemoProposal } from './dev-seed.js';
 import { SettingsService } from './services/settings-service.js';
 import { VaultService } from './services/vault-service.js';
 import { makeOutbound } from './services/outbound-service.js';
@@ -59,63 +56,6 @@ import {
   treeToDTO,
   vaultInfoToDTO,
 } from './dto.js';
-
-/** Dev-only: seed an insight card so the Inbox is demoable without an API key. */
-function seedDemoProposal(ctx: UseCaseContext): void {
-  if (ctx.proposals.pendingCount() > 0) return;
-  const meeting = ctx.index.listByType('meeting')[0];
-  if (!meeting) return;
-  createProposal(ctx, {
-    kind: 'note',
-    sessionId: 'seed',
-    targetPath: 'insights/seed-demo.md',
-    baseHash: null,
-    payload: {
-      path: 'insights/seed-demo.md',
-      frontmatter: { type: 'insight', summary: 'Seed insight from the demo meeting', evidence: [`[[${meeting.slug}]]`], confidence: 'med' },
-      body: 'A demo insight showing the approval-card flow.\n',
-      rationale: 'Demonstrates the Inbox card without a live model.',
-    },
-    rationale: 'File a new insight heard in the demo meeting — this is what an approval card looks like.',
-    evidence: [{ ref: `[[${meeting.slug}]]`, resolved: true }],
-    inference: false,
-  });
-  // A demo agent ping so the "Agent noticed" inbox section is demoable too.
-  if (ctx.pings && ctx.pings.pendingCount() === 0) {
-    ctx.pings.create(
-      {
-        key: 'demo-ping',
-        title: 'Release page still says v2.2 — two meetings mention v2.3',
-        body: 'Two meetings mention v2.3 shipping, but the release page still describes v2.2. Want to reconcile them together?',
-        evidence: [{ ref: `[[${meeting.slug}]]`, resolved: true }],
-        sessionType: 'librarian',
-        seedPrompt:
-          'The release page and recent meetings disagree: the meetings mention a newer ship (v2.3) than the release page describes (v2.2). Read the release page and the recent meetings, then propose updates for what changed.',
-        targetPath: null,
-      },
-      Date.now(),
-    );
-  }
-  // A demo outbound draft card (message tier — no external write needed).
-  createProposal(ctx, {
-    kind: 'outbound',
-    sessionId: 'seed',
-    targetPath: null,
-    baseHash: null,
-    payload: {
-      system: 'message',
-      action: 'message',
-      audience: 'exec',
-      title: 'Nordkap SSO on track',
-      body: 'WorkOS SSO is live in staging; SCIM lands in September. Nordkap renewal unblocked.',
-      linkBackPath: `${meeting.path}`,
-      rationale: 'Exec update drafted from the QBR.',
-    },
-    rationale: 'Exec update drafted from the QBR.',
-    evidence: [{ ref: `[[${meeting.slug}]]`, resolved: true }],
-    inference: false,
-  });
-}
 
 // Placeholder model list until the pi ModelRegistry has a live key.
 const MODELS: ModelInfoDTO[] = [
@@ -345,7 +285,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
 
   handle('vault:tree', () => treeToDTO(getVaultTree(vaultService.requireContext())));
   handle('vault:rebuildIndex', () => rebuild(vaultService.requireContext()));
-  handle('vault:refreshIndexes', () => refreshFolderIndexes(vaultService.requireContext()));
   handle('vault:query', (query) =>
     queryNotes(vaultService.requireContext(), query).map((n) => indexedToRefDTO(n)),
   );
@@ -376,10 +315,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     getBacklinks(vaultService.requireContext(), path).map(backlinkToDTO),
   );
   handle('note:resolveLink', (target) => resolveLink(vaultService.requireContext(), target));
-  handle('note:setProblemStance', async (path, stance) => {
-    const note = await setProblemStance(vaultService.requireContext(), path, stance);
-    return noteToDTO(note);
-  });
 
   handle('todos:capture', async (input) => {
     const note = await captureTodo(vaultService.requireContext(), input);

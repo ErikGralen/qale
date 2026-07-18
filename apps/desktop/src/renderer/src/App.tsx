@@ -13,7 +13,6 @@ import { SkillsView } from './app/SkillsView';
 import { InboxView } from './app/InboxView';
 import { TodosView } from './app/TodosView';
 import { MemoryView } from './app/MemoryView';
-import { SmartViewPage } from './app/SmartViewPage';
 import { FolderView } from './app/FolderView';
 import { ContextView } from './app/ContextView';
 import { RightPanel } from './app/RightPanel';
@@ -46,8 +45,6 @@ function Center() {
       return <TodosView />;
     case 'memory':
       return <MemoryView />;
-    case 'smartview':
-      return <SmartViewPage key={activeTab.viewId} viewId={activeTab.viewId} />;
     case 'folder':
       return <FolderView key={activeTab.dir} dir={activeTab.dir} />;
     case 'context':

@@ -5,10 +5,7 @@ import {
   checkFrontmatterMutation,
   buildChain,
   checkSupersede,
-  chainHead,
   refToSlug,
-  zTruthDelta,
-  truthDeltaSize,
   todoLane,
   isOverdueTodo,
   isExternalTodo,
@@ -96,7 +93,7 @@ test('checkFrontmatterMutation: decision body-frozen fields immutable, status mu
   assert.equal(checkFrontmatterMutation('decision', prev, badChange).allowed, false);
 });
 
-test('decision supersedes-chain: build, head, cycle guard', () => {
+test('decision supersedes-chain: build, cycle guard', () => {
   const nodes: Record<string, DecisionNode> = {
     'decisions/d1': { slug: 'decisions/d1', frontmatter: { type: 'decision', summary: 'd1', status: 'superseded', superseded_by: '[[decisions/d2]]', sources: [] } as never },
     'decisions/d2': { slug: 'decisions/d2', frontmatter: { type: 'decision', summary: 'd2', status: 'active', supersedes: '[[decisions/d1]]', sources: [] } as never },
@@ -106,7 +103,6 @@ test('decision supersedes-chain: build, head, cycle guard', () => {
   const { chain, cycle } = buildChain('decisions/d2', resolve);
   assert.equal(cycle, false);
   assert.deepEqual(chain.map((n) => n.slug), ['decisions/d1', 'decisions/d2']);
-  assert.equal(chainHead('decisions/d1', resolve)?.slug, 'decisions/d2');
 
   // superseding an already-superseded decision is refused
   assert.equal(checkSupersede('decisions/d3', 'decisions/d1', resolve).allowed, false);
@@ -153,15 +149,4 @@ test('todoLane: buckets by status, owner and due date', () => {
 test('byDue: dated before undated, earlier first', () => {
   const sorted = [{ due: undefined }, { due: '2026-07-20' }, { due: '2026-07-18' }].sort(byDue);
   assert.deepEqual(sorted.map((t) => t.due), ['2026-07-18', '2026-07-20', undefined]);
-});
-
-test('truth delta parses + counts items', () => {
-  const parsed = zTruthDelta.parse({
-    meeting: '[[meetings/acme]]',
-    decisions: [{ statement: 'Adopt WorkOS', evidence: ['[[meetings/acme]]'] }],
-    insights: [{ statement: 'Acme needs SCIM', evidence: ['[[meetings/acme]]'], confidence: 'high' }],
-    actions: [{ statement: 'File ENG ticket', owner: 'Sam' }],
-  });
-  assert.equal(truthDeltaSize(parsed), 3);
-  assert.equal(parsed.decisions[0]!.inference ?? false, false);
 });

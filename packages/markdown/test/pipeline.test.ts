@@ -5,7 +5,6 @@ import { parseNote, serializeNote, spliceBody, extractLinks } from '../src/index
 test('parse → serialize round-trip keeps frontmatter fields and body', () => {
   const raw = '---\ntype: decision\nsummary: pick X\nsources:\n  - "[[meetings/kickoff]]"\n---\n\nWe picked X.\n';
   const parsed = parseNote(raw);
-  assert.equal(parsed.hasFrontmatter, true);
   assert.equal(parsed.frontmatter['type'], 'decision');
   const out = serializeNote(parsed.frontmatter, parsed.body);
   const reparsed = parseNote(out);
@@ -15,15 +14,12 @@ test('parse → serialize round-trip keeps frontmatter fields and body', () => {
 
 test('parseNote handles BOM, CRLF, and malformed YAML without dropping the body', () => {
   const bom = parseNote('﻿---\ntype: note\nsummary: s\n---\nBody.\n');
-  assert.equal(bom.hasFrontmatter, true);
   assert.equal(bom.frontmatter['type'], 'note');
 
   const crlf = parseNote('---\r\ntype: note\r\nsummary: s\r\n---\r\nBody.\r\n');
-  assert.equal(crlf.hasFrontmatter, true);
   assert.equal(crlf.frontmatter['summary'], 's');
 
   const bad = parseNote('---\n{not yaml\n---\nBody survives.\n');
-  assert.equal(bad.hasFrontmatter, true);
   assert.deepEqual(bad.frontmatter, {});
   assert.ok(bad.body.includes('Body survives.'));
 });

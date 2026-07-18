@@ -23,7 +23,6 @@ import type {
   NoteType,
   PingResolveActionDTO,
   ProblemHeatDTO,
-  ProblemStance,
   ProposalDTO,
   SearchHitDTO,
   SessionLifecycle,
@@ -34,7 +33,6 @@ import type {
 } from '@pm/ipc';
 import { invoke, onEvent } from '../lib/ipc';
 import { requestCapture } from '../lib/capture-event';
-import { SMART_VIEWS, type SmartViewId } from './smart-views';
 
 export type ChatSessionType = 'chat' | 'ask' | 'after-meeting' | 'weekly-update';
 
@@ -50,7 +48,6 @@ export type Tab = { id: string; title: string; preview?: boolean } & (
   | { kind: 'inbox' }
   | { kind: 'todos' }
   | { kind: 'memory' }
-  | { kind: 'smartview'; viewId: SmartViewId }
   | { kind: 'folder'; dir: string }
   | { kind: 'context'; tag: string }
   | { kind: 'settings' }
@@ -133,7 +130,6 @@ interface AppState {
   openTodos: (opts?: { preview?: boolean }) => void;
   /** Open the Memory page — the full directory of every note type. */
   openMemory: (opts?: { preview?: boolean }) => void;
-  openSmartView: (id: SmartViewId, opts?: { preview?: boolean }) => void;
   openFolder: (dir: string, opts?: { preview?: boolean }) => void;
   /** Open a context (tag) page — the cross-cutting project/product/area axis. */
   openContext: (tag: string, opts?: { preview?: boolean }) => void;
@@ -160,7 +156,6 @@ interface AppState {
   refreshProposals: () => Promise<void>;
   acceptProposal: (id: string, edited?: unknown) => Promise<{ ok: boolean; stale?: boolean; error?: string; url?: string }>;
   rejectProposal: (id: string) => Promise<void>;
-  setProblemStance: (path: string, stance: ProblemStance) => Promise<void>;
   captureNote: (input: CaptureNoteInput) => Promise<NoteDTO>;
   /** Quick-add a todo (already parsed from the one-liner). */
   captureTodo: (input: CaptureTodoInputDTO) => Promise<NoteDTO>;
@@ -227,9 +222,10 @@ function loadPersistedTabs(): { tabs: Tab[]; activeTabId: string | null } {
     const parsed = JSON.parse(raw) as { tabs: Tab[]; activeTabId: string | null };
     // Session tabs survive restarts: the pi JSONL replays their transcript.
     // Strip initialPrompt so a persisted After-Meeting kickoff doesn't re-fire.
-    // Drop retired tab kinds (the old meeting-drop form) from older persists.
+    // Drop retired tab kinds (meeting-drop, smartview) from older persists.
+    const retiredKinds = new Set(['meeting-drop', 'smartview']);
     const tabs = (parsed.tabs ?? [])
-      .filter((t) => (t as { kind: string }).kind !== 'meeting-drop')
+      .filter((t) => !retiredKinds.has((t as { kind: string }).kind))
       .map((t) => (t.kind === 'session' ? { ...t, initialPrompt: undefined } : t));
     const activeTabId = tabs.some((t) => t.id === parsed.activeTabId) ? parsed.activeTabId : tabs[0]?.id ?? null;
     return { tabs, activeTabId };
@@ -411,15 +407,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       focusOrAddTab({ id: nextId(), kind: 'memory', title: 'Memory' }, (t) => t.kind === 'memory', {
         preview: opts?.preview ?? true,
       }),
-    [focusOrAddTab],
-  );
-  const openSmartView = useCallback(
-    (id: SmartViewId, opts?: { preview?: boolean }) =>
-      focusOrAddTab(
-        { id: nextId(), kind: 'smartview', viewId: id, title: SMART_VIEWS[id].label },
-        (t) => t.kind === 'smartview' && t.viewId === id,
-        { preview: opts?.preview ?? true },
-      ),
     [focusOrAddTab],
   );
   const openFolder = useCallback(
@@ -701,14 +688,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [refreshProposals],
   );
 
-  const setProblemStance = useCallback(
-    async (path: string, stance: ProblemStance) => {
-      await invoke['note:setProblemStance'](path, stance);
-      await Promise.all([refreshProblems(), refreshTree(), loadDoc(path)]);
-    },
-    [refreshProblems, refreshTree, loadDoc],
-  );
-
   // Taking the conversation: mark the ping opened, seed a fresh session with it.
   const openPing = useCallback(
     async (ping: AgentPingDTO) => {
@@ -762,7 +741,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     async (info: VaultInfoDTO | null) => {
       setVault((prev) => {
         // Switching to a different workspace: doc/folder/session tabs point at the
-        // old vault, so drop them (views like inbox/smartviews just re-query).
+        // old vault, so drop them (views like inbox just re-query).
         if (prev && info && prev.path !== info.path) {
           setDocData({});
           setTabs((tabs) => {
@@ -1009,7 +988,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openInbox,
       openTodos,
       openMemory,
-      openSmartView,
       openFolder,
       openContext,
       openSettings,
@@ -1029,7 +1007,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       refreshProposals,
       acceptProposal,
       rejectProposal,
-      setProblemStance,
       captureNote,
       captureTodo,
       setTodoStatus,
@@ -1039,7 +1016,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       deleteNote,
       search,
     }),
-    [vault, tree, tabs, activeTabId, activeTab, docData, openVaultDialog, favorites, toggleFavorite, pendingCount, proposals, problems, sessions, pings, skills, refreshSkills, attentionCount, markSessionSeen, refreshSessions, openPing, dismissPing, resolvePingItem, deleteSession, setSessionLifecycle, openDoc, openSession, openChat, openChats, bindTabSession, openInbox, openTodos, openMemory, openSmartView, openFolder, openContext, openSettings, openSkills, closeTab, closeOtherTabs, closeAllTabs, closeTabsBefore, closeTabsAfter, keepTab, moveTab, setActiveTab, query, ingestCapture, previewProposal, refreshProposals, acceptProposal, rejectProposal, setProblemStance, captureNote, captureTodo, setTodoStatus, saveNote, saveFrontmatter, renameNote, deleteNote, search, loadDoc],
+    [vault, tree, tabs, activeTabId, activeTab, docData, openVaultDialog, favorites, toggleFavorite, pendingCount, proposals, problems, sessions, pings, skills, refreshSkills, attentionCount, markSessionSeen, refreshSessions, openPing, dismissPing, resolvePingItem, deleteSession, setSessionLifecycle, openDoc, openSession, openChat, openChats, bindTabSession, openInbox, openTodos, openMemory, openFolder, openContext, openSettings, openSkills, closeTab, closeOtherTabs, closeAllTabs, closeTabsBefore, closeTabsAfter, keepTab, moveTab, setActiveTab, query, ingestCapture, previewProposal, refreshProposals, acceptProposal, rejectProposal, captureNote, captureTodo, setTodoStatus, saveNote, saveFrontmatter, renameNote, deleteNote, search, loadDoc],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

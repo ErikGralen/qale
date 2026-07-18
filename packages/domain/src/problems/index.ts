@@ -1,5 +1,3 @@
-import type { ProblemStance } from '../notes/frontmatter.js';
-
 /**
  * Problem "evidence heat" (PLAN-V2 §3.1) — problems (the durable hubs that
  * absorbed themes) are ranked by how much evidence they carry and how fresh it
@@ -22,5 +20,3 @@ export function byHeat(a: EvidenceHeat, b: EvidenceHeat): number {
   if (b.count !== a.count) return b.count - a.count;
   return (b.newest ?? '').localeCompare(a.newest ?? '');
 }
-
-export const STANCE_ORDER: ProblemStance[] = ['committed', 'watching', 'exploring', 'wont-do'];

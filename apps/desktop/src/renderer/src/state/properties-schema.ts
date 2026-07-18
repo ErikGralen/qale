@@ -7,7 +7,7 @@ import type { NoteType } from '@pm/ipc';
  * Ref arrays (evidence/sources/supersedes) are shown read-only; they are edited
  * through links and cards, not typed by hand.
  */
-export type Widget = 'text' | 'textarea' | 'select' | 'tags' | 'date' | 'bool';
+export type Widget = 'text' | 'textarea' | 'select' | 'tags' | 'date';
 
 export interface FieldSpec {
   key: string;

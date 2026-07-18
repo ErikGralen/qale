@@ -8,10 +8,6 @@ export function slugFromPath(path: string): string {
   return path.replace(/\.md$/i, '');
 }
 
-export function pathFromSlug(slug: string): string {
-  return /\.md$/i.test(slug) ? slug : `${slug}.md`;
-}
-
 /** The final path segment (basename without extension). */
 export function basename(slug: string): string {
   const s = slugFromPath(slug);

@@ -10,7 +10,6 @@ import {
   Link2,
   List,
   Plus,
-  SquareCheck,
   Type,
   X,
   type LucideIcon,
@@ -23,7 +22,7 @@ import { TagInput } from './TagInput';
 
 /**
  * Frontmatter as a collapsible property list under the title. Every row is a
- * typed widget with a type icon; edits autosave (selects/dates/checkboxes/tags
+ * typed widget with a type icon; edits autosave (selects/dates/tags
  * on change, text on blur or Enter, Escape reverts). Fields come from the
  * per-type schema; ref arrays render as clickable wikilink chips (provenance
  * is a first-class citizen here, not a footnote); unknown frontmatter keys
@@ -41,7 +40,6 @@ const WIDGET_ICON: Record<Widget, LucideIcon> = {
   select: CircleDot,
   tags: List,
   date: Calendar,
-  bool: SquareCheck,
 };
 
 /** `superseded_by` → `Superseded by` for keys without a schema label. */
@@ -285,18 +283,6 @@ function PropertyValue({
   tagSuggestions?: { tag: string; count: number }[];
   onTagClick?: (tag: string) => void;
 }) {
-  if (spec.widget === 'bool') {
-    return (
-      <label className="flex h-[26px] items-center px-1.5">
-        <input
-          type="checkbox"
-          className="accent-brand"
-          checked={value === true}
-          onChange={(e) => onCommit(e.target.checked || undefined)}
-        />
-      </label>
-    );
-  }
   if (spec.widget === 'select') {
     const current = (value as string) ?? '';
     return (

@@ -12,8 +12,6 @@ const NON_CONTENT_TYPES: ReadonlySet<NoteType> = new Set(['session', 'skill'] sa
 export interface ContextInfo {
   tag: string;
   count: number;
-  /** Per-type counts, insertion-ordered by the spine order below. */
-  byType: Map<NoteType, number>;
 }
 
 export function isContentNote(n: NoteRefDTO): boolean {
@@ -32,11 +30,10 @@ export function collectContexts(tree: VaultTreeDTO | null): ContextInfo[] {
     for (const tag of n.tags ?? []) {
       let info = map.get(tag);
       if (!info) {
-        info = { tag, count: 0, byType: new Map() };
+        info = { tag, count: 0 };
         map.set(tag, info);
       }
       info.count++;
-      info.byType.set(n.type, (info.byType.get(n.type) ?? 0) + 1);
     }
   }
   return [...map.values()].sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));

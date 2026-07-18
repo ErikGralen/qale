@@ -66,7 +66,7 @@ interface TodoRow {
   overdue: boolean;
 }
 
-function QuickAdd({ onAdded }: { onAdded: () => void }) {
+function QuickAdd() {
   const { captureTodo } = useApp();
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -83,7 +83,6 @@ function QuickAdd({ onAdded }: { onAdded: () => void }) {
     try {
       await captureTodo({ title: parsed.title, due: parsed.due, owner: parsed.owner });
       setValue('');
-      onAdded();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'could not add the todo');
     } finally {
@@ -404,7 +403,7 @@ export function TodosView() {
       </div>
 
       <div className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-8 py-4" onKeyDown={onListKeyDown}>
-        <QuickAdd onAdded={() => undefined} />
+        <QuickAdd />
 
         {empty ? (
           <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">

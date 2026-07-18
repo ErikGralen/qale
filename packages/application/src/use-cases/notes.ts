@@ -8,14 +8,11 @@ import {
   slugify,
   titleFromSlug,
   TYPE_RULES,
-  NOTE_STATUSES,
   type CaptureKind,
   type Frontmatter,
   type MeetingFrontmatter,
   type NoteFrontmatter,
-  type NoteStatus,
   type Note,
-  type ProblemStance,
   type SourceNoteFrontmatter,
   type SourceRef,
 } from '@pm/domain';
@@ -350,61 +347,6 @@ export async function saveAuthoredNote(ctx: UseCaseContext, path: string, body: 
   const note = await ctx.vault.writeBody(path, body);
   ctx.index.reindex(note);
   await ctx.git.commitPaths([note.path], `edit: ${note.slug}`);
-  return note;
-}
-
-/**
- * Re-sync a source from upstream (the Confluence page changed, the article was
- * revised). This is an *update*, not an edit — the whole body is replaced with
- * the fresh upstream content, `updated` is stamped, and `status` drops back to
- * `new` so analyses know to re-run. The only sanctioned way a raw body changes.
- */
-export async function refreshSource(ctx: UseCaseContext, path: string, body: string): Promise<Note> {
-  const existing = await ctx.vault.readNote(path);
-  if (!existing || existing.type !== 'source') throw new Error(`not a source: ${path}`);
-  const frontmatter = {
-    ...existing.frontmatter,
-    status: 'new',
-    updated: ctx.clock.now().slice(0, 10),
-  } as Frontmatter;
-  const note = await ctx.vault.writeNote(path, frontmatter, body.trim());
-  ctx.index.reindex(note);
-  await ctx.git.commitPaths([note.path], `sync: ${note.slug}`);
-  return note;
-}
-
-/** Types that carry the generic lifecycle `status` enum. */
-const STATUS_TYPES = new Set(['source', 'meeting', 'insight', 'note']);
-
-/** Flip a note's lifecycle status (new/processed/active/stale) — enum-guarded. */
-export async function setNoteStatus(ctx: UseCaseContext, path: string, status: NoteStatus): Promise<Note> {
-  if (!NOTE_STATUSES.includes(status)) throw new Error(`invalid status: ${status}`);
-  const existing = await ctx.vault.readNote(path);
-  if (!existing) throw new Error(`note not found: ${path}`);
-  if (!STATUS_TYPES.has(existing.type)) {
-    throw new Error(`${existing.type} does not carry a lifecycle status`);
-  }
-  const frontmatter = { ...existing.frontmatter, status } as Frontmatter;
-  const note = await ctx.vault.writeNote(path, frontmatter, existing.body);
-  ctx.index.reindex(note);
-  await ctx.git.commitPaths([note.path], `status: ${note.slug} → ${status}`);
-  return note;
-}
-
-/** Change a problem's stance (authored field). */
-export async function setProblemStance(
-  ctx: UseCaseContext,
-  path: string,
-  stance: ProblemStance,
-): Promise<Note> {
-  const existing = await ctx.vault.readNote(path);
-  if (!existing || existing.type !== 'problem') {
-    throw new Error(`not a problem: ${path}`);
-  }
-  const frontmatter = { ...existing.frontmatter, stance } as Frontmatter;
-  const note = await ctx.vault.writeNote(path, frontmatter, existing.body);
-  ctx.index.reindex(note);
-  await ctx.git.commitPaths([note.path], `stance: ${note.slug} → ${stance}`);
   return note;
 }
 

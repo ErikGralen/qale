@@ -1,7 +1,7 @@
 export { AgentRuntime, type AgentRuntimeConfig, type RunInput, type RunHandle, type ModelInfo, type ChatRef } from './runtime.js';
 export { entriesToUiMessages, type UiMessage } from './history.js';
 export { PiUiBridge, type Chunk } from './bridge.js';
-export { SESSION_TYPES, SHARED_PREAMBLE, type SessionType } from './prompts.js';
+export { SHARED_PREAMBLE } from './prompts.js';
 export {
   createVaultTools,
   createProposeTools,

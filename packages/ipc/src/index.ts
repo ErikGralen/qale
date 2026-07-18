@@ -29,7 +29,6 @@ import type {
   LiveSessionDTO,
   SettingsDTO,
   SkillDTO,
-  ProblemStance,
   TodoStatus,
   VaultInfoDTO,
   VaultTreeDTO,
@@ -74,7 +73,6 @@ export interface InvokeMap {
   'vault:current': { args: []; result: VaultInfoDTO | null };
   'vault:tree': { args: []; result: VaultTreeDTO };
   'vault:rebuildIndex': { args: []; result: { indexed: number } };
-  'vault:refreshIndexes': { args: []; result: { written: number } };
   'vault:query': { args: [query: NoteQueryDTO]; result: NoteRefDTO[] };
   'librarian:report': { args: []; result: MaintenanceReportDTO };
 
@@ -86,7 +84,6 @@ export interface InvokeMap {
   'note:delete': { args: [path: string]; result: { ok: boolean } };
   'note:backlinks': { args: [path: string]; result: BacklinkDTO[] };
   'note:resolveLink': { args: [target: string]; result: string | null };
-  'note:setProblemStance': { args: [path: string, stance: ProblemStance]; result: NoteDTO };
   'problems:byHeat': { args: []; result: ProblemHeatDTO[] };
 
   // Todos (the commitment ledger)
@@ -154,7 +151,6 @@ export const INVOKE_CHANNELS = [
   'vault:current',
   'vault:tree',
   'vault:rebuildIndex',
-  'vault:refreshIndexes',
   'vault:query',
   'librarian:report',
   'note:get',
@@ -164,7 +160,6 @@ export const INVOKE_CHANNELS = [
   'note:delete',
   'note:backlinks',
   'note:resolveLink',
-  'note:setProblemStance',
   'problems:byHeat',
   'todos:capture',
   'todos:setStatus',

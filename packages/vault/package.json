@@ -7,7 +7,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "check-types": "tsc --noEmit -p tsconfig.json"
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@pm/application": "workspace:*",
@@ -21,6 +22,7 @@
     "@pm/typescript-config": "workspace:*",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^24.0.0",
+    "tsx": "^4.23.1",
     "typescript": "~5.9.2"
   }
 }

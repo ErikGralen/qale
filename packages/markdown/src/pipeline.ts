@@ -65,3 +65,17 @@ export function serializeNote(frontmatter: Record<string, unknown>, body: string
   const trimmedBody = body.replace(/^\n+/, '').replace(/\s+$/, '');
   return `---\n${yaml}\n---\n\n${trimmedBody}\n`;
 }
+
+/**
+ * Replace only the body of a raw note file, preserving the original
+ * frontmatter block byte-for-byte. Body-only saves must never round-trip
+ * frontmatter through parse/serialize: a note whose frontmatter failed
+ * validation would be rewritten with the coerced in-memory fallback,
+ * permanently erasing the user's real fields.
+ */
+export function spliceBody(raw: string, body: string): string {
+  const match = raw.match(FRONTMATTER_RE);
+  const trimmedBody = body.replace(/^\n+/, '').replace(/\s+$/, '');
+  if (!match) return `${trimmedBody}\n`;
+  return `${match[0].trimEnd()}\n\n${trimmedBody}\n`;
+}

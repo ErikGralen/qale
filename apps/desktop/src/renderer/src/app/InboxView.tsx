@@ -1255,14 +1255,20 @@ function CardItem({
         {proposal.evidence.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1">
             {proposal.evidence.map((e) => {
-              const slug = e.ref.replace(/^\[\[/, '').replace(/\]\]$/, '');
+              // Evidence refs are wikilink slugs, not file paths — resolve
+              // through the index like every other link surface, or the tab
+              // opens onto a note:get miss and skeletons forever.
+              const { target, alias } = normalizeLinkTarget(e.ref.replace(/^\[\[/, '').replace(/\]\]$/, ''));
               return (
                 <button
                   key={e.ref}
                   className="rounded bg-brand/8 px-1.5 py-0.5 font-mono text-xs text-brand hover:bg-brand/15"
-                  onClick={() => onOpen(slug)}
+                  onClick={async () => {
+                    const path = await invoke['note:resolveLink'](target);
+                    if (path) onOpen(path);
+                  }}
                 >
-                  {slug}
+                  {alias ?? target}
                 </button>
               );
             })}

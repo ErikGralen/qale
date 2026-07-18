@@ -53,6 +53,12 @@ export interface VaultPort {
   readRaw(relPath: string): Promise<string | null>;
   /** Write frontmatter + body, creating parent dirs. Returns the written Note. */
   writeNote(relPath: string, frontmatter: Frontmatter, body: string): Promise<Note>;
+  /**
+   * Replace only the body, preserving the file's raw frontmatter block
+   * byte-for-byte. The write path for body-only edits: coerced/fallback
+   * in-memory frontmatter must never round-trip to disk.
+   */
+  writeBody(relPath: string, body: string): Promise<Note>;
   writeRaw(relPath: string, content: string): Promise<void>;
   /** Write a non-markdown asset (dropped image, etc.), creating parent dirs. */
   writeBinary(relPath: string, data: Uint8Array): Promise<void>;

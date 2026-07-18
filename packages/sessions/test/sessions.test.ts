@@ -24,6 +24,18 @@ test('parseSkill reads frontmatter + When/Read/Produce/Then', () => {
   assert.equal(c.guardrails.redFlags.length, 2);
 });
 
+test('the LAST section of a skill body is captured (regression: \\Z is not a JS anchor)', () => {
+  const raw = `---\ntype: skill\nsession_type: t\nsummary: s\n---\n## When\nDo it when X.\n\n## Then\nProduce Y.\n`;
+  const c = parseSkill(raw, 't');
+  assert.equal(c.when, 'Do it when X.');
+  assert.equal(c.then, 'Produce Y.');
+  // every shipped skill ends with ## Then — none may lose it
+  for (const [type, skill] of Object.entries(DEFAULT_SKILL_BY_TYPE)) {
+    const parsed = parseSkill(skill, type);
+    if (/^##\s*Then/im.test(skill)) assert.ok(parsed.then, `${type} lost its ## Then section`);
+  }
+});
+
 test('ask skill is observe-tier with no checkpoints', () => {
   const c = parseSkill(ASK_SKILL, 'ask');
   assert.equal(c.tier, 'observe');

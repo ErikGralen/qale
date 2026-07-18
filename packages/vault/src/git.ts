@@ -1,5 +1,7 @@
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { existsSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import type { GitPort } from '@pm/application';
 
@@ -25,10 +27,16 @@ export class GitAdapter implements GitPort {
     }
   }
 
+  /**
+   * True only when the vault root IS the repo root. A vault nested inside some
+   * other repo's work tree (e.g. a dev vault inside the app's source repo) must
+   * NOT count — committing there would write vault edits into the parent repo.
+   */
   async isRepo(): Promise<boolean> {
     if (existsSync(join(this.root, '.git'))) return true;
     try {
-      return await this.git.checkIsRepo();
+      const toplevel = (await this.git.raw(['rev-parse', '--show-toplevel'])).trim();
+      return realpathSync(toplevel) === realpathSync(this.root);
     } catch {
       return false;
     }
@@ -36,20 +44,42 @@ export class GitAdapter implements GitPort {
 
   async init(): Promise<void> {
     await this.git.init();
-    // Seed an ignore so index/runtime artifacts never get committed into the vault.
-    await this.git.raw(['config', 'user.name', 'pm']).catch(() => undefined);
+    // Seed an ignore so OS junk never gets committed into the vault.
+    const ignorePath = join(this.root, '.gitignore');
+    if (!existsSync(ignorePath)) await writeFile(ignorePath, '.DS_Store\n', 'utf8');
+    // Repo-local identity fallback: without user.email, every commit fails on
+    // machines that never configured git globally.
+    const email = await this.git.raw(['config', 'user.email']).catch(() => '');
+    if (!String(email).trim()) {
+      await this.git.raw(['config', 'user.name', 'pm']).catch(() => undefined);
+      await this.git.raw(['config', 'user.email', 'pm@localhost']).catch(() => undefined);
+    }
   }
 
   async commitPaths(paths: string[], message: string): Promise<void> {
     if (paths.length === 0) return;
     if (!(await this.available()) || !(await this.isRepo())) return;
     try {
-      await this.git.add(paths);
+      // Add per-path: one bad pathspec (e.g. the old name of a never-committed
+      // rename) must not abort staging the rest of the batch.
+      for (const p of paths) {
+        await this.git.add(p).catch((err) => {
+          console.error(`[git] add failed for ${p}:`, err instanceof Error ? err.message : err);
+        });
+      }
       const status = await this.git.status(paths);
       if (status.files.length === 0) return; // nothing actually changed
-      await this.git.commit(message, paths);
-    } catch {
+      // Commit only the paths git recognizes — an unmatched pathspec (never-
+      // tracked deletion) would abort the whole commit.
+      await this.git.commit(
+        message,
+        status.files.map((f) => f.path),
+      );
+    } catch (err) {
       // Never let a git hiccup break a vault write; the file is already saved.
+      // But never silently either — a broken setup would otherwise disable
+      // versioning forever with zero signal.
+      console.error('[git] commit failed:', err instanceof Error ? err.message : err);
     }
   }
 }

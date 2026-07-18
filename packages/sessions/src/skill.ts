@@ -116,7 +116,8 @@ function split(raw: string): { fm: Record<string, unknown>; body: string } {
 
 /** Extract a `## Heading` section's text (case-insensitive), trimmed. */
 function section(body: string, heading: string): string | undefined {
-  const re = new RegExp(`^#{1,3}\\s*${heading}\\s*$([\\s\\S]*?)(?=^#{1,3}\\s|\\Z)`, 'im');
+  // `$(?![\s\S])` is true end-of-string (JS has no \Z anchor).
+  const re = new RegExp(`^#{1,3}\\s*${heading}\\s*$([\\s\\S]*?)(?=^#{1,3}\\s|$(?![\\s\\S]))`, 'im');
   const m = body.match(re);
   return m?.[1]?.trim() || undefined;
 }

@@ -12,7 +12,7 @@ import {
   type Note,
   type NoteType,
 } from '@pm/domain';
-import { parseNote, serializeNote } from '@pm/markdown';
+import { parseNote, serializeNote, spliceBody } from '@pm/markdown';
 import type { FileListing, VaultPort } from '@pm/application';
 
 /**
@@ -89,6 +89,15 @@ export class FsVault implements VaultPort {
     await this.writeRaw(relPath, content);
     const stat = await this.statOf(relPath);
     return makeNote({ path: relPath, frontmatter, body, mtime: stat });
+  }
+
+  async writeBody(relPath: string, body: string): Promise<Note> {
+    const raw = await this.readRaw(relPath);
+    if (raw === null) throw new Error(`note not found: ${relPath}`);
+    await this.writeRaw(relPath, spliceBody(raw, body));
+    const note = await this.readNote(relPath);
+    if (!note) throw new Error(`note unreadable after write: ${relPath}`);
+    return note;
   }
 
   async writeRaw(relPath: string, content: string): Promise<void> {
@@ -185,9 +194,16 @@ export class FsVault implements VaultPort {
     const result = parseFrontmatter(candidate);
     if (result.ok && result.data) return result.data;
 
-    // Fallback: a permissive authored note so the file is never lost.
-    const fallback = parseFrontmatter({ type: 'note', summary, sources: [] });
-    return fallback.data as Frontmatter;
+    // Fallback: a permissive authored note so the file is never lost — but the
+    // original fields ride along. An explicit frontmatter write later must not
+    // erase what the user (or another tool) put there.
+    let fallback = parseFrontmatter({
+      type: 'note',
+      summary,
+      sources: Array.isArray(raw['sources']) ? raw['sources'] : [],
+    });
+    if (!fallback.ok) fallback = parseFrontmatter({ type: 'note', summary, sources: [] });
+    return { ...raw, ...(fallback.data as Record<string, unknown>) } as Frontmatter;
   }
 }
 

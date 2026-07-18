@@ -343,7 +343,10 @@ export async function saveAuthoredNote(ctx: UseCaseContext, path: string, body: 
   if (!isBodyEditable(existing.type)) {
     throw new Error(`this note type has an immutable body: ${path}`);
   }
-  const note = await ctx.vault.writeNote(path, existing.frontmatter, body);
+  // Body-only edit: splice under the raw frontmatter block. Writing
+  // `existing.frontmatter` here would persist the coerced fallback for notes
+  // whose frontmatter failed validation, erasing the user's real fields.
+  const note = await ctx.vault.writeBody(path, body);
   ctx.index.reindex(note);
   await ctx.git.commitPaths([note.path], `edit: ${note.slug}`);
   return note;

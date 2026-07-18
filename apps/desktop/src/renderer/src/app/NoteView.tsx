@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Badge, Button, Separator } from '@pm/ui';
 import { Link2, FileText, Star, Play, Sparkles, Trash2 } from 'lucide-react';
 import { useApp } from '../state/app-state';
@@ -71,6 +71,13 @@ export function NoteView({ path }: { path: string }) {
   const data = docData[path];
   const currentNote = data?.note ?? null;
   const backlinks = data?.backlinks ?? [];
+
+  // Tabs restored from localStorage (or opened in the background) have no
+  // docData yet — only the active tab is loaded at boot. Fetch on first view;
+  // `data` present-but-null means the load already ran and found nothing.
+  useEffect(() => {
+    if (!data) void loadDoc(path);
+  }, [data, loadDoc, path]);
 
   if (!currentNote) {
     return (

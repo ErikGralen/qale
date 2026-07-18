@@ -878,7 +878,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const { [path]: _, ...rest } = d;
         return rest;
       });
-      setTabs((prev) => prev.filter((t) => !(t.kind === 'doc' && t.path === path)));
+      setTabs((prev) => {
+        const next = prev.filter((t) => !(t.kind === 'doc' && t.path === path));
+        // Deleting the note you're viewing must hand focus to a neighbor,
+        // exactly like closeTab — otherwise no tab is active and ⌘W dies.
+        setActiveTabId((cur) => {
+          if (cur === null || next.some((t) => t.id === cur)) return cur;
+          const idx = prev.findIndex((t) => t.id === cur);
+          return next[Math.max(0, idx - 1)]?.id ?? null;
+        });
+        return next;
+      });
       setFavorites((prev) => {
         if (!prev.includes(path)) return prev;
         const next = prev.filter((p) => p !== path);

@@ -179,13 +179,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     if (ctx?.pings) pushEvent(getWindow(), { channel: 'pings:changed', pendingCount: ctx.pings.pendingCount() });
   };
 
-  const fireSession = async (sessionType: string, prompt: string): Promise<void> => {
-    const ctx = vaultService.context();
-    if (!ctx) return;
-    // Proposal/badge refreshes ride on the session:status settle push (agent.onStatus).
-    await agent.run({ sessionType: sessionType as AgentRunInput['sessionType'], prompt }, ctx, () => {});
-  };
-
   const SESSION_LABEL: Record<string, string> = {
     chat: 'Chat',
     ask: 'Ask',
@@ -198,6 +191,24 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     librarian: 'Librarian',
   };
   const sessionLabel = (type: string): string => SESSION_LABEL[type] ?? type.replace(/-/g, ' ');
+
+  const fireSession = async (sessionType: string, prompt: string): Promise<void> => {
+    const ctx = vaultService.context();
+    if (!ctx) return;
+    try {
+      // Proposal/badge refreshes ride on the session:status settle push (agent.onStatus).
+      await agent.run({ sessionType: sessionType as AgentRunInput['sessionType'], prompt }, ctx, () => {});
+    } catch (err) {
+      // Every caller is fire-and-forget (`void fireSession(...)`): a run that
+      // dies here — most often "no API key yet" — must surface, not become an
+      // unhandled rejection while the PO waits for cards that never come.
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[pm] background ${sessionType} session failed:`, message);
+      if (Notification.isSupported()) {
+        new Notification({ title: `${sessionLabel(sessionType)} failed`, body: message, silent: true }).show();
+      }
+    }
+  };
 
   // Session lifecycle → renderer rail/badges, plus an OS notification when a
   // background run finishes while the PO is elsewhere (nothing silent).
@@ -287,8 +298,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   handle('settings:setMcp', async (patch) => {
     await settings.setMcp(patch);
     const s = settings.get();
-    if (s.mcpEnabled) mcp.restart(s.mcpPort);
-    else mcp.stop();
+    if (s.mcpEnabled) await mcp.restart(s.mcpPort);
+    else await mcp.stop();
     return settingsDTO();
   });
   handle('models:list', () => {
@@ -550,7 +561,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
       // Start the app-open scheduler (idempotent; ticks no-op until a vault opens).
       scheduler.start();
       if (settings.get().mcpEnabled || process.env['PM_MCP']) {
-        mcp.start(settings.get().mcpPort);
+        await mcp.start(settings.get().mcpPort);
         if (process.env['PM_MCP']) console.log(`[pm] MCP token: ${settings.get().mcpToken}`);
       }
     },

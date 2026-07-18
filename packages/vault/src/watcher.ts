@@ -72,7 +72,18 @@ export class VaultWatcher {
       while (this.pending.size > 0) {
         const batch: VaultChange[] = [...this.pending.entries()].map(([path, kind]) => ({ path, kind }));
         this.pending.clear();
-        await this.opts.onBatch(batch);
+        try {
+          await this.opts.onBatch(batch);
+        } catch (err) {
+          // Put the batch back (newer events win) and retry — a reindex hiccup
+          // must not silently drop these files from the index forever.
+          for (const { path, kind } of batch) {
+            if (!this.pending.has(path)) this.pending.set(path, kind);
+          }
+          console.error('[watcher] batch failed, retrying:', err instanceof Error ? err.message : err);
+          this.timer = setTimeout(() => void this.drain(), 2000);
+          return;
+        }
       }
     } finally {
       this.draining = false;
@@ -83,5 +94,10 @@ export class VaultWatcher {
     if (this.timer) clearTimeout(this.timer);
     await this.watcher?.close();
     this.watcher = null;
+    // Final drain: a burst that arrived just before stop still lands.
+    if (this.pending.size > 0) await this.drain();
+    // A retry scheduled during that drain must not outlive the watcher.
+    if (this.timer) clearTimeout(this.timer);
+    this.pending.clear();
   }
 }

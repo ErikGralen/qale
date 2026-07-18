@@ -48,3 +48,4 @@ MVP. See [docs/NEXT-STEPS.md](docs/NEXT-STEPS.md) for the full review this work 
 ### Recent work
 
 - **Editor v2** — selection toolbar, slash commands, wikilink autocomplete, block drag handle, properties block redesign.
+- **P0 bug fixes** — session prompts no longer drop their final skill section; vault git commits refuse to land in a parent repo (vault root must be the repo root); body-only saves preserve frontmatter byte-for-byte (no more coerced-fallback overwrites); restored tabs load their content; deleting the viewed note focuses a neighbor tab. First test suites for `@pm/vault` and `@pm/markdown`.

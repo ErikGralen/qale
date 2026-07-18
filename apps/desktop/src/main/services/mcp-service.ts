@@ -26,22 +26,48 @@ export class McpService {
     return this.http !== null;
   }
 
-  start(port: number): void {
-    if (this.http) return;
-    const server = createServer((req, res) => void this.handle(req, res));
-    server.on('error', (err) => console.error('[pm] MCP server error:', err));
-    server.listen(port, '127.0.0.1', () => console.log(`[pm] MCP server on http://127.0.0.1:${port}/mcp`));
-    this.http = server;
+  /** Resolves once the port is bound — or after a failed bind, with isRunning() false. */
+  start(port: number): Promise<void> {
+    if (this.http) return Promise.resolve();
+    return new Promise((resolve) => {
+      const server = createServer((req, res) => {
+        this.handle(req, res).catch((err) => {
+          // A transport hiccup must not become an unhandled rejection with the
+          // HTTP response left hanging open.
+          console.error('[pm] MCP request failed:', err instanceof Error ? err.message : err);
+          if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'internal error' }));
+        });
+      });
+      server.on('error', (err) => {
+        console.error('[pm] MCP server error:', err);
+        // A failed bind (EADDRINUSE) must not leave isRunning() reporting true.
+        if (!server.listening) {
+          this.http = null;
+          resolve();
+        }
+      });
+      server.listen(port, '127.0.0.1', () => {
+        console.log(`[pm] MCP server on http://127.0.0.1:${port}/mcp`);
+        resolve();
+      });
+      this.http = server;
+    });
   }
 
-  stop(): void {
-    this.http?.close();
+  async stop(): Promise<void> {
+    const server = this.http;
     this.http = null;
+    if (!server) return;
+    // Sever open streamable-HTTP connections too, or the port stays held and
+    // an immediate restart hits EADDRINUSE.
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 
-  restart(port: number): void {
-    this.stop();
-    this.start(port);
+  async restart(port: number): Promise<void> {
+    await this.stop();
+    await this.start(port);
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {

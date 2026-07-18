@@ -102,7 +102,7 @@ export interface InvokeMap {
   // Proposals
   'proposals:list': { args: [status?: string]; result: ProposalDTO[] };
   'proposals:preview': { args: [id: string]; result: ProposalPreviewDTO | null };
-  'proposals:accept': { args: [id: string, edited?: unknown]; result: { ok: boolean; stale?: boolean } };
+  'proposals:accept': { args: [id: string, edited?: unknown]; result: { ok: boolean; stale?: boolean; error?: string; url?: string } };
   'proposals:reject': { args: [id: string]; result: { ok: boolean } };
   'proposals:stats': { args: []; result: ProposalStatsDTO };
   'golden:save': { args: [input: GoldenAnswerInput]; result: ProposalDTO };

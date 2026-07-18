@@ -1,4 +1,5 @@
 import {
+  checkFrontmatterMutation,
   classifyCapture,
   isBodyEditable,
   normalizeLinkTarget,
@@ -475,6 +476,11 @@ export async function saveFrontmatter(
 ): Promise<Note> {
   const existing = await ctx.vault.readNote(path);
   if (!existing) throw new Error(`note not found: ${path}`);
+  // The mutability invariant (immutable meeting provenance, receipt-frozen
+  // sessions, append-only decisions) is enforced HERE — every frontmatter
+  // write path (IPC properties form, MCP) funnels through this use-case.
+  const check = checkFrontmatterMutation(existing.type, existing.frontmatter, frontmatter);
+  if (!check.allowed) throw new Error(check.reason ?? 'immutable frontmatter field');
   const note = await ctx.vault.writeNote(path, frontmatter, existing.body);
   ctx.index.reindex(note);
   await ctx.git.commitPaths([note.path], `properties: ${note.slug}`);

@@ -414,6 +414,9 @@ export class AgentRuntime {
     if (!this.config?.apiKey) throw new Error('Set an Anthropic API key in Settings to chat.');
     const sessionId = input.sessionId ?? randomUUID();
     const state = this.sessions.get(sessionId) ?? (await this.createSession(input.sessionType, sessionId, ctx));
+    // One turn at a time per session: a second run would reroute the live
+    // bridge mid-stream and interleave pi prompts on the same session.
+    if (state.activeStreamId) throw new Error('This conversation is still responding — wait or stop it first.');
     // A new message on a done/dismissed conversation reopens it.
     if (this.getLifecycle(sessionId) !== 'active') this.setLifecycle(sessionId, 'active');
     state.harness.beginTurn(input.prompt, ctx.clock.now());

@@ -239,8 +239,12 @@ export function InboxView() {
             const ob = p.payload as OutboundPayloadDTO;
             setSent((s) => [...s, { id: p.id, target: outboundTarget(ob) }]);
           }
-        } else if (!r.stale) {
-          setError(p.id, 'Could not apply this card — the workspace rejected the write.');
+        } else if (r.stale) {
+          // The keyboard path can accept without ever seeing the preview's
+          // stale banner — a stale refusal must speak, never no-op.
+          setError(p.id, 'This card went stale — the note changed underneath it. Review the updated diff before applying.');
+        } else {
+          setError(p.id, r.error ?? 'Could not apply this card — the workspace rejected the write.');
         }
       } catch (err) {
         setError(p.id, err instanceof Error ? err.message : 'Something went wrong applying this card.');

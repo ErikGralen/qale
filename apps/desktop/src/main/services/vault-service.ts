@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { FsVault, SqliteIndex, VaultWatcher, GitAdapter, ProposalStore, PingStore, type VaultChange } from '@pm/vault';
 import { openVault, type UseCaseContext, type VaultInfo } from '@pm/application';
@@ -17,7 +18,16 @@ export class VaultService {
   private watcher: VaultWatcher | null = null;
   private currentPath: string | null = null;
   private readonly indexPath = join(app.getPath('userData'), 'index.db');
-  private readonly appDbPath = join(app.getPath('userData'), 'app.db');
+
+  /**
+   * Proposals/pings are scoped per vault via one app DB file per vault root —
+   * a shared queue would carry vault A's pending cards into vault B, and
+   * accepting one would write A's paths into B.
+   */
+  private appDbPathFor(root: string): string {
+    const key = createHash('sha256').update(root).digest('hex').slice(0, 12);
+    return join(app.getPath('userData'), `app-${key}.db`);
+  }
 
   constructor(private readonly notifyChanged: (paths: string[]) => void) {}
 
@@ -39,17 +49,26 @@ export class VaultService {
 
     const vault = new FsVault(path);
     if (!this.index) this.index = new SqliteIndex(this.indexPath);
-    if (!this.proposals) this.proposals = new ProposalStore(this.appDbPath);
-    if (!this.pings) this.pings = new PingStore(this.appDbPath);
-    // Switching to a different vault: the shared index must be rebuilt for it.
-    if (this.currentPath && this.currentPath !== vault.root()) this.index.clear();
+    // Switching to a different vault: the shared index must be rebuilt for it,
+    // and the proposal/ping stores swap to that vault's own DB file.
+    if (this.currentPath !== vault.root() || !this.proposals || !this.pings) {
+      if (this.currentPath && this.currentPath !== vault.root()) this.index.clear();
+      this.proposals?.close();
+      this.pings?.close();
+      const appDbPath = this.appDbPathFor(vault.root());
+      this.proposals = new ProposalStore(appDbPath);
+      this.pings = new PingStore(appDbPath);
+    }
 
     const git = new GitAdapter(path);
     const clock = { now: () => new Date().toISOString() };
-    this.ctx = { vault, index: this.index, git, clock, proposals: this.proposals, pings: this.pings };
-    this.currentPath = vault.root();
+    const ctx: UseCaseContext = { vault, index: this.index, git, clock, proposals: this.proposals, pings: this.pings };
 
-    const info = await openVault(this.ctx);
+    // Only publish the context once the open fully succeeds — a mid-open throw
+    // must not leave requireContext() returning a half-open vault.
+    const info = await openVault(ctx);
+    this.ctx = ctx;
+    this.currentPath = vault.root();
     this.startWatcher(vault.root());
     return info;
   }
@@ -81,6 +100,10 @@ export class VaultService {
     await this.closeWatcher();
     this.index?.close();
     this.index = null;
+    this.proposals?.close();
+    this.proposals = null;
+    this.pings?.close();
+    this.pings = null;
     this.ctx = null;
   }
 }

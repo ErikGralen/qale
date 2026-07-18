@@ -163,6 +163,11 @@ async function acceptNote(ctx: UseCaseContext, rec: ProposalRecord, edited?: unk
   const { path, frontmatter, body } = parsed.data;
   const fm = parseFrontmatter(frontmatter);
   if (!fm.ok || !fm.data) return { ok: false, error: fm.error };
+  // A `note` card means a NEW note; the preview shows `before: ''`, so an
+  // overwrite here would clobber an existing file sight-unseen.
+  if (await ctx.vault.exists(path)) {
+    return { ok: false, error: `a note already exists at ${path} — propose an update to it instead` };
+  }
   const written = await ctx.vault.writeNote(path, fm.data, body);
   ctx.index.reindex(written);
   await ctx.git.commitPaths([path], `note: ${written.slug}`);
@@ -245,6 +250,14 @@ async function acceptDecision(ctx: UseCaseContext, rec: ProposalRecord, edited?:
     if (!rc || rc.type !== 'decision') return null;
     return { slug: rc.slug, frontmatter: rc.frontmatter as unknown as DecisionFrontmatter };
   };
+
+  // Same new-note contract as note cards: the preview never shows what an
+  // overwrite would destroy, so refuse to clobber an existing file. Checked
+  // BEFORE the supersede flip — a later refusal would leave the old decision
+  // half-flipped.
+  if (await ctx.vault.exists(path)) {
+    return { ok: false, error: `a note already exists at ${path} — propose a supersede or update instead` };
+  }
 
   const committed: string[] = [];
   const targetSlug = refToSlug(supersedes);

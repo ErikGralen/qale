@@ -158,7 +158,7 @@ interface AppState {
   ingestCapture: (input: IngestCaptureInputDTO) => Promise<IngestCaptureResultDTO>;
   previewProposal: (id: string) => Promise<{ before: string; after: string; stale: boolean } | null>;
   refreshProposals: () => Promise<void>;
-  acceptProposal: (id: string, edited?: unknown) => Promise<{ ok: boolean; stale?: boolean }>;
+  acceptProposal: (id: string, edited?: unknown) => Promise<{ ok: boolean; stale?: boolean; error?: string; url?: string }>;
   rejectProposal: (id: string) => Promise<void>;
   setProblemStance: (path: string, stance: ProblemStance) => Promise<void>;
   captureNote: (input: CaptureNoteInput) => Promise<NoteDTO>;

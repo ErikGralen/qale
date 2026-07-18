@@ -16,7 +16,7 @@ series: nordkap-checkin
 
 ## Summary
 
-\[\[Gave Sara the firm SSO date: 2026-07-28, Nordkap as first tenant behind a flag, run jointly with her team. Her security review starts mid-August, so the margin is thin but real. SCIM: September reconfirmed ("September", not a date — per Tom); her team hand-created 14 more accounts last week and her patience is visibly finite. New: procurement's pricing review has started, question list coming our way. She'll flag anything unreasonable before it reaches us.
+Gave Sara the firm SSO date: 2026-07-28, Nordkap as first tenant behind a flag, run jointly with her team. Her security review starts mid-August, so the margin is thin but real. SCIM: September reconfirmed ("September", not a date — per Tom); her team hand-created 14 more accounts last week and her patience is visibly finite. New: procurement's pricing review has started, question list coming our way. She'll flag anything unreasonable before it reaches us.
 
 /
 

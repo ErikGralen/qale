@@ -1,9 +1,16 @@
 export {
   parseSkill,
   buildSystemPrompt,
+  describeBinding,
+  bindingMatches,
+  SKILL_EVENTS,
   type SkillConfig,
   type SkillTier,
   type SkillGuardrails,
+  type SkillKind,
+  type SkillBinding,
+  type BindingMode,
+  type SkillEvent,
 } from './skill.js';
 export { SessionHarness, type SessionTurn } from './harness.js';
 export { buildSessionReceipt, type SessionReceipt } from './receipt.js';

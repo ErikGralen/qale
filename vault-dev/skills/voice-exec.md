@@ -2,6 +2,9 @@
 type: skill
 skill_kind: voice
 summary: Exec voice — outcomes and decisions, no process
+bindings:
+  - mode: forced
+    audience: executives
 ---
 
 # Voice: executive

@@ -53,16 +53,16 @@ export class SessionHarness {
   /**
    * Whether propose-tools are unlocked. Gated skills require at least one
    * checkpoint advance (the model must give its digest/outline before drafting);
-   * un-gated skills are always open.
+   * un-gated skills are always open. A gate with no checkpoints is meaningless —
+   * the advance_checkpoint tool is never registered — so it never locks.
    */
   canPropose(): boolean {
-    if (!this.config.gateOutput) return true;
+    if (!this.config.gateOutput || this.config.checkpoints.length === 0) return true;
     return this.checkpointIndex >= 0;
   }
 
   gateMessage(): string {
-    return `Rejected: complete your outline first — call advance_checkpoint (e.g. "${
-      this.config.checkpoints[0] ?? 'outline'
-    }") after giving the digest and outline, then propose.`;
+    const first = this.config.checkpoints[0] ?? 'digest';
+    return `Rejected: give your ${first} first and record it with advance_checkpoint("${first}") — proposing unlocks after your first checkpoint.`;
   }
 }

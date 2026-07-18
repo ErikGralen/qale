@@ -18,7 +18,9 @@ import {
   type SourceNoteFrontmatter,
   type SourceRef,
 } from '@pm/domain';
+import type { SkillEvent } from '@pm/sessions';
 import type { BacklinkRow, IndexedNote, UseCaseContext } from '../ports.js';
+import { skillsForEvent } from './skills.js';
 
 export async function getNote(ctx: UseCaseContext, path: string): Promise<Note | null> {
   return ctx.vault.readNote(path);
@@ -64,7 +66,6 @@ export interface CaptureMeetingInput {
   body: string;
   source?: SourceRef;
   participants?: string[];
-  safeSpace?: boolean;
 }
 
 /**
@@ -81,41 +82,33 @@ export async function captureMeeting(ctx: UseCaseContext, input: CaptureMeetingI
   const desired = `${dirForType('meeting')}/${fileSlug(summary, date)}.md`;
   const path = await freePath(ctx, desired);
 
-  // Safe-space (PLAN-V2 §3.4): capture off — the transcript is NOT retained.
-  let transcriptRef: string | null = null;
   const committed: string[] = [];
-  if (!input.safeSpace) {
-    const tPath = await freePath(
-      ctx,
-      `${dirForType('source')}/${fileSlug(`${summary} transcript`, date)}.md`,
-    );
-    const tFrontmatter: SourceNoteFrontmatter = {
-      type: 'source',
-      summary: `Transcript — ${summary}`,
-      status: 'new',
-      source: input.source ?? { system: 'transcript' },
-      captured: date,
-    };
-    const tNote = await ctx.vault.writeNote(tPath, tFrontmatter, input.body.trim());
-    ctx.index.reindex(tNote);
-    committed.push(tNote.path);
-    transcriptRef = `[[${tNote.slug}]]`;
-  }
+  const tPath = await freePath(
+    ctx,
+    `${dirForType('source')}/${fileSlug(`${summary} transcript`, date)}.md`,
+  );
+  const tFrontmatter: SourceNoteFrontmatter = {
+    type: 'source',
+    summary: `Transcript — ${summary}`,
+    status: 'new',
+    source: input.source ?? { system: 'transcript' },
+    captured: date,
+  };
+  const tNote = await ctx.vault.writeNote(tPath, tFrontmatter, input.body.trim());
+  ctx.index.reindex(tNote);
+  committed.push(tNote.path);
+  const transcriptRef = `[[${tNote.slug}]]`;
 
   const frontmatter: MeetingFrontmatter = {
     type: 'meeting',
     summary,
     date,
-    // Safe-space meetings carry no transcript, so there is nothing to process.
-    ...(input.safeSpace ? {} : { status: 'new' as const }),
+    status: 'new' as const,
     ...(input.participants ? { participants: input.participants } : {}),
     ...(input.source ? { source: input.source } : {}),
-    ...(input.safeSpace ? { safe_space: true } : {}),
-    ...(transcriptRef ? { transcript: transcriptRef } : {}),
+    transcript: transcriptRef,
   };
-  const body = input.safeSpace
-    ? `_Safe-space meeting — capture off, transcript not retained. Nothing is formalized from this meeting._\n`
-    : `## Notes\n\n## Summary\n\n_Unprocessed — After-Meeting proposes this section as a card._\n`;
+  const body = `## Notes\n\n## Summary\n\n_Unprocessed — After-Meeting proposes this section as a card._\n`;
   const note = await ctx.vault.writeNote(path, frontmatter, body);
   ctx.index.reindex(note);
   committed.push(note.path);
@@ -167,8 +160,6 @@ export interface IngestCaptureInput {
   title?: string;
   /** Primary URL for a link capture. */
   url?: string;
-  /** Transcript only — private meeting, nothing retained or formalized. */
-  safeSpace?: boolean;
   /** Transcript only — someone else's meeting: filed as a source (signal), not a meeting. */
   external?: boolean;
   /** External transcript only — whose meeting it was. */
@@ -191,6 +182,31 @@ export interface IngestCaptureResult {
   kind: CaptureKind;
   /** The session the capture should kick off, if it needs processing. */
   followUp?: IngestFollowUp;
+  /** Further bound skills the same event fires — always run headlessly. */
+  extras?: IngestFollowUp[];
+}
+
+/**
+ * Which sessions a capture event fires (Skills v2): the workspace's triggered
+ * bindings decide; the hardwired default is the fallback when nothing is bound
+ * (e.g. a workspace whose skill copies predate bindings). The first hit keeps
+ * the branch's foreground/background semantics; any further hits run headless.
+ */
+async function boundFollowUps(
+  ctx: UseCaseContext,
+  event: SkillEvent,
+  payload: Record<string, unknown>,
+  fallbackType: string | null,
+  mk: (sessionType: string) => IngestFollowUp,
+): Promise<{ followUp?: IngestFollowUp; extras?: IngestFollowUp[] }> {
+  const hits = await skillsForEvent(ctx, event, payload);
+  const types = hits.length > 0 ? hits.map((h) => h.sessionType) : fallbackType ? [fallbackType] : [];
+  if (types.length === 0) return {};
+  const [first, ...rest] = types;
+  return {
+    followUp: mk(first!),
+    ...(rest.length > 0 ? { extras: rest.map((t) => ({ ...mk(t), background: true })) } : {}),
+  };
 }
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
@@ -216,34 +232,39 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
         body: input.text,
         origin: input.origin,
       });
-      return {
-        note,
-        kind,
-        followUp: {
-          sessionType: 'external-transcript',
-          prompt: `Run the External-Transcript session on ${note.path}: the PO was not in this meeting. Extract cited insights and customer signals as approval cards — never decisions.`,
+      const dispatched = await boundFollowUps(
+        ctx,
+        'capture.transcript',
+        { origin: 'external', path: note.path },
+        'external-transcript',
+        (sessionType) => ({
+          sessionType,
+          prompt: `Run the ${sessionType} session on ${note.path}: the PO was not in this meeting. Extract cited insights and customer signals as approval cards — never decisions.`,
           tabTitle: `Signals: ${title}`,
           background: true,
-        },
-      };
+        }),
+      );
+      return { note, kind, ...dispatched };
     }
-    const note = await captureMeeting(ctx, { title, body: input.text, safeSpace: input.safeSpace });
-    if (input.safeSpace) return { note, kind };
-    return {
-      note,
-      kind,
-      followUp: {
-        sessionType: 'after-meeting',
-        prompt: `Run the After-Meeting session on ${note.path}: read the meeting note and its linked transcript plus related memory, then produce the truth delta as approval cards.`,
+    const note = await captureMeeting(ctx, { title, body: input.text });
+    const dispatched = await boundFollowUps(
+      ctx,
+      'capture.transcript',
+      { origin: 'po', path: note.path },
+      'after-meeting',
+      (sessionType) => ({
+        sessionType,
+        prompt: `Run the ${sessionType} session on ${note.path}: read the meeting note and its linked transcript plus related memory, then produce the truth delta as approval cards.`,
         tabTitle: `After-Meeting: ${title}`,
         background: true,
-      },
-    };
+      }),
+    );
+    return { note, kind, ...dispatched };
   }
 
-  const intakeFollowUp = (note: Note, display: string): IngestFollowUp => ({
-    sessionType: 'intake',
-    prompt: `Run the Intake session on ${note.path}: read the capture, search the memory it might touch, and propose how to file and link it as approval cards. Ask me if something is unclear.`,
+  const intakeFollowUp = (note: Note, display: string) => (sessionType: string): IngestFollowUp => ({
+    sessionType,
+    prompt: `Run the ${sessionType} session on ${note.path}: read the capture, search the memory it might touch, and propose how to file and link it as approval cards. Ask me if something is unclear.`,
     tabTitle: `Intake: ${display}`,
   });
 
@@ -262,7 +283,14 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
     const note = await ctx.vault.writeNote(path, frontmatter, input.text.trim());
     ctx.index.reindex(note);
     await ctx.git.commitPaths([note.path], `source: ${summary}`);
-    return { note, kind, followUp: intakeFollowUp(note, summary) };
+    const dispatched = await boundFollowUps(
+      ctx,
+      'capture.ingested',
+      { kind, path: note.path },
+      'intake',
+      intakeFollowUp(note, summary),
+    );
+    return { note, kind, ...dispatched };
   }
 
   if (kind === 'screenshot') {
@@ -285,11 +313,27 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
     const note = await ctx.vault.writeNote(path, frontmatter, body);
     ctx.index.reindex(note);
     await ctx.git.commitPaths([note.path, assetPath], `source: ${summary}`);
-    return { note, kind, followUp: intakeFollowUp(note, summary) };
+    const dispatched = await boundFollowUps(
+      ctx,
+      'capture.ingested',
+      { kind, path: note.path },
+      'intake',
+      intakeFollowUp(note, summary),
+    );
+    return { note, kind, ...dispatched };
   }
 
   const note = await captureNote(ctx, { body: input.text, summary: title });
-  return { note, kind: 'note' };
+  // Quick notes have no default follow-up, but a workspace binding on
+  // `capture.ingested` with `when: {kind: note}` can opt in.
+  const dispatched = await boundFollowUps(
+    ctx,
+    'capture.ingested',
+    { kind: 'note', path: note.path },
+    null,
+    intakeFollowUp(note, title),
+  );
+  return { note, kind: 'note', ...dispatched };
 }
 
 /** Save an edit to an authored/derived note body (immutable-body types reject). */
@@ -409,6 +453,15 @@ export async function renameNote(ctx: UseCaseContext, input: RenameNoteInput): P
   ctx.index.reindex(note);
   await ctx.git.commitPaths([existing.path, note.path], `rename: ${existing.slug} → ${note.slug}`);
   return note;
+}
+
+/** Delete a note: remove from disk, drop from index, and commit. */
+export async function deleteNote(ctx: UseCaseContext, path: string): Promise<void> {
+  const existing = await ctx.vault.readNote(path);
+  if (!existing) throw new Error(`note not found: ${path}`);
+  await ctx.vault.remove(path);
+  ctx.index.removeByPath(path);
+  await ctx.git.commitPaths([path], `delete: ${existing.slug}`);
 }
 
 /** Write validated frontmatter (from the properties form) — never hand-edited. */

@@ -35,7 +35,7 @@ export const TYPE_RULES: Record<NoteType, TypeRule> = {
     bodyEditable: true,
     // `transcript` is mutable so a transcript can be matched to a pre-created
     // meeting note after the fact; the transcript source itself stays immutable.
-    mutableFields: ['status', 'summary', 'title', 'tags', 'safe_space', 'customer', 'transcript', 'series'],
+    mutableFields: ['status', 'summary', 'title', 'tags', 'customer', 'transcript', 'series'],
   },
   decision: {
     bodyEditable: false,

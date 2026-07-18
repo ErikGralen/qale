@@ -58,9 +58,6 @@ export function SettingsView() {
   const setSchedule = async (type: string, patch: { dayOfWeek?: number; hour?: number; enabled?: boolean }) => {
     setSettings(await invoke['settings:setSchedule'](type, patch));
   };
-  const setAutoApply = async (type: string, on: boolean) => {
-    setSettings(await invoke['settings:setAutoApply'](type, on));
-  };
   const runNow = async (type: string) => {
     await invoke['schedule:runNow'](type);
     setRan(type);
@@ -190,9 +187,6 @@ export function SettingsView() {
               lands in the Inbox as cards, nothing is sent.
             </p>
             {settings.schedules.map((sc) => {
-              const earned =
-                stats && stats.approvalRate !== null && stats.approvalRate >= 0.9 && stats.accepted >= 5;
-              const autoOn = settings.autoApplyTypes.includes(sc.sessionType);
               return (
                 <div key={sc.sessionType} className="rounded-lg border border-border bg-card p-3">
                   <div className="flex items-center justify-between gap-2">
@@ -237,18 +231,6 @@ export function SettingsView() {
                       <Play className="size-3.5" /> {ran === sc.sessionType ? 'Running…' : 'Dry-run'}
                     </Button>
                   </div>
-                  <label className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={autoOn}
-                      disabled={!earned && !autoOn}
-                      onChange={(e) => setAutoApply(sc.sessionType, e.target.checked)}
-                    />
-                    Auto-apply internal cards
-                    {earned
-                      ? ` — earned (accepted ${stats!.accepted}, ${Math.round((stats!.approvalRate ?? 0) * 100)}%). Internal writes only, revocable.`
-                      : ' — unlocks after a strong track record.'}
-                  </label>
                 </div>
               );
             })}

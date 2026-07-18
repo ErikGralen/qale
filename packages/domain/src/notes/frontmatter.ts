@@ -123,8 +123,6 @@ export const zMeeting = z.object({
   duration_minutes: z.number().optional(),
   participants: z.array(z.string()).optional(),
   source: zSource.optional(),
-  /** Private meeting — capture off, nothing formalized (PLAN-V2 §3.4). */
-  safe_space: z.boolean().optional(),
   customer: zRef.optional(),
   /**
    * The immutable transcript, stored as a source note and linked — the meeting
@@ -212,7 +210,7 @@ export const zSession = z.object({
  * config (checkpoints, tiers, guardrails) is parsed by @pm/sessions from the raw
  * file; the note schema only needs enough to list and route it.
  */
-export const SKILL_KINDS = ['session', 'voice', 'filing'] as const;
+export const SKILL_KINDS = ['session', 'voice', 'filing', 'guide', 'reaction'] as const;
 export type SkillKind = (typeof SKILL_KINDS)[number];
 
 export const zSkill = z.object({

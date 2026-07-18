@@ -28,6 +28,7 @@ import type {
   SessionLifecycle,
   LiveSessionDTO,
   SettingsDTO,
+  SkillDTO,
   ProblemStance,
   TodoStatus,
   VaultInfoDTO,
@@ -60,10 +61,12 @@ export interface InvokeMap {
     args: [sessionType: string, patch: { dayOfWeek?: number; hour?: number; enabled?: boolean }];
     result: SettingsDTO;
   };
-  'settings:setAutoApply': { args: [sessionType: string, on: boolean]; result: SettingsDTO };
   'settings:setMcp': { args: [patch: { enabled?: boolean; port?: number }]; result: SettingsDTO };
   'schedule:runNow': { args: [sessionType: string]; result: { ok: boolean } };
   'models:list': { args: []; result: ModelInfoDTO[] };
+
+  // Skills (v2) — the parsed skill catalogue behind the Skills view
+  'skills:list': { args: []; result: SkillDTO[] };
 
   // Vault
   'vault:pick': { args: []; result: VaultInfoDTO | null };
@@ -80,6 +83,7 @@ export interface InvokeMap {
   'note:save': { args: [input: SaveNoteInput]; result: NoteDTO };
   'note:saveFrontmatter': { args: [input: SaveFrontmatterInput]; result: NoteDTO };
   'note:rename': { args: [input: RenameNoteInput]; result: NoteDTO };
+  'note:delete': { args: [path: string]; result: { ok: boolean } };
   'note:backlinks': { args: [path: string]; result: BacklinkDTO[] };
   'note:resolveLink': { args: [target: string]; result: string | null };
   'note:setProblemStance': { args: [path: string, stance: ProblemStance]; result: NoteDTO };
@@ -141,10 +145,10 @@ export const INVOKE_CHANNELS = [
   'settings:setAtlassian',
   'settings:setModel',
   'settings:setSchedule',
-  'settings:setAutoApply',
   'settings:setMcp',
   'schedule:runNow',
   'models:list',
+  'skills:list',
   'vault:pick',
   'vault:open',
   'vault:current',
@@ -157,6 +161,7 @@ export const INVOKE_CHANNELS = [
   'note:save',
   'note:saveFrontmatter',
   'note:rename',
+  'note:delete',
   'note:backlinks',
   'note:resolveLink',
   'note:setProblemStance',

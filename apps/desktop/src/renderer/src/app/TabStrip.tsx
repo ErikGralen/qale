@@ -43,6 +43,8 @@ function iconFor(tab: Tab): LucideIcon {
       return Hash;
     case 'settings':
       return Settings;
+    case 'skills':
+      return Wand2;
     default:
       return FileText;
   }

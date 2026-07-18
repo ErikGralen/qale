@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button, Badge } from '@pm/ui';
-import { AlertTriangle, ArrowRight, Check, Inbox, Layers, MessageSquare, Pencil, Send, Wrench, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Check, Inbox, Layers, MessageSquare, Pencil, Send, Trash2, Wrench, X } from 'lucide-react';
 import type {
   AgentPingDTO,
   OutboundPayloadDTO,
@@ -10,9 +10,55 @@ import type {
   ProposalStatsDTO,
   UpdatePayloadDTO,
 } from '@pm/ipc';
+import { normalizeLinkTarget } from '@pm/domain';
 import { useApp, type SessionOverview } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { sessionLabel, timeAgo } from '../lib/session-meta';
+
+const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
+
+/**
+ * Inline renderer for a short human sentence that may contain `[[wikilinks]]`
+ * (e.g. a proposal's rationale). Each wikilink becomes a clickable link that
+ * resolves and routes exactly like the read-view Markdown component — normalize
+ * the raw target, resolve the slug to a note path over IPC, then open it. Plain
+ * text passes through unchanged so the card's typography is preserved.
+ */
+function WikiText({ text, onOpen }: { text: string; onOpen: (path: string) => void }) {
+  const nodes: ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  WIKILINK_RE.lastIndex = 0;
+  while ((match = WIKILINK_RE.exec(text)) !== null) {
+    if (match.index > last) nodes.push(text.slice(last, match.index));
+    const { target, alias } = normalizeLinkTarget(match[1] ?? '');
+    nodes.push(
+      <button
+        key={match.index}
+        className="text-brand hover:underline"
+        onClick={async (e) => {
+          e.stopPropagation();
+          const path = await invoke['note:resolveLink'](target);
+          if (path) onOpen(path);
+        }}
+      >
+        {alias ?? target}
+      </button>,
+    );
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return <>{nodes}</>;
+}
+
+/** Strip `[[wikilink]]` syntax to its bare label — for non-interactive contexts
+ *  (e.g. a truncated preview already wrapped in a button). */
+function stripWikilinks(text: string): string {
+  return text.replace(WIKILINK_RE, (_full, inner: string) => {
+    const { target, alias } = normalizeLinkTarget(inner);
+    return alias ?? target;
+  });
+}
 
 const KIND_LABEL: Record<string, string> = { note: 'new note', decision: 'decision', update: 'update', outbound: 'outbound draft' };
 
@@ -82,6 +128,7 @@ export function InboxView() {
     openChat,
     openPing,
     dismissPing,
+    resolvePingItem,
     markSessionSeen,
   } = useApp();
   const [busy, setBusy] = useState(false);
@@ -92,6 +139,9 @@ export function InboxView() {
   const [streak, setStreak] = useState(0);
   const [audit, setAudit] = useState(false);
   const [focusIdx, setFocusIdx] = useState(0);
+  /** Failures from the keyboard one-tap path — surfaced above the Librarian
+   * section, since the row-level error display belongs to the mouse path. */
+  const [pingError, setPingError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const SPOT_AUDIT_EVERY = 5;
@@ -132,21 +182,29 @@ export function InboxView() {
     return [...bySession.values()].sort((a, b) => b.newest - a.newest);
   }, [queue, sessions]);
 
+  // The librarian is one presence, not two: its prepared fixes leave the
+  // session pile and join its suggestions in the Librarian section below.
+  const sessionGroups = useMemo(() => groups.filter((g) => !isLibrarianGroup(g)), [groups]);
+  const librarianGroup = useMemo(() => groups.find(isLibrarianGroup) ?? null, [groups]);
+
   // Sessions that finished with nothing to approve — an answer waiting to be read.
   const results = useMemo(
     () => sessions.filter((s) => s.lifecycle === 'active' && s.unread && !s.running && s.pendingCards === 0),
     [sessions],
   );
 
-  // Stakes descending: approvals, finished sessions, then maintenance — the
-  // pings can always wait, so they sit last and never count as "need you".
+  // Stakes descending: the PO's own sessions' output, finished sessions, then
+  // the librarian — its fixes are still approvals ("need you"), but the
+  // suggestion pings can always wait and never count.
   const items = useMemo<QueueItem[]>(
     () => [
-      ...groups.flatMap((g) => g.cards.map((proposal): QueueItem => ({ kind: 'card', proposal, group: g }))),
+      ...sessionGroups.flatMap((g) => g.cards.map((proposal): QueueItem => ({ kind: 'card', proposal, group: g }))),
       ...results.map((session): QueueItem => ({ kind: 'result', session })),
+      ...(librarianGroup?.cards.map((proposal): QueueItem => ({ kind: 'card', proposal, group: librarianGroup })) ??
+        []),
       ...pings.map((ping): QueueItem => ({ kind: 'ping', ping })),
     ],
-    [groups, pings, results],
+    [sessionGroups, librarianGroup, pings, results],
   );
 
   useEffect(() => {
@@ -267,6 +325,35 @@ export function InboxView() {
 
   const internalCount = queue.filter((p) => p.kind !== 'outbound').length;
 
+  // Keyboard one-taps on the focused suggestion card: 1-9 applies that option
+  // of its first open row, s skips the row. True to "nothing silent", a
+  // failure surfaces as a banner instead of vanishing.
+  const keySuggestion = (ping: AgentPingDTO, key: string): boolean => {
+    const payload = ping.payload;
+    if (!payload) return false;
+    let itemId: string | null = null;
+    let choice: string | undefined;
+    if (payload.kind === 'link-choices') {
+      const row = payload.items.find((i) => !i.resolution && i.options.length > 0);
+      if (!row) return false;
+      itemId = row.id;
+      if (key !== 's') choice = row.options[Number(key) - 1]?.slug;
+    } else {
+      const row = payload.items.find((i) => !i.resolution && i.mentions.length > 0);
+      if (!row) return false;
+      itemId = row.id;
+      if (key !== 's') choice = row.mentions[Number(key) - 1]?.host;
+    }
+    if (key !== 's' && !choice) return false;
+    const action = key === 's' ? ({ action: 'skip' } as const) : ({ action: 'fix', choice: choice! } as const);
+    void resolvePingItem(ping.id, itemId, action)
+      .then(() => setPingError(null))
+      .catch((err: unknown) =>
+        setPingError(err instanceof Error ? err.message : 'Could not apply that suggestion — try the row itself.'),
+      );
+    return true;
+  };
+
   // Full keyboard path: navigate, approve/open, dismiss without the mouse.
   const onKeyDown = (e: React.KeyboardEvent) => {
     const t = e.target as HTMLElement;
@@ -290,20 +377,27 @@ export function InboxView() {
     } else if (e.key === 'o' && current) {
       e.preventDefault();
       openItemSession(current);
+    } else if (current?.kind === 'ping' && /^[1-9s]$/.test(e.key) && !busy) {
+      if (keySuggestion(current.ping, e.key)) e.preventDefault();
     }
   };
 
   // Where each visual block starts in the flattened queue (for focus mapping).
   let cursor = 0;
-  const groupStarts = groups.map((g) => {
+  const groupStarts = sessionGroups.map((g) => {
     const start = cursor;
     cursor += g.cards.length;
     return start;
   });
   const resultStart = cursor;
-  const pingStart = resultStart + results.length;
+  const librarianStart = resultStart + results.length;
+  const pingStart = librarianStart + (librarianGroup?.cards.length ?? 0);
   /** Approvals and unread results — what the header count means by "need you". */
   const needCount = pingStart;
+  const focusedSuggestion = (() => {
+    const cur = items[focusIdx];
+    return cur?.kind === 'ping' && cur.ping.payload ? cur.ping : null;
+  })();
 
   return (
     <div className="flex h-full flex-col" onKeyDown={onKeyDown}>
@@ -312,10 +406,14 @@ export function InboxView() {
         {needCount > 0 && (
           <span className="text-xs">· {needCount} need{needCount === 1 ? 's' : ''} you</span>
         )}
-        {pings.length > 0 && <span className="text-xs">· {pings.length} maintenance</span>}
+        {pings.length > 0 && (
+          <span className="text-xs">· {pings.length} suggestion{pings.length === 1 ? '' : 's'}</span>
+        )}
         {items.length > 0 && (
           <span className="ml-auto hidden text-xs text-muted-foreground lg:block">
-            ↑↓ navigate · ↵ approve/open · ⌫ dismiss · o open session
+            {focusedSuggestion
+              ? '↑↓ navigate · 1–9 apply · s skip · ↵ chat · ⌫ dismiss'
+              : '↑↓ navigate · ↵ approve/open · ⌫ dismiss · o open session'}
           </span>
         )}
         {internalCount > 1 && (
@@ -370,9 +468,8 @@ export function InboxView() {
           </div>
         ) : (
           <div className="flex flex-col gap-5">
-            {groups.map((g, gi) => {
+            {sessionGroups.map((g, gi) => {
               const review = isReviewGroup(g.sessionType);
-              const librarian = isLibrarianGroup(g);
               // The note the review is about — its meeting page (or source note).
               const anchor = review
                 ? (g.cards.map((c) => c.targetPath).find((t) => t?.startsWith('meetings/')) ??
@@ -404,16 +501,11 @@ export function InboxView() {
                 <section key={g.sessionId} aria-label={groupLabel(g)}>
                   <div className="mb-1.5 flex items-baseline gap-2 px-0.5">
                     <h3 className="min-w-0 shrink-0 truncate text-sm font-semibold">{groupLabel(g)}</h3>
-                    {librarian && (
-                      <span className="min-w-0 truncate text-xs text-muted-foreground">
-                        prepared these fixes — nothing changes until you approve
-                      </span>
-                    )}
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{timeAgo(g.newest)}</span>
                     <span className="ml-auto flex shrink-0 items-center gap-1">
                       {g.cards.filter((c) => c.kind !== 'outbound').length > 1 && (
                         <Button size="sm" variant="ghost" onClick={() => void acceptCards(g.cards)} disabled={busy}>
-                          <Check className="size-3.5" /> {librarian ? `Fix all ${g.cards.length}` : 'Approve all'}
+                          <Check className="size-3.5" /> Approve all
                         </Button>
                       )}
                       {anchor && (
@@ -434,9 +526,9 @@ export function InboxView() {
                       )}
                     </span>
                   </div>
-                  <ul className={`flex flex-col ${librarian ? 'gap-1.5' : 'gap-3'}`}>
+                  <ul className="flex flex-col gap-3">
                     {hk.length === 0
-                      ? g.cards.map((p, ci) => renderCard(p, ci, librarian && p.kind === 'update'))
+                      ? g.cards.map((p, ci) => renderCard(p, ci, false))
                       : [
                           ...g.cards.slice(0, hkStart).map((p, ci) => renderCard(p, ci, false)),
                           <li key="hk" className="flex flex-col gap-1.5">
@@ -485,21 +577,60 @@ export function InboxView() {
               </section>
             )}
 
-            {pings.length > 0 && (
-              <section aria-label="Maintenance">
+            {(librarianGroup || pings.length > 0) && (
+              <section aria-label="Librarian">
                 {needCount === 0 && (
                   <p className="mb-3 flex items-center gap-2 px-0.5 text-sm text-muted-foreground">
                     <Check className="size-4 text-success" aria-hidden />
-                    Nothing needs you — only housekeeping below, whenever suits.
+                    Nothing needs you — just the librarian's tidy-ups below, whenever suits.
                   </p>
                 )}
-                <h3 className="mb-1.5 flex items-baseline gap-2 px-0.5 text-sm font-semibold">
-                  Maintenance
-                  <span className="text-xs font-normal text-muted-foreground">
-                    loose ends the librarian won't guess at — chat to sort them together
+                <div className="mb-1.5 flex items-baseline gap-2 px-0.5">
+                  <h3 className="shrink-0 text-sm font-semibold">Librarian</h3>
+                  <span className="min-w-0 truncate text-xs text-muted-foreground">
+                    keeps the memory connected — a tap approves, nothing happens silently
                   </span>
-                </h3>
+                  {librarianGroup && librarianGroup.cards.length > 1 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="ml-auto shrink-0"
+                      onClick={() => void acceptCards(librarianGroup.cards)}
+                      disabled={busy}
+                    >
+                      <Check className="size-3.5" /> Fix all {librarianGroup.cards.length}
+                    </Button>
+                  )}
+                </div>
+                {pingError && (
+                  <div className="mb-1.5 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-1.5 text-sm text-destructive">
+                    <span className="flex-1">{pingError}</span>
+                    <Button size="sm" variant="ghost" onClick={() => setPingError(null)}>
+                      Dismiss
+                    </Button>
+                  </div>
+                )}
                 <ul className="flex flex-col gap-1.5">
+                  {librarianGroup?.cards.map((p, ci) => {
+                    const idx = librarianStart + ci;
+                    const shared = {
+                      proposal: p,
+                      busy,
+                      focused: idx === focusIdx,
+                      error: errors[p.id] ?? null,
+                      onFocus: () => setFocusIdx(idx),
+                      onAccept: (edited?: unknown) => onAccept(p, edited),
+                      onReject: () => onReject(p),
+                      onOpen: openDoc,
+                    };
+                    // Prepared fixes stay glance-and-go rows; anything richer
+                    // (a note proposal, say) gets the full card.
+                    return p.kind === 'update' ? (
+                      <HousekeepingItem key={p.id} {...shared} />
+                    ) : (
+                      <CardItem key={p.id} {...shared} />
+                    );
+                  })}
                   {pings.map((ping, i) =>
                     ping.payload ? (
                       <SuggestionPing
@@ -621,7 +752,7 @@ function SuggestionPing({
   onOpen: () => void;
   onDismiss: () => void;
 }) {
-  const { resolvePingItem, openDoc } = useApp();
+  const { resolvePingItem, openDoc, deleteNote } = useApp();
   const [busyItem, setBusyItem] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLLIElement>(null);
@@ -687,6 +818,10 @@ function SuggestionPing({
                 onOpen={openDoc}
                 onFix={(host) => void resolve(item.id, { action: 'fix', choice: host })}
                 onSkip={() => void resolve(item.id, { action: 'skip' })}
+                onDelete={async () => {
+                  await deleteNote(item.path);
+                  await resolve(item.id, { action: 'skip' });
+                }}
               />
             ))}
       </ul>
@@ -794,12 +929,14 @@ function OrphanRow({
   onOpen,
   onFix,
   onSkip,
+  onDelete,
 }: {
   item: PingOrphanItemDTO;
   busy: boolean;
   onOpen: (path: string) => void;
   onFix: (host: string) => void;
   onSkip: () => void;
+  onDelete?: () => void;
 }) {
   const slug = item.path.replace(/\.md$/, '');
   if (item.resolution) {
@@ -832,7 +969,7 @@ function OrphanRow({
             <ChoiceChip
               key={m.host}
               label={m.host.replace(/\.md$/, '').split('/').pop() ?? m.host}
-              title={`“${m.line.trim()}” — link ${slug} here`}
+              title={`"${m.line.trim()}" — link ${slug} here`}
               disabled={busy}
               onClick={() => onFix(m.host)}
             />
@@ -840,7 +977,17 @@ function OrphanRow({
           <span className="text-xs text-muted-foreground">tap to link it there</span>
         </>
       ) : (
-        <span className="text-xs text-muted-foreground italic">nothing mentions it — chat or skip</span>
+        <span className="text-xs text-muted-foreground italic">nothing mentions it</span>
+      )}
+      {onDelete && item.mentions.length === 0 && (
+        <button
+          className="rounded px-1.5 py-0.5 text-xs text-destructive/70 hover:bg-destructive/8 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
+          onClick={onDelete}
+          disabled={busy}
+          title={`Delete ${item.path}`}
+        >
+          <span className="flex items-center gap-1"><Trash2 className="size-3" /> Delete</span>
+        </button>
       )}
       <span className="ml-auto">
         <SkipButton disabled={busy} onClick={onSkip} />
@@ -952,7 +1099,7 @@ function HousekeepingItem(props: CardItemProps) {
         onClick={() => setExpanded(true)}
         title="Show the full card"
       >
-        {proposal.rationale}
+        {stripWikilinks(proposal.rationale)}
       </button>
       <button
         className="max-w-48 shrink-0 truncate font-mono text-xs text-muted-foreground hover:text-foreground"
@@ -1082,7 +1229,9 @@ function CardItem({
       <div className="p-4">
         {/* The human sentence leads — what approving does. Kind and target are
             metadata below it, not the headline. */}
-        <p className="mb-1 text-sm font-medium">{proposal.rationale}</p>
+        <p className="mb-1 text-sm font-medium">
+          <WikiText text={proposal.rationale} onOpen={onOpen} />
+        </p>
 
         <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-xs text-muted-foreground">{KIND_LABEL[proposal.kind] ?? proposal.kind}</span>

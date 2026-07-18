@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Badge, Button, Separator } from '@pm/ui';
-import { Link2, FileText, Star, Play, Sparkles } from 'lucide-react';
+import { Link2, FileText, Star, Play, Sparkles, Trash2 } from 'lucide-react';
 import { useApp } from '../state/app-state';
 import { Markdown } from '../components/Markdown';
 import { NoteEditor } from '../components/NoteEditor';
@@ -65,8 +65,9 @@ function TitleEditor({
 }
 
 export function NoteView({ path }: { path: string }) {
-  const { docData, openDoc, loadDoc, saveNote, renameNote, openSession, activeTabId, keepTab, favorites, toggleFavorite } =
+  const { docData, openDoc, loadDoc, saveNote, renameNote, deleteNote, openSession, activeTabId, keepTab, favorites, toggleFavorite } =
     useApp();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const data = docData[path];
   const currentNote = data?.note ?? null;
   const backlinks = data?.backlinks ?? [];
@@ -90,13 +91,10 @@ export function NoteView({ path }: { path: string }) {
 
   const editable = currentNote.bodyEditable;
   const stance = currentNote.frontmatter['stance'] as string | undefined;
-  // An upcoming, non-safe-space meeting without prep gets the brief offer here,
+  // An upcoming meeting without prep gets the brief offer here,
   // on the page it would write to — never as an inbox item.
   const upcoming = currentNote.type === 'meeting' ? upcomingLabel(currentNote.frontmatter) : null;
-  const offerBrief =
-    upcoming !== null &&
-    currentNote.frontmatter['safe_space'] !== true &&
-    !/^## Prep\b/m.test(currentNote.body);
+  const offerBrief = upcoming !== null && !/^## Prep\b/m.test(currentNote.body);
   const sessionSkill =
     currentNote.type === 'skill' && currentNote.frontmatter['skill_kind'] === 'session'
       ? (currentNote.frontmatter['session_type'] as string | undefined)
@@ -121,6 +119,26 @@ export function NoteView({ path }: { path: string }) {
           >
             <Star className={`size-4 ${favorites.includes(currentNote.path) ? 'fill-brand text-brand' : ''}`} />
           </button>
+          {confirmDelete ? (
+            <>
+              <span className="text-xs text-destructive">Delete this note?</span>
+              <Button size="sm" variant="destructive" onClick={() => void deleteNote(currentNote.path)}>
+                Yes, delete
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <button
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              onClick={() => setConfirmDelete(true)}
+              aria-label="Delete note"
+              title="Delete note"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          )}
           {sessionSkill && (
             <Button size="sm" onClick={() => openSession(sessionSkill, { title: currentNote.title })}>
               <Play className="size-3.5" /> Start session

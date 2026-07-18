@@ -6,3 +6,4 @@ export * from './use-cases/search.js';
 export * from './use-cases/proposals.js';
 export * from './use-cases/pings.js';
 export * from './use-cases/todos.js';
+export * from './use-cases/skills.js';

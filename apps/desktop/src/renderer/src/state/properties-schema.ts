@@ -41,7 +41,6 @@ export const FIELDS: Record<NoteType, FieldSpec[]> = {
     { key: 'date', label: 'Date', widget: 'date' },
     { key: 'participants', label: 'Participants', widget: 'tags' },
     { key: 'series', label: 'Series', widget: 'text' },
-    { key: 'safe_space', label: 'Safe space (private)', widget: 'bool' },
     TAGS,
   ],
   decision: [
@@ -93,7 +92,7 @@ export const FIELDS: Record<NoteType, FieldSpec[]> = {
   ],
   skill: [
     SUMMARY,
-    { key: 'skill_kind', label: 'Kind', widget: 'select', options: ['session', 'voice', 'filing'] },
+    { key: 'skill_kind', label: 'Kind', widget: 'select', options: ['session', 'voice', 'filing', 'guide', 'reaction'] },
     TAGS,
   ],
   note: [SUMMARY, STATUS, TAGS],

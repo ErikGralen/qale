@@ -9,6 +9,7 @@ import { NoteView } from './app/NoteView';
 import { ChatView } from './app/ChatView';
 import { ChatsView } from './app/ChatsView';
 import { SettingsView } from './app/SettingsView';
+import { SkillsView } from './app/SkillsView';
 import { InboxView } from './app/InboxView';
 import { TodosView } from './app/TodosView';
 import { MemoryView } from './app/MemoryView';
@@ -53,6 +54,8 @@ function Center() {
       return <ContextView key={activeTab.tag} tag={activeTab.tag} />;
     case 'settings':
       return <SettingsView />;
+    case 'skills':
+      return <SkillsView />;
     default:
       return <Landing />;
   }

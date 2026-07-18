@@ -51,7 +51,6 @@ export function CaptureDialog({
   const [image, setImage] = useState<{ name: string; dataUrl: string } | null>(null);
   const [override, setOverride] = useState<CaptureKind | null>(null);
   const [guess, setGuess] = useState<CaptureClassificationDTO | null>(null);
-  const [safeSpace, setSafeSpace] = useState(false);
   const [external, setExternal] = useState(false);
   const [origin, setOrigin] = useState('');
   const [busy, setBusy] = useState(false);
@@ -71,7 +70,6 @@ export function CaptureDialog({
       setImage(null);
       setOverride(null);
       setGuess(null);
-      setSafeSpace(false);
       setExternal(false);
       setOrigin('');
       setDragOver(false);
@@ -129,9 +127,7 @@ export function CaptureDialog({
     !busy &&
     (image
       ? text.trim().length > 0 // the caption is the claim — required, the agent can't read pixels
-      : kind === 'transcript'
-        ? text.trim().length > 0 || safeSpace
-        : text.trim().length > 0);
+      : text.trim().length > 0);
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -142,7 +138,6 @@ export function CaptureDialog({
         text: text.trim(),
         title: title.trim() || undefined,
         url: kind === 'link' ? detectedUrl : undefined,
-        safeSpace: kind === 'transcript' && !external ? safeSpace : undefined,
         external: kind === 'transcript' ? external : undefined,
         origin: kind === 'transcript' && external ? origin.trim() || undefined : undefined,
         attachment: image ? { name: image.name, dataBase64: image.dataUrl.split(',')[1] ?? '' } : undefined,
@@ -158,9 +153,7 @@ export function CaptureDialog({
     : kind === 'transcript'
       ? external
         ? 'Filed under sources/ as signal — insights and customer updates arrive in your Inbox, never decisions.'
-        : safeSpace
-          ? 'Files a stub meeting note only — no transcript, no session.'
-          : 'Lands in meetings/ — After-Meeting reviews it in the background; its cards arrive in your Inbox.'
+        : 'Lands in meetings/ — After-Meeting reviews it in the background; its cards arrive in your Inbox.'
       : kind === 'link'
         ? 'Filed in notes/ with the link — Intake connects it to your memory as cards you approve.'
         : kind === 'screenshot'
@@ -171,9 +164,7 @@ export function CaptureDialog({
     kind === 'transcript'
       ? external
         ? 'Capture & extract signals'
-        : safeSpace
-          ? 'Record safe-space meeting'
-          : 'Capture & review'
+        : 'Capture & review'
       : kind === 'link' || kind === 'screenshot'
         ? 'Capture & connect'
         : 'Capture';
@@ -290,25 +281,17 @@ export function CaptureDialog({
               <input
                 type="checkbox"
                 checked={external}
-                onChange={(e) => {
-                  setExternal(e.target.checked);
-                  if (e.target.checked) setSafeSpace(false);
-                }}
+                onChange={(e) => setExternal(e.target.checked)}
               />
               Someone else's meeting — I wasn't in it; extract signals only, file as a source.
             </label>
-            {external ? (
+            {external && (
               <Input
                 value={origin}
                 onChange={(e) => setOrigin(e.target.value)}
                 placeholder="Whose meeting? (e.g. Jonas Palm — sales call)"
                 aria-label="Origin"
               />
-            ) : (
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                <input type="checkbox" checked={safeSpace} onChange={(e) => setSafeSpace(e.target.checked)} />
-                Safe space — private meeting: capture off, transcript not retained, nothing formalized.
-              </label>
             )}
           </div>
         )}

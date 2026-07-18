@@ -27,6 +27,7 @@ import type {
   ProposalDTO,
   SearchHitDTO,
   SessionLifecycle,
+  SkillDTO,
   TodoStatus,
   VaultInfoDTO,
   VaultTreeDTO,
@@ -53,6 +54,7 @@ export type Tab = { id: string; title: string; preview?: boolean } & (
   | { kind: 'folder'; dir: string }
   | { kind: 'context'; tag: string }
   | { kind: 'settings' }
+  | { kind: 'skills' }
 );
 
 interface DocData {
@@ -99,6 +101,9 @@ interface AppState {
   /** Merged session rows (stored + live + cards + seen) — rail, Inbox, history. */
   sessions: SessionOverview[];
   pings: AgentPingDTO[];
+  /** The parsed skill catalogue (Skills v2) — refreshed on skill-file changes. */
+  skills: SkillDTO[];
+  refreshSkills: () => Promise<void>;
   /** What genuinely awaits the PO: pending cards + unread sessions. Maintenance
    * pings are visible in the Inbox but never counted — they can wait. */
   attentionCount: number;
@@ -133,6 +138,8 @@ interface AppState {
   /** Open a context (tag) page — the cross-cutting project/product/area axis. */
   openContext: (tag: string, opts?: { preview?: boolean }) => void;
   openSettings: (opts?: { preview?: boolean }) => void;
+  /** Open the Skills view — the parsed skill catalogue (Skills v2). */
+  openSkills: (opts?: { preview?: boolean }) => void;
   closeTab: (id: string) => void;
   closeOtherTabs: (id: string) => void;
   closeAllTabs: () => void;
@@ -163,6 +170,8 @@ interface AppState {
   saveFrontmatter: (path: string, frontmatter: Record<string, unknown>) => Promise<void>;
   /** Retitle a note; the file may move, so open tabs/favourites follow the new path. */
   renameNote: (path: string, title: string) => Promise<NoteDTO>;
+  /** Delete a note: close open tabs, drop from favourites, purge docData, remove file. */
+  deleteNote: (path: string) => Promise<void>;
   search: (query: string) => Promise<SearchHitDTO[]>;
 }
 
@@ -243,6 +252,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [chats, setChats] = useState<ChatRefDTO[]>([]);
   const [live, setLive] = useState<Record<string, LiveSessionDTO>>({});
   const [pings, setPings] = useState<AgentPingDTO[]>([]);
+  const [skills, setSkills] = useState<SkillDTO[]>([]);
   const [seen, setSeen] = useState<Record<string, number>>({});
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeTabId) ?? null, [tabs, activeTabId]);
@@ -261,6 +271,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setTree(await invoke['vault:tree']());
     } catch {
       setTree(null);
+    }
+  }, []);
+
+  const refreshSkills = useCallback(async () => {
+    try {
+      setSkills(await invoke['skills:list']());
+    } catch {
+      setSkills([]);
     }
   }, []);
 
@@ -427,6 +445,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }),
     [focusOrAddTab],
   );
+  const openSkills = useCallback(
+    (opts?: { preview?: boolean }) => {
+      void refreshSkills();
+      focusOrAddTab({ id: nextId(), kind: 'skills', title: 'Skills' }, (t) => t.kind === 'skills', {
+        preview: opts?.preview ?? true,
+      });
+    },
+    [focusOrAddTab, refreshSkills],
+  );
 
   const closeTab = useCallback((id: string) => {
     setTabs((prev) => {
@@ -533,7 +560,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setTabs((prev) => [...prev, tab]);
         setActiveTabId(tab.id);
       } else {
-        // Nothing to process (plain note, safe-space stub) — show what was filed.
+        // Nothing to process (plain note) — show what was filed.
         focusOrAddTab(
           { id: nextId(), kind: 'doc', path: result.note.path, title: result.note.title },
           (t) => t.kind === 'doc' && t.path === result.note.path,
@@ -753,9 +780,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           refreshProblems(),
           refreshSessions(),
           refreshPings(),
+          refreshSkills(),
         ]);
     },
-    [refreshTree, refreshProposals, refreshProblems, refreshSessions, refreshPings],
+    [refreshTree, refreshProposals, refreshProblems, refreshSessions, refreshPings, refreshSkills],
   );
 
   const openVaultDialog = useCallback(async () => {
@@ -843,6 +871,31 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [vault, refreshTree],
   );
 
+  const deleteNote = useCallback(
+    async (path: string) => {
+      await invoke['note:delete'](path);
+      setDocData((d) => {
+        const { [path]: _, ...rest } = d;
+        return rest;
+      });
+      setTabs((prev) => prev.filter((t) => !(t.kind === 'doc' && t.path === path)));
+      setFavorites((prev) => {
+        if (!prev.includes(path)) return prev;
+        const next = prev.filter((p) => p !== path);
+        if (vault) {
+          try {
+            localStorage.setItem(`${FAVORITES_KEY}:${vault.path}`, JSON.stringify(next));
+          } catch {
+            /* ignore quota */
+          }
+        }
+        return next;
+      });
+      await refreshTree();
+    },
+    [vault, refreshTree],
+  );
+
   const search = useCallback(async (q: string) => {
     if (!q.trim()) return [];
     return invoke['search:query'](q, 20);
@@ -857,6 +910,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (info && active?.kind === 'doc') void loadDoc(active.path);
       const open = new URLSearchParams(window.location.search).get('open');
       if (info && open === '__settings') openSettings();
+      else if (info && open === '__skills') openSkills();
       else if (info && open === '__chat') openSession('chat');
       else if (info && open === '__review') openInbox();
       else if (info && open === '__todos') openTodos();
@@ -875,6 +929,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (event.channel === 'vault:changed') {
         void refreshTree();
         void refreshProblems();
+        if (event.paths.some((p) => p.startsWith('skills/'))) void refreshSkills();
         for (const path of event.paths) if (docData[path]) void loadDoc(path);
       } else if (event.channel === 'proposals:changed') {
         setPendingCount(event.pendingCount);
@@ -908,7 +963,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         openChat({ id: event.sessionId, sessionType: event.sessionType, title: event.title });
       }
     });
-  }, [refreshTree, refreshProblems, refreshProposals, refreshSessions, refreshPings, openChat, loadDoc, docData]);
+  }, [refreshTree, refreshProblems, refreshProposals, refreshSessions, refreshPings, refreshSkills, openChat, loadDoc, docData]);
 
   const value = useMemo<AppState>(
     () => ({
@@ -926,6 +981,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       problems,
       sessions,
       pings,
+      skills,
+      refreshSkills,
       attentionCount,
       markSessionSeen,
       refreshSessions,
@@ -946,6 +1003,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openFolder,
       openContext,
       openSettings,
+      openSkills,
       closeTab,
       closeOtherTabs,
       closeAllTabs,
@@ -968,9 +1026,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       saveNote,
       saveFrontmatter,
       renameNote,
+      deleteNote,
       search,
     }),
-    [vault, tree, tabs, activeTabId, activeTab, docData, openVaultDialog, favorites, toggleFavorite, pendingCount, proposals, problems, sessions, pings, attentionCount, markSessionSeen, refreshSessions, openPing, dismissPing, resolvePingItem, deleteSession, setSessionLifecycle, openDoc, openSession, openChat, openChats, bindTabSession, openInbox, openTodos, openMemory, openSmartView, openFolder, openContext, openSettings, closeTab, closeOtherTabs, closeAllTabs, closeTabsBefore, closeTabsAfter, keepTab, moveTab, setActiveTab, query, ingestCapture, previewProposal, refreshProposals, acceptProposal, rejectProposal, setProblemStance, captureNote, captureTodo, setTodoStatus, saveNote, saveFrontmatter, renameNote, search, loadDoc],
+    [vault, tree, tabs, activeTabId, activeTab, docData, openVaultDialog, favorites, toggleFavorite, pendingCount, proposals, problems, sessions, pings, skills, refreshSkills, attentionCount, markSessionSeen, refreshSessions, openPing, dismissPing, resolvePingItem, deleteSession, setSessionLifecycle, openDoc, openSession, openChat, openChats, bindTabSession, openInbox, openTodos, openMemory, openSmartView, openFolder, openContext, openSettings, openSkills, closeTab, closeOtherTabs, closeAllTabs, closeTabsBefore, closeTabsAfter, keepTab, moveTab, setActiveTab, query, ingestCapture, previewProposal, refreshProposals, acceptProposal, rejectProposal, setProblemStance, captureNote, captureTodo, setTodoStatus, saveNote, saveFrontmatter, renameNote, deleteNote, search, loadDoc],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -8,6 +8,7 @@ import {
   type UseCaseContext,
   captureNote,
   captureTodo,
+  deleteNote,
   ensureDefaultSkills,
   getBacklinks,
   getNote,
@@ -15,6 +16,8 @@ import {
   getMaintenanceReport,
   getProposalStats,
   getVaultTree,
+  listSkills,
+  skillsForEvent,
   queryNotes,
   runLibrarianSweep,
   listPings,
@@ -52,6 +55,7 @@ import {
   pingToDTO,
   problemHeatToDTO,
   proposalToDTO,
+  skillToDTO,
   treeToDTO,
   vaultInfoToDTO,
 } from './dto.js';
@@ -161,7 +165,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
       hasAnthropicKey: !!settings.getAnthropicKey(),
       hasAtlassianCreds: !!settings.getAtlassian(),
       schedules: s.schedules,
-      autoApplyTypes: s.autoApplyTypes,
       mcp: { enabled: s.mcpEnabled, port: s.mcpPort, token: s.mcpToken, running: mcp.isRunning() },
     };
   };
@@ -273,9 +276,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     await settings.setSchedule(sessionType, patch);
     return settingsDTO();
   });
-  handle('settings:setAutoApply', async (sessionType, on) => {
-    await settings.setAutoApply(sessionType, on);
-    return settingsDTO();
+  handle('skills:list', async () => {
+    const summaries = await listSkills(vaultService.requireContext());
+    return summaries.map(skillToDTO);
   });
   handle('schedule:runNow', async (sessionType) => {
     await scheduler.runNow(sessionType);
@@ -354,6 +357,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     const note = await renameNote(vaultService.requireContext(), input);
     return noteToDTO(note);
   });
+  handle('note:delete', async (path) => {
+    await deleteNote(vaultService.requireContext(), path);
+    return { ok: true };
+  });
   handle('note:backlinks', (path) =>
     getBacklinks(vaultService.requireContext(), path).map(backlinkToDTO),
   );
@@ -378,12 +385,14 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   });
   handle('capture:classify', (text, fileName) => classifyCapture(text, fileName));
   handle('capture:ingest', async (input) => {
-    const { note, kind, followUp } = await ingestCapture(vaultService.requireContext(), {
+    const { note, kind, followUp, extras } = await ingestCapture(vaultService.requireContext(), {
       ...input,
       attachment: input.attachment
         ? { name: input.attachment.name, data: Buffer.from(input.attachment.dataBase64, 'base64') }
         : undefined,
     });
+    // Any further skills bound to the same capture event run headlessly alongside.
+    for (const extra of extras ?? []) void fireSession(extra.sessionType, extra.prompt);
     // After-Meeting / External-Transcript run headlessly the moment the capture
     // lands — the gate is the review, not the run. The PO's first touch is the
     // cards in the Inbox (session:status settle pushes the badge + notification).
@@ -424,8 +433,27 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     if (!ctx || !rec) return;
     await completeMeetingReview(ctx, rec.sessionId).catch(() => {});
   };
+  // Triggered reactions (Skills v2): approving a decision card that supersedes an
+  // earlier one fires any skill bound to `decision.superseded` (e.g. a
+  // supersede-sweep reaction). Depth-1 loop guard: the reaction's own writes never
+  // re-trigger. Best-effort — never blocks the accept.
+  const fireSupersedeReactions = async (id: string): Promise<void> => {
+    const ctx = vaultService.context();
+    const rec = ctx?.proposals.get(id);
+    if (!ctx || !rec || rec.kind !== 'decision') return;
+    const supersedes = (rec.payload as { supersedes?: string })?.supersedes;
+    if (!supersedes) return;
+    const skills = await skillsForEvent(ctx, 'decision.superseded', { target: supersedes });
+    for (const s of skills) {
+      void fireSession(
+        s.sessionType,
+        `A decision was just superseded (${supersedes}). Sweep the memory for notes, insights, and hubs that cite the old decision and propose updates to point at the new head, as approval cards.`,
+      );
+    }
+  };
   handle('proposals:accept', async (id, edited) => {
     const result = await acceptProposal(vaultService.requireContext(), id, edited);
+    if (result.ok) await fireSupersedeReactions(id).catch(() => {});
     await afterCardResolved(id);
     notifyProposals();
     return result;

@@ -134,6 +134,40 @@ export function createCheckpointTool(harness: SessionHarness): ToolDefinition {
   });
 }
 
+export const USE_SKILL_TOOL_NAME = 'use_skill';
+
+/**
+ * Dynamic-skill loader (Skills v2): the guide index lists every `skill_kind:
+ * guide` file by name + summary in the system prompt; calling this pulls the
+ * chosen guide's body into context on demand. Keeps rarely-needed reference out
+ * of every prompt while staying one tool-call away.
+ */
+export function createUseSkillTool(ctx: UseCaseContext): ToolDefinition {
+  return defineTool({
+    name: USE_SKILL_TOOL_NAME,
+    label: 'Use skill',
+    description:
+      'Load a guide skill into your context by name (see "Guides available on demand" in your instructions). Use it when a guide is relevant to the current task.',
+    parameters: Type.Object({
+      name: Type.String({ description: 'The guide name, e.g. "spec-review-checklist".' }),
+    }),
+    async execute(_id, params: { name: string }) {
+      const guides = ctx.index
+        .all()
+        .filter((n) => n.type === 'skill' && (n.frontmatter as Record<string, unknown>)['skill_kind'] === 'guide');
+      const wanted = params.name.replace(/\.md$/, '').toLowerCase();
+      const hit = guides.find((g) => g.slug.toLowerCase() === wanted || g.slug.toLowerCase().endsWith(`/${wanted}`));
+      if (!hit) {
+        const names = guides.map((g) => g.slug.split('/').pop()).join(', ');
+        return text(`No guide named "${params.name}". Available: ${names || 'none'}.`);
+      }
+      const note = await ctx.vault.readNote(hit.path);
+      if (!note) return text(`Guide "${params.name}" could not be read.`);
+      return text(`## Guide: ${note.frontmatter.summary}\n\n${note.body.trim()}`);
+    },
+  });
+}
+
 export function createProposeTools(ctx: UseCaseContext, sessionId: string, harness?: SessionHarness): ToolDefinition[] {
   const gate = (): string | null => (harness && !harness.canPropose() ? harness.gateMessage() : null);
   const proposeNote = defineTool({

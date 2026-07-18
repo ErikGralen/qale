@@ -185,7 +185,6 @@ export interface IngestCaptureInputDTO {
   text: string;
   title?: string;
   url?: string;
-  safeSpace?: boolean;
   /** Transcript only — someone else's meeting: filed as a source (signal), not a meeting. */
   external?: boolean;
   /** External transcript only — whose meeting it was (e.g. "Jonas Palm"). */
@@ -440,8 +439,31 @@ export interface SettingsDTO {
   hasAnthropicKey: boolean;
   hasAtlassianCreds: boolean;
   schedules: ScheduleDTO[];
-  autoApplyTypes: string[];
   mcp: { enabled: boolean; port: number; token: string | null; running: boolean };
+}
+
+/** One binding, plus the plain-language sentence the Skills view renders. */
+export interface SkillBindingDTO {
+  mode: 'forced' | 'triggered' | 'dynamic';
+  event?: string;
+  sentence: string;
+}
+
+/**
+ * A skill file as the Skills view sees it (Skills v2): its kind, how it attaches
+ * (bindings as readable sentences), and any frontmatter errors to pin. Clicking a
+ * row opens `path` — the file is the editor.
+ */
+export interface SkillDTO {
+  path: string;
+  slug: string;
+  name: string;
+  kind: 'session' | 'voice' | 'filing' | 'guide' | 'reaction';
+  summary: string;
+  tier?: 'observe' | 'suggest' | 'outbound';
+  bindings: SkillBindingDTO[];
+  errors: string[];
+  mtime: number;
 }
 
 export interface ModelInfoDTO {

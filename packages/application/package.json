@@ -11,7 +11,8 @@
     "check-types": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@pm/domain": "workspace:*"
+    "@pm/domain": "workspace:*",
+    "@pm/sessions": "workspace:*"
   },
   "devDependencies": {
     "@pm/typescript-config": "workspace:*",

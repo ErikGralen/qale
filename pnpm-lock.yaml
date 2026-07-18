@@ -208,6 +208,9 @@ importers:
       '@pm/domain':
         specifier: workspace:*
         version: link:../domain
+      '@pm/sessions':
+        specifier: workspace:*
+        version: link:../sessions
     devDependencies:
       '@pm/typescript-config':
         specifier: workspace:*

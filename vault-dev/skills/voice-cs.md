@@ -2,6 +2,9 @@
 type: skill
 skill_kind: voice
 summary: CS voice — what changes for the customer, and when
+bindings:
+  - mode: forced
+    audience: customers
 ---
 
 # Voice: customer success

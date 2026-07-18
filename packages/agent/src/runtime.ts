@@ -18,11 +18,13 @@ import {
   createCheckpointTool,
   createDraftTools,
   createAtlassianTools,
+  createUseSkillTool,
   ATLASSIAN_TOOL_NAMES,
   VAULT_TOOL_NAMES,
   PROPOSE_TOOL_NAMES,
   DRAFT_TOOL_NAMES,
   CHECKPOINT_TOOL_NAME,
+  USE_SKILL_TOOL_NAME,
 } from './tools.js';
 import { SHARED_PREAMBLE } from './prompts.js';
 import {
@@ -169,30 +171,73 @@ export class AgentRuntime {
     return available.find((m) => m.id === this.config!.modelId) ?? available[0]!;
   }
 
-  /** Resolve a session's skill: the workspace's `skills/<type>.md`, else built-in. */
+  /**
+   * Resolve a session's skill by its declared `session_type`: the conventional
+   * `skills/<type>.md` first, then any workspace skill file whose frontmatter
+   * declares the type (a triggered skill's filename need not match), else the
+   * built-in pack.
+   */
   private async resolveSkill(type: string, ctx: UseCaseContext): Promise<SkillConfig> {
-    const raw = (await ctx.vault.readRaw(`skills/${type}.md`)) ?? DEFAULT_SKILL_BY_TYPE[type] ?? '';
-    return parseSkill(raw, type);
+    const direct = await ctx.vault.readRaw(`skills/${type}.md`);
+    if (direct) {
+      const config = parseSkill(direct, type);
+      if (config.name === type) return config;
+    }
+    for (const n of ctx.index.all()) {
+      if (n.type !== 'skill') continue;
+      const raw = await ctx.vault.readRaw(n.path);
+      if (!raw) continue;
+      const config = parseSkill(raw, n.slug);
+      if (config.name === type) return config;
+    }
+    return parseSkill(DEFAULT_SKILL_BY_TYPE[type] ?? '', type);
   }
 
-  private toolNamesFor(config: SkillConfig, atlassianActive: boolean): string[] {
+  private toolNamesFor(config: SkillConfig, atlassianActive: boolean, hasGuides: boolean): string[] {
     const names = [...VAULT_TOOL_NAMES];
     if (config.tier === 'suggest' || config.tier === 'outbound') names.push(...PROPOSE_TOOL_NAMES);
     if (config.tier === 'outbound') names.push(...DRAFT_TOOL_NAMES);
     if (config.checkpoints.length > 0) names.push(CHECKPOINT_TOOL_NAME);
+    if (hasGuides) names.push(USE_SKILL_TOOL_NAME);
     if (atlassianActive) names.push(...ATLASSIAN_TOOL_NAMES);
     return names;
   }
 
-  /** Voice guides (skills/voice-*.md) injected when a session drafts outbound. */
+  /**
+   * Voice registers injected when a session drafts outbound (Skills v2). Driven by
+   * each voice skill's forced binding rather than a filename regex: a `voice` skill
+   * with a `mode: forced` binding (or none, for back-compat) is always in effect.
+   */
   private async voiceGuides(ctx: UseCaseContext): Promise<string> {
-    const guides = ctx.index.all().filter((n) => n.type === 'skill' && /(^|\/)voice-/.test(n.path));
+    const voices = ctx.index.all().filter((n) => n.type === 'skill' && (n.frontmatter as Record<string, unknown>)['skill_kind'] === 'voice');
     const bodies: string[] = [];
-    for (const g of guides) {
+    for (const g of voices) {
+      const raw = await ctx.vault.readRaw(g.path);
+      if (!raw) continue;
+      const cfg = parseSkill(raw, g.slug);
+      const forced = cfg.bindings.length === 0 || cfg.bindings.some((b) => b.mode === 'forced');
+      if (!forced) continue;
       const note = await ctx.vault.readNote(g.path);
-      if (note) bodies.push(`### ${note.frontmatter.summary}\n${note.body.trim()}`);
+      if (!note) continue;
+      // The binding's audience scope, stated where the model reads the register —
+      // the Skills view describes this scoping, so the prompt must carry it too.
+      const audiences = cfg.bindings.filter((b) => b.mode === 'forced' && b.audience).map((b) => b.audience);
+      const scope = audiences.length > 0 ? ` (applies when drafting for ${audiences.join(', ')})` : '';
+      bodies.push(`### ${note.frontmatter.summary}${scope}\n${note.body.trim()}`);
     }
     return bodies.length ? `\n\n## Voice guides (apply to outbound drafts)\n${bodies.join('\n\n')}` : '';
+  }
+
+  /**
+   * The guide index (Skills v2): every `skill_kind: guide` file listed by name +
+   * summary so the model knows what it can pull in via `use_skill`, without paying
+   * for the bodies until one is relevant. Returns null when there are no guides.
+   */
+  private guideIndex(ctx: UseCaseContext): string | null {
+    const guides = ctx.index.all().filter((n) => n.type === 'skill' && (n.frontmatter as Record<string, unknown>)['skill_kind'] === 'guide');
+    if (guides.length === 0) return null;
+    const lines = guides.map((g) => `- \`${g.slug.split('/').pop()}\` — ${g.summary}`);
+    return `\n\n## Guides available on demand\nCall \`use_skill\` with a guide name to load it when relevant:\n${lines.join('\n')}`;
   }
 
   /** Where the pi JSONL transcripts live — the machine replay store (off the vault). */
@@ -273,16 +318,18 @@ export class AgentRuntime {
     const skillConfig = await this.resolveSkill(type, ctx);
     const harness = new SessionHarness(id, skillConfig, ctx.clock.now());
     const voice = skillConfig.tier === 'outbound' ? await this.voiceGuides(ctx) : '';
-    const systemPrompt = buildSystemPrompt(SHARED_PREAMBLE, skillConfig) + voice;
+    const guides = this.guideIndex(ctx);
+    const systemPrompt = buildSystemPrompt(SHARED_PREAMBLE, skillConfig) + voice + (guides ?? '');
 
     // The ask session gains the tracker seam (Jira/Confluence) when configured.
     const atlassianActive = type === 'ask' && this.atlassian;
-    const toolNames = this.toolNamesFor(skillConfig, !!atlassianActive);
+    const toolNames = this.toolNamesFor(skillConfig, !!atlassianActive, !!guides);
     const customTools = [
       ...createVaultTools(ctx, harness),
       ...(skillConfig.tier !== 'observe' ? createProposeTools(ctx, id, harness) : []),
       ...(skillConfig.tier === 'outbound' ? createDraftTools(ctx, id, harness) : []),
       ...(skillConfig.checkpoints.length > 0 ? [createCheckpointTool(harness)] : []),
+      ...(guides ? [createUseSkillTool(ctx)] : []),
       ...(atlassianActive ? createAtlassianTools(this.atlassian!) : []),
     ];
 

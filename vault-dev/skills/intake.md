@@ -4,7 +4,15 @@ skill_kind: session
 session_type: intake
 summary: Intake — figure out what a capture is, connect it to the memory, propose the filing
 tier: suggest
-gate_output: true
+bindings:
+  - mode: triggered
+    event: capture.ingested
+    when:
+      kind: link
+  - mode: triggered
+    event: capture.ingested
+    when:
+      kind: screenshot
 completion_bar: Every proposed link or note cites the capture or existing memory; unclear points are asked, not assumed.
 stopping_conditions:
   - The capture is empty or content-free — say so and propose nothing.

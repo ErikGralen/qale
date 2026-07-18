@@ -6,9 +6,12 @@ summary: After-Meeting — turn a meeting into the truth delta as approval cards
 tier: suggest
 checkpoints: [digest, outline, draft]
 gate_output: true
+bindings:
+  - mode: triggered
+    event: capture.transcript
+    when:
+      origin: po
 completion_bar: Every truth-delta item cites the transcript or prior memory; nothing asserted uncited.
-stopping_conditions:
-  - The meeting is flagged safe_space — do nothing, say the meeting was private.
 red_flags:
   - A decision with no decider or date — ask before drafting it.
   - A claim that contradicts an existing decision or insight — flag it, do not overwrite.

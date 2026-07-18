@@ -4,10 +4,7 @@ skill_kind: session
 session_type: before-meeting
 summary: Before-Meeting — the memory brief, written into the meeting page as prep
 tier: suggest
-gate_output: true
 completion_bar: Every prep line cites the memory it came from; nothing invented about people or accounts.
-stopping_conditions:
-  - The meeting is flagged safe_space — do nothing, say the meeting is private.
 red_flags:
   - A "last told" claim with no ledger entry behind it — say the ledger is empty rather than guessing.
 ---

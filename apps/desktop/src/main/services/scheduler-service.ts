@@ -1,5 +1,10 @@
-import { applyAutoPolicy, type UseCaseContext } from '@pm/application';
+import { skillsForEvent, type UseCaseContext } from '@pm/application';
 import type { SettingsService } from './settings-service.js';
+
+/** Local "YYYY-MM-DD" for overdue-todo detection. */
+function todayIso(now: Date): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
 
 /**
  * The app-open scheduler (PLAN-V2 §3.5): fires scheduled sessions on their weekly
@@ -50,13 +55,42 @@ export class SchedulerService {
         );
       }
     }
-    const { applied } = await applyAutoPolicy(ctx, this.settings.get().autoApplyTypes).catch(() => ({ applied: 0 }));
-    if (applied > 0) this.onChanged();
+    // Triggered reactions (Skills v2): a slipped commitment fires any skill bound
+    // to `todo.overdue`, which produces approval cards. Depth-1 loop guard — only
+    // this scheduler-origin event dispatches; the reaction's own writes never
+    // re-trigger.
+    await this.fireOverdueReactions(ctx, now).catch((err) =>
+      console.error('[pm] overdue reaction failed:', err),
+    );
+
     try {
       this.maintenance?.();
     } catch (err) {
       console.error('[pm] ping sweep failed:', err);
     }
+  }
+
+  /** Once per day at most: if any of the PO's own todos have slipped, fire the reactions bound to `todo.overdue`. */
+  private lastOverdueSweep: string | null = null;
+  private async fireOverdueReactions(ctx: UseCaseContext, now: Date): Promise<void> {
+    const today = todayIso(now);
+    if (this.lastOverdueSweep === today) return;
+    const overdue = ctx.index
+      .listByType('todo')
+      .some((n) => {
+        const fm = n.frontmatter as Record<string, unknown>;
+        return (fm['status'] ?? 'open') === 'open' && !fm['owner'] && typeof fm['due'] === 'string' && fm['due'] < today;
+      });
+    if (!overdue) return;
+    this.lastOverdueSweep = today;
+    const skills = await skillsForEvent(ctx, 'todo.overdue', { date: today });
+    for (const s of skills) {
+      await this.fireSession(
+        s.sessionType,
+        `A commitment has slipped overdue as of ${today}. Review the overdue todos and propose how to handle each (reschedule, close, or draft a nudge) as approval cards.`,
+      ).catch((err) => console.error('[pm] reaction session failed:', err));
+    }
+    if (skills.length > 0) this.onChanged();
   }
 }
 

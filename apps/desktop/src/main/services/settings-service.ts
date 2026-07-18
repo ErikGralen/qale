@@ -26,8 +26,6 @@ export interface PersistedSettings {
   anthropicKeyEnc: string | null;
   atlassian: { baseUrl: string; email: string; tokenEnc: string } | null;
   schedules: ScheduleEntry[];
-  /** Session types the PM has earned + enabled auto-apply for (internal writes). */
-  autoApplyTypes: string[];
   /** Local MCP server: token-gated so the customer's Claude can query the memory. */
   mcpEnabled: boolean;
   mcpPort: number;
@@ -40,7 +38,6 @@ const DEFAULTS: PersistedSettings = {
   anthropicKeyEnc: null,
   atlassian: null,
   schedules: [{ sessionType: 'weekly-update', dayOfWeek: 5, hour: 15, enabled: false, lastRun: null }],
-  autoApplyTypes: [],
   mcpEnabled: false,
   mcpPort: 7717,
   mcpToken: null,
@@ -119,14 +116,6 @@ export class SettingsService {
     const existing = this.data.schedules.find((s) => s.sessionType === sessionType);
     if (existing) Object.assign(existing, patch);
     else this.data.schedules.push({ sessionType, dayOfWeek: 5, hour: 15, enabled: false, lastRun: null, ...patch });
-    await this.persist();
-  }
-
-  async setAutoApply(sessionType: string, on: boolean): Promise<void> {
-    const set = new Set(this.data.autoApplyTypes);
-    if (on) set.add(sessionType);
-    else set.delete(sessionType);
-    this.data.autoApplyTypes = [...set];
     await this.persist();
   }
 

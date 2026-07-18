@@ -7,7 +7,6 @@ duration_minutes: 60
 participants:
   - me
   - Tom Devlin
-safe_space: true
 ---
 
 ## Summary

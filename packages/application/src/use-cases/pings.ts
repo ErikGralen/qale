@@ -50,8 +50,12 @@ interface Candidate {
 }
 
 /** Ping kinds this sweep no longer produces — their nudges moved into the
- * views that own them. Pending leftovers are retired on the next tick. */
-const RETIRED_KEY = /^(overdue-todos$|meeting-prep-)/;
+ * views that own them, or (dangling-links/orphans) were superseded by the
+ * payload-carrying suggestion pings, which live under NEW keys. The rename is
+ * load-bearing: a lingering old-format ping (pending or recently dismissed)
+ * would block its replacement via hasRecent for a week if the key were reused.
+ * Leftovers are retired on the next tick. */
+const RETIRED_KEY = /^(overdue-todos$|meeting-prep-|dangling-links$|orphans$)/;
 
 /** True when a patch block's search text is a wikilink on `target`. */
 function searchesTarget(search: string, target: string): boolean {
@@ -176,7 +180,9 @@ async function collectOrphanItems(ctx: UseCaseContext, report: MaintenanceReport
     }
     items.push({ id: orphan.path, path: orphan.path, title: orphan.title, mentions });
   }
-  return items;
+  // Ready answers lead: orphans someone already mentions come first, so the
+  // one-tap rows aren't buried under a wall of "nothing mentions it".
+  return items.sort((a, b) => b.mentions.length - a.mentions.length);
 }
 
 /**
@@ -209,7 +215,7 @@ export async function runLibrarianSweep(ctx: UseCaseContext): Promise<{ pings: n
       options: l.options,
     }));
     candidates.push({
-      key: 'dangling-links',
+      key: 'link-choices',
       title: `${links.unfixed.length} broken link${links.unfixed.length === 1 ? '' : 's'} need${links.unfixed.length === 1 ? 's' : ''} a judgment call`,
       body: `The librarian couldn't pick a single confident target for these, so it won't guess — pick the right one, or chat it through.`,
       evidence: sample.map((l) => ({ ref: `[[${l.from.replace(/\.md$/, '')}]]`, resolved: true })),
@@ -231,7 +237,7 @@ export async function runLibrarianSweep(ctx: UseCaseContext): Promise<{ pings: n
   if (orphanItems.length >= 3) {
     const sample = orphanItems.slice(0, 5);
     candidates.push({
-      key: 'orphans',
+      key: 'orphan-connect',
       title: `${orphanItems.length} notes have no links at all`,
       body: `Unlinked notes are invisible to the memory — nothing cites them, they cite nothing. Where they're already mentioned, one tap wires them in; the rest, chat or skip.`,
       evidence: sample.map((o) => ({ ref: `[[${o.path.replace(/\.md$/, '')}]]`, resolved: true })),

@@ -553,7 +553,7 @@ export function Sidebar({
     openSettings,
     openInbox,
     openTodos,
-    openFolder,
+    openSkills,
     attentionCount,
     favorites,
   } = useApp();
@@ -678,8 +678,9 @@ export function Sidebar({
 
           <button
             className="flex items-center gap-2 border-t border-sidebar-border px-3.5 py-2 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={() => openFolder(skillsGroup?.dir ?? 'skills')}
-            title="Session playbooks the agent follows — markdown files you can read and edit"
+            onClick={() => openSkills()}
+            onDoubleClick={() => openSkills({ preview: false })}
+            title="Skills — how the agent behaves: voices, playbooks, triggers, and what it may do on its own"
           >
             <Wand2 className="size-3.5" aria-hidden /> Skills{skillsGroup ? ` (${skillsGroup.notes.length})` : ''}
           </button>

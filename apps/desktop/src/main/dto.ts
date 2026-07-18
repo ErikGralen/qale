@@ -5,6 +5,7 @@ import type {
   PingRecord,
   ProblemHeatRow,
   ProposalRecord,
+  SkillSummary,
   VaultInfo,
   VaultTreeGroup,
 } from '@pm/application';
@@ -17,6 +18,7 @@ import type {
   ProblemStance,
   ProposalDTO,
   SearchHitDTO,
+  SkillDTO,
   VaultInfoDTO,
   VaultTreeDTO,
 } from '@pm/ipc';
@@ -76,6 +78,20 @@ export function treeToDTO(groups: VaultTreeGroup[]): VaultTreeDTO {
       layer: g.layer as 'raw' | 'derived' | 'authored',
       notes: g.notes.map((n) => indexedToRefDTO(n)),
     })),
+  };
+}
+
+export function skillToDTO(s: SkillSummary): SkillDTO {
+  return {
+    path: s.path,
+    slug: s.slug,
+    name: s.name,
+    kind: s.kind,
+    summary: s.summary,
+    tier: s.tier,
+    bindings: s.bindings.map((b) => ({ mode: b.mode, event: b.event, sentence: b.sentence })),
+    errors: s.errors,
+    mtime: s.mtime,
   };
 }
 

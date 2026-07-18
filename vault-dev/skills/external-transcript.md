@@ -4,7 +4,11 @@ skill_kind: session
 session_type: external-transcript
 summary: External-Transcript — mine a meeting the PO was NOT in for signals, never decisions
 tier: suggest
-gate_output: true
+bindings:
+  - mode: triggered
+    event: capture.transcript
+    when:
+      origin: external
 completion_bar: Every extracted claim quotes the transcript verbatim; interpretation is marked with an honest confidence.
 stopping_conditions:
   - The transcript is empty or content-free — say so and propose nothing.

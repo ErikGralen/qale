@@ -12,9 +12,12 @@ summary: After-Meeting — turn a meeting into the truth delta as approval cards
 tier: outbound
 checkpoints: [digest, outline, draft]
 gate_output: true
+bindings:
+  - mode: triggered
+    event: capture.transcript
+    when:
+      origin: po
 completion_bar: Every truth-delta item cites the transcript or prior memory; nothing asserted uncited.
-stopping_conditions:
-  - The meeting is flagged safe_space — do nothing, say the meeting was private.
 red_flags:
   - A decision with no decider or date — ask before drafting it.
   - A claim that contradicts an existing decision or insight — flag it, do not overwrite.
@@ -63,10 +66,7 @@ skill_kind: session
 session_type: before-meeting
 summary: Before-Meeting — the memory brief, written into the meeting page as prep
 tier: suggest
-gate_output: true
 completion_bar: Every prep line cites the memory it came from; nothing invented about people or accounts.
-stopping_conditions:
-  - The meeting is flagged safe_space — do nothing, say the meeting is private.
 red_flags:
   - A "last told" claim with no ledger entry behind it — say the ledger is empty rather than guessing.
 ---
@@ -103,7 +103,11 @@ skill_kind: session
 session_type: external-transcript
 summary: External-Transcript — mine a meeting the PO was NOT in for signals, never decisions
 tier: suggest
-gate_output: true
+bindings:
+  - mode: triggered
+    event: capture.transcript
+    when:
+      origin: external
 completion_bar: Every extracted claim quotes the transcript verbatim; interpretation is marked with an honest confidence.
 stopping_conditions:
   - The transcript is empty or content-free — say so and propose nothing.
@@ -191,7 +195,15 @@ skill_kind: session
 session_type: intake
 summary: Intake — figure out what a capture is, connect it to the memory, propose the filing
 tier: suggest
-gate_output: true
+bindings:
+  - mode: triggered
+    event: capture.ingested
+    when:
+      kind: link
+  - mode: triggered
+    event: capture.ingested
+    when:
+      kind: screenshot
 completion_bar: Every proposed link or note cites the capture or existing memory; unclear points are asked, not assumed.
 stopping_conditions:
   - The capture is empty or content-free — say so and propose nothing.
@@ -387,6 +399,9 @@ export const VOICE_EXEC = `---
 type: skill
 skill_kind: voice
 summary: Exec voice — outcomes and decisions, no process
+bindings:
+  - mode: forced
+    audience: executives
 ---
 
 # Voice: executive
@@ -401,6 +416,9 @@ export const VOICE_CS = `---
 type: skill
 skill_kind: voice
 summary: CS voice — what changes for the customer, and when
+bindings:
+  - mode: forced
+    audience: customers
 ---
 
 # Voice: customer success

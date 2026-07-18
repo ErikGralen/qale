@@ -1,10 +1,10 @@
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 import type { CreateProposalInput, ProposalPort, ProposalRecord, ProposalStats } from '@pm/application';
+import { idHash } from './hash.js';
 
 /**
- * Primary app state (PLAN §3.5): `app.db` is a SEPARATE file from the derived
- * index — it is never dropped or rebuilt. Holds the proposal queue + the
- * accept/reject/edit log (the core eval signal, PLAN §6.12).
+ * The proposal queue + the accept/reject/edit log (the core eval signal,
+ * PLAN §6.12). Lives in the per-vault AppDb, which owns the connection.
  */
 interface Row {
   id: string;
@@ -23,12 +23,7 @@ interface Row {
 }
 
 export class ProposalStore implements ProposalPort {
-  private db: Database.Database;
-
-  constructor(dbPath: string) {
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('busy_timeout = 5000');
+  constructor(private readonly db: Database.Database) {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS proposals (
         id TEXT PRIMARY KEY,
@@ -57,7 +52,7 @@ export class ProposalStore implements ProposalPort {
   }
 
   create(input: CreateProposalInput, now: number): ProposalRecord {
-    const id = `p_${now.toString(36)}_${Math.abs(hash(JSON.stringify(input.payload))).toString(36)}`;
+    const id = `p_${now.toString(36)}_${Math.abs(idHash(JSON.stringify(input.payload))).toString(36)}`;
     const row: Row = {
       id,
       kind: input.kind,
@@ -151,10 +146,6 @@ export class ProposalStore implements ProposalPort {
     };
   }
 
-  close(): void {
-    this.db.close();
-  }
-
   private toRecord(row: Row): ProposalRecord {
     return {
       id: row.id,
@@ -172,10 +163,4 @@ export class ProposalStore implements ProposalPort {
       resolved: row.resolved,
     };
   }
-}
-
-function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-  return h;
 }

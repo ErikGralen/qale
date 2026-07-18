@@ -3,7 +3,7 @@ import { PluginKey } from '@tiptap/pm/state';
 import Suggestion from '@tiptap/suggestion';
 import type { SearchHitDTO } from '@pm/ipc';
 import { FileText, Link2 } from 'lucide-react';
-import { suggestionMenuRender } from './suggestion-render';
+import { suggestionMenuRender, suggestionPopupOptions } from './suggestion-render';
 import { wikilinkAttrs } from './wikilink';
 
 /**
@@ -42,6 +42,7 @@ export const WikilinkSuggest = Extension.create<WikilinkSuggestOptions>({
     const { searchNotes } = this.options;
     return [
       Suggestion<WikiPick>({
+        ...suggestionPopupOptions,
         editor: this.editor,
         pluginKey: new PluginKey('wikilinkSuggest'),
         char: '[[',

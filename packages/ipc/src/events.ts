@@ -70,3 +70,23 @@ export type PushEvent =
   | SessionFocusEvent;
 
 export type PushChannel = PushEvent['channel'];
+
+/**
+ * Runtime list of every push channel — the preload subscribes from THIS, so a
+ * new event type can't silently never reach the renderer. The `_AllPushListed`
+ * check fails to compile if the list and the union drift.
+ */
+export const PUSH_CHANNELS = [
+  'agent:event',
+  'vault:changed',
+  'proposals:changed',
+  'session:status',
+  'pings:changed',
+  'session:focus',
+] as const satisfies readonly PushChannel[];
+
+// Compile-time completeness guard: every PushEvent channel must appear above.
+type _AllPushListed = Exclude<PushChannel, (typeof PUSH_CHANNELS)[number]>;
+const _pushExhaustive: _AllPushListed extends never ? true : ['missing channels', _AllPushListed] =
+  true as never;
+void _pushExhaustive;

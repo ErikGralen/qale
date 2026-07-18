@@ -1,4 +1,5 @@
 import type { NoteRefDTO, NoteType, VaultTreeDTO } from '@pm/ipc';
+import { isFolderIndex } from '@pm/domain';
 
 /**
  * Contexts — curated tags (projects, products, areas) that cut across note
@@ -15,7 +16,7 @@ export interface ContextInfo {
 }
 
 export function isContentNote(n: NoteRefDTO): boolean {
-  return !NON_CONTENT_TYPES.has(n.type) && !n.path.endsWith('/index.md');
+  return !NON_CONTENT_TYPES.has(n.type) && !isFolderIndex(n.path);
 }
 
 export function contentNotes(tree: VaultTreeDTO | null): NoteRefDTO[] {

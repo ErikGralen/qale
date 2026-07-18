@@ -71,15 +71,22 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   });
   const agent = new AgentRuntime();
 
+  // Runs in the BACKGROUND after a vault opens (`void afterOpen()`): seeding
+  // skills and the librarian's whole-vault sweep must never block first paint
+  // or the vault-picker response. Badge pushes land once it settles.
   const afterOpen = async (): Promise<void> => {
-    const ctx = vaultService.context();
-    if (!ctx) return;
-    await ensureDefaultSkills(ctx, DEFAULT_SKILLS);
-    // App-open cron (PLAN-V2 §3.5): let the librarian work ahead on launch —
-    // prepared link fixes land as approval cards, judgment calls as pings.
-    await runLibrarianSweep(ctx);
-    notifyPings();
-    notifyProposalsFor();
+    try {
+      const ctx = vaultService.context();
+      if (!ctx) return;
+      await ensureDefaultSkills(ctx, DEFAULT_SKILLS);
+      // App-open cron (PLAN-V2 §3.5): let the librarian work ahead on launch —
+      // prepared link fixes land as approval cards, judgment calls as pings.
+      await runLibrarianSweep(ctx);
+      notifyPings();
+      notifyProposalsFor();
+    } catch (err) {
+      console.error('[pm] post-open sweep failed:', err instanceof Error ? err.message : err);
+    }
   };
 
   const reconfigureAgent = (): void => {
@@ -257,7 +264,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     const path = result.filePaths[0]!;
     const info = await vaultService.open(path);
     await settings.setVaultPath(info.path);
-    await afterOpen();
+    void afterOpen();
     reconfigureAgent();
     return vaultInfoToDTO(info);
   });
@@ -265,7 +272,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   handle('vault:open', async (path) => {
     const info = await vaultService.open(path);
     await settings.setVaultPath(info.path);
-    await afterOpen();
+    void afterOpen();
     reconfigureAgent();
     return vaultInfoToDTO(info);
   });
@@ -361,12 +368,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     getProblemsByHeat(vaultService.requireContext()).map((r) => problemHeatToDTO(r)),
   );
 
-  const notifyProposals = (): void => {
-    const ctx = vaultService.context();
-    if (!ctx) return;
-    pushEvent(getWindow(), { channel: 'proposals:changed', pendingCount: ctx.proposals.pendingCount() });
-  };
-
   handle('proposals:list', (status) =>
     listProposals(vaultService.requireContext(), status).map(proposalToDTO),
   );
@@ -401,20 +402,20 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     const result = await acceptProposal(vaultService.requireContext(), id, edited);
     if (result.ok) await fireSupersedeReactions(id).catch(() => {});
     await afterCardResolved(id);
-    notifyProposals();
+    notifyProposalsFor();
     return result;
   });
   handle('proposals:reject', async (id) => {
     const result = rejectProposal(vaultService.requireContext(), id);
     await afterCardResolved(id);
-    notifyProposals();
+    notifyProposalsFor();
     return result;
   });
   handle('proposals:stats', () => getProposalStats(vaultService.requireContext()));
   handle('librarian:report', () => getMaintenanceReport(vaultService.requireContext()));
   handle('golden:save', (input) => {
     const rec = saveGoldenAnswer(vaultService.requireContext(), input);
-    notifyProposals();
+    notifyProposalsFor();
     return proposalToDTO(rec);
   });
   handle('agent:run', async (input) => {
@@ -485,7 +486,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
       if (saved) {
         try {
           const info = await vaultService.open(saved);
-          await afterOpen();
+          void afterOpen();
           reconfigureAgent();
           console.log(`[pm] opened workspace "${info.name}" — ${info.noteCount} notes, git=${info.git}`);
           if (process.env['PM_SEED_PROPOSAL']) seedDemoProposal(vaultService.requireContext());

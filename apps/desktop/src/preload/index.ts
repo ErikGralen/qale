@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import { INVOKE_CHANNELS, type IpcApi, type PmBridge, type PushEvent } from '@pm/ipc';
+import { INVOKE_CHANNELS, PUSH_CHANNELS, type IpcApi, type PmBridge, type PushEvent } from '@pm/ipc';
 
 /**
  * Build concrete per-channel invoke functions from the contract's channel list.
@@ -13,15 +13,6 @@ const invoke = Object.fromEntries(
     (...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
   ]),
 ) as unknown as IpcApi;
-
-const PUSH_CHANNELS = [
-  'agent:event',
-  'vault:changed',
-  'proposals:changed',
-  'session:status',
-  'pings:changed',
-  'session:focus',
-] as const;
 
 const bridge: PmBridge = {
   invoke,

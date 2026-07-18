@@ -1,21 +1,48 @@
+import { flip, shift, size } from '@floating-ui/dom';
 import { ReactRenderer } from '@tiptap/react';
 import type { SuggestionOptions, SuggestionProps } from '@tiptap/suggestion';
 import { SuggestionMenu, type SuggestionMenuItem } from './SuggestionMenu';
-import { createSuggestionPopup, type SuggestionPopup } from './suggestion-popup';
+
+/**
+ * Shared floating-ui options for suggestion menus, spread into each
+ * `Suggestion()` config. `flip: false` disables the plugin's padding-less
+ * built-in flip so the middleware chain below matches the classic popup:
+ * offset(6) → flip → shift → size, fixed-position so the popup escapes every
+ * overflow container.
+ */
+export const suggestionPopupOptions: Pick<SuggestionOptions, 'offset' | 'flip' | 'floatingUi'> = {
+  offset: { mainAxis: 6 },
+  flip: false,
+  floatingUi: {
+    strategy: 'fixed',
+    middleware: [
+      flip({ padding: 8 }),
+      shift({ padding: 8 }),
+      size({
+        padding: 8,
+        apply({ elements, availableHeight }) {
+          elements.floating.style.maxHeight = `${Math.min(availableHeight, window.innerHeight * 0.4)}px`;
+        },
+      }),
+    ],
+  },
+};
 
 /**
  * The shared `render()` lifecycle for @tiptap/suggestion menus. Owns the
- * popup, the React renderer, and the selection cursor; ArrowUp/Down wrap,
- * Enter and Tab select, Escape closes (the suggestion plugin exits itself).
- * Keyboard and mouse write the same `selectedIndex`, Notion-style.
+ * React renderer and the selection cursor; positioning, outside-click
+ * dismissal, and flash-free reveal are delegated to the plugin's managed
+ * `props.mount`. ArrowUp/Down wrap, Enter and Tab select, Escape closes (the
+ * suggestion plugin exits itself). Keyboard and mouse write the same
+ * `selectedIndex`, Notion-style.
  */
 export function suggestionMenuRender<Item>(config: {
   toMenuItem: (item: Item) => SuggestionMenuItem;
   emptyLabel: string;
 }): NonNullable<SuggestionOptions<Item>['render']> {
   return () => {
-    let popup: SuggestionPopup | null = null;
     let renderer: ReactRenderer | null = null;
+    let unmount: (() => void) | null = null;
     let items: Item[] = [];
     let selectedIndex = 0;
     let command: SuggestionProps<Item>['command'] = () => {};
@@ -25,18 +52,20 @@ export function suggestionMenuRender<Item>(config: {
       if (item !== undefined) command(item);
     };
 
+    const hover = (index: number) => {
+      if (index !== selectedIndex) {
+        selectedIndex = index;
+        rerender();
+      }
+    };
+
     const rerender = () => {
       renderer?.updateProps({
         items: items.map(config.toMenuItem),
         selectedIndex,
         emptyLabel: config.emptyLabel,
         onSelect: select,
-        onHover: (index: number) => {
-          if (index !== selectedIndex) {
-            selectedIndex = index;
-            rerender();
-          }
-        },
+        onHover: hover,
       });
     };
 
@@ -52,15 +81,21 @@ export function suggestionMenuRender<Item>(config: {
         selectedIndex = 0;
         renderer = new ReactRenderer(SuggestionMenu, {
           editor: props.editor,
-          props: { items: [], selectedIndex: 0, emptyLabel: config.emptyLabel, onSelect: select, onHover: select },
+          props: { items: [], selectedIndex: 0, emptyLabel: config.emptyLabel, onSelect: select, onHover: hover },
         });
-        popup = createSuggestionPopup(props.editor.view.dom, () => props.clientRect?.() ?? null);
-        popup.element.appendChild(renderer.element);
+        const element = renderer.element;
+        element.className =
+          'z-50 w-72 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md';
+        element.style.maxHeight = '40vh';
+        // animationFrame keeps the popup glued to the caret rect even when a
+        // keystroke rewraps the line without firing a scroll/resize event.
+        unmount = props.mount(element, { autoUpdate: { animationFrame: true } });
+        // mount() forces `width: max-content` before measuring; w-72 owns it.
+        element.style.width = '';
         sync(props);
       },
       onUpdate(props) {
         sync(props);
-        popup?.setRect(() => props.clientRect?.() ?? null);
       },
       onKeyDown({ event }) {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -80,9 +115,9 @@ export function suggestionMenuRender<Item>(config: {
         return false;
       },
       onExit() {
-        popup?.destroy();
+        unmount?.();
         renderer?.destroy();
-        popup = null;
+        unmount = null;
         renderer = null;
       },
     };

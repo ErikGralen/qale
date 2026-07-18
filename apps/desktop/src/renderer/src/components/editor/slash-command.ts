@@ -16,7 +16,7 @@ import {
   TextQuote,
   type LucideIcon,
 } from 'lucide-react';
-import { suggestionMenuRender } from './suggestion-render';
+import { suggestionMenuRender, suggestionPopupOptions } from './suggestion-render';
 
 /**
  * The `/` block menu. Built on @tiptap/suggestion: typing `/` in an empty or
@@ -62,6 +62,7 @@ export const SlashCommand = Extension.create({
   addProseMirrorPlugins() {
     return [
       Suggestion<SlashItem>({
+        ...suggestionPopupOptions,
         editor: this.editor,
         pluginKey: new PluginKey('slashCommand'),
         char: '/',

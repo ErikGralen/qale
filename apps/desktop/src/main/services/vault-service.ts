@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { FsVault, SqliteIndex, VaultWatcher, GitAdapter, ProposalStore, PingStore, type VaultChange } from '@pm/vault';
+import { FsVault, SqliteIndex, VaultWatcher, GitAdapter, AppDb, type VaultChange } from '@pm/vault';
 import { openVault, type UseCaseContext, type VaultInfo } from '@pm/application';
 
 /**
@@ -13,8 +13,7 @@ import { openVault, type UseCaseContext, type VaultInfo } from '@pm/application'
 export class VaultService {
   private ctx: UseCaseContext | null = null;
   private index: SqliteIndex | null = null;
-  private proposals: ProposalStore | null = null;
-  private pings: PingStore | null = null;
+  private appDb: AppDb | null = null;
   private watcher: VaultWatcher | null = null;
   private currentPath: string | null = null;
   private readonly indexPath = join(app.getPath('userData'), 'index.db');
@@ -51,18 +50,22 @@ export class VaultService {
     if (!this.index) this.index = new SqliteIndex(this.indexPath);
     // Switching to a different vault: the shared index must be rebuilt for it,
     // and the proposal/ping stores swap to that vault's own DB file.
-    if (this.currentPath !== vault.root() || !this.proposals || !this.pings) {
+    if (this.currentPath !== vault.root() || !this.appDb) {
       if (this.currentPath && this.currentPath !== vault.root()) this.index.clear();
-      this.proposals?.close();
-      this.pings?.close();
-      const appDbPath = this.appDbPathFor(vault.root());
-      this.proposals = new ProposalStore(appDbPath);
-      this.pings = new PingStore(appDbPath);
+      this.appDb?.close();
+      this.appDb = new AppDb(this.appDbPathFor(vault.root()));
     }
 
     const git = new GitAdapter(path);
     const clock = { now: () => new Date().toISOString() };
-    const ctx: UseCaseContext = { vault, index: this.index, git, clock, proposals: this.proposals, pings: this.pings };
+    const ctx: UseCaseContext = {
+      vault,
+      index: this.index,
+      git,
+      clock,
+      proposals: this.appDb.proposals,
+      pings: this.appDb.pings,
+    };
 
     // Only publish the context once the open fully succeeds — a mid-open throw
     // must not leave requireContext() returning a half-open vault.
@@ -100,10 +103,8 @@ export class VaultService {
     await this.closeWatcher();
     this.index?.close();
     this.index = null;
-    this.proposals?.close();
-    this.proposals = null;
-    this.pings?.close();
-    this.pings = null;
+    this.appDb?.close();
+    this.appDb = null;
     this.ctx = null;
   }
 }

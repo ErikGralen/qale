@@ -1,20 +1,12 @@
 import { useMemo, useState } from 'react';
+import { isFolderIndex } from '@pm/domain';
 import { Button, Spinner } from '@pm/ui';
 import {
   FolderOpen,
-  Target,
-  GitBranch,
   Sparkles,
-  Building2,
-  Rocket,
-  User,
-  History,
   Check,
   Wand2,
   Star,
-  StickyNote,
-  Mic,
-  FileInput,
   FileUp,
   Search,
   Settings,
@@ -22,10 +14,11 @@ import {
   Inbox,
   ChevronRight,
   ListTodo,
-  SquareCheck,
   type LucideIcon,
 } from 'lucide-react';
 import { useApp, type SessionOverview } from '../state/app-state';
+import { localDateStr } from '../lib/dates';
+import { noteTypeIcon } from '../lib/note-icons';
 import {
   byRecent,
   isUnprocessedSource,
@@ -35,21 +28,6 @@ import {
   needsReview,
 } from '../lib/note-status';
 import type { NoteRefDTO, NoteType, ProblemHeatDTO, VaultTreeGroupDTO } from '@pm/ipc';
-
-const TYPE_ICON: Record<string, LucideIcon> = {
-  source: FileInput,
-  meeting: Mic,
-  decision: GitBranch,
-  insight: Sparkles,
-  customer: Building2,
-  problem: Target,
-  release: Rocket,
-  person: User,
-  session: History,
-  skill: Wand2,
-  todo: SquareCheck,
-  note: StickyNote,
-};
 
 // Clear the macOS traffic lights in the frameless window (hiddenInset).
 const isMac = navigator.userAgent.includes('Macintosh');
@@ -271,7 +249,7 @@ function FavoritesSection({ notes }: { notes: NoteRefDTO[] }) {
       ) : (
         <ul className="flex flex-col">
           {notes.map((n) => {
-            const Icon = TYPE_ICON[n.type] ?? StickyNote;
+            const Icon = noteTypeIcon(n.type);
             const active = activeTab?.kind === 'doc' && activeTab.path === n.path;
             return (
               <li key={n.path} className="group relative">
@@ -318,7 +296,7 @@ interface Shortlist {
  * everything else by recency — the note you touched last is the one you want.
  */
 function shortlistFor(g: VaultTreeGroupDTO, problems: ProblemHeatDTO[]): Shortlist {
-  const all = g.notes.filter((n) => !n.path.endsWith('/index.md'));
+  const all = g.notes.filter((n) => !isFolderIndex(n.path));
   const take = (list: NoteRefDTO[]): Shortlist => ({ notes: list.slice(0, SHORTLIST), total: all.length });
   switch (g.type) {
     case 'source': {
@@ -365,7 +343,7 @@ function TypeSection({ group, problems }: { group: VaultTreeGroupDTO; problems: 
   const [open, toggle] = useSection(`type.${group.type}`, true);
   const { notes, total } = useMemo(() => shortlistFor(group, problems), [group, problems]);
   if (total === 0) return null;
-  const Icon = TYPE_ICON[group.type] ?? StickyNote;
+  const Icon = noteTypeIcon(group.type);
   const folderActive = activeTab?.kind === 'folder' && activeTab.dir === group.dir;
   const more = total - notes.length;
 
@@ -474,7 +452,7 @@ function MemoryTree() {
   const unprocessed = all
     .filter((g) => g.type === 'source')
     .flatMap((g) => g.notes)
-    .filter((n) => !n.path.endsWith('/index.md') && isUnprocessedSource(n)).length;
+    .filter((n) => !isFolderIndex(n.path) && isUnprocessedSource(n)).length;
   if (all.length === 0) return null;
   return (
     <div className="px-2 pt-1">
@@ -561,12 +539,11 @@ export function Sidebar({
   const skillsGroup = tree?.groups.find((g) => g.type === 'skill');
   // The PO's own open todos due today or slipped — the "deal with these" count.
   const todosDue = useMemo(() => {
-    const today = new Date();
-    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const iso = localDateStr();
     const group = tree?.groups.find((g) => g.type === 'todo');
     return (group?.notes ?? []).filter(
       (n) =>
-        !n.path.endsWith('/index.md') &&
+        !isFolderIndex(n.path) &&
         (n.status ?? 'open') === 'open' &&
         !n.owner &&
         !!n.due &&
@@ -669,7 +646,7 @@ export function Sidebar({
             <ActivitySection />
             <FavoritesSection notes={favoriteNotes} />
             <MemoryTree />
-            {(tree?.groups ?? []).every((g) => g.type === 'skill' || g.notes.every((n) => n.path.endsWith('/index.md'))) && (
+            {(tree?.groups ?? []).every((g) => g.type === 'skill' || g.notes.every((n) => isFolderIndex(n.path))) && (
               <p className="px-4 py-4 text-sm text-muted-foreground">
                 Empty workspace — start a note with ⌘N, or dump anything with ⇧⌘N or a drop.
               </p>

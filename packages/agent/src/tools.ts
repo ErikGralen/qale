@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import type { UseCaseContext } from '@pm/application';
 import { createProposal, searchNotes, contentHash } from '@pm/application';
-import { fileSlug, validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload } from '@pm/domain';
+import { fileSlug, isFolderIndex, refToSlug, validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload } from '@pm/domain';
 import type { SessionHarness } from '@pm/sessions';
 import type { AtlassianClient } from '@pm/atlassian';
 
@@ -50,6 +50,7 @@ export function createVaultTools(ctx: UseCaseContext, harness?: SessionHarness):
       const all = ctx.index.all();
       const rows = all.filter(
         (n) =>
+          !isFolderIndex(n.path) &&
           (!params.type || n.type === params.type) &&
           (!params.status || n.status === params.status),
       );
@@ -550,6 +551,7 @@ export function createAtlassianTools(client: AtlassianClient): ToolDefinition[] 
   return [jiraSearch, jiraGetIssue, confluenceSearch, confluenceGetPage];
 }
 
+/** Domain's ref parsing, with '' instead of null for plain-string call sites. */
 function stripLink(ref: string): string {
-  return ref.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.split('#')[0]!.replace(/\.md$/, '');
+  return refToSlug(ref) ?? '';
 }

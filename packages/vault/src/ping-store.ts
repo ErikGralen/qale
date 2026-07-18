@@ -1,10 +1,11 @@
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 import type { CreatePingInput, PingPayload, PingPort, PingRecord } from '@pm/application';
+import { idHash } from './hash.js';
 
 /**
- * Agent-ping queue — lives in app.db beside the proposals table (primary state,
- * never dropped). A ping is an agent-opened conversation waiting in the Inbox;
- * its status log (opened/dismissed) doubles as the proactivity eval signal.
+ * Agent-ping queue — beside the proposals table in the per-vault AppDb, which
+ * owns the connection. A ping is an agent-opened conversation waiting in the
+ * Inbox; its status log (opened/dismissed) doubles as the proactivity eval signal.
  */
 interface Row {
   id: string;
@@ -22,12 +23,7 @@ interface Row {
 }
 
 export class PingStore implements PingPort {
-  private db: Database.Database;
-
-  constructor(dbPath: string) {
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('busy_timeout = 5000');
+  constructor(private readonly db: Database.Database) {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS pings (
         id TEXT PRIMARY KEY,
@@ -54,7 +50,7 @@ export class PingStore implements PingPort {
 
   create(input: CreatePingInput, now: number): PingRecord {
     const row: Row = {
-      id: `g_${now.toString(36)}_${Math.abs(hash(input.key + input.title)).toString(36)}`,
+      id: `g_${now.toString(36)}_${Math.abs(idHash(input.key + input.title)).toString(36)}`,
       key: input.key,
       title: input.title,
       body: input.body,
@@ -115,10 +111,6 @@ export class PingStore implements PingPort {
     return row.c > 0;
   }
 
-  close(): void {
-    this.db.close();
-  }
-
   private toRecord(row: Row): PingRecord {
     return {
       id: row.id,
@@ -135,10 +127,4 @@ export class PingStore implements PingPort {
       resolved: row.resolved,
     };
   }
-}
-
-function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-  return h;
 }

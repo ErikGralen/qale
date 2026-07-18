@@ -5,6 +5,8 @@
  * parse is previewed as chips before Enter, so a miss is visible, not silent.
  */
 
+import { localDateStr } from './dates';
+
 export interface ParsedTodo {
   title: string;
   /** "YYYY-MM-DD". */
@@ -23,17 +25,10 @@ const WEEKDAYS: Record<string, number> = {
   saturday: 6, sat: 6,
 };
 
-function fmt(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 function addDays(now: Date, n: number): string {
   const d = new Date(now);
   d.setDate(d.getDate() + n);
-  return fmt(d);
+  return localDateStr(d);
 }
 
 interface DueRule {
@@ -46,7 +41,7 @@ const DUE_RULES: DueRule[] = [
   { re: /(?:\b(?:by|on|due)\s+)?\b(\d{4}-\d{2}-\d{2})\b/i, resolve: (m) => m[1]! },
   {
     re: /(?:\b(?:by|due)\s+)?\b(?:today|tonight|this\s+(?:morning|afternoon|evening)|eod|end\s+of\s+day)\b/i,
-    resolve: (_m, now) => fmt(now),
+    resolve: (_m, now) => localDateStr(now),
   },
   { re: /(?:\b(?:by|due)\s+)?\b(?:tomorrow|tmrw|tmr)\b/i, resolve: (_m, now) => addDays(now, 1) },
   { re: /\bnext\s+week\b/i, resolve: (_m, now) => addDays(now, ((8 - now.getDay()) % 7) || 7) },

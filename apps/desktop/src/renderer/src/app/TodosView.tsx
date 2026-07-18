@@ -13,8 +13,9 @@ import {
 } from 'lucide-react';
 import { Spinner } from '@pm/ui';
 import type { NoteRefDTO } from '@pm/ipc';
-import { byDue, todoLane, type TodoLane } from '@pm/domain';
+import { byDue, todoLane, type TodoLane, isFolderIndex } from '@pm/domain';
 import { useApp } from '../state/app-state';
+import { localDateStr } from '../lib/dates';
 import { parseTodoInput } from '../lib/todo-parse';
 import { overdueTriageSeed, type OverdueTodoRef } from '../lib/agent-nudges';
 
@@ -35,11 +36,6 @@ const LANE_LABEL: Record<TodoLane, string> = {
   waiting: 'Waiting on others',
   closed: 'Done',
 };
-
-function todayStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 const dueFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
 const dueFmtYear = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -121,7 +117,7 @@ function QuickAdd() {
             {parsed.due && (
               <span className="flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-foreground/80">
                 <Calendar className="size-3" aria-hidden />
-                {dueLabel(parsed.due, todayStr())}
+                {dueLabel(parsed.due, localDateStr())}
               </span>
             )}
             {parsed.owner && (
@@ -294,7 +290,7 @@ function TodoRowItem({
 
 export function TodosView() {
   const { tree, setTodoStatus, openFolder, openSession } = useApp();
-  const today = todayStr();
+  const today = localDateStr();
   const [showDone, setShowDone] = useState(false);
   /** Optimistic status while the write+reindex round-trips. */
   const [pending, setPending] = useState<Record<string, string>>({});
@@ -305,7 +301,7 @@ export function TodosView() {
     let todoNotes: NoteRefDTO[] = [];
     for (const g of tree?.groups ?? []) {
       for (const n of g.notes) {
-        if (n.path.endsWith('/index.md')) continue;
+        if (isFolderIndex(n.path)) continue;
         bySlug.set(n.slug, n);
         if (g.type === 'todo') todoNotes = [...todoNotes, n];
       }

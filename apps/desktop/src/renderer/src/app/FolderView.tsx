@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
+import { isFolderIndex } from '@pm/domain';
 import { Button } from '@pm/ui';
-import { AlertTriangle, Folder, Search, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, Folder, Search, X } from 'lucide-react';
 import type { NoteRefDTO, NoteType } from '@pm/ipc';
 import { useApp } from '../state/app-state';
 import { NoteList } from './NoteList';
+import { ScopedAskComposer } from '../components/ScopedAskComposer';
 import { TagChip } from '../components/TagChip';
 import { monthBucket, refDate } from '../lib/contexts';
 
@@ -69,8 +71,7 @@ function FacetChip({
  * together. Docked Ask composer stays scoped to the folder.
  */
 export function FolderView({ dir }: { dir: string }) {
-  const { tree, openSession } = useApp();
-  const [ask, setAsk] = useState('');
+  const { tree } = useApp();
   const [filter, setFilter] = useState('');
   const [contextFacet, setContextFacet] = useState<string | null>(null);
   // Decisions default to the live spine — superseded ones are one click away.
@@ -80,7 +81,7 @@ export function FolderView({ dir }: { dir: string }) {
   const listRef = useRef<HTMLDivElement>(null);
 
   const group = tree?.groups.find((g) => g.dir === dir);
-  const notes = useMemo(() => (group?.notes ?? []).filter((n) => !n.path.endsWith('/index.md')), [group]);
+  const notes = useMemo(() => (group?.notes ?? []).filter((n) => !isFolderIndex(n.path)), [group]);
 
   const allTags = useMemo(() => {
     const freq = new Map<string, number>();
@@ -140,16 +141,6 @@ export function FolderView({ dir }: { dir: string }) {
     setContextFacet(null);
     setStatusFacet(null);
     filterRef.current?.focus();
-  };
-
-  const runAsk = () => {
-    const q = ask.trim();
-    if (!q) return;
-    setAsk('');
-    openSession('ask', {
-      title: `Ask · ${dir}`,
-      initialPrompt: `Scoped to the ${dir}/ folder. ${q}`,
-    });
   };
 
   return (
@@ -281,27 +272,11 @@ export function FolderView({ dir }: { dir: string }) {
         </div>
       </div>
 
-      <div className="shrink-0 px-6 pb-5">
-        <div className="mx-auto flex max-w-2xl items-end gap-2 rounded-xl border border-border bg-card p-2 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
-          <Sparkles className="mb-1.5 ml-1 size-4 shrink-0 text-brand" />
-          <textarea
-            value={ask}
-            onChange={(e) => setAsk(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                runAsk();
-              }
-            }}
-            placeholder={`Ask about ${dir}…`}
-            rows={1}
-            className="max-h-40 flex-1 resize-none bg-transparent px-1 py-1 text-[15px] outline-none"
-          />
-          <Button size="sm" onClick={runAsk} disabled={!ask.trim()}>
-            Ask
-          </Button>
-        </div>
-      </div>
+      <ScopedAskComposer
+        placeholder={`Ask about ${dir}…`}
+        sessionTitle={`Ask · ${dir}`}
+        scopePrefix={`Scoped to the ${dir}/ folder.`}
+      />
     </div>
   );
 }

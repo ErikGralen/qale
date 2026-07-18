@@ -1,30 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { X, Plus, PanelLeft, Inbox, History, MessageSquare, FileText, Folder, Hash, Settings, Pin, Building2, User, Mic, GitBranch, Sparkles, Target, Rocket, Wand2, StickyNote, FileInput, ListTodo, SquareCheck, Library } from 'lucide-react';
+import { X, Plus, PanelLeft, Inbox, History, MessageSquare, FileText, Folder, Hash, Settings, Pin, Wand2, ListTodo, Library } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Spinner } from '@pm/ui';
-import type { NoteType } from '@pm/ipc';
+import { NOTE_TYPE_ICON } from '../lib/note-icons';
 import { useApp, type Tab } from '../state/app-state';
-
-const NOTE_TYPE_ICONS: Record<NoteType, LucideIcon> = {
-  source: FileInput,
-  meeting: Mic,
-  decision: GitBranch,
-  insight: Sparkles,
-  customer: Building2,
-  problem: Target,
-  release: Rocket,
-  person: User,
-  session: History,
-  skill: Wand2,
-  todo: SquareCheck,
-  note: StickyNote,
-};
 
 function iconFor(tab: Tab): LucideIcon {
   switch (tab.kind) {
     case 'doc':
-      return tab.noteType ? (NOTE_TYPE_ICONS[tab.noteType] ?? FileText) : FileText;
+      return tab.noteType ? (NOTE_TYPE_ICON[tab.noteType] ?? FileText) : FileText;
     case 'session':
       return MessageSquare;
     case 'chats':

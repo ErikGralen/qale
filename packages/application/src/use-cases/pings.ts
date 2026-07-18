@@ -2,6 +2,7 @@ import {
   buildLinkRepairPatch,
   buildMentionLinkPatch,
   findUnlinkedMentions,
+  isFolderIndex,
   suggestLinkCandidates,
   suggestLinkTarget,
   type LinkRepairCandidate,
@@ -109,7 +110,7 @@ async function proposeLinkFixes(
 
   const candidates = ctx.index
     .all()
-    .filter((n) => !n.path.endsWith('/index.md'))
+    .filter((n) => !isFolderIndex(n.path))
     .map((n) => ({ slug: n.slug, title: n.title }));
 
   const unfixed: UnfixedLink[] = [];
@@ -170,7 +171,7 @@ async function collectOrphanItems(ctx: UseCaseContext, report: MaintenanceReport
     if (orphan.title.trim().length >= 4) {
       for (const hit of ctx.index.search(orphan.title, 6)) {
         if (mentions.length >= MAX_MENTION_HOSTS) break;
-        if (hit.path === orphan.path || hit.path.endsWith('/index.md')) continue;
+        if (hit.path === orphan.path || isFolderIndex(hit.path)) continue;
         const note = await ctx.vault.readNote(hit.path);
         if (!note) continue;
         const lines = findUnlinkedMentions(note.body, orphan.title);

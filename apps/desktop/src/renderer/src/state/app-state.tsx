@@ -215,6 +215,15 @@ function loadFavorites(vaultPath: string): string[] {
   }
 }
 
+/** Write the per-workspace favourites list back to localStorage (best-effort). */
+function persistFavorites(vaultPath: string, next: string[]) {
+  try {
+    localStorage.setItem(`${FAVORITES_KEY}:${vaultPath}`, JSON.stringify(next));
+  } catch {
+    /* ignore quota */
+  }
+}
+
 function loadPersistedTabs(): { tabs: Tab[]; activeTabId: string | null } {
   try {
     const raw = localStorage.getItem(TABS_KEY);
@@ -515,13 +524,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     (path: string) => {
       setFavorites((prev) => {
         const next = prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path];
-        if (vault) {
-          try {
-            localStorage.setItem(`${FAVORITES_KEY}:${vault.path}`, JSON.stringify(next));
-          } catch {
-            /* ignore quota */
-          }
-        }
+        if (vault) persistFavorites(vault.path, next);
         return next;
       });
     },
@@ -834,13 +837,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setFavorites((prev) => {
           if (!prev.includes(path)) return prev;
           const next = prev.map((p) => (p === path ? note.path : p));
-          if (vault) {
-            try {
-              localStorage.setItem(`${FAVORITES_KEY}:${vault.path}`, JSON.stringify(next));
-            } catch {
-              /* ignore quota */
-            }
-          }
+          if (vault) persistFavorites(vault.path, next);
           return next;
         });
       }
@@ -871,13 +868,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setFavorites((prev) => {
         if (!prev.includes(path)) return prev;
         const next = prev.filter((p) => p !== path);
-        if (vault) {
-          try {
-            localStorage.setItem(`${FAVORITES_KEY}:${vault.path}`, JSON.stringify(next));
-          } catch {
-            /* ignore quota */
-          }
-        }
+        if (vault) persistFavorites(vault.path, next);
         return next;
       });
       await refreshTree();

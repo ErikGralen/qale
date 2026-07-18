@@ -2,6 +2,8 @@ import {
   NOTE_TYPE_META,
   byHeat,
   computeHeat,
+  isFolderIndex,
+  refToSlug,
   type NoteType,
 } from '@pm/domain';
 import type { IndexedNote, UseCaseContext } from '../ports.js';
@@ -65,13 +67,14 @@ export interface ProblemHeatRow {
  * `date`/`captured` via the index.
  */
 export function getProblemsByHeat(ctx: UseCaseContext): ProblemHeatRow[] {
-  const problems = ctx.index.listByType('problem');
+  const problems = ctx.index.listByType('problem').filter((n) => !isFolderIndex(n.path));
   const rows = problems.map((note) => {
     const evidence = Array.isArray(note.frontmatter['evidence'])
       ? (note.frontmatter['evidence'] as string[])
       : [];
     const dates = evidence.map((ref) => {
-      const path = ctx.index.resolve(stripBrackets(ref));
+      const slug = refToSlug(ref);
+      const path = slug ? ctx.index.resolve(slug) : null;
       const rec = path ? ctx.index.get(path) : null;
       const fm = rec?.frontmatter ?? {};
       const d = fm['date'] ?? fm['captured'];
@@ -100,14 +103,14 @@ export interface NoteQuery {
  */
 export function queryNotes(ctx: UseCaseContext, q: NoteQuery): IndexedNote[] {
   const cutoff = q.recentDays ? Date.now() - q.recentDays * 24 * 60 * 60 * 1000 : null;
-  let rows = ctx.index.all().filter((n) => !n.path.endsWith('/index.md'));
+  let rows = ctx.index.all().filter((n) => !isFolderIndex(n.path));
   if (q.types) rows = rows.filter((n) => q.types!.includes(n.type));
   if (q.status) rows = rows.filter((n) => n.status === q.status);
   if (cutoff !== null) rows = rows.filter((n) => n.mtime >= cutoff);
   if (q.customer) {
     rows = rows.filter((n) => {
       const c = n.frontmatter['customer'];
-      return typeof c === 'string' && stripBrackets(c).replace(/\.md$/, '').endsWith(q.customer!);
+      return typeof c === 'string' && (refToSlug(c)?.endsWith(q.customer!) ?? false);
     });
   }
   rows.sort((a, b) => b.mtime - a.mtime);
@@ -123,7 +126,7 @@ export interface MaintenanceReport {
 
 /** Librarian maintenance scan (PLAN-V2 §3.5): orphans + dangling links. */
 export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
-  const all = ctx.index.all().filter((n) => !n.path.endsWith('/index.md'));
+  const all = ctx.index.all().filter((n) => !isFolderIndex(n.path));
   const orphans: { path: string; title: string }[] = [];
   const danglingLinks: { from: string; target: string }[] = [];
   for (const n of all) {
@@ -160,6 +163,3 @@ export async function ensureDefaultSkills(
   return { written };
 }
 
-function stripBrackets(ref: string): string {
-  return ref.replace(/^\[\[/, '').replace(/\]\]$/, '');
-}

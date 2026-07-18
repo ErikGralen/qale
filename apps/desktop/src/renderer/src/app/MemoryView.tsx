@@ -1,35 +1,10 @@
 import { useMemo } from 'react';
-import {
-  Building2,
-  ChevronRight,
-  FileInput,
-  GitBranch,
-  History,
-  Library,
-  Mic,
-  Rocket,
-  Sparkles,
-  StickyNote,
-  Target,
-  User,
-  type LucideIcon,
-} from 'lucide-react';
+import { isFolderIndex } from '@pm/domain';
+import { ChevronRight, Library } from 'lucide-react';
 import type { NoteRefDTO, NoteType, VaultTreeGroupDTO } from '@pm/ipc';
 import { useApp } from '../state/app-state';
+import { noteTypeIcon } from '../lib/note-icons';
 import { isUnprocessedSource, needsReview } from '../lib/note-status';
-
-const TYPE_ICON: Record<string, LucideIcon> = {
-  source: FileInput,
-  meeting: Mic,
-  decision: GitBranch,
-  insight: Sparkles,
-  customer: Building2,
-  problem: Target,
-  release: Rocket,
-  person: User,
-  session: History,
-  note: StickyNote,
-};
 
 /** Page order: the working set first, then the reference shelves. */
 const TYPE_ORDER: readonly NoteType[] = [
@@ -74,8 +49,8 @@ function attentionFor(type: NoteType, notes: NoteRefDTO[]): string | null {
 
 function ShelfRow({ group }: { group: VaultTreeGroupDTO }) {
   const { openFolder } = useApp();
-  const notes = useMemo(() => group.notes.filter((n) => !n.path.endsWith('/index.md')), [group]);
-  const Icon = TYPE_ICON[group.type] ?? StickyNote;
+  const notes = useMemo(() => group.notes.filter((n) => !isFolderIndex(n.path)), [group]);
+  const Icon = noteTypeIcon(group.type);
   const attention = attentionFor(group.type, notes);
   return (
     <li>
@@ -122,7 +97,7 @@ export function MemoryView() {
     };
     return [...content].sort((a, b) => rank(a) - rank(b) || a.dir.localeCompare(b.dir));
   }, [tree]);
-  const total = groups.reduce((sum, g) => sum + g.notes.filter((n) => !n.path.endsWith('/index.md')).length, 0);
+  const total = groups.reduce((sum, g) => sum + g.notes.filter((n) => !isFolderIndex(n.path)).length, 0);
 
   return (
     <div className="flex h-full flex-col">

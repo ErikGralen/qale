@@ -8,6 +8,15 @@ export function slugFromPath(path: string): string {
   return path.replace(/\.md$/i, '');
 }
 
+/**
+ * Folder hub pages (`<dir>/index.md`) are navigation, not content — every
+ * content listing (views, sweeps, agent listings) excludes them via this ONE
+ * predicate.
+ */
+export function isFolderIndex(path: string): boolean {
+  return path.endsWith('/index.md');
+}
+
 /** The final path segment (basename without extension). */
 export function basename(slug: string): string {
   const s = slugFromPath(slug);

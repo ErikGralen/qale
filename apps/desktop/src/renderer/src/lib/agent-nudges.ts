@@ -4,6 +4,15 @@
  * arrive as inbox pings; the prompt contracts moved here with them.
  */
 
+/** Ground a passage the PO selected in a note against the memory (bubble toolbar → Ask). */
+export function askSelectionSeed(path: string, selection: string): string {
+  const quoted = selection
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+  return `While reading ${path} I selected this passage:\n\n${quoted}\n\nWhat does the memory know about this? Give me the relevant context — related decisions (and whether any were superseded), evidence, open questions, who's involved — citing sources with dates. If the memory contradicts or can't back the passage, say so plainly.`;
+}
+
 /** Kick off the Before-Meeting session for one meeting page. */
 export function beforeMeetingSeed(path: string): string {
   return `Run the Before-Meeting session on ${path}: read the participants' people pages (last_told), the customer/problem hubs this meeting touches, and the previous meeting in its series, then propose a ## Prep section for the meeting page as one approval card.`;

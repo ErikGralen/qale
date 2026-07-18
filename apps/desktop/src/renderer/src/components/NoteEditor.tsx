@@ -6,13 +6,21 @@ import { Markdown } from '@tiptap/markdown';
 import { Placeholder } from '@tiptap/extensions';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
+import type { SearchHitDTO } from '@pm/ipc';
 import { invoke } from '../lib/ipc';
 import { WikiLink } from './editor/wikilink';
+import { SlashCommand } from './editor/slash-command';
+import { WikilinkSuggest } from './editor/wikilink-suggest';
+import { BlockHandle } from './editor/block-handle';
+import { SelectionToolbar } from './editor/SelectionToolbar';
 
 /**
  * Always-editable WYSIWYG note body (TipTap). Loads/saves markdown — the file
- * on disk stays the source of truth. Barebones by design: no toolbar; markdown
- * input rules (`# `, `**`, `- `, `> `) are the formatting affordance.
+ * on disk stays the source of truth. Markdown input rules (`# `, `**`, `- `,
+ * `> `) remain the fastest path; on top of them: a selection bubble toolbar,
+ * a `/` block menu, `[[` wikilink autocomplete, and a left-gutter block handle
+ * (+ / drag). Every affordance serializes cleanly to markdown — nothing here
+ * can put something in the editor that the file can't hold.
  *
  * Autosave: debounced 1.5s after the last keystroke, flushed on blur/hide/
  * unmount/quit. Only user edits mark the note dirty, so merely opening a note
@@ -52,15 +60,21 @@ export function NoteEditor({
   onSave,
   onOpenNote,
   onDirty,
+  onAsk,
+  searchNotes,
 }: {
   body: string;
   onSave: (body: string) => Promise<void>;
   onOpenNote: (path: string) => void;
   onDirty?: () => void;
+  /** Hand the selected text to an Ask session (bubble toolbar's Ask). */
+  onAsk?: (text: string) => void;
+  /** Workspace search backing the `[[` wikilink autocomplete. */
+  searchNotes?: (query: string) => Promise<SearchHitDTO[]>;
 }) {
   // Callbacks live in refs so the editor (created once) never sees stale closures.
-  const callbacks = useRef({ onSave, onOpenNote, onDirty });
-  callbacks.current = { onSave, onOpenNote, onDirty };
+  const callbacks = useRef({ onSave, onOpenNote, onDirty, onAsk, searchNotes });
+  callbacks.current = { onSave, onOpenNote, onDirty, onAsk, searchNotes };
 
   const lastSaved = useRef(body);
   const pendingMd = useRef<string | null>(null); // captured in onUpdate; survives editor destroy
@@ -93,13 +107,21 @@ export function NoteEditor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ link: { openOnClick: false } }),
+      StarterKit.configure({
+        link: { openOnClick: false },
+        dropcursor: { color: 'var(--brand)', width: 2 },
+      }),
       Markdown.configure({ markedOptions: { gfm: true } }),
-      Placeholder.configure({ placeholder: 'Write something…' }),
+      Placeholder.configure({ placeholder: 'Write, or type / for blocks and [[ to link…' }),
       TaskList,
       TaskItem.configure({ nested: true }),
       TableKit,
       WikiLink,
+      SlashCommand,
+      WikilinkSuggest.configure({
+        searchNotes: (q) => callbacks.current.searchNotes?.(q) ?? Promise.resolve([]),
+      }),
+      BlockHandle,
     ],
     onCreate: ({ editor }) => {
       // Content goes through parseBody (not the `content` option) so soft
@@ -107,7 +129,10 @@ export function NoteEditor({
       editor.commands.setContent(parseBody(editor, body), { emitUpdate: false });
     },
     editorProps: {
-      attributes: { class: 'note-body' },
+      // pl-14/-ml-14: the left gutter lives INSIDE the editor's box (text
+      // position unchanged), so mousing from a block to the floating handle
+      // never leaves view.dom — leaving is what hides the handle.
+      attributes: { class: 'note-body pl-14 -ml-14' },
       // Wikilink pills are atom nodes — ProseMirror hands us the node directly.
       handleClickOn: (_view, _pos, node, _nodePos, event) => {
         if (node.type.name !== 'wikiLink') return false;
@@ -168,5 +193,14 @@ export function NoteEditor({
     };
   }, [flush]);
 
-  return <EditorContent editor={editor} />;
+  return (
+    // Relative: the block handle's floating-ui wrapper positions against
+    // EditorContent's root (the editor DOM's parent element).
+    <div className="relative">
+      <EditorContent editor={editor} />
+      {editor && (
+        <SelectionToolbar editor={editor} onAsk={onAsk ? (text) => callbacks.current.onAsk?.(text) : undefined} />
+      )}
+    </div>
+  );
 }

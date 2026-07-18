@@ -5,7 +5,7 @@ import { useApp } from '../state/app-state';
 import { Markdown } from '../components/Markdown';
 import { NoteEditor } from '../components/NoteEditor';
 import { PropertiesBlock } from '../components/PropertiesBlock';
-import { beforeMeetingSeed } from '../lib/agent-nudges';
+import { askSelectionSeed, beforeMeetingSeed } from '../lib/agent-nudges';
 
 /** "today 14:00" / "tomorrow" / "in 3d" — when the meeting starts, or null if past. */
 function upcomingLabel(frontmatter: Record<string, unknown>): string | null {
@@ -65,7 +65,7 @@ function TitleEditor({
 }
 
 export function NoteView({ path }: { path: string }) {
-  const { docData, openDoc, loadDoc, saveNote, renameNote, deleteNote, openSession, activeTabId, keepTab, favorites, toggleFavorite } =
+  const { docData, openDoc, loadDoc, saveNote, renameNote, deleteNote, openSession, activeTabId, keepTab, favorites, toggleFavorite, search } =
     useApp();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const data = docData[path];
@@ -76,7 +76,7 @@ export function NoteView({ path }: { path: string }) {
     return (
       <div className="flex h-full flex-col">
         <div className="h-10 border-b border-border" />
-        <div className="mx-auto w-full max-w-2xl flex-1 px-8 py-6">
+        <div className="mx-auto w-full max-w-2xl flex-1 px-14 py-6">
           <div className="mb-3 h-4 w-24 animate-pulse rounded bg-muted" />
           <div className="mb-4 h-7 w-2/3 animate-pulse rounded bg-muted" />
           <div className="space-y-2">
@@ -147,7 +147,9 @@ export function NoteView({ path }: { path: string }) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-8 py-4">
+      {/* px-14: the left gutter must seat the block handle (+ ⋮⋮, 54px) without
+          clipping against the panel edge. */}
+      <div className="flex-1 overflow-y-auto px-14 py-4">
         <div className="mx-auto max-w-2xl">
           <div className="mb-1 flex flex-wrap items-center gap-2">
             <Badge variant="secondary" className="capitalize">
@@ -221,6 +223,14 @@ export function NoteView({ path }: { path: string }) {
                 // Editing commits the tab — it stops being a throwaway preview.
                 if (activeTabId) keepTab(activeTabId);
               }}
+              searchNotes={search}
+              onAsk={(text) =>
+                openSession('ask', {
+                  initialPrompt: askSelectionSeed(currentNote.path, text),
+                  title: `Ask — ${currentNote.title}`,
+                  fresh: true,
+                })
+              }
             />
           ) : (
             <Markdown content={currentNote.body} onOpenNote={openDoc} />

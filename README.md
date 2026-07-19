@@ -6,6 +6,7 @@ An Electron desktop app that turns a plain-markdown vault (notes, meetings, deci
 
 - **Markdown vault** — plain `.md` files with typed frontmatter (meeting, decision, insight, problem, person, …), wikilinks, backlinks, and a live SQLite index.
 - **Editor** — TipTap-based: selection toolbar, `/` block commands, `[[` wikilink autocomplete, drag block handles, structured properties block.
+- **Version history** — git-backed per-note history: a consent-gated `git init` per workspace, then a read-only history viewer on every note.
 - **Agent sessions** — skill-file driven (frontmatter + `## When / ## Produce / ## Then` sections) chat/ask/after-meeting/weekly sessions over the Anthropic API.
 - **Inbox** — the approval queue for agent proposals (with diffs and staleness checks) plus librarian housekeeping pings.
 - **Todos & commitments** — own todos and waiting-on ledger, parsed from notes plus quick-add.
@@ -53,3 +54,4 @@ MVP. See [docs/NEXT-STEPS.md](docs/NEXT-STEPS.md) for the full review this work 
 - **Dead-code sweep** — unreachable smart views, drifted duplicate agent prompts, the truth-delta module, dead IPC channels/use-cases, and assorted dead ends removed (−540 lines); note reads no longer pay a wasted remark parse.
 - **Refactor pass** — InboxView split into `components/inbox/` (1437 → 637 lines); five copy-paste families unified (icons, dates, favorites, scoped-Ask, wikilink parsing via `refToSlug`); the `/index.md` hub filter centralized as `isFolderIndex` and applied to two spots that leaked hub pages; one app DB connection per vault (`AppDb`); the librarian sweep no longer blocks first paint; the editor suggestion popup uses the TipTap library mount (outside-click dismissal included).
 - **UX polish** — one toast channel for silent failures (capture, todo flips, settings saves); an inline confirm before deleting a conversation; honest at-rest secret storage that says when the OS keychain is missing; editor fixes (link-to-note always opens the picker, property rows keep their value types and protect agent-written keys, one shared block registry for the toolbar and slash menu).
+- **Version history** — a git-backed vault now shows its payoff: every note has a History button that lists the commits touching it and shows the prose at any of them, read-only. A workspace that isn't a git repo yet is offered one-click, consent-gated `git init` (a baseline snapshot of every note) from the same dialog.

@@ -4,6 +4,21 @@ Product review, 2026-07-18. Scope: full codebase (renderer, main process, packag
 
 ---
 
+## Status — implemented 2026-07-19
+
+Everything in the sequencing plan below was carried out (see the `editor:`, `fix:`, `remove:`, `refactor:`, `improve:`, `feat:` commits). Summary:
+
+- **All 5 P0 bugs and all 9 P1 bugs fixed**, with new `@pm/vault` and `@pm/markdown` test suites (git root guard, `contain()` escapes, frontmatter coercion, parse/serialize round-trips, skill sections, git history).
+- **Dead code removed** (−540 lines) — except the `packages/ui` shadcn components, which were **kept intentionally** at the maintainer's request even though most are unused.
+- **Refactors done** — InboxView split, five dedupe families, single per-vault `AppDb`, background startup sweep, editor popup on the library mount.
+- **Improvements** — one toast channel for silent failures, delete-conversation confirm, honest secret storage, the four editor follow-ups.
+- **Both features shipped** — consent-gated vault `git init` + a per-note version-history viewer.
+- **Deliberately deferred** (churn without user payoff for an MVP): collapsing `packages/ipc/dtos.ts`'s parallel type system and the single-implementation `application/ports.ts` hexagon. Revisit only when they actively hurt.
+
+The original review follows, unchanged, for reference.
+
+---
+
 ## 1. Bugs — fix now
 
 ### P0 (verified, user-visible or data-destroying)

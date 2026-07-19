@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Separator } from '@pm/ui';
-import { Link2, FileText, Star, Play, Sparkles, Trash2 } from 'lucide-react';
+import { Link2, FileText, Star, Play, Sparkles, Trash2, History } from 'lucide-react';
 import { useApp } from '../state/app-state';
 import { Markdown } from '../components/Markdown';
 import { NoteEditor } from '../components/NoteEditor';
+import { NoteHistory } from '../components/NoteHistory';
 import { PropertiesBlock } from '../components/PropertiesBlock';
 import { askSelectionSeed, beforeMeetingSeed } from '../lib/agent-nudges';
 
@@ -68,6 +69,7 @@ export function NoteView({ path }: { path: string }) {
   const { docData, openDoc, loadDoc, saveNote, renameNote, deleteNote, openSession, activeTabId, keepTab, favorites, toggleFavorite, search } =
     useApp();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const data = docData[path];
   const currentNote = data?.note ?? null;
   const backlinks = data?.backlinks ?? [];
@@ -125,6 +127,14 @@ export function NoteView({ path }: { path: string }) {
             title={favorites.includes(currentNote.path) ? 'Remove from favourites' : 'Add to favourites'}
           >
             <Star className={`size-4 ${favorites.includes(currentNote.path) ? 'fill-brand text-brand' : ''}`} />
+          </button>
+          <button
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            onClick={() => setShowHistory(true)}
+            aria-label="Version history"
+            title="Version history"
+          >
+            <History className="size-4" />
           </button>
           {confirmDelete ? (
             <>
@@ -267,6 +277,7 @@ export function NoteView({ path }: { path: string }) {
           )}
         </div>
       </div>
+      <NoteHistory path={currentNote.path} open={showHistory} onOpenChange={setShowHistory} />
     </div>
   );
 }

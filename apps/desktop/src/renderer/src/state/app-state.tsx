@@ -89,6 +89,8 @@ interface AppState {
   activeTab: Tab | null;
   docData: Record<string, DocData>;
   openVaultDialog: () => Promise<void>;
+  /** Turn the open workspace into a git repo (consent-gated version history). */
+  enableGit: () => Promise<void>;
   /** Pinned note paths — the PO's curated sidebar shortlist, per workspace. */
   favorites: string[];
   toggleFavorite: (path: string) => void;
@@ -773,6 +775,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (info) await bootVault(info);
   }, [bootVault]);
 
+  const enableGit = useCallback(async () => {
+    setVault(await invoke['vault:initGit']());
+  }, []);
+
   const captureNote = useCallback(
     async (input: CaptureNoteInput) => {
       const note = await invoke['note:capture'](input);
@@ -954,6 +960,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activeTab,
       docData,
       openVaultDialog,
+      enableGit,
       favorites,
       toggleFavorite,
       pendingCount,
@@ -1007,7 +1014,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       deleteNote,
       search,
     }),
-    [vault, tree, tabs, activeTabId, activeTab, docData, openVaultDialog, favorites, toggleFavorite, pendingCount, proposals, problems, sessions, pings, skills, refreshSkills, attentionCount, markSessionSeen, refreshSessions, openPing, dismissPing, resolvePingItem, deleteSession, setSessionLifecycle, openDoc, openSession, openChat, openChats, bindTabSession, openInbox, openTodos, openMemory, openFolder, openContext, openSettings, openSkills, closeTab, closeOtherTabs, closeAllTabs, closeTabsBefore, closeTabsAfter, keepTab, moveTab, setActiveTab, query, ingestCapture, previewProposal, refreshProposals, acceptProposal, rejectProposal, captureNote, captureTodo, setTodoStatus, saveNote, saveFrontmatter, renameNote, deleteNote, search, loadDoc],
+    [vault, tree, tabs, activeTabId, activeTab, docData, openVaultDialog, enableGit, favorites, toggleFavorite, pendingCount, proposals, problems, sessions, pings, skills, refreshSkills, attentionCount, markSessionSeen, refreshSessions, openPing, dismissPing, resolvePingItem, deleteSession, setSessionLifecycle, openDoc, openSession, openChat, openChats, bindTabSession, openInbox, openTodos, openMemory, openFolder, openContext, openSettings, openSkills, closeTab, closeOtherTabs, closeAllTabs, closeTabsBefore, closeTabsAfter, keepTab, moveTab, setActiveTab, query, ingestCapture, previewProposal, refreshProposals, acceptProposal, rejectProposal, captureNote, captureTodo, setTodoStatus, saveNote, saveFrontmatter, renameNote, deleteNote, search, loadDoc],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

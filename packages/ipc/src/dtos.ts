@@ -95,7 +95,17 @@ export interface VaultInfoDTO {
   name: string;
   /** Whether the folder is (or was made into) a git repo. */
   git: boolean;
+  /** git is installed — history can be enabled even when `git` is false. */
+  gitAvailable: boolean;
   noteCount: number;
+}
+
+/** One commit in a note's version history. */
+export interface NoteCommitDTO {
+  hash: string;
+  date: string;
+  message: string;
+  author: string;
 }
 
 export interface VaultTreeGroupDTO {

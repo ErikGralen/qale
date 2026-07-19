@@ -85,12 +85,25 @@ export interface IndexPort {
   clear(): void;
 }
 
+/** One commit that touched a note (for the per-note history panel). */
+export interface GitCommit {
+  hash: string;
+  /** ISO date of the commit. */
+  date: string;
+  message: string;
+  author: string;
+}
+
 /** Git layer — path-scoped commits only, never `add -A` (PLAN §3.5). */
 export interface GitPort {
   available(): Promise<boolean>;
   isRepo(): Promise<boolean>;
   init(): Promise<void>;
   commitPaths(paths: string[], message: string): Promise<void>;
+  /** Commits that touched `relPath`, newest first (empty if not a repo). */
+  history(relPath: string): Promise<GitCommit[]>;
+  /** File contents at a commit, or null if it didn't exist there. */
+  fileAt(relPath: string, hash: string): Promise<string | null>;
 }
 
 /** Injected clock — domain/use-cases stay pure of the ambient system clock. */

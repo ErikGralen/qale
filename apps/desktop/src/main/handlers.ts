@@ -12,8 +12,12 @@ import {
   getNote,
   getProblemsByHeat,
   getMaintenanceReport,
+  getNoteHistory,
+  getNoteVersion,
   getProposalStats,
+  getVaultInfo,
   getVaultTree,
+  initVaultGit,
   listSkills,
   skillsForEvent,
   queryNotes,
@@ -279,16 +283,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
   });
 
   handle('vault:current', async () => {
-    if (vaultService.context()) {
-      const ctx = vaultService.requireContext();
-      return vaultInfoToDTO({
-        path: ctx.vault.root(),
-        name: ctx.vault.root().split('/').filter(Boolean).pop() ?? ctx.vault.root(),
-        git: (await ctx.git.available()) && (await ctx.git.isRepo()),
-        noteCount: ctx.index.count(),
-      });
-    }
-    return null;
+    const ctx = vaultService.context();
+    return ctx ? vaultInfoToDTO(await getVaultInfo(ctx)) : null;
+  });
+
+  handle('vault:initGit', async () => {
+    const info = await initVaultGit(vaultService.requireContext());
+    return vaultInfoToDTO(info);
   });
 
   handle('vault:tree', () => treeToDTO(getVaultTree(vaultService.requireContext())));
@@ -323,6 +324,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
     getBacklinks(vaultService.requireContext(), path).map(backlinkToDTO),
   );
   handle('note:resolveLink', (target) => resolveLink(vaultService.requireContext(), target));
+  handle('note:history', (path) => getNoteHistory(vaultService.requireContext(), path));
+  handle('note:versionAt', (path, hash) => getNoteVersion(vaultService.requireContext(), path, hash));
 
   handle('todos:capture', async (input) => {
     const note = await captureTodo(vaultService.requireContext(), input);

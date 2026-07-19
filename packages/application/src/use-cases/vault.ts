@@ -6,28 +6,80 @@ import {
   refToSlug,
   type NoteType,
 } from '@pm/domain';
-import type { IndexedNote, UseCaseContext } from '../ports.js';
+import type { GitCommit, IndexedNote, UseCaseContext } from '../ports.js';
 import { reconcileIndex, rebuildIndex } from './reconcile.js';
 
 export interface VaultInfo {
   path: string;
   name: string;
+  /** The vault folder IS a git repo root — version history is on. */
   git: boolean;
+  /** git is installed, so history CAN be enabled even when `git` is false. */
+  gitAvailable: boolean;
   noteCount: number;
+}
+
+async function vaultInfo(ctx: UseCaseContext): Promise<VaultInfo> {
+  const available = await ctx.git.available();
+  const isRepo = available && (await ctx.git.isRepo());
+  const root = ctx.vault.root();
+  return {
+    path: root,
+    name: root.split('/').filter(Boolean).pop() ?? root,
+    git: isRepo,
+    gitAvailable: available,
+    noteCount: ctx.index.count(),
+  };
 }
 
 /** Open (or re-open) a workspace: scaffold folders, reconcile the index. */
 export async function openVault(ctx: UseCaseContext): Promise<VaultInfo> {
   await ctx.vault.ensureScaffold();
   await reconcileIndex(ctx.vault, ctx.index);
-  const isRepo = (await ctx.git.available()) && (await ctx.git.isRepo());
-  const root = ctx.vault.root();
-  return {
-    path: root,
-    name: root.split('/').filter(Boolean).pop() ?? root,
-    git: isRepo,
-    noteCount: ctx.index.count(),
-  };
+  return vaultInfo(ctx);
+}
+
+/** The current vault's info without re-reconciling (for `vault:current`). */
+export async function getVaultInfo(ctx: UseCaseContext): Promise<VaultInfo> {
+  return vaultInfo(ctx);
+}
+
+/**
+ * Turn the open vault into a git repo (consent-gated in the UI): init, then
+ * commit every existing note so there's a baseline to diff against. A no-op if
+ * it's already a repo root.
+ */
+export async function initVaultGit(ctx: UseCaseContext): Promise<VaultInfo> {
+  if (!(await ctx.git.available())) throw new Error('git is not installed');
+  if (!(await ctx.git.isRepo())) {
+    await ctx.git.init();
+    const files = await ctx.vault.list();
+    const paths = ['.gitignore', ...files.map((f) => f.path)];
+    await ctx.git.commitPaths(paths, 'pm: initialize workspace history');
+  }
+  return vaultInfo(ctx);
+}
+
+export interface NoteVersion {
+  commit: GitCommit;
+  /** File contents at that commit (frontmatter + body, raw). */
+  raw: string;
+}
+
+/** Commits that touched this note, newest first. */
+export async function getNoteHistory(ctx: UseCaseContext, path: string): Promise<GitCommit[]> {
+  if (!ctx.vault.contain(path)) return [];
+  return ctx.git.history(path);
+}
+
+/** The note's raw contents at a specific commit (for the history viewer). */
+export async function getNoteVersion(
+  ctx: UseCaseContext,
+  path: string,
+  hash: string,
+): Promise<string | null> {
+  if (!ctx.vault.contain(path)) return null;
+  return ctx.git.fileAt(path, hash);
 }
 
 export async function rebuild(ctx: UseCaseContext): Promise<{ indexed: number }> {

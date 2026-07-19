@@ -67,3 +67,31 @@ test('commitPaths survives a bad pathspec in the batch (rename of a never-commit
   const log = await simpleGit(vault).log();
   assert.equal(log.total, 1);
 });
+
+test('history returns commits newest-first and fileAt reads a past version', async () => {
+  const vault = await tmp();
+  const git = new GitAdapter(vault);
+  await git.init();
+  await writeFile(join(vault, 'note.md'), 'v1\n');
+  await git.commitPaths(['note.md'], 'create: note');
+  await writeFile(join(vault, 'note.md'), 'v2\n');
+  await git.commitPaths(['note.md'], 'edit: note');
+
+  const history = await git.history('note.md');
+  assert.equal(history.length, 2);
+  assert.equal(history[0]!.message, 'edit: note'); // newest first
+  assert.equal(history[1]!.message, 'create: note');
+
+  const old = await git.fileAt('note.md', history[1]!.hash);
+  assert.equal(old, 'v1\n');
+  const recent = await git.fileAt('note.md', history[0]!.hash);
+  assert.equal(recent, 'v2\n');
+});
+
+test('history is empty (not an error) when the vault is not a repo', async () => {
+  const vault = await tmp();
+  const git = new GitAdapter(vault);
+  await writeFile(join(vault, 'note.md'), 'body\n');
+  assert.deepEqual(await git.history('note.md'), []);
+  assert.equal(await git.fileAt('note.md', 'HEAD'), null);
+});

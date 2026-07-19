@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import type { GitPort } from '@pm/application';
+import type { GitCommit, GitPort } from '@pm/application';
 
 /**
  * Git layer (PLAN §3.5): thin wrapper over system git via simple-git, with a
@@ -53,6 +53,32 @@ export class GitAdapter implements GitPort {
     if (!String(email).trim()) {
       await this.git.raw(['config', 'user.name', 'pm']).catch(() => undefined);
       await this.git.raw(['config', 'user.email', 'pm@localhost']).catch(() => undefined);
+    }
+  }
+
+  async history(relPath: string): Promise<GitCommit[]> {
+    if (!(await this.available()) || !(await this.isRepo())) return [];
+    try {
+      // --follow tracks the file across renames; the file may be uncommitted.
+      const log = await this.git.log<{ hash: string; date: string; message: string; author_name: string }>({
+        file: relPath,
+        format: { hash: '%H', date: '%aI', message: '%s', author_name: '%an' },
+        '--follow': null,
+      });
+      return log.all.map((c) => ({ hash: c.hash, date: c.date, message: c.message, author: c.author_name }));
+    } catch (err) {
+      console.error('[git] history failed:', err instanceof Error ? err.message : err);
+      return [];
+    }
+  }
+
+  async fileAt(relPath: string, hash: string): Promise<string | null> {
+    if (!(await this.available()) || !(await this.isRepo())) return null;
+    try {
+      return await this.git.show([`${hash}:${relPath}`]);
+    } catch {
+      // Not present at that commit (added later, or path differs pre-rename).
+      return null;
     }
   }
 

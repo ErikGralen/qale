@@ -9,6 +9,7 @@ import type {
   IngestCaptureInputDTO,
   IngestCaptureResultDTO,
   MaintenanceReportDTO,
+  NoteCommitDTO,
   NoteQueryDTO,
   NoteRefDTO,
   ModelInfoDTO,
@@ -71,6 +72,7 @@ export interface InvokeMap {
   'vault:pick': { args: []; result: VaultInfoDTO | null };
   'vault:open': { args: [path: string]; result: VaultInfoDTO };
   'vault:current': { args: []; result: VaultInfoDTO | null };
+  'vault:initGit': { args: []; result: VaultInfoDTO };
   'vault:tree': { args: []; result: VaultTreeDTO };
   'vault:rebuildIndex': { args: []; result: { indexed: number } };
   'vault:query': { args: [query: NoteQueryDTO]; result: NoteRefDTO[] };
@@ -84,6 +86,8 @@ export interface InvokeMap {
   'note:delete': { args: [path: string]; result: { ok: boolean } };
   'note:backlinks': { args: [path: string]; result: BacklinkDTO[] };
   'note:resolveLink': { args: [target: string]; result: string | null };
+  'note:history': { args: [path: string]; result: NoteCommitDTO[] };
+  'note:versionAt': { args: [path: string, hash: string]; result: string | null };
   'problems:byHeat': { args: []; result: ProblemHeatDTO[] };
 
   // Todos (the commitment ledger)
@@ -149,6 +153,7 @@ export const INVOKE_CHANNELS = [
   'vault:pick',
   'vault:open',
   'vault:current',
+  'vault:initGit',
   'vault:tree',
   'vault:rebuildIndex',
   'vault:query',
@@ -160,6 +165,8 @@ export const INVOKE_CHANNELS = [
   'note:delete',
   'note:backlinks',
   'note:resolveLink',
+  'note:history',
+  'note:versionAt',
   'problems:byHeat',
   'todos:capture',
   'todos:setStatus',

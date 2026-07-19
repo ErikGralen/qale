@@ -14,7 +14,8 @@ export function Markdown({
   onOpenNote,
 }: {
   content: string;
-  onOpenNote: (path: string) => void;
+  /** Optional — omit for read-only renders (e.g. a past version) where links don't navigate. */
+  onOpenNote?: (path: string) => void;
 }) {
   return (
     <div className="note-body">
@@ -38,7 +39,7 @@ export function Markdown({
                   onClick={async (e) => {
                     e.preventDefault();
                     const path = await invoke['note:resolveLink'](target);
-                    if (path) onOpenNote(path);
+                    if (path) onOpenNote?.(path);
                   }}
                   data-unresolved={undefined}
                 />

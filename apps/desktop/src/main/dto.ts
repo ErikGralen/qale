@@ -115,7 +115,13 @@ export function hitToDTO(h: SearchHit): SearchHitDTO {
 }
 
 export function vaultInfoToDTO(info: VaultInfo): VaultInfoDTO {
-  return { path: info.path, name: info.name, git: info.git, noteCount: info.noteCount };
+  return {
+    path: info.path,
+    name: info.name,
+    git: info.git,
+    gitAvailable: info.gitAvailable,
+    noteCount: info.noteCount,
+  };
 }
 
 export function problemHeatToDTO(row: ProblemHeatRow): ProblemHeatDTO {

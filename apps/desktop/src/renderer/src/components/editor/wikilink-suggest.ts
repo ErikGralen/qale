@@ -46,6 +46,12 @@ export const WikilinkSuggest = Extension.create<WikilinkSuggestOptions>({
         editor: this.editor,
         pluginKey: new PluginKey('wikilinkSuggest'),
         char: '[[',
+        // Default allowedPrefixes ([' ']) only fires after whitespace or a
+        // block start; `null` lifts the restriction entirely so `[[` opens the
+        // picker after punctuation or mid-word too — which is also what lets
+        // the toolbar's "Link to note" re-enter the picker wherever the
+        // selection sat. `[[` is never typed by accident, so no false fires.
+        allowedPrefixes: null,
         allowSpaces: true,
         allow: ({ editor }) => !editor.isActive('codeBlock'),
         items: async ({ query }) => {

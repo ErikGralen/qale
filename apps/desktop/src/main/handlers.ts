@@ -111,6 +111,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): { onRea
       modelId: s.modelId,
       hasAnthropicKey: !!settings.getAnthropicKey(),
       hasAtlassianCreds: !!settings.getAtlassian(),
+      secretsEncrypted: settings.secretsEncrypted(),
       schedules: s.schedules,
       mcp: { enabled: s.mcpEnabled, port: s.mcpPort, token: s.mcpToken, running: mcp.isRunning() },
     };

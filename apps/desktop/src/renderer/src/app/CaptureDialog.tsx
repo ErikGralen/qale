@@ -11,6 +11,7 @@ import {
 import { Image as ImageIcon, Link as LinkIcon, Mic, StickyNote, X, type LucideIcon } from 'lucide-react';
 import type { CaptureClassificationDTO, CaptureKind } from '@pm/ipc';
 import { useApp } from '../state/app-state';
+import { useToast } from '../components/toast';
 import { invoke } from '../lib/ipc';
 
 /** A dropped/pasted payload handed to the dialog before the user confirms. */
@@ -45,6 +46,7 @@ export function CaptureDialog({
   draft?: CaptureDraft | null;
 }) {
   const { ingestCapture, vault } = useApp();
+  const toast = useToast();
   const [text, setText] = useState('');
   const [title, setTitle] = useState('');
   const [fileName, setFileName] = useState<string | undefined>();
@@ -143,6 +145,10 @@ export function CaptureDialog({
         attachment: image ? { name: image.name, dataBase64: image.dataUrl.split(',')[1] ?? '' } : undefined,
       });
       onOpenChange(false);
+    } catch (err) {
+      // The primary capture path must never fail silently: the dialog stays
+      // open with the text intact so nothing typed is lost.
+      toast(`Capture failed: ${err instanceof Error ? err.message : 'the workspace rejected the write.'}`);
     } finally {
       setBusy(false);
     }

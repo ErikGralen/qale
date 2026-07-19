@@ -1,21 +1,8 @@
-import { Extension, type Editor } from '@tiptap/core';
+import { Extension } from '@tiptap/core';
 import { PluginKey } from '@tiptap/pm/state';
 import Suggestion from '@tiptap/suggestion';
-import {
-  Brackets,
-  Code,
-  Heading1,
-  Heading2,
-  Heading3,
-  List,
-  ListOrdered,
-  ListTodo,
-  Minus,
-  Pilcrow,
-  Table,
-  TextQuote,
-  type LucideIcon,
-} from 'lucide-react';
+import { Brackets, Minus, Table } from 'lucide-react';
+import { BLOCK_TYPES, type BlockType } from './blocks';
 import { suggestionMenuRender, suggestionPopupOptions } from './suggestion-render';
 
 /**
@@ -24,29 +11,30 @@ import { suggestionMenuRender, suggestionPopupOptions } from './suggestion-rende
  * the `/query` text and runs its command. `Link to note` chains into the
  * `[[` wikilink autocomplete by inserting its trigger.
  */
-interface SlashItem {
-  name: string;
-  label: string;
-  icon: LucideIcon;
+interface SlashItem extends BlockType {
   group: 'Blocks' | 'Insert';
   aliases?: string[];
-  run: (editor: Editor) => void;
 }
 
+/** Extra search vocabulary per registry key — slash-menu-only concern. */
+const BLOCK_ALIASES: Record<string, string[]> = {
+  text: ['paragraph', 'plain'],
+  h1: ['title', '#'],
+  h2: ['subtitle', '##'],
+  h3: ['###'],
+  bullet: ['unordered', 'ul'],
+  ordered: ['ol', '1.'],
+  task: ['todo', 'checkbox', 'checklist'],
+  quote: ['blockquote'],
+  code: ['pre', 'snippet'],
+};
+
 const SLASH_ITEMS: SlashItem[] = [
-  { name: 'text', label: 'Text', icon: Pilcrow, group: 'Blocks', aliases: ['paragraph', 'plain'], run: (e) => e.chain().focus().setParagraph().run() },
-  { name: 'h1', label: 'Heading 1', icon: Heading1, group: 'Blocks', aliases: ['title', '#'], run: (e) => e.chain().focus().setNode('heading', { level: 1 }).run() },
-  { name: 'h2', label: 'Heading 2', icon: Heading2, group: 'Blocks', aliases: ['subtitle', '##'], run: (e) => e.chain().focus().setNode('heading', { level: 2 }).run() },
-  { name: 'h3', label: 'Heading 3', icon: Heading3, group: 'Blocks', aliases: ['###'], run: (e) => e.chain().focus().setNode('heading', { level: 3 }).run() },
-  { name: 'bullet', label: 'Bullet list', icon: List, group: 'Blocks', aliases: ['unordered', 'ul'], run: (e) => e.chain().focus().toggleBulletList().run() },
-  { name: 'ordered', label: 'Numbered list', icon: ListOrdered, group: 'Blocks', aliases: ['ol', '1.'], run: (e) => e.chain().focus().toggleOrderedList().run() },
-  { name: 'task', label: 'Task list', icon: ListTodo, group: 'Blocks', aliases: ['todo', 'checkbox', 'checklist'], run: (e) => e.chain().focus().toggleTaskList().run() },
-  { name: 'quote', label: 'Quote', icon: TextQuote, group: 'Blocks', aliases: ['blockquote'], run: (e) => e.chain().focus().toggleBlockquote().run() },
-  { name: 'code', label: 'Code block', icon: Code, group: 'Blocks', aliases: ['pre', 'snippet'], run: (e) => e.chain().focus().setCodeBlock().run() },
-  { name: 'divider', label: 'Divider', icon: Minus, group: 'Insert', aliases: ['hr', 'rule', 'separator'], run: (e) => e.chain().focus().setHorizontalRule().run() },
-  { name: 'table', label: 'Table', icon: Table, group: 'Insert', run: (e) => e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+  ...BLOCK_TYPES.map((b) => ({ ...b, group: 'Blocks' as const, aliases: BLOCK_ALIASES[b.key] })),
+  { key: 'divider', label: 'Divider', icon: Minus, group: 'Insert', aliases: ['hr', 'rule', 'separator'], run: (e) => e.chain().focus().setHorizontalRule().run() },
+  { key: 'table', label: 'Table', icon: Table, group: 'Insert', run: (e) => e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
   {
-    name: 'wikilink',
+    key: 'wikilink',
     label: 'Link to note',
     icon: Brackets,
     group: 'Insert',
@@ -83,7 +71,7 @@ export const SlashCommand = Extension.create({
         },
         render: suggestionMenuRender<SlashItem>({
           toMenuItem: (item) => ({
-            id: item.name,
+            id: item.key,
             label: item.label,
             icon: item.icon,
             group: item.group,

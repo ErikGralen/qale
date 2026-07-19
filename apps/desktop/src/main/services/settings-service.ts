@@ -5,8 +5,11 @@ import { join } from 'node:path';
 
 /**
  * Persisted app settings (PLAN §3.5 "primary app state"). Secrets (Anthropic key,
- * Atlassian token) are encrypted at rest with Electron safeStorage and only ever
- * decrypted in the main process — never sent to the renderer.
+ * Atlassian token) are encrypted at rest with Electron safeStorage WHEN the OS
+ * keychain is available — otherwise they are stored base64-obfuscated and the
+ * Settings UI says so (`secretsEncrypted`). Only ever decrypted in the main
+ * process — never sent to the renderer. Values are prefixed with their scheme
+ * so an availability change between write and read can't produce garbage.
  */
 /** A scheduled session slot (PLAN-V2 §3.5): fires on a weekly day/hour. */
 export interface ScheduleEntry {
@@ -119,14 +122,27 @@ export class SettingsService {
     await this.persist();
   }
 
+  /** Is at-rest encryption actually in effect (OS keychain reachable)? */
+  secretsEncrypted(): boolean {
+    return safeStorage.isEncryptionAvailable();
+  }
+
   private encrypt(value: string): string {
-    if (!safeStorage.isEncryptionAvailable()) return Buffer.from(value, 'utf8').toString('base64');
-    return safeStorage.encryptString(value).toString('base64');
+    if (!safeStorage.isEncryptionAvailable()) {
+      console.error('[pm] OS keychain unavailable — storing secret base64-obfuscated, NOT encrypted');
+      return `b64:${Buffer.from(value, 'utf8').toString('base64')}`;
+    }
+    return `enc:${safeStorage.encryptString(value).toString('base64')}`;
   }
 
   private decrypt(enc: string): string {
-    const buf = Buffer.from(enc, 'base64');
-    if (!safeStorage.isEncryptionAvailable()) return buf.toString('utf8');
+    // Scheme-prefixed values decode by their own scheme; unprefixed values are
+    // legacy writes that used whatever was available at the time.
+    const scheme = enc.startsWith('enc:') ? 'enc' : enc.startsWith('b64:') ? 'b64' : 'legacy';
+    const body = scheme === 'legacy' ? enc : enc.slice(4);
+    const buf = Buffer.from(body, 'base64');
+    if (scheme === 'b64') return buf.toString('utf8');
+    if (scheme === 'legacy' && !safeStorage.isEncryptionAvailable()) return buf.toString('utf8');
     try {
       return safeStorage.decryptString(buf);
     } catch {

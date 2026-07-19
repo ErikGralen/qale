@@ -438,6 +438,8 @@ export interface SettingsDTO {
   modelId: string;
   hasAnthropicKey: boolean;
   hasAtlassianCreds: boolean;
+  /** False when the OS keychain is unavailable — secrets are only obfuscated at rest. */
+  secretsEncrypted: boolean;
   schedules: ScheduleDTO[];
   mcp: { enabled: boolean; port: number; token: string | null; running: boolean };
 }

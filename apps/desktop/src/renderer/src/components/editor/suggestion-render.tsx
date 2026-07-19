@@ -45,6 +45,7 @@ export function suggestionMenuRender<Item>(config: {
     let unmount: (() => void) | null = null;
     let items: Item[] = [];
     let selectedIndex = 0;
+    let lastQuery = '';
     let command: SuggestionProps<Item>['command'] = () => {};
 
     const select = (index: number) => {
@@ -72,6 +73,12 @@ export function suggestionMenuRender<Item>(config: {
     const sync = (props: SuggestionProps<Item>) => {
       items = props.items;
       command = props.command;
+      // A changed query is a new search — an arrowed-to index against the old
+      // results would silently highlight an unrelated item, so jump back to 0.
+      if (props.query !== lastQuery) {
+        lastQuery = props.query;
+        selectedIndex = 0;
+      }
       selectedIndex = Math.min(selectedIndex, Math.max(0, items.length - 1));
       rerender();
     };

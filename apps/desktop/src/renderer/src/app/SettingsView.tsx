@@ -6,10 +6,12 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 import type { ModelInfoDTO, ProposalStatsDTO, SettingsDTO } from '@pm/ipc';
 import { invoke } from '../lib/ipc';
 import { useApp } from '../state/app-state';
+import { useToast } from '../components/toast';
 
 export function SettingsView() {
   const { vault, openVaultDialog, activeTabId, keepTab } = useApp();
   const { theme, setTheme } = useTheme();
+  const toast = useToast();
   const [settings, setSettings] = useState<SettingsDTO | null>(null);
   const [models, setModels] = useState<ModelInfoDTO[]>([]);
   const [stats, setStats] = useState<ProposalStatsDTO | null>(null);
@@ -39,43 +41,58 @@ export function SettingsView() {
     void reload();
   }, []);
 
-  const saveKey = async () => {
-    if (!key.trim()) return;
-    const s = await invoke['settings:setAnthropicKey'](key.trim());
-    setSettings(s);
-    setKey('');
-    setSavedKey(true);
-    await reload();
-    setTimeout(() => setSavedKey(false), 2000);
+  // Every mutator funnels through this: a failed save must say so — the
+  // button quietly staying "Save" reads as success.
+  const trySave = async (what: string, fn: () => Promise<void>) => {
+    try {
+      await fn();
+    } catch (err) {
+      toast(`${what} failed: ${err instanceof Error ? err.message : 'the settings write was rejected.'}`);
+    }
   };
 
-  const pickModel = async (id: string) => {
-    const s = await invoke['settings:setModel'](id);
-    setSettings(s);
-  };
+  const saveKey = () =>
+    trySave('Saving the API key', async () => {
+      if (!key.trim()) return;
+      const s = await invoke['settings:setAnthropicKey'](key.trim());
+      setSettings(s);
+      setKey('');
+      setSavedKey(true);
+      await reload();
+      setTimeout(() => setSavedKey(false), 2000);
+    });
+
+  const pickModel = (id: string) =>
+    trySave('Switching the model', async () => {
+      setSettings(await invoke['settings:setModel'](id));
+    });
 
   const [ran, setRan] = useState<string | null>(null);
-  const setSchedule = async (type: string, patch: { dayOfWeek?: number; hour?: number; enabled?: boolean }) => {
-    setSettings(await invoke['settings:setSchedule'](type, patch));
-  };
-  const runNow = async (type: string) => {
-    await invoke['schedule:runNow'](type);
-    setRan(type);
-    setTimeout(() => setRan(null), 2500);
-  };
+  const setSchedule = (type: string, patch: { dayOfWeek?: number; hour?: number; enabled?: boolean }) =>
+    trySave('Updating the schedule', async () => {
+      setSettings(await invoke['settings:setSchedule'](type, patch));
+    });
+  const runNow = (type: string) =>
+    trySave('Starting the run', async () => {
+      await invoke['schedule:runNow'](type);
+      setRan(type);
+      setTimeout(() => setRan(null), 2500);
+    });
 
-  const setMcp = async (patch: { enabled?: boolean; port?: number }) => {
-    setSettings(await invoke['settings:setMcp'](patch));
-  };
+  const setMcp = (patch: { enabled?: boolean; port?: number }) =>
+    trySave('Updating the MCP server', async () => {
+      setSettings(await invoke['settings:setMcp'](patch));
+    });
 
-  const saveAtlassian = async () => {
-    if (!atl.baseUrl || !atl.email || !atl.token) return;
-    const s = await invoke['settings:setAtlassian'](atl);
-    setSettings(s);
-    setAtl({ baseUrl: '', email: '', token: '' });
-    setSavedAtl(true);
-    setTimeout(() => setSavedAtl(false), 2000);
-  };
+  const saveAtlassian = () =>
+    trySave('Saving the Atlassian credentials', async () => {
+      if (!atl.baseUrl || !atl.email || !atl.token) return;
+      const s = await invoke['settings:setAtlassian'](atl);
+      setSettings(s);
+      setAtl({ baseUrl: '', email: '', token: '' });
+      setSavedAtl(true);
+      setTimeout(() => setSavedAtl(false), 2000);
+    });
 
   return (
     <div className="flex h-full flex-col">
@@ -133,10 +150,16 @@ export function SettingsView() {
               </span>
             )}
           </div>
-          <p className="text-sm text-muted-foreground">
-            Stored encrypted with the OS keychain (safeStorage) and held in memory only for the agent
-            — never written to the vault.
-          </p>
+          {settings && !settings.secretsEncrypted ? (
+            <p className="rounded-md bg-warning/10 px-2 py-1.5 text-sm text-warning">
+              No OS keychain available on this system — keys are stored obfuscated, not encrypted.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Stored encrypted with the OS keychain (safeStorage) and held in memory only for the agent
+              — never written to the vault.
+            </p>
+          )}
           <div className="flex gap-2">
             <Input
               type="password"

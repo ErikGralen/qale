@@ -17,7 +17,7 @@ import {
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { collectContexts } from '../lib/contexts';
-import { FIELDS, REF_FIELDS, type FieldSpec, type Widget } from '../state/properties-schema';
+import { FIELDS, REF_FIELDS, SYSTEM_KEYS, type FieldSpec, type Widget } from '../state/properties-schema';
 import { TagInput } from './TagInput';
 
 /**
@@ -46,6 +46,23 @@ const WIDGET_ICON: Record<Widget, LucideIcon> = {
 function humanize(key: string): string {
   const words = key.replace(/[_-]+/g, ' ').trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Custom rows edit through a text input, but the file's type is truth: a row
+ * that held a boolean/number parses the input back into that type ('true' →
+ * true, '42' → 42); input that doesn't parse commits as the typed string
+ * rather than being dropped.
+ */
+function coerceScalar(input: string, original: unknown): unknown {
+  if (typeof original === 'boolean') {
+    if (input === 'true') return true;
+    if (input === 'false') return false;
+  } else if (typeof original === 'number') {
+    const parsed = Number(input);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return input;
 }
 
 const COLLAPSE_KEY = 'pm.properties.collapsed';
@@ -152,19 +169,35 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
               </PropertyRow>
             ))}
 
-            {customKeys.map((key) => (
-              <PropertyRow
-                key={key}
-                icon={Type}
-                label={humanize(key)}
-                onRemove={() => commit(key, undefined)}
-              >
-                <TextValue
-                  value={typeof note.frontmatter[key] === 'string' ? (note.frontmatter[key] as string) : JSON.stringify(note.frontmatter[key])}
-                  onCommit={(v) => commit(key, v)}
-                />
-              </PropertyRow>
-            ))}
+            {customKeys.map((key) => {
+              const value = note.frontmatter[key];
+              return (
+                <PropertyRow
+                  key={key}
+                  icon={Type}
+                  label={humanize(key)}
+                  // Harness-written keys stay visible but lose the hover-X — a
+                  // stray click must not delete part of a receipt or the spine.
+                  onRemove={SYSTEM_KEYS.has(key) ? undefined : () => commit(key, undefined)}
+                >
+                  {typeof value === 'object' ? (
+                    // Arrays/objects don't survive a text-input round trip
+                    // (they'd come back as strings) — show them read-only.
+                    <p
+                      className="min-h-[26px] truncate px-1.5 py-0.5 text-sm text-muted-foreground"
+                      title={JSON.stringify(value)}
+                    >
+                      {JSON.stringify(value)}
+                    </p>
+                  ) : (
+                    <TextValue
+                      value={typeof value === 'string' ? value : String(value)}
+                      onCommit={(v) => commit(key, typeof v === 'string' ? coerceScalar(v, value) : v)}
+                    />
+                  )}
+                </PropertyRow>
+              );
+            })}
 
             <AddPropertyRow
               reserved={new Set([...known, ...customKeys])}

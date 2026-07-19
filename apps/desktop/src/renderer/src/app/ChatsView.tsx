@@ -158,6 +158,9 @@ function SessionRow({
   const Icon = TYPE_ICON[s.sessionType] ?? MessageSquare;
   const archived = s.lifecycle !== 'active' && !s.running;
   const needsYou = !archived && (s.pendingCards > 0 || s.unread);
+  // Deleting a transcript is permanent and the icon sits beside Reopen —
+  // one misclick must not destroy a conversation. Same confirm as NoteView.
+  const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <li className="group relative">
       <button
@@ -207,28 +210,48 @@ function SessionRow({
           Review in Inbox →
         </button>
       )}
-      <span className="absolute top-2 right-2 flex gap-0.5">
-        {!s.running && s.lifecycle === 'active' && (
+      <span className="absolute top-2 right-2 flex items-center gap-0.5">
+        {confirmDelete ? (
+          <span className="flex items-center gap-1 rounded-md bg-background px-1 shadow-sm">
+            <span className="text-xs text-destructive">Delete?</span>
+            <button
+              className="rounded px-1.5 py-0.5 text-xs font-medium text-destructive hover:bg-destructive/10"
+              onClick={onDelete}
+            >
+              Yes
+            </button>
+            <button
+              className="rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent"
+              onClick={() => setConfirmDelete(false)}
+            >
+              Cancel
+            </button>
+          </span>
+        ) : (
           <>
-            <RowAction Icon={Check} label={`Mark "${s.title}" done`} title="Mark done" onClick={() => onSetLifecycle('done')} />
+            {!s.running && s.lifecycle === 'active' && (
+              <>
+                <RowAction Icon={Check} label={`Mark "${s.title}" done`} title="Mark done" onClick={() => onSetLifecycle('done')} />
+                <RowAction
+                  Icon={Archive}
+                  label={`Dismiss "${s.title}"`}
+                  title="Dismiss — won't be useful"
+                  onClick={() => onSetLifecycle('dismissed')}
+                />
+              </>
+            )}
+            {archived && (
+              <RowAction Icon={RotateCcw} label={`Reopen "${s.title}"`} title="Reopen" onClick={() => onSetLifecycle('active')} />
+            )}
             <RowAction
-              Icon={Archive}
-              label={`Dismiss "${s.title}"`}
-              title="Dismiss — won't be useful"
-              onClick={() => onSetLifecycle('dismissed')}
+              Icon={Trash2}
+              label={`Delete "${s.title}"`}
+              title="Delete conversation"
+              destructive
+              onClick={() => setConfirmDelete(true)}
             />
           </>
         )}
-        {archived && (
-          <RowAction Icon={RotateCcw} label={`Reopen "${s.title}"`} title="Reopen" onClick={() => onSetLifecycle('active')} />
-        )}
-        <RowAction
-          Icon={Trash2}
-          label={`Delete "${s.title}"`}
-          title="Delete conversation"
-          destructive
-          onClick={onDelete}
-        />
       </span>
     </li>
   );

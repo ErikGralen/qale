@@ -9,22 +9,14 @@ import {
   Check,
   ChevronDown,
   Code,
-  CodeSquare,
-  Heading1,
-  Heading2,
-  Heading3,
   Italic,
   Link as LinkIcon,
-  List,
-  ListOrdered,
-  ListTodo,
-  Pilcrow,
   Sparkles,
   Strikethrough,
-  TextQuote,
   Trash2,
   type LucideIcon,
 } from 'lucide-react';
+import { BLOCK_TYPES, type BlockType } from './blocks';
 
 /**
  * The floating toolbar over a text selection: turn-into, inline marks, links.
@@ -32,25 +24,27 @@ import {
  * (no underline/highlight). `Ask` hands the selection to an Ask session;
  * `Link to note` re-enters the `[[` autocomplete seeded with the selection.
  */
-interface BlockChoice {
-  name: string;
-  label: string;
-  icon: LucideIcon;
+interface BlockChoice extends BlockType {
   isActive: (editor: Editor) => boolean;
-  run: (editor: Editor) => void;
 }
 
-const BLOCKS: BlockChoice[] = [
-  { name: 'text', label: 'Text', icon: Pilcrow, isActive: (e) => e.isActive('paragraph'), run: (e) => e.chain().focus().setParagraph().run() },
-  { name: 'h1', label: 'Heading 1', icon: Heading1, isActive: (e) => e.isActive('heading', { level: 1 }), run: (e) => e.chain().focus().setNode('heading', { level: 1 }).run() },
-  { name: 'h2', label: 'Heading 2', icon: Heading2, isActive: (e) => e.isActive('heading', { level: 2 }), run: (e) => e.chain().focus().setNode('heading', { level: 2 }).run() },
-  { name: 'h3', label: 'Heading 3', icon: Heading3, isActive: (e) => e.isActive('heading', { level: 3 }), run: (e) => e.chain().focus().setNode('heading', { level: 3 }).run() },
-  { name: 'bullet', label: 'Bullet list', icon: List, isActive: (e) => e.isActive('bulletList'), run: (e) => e.chain().focus().toggleBulletList().run() },
-  { name: 'ordered', label: 'Numbered list', icon: ListOrdered, isActive: (e) => e.isActive('orderedList'), run: (e) => e.chain().focus().toggleOrderedList().run() },
-  { name: 'task', label: 'Task list', icon: ListTodo, isActive: (e) => e.isActive('taskList'), run: (e) => e.chain().focus().toggleTaskList().run() },
-  { name: 'quote', label: 'Quote', icon: TextQuote, isActive: (e) => e.isActive('blockquote'), run: (e) => e.chain().focus().toggleBlockquote().run() },
-  { name: 'code', label: 'Code block', icon: CodeSquare, isActive: (e) => e.isActive('codeBlock'), run: (e) => e.chain().focus().toggleCodeBlock().run() },
-];
+/** Current-block detection per registry key — the registry stays view-agnostic. */
+const BLOCK_ACTIVE: Record<string, (editor: Editor) => boolean> = {
+  text: (e) => e.isActive('paragraph'),
+  h1: (e) => e.isActive('heading', { level: 1 }),
+  h2: (e) => e.isActive('heading', { level: 2 }),
+  h3: (e) => e.isActive('heading', { level: 3 }),
+  bullet: (e) => e.isActive('bulletList'),
+  ordered: (e) => e.isActive('orderedList'),
+  task: (e) => e.isActive('taskList'),
+  quote: (e) => e.isActive('blockquote'),
+  code: (e) => e.isActive('codeBlock'),
+};
+
+const BLOCKS: BlockChoice[] = BLOCK_TYPES.map((b) => ({
+  ...b,
+  isActive: BLOCK_ACTIVE[b.key] ?? (() => false),
+}));
 
 const barButton =
   'flex size-7 items-center justify-center rounded-md text-foreground transition-colors duration-150 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none';
@@ -83,6 +77,11 @@ export function SelectionToolbar({ editor, onAsk }: { editor: Editor; onAsk?: (t
   // A new selection always reopens as the plain bar, never a stale submenu.
   useEffect(() => setMode('bar'), [state.from, state.to]);
 
+  // Re-enters the `[[` picker seeded with the selection — wikilink-suggest
+  // sets `allowedPrefixes: null`, so this triggers regardless of the char
+  // before the selection. Escaping the picker leaves the literal `[[text`,
+  // exactly as if it had been typed by hand (reverting would also nuke
+  // hand-typed triggers, so we don't).
   const linkToNote = () => {
     const text = selectedText(editor).trim().replace(/\s+/g, ' ');
     editor.chain().focus().deleteSelection().insertContent(`[[${text}`).run();
@@ -138,10 +137,10 @@ export function SelectionToolbar({ editor, onAsk }: { editor: Editor; onAsk?: (t
               >
                 {BLOCKS.map((b) => (
                   <button
-                    key={b.name}
+                    key={b.key}
                     role="menuitem"
                     className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-75 hover:bg-accent ${
-                      b.name === state.block.name ? 'text-brand' : ''
+                      b.key === state.block.key ? 'text-brand' : ''
                     }`}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
@@ -151,7 +150,7 @@ export function SelectionToolbar({ editor, onAsk }: { editor: Editor; onAsk?: (t
                   >
                     <b.icon className="size-4 text-muted-foreground" aria-hidden />
                     <span className="flex-1">{b.label}</span>
-                    {b.name === state.block.name && <Check className="size-3.5" aria-hidden />}
+                    {b.key === state.block.key && <Check className="size-3.5" aria-hidden />}
                   </button>
                 ))}
               </div>

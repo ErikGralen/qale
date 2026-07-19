@@ -15,6 +15,7 @@ import { Spinner } from '@pm/ui';
 import type { NoteRefDTO } from '@pm/ipc';
 import { byDue, todoLane, type TodoLane, isFolderIndex } from '@pm/domain';
 import { useApp } from '../state/app-state';
+import { useToast } from '../components/toast';
 import { localDateStr } from '../lib/dates';
 import { parseTodoInput } from '../lib/todo-parse';
 import { overdueTriageSeed, type OverdueTodoRef } from '../lib/agent-nudges';
@@ -290,6 +291,7 @@ function TodoRowItem({
 
 export function TodosView() {
   const { tree, setTodoStatus, openFolder, openSession } = useApp();
+  const toast = useToast();
   const today = localDateStr();
   const [showDone, setShowDone] = useState(false);
   /** Optimistic status while the write+reindex round-trips. */
@@ -363,6 +365,9 @@ export function TodosView() {
     setPending((p) => ({ ...p, [path]: status }));
     try {
       await setTodoStatus(path, status);
+    } catch (err) {
+      // The optimistic checkbox reverts (pending cleared below) — say why.
+      toast(`Couldn't update the todo: ${err instanceof Error ? err.message : 'the write failed.'}`);
     } finally {
       setPending((p) => {
         const next = { ...p };

@@ -100,3 +100,24 @@ export const FIELDS: Record<NoteType, FieldSpec[]> = {
 
 /** Ref-array frontmatter keys shown read-only as chips. */
 export const REF_FIELDS = ['evidence', 'sources', 'supersedes', 'superseded_by', 'problem', 'customer', 'transcript'] as const;
+
+/**
+ * Frontmatter the harness/domain writes, not the human: session receipt fields
+ * (@pm/domain zSession), the decision spine back-pointers, sync provenance.
+ * Shown like any other row but never one-click deletable — losing a receipt's
+ * `reads`/`writes` or a spine pointer to a stray hover-X breaks the audit
+ * trail. (The spine/transcript keys usually render as ref chips already; they
+ * are listed here so they stay protected if they ever surface as custom rows.)
+ */
+export const SYSTEM_KEYS = new Set<string>([
+  'session_id',
+  'started',
+  'ended',
+  'reads',
+  'writes',
+  'source_meeting',
+  'supersedes',
+  'superseded_by',
+  'transcript',
+  'source',
+]);

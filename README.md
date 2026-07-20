@@ -40,7 +40,7 @@ pnpm check-types    # tsc across all packages
 pnpm lint
 ```
 
-Dev vault: `scripts/seed-demo.ts` seeds the Tavla demo scenario. An Anthropic API key (Settings → API key) is required for agent sessions; the rest of the app works without one.
+Dev vault: `pnpm refresh-demo` builds the runtime `.vault-dev/` from the canonical `vault-dev/` Tavla scenario with every date slid to today, so the demo reads as current — point the app at `.vault-dev/` (the macOS folder picker hides dot-dirs, so press **⌘⇧.** to reveal it the first time; the app remembers it afterwards). The `/update-demo` skill wraps it with a cleanup + verify pass, and `demo-samples/` holds ready-to-ingest transcripts for the two core pain points. An Anthropic API key (Settings → API key) is required for agent sessions; the rest of the app works without one.
 
 ## Status
 

@@ -1,0 +1,43 @@
+me: Thanks for making time the morning after go-live. How did the SSO cutover feel from your side?
+
+Sara: Smoother than I'd braced for. We flipped the flag at seven, the first analysts logged in through Entra by half past, no tickets. One snag — your claim mapping expected the email as the name identifier and our Entra tenant sends the UPN. Your engineer caught it in ten minutes, but you'll want to write that down, because every Entra customer after us will hit it.
+
+me: Noted — that's going straight into the rollout notes so the next tenant doesn't rediscover it. Genuinely useful, thank you.
+
+Sara: That's the good news. Now the part you won't like. I took the renewal to my leadership yesterday to get ahead of it. They're supportive, but they attached a condition, and it's not soft: they want a written SCIM commitment — an actual date — before our board meeting in three weeks. If I walk in without one, the renewal doesn't get signed in the room, it goes to a procurement committee, and that adds two months and four people who've never used the product.
+
+me: Understood. So "September" in an email isn't enough anymore — you need a date you can put on a slide.
+
+Sara: A date I can defend. My IT director is the one who has to provision fifty analysts, and "movement in Q3" is what he throws back at me every week. I need scoping-starts-here, delivery-lands-there, in writing, with your name on it.
+
+me: Then here's what I'll commit to, and I'll put it in writing this week: SCIM scoping starts the week after this SSO rollout settles — call it two weeks out — and we target delivery for the last week of September. I'll send you a one-page plan with those dates by Friday. If Tom's scoping surfaces something that moves the target, you hear it from me the same day, not at the board meeting.
+
+Sara: That I can work with. Friday, though — not "end of next week." My deck locks Monday.
+
+me: Friday. You have my word.
+
+Sara: Good. While you're writing things down — the security review. I'll send you the scope on Wednesday, same as I promised Jonas. But I also want to set up the intro to Henrik, our CISO, so your side and his talk directly instead of through me. I'll get that on the calendar this week.
+
+me: That helps a lot. Who on our side should Henrik expect? I'll get you named contacts rather than "our security team" — send me two names to hand him.
+
+Sara: Perfect. Two names, a real person to email, not a shared inbox.
+
+me: You'll have them. Speaking of your board — anything I should know about the competitive picture? Jonas mentioned someone reached out to you.
+
+Sara: The same crowd called again last week. I'm not entertaining it — I'm telling you because if the SCIM date slips, that's the moment the conversation stops being hypothetical. So don't let it slip.
+
+me: Heard. And procurement's pricing questions — did those land?
+
+Sara: They did, and honestly your seat-activity numbers held up. Ninety-one percent of our seats logged in this quarter, which is the number I needed. Send Johanna's talking points over and I'll make sure they reach the right desk, but I'm not worried about the per-seat model surviving this review.
+
+me: That's a relief. Anything else on your list before I let you go?
+
+Sara: One open question, and it's yours to chase, not mine. If the SCIM commitment has a date in writing, does that language need to touch the contract, or does it live as a side letter? Because if it's contractual, your legal has to see it before Friday, and Friday is Friday.
+
+me: Fair. I'll find out whether it's a side letter or a contract change and route it to legal today either way. If legal needs longer than Friday, I'll tell you Thursday, not Friday.
+
+Sara: That's the difference between us renewing and us going to committee. Get me the plan.
+
+me: You'll have it Friday. Congratulations on a clean go-live — first tenant, no tickets. That's a good day.
+
+Sara: It was. Don't make me regret being your test case.

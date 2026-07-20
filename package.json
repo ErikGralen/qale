@@ -13,7 +13,8 @@
     "check-types": "turbo check-types",
     "test": "turbo test",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
-    "desktop": "turbo dev --filter=@pm/desktop"
+    "desktop": "turbo dev --filter=@pm/desktop",
+    "refresh-demo": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/refresh-demo.ts"
   },
   "devDependencies": {
     "prettier": "^3.4.2",

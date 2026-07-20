@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm refresh-demo)",
+      "Bash(pnpm refresh-demo:*)",
+      "Bash(find vault-dev/sessions:*)"
+    ]
+  }
+}

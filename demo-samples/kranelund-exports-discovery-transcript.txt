@@ -1,0 +1,55 @@
+me: Thanks for doing this as a working session rather than a status call. I want to watch how you actually build the Friday reports, not hear a summary of it.
+
+Mikkel: Happy to, because "summary" undersells the pain. Every Friday morning I open three dashboards — utilisation, on-time delivery, cost-per-route — and I rebuild each one as a PDF, by hand, and email them to five regional managers. It takes me two to three hours. Before I've had coffee. Every single week.
+
+me: Two to three hours, every week. Walk me through where the time actually goes — is it the building, or the sending?
+
+Mikkel: Neither, really. It's the reshaping. Each regional manager only wants their region. So I filter the dashboard to North, export, rename the file, filter to West, export, rename — five times, three dashboards. Fifteen exports, fifteen filenames, five emails. If I fat-finger one filter, someone in West gets North's numbers and I hear about it for a week.
+
+me: So the job isn't "look at a dashboard." The job is "deliver five region-specific report packs, reliably, first thing Friday."
+
+Mikkel: That's exactly it. And it has to be there before they arrive. If it lands at nine-thirty they've already started asking me for it in Slack. I need it sitting in their inbox at six a.m. Friday, filtered to their region, without me touching it.
+
+me: If I could give you that — scheduled, auto-filtered per region, delivered before you're awake — what would that be worth to you?
+
+Mikkel: You'd have solved the worst hour of my week. I'm not exaggerating. That's the thing I'd renew for on its own.
+
+me: Let me push on the format, because this is where we usually get it wrong. PDF for everyone?
+
+Mikkel: PDF for three of the managers — they forward it to their teams, they like that it's clean and locked. But two of them pull it into their own spreadsheets, so those two need Excel, or at least CSV. Right now I export PDF and then separately export CSV for those two, which is why it's fifteen exports and not five.
+
+me: Good — so it's not "PDF versus Excel," it's per-recipient format. Some want the locked pack, some want the raw numbers.
+
+Mikkel: Per-recipient, yes. And per-recipient region. If your scheduled export can't send different cuts to different people, it only solves half my Friday.
+
+me: What about the delivery itself — straight to their individual emails?
+
+Mikkel: Actually, no — send it to a distribution list. We have ops-north@, ops-west@, and so on. People change roles here constantly; if it's wired to a person's address I'm back to maintaining it by hand every time someone moves. Send it to the group inbox and let the group membership be someone else's problem.
+
+me: That's a useful correction — a shared list, not a person. Noted hard. Now I have to ask the uncomfortable one. Have you looked at anyone else for this?
+
+Mikkel: I'll be straight with you, because you've earned it. We took a demo from Insikt last month. Ops set it up, not me, but I sat in.
+
+me: I appreciate you telling me directly. What was their pitch?
+
+Mikkel: "Reports without the dashboard." Which is a good line, honestly — it's aimed exactly at my Friday. You send them your data, they email out scheduled reports, no dashboard to log into. For the five managers who never open your dashboard anyway, that's tempting.
+
+me: And why are you still talking to me?
+
+Mikkel: Two reasons. One, ripping out the dashboard means my analysts lose the thing they actually use daily — Insikt only does the outbound reports, nothing interactive. Two, moving all our route data to a second vendor for one feature felt insane when you already have the data. If you ship scheduled exports, their whole pitch evaporates for us. If you don't, by autumn the "why are we paying for a dashboard nobody reads" conversation writes itself.
+
+me: That's fair and I'd rather hear it plainly. Let me shift to something adjacent — the summer ramp. Where are you on headcount?
+
+Mikkel: Six weeks out from adding about forty seasonal drivers. And here's my standing complaint, since you're writing things down: I am not paying a full annual seat for a driver who opens one screen to check their route for three months. Last summer I paid for forty seats that averaged maybe four logins each. That math is going to come up at renewal whether I raise it or you do.
+
+me: I know it will, and I'm not going to pretend the per-seat model fits your shape. I can't fix pricing in this call, but I can make sure it's documented as your position and not lost.
+
+Mikkel: Document it. Seasonal, view-only, should not cost what an analyst seat costs. That's the whole sentence.
+
+me: Got it, word for word. Back to exports — if I got you into a v1 beta in a few weeks, would you actually run your real Friday on it?
+
+Mikkel: Gladly. I'll send you my five current report templates so you're building against reality, not a mock-up. If it survives one real Friday I'll tell every regional manager it's coming, and I'll say it loudly at renewal.
+
+me: Deal. Send me the five templates and I'll get you the v1 spec to react to before we build, so we don't guess on the format-per-recipient thing.
+
+Mikkel: Send it. And don't overthink it — scheduled, per-region, per-format, to a group inbox, Friday 6 a.m. That's the whole product. Ship that and I stop taking competitor demos.

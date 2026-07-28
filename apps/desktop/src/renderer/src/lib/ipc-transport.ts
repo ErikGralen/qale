@@ -18,6 +18,12 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
     initialSessionId?: string,
     /** Fired once when the main process assigns the conversation its id. */
     private readonly onSessionId?: (sessionId: string) => void,
+    /**
+     * Skill the PM picked for the NEXT turn (Sessions v2 explicit invocation).
+     * Read fresh on each send and cleared by the caller once it lands, so the
+     * pick applies to one turn rather than sticking to the transport.
+     */
+    private readonly takeInvokeSkill?: () => string | undefined,
   ) {
     this.sessionId = initialSessionId;
   }
@@ -59,6 +65,7 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
             sessionType: this.sessionType,
             sessionId: this.sessionId,
             prompt,
+            invokeSkill: this.takeInvokeSkill?.(),
           });
           this.sessionId = handle.sessionId;
           // Reported on every run, not just id changes — the shell also uses

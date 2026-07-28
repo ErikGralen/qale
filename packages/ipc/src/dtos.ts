@@ -464,6 +464,13 @@ export interface AgentRunInput {
   sessionId?: string;
   /** The user's message (plain text for now). */
   prompt: string;
+  /**
+   * Bring this skill into the session before the turn runs (Sessions v2). The
+   * PM picked it — from the composer's picker or an entry-point button. Carried
+   * beside the prompt rather than inside it so the chat still shows what they
+   * actually typed.
+   */
+  invokeSkill?: string;
 }
 
 export interface AgentRunHandle {

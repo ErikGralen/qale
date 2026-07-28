@@ -10,6 +10,7 @@ import { SpawnCard } from '../components/inbox/SpawnCard';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { useChatMentions } from './ChatMentions';
+import { SkillPicker } from './SkillPicker';
 
 /**
  * Wrap bare note-path citations (decisions/adopt-workos.md) in wikilinks so they
@@ -370,7 +371,9 @@ function ChatSession({
   backgroundStreamId?: string;
   onOwnStream?: (busy: boolean) => void;
 }) {
-  const proposesWrites = sessionType !== 'chat' && sessionType !== 'ask';
+  // A skill can arrive mid-conversation and start proposing (Sessions v2), so
+  // "does this session type write?" is no longer a thing to know up front.
+  // SessionReview renders nothing when there are no cards; let the cards decide.
   const { openDoc, refreshProposals, openSettings, markSessionSeen, sessions, setSessionLifecycle, tree, spawnRequests } =
     useApp();
   const [needsKey, setNeedsKey] = useState(false);
@@ -379,13 +382,31 @@ function ChatSession({
   const currentSessionId = useRef(initialSessionId);
   // State copy of the bound id so the header's lifecycle control re-renders.
   const [boundSessionId, setBoundSessionId] = useState(initialSessionId);
+  // The skill the PM picked for the NEXT message. A ref because the transport
+  // is built once and reads it at send time; the state copy drives the chip.
+  const [pickedSkill, setPickedSkill] = useState<string | null>(null);
+  const pickedSkillRef = useRef<string | null>(null);
+  const pickSkill = (name: string | null) => {
+    pickedSkillRef.current = name;
+    setPickedSkill(name);
+  };
   const transport = useMemo(
     () =>
-      new IpcChatTransport(sessionType, initialSessionId, (id) => {
-        currentSessionId.current = id;
-        setBoundSessionId(id);
-        onSessionIdRef.current?.(id);
-      }),
+      new IpcChatTransport(
+        sessionType,
+        initialSessionId,
+        (id) => {
+          currentSessionId.current = id;
+          setBoundSessionId(id);
+          onSessionIdRef.current?.(id);
+        },
+        () => {
+          // One turn, not a mode: the pick is consumed as the message goes.
+          const name = pickedSkillRef.current ?? undefined;
+          pickedSkillRef.current = null;
+          return name;
+        },
+      ),
     [sessionType, initialSessionId],
   );
   const { messages, sendMessage, status, stop, error } = useChat({ transport, messages: initialMessages });
@@ -439,10 +460,10 @@ function ChatSession({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt]);
 
-  // After a proposing turn settles, refresh the Inbox.
+  // After a settled turn, refresh the Inbox — any session may now have proposed.
   useEffect(() => {
-    if (status === 'ready' && proposesWrites) void refreshProposals();
-  }, [status, proposesWrites, refreshProposals]);
+    if (status === 'ready') void refreshProposals();
+  }, [status, refreshProposals]);
 
   // Surface the missing-key state BEFORE the first send, not as a failed turn.
   useEffect(() => {
@@ -460,6 +481,7 @@ function ChatSession({
     if (!text || busy || backgroundBusy) return;
     setInput('');
     send(text);
+    setPickedSkill(null);
   };
 
   return (
@@ -597,7 +619,7 @@ function ChatSession({
 
           {/* The cards this session proposed — approvable right here, so the PO
               never has to hop to the Inbox to close out a meeting. */}
-          {proposesWrites && boundSessionId && <SessionReview sessionId={boundSessionId} />}
+          {boundSessionId && <SessionReview sessionId={boundSessionId} />}
         </div>
       </div>
 
@@ -619,6 +641,7 @@ function ChatSession({
       <div className="px-6 pb-5">
         <div className="relative mx-auto flex max-w-2xl items-end gap-2 rounded-xl border border-border bg-card p-2 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
           {mentions.menu}
+          <SkillPicker picked={pickedSkill} onPick={pickSkill} disabled={backgroundBusy} />
           <textarea
             ref={inputRef}
             value={input}
@@ -635,7 +658,13 @@ function ChatSession({
             }}
             onClick={mentions.refresh}
             onBlur={mentions.close}
-            placeholder={backgroundBusy ? 'Waiting for the running turn to finish…' : 'Ask your product memory… (@ note, # context)'}
+            placeholder={
+              backgroundBusy
+                ? 'Waiting for the running turn to finish…'
+                : pickedSkill
+                  ? `What should ${pickedSkill} work on?`
+                  : 'Ask your product memory… (@ note, # context)'
+            }
             rows={1}
             disabled={backgroundBusy}
             className="max-h-40 flex-1 resize-none bg-transparent px-1.5 py-1 text-[15px] outline-none disabled:opacity-50"

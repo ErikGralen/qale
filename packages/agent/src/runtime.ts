@@ -54,6 +54,7 @@ import { CHILD_PREAMBLE, SHARED_PREAMBLE } from './prompts.js';
 import {
   parseSkill,
   buildSystemPrompt,
+  buildSkillBrief,
   buildSessionReceipt,
   SessionHarness,
   DEFAULT_SKILL_BY_TYPE,
@@ -109,6 +110,13 @@ export interface RunInput {
   sessionType: string;
   sessionId?: string;
   prompt: string;
+  /**
+   * Explicit invocation (Sessions v2 Part 3.2): bring this skill into the
+   * session before the turn runs. The PM picked it — from the composer, or from
+   * an entry-point button that used to open a mode. Same code path as the
+   * agent's own `use_skill`, just a different caller.
+   */
+  invokeSkill?: string;
 }
 
 export interface RunHandle {
@@ -199,6 +207,10 @@ interface SessionState {
   /** First user prompt, truncated — the session's display title everywhere. */
   title: string;
   runStartedAt: number;
+  /** Bring a skill into this live session (the PM picked it). */
+  invoke: (skill: SkillConfig) => Promise<void>;
+  /** Re-narrow the active tool set to what the harness now grants. */
+  reactivate: () => void;
 }
 
 /** Marker entry stamped into each pi session file so listings know the skill. */
@@ -380,18 +392,24 @@ export class AgentRuntime {
     return parseSkill(DEFAULT_SKILL_BY_TYPE[type] ?? '', type);
   }
 
-  private toolNamesFor(config: SkillConfig, atlassianActive: boolean, canInvokeSkills: boolean): string[] {
+  /**
+   * What the session may do RIGHT NOW — read off the harness, not off the skill
+   * it opened with, because a skill that arrives mid-conversation brings its own
+   * tier, checkpoints and files.
+   */
+  private toolNamesFor(harness: SessionHarness, atlassianActive: boolean, canInvokeSkills: boolean): string[] {
     const names = [...VAULT_TOOL_NAMES];
-    if (config.tier === 'suggest' || config.tier === 'outbound') names.push(...PROPOSE_TOOL_NAMES);
-    if (config.tier === 'outbound') names.push(...DRAFT_TOOL_NAMES);
+    const tier = harness.tier;
+    if (tier === 'suggest' || tier === 'outbound') names.push(...PROPOSE_TOOL_NAMES);
+    if (tier === 'outbound') names.push(...DRAFT_TOOL_NAMES);
     // A session that can pull in skills gets the checkpoint tool even when its
     // OWN skill declares no plan: the arriving skill's checkpoints would
     // otherwise gate output with no way to advance past the gate.
-    if (config.checkpoints.length > 0 || canInvokeSkills) names.push(CHECKPOINT_TOOL_NAME);
+    if (harness.checkpoints.length > 0 || canInvokeSkills) names.push(CHECKPOINT_TOOL_NAME);
     if (canInvokeSkills) names.push(USE_SKILL_TOOL_NAME);
     // Fan-out rides with session files: children write into the folder, and
     // reading their output back is the whole point of having one.
-    if (config.sessionFiles) names.push(...SESSION_FILE_TOOL_NAMES, SPAWN_TOOL_NAME);
+    if (harness.sessionFiles) names.push(...SESSION_FILE_TOOL_NAMES, SPAWN_TOOL_NAME);
     if (atlassianActive) names.push(...ATLASSIAN_TOOL_NAMES);
     return names;
   }
@@ -554,32 +572,49 @@ export class AgentRuntime {
     const vaultMap = await this.vaultMap(ctx);
     const filesRoot = sessionFilesRoot(this.config.vaultDir, id);
     const files = skillConfig.sessionFiles ? sessionFilesPrompt(sessionFilesRelRoot(id)) : '';
-    const systemPrompt =
+    const baseSystemPrompt =
       buildSystemPrompt(SHARED_PREAMBLE, skillConfig) + voice + (skillIndex ?? '') + files + vaultMap;
 
     // The ask session gains the tracker seam (Jira/Confluence) when configured.
     const atlassianActive = type === 'ask' && this.atlassian;
     const canInvokeSkills = !!skillIndex;
-    const toolNames = this.toolNamesFor(skillConfig, !!atlassianActive, canInvokeSkills);
+
+    /**
+     * The one hard change of Sessions v2 (Part 3): the tool set is no longer
+     * fixed at session creation. Every tool a skill could ever turn on is
+     * REGISTERED here — pi's `tools` allowlist filters the registry itself, so
+     * a tool absent from it can never be activated later — while only the ones
+     * the current skill grants are ACTIVE. `applyActivation` moves that line.
+     */
+    const registry = [
+      ...VAULT_TOOL_NAMES,
+      ...PROPOSE_TOOL_NAMES,
+      ...DRAFT_TOOL_NAMES,
+      CHECKPOINT_TOOL_NAME,
+      ...(canInvokeSkills ? [USE_SKILL_TOOL_NAME] : []),
+      ...SESSION_FILE_TOOL_NAMES,
+      SPAWN_TOOL_NAME,
+      ...(atlassianActive ? ATLASSIAN_TOOL_NAMES : []),
+    ];
     const customTools = [
       ...createVaultTools(ctx, harness),
-      ...(skillConfig.tier !== 'observe' ? createProposeTools(ctx, id, harness) : []),
-      ...(skillConfig.tier === 'outbound' ? createDraftTools(ctx, id, harness) : []),
-      ...(skillConfig.checkpoints.length > 0 || canInvokeSkills ? [createCheckpointTool(harness)] : []),
-      ...(canInvokeSkills ? [createUseSkillTool(ctx, harness)] : []),
-      ...(skillConfig.sessionFiles
-        ? [
-            ...createSessionFileTools(filesRoot, () => this.onFilesChanged?.(id)),
-            createSpawnTool({
-              readBrief: () => readSessionFile(filesRoot, BRIEF_FILE),
-              requestApproval: (plan, brief) => this.askToSpawn(id, plan, brief),
-              runChild: (child, opts) => this.runChild(id, child, opts, ctx, harness),
-            }),
-          ]
-        : []),
+      ...createProposeTools(ctx, id, harness),
+      ...createDraftTools(ctx, id, harness),
+      createCheckpointTool(harness),
+      ...(canInvokeSkills ? [createUseSkillTool(ctx, harness, () => applyActivation())] : []),
+      ...createSessionFileTools(filesRoot, () => this.onFilesChanged?.(id)),
+      createSpawnTool({
+        readBrief: () => readSessionFile(filesRoot, BRIEF_FILE),
+        requestApproval: (plan, brief) => this.askToSpawn(id, plan, brief),
+        runChild: (child, opts) => this.runChild(id, child, opts, ctx, harness),
+      }),
       ...(atlassianActive ? createAtlassianTools(this.atlassian!, this.config.trackExternal) : []),
     ];
 
+    // Mutable so an arriving skill's instructions can join the system prompt and
+    // stay there — a tool result is one message that compaction may drop, but
+    // the rules the session is now working under have to survive the turn.
+    let systemPrompt = baseSystemPrompt;
     const loader = new DefaultResourceLoader({
       cwd: this.config.vaultDir,
       agentDir: join(this.config.userDataDir, 'pi', 'agent'),
@@ -607,7 +642,7 @@ export class AgentRuntime {
       cwd: this.config.vaultDir,
       model,
       noTools: 'all',
-      tools: toolNames,
+      tools: registry,
       customTools,
       authStorage: this.authStorage,
       modelRegistry: this.modelRegistry,
@@ -615,6 +650,14 @@ export class AgentRuntime {
       sessionManager: manager,
       settingsManager: SettingsManager.inMemory(),
     });
+
+    /** Narrow the registry to what the skills currently in force actually grant. */
+    const applyActivation = (): void => {
+      session.setActiveToolsByName(
+        this.toolNamesFor(harness, !!atlassianActive, canInvokeSkills).filter((n) => registry.includes(n)),
+      );
+    };
+    applyActivation();
 
     const state: SessionState = {
       id,
@@ -627,6 +670,19 @@ export class AgentRuntime {
       title: '',
       runStartedAt: 0,
       unsubscribe: () => undefined,
+      /**
+       * Explicit invocation (Sessions v2 Part 3.2): the PM picked a skill, so no
+       * tool call carried its body into context. Append it to the system prompt,
+       * reload so the loader recomputes, and re-activate — `setActiveToolsByName`
+       * rebuilds the prompt from the loader, so the two must happen together.
+       */
+      invoke: async (skill: SkillConfig) => {
+        harness.invokeSkill(skill);
+        systemPrompt = `${systemPrompt}\n\n${buildSkillBrief(skill)}`;
+        await loader.reload();
+        applyActivation();
+      },
+      reactivate: applyActivation,
     };
     state.unsubscribe = session.subscribe((event) => {
       state.bridge?.handle(event);
@@ -677,6 +733,7 @@ export class AgentRuntime {
     if (state.activeStreamId) throw new Error('This conversation is still responding — wait or stop it first.');
     // A new message on a done/dismissed conversation reopens it.
     if (this.getLifecycle(sessionId) !== 'active') this.setLifecycle(sessionId, 'active');
+    if (input.invokeSkill) await this.invokeSkillInto(state, input.invokeSkill, ctx);
     state.harness.beginTurn(input.prompt, ctx.clock.now());
     if (!state.title) state.title = truncate(input.prompt, 60) ?? state.type;
 
@@ -717,6 +774,23 @@ export class AgentRuntime {
       status,
       updated: Date.now(),
     });
+  }
+
+  /**
+   * Bring a named skill into a live session. Resolves the same way session
+   * creation does — workspace file first, built-in pack as the fallback — so a
+   * customised skill wins over the shipped one here too. A name that resolves to
+   * nothing is skipped rather than thrown: a stale picker entry must not kill
+   * the PM's message.
+   */
+  private async invokeSkillInto(state: SessionState, name: string, ctx: UseCaseContext): Promise<void> {
+    if (state.harness.invoked.some((c) => c.name === name)) return; // already in force
+    const config = await this.resolveSkill(name, ctx);
+    if (!config.name || (!config.when && !config.read && !config.produce && !config.then && !config.body.trim())) {
+      console.error(`[pm] skill "${name}" could not be resolved — invoking it was skipped`);
+      return;
+    }
+    await state.invoke(config);
   }
 
   /**

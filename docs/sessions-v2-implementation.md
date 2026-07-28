@@ -132,3 +132,41 @@ readout in Settings is the obvious next move if it becomes real.
 - *"Cost ceiling — does the PM see a number they understand?"* — they see the child count and
   the model, which is what the plan's mockup shows. Not a token or currency estimate; that needs
   per-model pricing the app does not hold.
+
+---
+
+## Phase 3 — explicit invocation + mid-session activation
+
+**The hard change, and how it was done**
+
+pi's `tools:` option is an allowlist over the tool *registry*, not just the initial active set —
+a tool missing from it can never be activated later. So a session now **registers everything a
+skill could ever turn on** (propose, draft, checkpoint, use_skill, session files, spawn, plus
+Atlassian when configured) and **activates only what the skills in force grant**, via
+`session.setActiveToolsByName()`. `toolNamesFor()` now reads the *harness* (`tier`,
+`checkpoints`, `sessionFiles`) instead of the config the session opened with.
+
+The system prompt is mutable through the resource loader: `systemPromptOverride: () =>
+systemPrompt` closes over a `let`, so appending an arriving skill's brief and calling
+`loader.reload()` + `applyActivation()` puts the new rules in the system prompt itself.
+`setActiveToolsByName` rebuilds the prompt from the loader, so those two must happen together —
+they do, inside `state.invoke()`.
+
+**Explicit invocation**
+
+`AgentRunInput.invokeSkill` carries the PM's pick beside the prompt rather than inside it, so the
+chat still shows what they actually typed and a replayed transcript is not polluted with an
+injected preamble. `SkillPicker` in the composer lists every `skill_kind: session` skill; the
+pick applies to the next message and then clears — a skill that stuck to the composer would be a
+mode by another name, which is the thing being removed.
+
+**Deviations / decisions**
+
+- **The pick is per-message, not per-session.** Sticky would re-create modes.
+- **An unresolvable skill name is skipped with a log, not thrown.** A stale picker entry must not
+  kill the PM's message.
+- **Invoking a skill already in force is a no-op**, so clicking an entry-point button twice does
+  not stack duplicate instructions.
+- **`ChatView` stopped deciding whether a session "proposes writes".** Any session may now
+  propose, so `SessionReview` renders whenever cards exist and the Inbox refreshes after every
+  settled turn.

@@ -178,8 +178,9 @@ by their deep link. When a decision was superseded, follow the chain and give th
 evidence is thin (few insights, one account, old), say so with honest confidence.
 
 ## Then
-If there is no evidence, say "vet inte" (I don't know) rather than guessing. A good answer can be
-saved as a golden answer for next time.
+If there is no evidence, say "vet inte" (I don't know) rather than guessing. If the answer is worth
+keeping, propose it as a note or an insight citing what it rests on — that is the only way anything
+lands in the memory.
 `;
 
 export const CHAT_SKILL = `---
@@ -206,8 +207,8 @@ transcripts and tell me what's there") is worked in the folder rather than refus
 then a file per source, then answer from those.
 
 ## Then
-Nothing is written to the memory; surface what to formalise and the PM can run an After-Meeting,
-pull in a skill that proposes, or save a golden answer.
+Nothing is written to the memory; surface what is worth formalising and the PM can pull in a skill
+that proposes it.
 `;
 
 

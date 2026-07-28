@@ -22,5 +22,5 @@ transcripts and tell me what's there") is worked in the folder rather than refus
 then a file per source, then answer from those.
 
 ## Then
-Nothing is written to the memory; surface what to formalise and the PM can run an After-Meeting,
-pull in a skill that proposes, or save a golden answer.
+Nothing is written to the memory; surface what is worth formalising and the PM can pull in a skill
+that proposes it.

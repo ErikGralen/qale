@@ -2,7 +2,7 @@ import { useMemo, useState, useRef, useEffect } from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { Button, Spinner } from '@pm/ui';
-import { AlertTriangle, ArrowUp, Check, Square, Wrench, Brain, ChevronDown, MessageSquarePlus, RotateCcw, Star } from 'lucide-react';
+import { AlertTriangle, ArrowUp, Check, Square, Wrench, Brain, ChevronDown, MessageSquarePlus, RotateCcw } from 'lucide-react';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { Markdown } from '../components/Markdown';
 import { SessionReview } from '../components/inbox/SessionReview';
@@ -19,15 +19,6 @@ import { SkillPicker } from './SkillPicker';
  */
 function linkifyNotePaths(text: string): string {
   return text.replace(/(^|[\s,;:])([a-z][\w-]*\/[\w./-]+\.md)\b/gim, '$1[[$2]]');
-}
-
-/** Pull citation refs from an answer: wikilinks, bare note paths, and URLs. */
-function extractCitations(text: string): string[] {
-  const refs = new Set<string>();
-  for (const m of text.matchAll(/\[\[([^\]]+)\]\]/g)) refs.add(`[[${m[1]!.split('|')[0]!.split('#')[0]!.trim()}]]`);
-  for (const m of text.matchAll(/(?:^|[\s(])([a-z][\w-]*\/[\w./-]+\.md)/gim)) refs.add(`[[${m[1]!.replace(/\.md$/, '')}]]`);
-  for (const m of text.matchAll(/https?:\/\/[^\s)]+/g)) refs.add(m[0]!);
-  return [...refs];
 }
 
 interface AnyPart {
@@ -227,38 +218,6 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
           })}
         </div>
       )}
-    </div>
-  );
-}
-
-/** Turn an approved ask answer into a golden-answer insight card (PLAN-V2 §4). */
-function GoldenButton({ question, answer }: { question: string; answer: string }) {
-  const { openInbox, refreshProposals } = useApp();
-  const [saved, setSaved] = useState(false);
-  const citations = useMemo(() => extractCitations(answer), [answer]);
-  const save = async () => {
-    await invoke['golden:save']({ question: question || answer.slice(0, 80), answer, sources: citations });
-    setSaved(true);
-    await refreshProposals();
-    openInbox();
-  };
-  return (
-    <div className="mt-2 flex items-center gap-2">
-      <button
-        className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
-        onClick={save}
-        disabled={saved}
-      >
-        <Star className="size-3.5" /> {saved ? 'Saved to Inbox' : 'Save as golden answer'}
-      </button>
-      {!saved &&
-        (citations.length > 0 ? (
-          <span className="text-xs text-muted-foreground">cites {citations.length} source{citations.length === 1 ? '' : 's'}</span>
-        ) : (
-          <span className="flex items-center gap-1 text-xs text-warning">
-            <AlertTriangle className="size-3" /> no citations — will be flagged as inference
-          </span>
-        ))}
     </div>
   );
 }
@@ -546,16 +505,6 @@ function ChatSession({
           )}
           {messages.map((message, mi) => {
             const parts = message.parts as AnyPart[];
-            const answerText = parts
-              .filter((p) => p.type === 'text')
-              .map((p) => p.text ?? '')
-              .join('\n');
-            const prevUser = [...messages.slice(0, mi)].reverse().find((m) => m.role === 'user');
-            const question = prevUser
-              ? (prevUser.parts as AnyPart[]).filter((p) => p.type === 'text').map((p) => p.text).join(' ')
-              : '';
-            const canGolden =
-              sessionType === 'ask' && message.role === 'assistant' && status === 'ready' && answerText.trim().length > 0;
             if (message.role === 'user') {
               return (
                 <div key={message.id} className="flex justify-end">
@@ -587,7 +536,6 @@ function ChatSession({
               <div key={message.id} className="w-full">
                 {activity.length > 0 && <ActivityBlock parts={activity} live={live} />}
                 {answer && <Markdown content={linkifyNotePaths(answer.text ?? '')} onOpenNote={openDoc} />}
-                {canGolden && <GoldenButton question={question} answer={answerText} />}
               </div>
             );
           })}

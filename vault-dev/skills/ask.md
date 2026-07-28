@@ -22,5 +22,6 @@ by their deep link. When a decision was superseded, follow the chain and give th
 evidence is thin (few insights, one account, old), say so with honest confidence.
 
 ## Then
-If there is no evidence, say "vet inte" (I don't know) rather than guessing. A good answer can be
-saved as a golden answer for next time.
+If there is no evidence, say "vet inte" (I don't know) rather than guessing. If the answer is worth
+keeping, propose it as a note or an insight citing what it rests on — that is the only way anything
+lands in the memory.

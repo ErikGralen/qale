@@ -13,7 +13,6 @@ import type {
   CaptureMeetingMatchDTO,
   CaptureNoteInput,
   CaptureTodoInputDTO,
-  GoldenAnswerInput,
   IngestCaptureInputDTO,
   IngestCaptureResultDTO,
   MaintenanceReportDTO,
@@ -128,7 +127,6 @@ export interface InvokeMap {
   'proposals:accept': { args: [id: string, edited?: unknown]; result: { ok: boolean; stale?: boolean; error?: string; url?: string } };
   'proposals:reject': { args: [id: string]; result: { ok: boolean } };
   'proposals:stats': { args: []; result: ProposalStatsDTO };
-  'golden:save': { args: [input: GoldenAnswerInput]; result: ProposalDTO };
 
   // Agent / sessions
   'agent:run': { args: [input: AgentRunInput]; result: AgentRunHandle };
@@ -244,7 +242,6 @@ export const INVOKE_CHANNELS = [
   'proposals:accept',
   'proposals:reject',
   'proposals:stats',
-  'golden:save',
   'agent:run',
   'agent:abort',
   'chats:list',

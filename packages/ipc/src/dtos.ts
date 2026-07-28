@@ -386,12 +386,6 @@ export interface UpdatePayloadDTO {
   title?: string;
 }
 
-export interface GoldenAnswerInput {
-  question: string;
-  answer: string;
-  sources: string[];
-}
-
 export interface ProposalStatsDTO {
   pending: number;
   accepted: number;

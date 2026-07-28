@@ -36,7 +36,6 @@ import {
   ingestCapture,
   renameNote,
   resolveLink,
-  saveGoldenAnswer,
   saveAuthoredNote,
   saveFrontmatter,
   searchNotes,
@@ -662,11 +661,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   });
   handle('proposals:stats', () => getProposalStats(vaultService.requireContext()));
   handle('librarian:report', () => getMaintenanceReport(vaultService.requireContext()));
-  handle('golden:save', (input) => {
-    const rec = saveGoldenAnswer(vaultService.requireContext(), input);
-    notifyProposalsFor();
-    return proposalToDTO(rec);
-  });
   handle('agent:run', async (input) => {
     const ctx = vaultService.requireContext();
     return agent.run(input, ctx, (streamId, chunk) => {

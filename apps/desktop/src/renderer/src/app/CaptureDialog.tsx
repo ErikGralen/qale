@@ -63,6 +63,12 @@ export function CaptureDialog({
   const [guess, setGuess] = useState<CaptureClassificationDTO | null>(null);
   const [external, setExternal] = useState(false);
   const [origin, setOrigin] = useState('');
+  /**
+   * "Anything to act on?" (Sessions v2 Part 5). Not "process this?", which
+   * sounds like consent for something opaque — it asks whether there is anything
+   * in here that needs to happen. Off means the document files and nothing runs.
+   */
+  const [process, setProcess] = useState(true);
   const [match, setMatch] = useState<CaptureMeetingMatchDTO | null>(null);
   const [attach, setAttach] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -78,6 +84,7 @@ export function CaptureDialog({
     } else {
       setText('');
       setTitle('');
+      setProcess(true);
       setFileName(undefined);
       setImage(null);
       setOverride(null);
@@ -174,6 +181,7 @@ export function CaptureDialog({
         external: kind === 'transcript' ? external : undefined,
         origin: kind === 'transcript' && external ? origin.trim() || undefined : undefined,
         attachTo: attaching ? match!.notePath : undefined,
+        process,
         attachment: image ? { name: image.name, dataBase64: image.dataUrl.split(',')[1] ?? '' } : undefined,
       });
       onOpenChange(false);
@@ -188,7 +196,9 @@ export function CaptureDialog({
 
   const helper = !vault
     ? 'Open a workspace first.'
-    : kind === 'transcript'
+    : !process
+      ? "Files it and stops. Nothing runs over it — you can still ask about it, or analyse it later with everything else."
+      : kind === 'transcript'
       ? external
         ? 'Filed under sources/ as signal — approve the insights it finds here or in your Inbox, never decisions.'
         : attaching
@@ -200,8 +210,9 @@ export function CaptureDialog({
           ? 'Image kept in attachments/ as evidence — your line is the claim, and Intake connects it.'
           : 'Lands in notes/.';
 
-  const action =
-    kind === 'transcript'
+  const action = !process
+    ? 'Capture'
+    : kind === 'transcript'
       ? external
         ? 'Capture & extract signals'
         : 'Capture & review'
@@ -378,6 +389,16 @@ export function CaptureDialog({
             )}
           </div>
         )}
+
+        {/* Extraction is time-sensitive; analysis is not. You process this
+            morning's call because it contains commitments that have to happen
+            this week — a transcript from four months ago has nothing left to
+            extract, and forty of them is an unusable Inbox. */}
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input type="checkbox" checked={process} onChange={(e) => setProcess(e.target.checked)} />
+          Anything to act on? Pull out commitments, dates and anything that contradicts what you
+          already believe.
+        </label>
 
         <div className="flex items-center justify-between gap-6">
           <span className="flex-1 text-xs leading-relaxed text-muted-foreground">{helper}</span>

@@ -6,27 +6,32 @@ import {
   bindingMatches,
   SessionHarness,
   buildSessionReceipt,
-  AFTER_MEETING_SKILL,
+  ARRIVAL_SKILL,
   ASK_SKILL,
+  WEEKLY_UPDATE_SKILL,
   CHAT_SKILL,
   SYNTHESIS_SKILL,
   PROCESS_NOTE_SKILL,
   DEFAULT_SKILL_BY_NAME,
   isDynamicSkill,
+  DEFAULT_SKILLS,
+  RETIRED_SKILLS,
   buildSkillBrief,
 } from '../src/index.js';
 
 test('parseSkill reads frontmatter + When/Read/Produce/Then', () => {
-  const c = parseSkill(AFTER_MEETING_SKILL, 'after-meeting');
-  assert.equal(c.name, 'after-meeting');
-  assert.equal(c.tier, 'outbound');
-  assert.deepEqual(c.checkpoints, ['digest', 'outline', 'draft']);
+  const c = parseSkill(ARRIVAL_SKILL, 'arrival');
+  assert.equal(c.name, 'arrival');
+  // The FILE's tier is the floor; each triggered binding names the tier its
+  // material gets (Sessions v2 Part 5).
+  assert.equal(c.tier, 'suggest');
+  assert.deepEqual(c.checkpoints, ['digest', 'delta']);
   assert.equal(c.gateOutput, true);
-  assert.ok(c.when && /transcript is dropped/i.test(c.when));
+  assert.ok(c.when && /landed/i.test(c.when));
   assert.ok(c.produce && /truth delta/i.test(c.produce));
-  assert.ok(c.guardrails.completionBar && /cites/i.test(c.guardrails.completionBar));
-  assert.equal(c.guardrails.stoppingConditions.length, 0);
-  assert.equal(c.guardrails.redFlags.length, 3);
+  assert.ok(c.guardrails.completionBar && /cite/i.test(c.guardrails.completionBar));
+  assert.equal(c.guardrails.stoppingConditions.length, 2);
+  assert.equal(c.guardrails.redFlags.length, 4);
 });
 
 test('the LAST section of a skill body is captured (regression: \\Z is not a JS anchor)', () => {
@@ -49,28 +54,28 @@ test('ask skill is observe-tier with no checkpoints', () => {
 });
 
 test('buildSystemPrompt composes preamble + sections + guardrails', () => {
-  const c = parseSkill(AFTER_MEETING_SKILL, 'after-meeting');
+  const c = parseSkill(ARRIVAL_SKILL, 'arrival');
   const p = buildSystemPrompt('PREAMBLE', c);
   assert.ok(p.startsWith('PREAMBLE'));
   assert.ok(p.includes('## When'));
   assert.ok(p.includes('## Produce'));
-  assert.ok(p.includes('digest → outline → draft'));
+  assert.ok(p.includes('digest → delta'));
   assert.ok(p.includes('Completion bar:'));
   assert.ok(p.includes('advance_checkpoint'));
 });
 
 test('harness gate: locked until a checkpoint is advanced', () => {
-  const c = parseSkill(AFTER_MEETING_SKILL, 'after-meeting');
+  const c = parseSkill(ARRIVAL_SKILL, 'arrival');
   const h = new SessionHarness('sess-1', c, '2026-07-15T09:00:00Z');
   assert.equal(h.canPropose(), false); // gated skill, no checkpoint yet
   h.advanceCheckpoint('digest');
   assert.equal(h.canPropose(), true);
   assert.equal(h.reachedCheckpoint, 'digest');
   // monotonic: advancing to a later checkpoint moves forward, not back
-  h.advanceCheckpoint('draft');
-  assert.equal(h.reachedCheckpoint, 'draft');
+  h.advanceCheckpoint('delta');
+  assert.equal(h.reachedCheckpoint, 'delta');
   h.advanceCheckpoint('digest');
-  assert.equal(h.reachedCheckpoint, 'draft');
+  assert.equal(h.reachedCheckpoint, 'delta');
 });
 
 test('un-gated skill can always propose', () => {
@@ -121,36 +126,54 @@ test('note.stale is no longer a known event', () => {
   assert.ok(c.errors.some((e) => /known event/.test(e)));
 });
 
-test('after-meeting binding fires only for the PO’s own transcripts', () => {
-  const c = parseSkill(AFTER_MEETING_SKILL, 'after-meeting');
-  const b = c.bindings[0]!;
-  assert.equal(bindingMatches(b, 'capture.transcript', { origin: 'po', path: 'x' }), true);
-  assert.equal(bindingMatches(b, 'capture.transcript', { origin: 'external', path: 'x' }), false);
+test('one arrival skill routes every drop, and the MATERIAL sets its tier', () => {
+  const c = parseSkill(ARRIVAL_SKILL, 'arrival');
+  const firing = (event: 'capture.transcript' | 'capture.ingested', payload: Record<string, string>) =>
+    c.bindings.find((b) => bindingMatches(b, event, payload));
+
+  // The PM's own meeting may draft outbound; a colleague's sales call may not.
+  // That difference is a property of what landed, not of which mode was opened —
+  // and it is the tool set, not a rule the model has to remember (invariant 3).
+  assert.equal(firing('capture.transcript', { origin: 'po' })?.tier, 'outbound');
+  assert.equal(firing('capture.transcript', { origin: 'external' })?.tier, 'suggest');
+  assert.equal(firing('capture.ingested', { kind: 'link' })?.tier, 'suggest');
+  assert.equal(firing('capture.ingested', { kind: 'screenshot' })?.tier, 'suggest');
+  // A quick note still fires nothing by default.
+  assert.equal(firing('capture.ingested', { kind: 'note' }), undefined);
 });
 
-test('intake binding fires for links and screenshots, not quick notes', () => {
-  const c = parseSkill(DEFAULT_SKILL_BY_NAME['intake']!, 'intake');
-  const fires = (kind: string) => c.bindings.some((b) => bindingMatches(b, 'capture.ingested', { kind }));
-  assert.equal(fires('link'), true);
-  assert.equal(fires('screenshot'), true);
-  assert.equal(fires('note'), false);
+test('an unknown binding tier is flagged rather than silently granting one', () => {
+  const raw = `---\ntype: skill\nsession_type: t\nsummary: s\nbindings:\n  - mode: triggered\n    event: capture.ingested\n    tier: godmode\n---\n`;
+  const c = parseSkill(raw, 't');
+  assert.equal(c.bindings[0]?.tier, undefined);
+  assert.ok(c.errors.some((e) => /unknown tier/.test(e)));
+});
+
+test('interview-synthesis is gone from the pack — insights no longer arrive automatically', () => {
+  assert.equal(DEFAULT_SKILL_BY_NAME['interview-synthesis'], undefined);
+  assert.equal(DEFAULT_SKILL_BY_NAME['after-meeting'], undefined);
+  assert.equal(DEFAULT_SKILL_BY_NAME['external-transcript'], undefined);
+  assert.equal(DEFAULT_SKILL_BY_NAME['intake'], undefined);
+  assert.ok(DEFAULT_SKILL_BY_NAME['arrival']);
+  const files = DEFAULT_SKILLS.map((s) => s.file);
+  for (const gone of RETIRED_SKILLS) assert.ok(!files.includes(gone.file), `${gone.file} is still shipped`);
 });
 
 test('receipt records reads, writes and turns', () => {
-  const c = parseSkill(AFTER_MEETING_SKILL, 'after-meeting');
+  const c = parseSkill(ARRIVAL_SKILL, 'arrival');
   const h = new SessionHarness('abcd1234ef', c, '2026-07-15T09:00:00Z');
   h.beginTurn('Run After-Meeting on meetings/acme.md', '2026-07-15T09:00:00Z');
   h.recordRead('meetings/acme.md');
   h.recordRead('customers/acme-co.md');
-  h.advanceCheckpoint('outline');
+  h.advanceCheckpoint('delta');
   h.recordWrite('decisions/adopt-x.md', 'p_1', 'decision');
   const r = buildSessionReceipt(h, '2026-07-15T09:05:00Z');
   assert.ok(r.path.startsWith('sessions/2026-07-15-'));
   assert.equal(r.frontmatter.type, 'session');
-  assert.equal(r.frontmatter.session_type, 'after-meeting');
+  assert.equal(r.frontmatter.session_type, 'arrival');
   assert.deepEqual(r.frontmatter.reads, ['[[meetings/acme]]', '[[customers/acme-co]]']);
   assert.deepEqual(r.frontmatter.writes, ['[[decisions/adopt-x]]']);
-  assert.ok(r.body.includes('Reached checkpoint: **outline**'));
+  assert.ok(r.body.includes('Reached checkpoint: **delta**'));
   assert.ok(r.body.includes('decision: [[decisions/adopt-x]] (p_1)'));
 });
 
@@ -159,7 +182,7 @@ test('receipt records reads, writes and turns', () => {
 test('isDynamicSkill: guides always, others only with a dynamic binding', () => {
   assert.equal(isDynamicSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis')), true);
   assert.equal(isDynamicSkill(parseSkill(PROCESS_NOTE_SKILL, 'process-note')), true);
-  assert.equal(isDynamicSkill(parseSkill(AFTER_MEETING_SKILL, 'after-meeting')), false);
+  assert.equal(isDynamicSkill(parseSkill(ARRIVAL_SKILL, 'arrival')), false);
   const guide = `---\ntype: skill\nskill_kind: guide\nsummary: A checklist\n---\n\nCheck the thing.\n`;
   assert.equal(isDynamicSkill(parseSkill(guide, 'a-checklist')), true);
 });
@@ -195,8 +218,8 @@ test('an arriving skill brings its tier, checkpoints and gate — and resets the
 });
 
 test('a checkpoint recorded against the old plan cannot unlock a newly arrived gate', () => {
-  const after = parseSkill(AFTER_MEETING_SKILL, 'after-meeting');
-  const h = new SessionHarness('s2', after, '2026-07-28T09:00:00Z');
+  const arrival = parseSkill(ARRIVAL_SKILL, 'arrival');
+  const h = new SessionHarness('s2', arrival, '2026-07-28T09:00:00Z');
   h.advanceCheckpoint('digest');
   assert.equal(h.canPropose(), true);
   h.invokeSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
@@ -205,8 +228,9 @@ test('a checkpoint recorded against the old plan cannot unlock a newly arrived g
 });
 
 test('an observe-tier arrival never strips permissions the session already had', () => {
-  const after = parseSkill(AFTER_MEETING_SKILL, 'after-meeting');
-  const h = new SessionHarness('s3', after, '2026-07-28T09:00:00Z');
+  const weekly = parseSkill(WEEKLY_UPDATE_SKILL, 'weekly-update');
+  const h = new SessionHarness('s3', weekly, '2026-07-28T09:00:00Z');
+  assert.equal(h.tier, 'outbound');
   h.invokeSkill(parseSkill(ASK_SKILL, 'ask'));
   assert.equal(h.tier, 'outbound');
 });

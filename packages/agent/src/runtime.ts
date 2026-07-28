@@ -60,6 +60,7 @@ import {
   DEFAULT_SKILL_BY_NAME,
   BASE_SKILL_NAME,
   type SkillConfig,
+  type SkillTier,
 } from '@pm/sessions';
 
 import { PiUiBridge, type Chunk } from './bridge.js';
@@ -118,6 +119,13 @@ export interface RunInput {
    * agent's own `use_skill`, just a different caller.
    */
   invokeSkill?: string;
+  /**
+   * Tier the arrival gets, from the binding that fired it (Sessions v2 Part 5).
+   * The material's permissions, not the session's: one arrival skill serves both
+   * the PM's own meeting and a colleague's sales call, and only the first may
+   * draft outbound. Enforced by the tool set, not by the model remembering.
+   */
+  invokeTier?: SkillTier;
 }
 
 export interface RunHandle {
@@ -749,7 +757,7 @@ export class AgentRuntime {
     // The requested session type IS an invocation now: the first one, on the
     // first turn. Re-running with the same type is a no-op, so nothing stacks.
     const arriving = input.invokeSkill ?? (input.sessionType === BASE_SKILL_NAME ? undefined : input.sessionType);
-    if (arriving) await this.invokeSkillInto(state, arriving, ctx);
+    if (arriving) await this.invokeSkillInto(state, arriving, ctx, input.invokeTier);
     state.harness.beginTurn(input.prompt, ctx.clock.now());
     if (!state.title) state.title = truncate(input.prompt, 60) ?? state.type;
 
@@ -799,14 +807,19 @@ export class AgentRuntime {
    * nothing is skipped rather than thrown: a stale picker entry must not kill
    * the PM's message.
    */
-  private async invokeSkillInto(state: SessionState, name: string, ctx: UseCaseContext): Promise<void> {
+  private async invokeSkillInto(
+    state: SessionState,
+    name: string,
+    ctx: UseCaseContext,
+    tier?: SkillTier,
+  ): Promise<void> {
     if (state.harness.invoked.some((c) => c.name === name)) return; // already in force
     const config = await this.resolveSkill(name, ctx);
     if (!config.name || (!config.when && !config.read && !config.produce && !config.then && !config.body.trim())) {
       console.error(`[pm] skill "${name}" could not be resolved — invoking it was skipped`);
       return;
     }
-    await state.invoke(config);
+    await state.invoke(tier ? { ...config, tier } : config);
   }
 
   /**

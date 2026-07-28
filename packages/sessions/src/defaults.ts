@@ -1,82 +1,114 @@
+import { ASK_SKILL_V1, CHAT_SKILL_V1 } from './retired.js';
+
 /**
  * The built-in skill pack (PLAN-V2 §3.2) — shipped as content, seeded into a new
  * workspace's `skills/` folder and used as the fallback when a workspace hasn't
  * customised a session type. Editing the workspace copy overrides these.
  */
 
-export const AFTER_MEETING_SKILL = `---
+
+export const ARRIVAL_SKILL = `---
 type: skill
 skill_kind: session
-session_type: after-meeting
-summary: After-Meeting — turn a meeting into the truth delta as approval cards
-tier: outbound
-checkpoints: [digest, outline, draft]
+session_type: arrival
+summary: Arrival — extract what a dropped document needs you to ACT on, and wire it in
+tier: suggest
+checkpoints: [digest, delta]
 gate_output: true
 bindings:
   - mode: triggered
     event: capture.transcript
     when:
       origin: po
-completion_bar: Every truth-delta item cites the transcript or prior memory; nothing asserted uncited.
+    tier: outbound
+  - mode: triggered
+    event: capture.transcript
+    when:
+      origin: external
+    tier: suggest
+  - mode: triggered
+    event: capture.ingested
+    when:
+      kind: link
+    tier: suggest
+  - mode: triggered
+    event: capture.ingested
+    when:
+      kind: screenshot
+    tier: suggest
+completion_bar: Every item quotes the document or cites prior memory; nothing asserted uncited, and anything you could not tell is asked rather than guessed.
+stopping_conditions:
+  - The document is empty or content-free — say so and propose nothing.
+  - Nothing in it needs to happen and nothing in it contradicts the memory — say that plainly rather than manufacturing cards.
 red_flags:
-  - A decision with no decider or date — ask before drafting it.
-  - A claim that contradicts an existing decision or insight — flag it, do not overwrite.
-  - An outbound card the meeting does not force — draft tracker changes only when the meeting settles, dates or creates tracked work; never reflexively.
+  - A decision with no decider or date — ask before drafting it; a spoken line is not a decision record yet.
+  - A claim that contradicts a live decision or insight — flag it, never overwrite. This is the cheapest, highest-value thing you can find here.
+  - Analysis. You are reading ONE document with nothing to weigh it against, which makes any pattern you think you see the weakest thing this system can produce. Insights, themes and stances come later, from a session with a question and a corpus.
+  - A commitment made on the product's behalf by someone who is not the PM ("we told them SCIM lands in Q3") — surface it as its own card marked "commitment made externally — confirm or correct", never file it silently.
 ---
 
 ## When
-A meeting transcript is dropped, or the PM gives a 60-second typed debrief. The meeting isn't over
-until the systems are updated.
+Something landed: a transcript of a meeting the PM was in, a transcript of one they were not, a
+link, a screenshot, a pasted thread. One skill handles all of them, because the branch is data —
+who was in the room, and what kind of thing it is — not a mode the PM should have to pick.
+
+Your job is **extraction**, never analysis. What is mechanically in this document that needs to
+become an object? Commitments made, dates, decisions stated with a decider, people, the meeting
+record, and anything contradicting what the memory currently holds. One document, no corpus, no
+question needed. What it all *means* is a different session with nine documents and a question.
 
 ## Read
-The meeting note and its transcript — follow the \`transcript\` frontmatter ref to the source note
-(older meetings carry it inline under \`## Transcript\`) — plus the memory it touches: the customer
-page, the relevant theme hub, and prior decisions (via search_vault). Follow superseded decisions
-to their live head. If the meeting has a \`## Prep\` section, note which prep questions got answered.
-When the meeting, its series or its hubs link tickets, read their mirror notes (tickets/) so
-anything you say about delivery rests on current state, not memory of it.
+The document itself first — for a meeting, follow the \`transcript\` frontmatter ref to the source
+note. Then only the memory it actually touches: the customer page, the theme hubs it names, live
+decisions it might contradict (search_vault), and the mirror notes (tickets/) of any ticket it
+references, so anything you say about delivery rests on current state.
+
+For a link, work from the URL and whatever the PM pasted with it — never invent what the page says.
+For a screenshot, work from the caption; the image is evidence on disk, not something you can read.
 
 ## Produce
-The truth delta, each item as one approval card citing its evidence:
-- **Decisions** — what was decided, by whom, why (propose_decision). If it reverses an earlier
-  decision, set \`supersedes\` to that decision's slug.
-- **Insights** — cited claims about customers/themes with a confidence level (propose_note, type insight).
-- **Actions / open questions / not-doings** — as updates to the meeting page and the relevant hub
-  (propose_update). Tickets mirrored in the workspace (tickets/) are wikilinked to their mirror
-  notes; keys with no mirror note stay plain text. Never invent keys or links.
-- **Commitments** — every "I'll …" becomes a todo card (propose_todo) citing the meeting, with the
-  verbatim quote. The PM's own commitments get no owner; someone else's ("Jonas: I'll update the
-  docs") set \`owner\` to that person. Date only if one was named or clearly implied. Check existing
-  todos first (vault_list type "todo") and skip anything already tracked.
-- **Who-needs-to-know** — update the relevant people pages' last_told ledger (propose_update).
-- A **meeting summary** on the meeting page (propose_update) linking the decisions and insights.
+The smallest set of approval cards that makes the document actionable. What you may propose depends
+on **what the document is**, not on how this session was opened:
 
-Tag every proposed note with 1–2 contexts (\`tags\`) drawn from tags already in use in the workspace;
-a brand-new context must be named in the card's rationale ("new context: #x") per the filing rules.
+**A meeting the PM was in** (origin: po) — the full truth delta:
+- **Decisions** made, with the decider and the reason (propose_decision). Set \`supersedes\` when it
+  reverses an earlier one.
+- **Commitments** — every "I'll …" becomes a todo (propose_todo) citing the meeting with the
+  verbatim quote. The PM's own get no owner; someone else's set \`owner\` to that person. A date only
+  if one was named or clearly implied. Check existing todos first (vault_list type "todo").
+- **A meeting summary** on the meeting page (propose_update) and the hub updates it implies —
+  actions, open questions, not-doings, and the people pages' \`last_told\` ledger.
+- **The external consequences**, ONLY where the meeting actually forces one: a comment on a linked
+  ticket that the meeting settles or dates (draft_jira_comment), a new ticket for tracked work no
+  ticket covers (draft_jira_issue), a follow-up the meeting concretely booked (draft_calendar_event
+  — "let's reconvene next week" with a real time, never a vague "we should meet again"). Most
+  meetings force none, and a card nobody needed is noise. Every outbound body ends with a
+  provenance line ("Source: <meeting>, <date>"), cites its evidence, and sets linkBack to the
+  meeting page. Apply the voice guides. Outbound is draft-and-approve, forever.
 
-Then draft the external consequences — ONLY where the meeting actually implies a tracker change;
-most meetings imply none, and a card nobody needed is noise:
-- **A comment on a linked ticket** (draft_jira_comment) — when the meeting settles, dates or changes
-  something an existing ticket tracks. Read the ticket's mirror note first so the comment lands on
-  its current state, not a stale memory of it.
-- **A new ticket** (draft_jira_issue) — when the meeting produced tracked work no ticket covers.
-- **A follow-up on the calendar** (draft_calendar_event) — ONLY when the meeting names a concrete
-  next session ("let's reconvene next week", "book 30 with Tom"): draft the event with a real start
-  time (RFC3339 with offset), the people it names as attendees, and a body that says what it's for.
-  linkBack the meeting page so the created event files back. A vague "we should meet again" is not a
-  booking — don't draft one.
-- **Per-audience** — who-needs-to-know items become draft_message cards per audience (CS/sales/exec),
-  filed under the person/customer; a meeting summary can become a wikipage update (draft_confluence_update).
-Every outbound body ends with a provenance line — "Source: <meeting>, <date>" — and every card cites
-its evidence (the meeting, the decision it rests on). Set linkBack to the meeting page so the created
-key / deep link files back on approval. Apply the voice guides when drafting outbound. Outbound is
-draft-and-approve, forever.
+**A meeting the PM was NOT in** (origin: external) — a colleague's sales call is signal, not truth:
+- Commitments anyone made, as todos with \`owner\` set to that colleague and the verbatim quote.
+- Customer signals onto the customer hub (propose_update) where the call genuinely adds one.
+- Who was told what, onto the \`last_told\` ledger, attributing who said it.
+- **Never a decision.** A colleague's call cannot create product truth — not because of which
+  session this is, but because of what the document is. You do not have the tools to draft outbound
+  here either; that is deliberate.
+
+**A link, screenshot or pasted thread** — wire it in from the other side, since a raw source's body
+is immutable and you must never propose edits to it:
+- Update the hubs it concerns (propose_update adding wikilinks to the capture) where it adds signal.
+- A commitment or a date hiding in it becomes a todo.
+- If it names a person or customer with no page yet, ask before creating one.
+- If you cannot tell what it is for, ask ONE concrete question instead of guessing.
+
+Tag every proposed note with 1-2 contexts (\`tags\`) drawn from tags already in use; name any
+brand-new context in the card's rationale.
 
 ## Then
-Approved internal cards write the decision spine and insights and update the customer/theme/meeting
-hubs; approved outbound cards execute upstream — the ticket comment, the new ticket, the wikipage
-update — and file the deterministic link back, and the mirror re-syncs on the next pull.
-Who-needs-to-know updates the people last_told ledger.
+Approved cards land the delta: the decision spine, the commitment ledger, the hubs, the meeting
+page. Approved outbound executes upstream and files its link back. The source stays in sources/ as
+cold, verbatim evidence, and flips new → processed when an accepted card cites it. What this
+document MEANS, weighed against everything else, is a question for a later session.
 `;
 
 export const BEFORE_MEETING_SKILL = `---
@@ -123,52 +155,6 @@ The approved prep lands on the meeting page — it doubles as the in-meeting cri
 After-Meeting later checks which prep questions were answered.
 `;
 
-export const EXTERNAL_TRANSCRIPT_SKILL = `---
-type: skill
-skill_kind: session
-session_type: external-transcript
-summary: External-Transcript — mine a meeting the PO was NOT in for signals, never decisions
-tier: suggest
-bindings:
-  - mode: triggered
-    event: capture.transcript
-    when:
-      origin: external
-completion_bar: Every extracted claim quotes the transcript verbatim; interpretation is marked with an honest confidence.
-stopping_conditions:
-  - The transcript is empty or content-free — say so and propose nothing.
-red_flags:
-  - Anything that reads like a product decision — a colleague's call CANNOT create product truth. Never propose_decision from an external transcript.
-  - A commitment made on the product's behalf ("we told them SCIM lands in Q3"), especially one the decision spine contradicts — surface it as its own card marked "commitment made externally — confirm or correct", never file it silently.
----
-
-## When
-A transcript of a meeting the PO did not attend lands in sources/ — a colleague's sales call, a
-forwarded customer conversation. The PO is a reader, not a participant: this is signal to mine,
-not a meeting to process.
-
-## Read
-The source note (its \`origin\` says whose meeting it was), the customer page it concerns, the
-theme hubs and existing insights it touches, and the decision spine for anything the conversation
-contradicts (search_vault).
-
-## Produce
-Approval cards — insights and hub updates ONLY, never decisions:
-- **Insights** — cited claims about the customer/theme (propose_note, type insight), each quoting
-  the transcript. The verbatim customer voice is strong evidence; what is secondhand is the
-  interpretation, so set confidence honestly on the claim, not reflexively low.
-- **Customer signals** — updates to the customer hub (propose_update) where the call genuinely adds
-  signal (pain points, competitors named, feature asks).
-- **External commitments** — if the colleague promised something, a todo card (propose_todo) with
-  \`owner\` set to that colleague and the verbatim quote; when it contradicts the spine, say so
-  plainly in the card's rationale.
-- **Who was told what** — if the colleague shared product news, advance the relevant people/customer
-  \`last_told\` ledger (propose_update) attributing who said it.
-
-## Then
-Approved cards wire the signal into memory; the source flips new → processed when an accepted card
-cites it. The transcript stays in sources/ as cold, verbatim evidence for provenance walks.
-`;
 
 export const ASK_SKILL = `---
 type: skill
@@ -226,55 +212,6 @@ Nothing is written to the memory; surface what to formalise and the PM can run a
 pull in a skill that proposes, or save a golden answer.
 `;
 
-export const INTAKE_SKILL = `---
-type: skill
-skill_kind: session
-session_type: intake
-summary: Intake — figure out what a capture is, connect it to the memory, propose the filing
-tier: suggest
-bindings:
-  - mode: triggered
-    event: capture.ingested
-    when:
-      kind: link
-  - mode: triggered
-    event: capture.ingested
-    when:
-      kind: screenshot
-completion_bar: Every proposed link or note cites the capture or existing memory; unclear points are asked, not assumed.
-stopping_conditions:
-  - The capture is empty or content-free — say so and propose nothing.
-red_flags:
-  - A capture that is actually a meeting transcript — participation decides its path. If the PO was in the room, suggest re-filing it as a meeting (After-Meeting). If not, it stays a source; suggest the External-Transcript session instead.
-  - A claim from an article or screenshot asserted as product truth — file it as a cited signal with its source and an honest confidence, never as fact.
----
-
-## When
-Something lands in the workspace that isn't a meeting transcript: an article link, a screenshot with
-a caption, a pasted thread, a stray thought worth filing. The PO dumped it; deciding what it is and
-where it belongs is the system's job.
-
-## Read
-The capture itself (a raw source in sources/, or a quick note), then the memory it might touch:
-search_vault for the customers, themes, insights and decisions it relates to. For a link, work from
-the URL and whatever the PO pasted with it — do not invent what the page says. For a screenshot, work
-from the caption; the image itself is evidence on disk, not something you can read.
-
-## Produce
-The smallest set of approval cards that wires the capture into the memory. A raw source's body is
-immutable — never propose edits to it; wire it in from the other side:
-- Update the hubs it concerns (propose_update adding wikilinks to the capture) where it genuinely
-  adds signal.
-- If it carries a claim — an article's finding, a screenshot's statement, a competitor move — propose
-  an insight (propose_note, type insight) citing the capture and its source, with a confidence level.
-- If it names a person or customer with no page yet, ask before creating one.
-If you cannot tell what the capture is for, ask one concrete question instead of guessing.
-
-## Then
-Approved cards connect the capture into the memory; unclear captures get resolved in this
-conversation. The capture file itself stays as the raw source — approving a card that cites it flips
-its status from new to processed.
-`;
 
 export const PROCESS_NOTE_SKILL = `---
 type: skill
@@ -409,35 +346,6 @@ the relevant people/customers; approved wikipage updates push upstream with the 
 and the mirror re-syncs on the next pull.
 `;
 
-export const INTERVIEW_SYNTHESIS_SKILL = `---
-type: skill
-skill_kind: session
-session_type: interview-synthesis
-summary: Interview Synthesis — turn a customer call into insights, flag contradictions
-tier: suggest
-checkpoints: [digest, outline, draft]
-gate_output: true
-completion_bar: Every insight cites the transcript; contradictions with existing beliefs are flagged.
-red_flags:
-  - An insight that contradicts an existing insight or decision — flag it, never overwrite.
----
-
-## When
-A customer-call transcript is dropped.
-
-## Read
-The transcript, the customer page, and the themes it touches (search_vault).
-
-## Produce
-Signals and insights as approval cards (propose_note type insight), each citing the transcript and a
-confidence level. Where a finding contradicts an existing belief, flag it as an update to the relevant
-insight/theme (propose_update) — never resolve silently.
-
-## Then
-Approved cards update the customer and insight pages; contradictions surface for the PM to resolve.
-One interview is one account. Turning several of these into a pattern is the Synthesis session's
-job, not this one's — never promote a single call to a theme here.
-`;
 
 export const SYNTHESIS_SKILL = `---
 type: skill
@@ -638,6 +546,13 @@ status, a reschedule moves its date. Nothing changes silently, and nothing else 
 export interface DefaultSkill {
   file: string;
   content: string;
+  /**
+   * Bodies this file used to ship with. A workspace copy matching one of them
+   * was never edited, so seeding refreshes it in place. Without this an existing
+   * workspace keeps its pre-Sessions-v2 `chat`, and every session there quietly
+   * has no working files and no fan-out.
+   */
+  previous?: string[];
 }
 
 /**
@@ -648,16 +563,25 @@ export interface DefaultSkill {
  */
 export const BASE_SKILL_NAME = 'chat';
 
+/**
+ * The one skill that fires when something lands (Sessions v2 Part 5). It
+ * replaced after-meeting / external-transcript / intake / interview-synthesis,
+ * which were five skills implementing one routing table: the branch is data —
+ * who was in the room, what kind of thing it is — and both fields are already in
+ * the capture payload and matched by `bindingMatches`. `intake`'s own red flag
+ * used to say "if the PO was in the room, suggest re-filing it as a meeting",
+ * which is a session type whose job included telling you it was the wrong
+ * session type.
+ */
+export const ARRIVAL_SKILL_NAME = 'arrival';
+
 export const DEFAULT_SKILLS: DefaultSkill[] = [
-  { file: 'skills/after-meeting.md', content: AFTER_MEETING_SKILL },
+  { file: 'skills/arrival.md', content: ARRIVAL_SKILL },
   { file: 'skills/before-meeting.md', content: BEFORE_MEETING_SKILL },
-  { file: 'skills/external-transcript.md', content: EXTERNAL_TRANSCRIPT_SKILL },
-  { file: 'skills/ask.md', content: ASK_SKILL },
-  { file: 'skills/chat.md', content: CHAT_SKILL },
-  { file: 'skills/intake.md', content: INTAKE_SKILL },
+  { file: 'skills/ask.md', content: ASK_SKILL, previous: [ASK_SKILL_V1] },
+  { file: 'skills/chat.md', content: CHAT_SKILL, previous: [CHAT_SKILL_V1] },
   { file: 'skills/process-note.md', content: PROCESS_NOTE_SKILL },
   { file: 'skills/weekly-update.md', content: WEEKLY_UPDATE_SKILL },
-  { file: 'skills/interview-synthesis.md', content: INTERVIEW_SYNTHESIS_SKILL },
   { file: 'skills/synthesis.md', content: SYNTHESIS_SKILL },
   { file: 'skills/librarian.md', content: LIBRARIAN_SKILL },
   { file: 'skills/commitment-check.md', content: COMMITMENT_CHECK_SKILL },
@@ -674,15 +598,12 @@ export const DEFAULT_SKILLS: DefaultSkill[] = [
  * when the workspace has no file of its own.
  */
 export const DEFAULT_SKILL_BY_NAME: Record<string, string> = {
-  'after-meeting': AFTER_MEETING_SKILL,
+  arrival: ARRIVAL_SKILL,
   'before-meeting': BEFORE_MEETING_SKILL,
-  'external-transcript': EXTERNAL_TRANSCRIPT_SKILL,
   ask: ASK_SKILL,
   chat: CHAT_SKILL,
-  intake: INTAKE_SKILL,
   'process-note': PROCESS_NOTE_SKILL,
   'weekly-update': WEEKLY_UPDATE_SKILL,
-  'interview-synthesis': INTERVIEW_SYNTHESIS_SKILL,
   synthesis: SYNTHESIS_SKILL,
   librarian: LIBRARIAN_SKILL,
   'commitment-check': COMMITMENT_CHECK_SKILL,

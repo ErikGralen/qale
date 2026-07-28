@@ -258,6 +258,13 @@ export interface IngestCaptureInputDTO {
   url?: string;
   /** Transcript only — someone else's meeting: filed as a source (signal), not a meeting. */
   external?: boolean;
+  /**
+   * Anything in here to act on? False files the document and runs nothing over
+   * it. The default keys off recency, not preference: extraction is
+   * time-sensitive (this morning's call has commitments due this week), analysis
+   * is not (an analysis session reads unprocessed sources perfectly well).
+   */
+  process?: boolean;
   /** External transcript only — whose meeting it was (e.g. "Jonas Palm"). */
   origin?: string;
   /** Transcript only — attach to this existing calendar-synced meeting note
@@ -281,6 +288,8 @@ export interface IngestFollowUpDTO {
   sessionType: string;
   prompt: string;
   tabTitle: string;
+  /** Tier the firing binding grants — the material's permissions, not the session's. */
+  tier?: 'observe' | 'suggest' | 'outbound';
   /** Runs headlessly on ingest — the review lands in the Inbox; no tab opens. */
   background?: boolean;
 }
@@ -471,6 +480,8 @@ export interface AgentRunInput {
    * actually typed.
    */
   invokeSkill?: string;
+  /** Tier the arrival gets, when a triggered binding named one for this material. */
+  invokeTier?: 'observe' | 'suggest' | 'outbound';
 }
 
 export interface AgentRunHandle {

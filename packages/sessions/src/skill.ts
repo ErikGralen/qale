@@ -70,6 +70,16 @@ export interface SkillBinding {
   when?: Record<string, string>;
   /** Forced only — scope this register/rule to a named audience. */
   audience?: string;
+  /**
+   * Triggered only — the tier this arrival gets, overriding the skill's own
+   * (Sessions v2 Part 5). This is how one arrival skill can branch on the
+   * MATERIAL without weakening invariant 3: a transcript of the PO's own meeting
+   * may draft outbound, a colleague's sales call may not, and that difference is
+   * a property of what landed rather than a rule the model is asked to remember.
+   * The skill's own `tier` is the default; a binding may name a different one for
+   * the material it matches.
+   */
+  tier?: SkillTier;
 }
 
 export interface SkillGuardrails {
@@ -190,6 +200,14 @@ function parseBindings(raw: unknown, errors: string[]): SkillBinding[] {
       binding.event = event as SkillEvent;
       const when = asFlatCondition(item['when']);
       if (Object.keys(when).length) binding.when = when;
+      const tier = item['tier'];
+      if (typeof tier === 'string') {
+        if (!TIERS.includes(tier as SkillTier)) {
+          errors.push(`binding ${i + 1}: unknown tier "${tier}" (one of: ${TIERS.join(', ')})`);
+        } else {
+          binding.tier = tier as SkillTier;
+        }
+      }
     }
     if (mode === 'forced' && typeof item['audience'] === 'string') {
       binding.audience = item['audience'];
@@ -218,7 +236,17 @@ export function describeBinding(binding: SkillBinding, kind: SkillKind): string 
           .map(([f, v]) => `${f} is ${v}`)
           .join(' and ')}`
       : '';
-    return `Runs automatically when ${phrase}${cond}.`;
+    // The tier is what the PO can actually feel, so say it in their words rather
+    // than leaving "tier: suggest" to be decoded from the file.
+    const scope =
+      binding.tier === 'observe'
+        ? ' It only reads.'
+        : binding.tier === 'suggest'
+          ? ' It may propose notes, never outbound drafts.'
+          : binding.tier === 'outbound'
+            ? ' It may also draft outbound.'
+            : '';
+    return `Runs automatically when ${phrase}${cond}.${scope}`;
   }
   return 'Available on demand — the agent loads it when it is relevant.';
 }

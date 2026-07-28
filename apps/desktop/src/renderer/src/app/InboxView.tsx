@@ -15,7 +15,9 @@ import { cardRank, HOUSEKEEPING_RANK, titleForRef } from '../components/inbox/ca
 
 /** Sessions whose card group reads as a meeting review, not a generic pile. */
 function isReviewGroup(sessionType: string | null): boolean {
-  return sessionType === 'after-meeting' || sessionType === 'external-transcript';
+  // `arrival` replaced after-meeting/external-transcript (Sessions v2 Part 5);
+  // the old names stay so cards a workspace already filed still group right.
+  return sessionType === 'arrival' || sessionType === 'after-meeting' || sessionType === 'external-transcript';
 }
 
 /** Reaction sessions where the cards are consequences of one cause — a decision

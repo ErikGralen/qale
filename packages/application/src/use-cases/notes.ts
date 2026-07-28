@@ -16,7 +16,7 @@ import {
   type SourceNoteFrontmatter,
   type SourceRef,
 } from '@pm/domain';
-import type { SkillEvent } from '@pm/sessions';
+import { ARRIVAL_SKILL_NAME, type SkillEvent } from '@pm/sessions';
 import type { BacklinkRow, IndexedNote, UseCaseContext } from '../ports.js';
 import { skillsForEvent } from './skills.js';
 
@@ -207,6 +207,13 @@ export async function captureExternalTranscript(
 export interface IngestCaptureInput {
   /** What the capture is; omit to let the classifier decide. */
   kind?: CaptureKind;
+  /**
+   * Is there anything in here to act on? (Sessions v2 Part 5.) When false the
+   * document files and nothing runs over it — extraction is time-sensitive and a
+   * four-month-old transcript has nothing left to extract, while an analysis
+   * session reads unprocessed sources perfectly well. Defaults to true.
+   */
+  process?: boolean;
   /** The dumped content: transcript body, note text, link + comment, or a screenshot caption. */
   text: string;
   title?: string;
@@ -228,6 +235,14 @@ export interface IngestFollowUp {
   sessionType: string;
   prompt: string;
   tabTitle: string;
+  /**
+   * Tier the firing binding grants this arrival — the material's permissions,
+   * not the session's (Sessions v2 invariant 3). A colleague's sales call fires
+   * the same skill as the PM's own meeting and gets `suggest`, so "never propose
+   * a decision from an external transcript" is enforced by the tool set rather
+   * than by the model remembering a rule.
+   */
+  tier?: 'observe' | 'suggest' | 'outbound';
   /** Run headlessly on ingest — the gate is the review, not the run, so nothing
    * waits on the PO to start it; cards land in the Inbox when the session settles. */
   background?: boolean;
@@ -254,14 +269,21 @@ async function boundFollowUps(
   payload: Record<string, unknown>,
   fallbackType: string | null,
   mk: (sessionType: string) => IngestFollowUp,
+  /** The `process` toggle: false means file it and run nothing (Part 5). */
+  process = true,
 ): Promise<{ followUp?: IngestFollowUp; extras?: IngestFollowUp[] }> {
+  if (!process) return {};
   const hits = await skillsForEvent(ctx, event, payload);
-  const types = hits.length > 0 ? hits.map((h) => h.sessionType) : fallbackType ? [fallbackType] : [];
-  if (types.length === 0) return {};
-  const [first, ...rest] = types;
+  const fired = hits.length > 0 ? hits : fallbackType ? [{ sessionType: fallbackType }] : [];
+  if (fired.length === 0) return {};
+  const [first, ...rest] = fired as { sessionType: string; tier?: 'observe' | 'suggest' | 'outbound' }[];
+  const withTier = (h: { sessionType: string; tier?: 'observe' | 'suggest' | 'outbound' }): IngestFollowUp => ({
+    ...mk(h.sessionType),
+    ...(h.tier ? { tier: h.tier } : {}),
+  });
   return {
-    followUp: mk(first!),
-    ...(rest.length > 0 ? { extras: rest.map((t) => ({ ...mk(t), background: true })) } : {}),
+    followUp: withTier(first!),
+    ...(rest.length > 0 ? { extras: rest.map((h) => ({ ...withTier(h), background: true })) } : {}),
   };
 }
 
@@ -292,13 +314,14 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
         ctx,
         'capture.transcript',
         { origin: 'external', path: note.path },
-        'external-transcript',
+        ARRIVAL_SKILL_NAME,
         (sessionType) => ({
           sessionType,
-          prompt: `Run the ${sessionType} session on ${note.path}: the PO was not in this meeting. Extract cited insights and customer signals as approval cards — never decisions.`,
+          prompt: `Run the ${sessionType} skill on ${note.path}: the PM was NOT in this meeting, so this is signal to mine, not a meeting to process. Extract what needs to happen — commitments anyone made, dates, customer signals — and flag anything that contradicts what the memory holds. Never a decision.`,
           tabTitle: `Signals: ${title}`,
           background: true,
         }),
+        input.process ?? true,
       );
       return { note, kind, ...dispatched };
     }
@@ -311,20 +334,21 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
       ctx,
       'capture.transcript',
       { origin: 'po', path: note.path },
-      'after-meeting',
+      ARRIVAL_SKILL_NAME,
       (sessionType) => ({
         sessionType,
-        prompt: `Run the ${sessionType} session on ${note.path}: read the meeting note and its linked transcript plus related memory, then produce the truth delta as approval cards.`,
+        prompt: `Run the ${sessionType} skill on ${note.path}: this was the PM's own meeting. Read the meeting note and its linked transcript plus the memory it touches, then extract the truth delta as approval cards — decisions with their decider, every commitment made, the summary, and anything that contradicts what the memory holds.`,
         tabTitle: `After-Meeting: ${title}`,
         background: true,
       }),
+      input.process ?? true,
     );
     return { note, kind, ...dispatched };
   }
 
   const intakeFollowUp = (note: Note, display: string) => (sessionType: string): IngestFollowUp => ({
     sessionType,
-    prompt: `Run the ${sessionType} session on ${note.path}: read the capture, search the memory it might touch, and propose how to file and link it as approval cards. Ask me if something is unclear.`,
+    prompt: `Run the ${sessionType} skill on ${note.path}: read the capture, search the memory it might touch, and extract what needs to happen or to be wired in, as approval cards. Ask me if something is unclear.`,
     tabTitle: `Intake: ${display}`,
   });
 
@@ -347,8 +371,9 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
       ctx,
       'capture.ingested',
       { kind, path: note.path },
-      'intake',
+      ARRIVAL_SKILL_NAME,
       intakeFollowUp(note, summary),
+        input.process ?? true,
     );
     return { note, kind, ...dispatched };
   }
@@ -377,8 +402,9 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
       ctx,
       'capture.ingested',
       { kind, path: note.path },
-      'intake',
+      ARRIVAL_SKILL_NAME,
       intakeFollowUp(note, summary),
+        input.process ?? true,
     );
     return { note, kind, ...dispatched };
   }
@@ -392,6 +418,7 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
     { kind: 'note', path: note.path },
     null,
     intakeFollowUp(note, title),
+      input.process ?? true,
   );
   return { note, kind: 'note', ...dispatched };
 }

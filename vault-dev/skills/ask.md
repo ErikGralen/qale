@@ -4,10 +4,14 @@ skill_kind: session
 session_type: ask
 summary: Ask — answer any question with a cited, dated answer, or "vet inte"
 tier: observe
+bindings:
+  - mode: dynamic
 ---
 
 ## When
-Anytime — a question about the product, a customer, a decision, or what was said.
+Anytime — a question about the product, a customer, a decision, or what was said. Pull this in
+mid-conversation when the PM stops thinking out loud and asks something that deserves a cited,
+dated answer rather than a discussion.
 
 ## Read
 The whole workspace (search_vault, vault_read) and, when configured, live Jira/Confluence.

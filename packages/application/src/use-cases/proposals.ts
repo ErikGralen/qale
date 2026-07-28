@@ -505,7 +505,9 @@ export async function completeMeetingReview(
 ): Promise<{ completed: string | null }> {
   const mine = ctx.proposals.list().filter((p) => p.sessionId === sessionId);
   if (mine.length === 0) return { completed: null };
-  if (mine[0]!.sessionType !== 'after-meeting') return { completed: null };
+  // `arrival` is the skill that reviews a dropped meeting now; `after-meeting`
+  // stays recognised for cards a workspace filed before the merge.
+  if (mine[0]!.sessionType !== 'arrival' && mine[0]!.sessionType !== 'after-meeting') return { completed: null };
   if (mine.some((p) => p.status === 'pending')) return { completed: null };
   const meetingPath = mine.map((p) => p.targetPath).find((t) => t?.startsWith('meetings/'));
   if (!meetingPath) return { completed: null };

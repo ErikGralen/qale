@@ -207,3 +207,53 @@ arrive after the first.
 - **The `ViewBody` field is still called `sessionType`.** Renaming it to `skill` would need a
   migration for persisted tabs; its *meaning* is now "initial invocation", documented at both
   the type and the `ChatView` prop.
+
+---
+
+## Phase 5 — arrival: extraction vs analysis
+
+**What changed**
+
+- **One `arrival` skill** replaces `after-meeting`, `external-transcript` and `intake`. The branch
+  was always data — who was in the room, what kind of thing it is — and both fields are already in
+  the capture payload and matched by `bindingMatches`. `intake`'s own red flag used to say "if the
+  PO was in the room, suggest re-filing it as a meeting", which is a session type whose job
+  included telling you it was the wrong session type.
+- **`interview-synthesis` is deleted.** It fired on arrival and produced insights — an analytical
+  judgment about one document read in isolation. The memory's automatic intake was its
+  lowest-quality content while its highest-quality content needed a human to go ask for it.
+- **The `process` toggle** on the capture dialog: *"Anything to act on?"* Off files the document
+  and runs nothing. Wired through `IngestCaptureInput.process` → `boundFollowUps`.
+- **Retirement that actually retires.** `ensureDefaultSkills` now deletes a retired skill file from
+  a workspace *only when its contents still match a version we shipped*, and refreshes a
+  still-shipped skill whose copy matches an older shipped body (`DefaultSkill.previous`). The old
+  bodies live in `packages/sessions/src/retired.ts` as dead-on-purpose strings. Without this,
+  every existing workspace would run both the retired skill and its replacement on the same
+  dropped transcript, and `chat` would keep its pre-v2 frontmatter — no session files, no fan-out.
+
+**How invariant 3 survived the merge (the interesting part)**
+
+`after-meeting` was `tier: outbound` with gates; `external-transcript` was `tier: suggest` with a
+hard *never propose a decision* rule. One file has one `tier`, so merging them naively would have
+demoted that difference from a tool-set fact to a sentence the model has to remember.
+
+Instead, **bindings gained a `tier`**: `SkillBinding.tier` overrides the skill's own for the
+material that binding matches. The arrival skill declares `tier: suggest` as its floor and gives
+`origin: po` the `outbound` tier; the tier rides the `TriggeredSkill` → `IngestFollowUp` →
+`AgentRunInput.invokeTier` path into the harness. A colleague's sales call literally does not have
+the draft tools. Permissions attach to the material, structurally.
+
+**Deviations / decisions**
+
+- **`process-note` survives.** The plan left this open ("or does 'work this dump properly' become
+  an explicit invocation?"). It is now *both*: it keeps its `dynamic` binding and, since Phase 3,
+  is one click away in the composer picker. Nothing had to be cut.
+- **Arrival keeps a gate**, `[digest, delta]` rather than after-meeting's three checkpoints —
+  analysis moved out, so there is no outline stage. A one-line digest before proposing is cheap
+  even for a screenshot, and it is what stops cards being fired without reading.
+- **The default for `process` is on, and does not yet key off recency.** The plan wants a bulk
+  historical import to default it off; there is no bulk-import path in the app today (captures
+  arrive one at a time from the dialog or a shell drop), so there is nothing to detect. The toggle
+  is in place and the moment a bulk path exists it should default off there.
+- **Old session-type names stay recognised** in the Inbox grouping, the label map and
+  `completeMeetingReview`, so cards and receipts a workspace already filed still read correctly.

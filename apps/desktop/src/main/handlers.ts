@@ -44,7 +44,7 @@ import {
 } from '@pm/application';
 import { classifyCapture, parseFrontmatter, type Frontmatter } from '@pm/domain';
 import { atlassianAuthSchema } from '@pm/connectors';
-import { DEFAULT_SKILLS } from '@pm/sessions';
+import { DEFAULT_SKILLS, RETIRED_SKILLS } from '@pm/sessions';
 import { handle, pushEvent } from './ipc.js';
 import { seedDemoProposal } from './dev-seed.js';
 import { SettingsService } from './services/settings-service.js';
@@ -140,7 +140,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     try {
       const ctx = vaultService.context();
       if (!ctx) return;
-      await ensureDefaultSkills(ctx, DEFAULT_SKILLS);
+      const seeded = await ensureDefaultSkills(ctx, DEFAULT_SKILLS, RETIRED_SKILLS);
+      // A retired skill the PO edited stays theirs — but it still has its
+      // triggered binding, so say plainly that it will keep firing alongside
+      // the skill that replaced it rather than deleting their work silently.
+      for (const file of seeded.kept) {
+        console.warn(`[pm] ${file} was retired but you edited it — left in place, and it still fires`);
+      }
       await runMaintenance();
       notifyPings();
       notifyProposalsFor();
@@ -220,6 +226,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   const SESSION_LABEL: Record<string, string> = {
     chat: 'Chat',
     ask: 'Ask',
+    arrival: 'Arrival',
     'after-meeting': 'After-Meeting',
     'before-meeting': 'Before-Meeting',
     'external-transcript': 'External transcript',
@@ -231,14 +238,19 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   };
   const sessionLabel = (type: string): string => SESSION_LABEL[type] ?? type.replace(/-/g, ' ');
 
-  const fireSession = async (sessionType: string, prompt: string): Promise<{ sessionId: string } | null> => {
+  const fireSession = async (
+    sessionType: string,
+    prompt: string,
+    /** Tier the firing binding grants this arrival (Sessions v2 invariant 3). */
+    tier?: 'observe' | 'suggest' | 'outbound',
+  ): Promise<{ sessionId: string } | null> => {
     const ctx = vaultService.context();
     if (!ctx) return null;
     try {
       // run() returns immediately with the session id; chunks + settle stream via
       // agent.onStatus. Handing the id back lets capture open a live watch tab.
       const handle = await agent.run(
-        { sessionType: sessionType as AgentRunInput['sessionType'], prompt },
+        { sessionType: sessionType as AgentRunInput['sessionType'], prompt, ...(tier ? { invokeTier: tier } : {}) },
         ctx,
         () => {},
       );
@@ -583,13 +595,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         : undefined,
     });
     // Any further skills bound to the same capture event run headlessly alongside.
-    for (const extra of extras ?? []) void fireSession(extra.sessionType, extra.prompt);
+    for (const extra of extras ?? []) void fireSession(extra.sessionType, extra.prompt, extra.tier);
     // After-Meeting / External-Transcript run the moment the capture lands — the
     // gate is the review, not the run. We hand the session id back so the PO
     // lands in the live session, watches it work, and approves its cards inline;
     // the same cards also collect in the Inbox.
     if (followUp?.background) {
-      const handle = await fireSession(followUp.sessionType, followUp.prompt);
+      const handle = await fireSession(followUp.sessionType, followUp.prompt, followUp.tier);
       return {
         note: noteToDTO(note),
         kind,

@@ -61,9 +61,15 @@ export async function listSkills(ctx: UseCaseContext): Promise<SkillSummary[]> {
 }
 
 export interface TriggeredSkill {
-  /** The skill name (session type) to fire. */
+  /** The skill name to invoke. */
   sessionType: string;
   slug: string;
+  /**
+   * Tier this arrival gets, when its matching binding names one — how one
+   * arrival skill branches on the MATERIAL (Sessions v2 Part 5, invariant 3):
+   * the PO's own meeting may draft outbound, a colleague's sales call may not.
+   */
+  tier?: SkillConfig['tier'];
 }
 
 /**
@@ -86,8 +92,9 @@ export async function skillsForEvent(
     const raw = (await ctx.vault.readRaw(n.path)) ?? '';
     const config = parseSkill(raw, n.slug);
     if (config.kind !== 'session' && config.kind !== 'reaction') continue;
-    if (config.bindings.some((b) => bindingMatches(b, event, payload))) {
-      hits.push({ sessionType: config.name, slug: n.slug });
+    const match = config.bindings.find((b) => bindingMatches(b, event, payload));
+    if (match) {
+      hits.push({ sessionType: config.name, slug: n.slug, ...(match.tier ? { tier: match.tier } : {}) });
     }
   }
   return hits;

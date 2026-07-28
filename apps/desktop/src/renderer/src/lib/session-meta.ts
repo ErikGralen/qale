@@ -2,14 +2,17 @@
 const SESSION_LABEL: Record<string, string> = {
   chat: 'Chat',
   ask: 'Ask',
-  'after-meeting': 'After-Meeting',
+  arrival: 'Arrival',
   'before-meeting': 'Before-Meeting',
-  'external-transcript': 'External transcript',
-  intake: 'Intake',
   'process-note': 'Process Note',
   'weekly-update': 'Weekly Update',
-  'interview-synthesis': 'Interview Synthesis',
   synthesis: 'Synthesis',
+  // Retired arrival skills (Sessions v2 Part 5). Kept so cards and receipts a
+  // workspace already filed under these names still read as words.
+  'after-meeting': 'After-Meeting',
+  'external-transcript': 'External transcript',
+  intake: 'Intake',
+  'interview-synthesis': 'Interview Synthesis',
   'supersede-sweep': 'Repoint references',
   librarian: 'Librarian',
 };

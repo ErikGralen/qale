@@ -22,6 +22,7 @@ export {
   DEFAULT_SKILL_BY_NAME,
   BASE_SKILL_NAME,
   ARRIVAL_SKILL_NAME,
+  RETIRED_SKILL_FILES,
   type DefaultSkill,
   ARRIVAL_SKILL,
   ASK_SKILL,
@@ -34,4 +35,3 @@ export {
   VOICE_EXEC,
   VOICE_CS,
 } from './defaults.js';
-export { RETIRED_SKILLS, type RetiredSkill } from './retired.js';

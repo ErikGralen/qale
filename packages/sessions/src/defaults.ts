@@ -1,5 +1,3 @@
-import { ASK_SKILL_V1, CHAT_SKILL_V1, SYNTHESIS_SKILL_V1 } from './retired.js';
-
 /**
  * The built-in skill pack (PLAN-V2 §3.2) — shipped as content, seeded into a new
  * workspace's `skills/` folder and used as the fallback when a workspace hasn't
@@ -569,14 +567,20 @@ status, a reschedule moves its date. Nothing changes silently, and nothing else 
 export interface DefaultSkill {
   file: string;
   content: string;
-  /**
-   * Bodies this file used to ship with. A workspace copy matching one of them
-   * was never edited, so seeding refreshes it in place. Without this an existing
-   * workspace keeps its pre-Sessions-v2 `chat`, and every session there quietly
-   * has no working files and no fan-out.
-   */
-  previous?: string[];
 }
+
+/**
+ * Skill files the pack no longer ships (Sessions v2 Part 5) — deleted from a
+ * workspace on seed. A retired file keeps its triggered binding, so leaving one
+ * behind means a dropped transcript fires both it and the skill that replaced
+ * it. Pre-alpha: local edits to these are not preserved.
+ */
+export const RETIRED_SKILL_FILES = [
+  'skills/after-meeting.md',
+  'skills/external-transcript.md',
+  'skills/intake.md',
+  'skills/interview-synthesis.md',
+];
 
 /**
  * The skill a session opens with (Sessions v2 Part 4). Every session is this
@@ -601,11 +605,11 @@ export const ARRIVAL_SKILL_NAME = 'arrival';
 export const DEFAULT_SKILLS: DefaultSkill[] = [
   { file: 'skills/arrival.md', content: ARRIVAL_SKILL },
   { file: 'skills/before-meeting.md', content: BEFORE_MEETING_SKILL },
-  { file: 'skills/ask.md', content: ASK_SKILL, previous: [ASK_SKILL_V1] },
-  { file: 'skills/chat.md', content: CHAT_SKILL, previous: [CHAT_SKILL_V1] },
+  { file: 'skills/ask.md', content: ASK_SKILL },
+  { file: 'skills/chat.md', content: CHAT_SKILL },
   { file: 'skills/process-note.md', content: PROCESS_NOTE_SKILL },
   { file: 'skills/weekly-update.md', content: WEEKLY_UPDATE_SKILL },
-  { file: 'skills/synthesis.md', content: SYNTHESIS_SKILL, previous: [SYNTHESIS_SKILL_V1] },
+  { file: 'skills/synthesis.md', content: SYNTHESIS_SKILL },
   { file: 'skills/librarian.md', content: LIBRARIAN_SKILL },
   { file: 'skills/commitment-check.md', content: COMMITMENT_CHECK_SKILL },
   { file: 'skills/_filing-rules.md', content: FILING_RULES },

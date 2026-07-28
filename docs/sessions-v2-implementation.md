@@ -224,12 +224,9 @@ arrive after the first.
   lowest-quality content while its highest-quality content needed a human to go ask for it.
 - **The `process` toggle** on the capture dialog: *"Anything to act on?"* Off files the document
   and runs nothing. Wired through `IngestCaptureInput.process` → `boundFollowUps`.
-- **Retirement that actually retires.** `ensureDefaultSkills` now deletes a retired skill file from
-  a workspace *only when its contents still match a version we shipped*, and refreshes a
-  still-shipped skill whose copy matches an older shipped body (`DefaultSkill.previous`). The old
-  bodies live in `packages/sessions/src/retired.ts` as dead-on-purpose strings. Without this,
-  every existing workspace would run both the retired skill and its replacement on the same
-  dropped transcript, and `chat` would keep its pre-v2 frontmatter — no session files, no fan-out.
+- **Retired files are deleted on seed.** `RETIRED_SKILL_FILES` lists the four; `ensureDefaultSkills`
+  removes them outright. A retired file keeps its triggered binding, so leaving one behind means a
+  dropped transcript fires both it and the skill that replaced it.
 
 **How invariant 3 survived the merge (the interesting part)**
 
@@ -257,6 +254,11 @@ the draft tools. Permissions attach to the material, structurally.
   is in place and the moment a bulk path exists it should default off there.
 - **Old session-type names stay recognised** in the Inbox grouping, the label map and
   `completeMeetingReview`, so cards and receipts a workspace already filed still read correctly.
+- **Retirement does not preserve local edits, and shipped skills are never refreshed in place.**
+  Both were built with content-identity checks and then cut: pre-alpha, the only vaults that exist
+  are `vault-dev/` and `.vault-dev/`, and both are already synced to the new pack. When there are
+  users whose customisations matter, this needs to come back — either the identity check, or a
+  pack-version stamp per file.
 
 ---
 
@@ -304,9 +306,13 @@ The plan's list, revisited now that the code exists.
 
 New ones this implementation raises:
 
-- **A retired skill the PO edited keeps firing** alongside the skill that replaced it. It is logged
-  at startup and left alone, which is the right default for their work but means a workspace can
-  quietly run two arrival skills on one transcript. The Skills view could say so on the row.
+- **Upgrades overwrite nothing and preserve nothing.** A retired skill is deleted with its edits; a
+  still-shipped skill whose content changed (`chat` gaining `session_files`) is left stale in any
+  workspace that already has it. Fine for three alpha users who expect the product to swing; the
+  first thing to fix when that stops being true.
+- **`tier` on a non-triggered binding is silently ignored** — the parser only reads it in the
+  `triggered` branch. Deliberately left as-is; how permissions are declared is due a rethink
+  anyway, and a validation error now would just harden a shape that is going to move.
 - **`process` has no bulk-import path to default off from.** The toggle exists and defaults on;
   the recency rule the plan describes needs a bulk path to attach to.
 - **The atlassian tools widened** from `ask` to every session (Phase 4). Defensible — every read is

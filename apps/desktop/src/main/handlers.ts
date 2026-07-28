@@ -44,7 +44,7 @@ import {
 } from '@pm/application';
 import { classifyCapture, parseFrontmatter, type Frontmatter } from '@pm/domain';
 import { atlassianAuthSchema } from '@pm/connectors';
-import { DEFAULT_SKILLS, RETIRED_SKILLS } from '@pm/sessions';
+import { DEFAULT_SKILLS, RETIRED_SKILL_FILES } from '@pm/sessions';
 import { handle, pushEvent } from './ipc.js';
 import { seedDemoProposal } from './dev-seed.js';
 import { SettingsService } from './services/settings-service.js';
@@ -140,13 +140,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     try {
       const ctx = vaultService.context();
       if (!ctx) return;
-      const seeded = await ensureDefaultSkills(ctx, DEFAULT_SKILLS, RETIRED_SKILLS);
-      // A retired skill the PO edited stays theirs — but it still has its
-      // triggered binding, so say plainly that it will keep firing alongside
-      // the skill that replaced it rather than deleting their work silently.
-      for (const file of seeded.kept) {
-        console.warn(`[pm] ${file} was retired but you edited it — left in place, and it still fires`);
-      }
+      await ensureDefaultSkills(ctx, DEFAULT_SKILLS, RETIRED_SKILL_FILES);
       await runMaintenance();
       notifyPings();
       notifyProposalsFor();

@@ -15,7 +15,7 @@ import {
   DEFAULT_SKILL_BY_NAME,
   isDynamicSkill,
   DEFAULT_SKILLS,
-  RETIRED_SKILLS,
+  RETIRED_SKILL_FILES,
   buildSkillBrief,
 } from '../src/index.js';
 
@@ -156,7 +156,7 @@ test('interview-synthesis is gone from the pack — insights no longer arrive au
   assert.equal(DEFAULT_SKILL_BY_NAME['intake'], undefined);
   assert.ok(DEFAULT_SKILL_BY_NAME['arrival']);
   const files = DEFAULT_SKILLS.map((s) => s.file);
-  for (const gone of RETIRED_SKILLS) assert.ok(!files.includes(gone.file), `${gone.file} is still shipped`);
+  for (const gone of RETIRED_SKILL_FILES) assert.ok(!files.includes(gone), `${gone} is still shipped`);
 });
 
 test('receipt records reads, writes and turns', () => {

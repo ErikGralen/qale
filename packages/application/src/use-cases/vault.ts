@@ -268,27 +268,19 @@ export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
  */
 export async function ensureDefaultSkills(
   ctx: UseCaseContext,
-  skills: { file: string; content: string; previous?: string[] }[],
+  skills: { file: string; content: string }[],
   /**
-   * Skills the pack no longer ships (Sessions v2 Part 5). Removed from a
-   * workspace ONLY when the file still matches a version we shipped: an edited
-   * skill is the PO's, and it keeps working until they say otherwise. Leaving
-   * every old copy in place is not the safe default — a retired arrival skill
-   * still has its triggered binding, so a dropped transcript would run both it
-   * and its replacement.
+   * Skill files the pack no longer ships. Deleted outright: a retired file keeps
+   * its triggered binding, so leaving one behind means a dropped transcript
+   * fires both it and the skill that replaced it. Pre-alpha, local edits to a
+   * retired skill are not preserved.
    */
-  retired: { file: string; shipped: string[] }[] = [],
-): Promise<{ written: number; removed: number; kept: string[] }> {
+  retired: string[] = [],
+): Promise<{ written: number; removed: number }> {
   let written = 0;
   const committed: string[] = [];
   for (const skill of skills) {
-    const current = await ctx.vault.readRaw(skill.file);
-    if (current !== null) {
-      // Refresh an untouched copy of an older shipped version; leave anything
-      // the PO edited exactly as they left it.
-      const stale = skill.previous?.some((v) => v.trim() === current.trim()) ?? false;
-      if (!stale || current.trim() === skill.content.trim()) continue;
-    }
+    if (await ctx.vault.exists(skill.file)) continue;
     await ctx.vault.writeRaw(skill.file, skill.content);
     const note = await ctx.vault.readNote(skill.file);
     if (note) ctx.index.reindex(note);
@@ -296,21 +288,14 @@ export async function ensureDefaultSkills(
     written++;
   }
   let removed = 0;
-  /** Retired files the PO edited — left alone, and named so the caller can say so. */
-  const kept: string[] = [];
-  for (const old of retired) {
-    const current = await ctx.vault.readRaw(old.file);
-    if (current === null) continue;
-    if (!old.shipped.some((v) => v.trim() === current.trim())) {
-      kept.push(old.file);
-      continue;
-    }
-    await ctx.vault.remove(old.file);
-    ctx.index.removeByPath(old.file);
-    committed.push(old.file);
+  for (const file of retired) {
+    if (!(await ctx.vault.exists(file))) continue;
+    await ctx.vault.remove(file);
+    ctx.index.removeByPath(file);
+    committed.push(file);
     removed++;
   }
   if (committed.length > 0) await ctx.git.commitPaths(committed, 'skills: seed defaults');
-  return { written, removed, kept };
+  return { written, removed };
 }
 

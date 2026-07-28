@@ -11,7 +11,7 @@ import {
   CHAT_SKILL,
   SYNTHESIS_SKILL,
   PROCESS_NOTE_SKILL,
-  DEFAULT_SKILL_BY_TYPE,
+  DEFAULT_SKILL_BY_NAME,
   isDynamicSkill,
   buildSkillBrief,
 } from '../src/index.js';
@@ -35,7 +35,7 @@ test('the LAST section of a skill body is captured (regression: \\Z is not a JS 
   assert.equal(c.when, 'Do it when X.');
   assert.equal(c.then, 'Produce Y.');
   // every shipped skill ends with ## Then — none may lose it
-  for (const [type, skill] of Object.entries(DEFAULT_SKILL_BY_TYPE)) {
+  for (const [type, skill] of Object.entries(DEFAULT_SKILL_BY_NAME)) {
     const parsed = parseSkill(skill, type);
     if (/^##\s*Then/im.test(skill)) assert.ok(parsed.then, `${type} lost its ## Then section`);
   }
@@ -89,7 +89,7 @@ test('gate_output without checkpoints is ignored, flagged, and never locks', () 
 });
 
 test('no shipped default skill can gate-lock itself', () => {
-  for (const [type, raw] of Object.entries(DEFAULT_SKILL_BY_TYPE)) {
+  for (const [type, raw] of Object.entries(DEFAULT_SKILL_BY_NAME)) {
     const c = parseSkill(raw, type);
     assert.deepEqual(c.errors, [], `${type} has frontmatter errors: ${c.errors.join('; ')}`);
     if (c.gateOutput) assert.ok(c.checkpoints.length > 0, `${type} gates without checkpoints`);
@@ -129,7 +129,7 @@ test('after-meeting binding fires only for the PO’s own transcripts', () => {
 });
 
 test('intake binding fires for links and screenshots, not quick notes', () => {
-  const c = parseSkill(DEFAULT_SKILL_BY_TYPE['intake']!, 'intake');
+  const c = parseSkill(DEFAULT_SKILL_BY_NAME['intake']!, 'intake');
   const fires = (kind: string) => c.bindings.some((b) => bindingMatches(b, 'capture.ingested', { kind }));
   assert.equal(fires('link'), true);
   assert.equal(fires('screenshot'), true);
@@ -216,7 +216,21 @@ test('the receipt records every skill that was in force, not just the opener', (
   h.beginTurn('what do these nine interviews add up to?', '2026-07-28T09:00:00Z');
   h.invokeSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
   const r = buildSessionReceipt(h, '2026-07-28T09:30:00Z');
-  assert.equal(r.frontmatter.session_type, 'chat');
+  // The receipt is named for what the session was ABOUT — the first skill that
+  // arrived — not the base every session opens with.
+  assert.equal(r.frontmatter.session_type, 'synthesis');
+  assert.ok(r.path.includes('-synthesis-'));
   assert.deepEqual(r.frontmatter.skills, ['chat', 'synthesis']);
   assert.ok(r.body.includes('Skills: chat → synthesis'));
+});
+
+test('a skill invoked on a later turn does not rename an already-filed receipt', () => {
+  const h = new SessionHarness('abcd1234ef', parseSkill(CHAT_SKILL, 'chat'), '2026-07-28T09:00:00Z');
+  h.beginTurn('what changed this week?', '2026-07-28T09:00:00Z');
+  const first = buildSessionReceipt(h, '2026-07-28T09:05:00Z');
+  assert.ok(first.path.includes('-chat-'));
+  h.invokeSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
+  const later = buildSessionReceipt(h, '2026-07-28T09:40:00Z');
+  assert.equal(later.path, first.path, 'a renamed receipt would orphan the one already on disk');
+  assert.deepEqual(later.frontmatter.skills, ['chat', 'synthesis']);
 });

@@ -57,7 +57,8 @@ import {
   buildSkillBrief,
   buildSessionReceipt,
   SessionHarness,
-  DEFAULT_SKILL_BY_TYPE,
+  DEFAULT_SKILL_BY_NAME,
+  BASE_SKILL_NAME,
   type SkillConfig,
 } from '@pm/sessions';
 
@@ -371,25 +372,26 @@ export class AgentRuntime {
   }
 
   /**
-   * Resolve a session's skill by its declared `session_type`: the conventional
-   * `skills/<type>.md` first, then any workspace skill file whose frontmatter
-   * declares the type (a triggered skill's filename need not match), else the
-   * built-in pack.
+   * Resolve a skill by NAME — an invocation, not a session type (Sessions v2
+   * Part 4). The conventional `skills/<name>.md` first, then any workspace skill
+   * file whose frontmatter declares that name (a triggered skill's filename need
+   * not match), else the built-in pack. Frontmatter `session_type` is now just
+   * the skill's name; nothing about it selects a mode.
    */
-  private async resolveSkill(type: string, ctx: UseCaseContext): Promise<SkillConfig> {
-    const direct = await ctx.vault.readRaw(`skills/${type}.md`);
+  private async resolveSkill(name: string, ctx: UseCaseContext): Promise<SkillConfig> {
+    const direct = await ctx.vault.readRaw(`skills/${name}.md`);
     if (direct) {
-      const config = parseSkill(direct, type);
-      if (config.name === type) return config;
+      const config = parseSkill(direct, name);
+      if (config.name === name) return config;
     }
     for (const n of ctx.index.all()) {
       if (n.type !== 'skill') continue;
       const raw = await ctx.vault.readRaw(n.path);
       if (!raw) continue;
       const config = parseSkill(raw, n.slug);
-      if (config.name === type) return config;
+      if (config.name === name) return config;
     }
-    return parseSkill(DEFAULT_SKILL_BY_TYPE[type] ?? '', type);
+    return parseSkill(DEFAULT_SKILL_BY_NAME[name] ?? '', name);
   }
 
   /**
@@ -564,10 +566,18 @@ export class AgentRuntime {
     }
     const model = this.resolveModel();
 
-    // A session type is a skill file (PLAN-V2 §3.2): prompt + tool tier + gate.
-    const skillConfig = await this.resolveSkill(type, ctx);
+    /**
+     * Every session opens on the SAME skill (Sessions v2 Part 4). A session type
+     * is not a mode any more: the requested one arrives as the first invocation
+     * (see `run`), which is what lets a second one arrive after it. The entry
+     * points are unchanged — the button on a meeting, the Landing tiles, the
+     * Skills view — they just mean "start a session and invoke this" now.
+     */
+    const skillConfig = await this.resolveSkill(BASE_SKILL_NAME, ctx);
     const harness = new SessionHarness(id, skillConfig, ctx.clock.now());
-    const voice = skillConfig.tier === 'outbound' ? await this.voiceGuides(ctx) : '';
+    // Voice registers ride along unconditionally: the skill that will draft
+    // outbound has not arrived yet, and they are inert until one does.
+    const voice = await this.voiceGuides(ctx);
     const skillIndex = await this.skillIndex(ctx, skillConfig.name);
     const vaultMap = await this.vaultMap(ctx);
     const filesRoot = sessionFilesRoot(this.config.vaultDir, id);
@@ -575,8 +585,11 @@ export class AgentRuntime {
     const baseSystemPrompt =
       buildSystemPrompt(SHARED_PREAMBLE, skillConfig) + voice + (skillIndex ?? '') + files + vaultMap;
 
-    // The ask session gains the tracker seam (Jira/Confluence) when configured.
-    const atlassianActive = type === 'ask' && this.atlassian;
+    // The tracker seam (Jira/Confluence) is available whenever it is configured.
+    // It used to be the `ask` session's alone; with types dissolved there is no
+    // "the ask session" to hang it on, and every read it offers is silent and
+    // non-mutating — `track_external` only starts a local mirror.
+    const atlassianActive = !!this.atlassian;
     const canInvokeSkills = !!skillIndex;
 
     /**
@@ -699,7 +712,7 @@ export class AgentRuntime {
       const receipt = buildSessionReceipt(state.harness, ctx.clock.now(), undefined, files);
       const note = await ctx.vault.writeNote(receipt.path, receipt.frontmatter, receipt.body);
       ctx.index.reindex(note);
-      await ctx.git.commitPaths([receipt.path], `session: ${state.harness.config.name}`);
+      await ctx.git.commitPaths([receipt.path], `session: ${state.harness.primarySkillName}`);
     } catch (err) {
       console.error('[pm] session receipt filing failed:', err);
     }
@@ -733,7 +746,10 @@ export class AgentRuntime {
     if (state.activeStreamId) throw new Error('This conversation is still responding — wait or stop it first.');
     // A new message on a done/dismissed conversation reopens it.
     if (this.getLifecycle(sessionId) !== 'active') this.setLifecycle(sessionId, 'active');
-    if (input.invokeSkill) await this.invokeSkillInto(state, input.invokeSkill, ctx);
+    // The requested session type IS an invocation now: the first one, on the
+    // first turn. Re-running with the same type is a no-op, so nothing stacks.
+    const arriving = input.invokeSkill ?? (input.sessionType === BASE_SKILL_NAME ? undefined : input.sessionType);
+    if (arriving) await this.invokeSkillInto(state, arriving, ctx);
     state.harness.beginTurn(input.prompt, ctx.clock.now());
     if (!state.title) state.title = truncate(input.prompt, 60) ?? state.type;
 

@@ -25,6 +25,7 @@ export class SessionHarness {
   readonly invoked: SkillConfig[] = [];
   private checkpointIndex = -1;
   private current: SessionTurn | null = null;
+  private primary: string | null = null;
 
   constructor(
     readonly sessionId: string,
@@ -60,6 +61,17 @@ export class SessionHarness {
   /** Every skill in force, base first — what the receipt records. */
   get skillNames(): string[] {
     return [...new Set([this.config.name, ...this.invoked.map((c) => c.name)])];
+  }
+
+  /**
+   * The skill this session is ABOUT — the first that arrived, else the base one.
+   * Memoized on first read because the receipt is named from it and rewritten
+   * every turn: a skill invoked on turn five must not rename a receipt that
+   * turns one to four already filed, orphaning the old path.
+   */
+  get primarySkillName(): string {
+    this.primary ??= this.invoked[0]?.name ?? this.config.name;
+    return this.primary;
   }
 
   /** The skill that produced whatever is being proposed right now (cards are tagged with it). */

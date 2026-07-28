@@ -24,15 +24,16 @@ export function buildSessionReceipt(
   files = 0,
 ): SessionReceipt {
   const date = harness.started.slice(0, 10);
-  const path = `sessions/${date}-${fileSlug(harness.config.name, date).replace(/^\d{4}-\d{2}-\d{2}-/, '')}-${harness.sessionId.slice(0, 8)}.md`;
+  const name = harness.primarySkillName;
+  const path = `sessions/${date}-${fileSlug(name, date).replace(/^\d{4}-\d{2}-\d{2}-/, '')}-${harness.sessionId.slice(0, 8)}.md`;
 
   const reads = [...harness.reads];
   const writes = harness.writes.map((w) => `[[${w.path.replace(/\.md$/, '')}]]`);
 
   const frontmatter: SessionFrontmatter = {
     type: 'session',
-    summary: `${harness.config.name} session — ${harness.writes.length} card(s) proposed`,
-    session_type: harness.config.name,
+    summary: `${name} session — ${harness.writes.length} card(s) proposed`,
+    session_type: name,
     ...(harness.invoked.length > 0 ? { skills: harness.skillNames } : {}),
     session_id: harness.sessionId,
     started: harness.started,
@@ -42,7 +43,7 @@ export function buildSessionReceipt(
     ...(sourceMeeting ? { source_meeting: sourceMeeting } : {}),
   };
 
-  const lines: string[] = [`# ${harness.config.name} session`, ''];
+  const lines: string[] = [`# ${name} session`, ''];
   lines.push(`Started ${harness.started} · ${harness.turns.length} turn(s)`);
   // Which skills were in force, not just the one the session opened with — a
   // session that pulled in Synthesis halfway through says so (Sessions v2 Part 4).

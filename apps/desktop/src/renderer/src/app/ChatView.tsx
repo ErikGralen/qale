@@ -265,10 +265,16 @@ function GoldenButton({ question, answer }: { question: string; answer: string }
 
 const EMPTY_HINT: Record<string, string> = {
   ask: 'Ask about a decision, a customer, or a theme — answers cite their sources, or say "I don\'t know".',
-  chat: 'A free-form chat over the workspace. Nothing is written without an approval card.',
+  chat: 'A conversation with your memory. Pick a skill (or let the agent load one) when it turns into work — nothing is written without an approval card.',
 };
 
 interface ChatViewProps {
+  /**
+   * The skill to invoke on the first turn (Sessions v2 Part 4). Not a mode: the
+   * session is the same session either way, and a second skill can arrive after
+   * this one. The entry-point buttons and Landing tiles pass it and read exactly
+   * as they did — they just mean "start a session and invoke this" now.
+   */
   sessionType?: string;
   /** Stored conversation to reopen — its transcript replays before the chat mounts. */
   sessionId?: string;

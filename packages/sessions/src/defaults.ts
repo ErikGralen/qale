@@ -176,10 +176,14 @@ skill_kind: session
 session_type: ask
 summary: Ask — answer any question with a cited, dated answer, or "vet inte"
 tier: observe
+bindings:
+  - mode: dynamic
 ---
 
 ## When
-Anytime — a question about the product, a customer, a decision, or what was said.
+Anytime — a question about the product, a customer, a decision, or what was said. Pull this in
+mid-conversation when the PM stops thinking out loud and asks something that deserves a cited,
+dated answer rather than a discussion.
 
 ## Read
 The whole workspace (search_vault, vault_read) and, when configured, live Jira/Confluence.
@@ -204,7 +208,9 @@ session_files: true
 ---
 
 ## When
-Open-ended thinking — connections across meetings, decisions, insights and themes.
+Every session starts here. This is what a conversation with the memory is before anything narrows
+it: open-ended thinking, connections across meetings, decisions, insights and themes. When the work
+turns into something a skill already describes, load that skill rather than improvising it.
 
 ## Read
 The workspace via search_vault and vault_read.
@@ -634,6 +640,14 @@ export interface DefaultSkill {
   content: string;
 }
 
+/**
+ * The skill a session opens with (Sessions v2 Part 4). Every session is this
+ * one; everything else ARRIVES — pulled in by the agent, picked by the PM, or
+ * fired by a rule. "Chat" is not a mode you choose, it is what a conversation
+ * with the memory is before anything narrows it.
+ */
+export const BASE_SKILL_NAME = 'chat';
+
 export const DEFAULT_SKILLS: DefaultSkill[] = [
   { file: 'skills/after-meeting.md', content: AFTER_MEETING_SKILL },
   { file: 'skills/before-meeting.md', content: BEFORE_MEETING_SKILL },
@@ -652,8 +666,14 @@ export const DEFAULT_SKILLS: DefaultSkill[] = [
   { file: 'skills/voice-cs.md', content: VOICE_CS },
 ];
 
-/** Built-in skill content keyed by session_type (the runtime fallback). */
-export const DEFAULT_SKILL_BY_TYPE: Record<string, string> = {
+/**
+ * The built-in skill registry, keyed by skill name (Sessions v2 Part 4). This
+ * used to be a session-TYPE map: the key picked which mode a session opened in.
+ * A session no longer has a mode — skills arrive into it — so the key is just a
+ * name, and this is the fallback the runtime resolves an invocation against
+ * when the workspace has no file of its own.
+ */
+export const DEFAULT_SKILL_BY_NAME: Record<string, string> = {
   'after-meeting': AFTER_MEETING_SKILL,
   'before-meeting': BEFORE_MEETING_SKILL,
   'external-transcript': EXTERNAL_TRANSCRIPT_SKILL,

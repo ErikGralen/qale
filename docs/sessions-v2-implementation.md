@@ -170,3 +170,40 @@ mode by another name, which is the thing being removed.
 - **`ChatView` stopped deciding whether a session "proposes writes".** Any session may now
   propose, so `SessionReview` renders whenever cards exist and the Inbox refreshes after every
   settled turn.
+
+---
+
+## Phase 4 — session types dissolve
+
+**What changed**
+
+- Every session is created on `BASE_SKILL_NAME` (`chat`). The requested "session type" is applied
+  as the **first invocation** on the first turn, through the same path as `use_skill` and the
+  composer picker. Re-running with the same type is a no-op, so nothing stacks.
+- `DEFAULT_SKILL_BY_TYPE` → `DEFAULT_SKILL_BY_NAME`; `resolveSkill(name)` resolves invocations,
+  not session creation. Frontmatter `session_type` is now just the skill's name.
+- `harness.primarySkillName` — the first skill that arrived, else the base — names the receipt.
+  Memoized on first read: a skill invoked on turn five must not rename a receipt turns one to
+  four already filed, orphaning the old path.
+- `ask` gained a `dynamic` binding, so a cited answer can be asked for in the middle of any
+  conversation instead of opening a different kind of tab.
+
+**Entry points did not change.** The button on a meeting, the Landing tiles and the Skills view
+are where they were and say what they said. They stop meaning *enter this mode* and start meaning
+*start a session and invoke this skill* — same clicks, same names, and now a second skill can
+arrive after the first.
+
+**Deviations / decisions**
+
+- **The Atlassian tools are available whenever configured**, not only in `ask`. With types
+  dissolved there is no "the ask session" to hang them on, and every read they offer is
+  non-mutating (`track_external` only starts a local mirror).
+- **Voice registers are always in the system prompt.** They used to be gated on the session's
+  tier being `outbound`, which is unknowable at creation now. They are short and inert until
+  something drafts.
+- **`session_files: false` for `ask` is unreachable.** The plan's table wants it off, but `ask`
+  is now an invocation into a base that has files on, and arrivals only ever add. The property
+  that actually matters — `ask` is observe-tier and proposes nothing — is preserved.
+- **The `ViewBody` field is still called `sessionType`.** Renaming it to `skill` would need a
+  migration for persisted tabs; its *meaning* is now "initial invocation", documented at both
+  the type and the `ChatView` prop.

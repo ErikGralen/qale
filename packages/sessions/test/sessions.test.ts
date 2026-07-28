@@ -208,10 +208,11 @@ test('an arriving skill brings its tier, checkpoints and gate — and resets the
 
   h.invokeSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
   assert.equal(h.tier, 'outbound', 'arrival adds permissions');
-  assert.deepEqual(h.checkpoints, ['gather', 'cluster', 'draft']);
+  assert.equal(h.sessionFiles, true, 'and its working files');
+  assert.deepEqual(h.checkpoints, ['scope', 'read', 'cluster', 'draft']);
   assert.equal(h.gateOutput, true);
   assert.equal(h.canPropose(), false, 'the arriving gate locks output');
-  h.advanceCheckpoint('gather');
+  h.advanceCheckpoint('scope');
   assert.equal(h.canPropose(), true);
   assert.equal(h.activeSkillName, 'synthesis', 'cards are tagged with the skill that made them');
   assert.deepEqual(h.skillNames, ['chat', 'synthesis']);

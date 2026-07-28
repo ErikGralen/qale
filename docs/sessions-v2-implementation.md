@@ -257,3 +257,57 @@ the draft tools. Permissions attach to the material, structurally.
   is in place and the moment a bulk path exists it should default off there.
 - **Old session-type names stay recognised** in the Inbox grouping, the label map and
   `completeMeetingReview`, so cards and receipts a workspace already filed still read correctly.
+
+---
+
+## Phase 6 — `synthesis` as prose over the new primitives
+
+Rewritten to do the thing the whole plan started from: nine interviews, one question, an answer
+that holds. It now scopes the corpus and says the list back, writes `brief.md`, `spawn`s one child
+per document (plus extra entries when the question has more than one lens), reads the results back
+and clusters from them. Checkpoints became `[scope, read, cluster, draft]` — the reading is now a
+stage with a cost, so it gets a gate of its own.
+
+Two content changes beyond the mechanics:
+
+- It reads **sources**, not only insights. With `interview-synthesis` gone, insights are no longer
+  manufactured on arrival, so synthesis is where they are earned — weighed against everything else
+  rather than extracted from one document with nothing to compare it to.
+- Its completion bar and red flags now carry the **honest-counting** rule: every source in scope got
+  a pass, the silent ones are named as silent, and a count that quietly excludes what could not be
+  read is called out as the failure it is.
+
+"Delete its session-type registration" was already done by Phase 4 — there is no type registry left
+to delete from; `DEFAULT_SKILL_BY_NAME` holds it as fallback *content*, which is what it should be.
+
+---
+
+## Open questions, after building
+
+The plan's list, revisited now that the code exists.
+
+- **How does the model choose well among many dynamic skills?** Still open, and now slightly
+  sharper: the index lists sessions and guides separately and tells the model that loading a
+  session skill takes over how it works. At six skills that reads fine. At twenty it is a retrieval
+  problem and a wrong pick is worse than no pick.
+- **Can a session's files be read by a later session?** No, and the roots enforce it. Position
+  unchanged: if it was worth comparing, it was worth keeping into the memory first.
+- **What happens to a fan-out when the app quits mid-run?** Unresolved. Written files survive,
+  in-flight children do not, and nothing marks the gap. A crash mid-batch reads as a smaller batch.
+- **Cost ceiling.** Concurrency is capped at 4 and a batch at 40 children, both constants. The card
+  shows the child count and the model, not a currency estimate.
+- **Does `process-note` survive the arrival merge?** Yes — answered by Phase 3 rather than by
+  cutting it. It is dynamic *and* picker-invocable, which is exactly "work this dump properly" as
+  an explicit invocation.
+- **Unbounded session files.** Still no sweep and no size readout beyond the per-session tree
+  footer and the receipt count.
+
+New ones this implementation raises:
+
+- **A retired skill the PO edited keeps firing** alongside the skill that replaced it. It is logged
+  at startup and left alone, which is the right default for their work but means a workspace can
+  quietly run two arrival skills on one transcript. The Skills view could say so on the row.
+- **`process` has no bulk-import path to default off from.** The toggle exists and defaults on;
+  the recency rule the plan describes needs a bulk path to attach to.
+- **The atlassian tools widened** from `ask` to every session (Phase 4). Defensible — every read is
+  non-mutating — but it is a capability increase nobody explicitly asked for.

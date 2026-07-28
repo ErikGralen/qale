@@ -1,6 +1,8 @@
 # Sessions v2 — one session, skills that arrive, agents with a desk
 
-**Status: plan, not built. 2026-07-28.**
+**Status: BUILT, 2026-07-28.** All seven phases landed. What was actually built, where it
+deviates from this plan and why, and the open questions as they stand afterwards:
+`sessions-v2-implementation.md`.
 
 Three changes that turn out to be one change:
 
@@ -452,6 +454,15 @@ Ordered so each phase is shippable and the risky one is isolated.
 | **6** | Rewrite `synthesis` as prose over the new primitives; delete its session-type registration. | 2, 4 |
 
 Phase 0 is worth doing this week regardless of whether the rest proceeds.
+
+All seven shipped in order, one commit each. Two things this plan did not anticipate:
+
+- **Bindings needed their own `tier`.** One skill file has one tier, so merging After-Meeting
+  (outbound) with External-Transcript (suggest) would have demoted invariant 3 from a tool-set fact
+  to a sentence the model has to remember. `bindings[].tier` keeps it structural.
+- **Retiring a skill needed a mechanism.** A retired file keeps its triggered binding, so without
+  content-identity retirement every existing workspace would run both the old skill and its
+  replacement on the same dropped transcript.
 
 ---
 

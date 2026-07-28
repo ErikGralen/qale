@@ -455,12 +455,6 @@ export interface ProposalDTO {
 // Agent / chat / sessions
 // ---------------------------------------------------------------------------
 
-/**
- * Session types are open strings — a session type is a skill file, so new ones
- * ship as content with zero code change (PLAN-V2 §8). These are the built-ins.
- */
-export type SessionType = 'chat' | 'ask' | 'after-meeting' | 'weekly-update' | (string & {});
-
 export interface AgentRunInput {
   sessionType: string;
   /** Existing pi session id to resume, or omit to start fresh. */

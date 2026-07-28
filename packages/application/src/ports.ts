@@ -176,7 +176,8 @@ export interface ProposalPort {
   list(status?: string): ProposalRecord[];
   get(id: string): ProposalRecord | null;
   setStatus(id: string, status: string, resolved: number | null): void;
-  setEditDistance(id: string, distance: number): void;
+  /** Record that this card was edited before it was accepted. */
+  markEdited(id: string): void;
   pendingCount(): number;
   stats(): ProposalStats;
 }

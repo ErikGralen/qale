@@ -67,7 +67,7 @@ function fakeContext(files: Record<string, Stored>, opts?: { backlinked?: boolea
     clock: { now: () => '2026-07-22T00:00:00.000Z' },
     proposals: {
       create: (input, created) => {
-        const rec = { ...input, id: 'p1', status: 'pending', created, resolved: null, editDistance: null } as ProposalRecord;
+        const rec = { ...input, id: 'p1', status: 'pending', created, resolved: null } as ProposalRecord;
         proposals.set(rec.id, rec);
         return rec;
       },
@@ -76,7 +76,7 @@ function fakeContext(files: Record<string, Stored>, opts?: { backlinked?: boolea
       setStatus: (id: string, status) => {
         statuses[id] = status;
       },
-      setEditDistance: () => {},
+      markEdited: () => {},
       pendingCount: () => 0,
       stats: () => ({ total: 0, accepted: 0, rejected: 0, pending: 0, stale: 0, approvalRate: null, medianMsToResolve: null }),
     } as never,

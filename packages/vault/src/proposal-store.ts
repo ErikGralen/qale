@@ -95,8 +95,12 @@ export class ProposalStore implements ProposalPort {
     this.db.prepare('UPDATE proposals SET status = ?, resolved = ? WHERE id = ?').run(status, resolved, id);
   }
 
-  setEditDistance(id: string, distance: number): void {
-    this.db.prepare('UPDATE proposals SET edit_distance = ? WHERE id = ?').run(distance, id);
+  /**
+   * Legacy column name: it used to hold a cheap diff score, but the only
+   * consumer is `stats().edited`, which asks `> 0`. It holds a flag now.
+   */
+  markEdited(id: string): void {
+    this.db.prepare('UPDATE proposals SET edit_distance = 1 WHERE id = ?').run(id);
   }
 
   pendingCount(): number {

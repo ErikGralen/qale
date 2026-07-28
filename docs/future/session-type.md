@@ -42,9 +42,9 @@ job 2 is still served by the marker stamped at creation.
 - One field means "run this" in some places and "this is what it was" in others, and those can
   differ: a session opened as `chat` that pulls in `synthesis` still reads as `chat` everywhere
   except its receipt.
-- `SessionType` (`dtos.ts:468`) is a union of four names — one of which, `after-meeting`, is no
-  longer a shipped skill — ending in `| (string & {})`, so it constrains nothing. One call site.
-- `ChatSessionType` (`app-state.tsx:52`) is the same union again, exported, referenced nowhere.
+There were also two leftover unions naming the old modes — `SessionType` in `dtos.ts` and
+`ChatSessionType` in `app-state.tsx`. Both listed `after-meeting`, which is no longer a shipped
+skill, and neither constrained anything. Deleted; the invocation is a plain `string`.
 
 ## What's in the way of changing it
 

@@ -1,5 +1,4 @@
 import type { ChatTransport, UIMessage, UIMessageChunk } from 'ai';
-import type { SessionType } from '@pm/ipc';
 import { invoke, onEvent } from './ipc';
 
 /**
@@ -14,7 +13,7 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
   private sessionId: string | undefined;
 
   constructor(
-    private readonly sessionType: SessionType = 'chat',
+    private readonly sessionType: string = 'chat',
     initialSessionId?: string,
     /** Fired once when the main process assigns the conversation its id. */
     private readonly onSessionId?: (sessionId: string) => void,

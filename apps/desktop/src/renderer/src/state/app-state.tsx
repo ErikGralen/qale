@@ -49,8 +49,6 @@ import {
 } from '../lib/reveal';
 import type { NavOpts } from '../lib/nav';
 
-export type ChatSessionType = 'chat' | 'ask' | 'after-meeting' | 'weekly-update';
-
 /**
  * One visitable place — a document, a session, or an app view. Tabs navigate
  * browser-style (PLAN-V2 §3.3): a plain click pushes the destination onto the

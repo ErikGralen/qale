@@ -49,17 +49,6 @@ export function getProposalStats(ctx: UseCaseContext): ProposalStats {
   return ctx.proposals.stats();
 }
 
-/**
- * A cheap edit-distance proxy for telemetry (not a true Levenshtein — length
- * delta plus positional mismatch, which is O(n) and good enough to trend).
- */
-export function editDistance(a: string, b: string): number {
-  const min = Math.min(a.length, b.length);
-  let diff = Math.abs(a.length - b.length);
-  for (let i = 0; i < min; i++) if (a[i] !== b[i]) diff++;
-  return diff;
-}
-
 export interface ProposalPreview {
   before: string;
   after: string;
@@ -172,7 +161,7 @@ export async function acceptProposal(
 
     // Telemetry: record how far the human edited the card before approving.
     if (result.ok && edited !== undefined) {
-      ctx.proposals.setEditDistance(id, editDistance(JSON.stringify(rec.payload), JSON.stringify(edited)));
+      ctx.proposals.markEdited(id);
     }
     return result;
   } finally {

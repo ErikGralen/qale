@@ -18,6 +18,16 @@
  *   pnpm tsx scripts/refresh-demo.ts --today=2026-09-01   # pin "today" for testing
  *   pnpm tsx scripts/refresh-demo.ts --anchor=2026-07-17  # if you re-center the source timeline
  *   pnpm tsx scripts/refresh-demo.ts --dry           # print the plan, write nothing
+ *   pnpm tsx scripts/refresh-demo.ts --keep-app-state    # rebuild the vault, leave the inbox alone
+ *
+ * It also resets the app-side state keyed to the runtime vault. The inbox cards,
+ * proposals and pings do NOT live in the vault — they sit in a per-vault SQLite
+ * DB under Electron's userData dir (see apps/desktop/src/main/services/
+ * vault-service.ts). A vault-only rebuild would therefore open behind a stale
+ * inbox from the previous run, so by default we also clear that per-vault DB, the
+ * shared search index (it reindexes on open), and the agent-run session receipts.
+ * Pass --keep-app-state to skip that, or set PM_USERDATA to point at a non-default
+ * userData dir (the same override the app itself honours).
  *
  * What shifts: the date-valued frontmatter fields (date, due, captured, updated,
  * last_told, resolved, started, ended), the prose in summary/title, and bare
@@ -29,6 +39,8 @@
  */
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
+import { homedir, platform } from 'node:os';
+import { createHash } from 'node:crypto';
 
 // The fictional "today" the canonical vault-dev/ scenario is written around.
 // If you ever re-date the source to a different centre, update this (or pass
@@ -37,7 +49,9 @@ const ANCHOR = '2026-07-17';
 
 // Frontmatter keys whose scalar value is a date we should slide. These never
 // hold wikilinks, so shifting their date tokens can't corrupt a link.
-const DATE_KEYS = ['date', 'due', 'captured', 'updated', 'last_told', 'resolved', 'started', 'ended'];
+// remote_updated (ticket/wikipage mirrors) is a full ISO timestamp; only its
+// date part shifts, the time-of-day stays.
+const DATE_KEYS = ['date', 'due', 'captured', 'updated', 'last_told', 'resolved', 'started', 'ended', 'remote_updated'];
 
 // Frontmatter string keys that hold human prose (never wikilinks): their date
 // tokens shift too, so a summary like "SSO date 2026-07-28" stays consistent.
@@ -52,6 +66,7 @@ interface Args {
   anchor: string;
   today: string;
   dry: boolean;
+  keepAppState: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -59,14 +74,16 @@ function parseArgs(argv: string[]): Args {
   let anchor = ANCHOR;
   let today = new Date().toISOString().slice(0, 10);
   let dry = false;
+  let keepAppState = false;
   for (const a of argv) {
     if (a === '--dry' || a === '--dry-run') dry = true;
+    else if (a === '--keep-app-state') keepAppState = true;
     else if (a.startsWith('--anchor=')) anchor = a.slice('--anchor='.length);
     else if (a.startsWith('--today=')) today = a.slice('--today='.length);
     else if (a.startsWith('--')) throw new Error(`Unknown flag: ${a}`);
     else target = a;
   }
-  return { target: target ?? '.vault-dev', anchor, today, dry };
+  return { target: target ?? '.vault-dev', anchor, today, dry, keepAppState };
 }
 
 function assertISODate(label: string, s: string): void {
@@ -169,11 +186,93 @@ function buildSlugIndex(root: string, files: string[]): Set<string> {
 function extractLinks(text: string): string[] {
   const out: string[] = [];
   for (const m of text.matchAll(WIKILINK_RE)) {
-    // strip alias `|...` and anchor `#...`
-    const target = (m[1] ?? '').split('|')[0].split('#')[0].trim();
+    // strip alias `|...`, anchor `#...`, and a `type::` prefix (typed links,
+    // docs/typed-links.md) — resolution only cares about the bare target.
+    let target = (m[1] ?? '').split('|')[0].split('#')[0].trim();
+    const sep = target.indexOf('::');
+    if (sep > 0 && target.slice(sep + 2).trim()) target = target.slice(sep + 2).trim();
     if (target) out.push(target);
   }
   return out;
+}
+
+/**
+ * Electron's userData dir for the desktop app, resolved the same way the main
+ * process does (apps/desktop/src/main/index.ts): honour PM_USERDATA, else the OS
+ * default under the app's name. Returns null only if the platform default can't
+ * be determined. The app's per-vault DB, search index and session receipts all
+ * live directly under here.
+ */
+function electronUserDataDir(): string | null {
+  const override = process.env['PM_USERDATA'];
+  if (override) return resolve(override);
+  let appName = '@pm/desktop'; // app.getName() = productName ?? name
+  try {
+    const pkg = JSON.parse(
+      readFileSync(join(import.meta.dirname, '..', 'apps', 'desktop', 'package.json'), 'utf8'),
+    );
+    appName = pkg.productName || pkg.name || appName;
+  } catch {
+    /* fall back to the known name */
+  }
+  const appData =
+    platform() === 'darwin'
+      ? join(homedir(), 'Library', 'Application Support')
+      : platform() === 'win32'
+        ? process.env['APPDATA'] ?? join(homedir(), 'AppData', 'Roaming')
+        : process.env['XDG_CONFIG_HOME'] ?? join(homedir(), '.config');
+  return join(appData, appName);
+}
+
+/**
+ * Per-vault app DB filename, mirroring VaultService.appDbPathFor(): the first 12
+ * hex chars of sha256(absolute vault root). Must stay in lockstep with that
+ * method or we'd clear the wrong (or no) DB.
+ */
+function appDbBasename(vaultRoot: string): string {
+  return `app-${createHash('sha256').update(vaultRoot).digest('hex').slice(0, 12)}.db`;
+}
+
+/**
+ * Clear the app-side state a vault-only refresh can't reach: the target vault's
+ * per-vault app DB (inbox cards / proposals / pings, + its -shm/-wal sidecars),
+ * the shared search index (harmless to drop — it reindexes on next open), and the
+ * agent-run session receipts. Without this the freshly-dated vault opens behind a
+ * stale inbox from the previous run. In dry mode it only reports what it'd remove.
+ */
+function clearAppState(target: string, dry: boolean): void {
+  const dir = electronUserDataDir();
+  if (!dir || !existsSync(dir)) {
+    console.log('App state: userData dir not found — nothing to clear.');
+    return;
+  }
+  const rm = (p: string): boolean => {
+    if (!existsSync(p)) return false;
+    if (!dry) rmSync(p, { force: true });
+    return true;
+  };
+  const db = appDbBasename(target);
+  let inbox = 0;
+  let index = 0;
+  let receipts = 0;
+  for (const s of ['', '-shm', '-wal']) if (rm(join(dir, db + s))) inbox++;
+  for (const s of ['', '-shm', '-wal']) if (rm(join(dir, 'index.db' + s))) index++;
+  const sessionsDir = join(dir, 'sessions');
+  if (existsSync(sessionsDir)) {
+    for (const f of readdirSync(sessionsDir)) {
+      if (f.endsWith('.jsonl') && rm(join(sessionsDir, f))) receipts++;
+    }
+  }
+  if (inbox + index + receipts === 0) {
+    console.log(`App state @ ${dir}: already clean.`);
+    return;
+  }
+  const verb = dry ? 'would remove' : 'removed';
+  console.log(
+    `App state @ ${dir}: ${verb} ` +
+      `${inbox ? `inbox DB ${db}` : 'no inbox DB'}, ` +
+      `${index ? 'search index' : 'no index'}, ${receipts} session receipt(s).`,
+  );
 }
 
 function main(): void {
@@ -211,6 +310,12 @@ function main(): void {
     });
     mkdirSync(join(target, 'sessions'), { recursive: true });
   }
+
+  // 1b. Reset the app-side state keyed to this runtime vault (inbox / proposals /
+  // pings live in a per-vault DB under userData, not in the vault) so the demo
+  // opens with a clean inbox rather than last run's cards. --keep-app-state opts
+  // out. Uses the resolved absolute `target` so the DB key matches the app's.
+  if (!args.keepAppState) clearAppState(target, args.dry);
 
   // 2. Shift dates across the copy (or the source, read-only, in dry mode).
   const readRoot = args.dry ? source : target;

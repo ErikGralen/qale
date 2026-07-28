@@ -1,8 +1,16 @@
 import type {
   AgentRunInput,
   AgentRunHandle,
+  AtRiskLinkDTO,
   BacklinkDTO,
+  ConnectionDTO,
+  ConnectResultDTO,
+  DeliveryDeltaDTO,
+  ExternalRefMetaDTO,
+  ProviderDescriptorDTO,
+  ShallowIndexItemDTO,
   CaptureClassificationDTO,
+  CaptureMeetingMatchDTO,
   CaptureNoteInput,
   CaptureTodoInputDTO,
   GoldenAnswerInput,
@@ -17,7 +25,9 @@ import type {
   NoteDTO,
   ProposalDTO,
   ProposalStatsDTO,
-  ProblemHeatDTO,
+  ThemeHeatDTO,
+  PeopleDirectoryDTO,
+  PersonCardDTO,
   RenameNoteInput,
   SaveNoteInput,
   SaveFrontmatterInput,
@@ -62,6 +72,11 @@ export interface InvokeMap {
     result: SettingsDTO;
   };
   'settings:setMcp': { args: [patch: { enabled?: boolean; port?: number }]; result: SettingsDTO };
+  /** Who the PO is: display name and any extra addresses that mean "me". */
+  'settings:setIdentity': {
+    args: [patch: { name?: string | null; aliases?: string[] }];
+    result: SettingsDTO;
+  };
   'schedule:runNow': { args: [sessionType: string]; result: { ok: boolean } };
   'models:list': { args: []; result: ModelInfoDTO[] };
 
@@ -88,7 +103,11 @@ export interface InvokeMap {
   'note:resolveLink': { args: [target: string]; result: string | null };
   'note:history': { args: [path: string]; result: NoteCommitDTO[] };
   'note:versionAt': { args: [path: string, hash: string]; result: string | null };
-  'problems:byHeat': { args: []; result: ProblemHeatDTO[] };
+  'themes:byHeat': { args: []; result: ThemeHeatDTO[] };
+
+  // People (participant chips + their preview cards)
+  'people:directory': { args: []; result: PeopleDirectoryDTO };
+  'people:create': { args: [input: { name?: string; email?: string }]; result: PersonCardDTO };
 
   // Todos (the commitment ledger)
   'todos:capture': { args: [input: CaptureTodoInputDTO]; result: NoteDTO };
@@ -98,6 +117,7 @@ export interface InvokeMap {
   'note:capture': { args: [input: CaptureNoteInput]; result: NoteDTO };
   'capture:classify': { args: [text: string, fileName?: string]; result: CaptureClassificationDTO };
   'capture:ingest': { args: [input: IngestCaptureInputDTO]; result: IngestCaptureResultDTO };
+  'capture:matchMeeting': { args: []; result: CaptureMeetingMatchDTO | null };
   'search:query': { args: [query: string, limit?: number]; result: SearchHitDTO[] };
 
   // Proposals
@@ -130,6 +150,34 @@ export interface InvokeMap {
     args: [pingId: string, itemId: string, action: PingResolveActionDTO];
     result: AgentPingDTO | null;
   };
+
+  // Connections (external integrations, Area C). Reads are silent and cheap —
+  // the renderer polls nothing; a `connections:changed` push invalidates.
+  'connections:providers': { args: []; result: ProviderDescriptorDTO[] };
+  'connections:list': { args: []; result: ConnectionDTO[] };
+  'connections:connect': {
+    args: [providerId: string, values: Record<string, string>];
+    result: ConnectResultDTO;
+  };
+  /** Re-paste a token on the calm expired path — same verify, follows kept. */
+  'connections:renewAuth': {
+    args: [connectionId: string, values: Record<string, string>];
+    result: ConnectResultDTO;
+  };
+  'connections:disconnect': { args: [connectionId: string]; result: void };
+  /** Abort a pending OAuth browser flow (the PM gave up on the tab). */
+  'connections:cancelOAuth': { args: []; result: void };
+  'connections:setFollow': {
+    args: [connectionId: string, containerId: string, followed: boolean];
+    result: void;
+  };
+  'connections:syncNow': { args: []; result: { ok: boolean; error?: string } };
+  'connections:searchIndex': { args: [query: string, limit?: number]; result: ShallowIndexItemDTO[] };
+  'connections:refMeta': { args: [slug: string]; result: ExternalRefMetaDTO | null };
+  'connections:atRisk': { args: []; result: AtRiskLinkDTO[] };
+  'connections:deliveryDelta': { args: [meetingPath: string]; result: DeliveryDeltaDTO[] };
+  /** Current mirrored body of a wikipage — the "before" of a redline preview. */
+  'connections:pageBody': { args: [externalIdOrSlug: string]; result: string | null };
 }
 
 export type InvokeChannel = keyof InvokeMap;
@@ -147,6 +195,7 @@ export const INVOKE_CHANNELS = [
   'settings:setModel',
   'settings:setSchedule',
   'settings:setMcp',
+  'settings:setIdentity',
   'schedule:runNow',
   'models:list',
   'skills:list',
@@ -167,12 +216,15 @@ export const INVOKE_CHANNELS = [
   'note:resolveLink',
   'note:history',
   'note:versionAt',
-  'problems:byHeat',
+  'themes:byHeat',
+  'people:directory',
+  'people:create',
   'todos:capture',
   'todos:setStatus',
   'note:capture',
   'capture:classify',
   'capture:ingest',
+  'capture:matchMeeting',
   'search:query',
   'proposals:list',
   'proposals:preview',
@@ -192,6 +244,19 @@ export const INVOKE_CHANNELS = [
   'pings:open',
   'pings:dismiss',
   'pings:resolveItem',
+  'connections:providers',
+  'connections:list',
+  'connections:connect',
+  'connections:renewAuth',
+  'connections:disconnect',
+  'connections:cancelOAuth',
+  'connections:setFollow',
+  'connections:syncNow',
+  'connections:searchIndex',
+  'connections:refMeta',
+  'connections:atRisk',
+  'connections:deliveryDelta',
+  'connections:pageBody',
 ] as const satisfies readonly InvokeChannel[];
 
 // Compile-time completeness guard: every InvokeMap key must appear above.

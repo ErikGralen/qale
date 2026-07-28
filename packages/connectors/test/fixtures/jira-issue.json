@@ -1,0 +1,41 @@
+{
+  "key": "PAY-142",
+  "fields": {
+    "summary": "SAML SSO (epic)",
+    "status": { "name": "Blocked", "statusCategory": { "key": "indeterminate" } },
+    "assignee": { "displayName": "Mika Ranta" },
+    "updated": "2026-07-21T14:03:00.000+0200",
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "heading",
+          "attrs": { "level": 2 },
+          "content": [{ "type": "text", "text": "Goal" }]
+        },
+        {
+          "type": "paragraph",
+          "content": [{ "type": "text", "text": "SAML SSO for enterprise tenants, Nordkap first." }]
+        },
+        {
+          "type": "bulletList",
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                { "type": "paragraph", "content": [{ "type": "text", "text": "IdP-initiated flow" }] }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                { "type": "paragraph", "content": [{ "type": "text", "text": "SCIM follows in Q3" }] }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

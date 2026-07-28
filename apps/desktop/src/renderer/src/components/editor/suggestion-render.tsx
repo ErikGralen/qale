@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { flip, shift, size } from '@floating-ui/dom';
 import { ReactRenderer } from '@tiptap/react';
 import type { SuggestionOptions, SuggestionProps } from '@tiptap/suggestion';
@@ -39,6 +40,15 @@ export const suggestionPopupOptions: Pick<SuggestionOptions, 'offset' | 'flip' |
 export function suggestionMenuRender<Item>(config: {
   toMenuItem: (item: Item) => SuggestionMenuItem;
   emptyLabel: string;
+  /** Context line above the list, recomputed per query. */
+  header?: (query: string) => ReactNode;
+  /** Static key hint under the list. */
+  footer?: ReactNode;
+  /**
+   * The ⇧↵ variant of a pick: return the item to commit instead. Menus that
+   * don't offer a second gesture leave this undefined and ⇧↵ picks normally.
+   */
+  shiftSelect?: (item: Item) => Item;
 }): NonNullable<SuggestionOptions<Item>['render']> {
   return () => {
     let renderer: ReactRenderer | null = null;
@@ -46,11 +56,13 @@ export function suggestionMenuRender<Item>(config: {
     let items: Item[] = [];
     let selectedIndex = 0;
     let lastQuery = '';
+    let query = '';
     let command: SuggestionProps<Item>['command'] = () => {};
 
-    const select = (index: number) => {
+    const select = (index: number, shift = false) => {
       const item = items[index];
-      if (item !== undefined) command(item);
+      if (item === undefined) return;
+      command(shift && config.shiftSelect ? config.shiftSelect(item) : item);
     };
 
     const hover = (index: number) => {
@@ -65,7 +77,9 @@ export function suggestionMenuRender<Item>(config: {
         items: items.map(config.toMenuItem),
         selectedIndex,
         emptyLabel: config.emptyLabel,
-        onSelect: select,
+        header: config.header?.(query),
+        footer: config.footer,
+        onSelect: (index: number) => select(index),
         onHover: hover,
       });
     };
@@ -73,6 +87,7 @@ export function suggestionMenuRender<Item>(config: {
     const sync = (props: SuggestionProps<Item>) => {
       items = props.items;
       command = props.command;
+      query = props.query;
       // A changed query is a new search — an arrowed-to index against the old
       // results would silently highlight an unrelated item, so jump back to 0.
       if (props.query !== lastQuery) {
@@ -115,7 +130,7 @@ export function suggestionMenuRender<Item>(config: {
         }
         if (event.key === 'Enter' || event.key === 'Tab') {
           if (items.length === 0) return false;
-          select(selectedIndex);
+          select(selectedIndex, event.shiftKey);
           return true;
         }
         // Escape falls through: the suggestion plugin exits on it.

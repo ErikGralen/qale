@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { X, Plus, PanelLeft, Inbox, History, MessageSquare, FileText, Folder, Hash, Settings, Pin, Wand2, ListTodo, Library } from 'lucide-react';
+import { X, Plus, PanelLeft, Inbox, History, MessageSquare, FileText, Folder, Hash, Settings, Wand2, ListTodo, Library, ArrowLeft, ArrowRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Spinner } from '@pm/ui';
+import { ToolbarButton } from '../components/ToolbarButton';
 import { NOTE_TYPE_ICON } from '../lib/note-icons';
 import { useApp, type Tab } from '../state/app-state';
 
@@ -45,7 +46,7 @@ const DRAG_THRESHOLD = 4;
 const EDGE_SCROLL_ZONE = 36;
 
 function TabMenu({ tabId, x, y, onClose }: { tabId: string; x: number; y: number; onClose: () => void }) {
-  const { tabs, closeTab, closeOtherTabs, closeAllTabs, closeTabsBefore, closeTabsAfter, keepTab } = useApp();
+  const { tabs, closeTab, closeOtherTabs, closeAllTabs, closeTabsBefore, closeTabsAfter, reopenClosedTab } = useApp();
   const idx = tabs.findIndex((t) => t.id === tabId);
   const tab = tabs[idx];
 
@@ -65,12 +66,12 @@ function TabMenu({ tabId, x, y, onClose }: { tabId: string; x: number; y: number
   };
 
   const items: { label: string; action: () => void; disabled?: boolean; hint?: string; icon?: LucideIcon }[] = [
-    ...(tab.preview ? [{ label: 'Keep Tab', action: () => keepTab(tab.id), icon: Pin }] : []),
     { label: 'Close', action: () => closeTab(tab.id), hint: '⌘W' },
     { label: 'Close Other Tabs', action: () => closeOtherTabs(tab.id), disabled: tabs.length <= 1 },
     { label: 'Close All Tabs', action: closeAllTabs },
     { label: 'Close Tabs to the Left', action: () => closeTabsBefore(tab.id), disabled: idx === 0 },
     { label: 'Close Tabs to the Right', action: () => closeTabsAfter(tab.id), disabled: idx === tabs.length - 1 },
+    { label: 'Reopen Closed Tab', action: reopenClosedTab, hint: '⇧⌘T' },
   ];
 
   return (
@@ -136,16 +137,17 @@ interface DragState {
 
 /**
  * The tab strip — documents and sessions interchangeably (PLAN-V2 §3.3).
- * Sidebar navigation reuses a single preview tab (italic title) so browsing
- * doesn't pile up tabs; double-click or editing keeps a tab permanently.
+ * Navigation is browser-style: each tab carries its own history, and the
+ * back/forward cluster on the left walks the active tab's trail (⌘←/⌘→).
  * Fully keyboard-operable: roving tabindex, ←/→ move focus, ⌥←/→ reorder,
  * ↵/space activate, ⌫ closes, ⌘W closes the active tab (shell shortcut).
- * Right-click for close/keep actions. Tabs reorder by pointer drag; the strip
- * scrolls on vertical wheel, fades at overflowed edges, and keeps the active
- * tab in view.
+ * Right-click for close actions. Tabs reorder by pointer drag. Tabs share
+ * the strip width Chrome-style — squeezing toward an icon-only minimum as more
+ * open rather than scrolling; only past that floor does it scroll (vertical
+ * wheel, edge fades) and keep the active tab in view.
  */
 export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolean; onToggleSidebar: () => void }) {
-  const { tabs, activeTabId, setActiveTab, closeTab, keepTab, moveTab, openSession, sessions } = useApp();
+  const { tabs, activeTabId, setActiveTab, closeTab, moveTab, openSession, sessions, goBack, goForward, canGoBack, canGoForward } = useApp();
   const [menu, setMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [fades, setFades] = useState({ left: false, right: false });
@@ -291,20 +293,23 @@ export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolea
 
   return (
     <div
-      className={`relative flex h-9 items-stretch bg-sidebar ${!sidebarOpen && isMac ? 'pl-[70px]' : ''}`}
+      className={`relative flex h-10 items-stretch bg-sidebar ${!sidebarOpen && isMac ? 'pl-[70px]' : ''}`}
       style={{ WebkitAppRegion: 'drag' } as never}
     >
-      <div className="flex shrink-0 items-center gap-1 pl-1.5" style={{ WebkitAppRegion: 'no-drag' } as never}>
-        <button
-          className="rounded-md p-1.5 text-muted-foreground transition-colors duration-150 hover:bg-card/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      {/* Sidebar toggle sits apart from the paired nav arrows so the two read as
+          distinct jobs — no divider needed. */}
+      <div className="flex shrink-0 items-center gap-0.5 pr-1 pl-1.5" style={{ WebkitAppRegion: 'no-drag' } as never}>
+        <ToolbarButton
+          icon={PanelLeft}
+          label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+          keys={['⌘', '\\']}
           onClick={onToggleSidebar}
-          aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
           aria-expanded={sidebarOpen}
-          title={`${sidebarOpen ? 'Hide' : 'Show'} sidebar (⌘\\)`}
-        >
-          <PanelLeft className="size-4" />
-        </button>
-        <div aria-hidden className="h-4 w-px bg-border" />
+        />
+        {/* Browser-style history for the ACTIVE tab. Disabled ≠ hidden: the
+            cluster keeps its place so the strip never reflows on navigation. */}
+        <ToolbarButton icon={ArrowLeft} label="Back" keys={['⌘', '←']} onClick={goBack} disabled={!canGoBack} />
+        <ToolbarButton icon={ArrowRight} label="Forward" keys={['⌘', '→']} onClick={goForward} disabled={!canGoForward} />
       </div>
       <div className="relative min-w-0 flex-1">
         <div
@@ -332,7 +337,7 @@ export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolea
               <div
                 key={tab.id}
                 id={`tab-${tab.id}`}
-                className={`group relative flex h-full max-w-52 min-w-0 shrink-0 items-center gap-1.5 rounded-t-md px-2.5 text-[13px] outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset ${
+                className={`group relative flex h-full min-w-[40px] max-w-[208px] flex-1 basis-0 items-center gap-1.5 rounded-t-md pl-2.5 pr-2 text-[13px] outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset ${
                   active
                     ? 'z-10 border-x border-t border-border bg-background font-medium text-foreground'
                     : 'text-foreground/75 hover:bg-card/60 hover:text-foreground'
@@ -348,7 +353,6 @@ export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolea
                 onPointerMove={onTabPointerMove}
                 onPointerUp={() => endDrag(true)}
                 onPointerCancel={() => endDrag(false)}
-                onDoubleClick={() => keepTab(tab.id)}
                 onAuxClick={(e) => {
                   if (e.button === 1) closeTab(tab.id);
                 }}
@@ -378,7 +382,6 @@ export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolea
                 role="tab"
                 aria-selected={active}
                 tabIndex={active ? 0 : -1}
-                title={tab.preview ? `${tab.title} — preview; double-click to keep open` : undefined}
               >
                 {(() => {
                   // Session tabs carry their live status: spinning while the
@@ -387,7 +390,7 @@ export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolea
                   if (s?.running) return <Spinner className="size-3.5 shrink-0 text-muted-foreground" aria-label="running" />;
                   return <Icon className="size-3.5 shrink-0 opacity-70" aria-hidden />;
                 })()}
-                <span className={`truncate ${tab.preview ? 'italic' : ''}`}>{tab.title}</span>
+                <span className="min-w-0 flex-1 truncate">{tab.title}</span>
                 {tab.kind === 'session' &&
                   tab.sessionId &&
                   (() => {
@@ -396,8 +399,17 @@ export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolea
                       <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-label="needs you" />
                     ) : null;
                   })()}
+                {/* Close button overlays the right edge so it never forces the
+                    strip to scroll; a gradient keeps the truncated title legible
+                    beneath it (browser-style). Squeezed tabs still show the icon. */}
+                <span
+                  aria-hidden
+                  className={`pointer-events-none absolute inset-y-px right-0 w-9 rounded-tr-md bg-gradient-to-l to-transparent opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 ${
+                    active ? 'from-background' : 'from-card'
+                  }`}
+                />
                 <button
-                  className="ml-0.5 shrink-0 rounded p-0.5 opacity-0 group-focus-within:opacity-70 group-hover:opacity-70 hover:bg-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-0.5 text-foreground/70 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                   onClick={(e) => {
                     e.stopPropagation();
                     closeTab(tab.id);
@@ -420,14 +432,12 @@ export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolea
         )}
       </div>
       <div className="flex shrink-0 items-center px-1.5" style={{ WebkitAppRegion: 'no-drag' } as never}>
-        <button
-          className="rounded-md p-1.5 text-muted-foreground transition-colors duration-150 hover:bg-card/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        <ToolbarButton
+          icon={Plus}
+          label="New chat"
+          keys={['⌘', 'T']}
           onClick={() => openSession('chat', { fresh: true })}
-          aria-label="New chat"
-          title="New chat"
-        >
-          <Plus className="size-4" />
-        </button>
+        />
       </div>
       {/* Bottom hairline lives above the inactive tabs (browser-style) but below the
           z-raised active tab, whose background bridges it into the content area. */}

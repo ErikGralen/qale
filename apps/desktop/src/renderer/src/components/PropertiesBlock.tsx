@@ -1,24 +1,41 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  latestVerification,
+  linkTypeLabel,
+  parseActor,
+  trustTier,
+  trustTierLabel,
+  TYPE_RULES,
+  type Verification,
+} from '@pm/domain';
 import type { NoteDTO } from '@pm/ipc';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@pm/ui';
 import {
   AlignLeft,
+  BadgeCheck,
   Calendar,
   ChevronRight,
   CircleDot,
+  ExternalLink,
   Hash,
   Link2,
+  Lock,
   List,
   Plus,
   Type,
+  Users,
   X,
   type LucideIcon,
 } from 'lucide-react';
 import { useApp } from '../state/app-state';
+import { navFromEvent } from '../lib/nav';
 import { invoke } from '../lib/ipc';
+import { webUrl } from '../lib/urls';
 import { collectContexts } from '../lib/contexts';
 import { FIELDS, REF_FIELDS, SYSTEM_KEYS, type FieldSpec, type Widget } from '../state/properties-schema';
 import { TagInput } from './TagInput';
+import { PeopleInput } from './PeopleInput';
+import { PersonChip } from './PersonChip';
 
 /**
  * Frontmatter as a collapsible property list under the title. Every row is a
@@ -40,6 +57,8 @@ const WIDGET_ICON: Record<Widget, LucideIcon> = {
   select: CircleDot,
   tags: List,
   date: Calendar,
+  readonly: Lock,
+  people: Users,
 };
 
 /** `superseded_by` → `Superseded by` for keys without a schema label. */
@@ -63,6 +82,70 @@ function coerceScalar(input: string, original: unknown): unknown {
     if (Number.isFinite(parsed)) return parsed;
   }
   return input;
+}
+
+/**
+ * Ticket relationships written by sync: `parent` reads as "Part of"; `links`
+ * entries group under their relationship label ("Blocks", "Blocked by") in the
+ * direction the ticket sees them.
+ */
+function ticketRelationRows(fm: Record<string, unknown>): { label: string; targets: string[] }[] {
+  const rows: { label: string; targets: string[] }[] = [];
+  const parent = fm['parent'];
+  if (typeof parent === 'string' && parent) rows.push({ label: 'Part of', targets: [parent] });
+  const byLabel = new Map<string, string[]>();
+  for (const entry of Array.isArray(fm['links']) ? fm['links'] : []) {
+    const e = entry as { type?: unknown; key?: unknown; reversed?: unknown };
+    if (typeof e.type !== 'string' || typeof e.key !== 'string' || !e.key) continue;
+    const raw = linkTypeLabel(e.type, e.reversed === true);
+    const label = raw.charAt(0).toUpperCase() + raw.slice(1);
+    byLabel.set(label, [...(byLabel.get(label) ?? []), e.key]);
+  }
+  rows.push(...[...byLabel.entries()].map(([label, targets]) => ({ label, targets })));
+  return rows;
+}
+
+/** Read a note's `verified` frontmatter into typed records, dropping malformed
+ *  entries — the schema tolerates and preserves shapes we don't model, so the
+ *  UI must never assume the array is well-formed. */
+function coerceVerified(value: unknown): Verification[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((v) => {
+    if (v && typeof v === 'object' && typeof (v as Verification).by === 'string' && typeof (v as Verification).at === 'string') {
+      return [{ by: (v as Verification).by, at: (v as Verification).at }];
+    }
+    return [];
+  });
+}
+
+/**
+ * The OKF trust tier (docs/okf-alignment.md Phase 2), shown next to the freshness
+ * status: who last confirmed the note is still true, and when. Absence is the
+ * "unverified" default and shows no row — this only appears once something has
+ * actually been verified.
+ */
+function TrustRow({ verifications }: { verifications: Verification[] }) {
+  const tier = trustTier(verifications);
+  const latest = latestVerification(verifications);
+  const who = latest ? parseActor(latest.by) : null;
+  const when = latest && /^\d{4}-\d{2}-\d{2}/.test(latest.at) ? latest.at.slice(0, 10) : latest?.at;
+  const detail = who ? `${who.id}${when ? ` · ${when}` : ''}` : null;
+  return (
+    <PropertyRow icon={BadgeCheck} label="Trust">
+      <div className="flex min-h-[26px] flex-wrap items-center gap-1.5 px-1.5 py-0.5 text-sm">
+        <span
+          className={
+            tier === 'human'
+              ? 'rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400'
+              : 'rounded-full bg-sky-500/15 px-1.5 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-400'
+          }
+        >
+          {trustTierLabel(tier)}
+        </span>
+        {detail && <span className="text-xs text-muted-foreground">{detail}</span>}
+      </div>
+    </PropertyRow>
+  );
 }
 
 const COLLAPSE_KEY = 'pm.properties.collapsed';
@@ -95,32 +178,59 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
   };
 
   const specs = (FIELDS[note.type] ?? FIELDS.note).filter((s) => s.key !== 'summary');
+  // What this note type actually lets a human change (@pm/domain TYPE_RULES —
+  // a meeting's provenance is immutable, a decision is append-only). Main
+  // rejects the rest, so offering an editable widget for them was a lie the UI
+  // told and the file quietly refused: those rows read as values, not inputs.
+  const mutable = TYPE_RULES[note.type]?.mutableFields ?? 'all';
+  const canEdit = (key: string): boolean => mutable === 'all' || mutable.includes(key);
   const refs = REF_FIELDS.flatMap((key) => {
     const v = note.frontmatter[key];
     const arr = Array.isArray(v) ? v : typeof v === 'string' ? [v] : [];
     const targets = arr.map((r) => String(r).replace(/^\[\[/, '').replace(/\]\]$/, ''));
     return targets.length > 0 ? [{ key, targets }] : [];
   });
+  // Ticket relationships written by sync (docs/typed-links.md): `parent` reads
+  // as "Part of"; `links` entries group under their relationship label. They
+  // render as the same ref chips — synced, so no remove affordance.
+  const relationRows =
+    note.type === 'ticket' ? ticketRelationRows(note.frontmatter) : [];
+  // `verified` renders as the derived Trust row below, not as a raw-JSON custom
+  // row — so it's "known" for the purpose of custom-key detection.
+  const verifications = coerceVerified(note.frontmatter['verified']);
   const known = new Set<string>([
     'type',
     'title',
     'summary',
+    'parent',
+    'links',
+    'verified',
     ...specs.map((s) => s.key),
     ...REF_FIELDS,
   ]);
   const customKeys = Object.keys(note.frontmatter).filter((k) => !known.has(k));
   const filledCount =
-    specs.filter((s) => note.frontmatter[s.key] !== undefined).length + customKeys.length + refs.length;
+    specs.filter((s) => note.frontmatter[s.key] !== undefined).length +
+    customKeys.length +
+    refs.length +
+    relationRows.length +
+    (verifications.length > 0 ? 1 : 0);
 
-  const openRef = (target: string) => {
+  const openRef = (target: string, e?: React.MouseEvent) => {
+    const opts = e && navFromEvent(e);
     void invoke['note:resolveLink'](target).then((path) => {
-      if (path) void openDoc(path);
+      if (path) void openDoc(path, opts);
     });
   };
 
   return (
     <div className="mb-4">
-      <SummaryEditor value={note.summary} title={note.title} onCommit={(v) => commit('summary', v)} />
+      <SummaryEditor
+        value={note.summary}
+        title={note.title}
+        readOnly={!canEdit('summary')}
+        onCommit={(v) => commit('summary', v)}
+      />
       <Collapsible
         open={open}
         onOpenChange={(next) => {
@@ -145,12 +255,15 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
                 <PropertyValue
                   spec={spec}
                   value={note.frontmatter[spec.key]}
+                  readOnly={!canEdit(spec.key)}
                   onCommit={(v) => commit(spec.key, v)}
                   tagSuggestions={spec.key === 'tags' ? tagSuggestions : undefined}
                   onTagClick={spec.key === 'tags' ? openContext : undefined}
                 />
               </PropertyRow>
             ))}
+
+            {verifications.length > 0 && <TrustRow verifications={verifications} />}
 
             {refs.map(({ key, targets }) => (
               <PropertyRow key={key} icon={Link2} label={humanize(key)}>
@@ -159,7 +272,24 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
                     <button
                       key={target}
                       className="note-link text-xs focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                      onClick={() => openRef(target)}
+                      onClick={(e) => openRef(target, e)}
+                      title={`Open ${target}`}
+                    >
+                      {target}
+                    </button>
+                  ))}
+                </div>
+              </PropertyRow>
+            ))}
+
+            {relationRows.map(({ label, targets }) => (
+              <PropertyRow key={label} icon={Link2} label={label}>
+                <div className="flex min-h-[26px] flex-wrap items-center gap-1 px-1.5 py-0.5">
+                  {targets.map((target) => (
+                    <button
+                      key={target}
+                      className="note-link text-xs focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                      onClick={(e) => openRef(target, e)}
                       title={`Open ${target}`}
                     >
                       {target}
@@ -171,6 +301,7 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
 
             {customKeys.map((key) => {
               const value = note.frontmatter[key];
+              const locked = !canEdit(key);
               return (
                 <PropertyRow
                   key={key}
@@ -178,17 +309,24 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
                   label={humanize(key)}
                   // Harness-written keys stay visible but lose the hover-X — a
                   // stray click must not delete part of a receipt or the spine.
-                  onRemove={SYSTEM_KEYS.has(key) ? undefined : () => commit(key, undefined)}
+                  // Same for anything the type's invariant freezes.
+                  onRemove={SYSTEM_KEYS.has(key) || locked ? undefined : () => commit(key, undefined)}
                 >
-                  {typeof value === 'object' ? (
+                  {locked || typeof value === 'object' ? (
                     // Arrays/objects don't survive a text-input round trip
                     // (they'd come back as strings) — show them read-only.
                     <p
                       className="min-h-[26px] truncate px-1.5 py-0.5 text-sm text-muted-foreground"
-                      title={JSON.stringify(value)}
+                      title={typeof value === 'object' ? JSON.stringify(value) : String(value)}
                     >
-                      {JSON.stringify(value)}
+                      {typeof value === 'object' ? JSON.stringify(value) : String(value)}
                     </p>
+                  ) : webUrl(value) ? (
+                    <UrlValue
+                      value={value as string}
+                      href={webUrl(value) as string}
+                      onCommit={(v) => commit(key, v)}
+                    />
                   ) : (
                     <TextValue
                       value={typeof value === 'string' ? value : String(value)}
@@ -199,10 +337,14 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
               );
             })}
 
-            <AddPropertyRow
-              reserved={new Set([...known, ...customKeys])}
-              onAdd={(key, value) => commit(key, value)}
-            />
+            {/* A type with frozen frontmatter has no room for new keys either —
+                main rejects them, so the affordance doesn't appear. */}
+            {mutable === 'all' && (
+              <AddPropertyRow
+                reserved={new Set([...known, ...customKeys])}
+                onAdd={(key, value) => commit(key, value)}
+              />
+            )}
 
             <p className="mt-1.5 px-1.5 text-xs text-muted-foreground/70">
               Modified {new Date(note.mtime).toLocaleString()}
@@ -257,10 +399,13 @@ function PropertyRow({
 function SummaryEditor({
   value,
   title,
+  readOnly,
   onCommit,
 }: {
   value: string;
   title: string;
+  /** Receipts (sessions) freeze their summary too — don't offer the cursor. */
+  readOnly?: boolean;
   onCommit: (v: string | undefined) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -268,6 +413,9 @@ function SummaryEditor({
   const norm = value.trim().toLowerCase();
   const echo = !norm || norm === title.trim().toLowerCase() || norm === 'untitled';
 
+  if (readOnly) {
+    return echo ? null : <p className="mb-4 text-[15px] text-muted-foreground">{value}</p>;
+  }
   if (draft === null) {
     return (
       <p
@@ -306,16 +454,61 @@ function SummaryEditor({
 function PropertyValue({
   spec,
   value,
+  readOnly,
   onCommit,
   tagSuggestions,
   onTagClick,
 }: {
   spec: FieldSpec;
   value: unknown;
+  /** The type's invariant forbids changing this field (immutable provenance). */
+  readOnly?: boolean;
   onCommit: (v: unknown) => void;
   tagSuggestions?: { tag: string; count: number }[];
   onTagClick?: (tag: string) => void;
 }) {
+  if (spec.widget === 'people') {
+    const arr = Array.isArray(value) ? (value as unknown[]).filter((t): t is string => typeof t === 'string') : [];
+    // Who was in the room is provenance — readable, clickable, not editable.
+    if (readOnly) {
+      return (
+        <div className="flex min-h-[26px] flex-wrap items-center gap-1 px-1.5 py-0.5">
+          {arr.length === 0 ? (
+            <span className="text-sm text-muted-foreground/50">Empty</span>
+          ) : (
+            arr.map((raw, i) => <PersonChip key={`${raw}-${i}`} value={raw} />)
+          )}
+        </div>
+      );
+    }
+    return (
+      <PeopleInput
+        value={arr}
+        onChange={(next) => onCommit(next.length > 0 ? next : undefined)}
+        placeholder="Empty"
+      />
+    );
+  }
+  if (spec.widget === 'readonly' || readOnly) {
+    // Sync-owned facts (a mirror's state, assignee, upstream timestamp)
+    // display but never edit — re-sync is their only writer, and main rejects
+    // any other. Timestamps read as local time, not raw ISO.
+    const text =
+      value === undefined || value === null || value === ''
+        ? '—'
+        : Array.isArray(value)
+          ? value.join(', ')
+          : String(value);
+    const asDate =
+      typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && !Number.isNaN(Date.parse(value))
+        ? new Date(value).toLocaleString()
+        : null;
+    return (
+      <p className="min-h-[26px] truncate px-1.5 py-0.5 text-sm text-muted-foreground" title={text}>
+        {asDate ?? text}
+      </p>
+    );
+  }
   if (spec.widget === 'select') {
     const current = (value as string) ?? '';
     return (
@@ -393,6 +586,73 @@ function TextValue({ value, onCommit }: { value: string; onCommit: (v: unknown) 
         }
       }}
     />
+  );
+}
+
+/**
+ * A URL property reads as its link and opens the page on click (routed to the
+ * OS browser via the window's open handler) — the mirror's back-reference to
+ * Jira/Confluence is one click, not a select-and-copy. Still editable: the
+ * trailing pencil-free affordance is a focusable input revealed on hover, so
+ * the value can be corrected without losing the click-to-open default.
+ */
+function UrlValue({
+  value,
+  href,
+  onCommit,
+}: {
+  value: string;
+  href: string;
+  onCommit: (v: unknown) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const cancelled = useRef(false);
+  if (draft !== null) {
+    return (
+      <input
+        className={quietInput}
+        value={draft}
+        autoFocus
+        placeholder="Empty"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (!cancelled.current && draft.trim() !== value) onCommit(draft.trim() || undefined);
+          cancelled.current = false;
+          setDraft(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') {
+            cancelled.current = true;
+            e.currentTarget.blur();
+          }
+        }}
+      />
+    );
+  }
+  return (
+    <div className="group/url flex min-h-[26px] items-center gap-1">
+      <a
+        href={href}
+        onClick={(e) => {
+          e.preventDefault();
+          window.open(href);
+        }}
+        className="min-w-0 flex-1 truncate rounded-md px-1.5 py-0.5 text-sm text-primary underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+        title={`Open ${href}`}
+      >
+        {value}
+      </a>
+      <ExternalLink className="size-3.5 shrink-0 text-muted-foreground/50" aria-hidden />
+      <button
+        className="shrink-0 rounded-sm px-1 py-0.5 text-xs text-muted-foreground/0 transition-colors group-hover/url:text-muted-foreground/60 hover:!text-foreground focus-visible:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        onClick={() => setDraft(value)}
+        title="Edit URL"
+        aria-label="Edit URL"
+      >
+        Edit
+      </button>
+    </div>
   );
 }
 

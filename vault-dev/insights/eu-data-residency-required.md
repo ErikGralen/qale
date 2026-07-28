@@ -5,7 +5,7 @@ tags: ["compliance"]
 evidence: ["[[meetings/2026-05-18-nordkap-qbr]]", "[[meetings/2026-07-10-internal-auth-review]]"]
 confidence: "high"
 customer: "[[customers/nordkap-payments]]"
-problem: "[[problems/enterprise-onboarding]]"
+theme: "[[themes/enterprise-onboarding]]"
 ---
 
 Nordkap's legal added an EU-only clause covering both storage and processing. Everything runs in

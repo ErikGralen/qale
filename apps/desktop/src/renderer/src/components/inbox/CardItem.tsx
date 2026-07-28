@@ -1,27 +1,90 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Badge } from '@pm/ui';
-import { AlertTriangle, Check, MessageSquare, Pencil, Send, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Button } from '@pm/ui';
+import { AlertTriangle, Check, ChevronDown, MessageSquare, Pencil, RefreshCw, Send, X } from 'lucide-react';
 import type { OutboundPayloadDTO, ProposalDTO, UpdatePayloadDTO } from '@pm/ipc';
 import { normalizeLinkTarget } from '@pm/domain';
 import { useApp } from '../../state/app-state';
 import { invoke } from '../../lib/ipc';
-import { KIND_LABEL, WikiText, outboundTarget, stripWikilinks } from './shared';
+import { connections, isExternalRef, refMetaCached, type ExternalRefMetaDTO } from '../../lib/connections';
+import { relativeTime } from '../../lib/dates';
+import { navFromEvent, type NavOpts } from '../../lib/nav';
+import { Markdown } from '../Markdown';
+import { ExternalRefChip } from '../ExternalRef';
+import { providerLabel, WikiText } from './shared';
+import { cardHeadline, iconForRef, sourceHint, stripFrontmatter, titleForRef } from './cardMeta';
 
 export interface CardItemProps {
   proposal: ProposalDTO;
   busy: boolean;
   focused: boolean;
   error: string | null;
+  /** An outbound send was refused because the target moved after drafting —
+   *  the card stays pending and grows an explicit "Approve anyway". */
+  staleSend?: boolean;
   onFocus: () => void;
   onAccept: (edited?: unknown) => void;
   onReject: () => void;
-  onOpen: (path: string) => void;
+  onOpen: (path: string, opts?: NavOpts) => void;
+  /** Open with the detail showing (a housekeeping row expanding into the full card). */
+  initialExpanded?: boolean;
+  /** When set, collapsing the open detail returns to the caller's compact form instead. */
+  onCollapse?: () => void;
+}
+
+/** The note a card refers to, as a distinct, openable chip — so a note title
+ *  never reads as loose words run together with the verb around it. A leading
+ *  type glyph says what kind of note it is; ⌘/middle-click opens it in a
+ *  background tab like every other link surface. */
+function NoteChip({
+  title,
+  path,
+  onOpen,
+  small,
+}: {
+  title: string;
+  path: string;
+  onOpen: (opts: NavOpts) => void;
+  small?: boolean;
+}) {
+  const Icon = iconForRef(path);
+  return (
+    <button
+      className={`inline-flex max-w-full items-baseline gap-1 rounded-md bg-brand/8 px-1.5 font-medium text-brand transition-colors hover:bg-brand/15 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
+        small ? 'py-0.5 text-xs' : 'py-px'
+      }`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen(navFromEvent(e));
+      }}
+      onAuxClick={(e) => {
+        if (e.button !== 1) return;
+        e.stopPropagation();
+        onOpen(navFromEvent(e));
+      }}
+      title={`Open ${title}`}
+    >
+      <Icon className="size-3 shrink-0 self-center opacity-70" aria-hidden />
+      <span className="truncate">{title}</span>
+    </button>
+  );
+}
+
+/** Amber flag — an unsourced claim is never the quietest thing on screen. */
+function InferenceFlag() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
+      title="The agent inferred this without citing a source — double-check it."
+    >
+      <AlertTriangle className="size-3" aria-hidden /> Unverified
+    </span>
+  );
 }
 
 /**
- * The housekeeping tier of a meeting review — mechanical writes (last_told
- * bumps, hub links) rendered as one-line rows so the review reads as 2 real
- * cards + a batch, not six equal cards. Expands to the full card on demand.
+ * The housekeeping tier of a meeting review — mechanical writes (hub links,
+ * ledger bumps) shown as one-line rows so the review reads as a couple of real
+ * decisions plus a batch, not six equal cards. Expands to the full card.
  */
 export function HousekeepingItem(props: CardItemProps) {
   const { proposal, busy, focused, error, onFocus, onAccept, onReject, onOpen } = props;
@@ -31,9 +94,21 @@ export function HousekeepingItem(props: CardItemProps) {
     if (focused) ref.current?.scrollIntoView({ block: 'nearest' });
   }, [focused]);
 
-  if (expanded || error) return <CardItem {...props} />;
+  // Expanding opens the full card WITH its detail (that's what the click asked
+  // for), and the card's collapse chevron folds it back to this one-line row.
+  // Error cards force the full form and stay there — the row can't show why.
+  if (expanded || error)
+    return (
+      <CardItem
+        {...props}
+        initialExpanded={expanded}
+        onCollapse={expanded ? () => setExpanded(false) : undefined}
+      />
+    );
 
+  const { headline } = cardHeadline(proposal);
   const target = proposal.targetPath ?? (proposal.payload as { path?: string }).path ?? '';
+  const noteTitle = titleForRef(target);
   return (
     <li
       ref={ref}
@@ -45,22 +120,24 @@ export function HousekeepingItem(props: CardItemProps) {
       <button
         className="min-w-0 flex-1 truncate text-left text-sm text-foreground/85 focus-visible:outline-none"
         onClick={() => setExpanded(true)}
-        title="Show the full card"
+        title="Show the full change"
       >
-        {stripWikilinks(proposal.rationale)}
+        {headline}
       </button>
-      <button
-        className="max-w-48 shrink-0 truncate font-mono text-xs text-muted-foreground hover:text-foreground"
-        onClick={() => onOpen(target)}
-        title={`Open ${target}`}
-      >
-        {target.split('/').pop()}
-      </button>
+      {noteTitle && (
+        <button
+          className="hidden max-w-48 shrink-0 truncate text-xs text-muted-foreground hover:text-foreground sm:block"
+          onClick={() => onOpen(target)}
+          title={`Open ${noteTitle}`}
+        >
+          {noteTitle}
+        </button>
+      )}
       <button
         className="rounded p-1 text-muted-foreground opacity-0 group-focus-within:opacity-70 group-hover:opacity-70 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
         onClick={() => setExpanded(true)}
-        aria-label="Show the full card"
-        title="Show the full card"
+        aria-label="Show the full change"
+        title="Show the full change"
       >
         <Pencil className="size-3.5" />
       </button>
@@ -79,43 +156,72 @@ export function CardItem({
   busy,
   focused,
   error,
+  staleSend,
   onFocus,
   onAccept,
   onReject,
   onOpen,
+  initialExpanded,
+  onCollapse,
 }: CardItemProps) {
   const { previewProposal, openSession } = useApp();
-  const [preview, setPreview] = useState<{ before: string; after: string; stale: boolean } | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [preview, setPreview] = useState<{
+    before: string;
+    after: string;
+    stale: boolean;
+    staleReason?: 'changed' | 'unanchored';
+    frontmatterChanges?: { key: string; before: unknown; after: unknown }[];
+  } | null>(null);
+  const [rerunning, setRerunning] = useState(false);
+  const [expanded, setExpanded] = useState(!!initialExpanded);
   const [editing, setEditing] = useState(false);
   const [draftBody, setDraftBody] = useState('');
   const [draftPatch, setDraftPatch] = useState<{ search: string; replace: string }[]>([]);
+  const [whyOpen, setWhyOpen] = useState(false);
   const ref = useRef<HTMLLIElement>(null);
 
+  const outbound = proposal.kind === 'outbound' ? (proposal.payload as OutboundPayloadDTO) : null;
+  // An outbound send is the review's own last decision — never a one-line row.
+  // It always shows its detail so nothing leaves the workspace unseen.
+  const open = expanded || editing || !!outbound;
+
+  // Collapsing hands control back to the caller's compact form (the
+  // housekeeping row) when there is one — except mid-edit, where the detail
+  // holds unsaved changes.
+  const toggleDetail = () => {
+    if (open && !editing && onCollapse) onCollapse();
+    else setExpanded((x) => !x);
+  };
+
+  const { Icon, headline, authored, verb, note, replaces, retitle } = cardHeadline(proposal);
+  // Suppress the provenance line when it just repeats the note the card is about.
+  const source = (() => {
+    const s = sourceHint(proposal);
+    return s && s !== note?.title ? s : null;
+  })();
+
+  // Fetch the preview lazily — only once the card is open, so a 24-card review
+  // doesn't fire two dozen preview reads up front.
   useEffect(() => {
+    if (!open || preview) return;
     let alive = true;
     void previewProposal(proposal.id).then((p) => alive && setPreview(p));
     return () => {
       alive = false;
     };
-  }, [proposal.id, previewProposal]);
+  }, [open, preview, proposal.id, previewProposal]);
 
   useEffect(() => {
     if (focused) ref.current?.scrollIntoView({ block: 'nearest' });
   }, [focused]);
 
-  const outbound = proposal.kind === 'outbound' ? (proposal.payload as OutboundPayloadDTO) : null;
-  const target = outbound
-    ? outboundTarget(outbound)
-    : proposal.targetPath ?? (proposal.payload as { path?: string }).path ?? '';
-  const supersedes = (proposal.payload as { supersedes?: string }).supersedes;
-
   const startEdit = () => {
     if (proposal.kind === 'update') {
-      setDraftPatch((proposal.payload as UpdatePayloadDTO).patch.map((p) => ({ ...p })));
+      setDraftPatch(((proposal.payload as UpdatePayloadDTO).patch ?? []).map((p) => ({ ...p })));
     } else {
       setDraftBody((proposal.payload as { body?: string }).body ?? '');
     }
+    setExpanded(true);
     setEditing(true);
   };
 
@@ -125,10 +231,9 @@ export function CardItem({
     const prompt = [
       "I'm looking at a pending approval card and want to talk it through before deciding. Don't apply anything — the card stays pending until I act on it.",
       '',
-      `Card: ${proposal.rationale}`,
-      `Kind: ${KIND_LABEL[proposal.kind] ?? proposal.kind}`,
-      target ? `Target: ${target}` : null,
-      proposal.evidence.length > 0 ? `Evidence: ${proposal.evidence.map((e) => e.ref).join(', ')}` : null,
+      `Change: ${headline}`,
+      `Why: ${proposal.rationale}`,
+      proposal.evidence.length > 0 ? `Sources: ${proposal.evidence.map((e) => e.ref).join(', ')}` : null,
       '',
       'Proposed payload:',
       '```json',
@@ -141,7 +246,7 @@ export function CardItem({
       .join('\n');
     openSession('chat', {
       initialPrompt: prompt,
-      title: `About: ${target || proposal.rationale.slice(0, 40)}`,
+      title: `About: ${headline.slice(0, 48)}`,
       fresh: true,
     });
   };
@@ -159,165 +264,560 @@ export function CardItem({
     <li
       ref={ref}
       onClick={onFocus}
-      className={`rounded-xl bg-card ring-1 transition-shadow ${
+      className={`overflow-hidden rounded-xl bg-card ring-1 transition-shadow ${
         focused ? 'ring-2 ring-ring/60' : 'ring-foreground/10'
       } ${outbound ? 'ring-brand/30' : ''}`}
     >
       {outbound && (
-        <div className="flex items-center gap-2 rounded-t-xl border-b border-brand/20 bg-brand/6 px-4 py-2 text-sm">
-          <Send className="size-4 shrink-0 text-brand" />
-          <span className="font-medium text-foreground">
-            Sends outside the workspace — {outbound.system}
-            {outbound.audience ? ` · for ${outbound.audience}` : ''}
-          </span>
-          <span className="ml-auto truncate font-mono text-xs text-muted-foreground">{target}</span>
+        <div className="border-b border-brand/20 bg-brand/6 px-4 py-2">
+          <div className="flex items-center gap-2 text-xs">
+            <Send className="size-3.5 shrink-0 text-brand" />
+            <span className="font-medium text-foreground">
+              Leaves your workspace — goes to {providerLabel(outbound)}
+            </span>
+          </div>
+          <OutboundTargetLine payload={outbound} onOpen={onOpen} />
         </div>
       )}
 
-      <div className="p-4">
-        {/* The human sentence leads — what approving does. Kind and target are
-            metadata below it, not the headline. */}
-        <p className="mb-1 text-sm font-medium">
-          <WikiText text={proposal.rationale} onOpen={onOpen} />
-        </p>
-
-        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-xs text-muted-foreground">{KIND_LABEL[proposal.kind] ?? proposal.kind}</span>
-          {!outbound && (
-            <button
-              className="truncate font-mono text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => onOpen(target)}
-              title={`Open ${target}`}
-            >
-              {target}
-            </button>
-          )}
-          {supersedes && <Badge variant="outline">supersedes {supersedes.split('/').pop()}</Badge>}
-          {proposal.inference && (
-            <Badge className="gap-1 bg-warning/15 text-warning" title="No citations — the agent inferred this without sources">
-              <AlertTriangle className="size-3" /> inference
-            </Badge>
+      {/* Header: the scannable human headline + inline approve/discard. The whole
+          line toggles the detail. Actions stay top-aligned and reachable even
+          when the headline wraps to two lines. */}
+      <div className="flex items-start gap-2.5 px-3.5 py-3">
+        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <div
+          className={`min-w-0 flex-1 ${outbound ? '' : 'cursor-pointer'}`}
+          onClick={() => !outbound && toggleDetail()}
+        >
+          <span className="block text-sm leading-snug font-medium text-balance break-words text-foreground">
+            {note && !authored ? (
+              // "Update <note>" — the note is the subject, so it renders as a
+              // distinct, openable chip instead of running into the verb.
+              <>
+                <span className="text-muted-foreground">{verb} </span>
+                <NoteChip title={note.title} path={note.path} onOpen={(opts) => onOpen(note.path, opts)} />
+              </>
+            ) : (
+              headline
+            )}
+          </span>
+          {(replaces || retitle || (note && authored) || source || proposal.inference) && (
+            <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+              {note && authored && (
+                <NoteChip title={note.title} path={note.path} onOpen={(opts) => onOpen(note.path, opts)} small />
+              )}
+              {replaces && (
+                <span>
+                  Replaces <span className="text-foreground/75">“{replaces}”</span>
+                </span>
+              )}
+              {retitle && (
+                <span>
+                  Retitles to <span className="text-foreground/75">“{retitle}”</span>
+                </span>
+              )}
+              {proposal.inference ? <InferenceFlag /> : source && <span>from {source}</span>}
+            </span>
           )}
         </div>
 
-        {proposal.evidence.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1">
-            {proposal.evidence.map((e) => {
-              // Evidence refs are wikilink slugs, not file paths — resolve
-              // through the index like every other link surface, or the tab
-              // opens onto a note:get miss and skeletons forever.
-              const { target, alias } = normalizeLinkTarget(e.ref.replace(/^\[\[/, '').replace(/\]\]$/, ''));
-              return (
-                <button
-                  key={e.ref}
-                  className="rounded bg-brand/8 px-1.5 py-0.5 font-mono text-xs text-brand hover:bg-brand/15"
-                  onClick={async () => {
-                    const path = await invoke['note:resolveLink'](target);
-                    if (path) onOpen(path);
-                  }}
-                >
-                  {alias ?? target}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {editing ? (
-          <div className="mb-2 flex flex-col gap-2">
-            {proposal.kind === 'update' ? (
-              draftPatch.map((blk, i) => (
-                <div key={i} className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">replaces:</span>
-                  <pre className="max-h-24 overflow-y-auto rounded-lg bg-destructive/6 p-2 text-xs whitespace-pre-wrap text-muted-foreground">
-                    {blk.search}
-                  </pre>
-                  <span className="text-xs font-medium text-muted-foreground">with:</span>
-                  <textarea
-                    value={blk.replace}
-                    onChange={(e) =>
-                      setDraftPatch((d) => d.map((b, j) => (j === i ? { ...b, replace: e.target.value } : b)))
-                    }
-                    rows={Math.min(10, blk.replace.split('\n').length + 1)}
-                    className="w-full resize-y rounded-lg border border-input bg-background p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                  />
-                </div>
-              ))
-            ) : (
-              <textarea
-                value={draftBody}
-                onChange={(e) => setDraftBody(e.target.value)}
-                rows={Math.min(16, draftBody.split('\n').length + 2)}
-                autoFocus
-                className="w-full resize-y rounded-lg border border-input bg-background p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-              />
-            )}
-          </div>
-        ) : (
-          preview && (
-            <button className="mb-2 block w-full text-left" onClick={() => setExpanded((x) => !x)}>
-              <div
-                className={`overflow-y-auto rounded-lg bg-muted/60 p-3 text-xs ${expanded ? 'max-h-96' : 'max-h-24'}`}
+        <div className="flex shrink-0 items-center gap-0.5">
+          {!open && (
+            <>
+              <button
+                className="rounded-md p-1.5 text-brand transition-colors hover:bg-brand/10 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                onClick={() => onAccept()}
+                disabled={busy || preview?.stale}
+                aria-label="Approve"
+                title="Approve"
               >
-                {proposal.kind === 'update' ? (
-                  <DiffBlock before={preview.before} after={preview.after} />
-                ) : (
-                  <pre className="whitespace-pre-wrap">{preview.after}</pre>
-                )}
-              </div>
+                <Check className="size-4" />
+              </button>
+              <button
+                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                onClick={onReject}
+                disabled={busy}
+                aria-label="Discard"
+                title="Discard"
+              >
+                <X className="size-4" />
+              </button>
+            </>
+          )}
+          {!outbound && (
+            <button
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              onClick={toggleDetail}
+              aria-label={open ? 'Collapse' : 'Show detail'}
+              title={open ? 'Collapse' : 'Show detail'}
+            >
+              <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
-          )
-        )}
-
-        {preview?.stale && (
-          <div className="mb-2 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-            The target changed since this was proposed — re-run the session to regenerate.
-          </div>
-        )}
-
-        {error && (
-          <div className="mb-2 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-            <span className="flex-1">{error}</span>
-            <Button size="sm" variant="outline" onClick={() => onAccept()} disabled={busy}>
-              Retry
-            </Button>
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          {editing ? (
-            <>
-              <Button size="sm" onClick={approveEdited} disabled={busy || preview?.stale}>
-                <Check className="size-3.5" /> {outbound ? 'Approve & send edited' : 'Approve edited'}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button size="sm" onClick={() => onAccept()} disabled={busy || preview?.stale}>
-                {outbound ? <Send className="size-3.5" /> : <Check className="size-3.5" />}
-                {outbound ? 'Approve & send' : 'Approve'}
-              </Button>
-              <Button size="sm" variant="outline" onClick={startEdit} disabled={busy || preview?.stale}>
-                <Pencil className="size-3.5" /> Edit
-              </Button>
-              <Button size="sm" variant="outline" onClick={onReject} disabled={busy}>
-                <X className="size-3.5" /> Discard
-              </Button>
-              <Button size="sm" variant="ghost" className="ml-auto" onClick={discuss}>
-                <MessageSquare className="size-3.5" /> Chat about this
-              </Button>
-            </>
           )}
         </div>
       </div>
+
+      {open && (
+        <div className="border-t border-border/60 px-3.5 pt-3 pb-3.5">
+          {/* The human "why" — clamped to two lines so a long agent rationale
+              never becomes a wall; the change itself is the point, not the essay. */}
+          {proposal.rationale && (
+            <div className="text-sm leading-relaxed text-foreground/80">
+              <p className={whyOpen ? '' : 'line-clamp-2'}>
+                <WikiText text={proposal.rationale} onOpen={onOpen} />
+              </p>
+              {proposal.rationale.length > 150 && (
+                <button
+                  className="mt-0.5 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  onClick={() => setWhyOpen((v) => !v)}
+                >
+                  {whyOpen ? 'Show less' : 'Show more'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {proposal.evidence.length > 0 && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Based on</span>
+              {proposal.evidence.map((e) => {
+                // Evidence refs are wikilink slugs — resolve through the index
+                // like every other link surface, but show the human title only.
+                const { target: evTarget } = normalizeLinkTarget(
+                  e.ref.replace(/^\[\[/, '').replace(/\]\]$/, ''),
+                );
+                const EvIcon = iconForRef(e.ref);
+                // Resolve then open, honoring browser-style modifiers so ⌘/middle
+                // click drops the note into a background tab. Snapshot the intent
+                // before the await — the event is pooled and gone by then.
+                const openEvidence = async (ev: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; button?: number }) => {
+                  const opts = navFromEvent(ev);
+                  const path = await invoke['note:resolveLink'](evTarget);
+                  if (path) onOpen(path, opts);
+                };
+                return (
+                  <button
+                    key={e.ref}
+                    className="inline-flex items-center gap-1 rounded bg-brand/8 px-1.5 py-0.5 text-xs text-brand hover:bg-brand/15 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      void openEvidence(ev);
+                    }}
+                    onAuxClick={(ev) => {
+                      if (ev.button !== 1) return;
+                      ev.stopPropagation();
+                      void openEvidence(ev);
+                    }}
+                    title={`Open ${titleForRef(e.ref)}`}
+                  >
+                    <EvIcon className="size-3 shrink-0 opacity-70" aria-hidden />
+                    {titleForRef(e.ref)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {editing ? (
+            <EditFields
+              kind={proposal.kind}
+              draftBody={draftBody}
+              draftPatch={draftPatch}
+              onBody={setDraftBody}
+              onPatch={setDraftPatch}
+            />
+          ) : outbound ? (
+            <OutboundDetail payload={outbound} onOpen={onOpen} />
+          ) : (
+            preview && <ChangePreview kind={proposal.kind} preview={preview} onOpen={onOpen} />
+          )}
+
+          {preview?.stale && (
+            <div className="mt-2.5 flex items-start gap-2.5 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
+              <span className="flex-1">
+                {preview.staleReason === 'unanchored'
+                  ? "Couldn't line this edit up with the note's current text, so there's nothing to apply."
+                  : 'The note changed since this card was proposed, so the edit no longer fits.'}{' '}
+                {proposal.sessionType
+                  ? 'Re-run the session to regenerate it against the current note.'
+                  : 'Discard it and let the agent propose a fresh one.'}
+              </span>
+              {proposal.sessionType && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={rerunning}
+                  onClick={async () => {
+                    setRerunning(true);
+                    try {
+                      await invoke['schedule:runNow'](proposal.sessionType!);
+                    } finally {
+                      setRerunning(false);
+                    }
+                  }}
+                >
+                  <RefreshCw className={`size-3.5${rerunning ? ' animate-spin' : ''}`} />
+                  {rerunning ? 'Re-running…' : 'Re-run session'}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div className="mt-2.5 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
+              <span className="flex-1">{error}</span>
+              {outbound && staleSend ? (
+                // Main refused the send because the target moved after
+                // drafting. Approving anyway re-accepts with the snapshot
+                // refreshed to the mirror's current state — an explicit
+                // decision, never a silent retry loop.
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void withFreshSnapshot(outbound).then((p) => onAccept(p))}
+                >
+                  <Send className="size-3.5" /> Approve anyway
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => onAccept()} disabled={busy}>
+                  Retry
+                </Button>
+              )}
+            </div>
+          )}
+
+          <div className="mt-3.5 flex flex-wrap items-center gap-2">
+            {editing ? (
+              <>
+                <Button size="sm" onClick={approveEdited} disabled={busy || preview?.stale}>
+                  <Check className="size-3.5" /> {outbound ? 'Approve & send edited' : 'Approve edited'}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button size="sm" onClick={() => onAccept()} disabled={busy || preview?.stale}>
+                  {outbound ? <Send className="size-3.5" /> : <Check className="size-3.5" />}
+                  {outbound ? 'Approve & send' : 'Approve'}
+                </Button>
+                <Button size="sm" variant="outline" onClick={startEdit} disabled={busy || preview?.stale}>
+                  <Pencil className="size-3.5" /> Edit
+                </Button>
+                <Button size="sm" variant="outline" onClick={onReject} disabled={busy}>
+                  <X className="size-3.5" /> Discard
+                </Button>
+                <Button size="sm" variant="ghost" className="ml-auto" onClick={discuss}>
+                  <MessageSquare className="size-3.5" /> Chat about this
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </li>
   );
 }
 
-type DiffRow = { kind: 'same' | 'add' | 'del'; text: string };
+/** The edit affordance — plain textareas over the raw payload, mono where the
+ *  text IS structured (a patch's replacement), never shown at rest. */
+function EditFields({
+  kind,
+  draftBody,
+  draftPatch,
+  onBody,
+  onPatch,
+}: {
+  kind: ProposalDTO['kind'];
+  draftBody: string;
+  draftPatch: { search: string; replace: string }[];
+  onBody: (v: string) => void;
+  onPatch: (fn: (d: { search: string; replace: string }[]) => { search: string; replace: string }[]) => void;
+}) {
+  return (
+    <div className="mt-3 flex flex-col gap-2">
+      {kind === 'update' ? (
+        draftPatch.map((blk, i) => (
+          <div key={i} className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground">Replace this:</span>
+            <pre className="max-h-24 overflow-y-auto rounded-lg bg-destructive/6 p-2 text-xs whitespace-pre-wrap text-muted-foreground">
+              {blk.search}
+            </pre>
+            <span className="text-xs font-medium text-muted-foreground">With:</span>
+            <textarea
+              value={blk.replace}
+              onChange={(e) => onPatch((d) => d.map((b, j) => (j === i ? { ...b, replace: e.target.value } : b)))}
+              rows={Math.min(10, blk.replace.split('\n').length + 1)}
+              className="w-full resize-y rounded-lg border border-input bg-background p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            />
+          </div>
+        ))
+      ) : (
+        <textarea
+          value={draftBody}
+          onChange={(e) => onBody(e.target.value)}
+          rows={Math.min(16, draftBody.split('\n').length + 2)}
+          autoFocus
+          className="w-full resize-y rounded-lg border border-input bg-background p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        />
+      )}
+    </div>
+  );
+}
+
+/** The external item an outbound card touches, or null (new tickets, messages).
+ *  The bare issue key / page id — refMeta resolves external ids directly, so a
+ *  page reference never fabricates a slug real mirror notes won't match. */
+function outboundRef(ob: OutboundPayloadDTO): string | null {
+  return ob.issueKey ?? ob.pageId ?? null;
+}
+
+/**
+ * The payload re-approved after a stale refusal: the drafted-against snapshot
+ * (`remote_updated`/`version`) refreshed to the mirror's current values, so the
+ * accept-time check passes deliberately. When the mirror can't say, the
+ * snapshot is stripped and the send proceeds unchecked — the PO chose that
+ * with the banner in view.
+ */
+async function withFreshSnapshot(payload: OutboundPayloadDTO): Promise<OutboundPayloadDTO> {
+  const next = { ...payload };
+  delete next.remote_updated;
+  delete next.version;
+  const ref = outboundRef(payload);
+  if (!ref) return next;
+  const meta = await connections.refMeta(ref).catch(() => null);
+  if (!meta) return next;
+  if (payload.remote_updated !== undefined) next.remote_updated = meta.remoteUpdated;
+  if (payload.version !== undefined && meta.notePath) {
+    // The mirror's current page version lives on the mirror note.
+    const note = await invoke['note:get'](meta.notePath).catch(() => null);
+    const version = note?.frontmatter['version'];
+    if (typeof version === 'number') next.version = version;
+  }
+  return next;
+}
+
+function useOutboundRefMeta(ob: OutboundPayloadDTO): ExternalRefMetaDTO | null {
+  const [meta, setMeta] = useState<ExternalRefMetaDTO | null>(null);
+  const ref = outboundRef(ob);
+  useEffect(() => {
+    if (!ref) return;
+    let alive = true;
+    void refMetaCached(ref).then((m) => alive && setMeta(m));
+    return () => {
+      alive = false;
+    };
+  }, [ref]);
+  return meta;
+}
+
+/**
+ * The target line under the outbound banner — where this goes, in the PO's
+ * words, with the touched item as a live chip: "Comment on [PAY-142 · Blocked]
+ * — SAML SSO (epic)". A message card's audience already lives in the banner.
+ */
+function OutboundTargetLine({ payload, onOpen }: { payload: OutboundPayloadDTO; onOpen: (p: string) => void }) {
+  const meta = useOutboundRefMeta(payload);
+  const ref = outboundRef(payload);
+
+  if (payload.action === 'create_ticket') {
+    return (
+      <div className="mt-1 text-sm font-medium text-foreground">
+        New {payload.issueType?.toLowerCase() ?? 'ticket'}
+        {payload.projectKey && <span className="text-muted-foreground"> in {payload.projectKey}</span>}
+        {payload.title && <span className="text-muted-foreground"> — {payload.title}</span>}
+      </div>
+    );
+  }
+  if (!ref) return null;
+
+  const verb = payload.action === 'comment_ticket' ? 'Comment on' : 'Update the page';
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-medium text-foreground">
+      <span>{verb}</span>
+      <ExternalRefChip target={ref} onOpen={onOpen} />
+      {meta?.kind === 'ticket' && meta.title && <span className="text-muted-foreground">— {meta.title}</span>}
+    </div>
+  );
+}
+
+/**
+ * Outbound detail: the body exactly as it will be sent (rendered, never raw
+ * syntax), a redline against the page's current text for `update_page`, and the
+ * drafted-against-stale banner when the target moved after this was written —
+ * one extra glance, never a blocked send.
+ */
+function OutboundDetail({ payload, onOpen }: { payload: OutboundPayloadDTO; onOpen: (p: string) => void }) {
+  const meta = useOutboundRefMeta(payload);
+  const [pageBefore, setPageBefore] = useState<string | null>(null);
+  const [mirrorVersion, setMirrorVersion] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (payload.action !== 'update_page' || !payload.pageId) return;
+    let alive = true;
+    void connections.pageBody(payload.pageId).then((b) => alive && setPageBefore(b));
+    return () => {
+      alive = false;
+    };
+  }, [payload.action, payload.pageId]);
+
+  // The mirror's current page version lives on the mirror note — only needed
+  // when the draft pinned one.
+  useEffect(() => {
+    if (payload.version === undefined || !meta?.notePath) return;
+    let alive = true;
+    void invoke['note:get'](meta.notePath)
+      .then((note) => {
+        const version = note?.frontmatter['version'];
+        if (alive && typeof version === 'number') setMirrorVersion(version);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [payload.version, meta?.notePath]);
+
+  // Honest staleness: the banner shows only when the draft carries a snapshot
+  // of the mirror it was written against AND the mirror has moved past it —
+  // never a clock comparison between two machines.
+  const changedSince =
+    meta !== null &&
+    ((payload.remote_updated !== undefined && meta.remoteUpdated !== payload.remote_updated) ||
+      (payload.version !== undefined && mirrorVersion !== null && mirrorVersion !== payload.version));
+  const redline = payload.action === 'update_page' && pageBefore !== null;
+
+  // A localized patch previews as the page with just that passage rewritten —
+  // the context-collapsing diff then reads as a redline, not a whole-page
+  // rewrite. Without a patch the body lands as an appended section. If the
+  // page moved and the patch anchor is gone, the passage itself still reads.
+  const diffPair = useMemo(() => {
+    if (payload.action !== 'update_page' || pageBefore === null) return null;
+    const patch = payload.patch;
+    if (patch) {
+      return pageBefore.includes(patch.search)
+        ? { before: pageBefore, after: pageBefore.replace(patch.search, patch.replace) }
+        : { before: patch.search, after: patch.replace };
+    }
+    return { before: pageBefore, after: `${pageBefore}\n\n${payload.body}` };
+  }, [payload, pageBefore]);
+
+  // Pages read by their title; only tickets go by key.
+  const refName =
+    payload.action === 'update_page' ? (payload.title ?? meta?.title ?? 'The page') : meta?.externalId;
+
+  return (
+    <div className="mt-3">
+      {changedSince && (
+        <div className="mb-2.5 flex items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <span>
+            <span className="font-medium">{refName} changed since this was drafted</span>
+            {meta.state && <> — now {meta.state}</>}
+            {meta.lastChange?.by && <>, by {meta.lastChange.by}</>}
+            {', '}
+            {relativeTime(meta.lastChange?.at ?? meta.remoteUpdated)}. Worth one more glance before
+            sending.
+          </span>
+        </div>
+      )}
+      <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+        {redline ? 'How the page changes' : 'What gets sent'}
+      </div>
+      <div className="max-h-[26rem] overflow-y-auto rounded-lg border border-border/70 bg-muted/25 px-3.5 py-3">
+        {redline && diffPair ? (
+          <RenderedDiff before={diffPair.before} after={diffPair.after} onOpen={onOpen} />
+        ) : (
+          <Markdown content={payload.body} onOpenNote={onOpen} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Render a frontmatter value for the property-change line — dates and scalars
+ *  as-is, arrays joined, empty/absent as an em dash so a set-from-nothing reads. */
+function fmValue(v: unknown): string {
+  if (v === undefined || v === null || v === '') return '—';
+  if (Array.isArray(v)) return v.length ? v.map((x) => String(x)).join(', ') : '—';
+  return String(v);
+}
+
+/**
+ * The property changes an update sets — a todo's due/status, a person's ledger.
+ * The body diff deliberately hides frontmatter, so a metadata edit would preview
+ * as blank; this surfaces it as `key: was → now`. Values render through the same
+ * inline pass as the body diff, so an evidence ref reads as its note title, not
+ * raw `[[slug]]` syntax.
+ */
+function PropertyChanges({
+  changes,
+  onOpen,
+}: {
+  changes: { key: string; before: unknown; after: unknown }[];
+  onOpen: (path: string) => void;
+}) {
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {changes.map((c) => (
+        <li key={c.key} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[13px]">
+          <span className="font-medium text-foreground/80 capitalize">{c.key.replace(/_/g, ' ')}</span>
+          <span className="text-muted-foreground/70 line-through decoration-destructive/40">
+            {renderInline(fmValue(c.before), onOpen, `${c.key}-was`)}
+          </span>
+          <span className="text-muted-foreground/50" aria-hidden>→</span>
+          <span className="rounded-sm bg-success/10 px-1 font-medium text-foreground">
+            {renderInline(fmValue(c.after), onOpen, `${c.key}-now`)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The change preview — the note as the PO will read it, never its source. New
+ * notes/decisions render as real Markdown; an edit renders as a rendered diff
+ * where removed content is struck through in red and added content sits on
+ * green, with no `+`/`−` gutters, no `#`, and links shown by their title.
+ * A metadata edit (frontmatter) is shown as a property-change list above the diff.
+ */
+function ChangePreview({
+  kind,
+  preview,
+  onOpen,
+}: {
+  kind: ProposalDTO['kind'];
+  preview: { before: string; after: string; frontmatterChanges?: { key: string; before: unknown; after: unknown }[] };
+  onOpen: (path: string) => void;
+}) {
+  const fmChanges = preview.frontmatterChanges ?? [];
+  // A frontmatter-only card leaves the body untouched — don't render an empty diff.
+  const bodyChanged = kind === 'update' && preview.before !== preview.after;
+  return (
+    <div className="mt-3">
+      <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+        {kind === 'update' ? 'What this changes' : 'What gets filed'}
+      </div>
+      <div className="max-h-[26rem] overflow-y-auto rounded-lg border border-border/70 bg-muted/25 px-3.5 py-3">
+        {kind === 'update' ? (
+          <div className="flex flex-col gap-3">
+            {fmChanges.length > 0 && <PropertyChanges changes={fmChanges} onOpen={onOpen} />}
+            {bodyChanged && <RenderedDiff before={preview.before} after={preview.after} onOpen={onOpen} />}
+          </div>
+        ) : (
+          <Markdown content={stripFrontmatter(preview.after)} onOpenNote={onOpen} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+type DiffRow =
+  | { kind: 'same' | 'add' | 'del'; text: string }
+  | { kind: 'replace'; text: string; before: string; after: string };
+type DiffView = DiffRow | { kind: 'gap'; text: string };
 
 /** Longest-common-subsequence line diff — insertions no longer cascade. */
 function diffLines(before: string, after: string): DiffRow[] {
@@ -356,25 +856,265 @@ function diffLines(before: string, after: string): DiffRow[] {
   return rows;
 }
 
-function DiffBlock({ before, after }: { before: string; after: string }) {
-  const rows = useMemo(() => diffLines(before, after), [before, after]);
+/** Keep `ctx` unchanged lines around every change; collapse the rest to a marker. */
+function withContext(rows: DiffRow[], ctx: number): DiffView[] {
+  const keep = new Array(rows.length).fill(false);
+  rows.forEach((r, i) => {
+    if (r.kind === 'same') return;
+    for (let j = Math.max(0, i - ctx); j <= Math.min(rows.length - 1, i + ctx); j++) keep[j] = true;
+  });
+  const out: DiffView[] = [];
+  let hidden = 0;
+  const flush = () => {
+    if (hidden > 0) out.push({ kind: 'gap', text: '⋯' });
+    hidden = 0;
+  };
+  rows.forEach((r, i) => {
+    if (keep[i]) {
+      flush();
+      out.push(r);
+    } else {
+      hidden++;
+    }
+  });
+  flush();
+  return out;
+}
+
+/**
+ * Collapse an isolated one-line swap (a single deleted line immediately followed
+ * by a single added line, both bounded by unchanged content — "a sentence was
+ * edited") into one `replace` row. Instead of the old paragraph struck *and* the
+ * near-identical new one green, the reader sees one line with only the changed
+ * words highlighted. Larger, multi-line changes keep the block form.
+ */
+function mergeReplacements(rows: DiffRow[]): DiffRow[] {
+  const out: DiffRow[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const cur = rows[i]!;
+    const next = rows[i + 1];
+    const isolated =
+      cur.kind === 'del' &&
+      next?.kind === 'add' &&
+      (i === 0 || rows[i - 1]!.kind === 'same') &&
+      (i + 2 >= rows.length || rows[i + 2]!.kind === 'same');
+    if (isolated && cur.kind === 'del' && next?.kind === 'add') {
+      out.push({ kind: 'replace', text: next.text, before: cur.text, after: next.text });
+      i++; // consume the paired add
+    } else {
+      out.push(cur);
+    }
+  }
+  return out;
+}
+
+// Markdown atoms ([[link]], **bold**, `code`) stay whole; otherwise split on
+// words and whitespace so shared text can be matched token by token.
+const WORD_RE = /\[\[[^\]]+\]\]|\*\*[^*]+\*\*|`[^`]+`|\s+|[^\s]+/g;
+
+type AffixDiff = { pre: string; midBefore: string; midAfter: string; suf: string };
+
+/**
+ * Trim the shared start and end of two edited lines and hand back the differing
+ * middle. Prose reads far better this way than a per-word LCS: the unchanged
+ * text shows once, and only the middle that actually changed is marked (removed
+ * then added) — no confetti of scattered red/green words when a whole sentence
+ * was rewritten.
+ */
+function affixDiff(before: string, after: string): AffixDiff {
+  const b = before.match(WORD_RE) ?? [];
+  const a = after.match(WORD_RE) ?? [];
+  let p = 0;
+  while (p < b.length && p < a.length && b[p] === a[p]) p++;
+  let s = 0;
+  while (s < b.length - p && s < a.length - p && b[b.length - 1 - s] === a[a.length - 1 - s]) s++;
+  return {
+    pre: b.slice(0, p).join(''),
+    midBefore: b.slice(p, b.length - s).join(''),
+    midAfter: a.slice(p, a.length - s).join(''),
+    suf: b.slice(b.length - s).join(''),
+  };
+}
+
+const INLINE_RE = /\[\[([^\]]+)\]\]|\*\*([^*]+)\*\*|`([^`]+)`/g;
+
+/** Render a note line's inline syntax as it reads: references become titles,
+ *  bold stays bold, code stays code — no raw `[[ ]]`, `**`, or backticks. */
+function renderInline(text: string, onOpen: (p: string) => void, keyBase: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  INLINE_RE.lastIndex = 0;
+  while ((match = INLINE_RE.exec(text)) !== null) {
+    if (match.index > last) nodes.push(text.slice(last, match.index));
+    const key = `${keyBase}-${match.index}`;
+    if (match[1] !== undefined) {
+      const { target, alias } = normalizeLinkTarget(match[1]);
+      nodes.push(
+        isExternalRef(target) ? (
+          <ExternalRefChip key={key} target={target} alias={alias} onOpen={onOpen} />
+        ) : (
+          <button
+            key={key}
+            className="rounded-sm bg-brand/8 px-1 text-brand hover:bg-brand/15"
+            onClick={async (e) => {
+              e.stopPropagation();
+              const path = await invoke['note:resolveLink'](target);
+              if (path) onOpen(path);
+            }}
+          >
+            {alias ?? titleForRef(target)}
+          </button>
+        ),
+      );
+    } else if (match[2] !== undefined) {
+      nodes.push(
+        <strong key={key} className="font-semibold">
+          {match[2]}
+        </strong>,
+      );
+    } else if (match[3] !== undefined) {
+      nodes.push(
+        <code key={key} className="rounded bg-foreground/8 px-1 text-[0.9em]">
+          {match[3]}
+        </code>,
+      );
+    }
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
+type LineStructure = { inner: string; structural: string; padLeft: number; lead: 'bullet' | 'quote' | null };
+
+/** Read a note line's block role (heading / bullet / quote) and hand back the
+ *  bare inner text — markers become real structure, never raw `#`/`-`/`>`. */
+function parseStructure(text: string): LineStructure {
+  const heading = /^\s{0,3}(#{1,6})\s+(.*)$/.exec(text);
+  const bullet = /^(\s*)([-*+]|\d+\.)\s+(.*)$/.exec(text);
+  const quote = /^\s{0,3}>\s?(.*)$/.exec(text);
+  if (heading) return { inner: heading[2]!, structural: 'font-semibold text-foreground', padLeft: 0, lead: null };
+  if (bullet)
+    return { inner: bullet[3]!, structural: '', padLeft: Math.floor((bullet[1]?.length ?? 0) / 2) * 0.85 + 0.9, lead: 'bullet' };
+  if (quote) return { inner: quote[1]!, structural: 'text-foreground/70 italic', padLeft: 0.9, lead: 'quote' };
+  return { inner: text, structural: '', padLeft: 0, lead: null };
+}
+
+function leadNode(lead: LineStructure['lead']): ReactNode {
+  if (lead === 'bullet') return <span className="absolute left-2 text-muted-foreground/60">•</span>;
+  if (lead === 'quote') return <span className="absolute top-0 bottom-0 left-1.5 w-0.5 rounded bg-brand/30" aria-hidden />;
+  return null;
+}
+
+/** A wholly added or removed line — the change is carried by color + strikethrough. */
+function DiffLine({ row, onOpen }: { row: { kind: 'same' | 'add' | 'del'; text: string }; onOpen: (p: string) => void }) {
+  // A blank line is paragraph spacing, not content — render the gap, never an
+  // empty colored bar.
+  if (row.text.trim() === '') return <div className="h-2" aria-hidden />;
+
+  const s = parseStructure(row.text);
+  const tone =
+    row.kind === 'add'
+      ? 'bg-success/10 text-foreground'
+      : row.kind === 'del'
+        ? 'bg-destructive/8 text-muted-foreground line-through decoration-destructive/40'
+        : 'text-foreground/70';
+
   return (
-    <div className="font-mono">
-      {rows.map((r, i) => (
-        <div
-          key={i}
-          className={
-            r.kind === 'add'
-              ? 'bg-success/10 text-foreground'
-              : r.kind === 'del'
-                ? 'bg-destructive/8 text-muted-foreground line-through decoration-destructive/40'
-                : 'text-muted-foreground'
-          }
-        >
-          <span className="select-none">{r.kind === 'add' ? '+ ' : r.kind === 'del' ? '- ' : '  '}</span>
-          <span className="whitespace-pre-wrap">{r.text || ' '}</span>
+    <div
+      className={`relative -mx-1 rounded-sm px-2 py-0.5 ${tone} ${s.structural}`}
+      style={s.padLeft ? { paddingLeft: `${s.padLeft}rem` } : undefined}
+    >
+      {leadNode(s.lead)}
+      <span className="[overflow-wrap:anywhere] whitespace-pre-wrap">
+        {s.inner ? renderInline(s.inner, onOpen, row.text.slice(0, 8)) : ' '}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * An edited line, shown result-first: the note as it will now read, with only
+ * the newly-changed span softly highlighted. The old wording it replaced is one
+ * click away ("was…") rather than doubling the text inline. A pure deletion has
+ * nothing new to show, so the removed span is struck in place.
+ */
+function ReplaceLine({ before, after, onOpen }: { before: string; after: string; onOpen: (p: string) => void }) {
+  const s = parseStructure(after);
+  const beforeInner = parseStructure(before).inner;
+  const d = useMemo(() => affixDiff(beforeInner, s.inner), [beforeInner, s.inner]);
+  const [showOld, setShowOld] = useState(false);
+  const removed = d.midBefore.trim() !== '';
+  const added = d.midAfter.trim() !== '';
+  const pad = s.padLeft ? { paddingLeft: `${s.padLeft}rem` } : undefined;
+  return (
+    <div>
+      <div className={`relative -mx-1 rounded-sm px-2 py-0.5 text-foreground/90 ${s.structural}`} style={pad}>
+        {leadNode(s.lead)}
+        <span className="[overflow-wrap:anywhere] whitespace-pre-wrap">
+          {d.pre && renderInline(d.pre, onOpen, 'pre')}
+          {added && (
+            <span className="rounded-sm bg-success/10 text-foreground">{renderInline(d.midAfter, onOpen, 'ma')}</span>
+          )}
+          {!added && removed && (
+            <span className="rounded-sm bg-destructive/10 text-muted-foreground line-through decoration-destructive/40">
+              {renderInline(d.midBefore, onOpen, 'mb')}
+            </span>
+          )}
+          {d.suf && renderInline(d.suf, onOpen, 'suf')}
+          {added && removed && (
+            <button
+              className="ml-1.5 align-baseline text-xs text-muted-foreground/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowOld((v) => !v);
+              }}
+            >
+              {showOld ? 'hide previous' : 'was…'}
+            </button>
+          )}
+        </span>
+      </div>
+      {showOld && added && removed && (
+        <div className="-mx-1 px-2 py-0.5 text-muted-foreground" style={pad}>
+          <span className="[overflow-wrap:anywhere] text-muted-foreground/70 line-through whitespace-pre-wrap decoration-destructive/40">
+            {renderInline(d.midBefore, onOpen, 'mbo')}
+          </span>
         </div>
-      ))}
+      )}
+    </div>
+  );
+}
+
+function RenderedDiff({
+  before,
+  after,
+  onOpen,
+}: {
+  before: string;
+  after: string;
+  onOpen: (p: string) => void;
+}) {
+  // Frontmatter never reaches the PO — diff only the readable body. Isolated
+  // one-line edits collapse to a single word-level line before context-trimming.
+  const rows = useMemo(
+    () => withContext(mergeReplacements(diffLines(stripFrontmatter(before), stripFrontmatter(after))), 2),
+    [before, after],
+  );
+  return (
+    <div className="flex flex-col gap-0.5 text-[13px] leading-relaxed">
+      {rows.map((r, i) =>
+        r.kind === 'gap' ? (
+          <div key={i} className="py-0.5 text-center text-muted-foreground/50 select-none" aria-label="unchanged content">
+            {r.text}
+          </div>
+        ) : r.kind === 'replace' ? (
+          <ReplaceLine key={i} before={r.before} after={r.after} onOpen={onOpen} />
+        ) : (
+          <DiffLine key={i} row={r} onOpen={onOpen} />
+        ),
+      )}
     </div>
   );
 }

@@ -7,7 +7,7 @@ date: "2026-02-10"
 deciders: ["Tom Devlin"]
 sources: []
 superseded_by: "[[decisions/2026-05-20-adopt-workos]]"
-problem: "[[problems/enterprise-onboarding]]"
+theme: "[[themes/enterprise-onboarding]]"
 ---
 
 Chose Firebase Auth to get email and Google login shipped in a week rather than a month. Known

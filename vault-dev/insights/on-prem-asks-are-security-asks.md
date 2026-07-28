@@ -4,7 +4,7 @@ summary: "On-prem requests unpack into data-control and audit concerns, not hard
 tags: ["compliance"]
 evidence: ["[[meetings/2026-06-16-fenno-energi-intro]]", "[[meetings/2026-07-02-bergman-falk-security-review]]"]
 confidence: "med"
-problem: "[[problems/on-prem-deployment]]"
+theme: "[[themes/on-prem-deployment]]"
 ---
 
 Both times self-hosting has come up, asking "what is the policy protecting against?" surfaced

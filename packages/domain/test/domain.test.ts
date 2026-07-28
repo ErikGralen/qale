@@ -6,6 +6,7 @@ import {
   buildChain,
   checkSupersede,
   refToSlug,
+  slugify,
   todoLane,
   isOverdueTodo,
   isExternalTodo,
@@ -117,6 +118,12 @@ test('refToSlug normalizes wikilinks', () => {
   assert.equal(refToSlug('decisions/d1.md'), 'decisions/d1');
   assert.equal(refToSlug('[[decisions/d1|Alias]]'), 'decisions/d1');
   assert.equal(refToSlug(undefined), null);
+});
+
+test('slugify transliterates diacritics instead of stripping them', () => {
+  assert.equal(slugify('Möte med Åsa'), 'mote-med-asa');
+  assert.equal(slugify('Bergman & Falk: Q3-läge'), 'bergman-falk-q3-lage');
+  assert.equal(slugify('Straße café søren'), 'strasse-cafe-soren');
 });
 
 test('todo: defaults to open, status is enum, owner marks external', () => {

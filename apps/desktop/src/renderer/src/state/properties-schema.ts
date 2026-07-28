@@ -7,7 +7,12 @@ import type { NoteType } from '@pm/ipc';
  * Ref arrays (evidence/sources/supersedes) are shown read-only; they are edited
  * through links and cards, not typed by hand.
  */
-export type Widget = 'text' | 'textarea' | 'select' | 'tags' | 'date';
+/** `readonly` rows display a value the human never edits (sync-owned mirror
+ *  facts) — offering a widget would only earn a main-side rejection. */
+/** `people` rows hold person references (a `[[people/…]]` link, a name, or an
+ *  invite address) and render as faces + names with a preview card — the raw
+ *  form is never shown to the PO. */
+export type Widget = 'text' | 'textarea' | 'select' | 'tags' | 'date' | 'readonly' | 'people';
 
 export interface FieldSpec {
   key: string;
@@ -39,7 +44,7 @@ export const FIELDS: Record<NoteType, FieldSpec[]> = {
     SUMMARY,
     STATUS,
     { key: 'date', label: 'Date', widget: 'date' },
-    { key: 'participants', label: 'Participants', widget: 'tags' },
+    { key: 'participants', label: 'Participants', widget: 'people' },
     { key: 'series', label: 'Series', widget: 'text' },
     TAGS,
   ],
@@ -47,7 +52,7 @@ export const FIELDS: Record<NoteType, FieldSpec[]> = {
     SUMMARY,
     { key: 'status', label: 'Status', widget: 'select', options: ['active', 'superseded'] },
     { key: 'date', label: 'Date', widget: 'date' },
-    { key: 'deciders', label: 'Deciders', widget: 'tags' },
+    { key: 'deciders', label: 'Deciders', widget: 'people' },
     TAGS,
   ],
   insight: [
@@ -62,16 +67,9 @@ export const FIELDS: Record<NoteType, FieldSpec[]> = {
     { key: 'segment', label: 'Segment', widget: 'text' },
     TAGS,
   ],
-  problem: [
+  theme: [
     SUMMARY,
     { key: 'stance', label: 'Stance', widget: 'select', options: ['exploring', 'watching', 'committed', 'wont-do'] },
-    TAGS,
-  ],
-  release: [
-    SUMMARY,
-    { key: 'status', label: 'Status', widget: 'select', options: ['planned', 'shipped'] },
-    { key: 'date', label: 'Date', widget: 'date' },
-    { key: 'audiences', label: 'Audiences', widget: 'tags' },
     TAGS,
   ],
   person: [
@@ -96,10 +94,30 @@ export const FIELDS: Record<NoteType, FieldSpec[]> = {
     TAGS,
   ],
   note: [SUMMARY, STATUS, TAGS],
+  // External mirrors: re-sync owns the delivery facts, so they display but
+  // never edit (a hand-flipped state_category is exactly the drift the sync
+  // exists to catch, and main rejects the write anyway). Only the PO's own
+  // summary/status/tags stay live.
+  ticket: [
+    SUMMARY,
+    STATUS,
+    { key: 'state', label: 'State (as in tracker)', widget: 'readonly' },
+    { key: 'state_category', label: 'State category', widget: 'readonly' },
+    { key: 'assignee', label: 'Assignee', widget: 'readonly' },
+    { key: 'remote_updated', label: 'Changed upstream', widget: 'readonly' },
+    TAGS,
+  ],
+  wikipage: [
+    SUMMARY,
+    STATUS,
+    { key: 'version', label: 'Version', widget: 'readonly' },
+    { key: 'remote_updated', label: 'Changed upstream', widget: 'readonly' },
+    TAGS,
+  ],
 };
 
 /** Ref-array frontmatter keys shown read-only as chips. */
-export const REF_FIELDS = ['evidence', 'sources', 'supersedes', 'superseded_by', 'problem', 'customer', 'transcript'] as const;
+export const REF_FIELDS = ['evidence', 'sources', 'supersedes', 'superseded_by', 'theme', 'customer', 'transcript'] as const;
 
 /**
  * Frontmatter the harness/domain writes, not the human: session receipt fields

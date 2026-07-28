@@ -137,7 +137,7 @@ export function QuickSwitcher({
             <CommandGroup heading="Open documents">
               {openDocs.map((t) =>
                 t.kind === 'doc' ? (
-                  <CommandItem key={t.id} value={`open-${t.path}`} onSelect={() => runAndClose(() => void openDoc(t.path))}>
+                  <CommandItem key={t.id} value={`open-${t.id}`} onSelect={() => runAndClose(() => void openDoc(t.path))}>
                     <FileText className="size-4 text-muted-foreground" />
                     <span className="truncate">{t.title}</span>
                   </CommandItem>

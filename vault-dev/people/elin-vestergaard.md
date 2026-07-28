@@ -3,6 +3,7 @@ type: "person"
 summary: "Elin Vestergaard — information security lead at Bergman & Falk, runs their vendor review"
 tags: ["compliance"]
 role: "Information Security Lead, Bergman & Falk"
+email: "elin.vestergaard@bergmanfalk.example"
 cares_about: ["SSO", "data residency", "subprocessors", "pen tests"]
 last_told: "2026-07-06"
 customer: "[[customers/bergman-falk]]"

@@ -3,37 +3,31 @@ import { Button } from '@pm/ui';
 import { AlertTriangle, ArrowRight, Check, Inbox, Layers, Send } from 'lucide-react';
 import type { AgentPingDTO, OutboundPayloadDTO, ProposalDTO, ProposalStatsDTO } from '@pm/ipc';
 import { useApp, type SessionOverview } from '../state/app-state';
+import { navFromEvent } from '../lib/nav';
 import { invoke } from '../lib/ipc';
 import { sessionLabel, timeAgo } from '../lib/session-meta';
+import { useToast } from '../components/toast';
 import { CardItem, HousekeepingItem } from '../components/inbox/CardItem';
 import { PingItem, SuggestionPing } from '../components/inbox/PingRows';
 import { ResultItem } from '../components/inbox/ResultItem';
 import { outboundTarget } from '../components/inbox/shared';
+import { cardRank, HOUSEKEEPING_RANK, titleForRef } from '../components/inbox/cardMeta';
 
 /** Sessions whose card group reads as a meeting review, not a generic pile. */
 function isReviewGroup(sessionType: string | null): boolean {
   return sessionType === 'after-meeting' || sessionType === 'external-transcript';
 }
 
+/** Reaction sessions where the cards are consequences of one cause — a decision
+ *  that changed leaves several notes pointing at the old plan. Read as one story. */
+function isCauseGroup(sessionType: string | null): boolean {
+  return sessionType === 'supersede-sweep';
+}
+
 /** The librarian's prepared fixes — mechanical repairs, rendered glance-and-go. */
 function isLibrarianGroup(g: CardGroup): boolean {
   return g.sessionId === 'librarian';
 }
-
-/**
- * Narrative order for a meeting review — mirror how the PM thinks about what
- * just happened, stakes descending: the meeting summary sets context, decisions
- * are highest-stakes, then insights/todos; mechanical hub/ledger updates are
- * housekeeping; outbound (externally visible) is always its own last decision.
- */
-function cardRank(p: ProposalDTO): number {
-  if (p.kind === 'outbound') return 4;
-  if (p.kind === 'update') return p.targetPath?.startsWith('meetings/') ? 0 : 3;
-  if (p.kind === 'decision') return 1;
-  return 2;
-}
-
-const HOUSEKEEPING_RANK = 3;
 
 interface SentReceipt {
   id: string;
@@ -83,6 +77,9 @@ export function InboxView() {
   const [receipt, setReceipt] = useState<{ accepted: number; rejected: number }>({ accepted: 0, rejected: 0 });
   const [sent, setSent] = useState<SentReceipt[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Outbound cards whose send was refused because the target moved — they get
+  // the explicit "Approve anyway" affordance instead of a blind Retry.
+  const [staleSends, setStaleSends] = useState<Record<string, boolean>>({});
   const [stats, setStats] = useState<ProposalStatsDTO | null>(null);
   const [streak, setStreak] = useState(0);
   const [audit, setAudit] = useState(false);
@@ -91,6 +88,12 @@ export function InboxView() {
    * section, since the row-level error display belongs to the mouse path. */
   const [pingError, setPingError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const toast = useToast();
+
+  // Keyboard mode works immediately — j/k must not wait for a click.
+  useEffect(() => {
+    listRef.current?.focus();
+  }, []);
 
   const SPOT_AUDIT_EVERY = 5;
 
@@ -183,14 +186,25 @@ export function InboxView() {
         if (r.ok) {
           setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
           bumpStreak();
+          setStaleSends((s) => {
+            const next = { ...s };
+            delete next[p.id];
+            return next;
+          });
           if (p.kind === 'outbound') {
             const ob = p.payload as OutboundPayloadDTO;
             setSent((s) => [...s, { id: p.id, target: outboundTarget(ob) }]);
           }
+        } else if (r.stale && p.kind === 'outbound') {
+          // The target moved after this was drafted; main refused the send and
+          // the card stays pending. The card's error row grows an explicit
+          // "Approve anyway" that re-accepts with a refreshed snapshot.
+          setStaleSends((s) => ({ ...s, [p.id]: true }));
+          setError(p.id, r.error ?? 'The target changed since this was drafted — review it, then approve anyway to send.');
         } else if (r.stale) {
           // The keyboard path can accept without ever seeing the preview's
           // stale banner — a stale refusal must speak, never no-op.
-          setError(p.id, 'This card went stale — the note changed underneath it. Review the updated diff before applying.');
+          setError(p.id, "This card no longer fits the note's current text. Open it to review, or re-run the session to regenerate it.");
         } else {
           setError(p.id, r.error ?? 'Could not apply this card — the workspace rejected the write.');
         }
@@ -227,6 +241,8 @@ export function InboxView() {
       setBusy(true);
       try {
         let local = streak;
+        let attempted = 0;
+        let failed = 0;
         for (const p of cards) {
           // Anti-rubber-stamping: pause the batch for a spot-audit every N accepts.
           if (local > 0 && local % SPOT_AUDIT_EVERY === 0) {
@@ -235,6 +251,7 @@ export function InboxView() {
           }
           // Outbound never rides along in a batch — each send is its own decision.
           if (p.kind === 'outbound') continue;
+          attempted++;
           const r = await acceptProposal(p.id).catch((err: unknown) => {
             setError(p.id, err instanceof Error ? err.message : 'Failed — retry from the card.');
             return { ok: false as const };
@@ -242,15 +259,44 @@ export function InboxView() {
           if (r.ok) {
             local++;
             setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
+          } else {
+            failed++;
           }
         }
         setStreak(local);
+        if (failed > 0) toast(`${failed} of ${attempted} cards failed to apply — see the cards for details.`);
       } finally {
         setBusy(false);
       }
       loadStats();
     },
-    [acceptProposal, streak],
+    [acceptProposal, streak, toast],
+  );
+
+  // Discard a whole cause block at once — the PO judged the premise wrong, so
+  // none of the consequent edits should land.
+  const rejectCards = useCallback(
+    async (cards: ProposalDTO[]) => {
+      setBusy(true);
+      try {
+        let failed = 0;
+        for (const p of cards) {
+          try {
+            await rejectProposal(p.id);
+            setReceipt((x) => ({ ...x, rejected: x.rejected + 1 }));
+          } catch (err) {
+            failed++;
+            setError(p.id, err instanceof Error ? err.message : 'Failed — retry from the card.');
+          }
+        }
+        setStreak(0);
+        if (failed > 0) toast(`${failed} of ${cards.length} cards failed to discard — see the cards for details.`);
+      } finally {
+        setBusy(false);
+      }
+      loadStats();
+    },
+    [rejectProposal, toast],
   );
 
   const openResult = useCallback(
@@ -382,7 +428,14 @@ export function InboxView() {
             <span className="flex-1 text-foreground">
               You've approved {streak} in a row — take a closer look at this one before continuing.
             </span>
-            <Button size="sm" variant="ghost" onClick={() => setAudit(false)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setAudit(false);
+                setStreak(0);
+              }}
+            >
               Got it
             </Button>
           </div>
@@ -442,6 +495,7 @@ export function InboxView() {
                   busy,
                   focused: idx === focusIdx,
                   error: errors[p.id] ?? null,
+                  staleSend: staleSends[p.id] ?? false,
                   onFocus: () => setFocusIdx(idx),
                   onAccept: (edited?: unknown) => onAccept(p, edited),
                   onReject: () => onReject(p),
@@ -449,32 +503,64 @@ export function InboxView() {
                 };
                 return compact ? <HousekeepingItem key={p.id} {...shared} /> : <CardItem key={p.id} {...shared} />;
               };
+              const cause = isCauseGroup(g.sessionType);
+              const internalN = g.cards.filter((c) => c.kind !== 'outbound').length;
+              // The header speaks the meeting, or the cause — never the prompt or a path.
+              const title = cause ? causeSentence(g.cards) : groupTitle(g, anchor ?? null);
+              const summary = cause
+                ? 'Approve to update them all — or discard, if the premise is wrong.'
+                : groupSummary(g.cards);
               return (
-                <section key={g.sessionId} aria-label={groupLabel(g)}>
-                  <div className="mb-1.5 flex items-baseline gap-2 px-0.5">
-                    <h3 className="min-w-0 shrink-0 truncate text-sm font-semibold">{groupLabel(g)}</h3>
-                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{timeAgo(g.newest)}</span>
-                    <span className="ml-auto flex shrink-0 items-center gap-1">
-                      {g.cards.filter((c) => c.kind !== 'outbound').length > 1 && (
+                <section key={g.sessionId} aria-label={title}>
+                  {/* Title flexes and wraps; actions shrink-0 and stay reachable —
+                      a long meeting name never pushes "Approve all" off-screen. */}
+                  <div className="mb-2 flex items-start gap-3 px-0.5">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm leading-snug font-semibold text-balance break-words text-foreground">
+                        {cause ? title : <>From <span className="text-foreground">{title}</span></>}
+                      </h3>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {summary && <>{summary} · </>}
+                        <span className="tabular-nums">{timeAgo(g.newest)}</span>
+                      </p>
+                    </div>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {internalN > 1 && (
                         <Button size="sm" variant="ghost" onClick={() => void acceptCards(g.cards)} disabled={busy}>
-                          <Check className="size-3.5" /> Approve all
+                          <Check className="size-3.5" /> {cause ? `Update all ${internalN}` : 'Approve all'}
                         </Button>
                       )}
-                      {anchor && (
-                        <button
-                          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                          onClick={() => openDoc(anchor)}
+                      {cause ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-muted-foreground"
+                          onClick={() => void rejectCards(g.cards)}
+                          disabled={busy}
                         >
-                          {anchor.startsWith('meetings/') ? 'Open meeting' : 'Open source'}
-                        </button>
-                      )}
-                      {g.session && (
-                        <button
-                          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                          onClick={() => openChat({ id: g.session!.id, sessionType: g.session!.sessionType, title: g.session!.title })}
-                        >
-                          Open session <ArrowRight className="size-3" />
-                        </button>
+                          Discard all
+                        </Button>
+                      ) : (
+                        <>
+                          {anchor && (
+                            <button
+                              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                              onClick={(e) => openDoc(anchor, navFromEvent(e))}
+                            >
+                              {anchor.startsWith('meetings/') ? 'Open meeting' : 'Open source'}
+                            </button>
+                          )}
+                          {g.session && (
+                            <button
+                              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                              onClick={(e) =>
+                                openChat({ id: g.session!.id, sessionType: g.session!.sessionType, title: g.session!.title }, navFromEvent(e))
+                              }
+                            >
+                              Open session <ArrowRight className="size-3" />
+                            </button>
+                          )}
+                        </>
                       )}
                     </span>
                   </div>
@@ -627,11 +713,51 @@ export function InboxView() {
   );
 }
 
-function groupLabel(g: CardGroup): string {
-  if (g.sessionId === 'librarian') return 'Librarian';
-  if (g.sessionId === 'seed') return 'Demo session';
-  const type = g.sessionType ? sessionLabel(g.sessionType) : null;
-  const title = g.session?.title;
-  if (type && title && title.toLowerCase() !== type.toLowerCase()) return `${type} — ${title}`;
-  return type ?? title ?? 'Session';
+/** The group header in human terms: the meeting the review is about — never the
+ *  agent's prompt, never a path. Falls back to the session kind's label. */
+function groupTitle(g: CardGroup, anchor: string | null): string {
+  if (anchor) return titleForRef(anchor);
+  if (g.sessionId === 'seed') return 'your demo meeting';
+  return g.sessionType ? sessionLabel(g.sessionType) : 'your session';
+}
+
+/** A glanceable tally of what a meeting produced, in the PO's nouns. */
+function groupSummary(cards: ProposalDTO[]): string {
+  let dec = 0;
+  let ins = 0;
+  let note = 0;
+  let upd = 0;
+  let out = 0;
+  for (const c of cards) {
+    if (c.kind === 'outbound') out++;
+    else if (c.kind === 'decision') dec++;
+    else if (c.kind === 'update') upd++;
+    else {
+      const type = (c.payload as { frontmatter?: { type?: string } }).frontmatter?.type;
+      if (type === 'insight') ins++;
+      else note++;
+    }
+  }
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+  const parts: string[] = [];
+  if (dec) parts.push(plural(dec, 'decision'));
+  if (ins) parts.push(plural(ins, 'insight'));
+  if (note) parts.push(plural(note, 'note'));
+  if (upd) parts.push(plural(upd, 'update'));
+  if (out) parts.push(`${out} to send`);
+  return parts.join(' · ');
+}
+
+/** The cause behind a sweep: one decision changed and N notes still cite the old
+ *  one. Stated as the PO thinks it — cause first, effect second. */
+function causeSentence(cards: ProposalDTO[]): string {
+  const n = cards.length;
+  const decisionRef = cards
+    .flatMap((c) => c.evidence.map((e) => e.ref))
+    .map((r) => r.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.trim())
+    .find((r) => r.startsWith('decisions/'));
+  const notes = `${n} note${n === 1 ? '' : 's'}`;
+  return decisionRef
+    ? `Because you decided “${titleForRef(decisionRef)}”, ${notes} still point at the old plan`
+    : `A decision changed — ${notes} still point at the old plan`;
 }

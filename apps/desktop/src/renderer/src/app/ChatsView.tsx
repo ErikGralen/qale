@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useApp, type SessionOverview } from '../state/app-state';
+import { navFromEvent } from '../lib/nav';
 import { sessionLabel, timeAgo } from '../lib/session-meta';
 
 const TYPE_ICON: Record<string, LucideIcon> = {
@@ -114,7 +115,7 @@ export function ChatsView() {
                 <SessionRow
                   key={s.id}
                   session={s}
-                  onOpen={() => openChat({ id: s.id, sessionType: s.sessionType, title: s.title })}
+                  onOpen={(e) => openChat({ id: s.id, sessionType: s.sessionType, title: s.title }, e && navFromEvent(e))}
                   onOpenCards={() => openInbox()}
                   onDelete={() => void deleteSession(s.id)}
                   onSetLifecycle={(lc) => void setSessionLifecycle(s.id, lc)}
@@ -150,7 +151,7 @@ function SessionRow({
   onSetLifecycle,
 }: {
   session: SessionOverview;
-  onOpen: () => void;
+  onOpen: (e?: React.MouseEvent) => void;
   onOpenCards: () => void;
   onDelete: () => void;
   onSetLifecycle: (lifecycle: SessionLifecycle) => void;
@@ -166,6 +167,7 @@ function SessionRow({
       <button
         className="flex w-full flex-col gap-0.5 rounded-lg border border-transparent px-3 py-2 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
         onClick={onOpen}
+        onAuxClick={(e) => e.button === 1 && onOpen(e)}
       >
         <span className="flex items-center gap-2 pr-8">
           <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />

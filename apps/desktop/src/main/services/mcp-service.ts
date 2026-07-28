@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createProposal, searchNotes, type UseCaseContext } from '@pm/application';
+import { zOutboundPayload, OUTBOUND_PROVIDERS } from '@pm/domain';
 
 /**
  * The workspace as an MCP server (PLAN-V2 §3.5) — not just a client. A Claude-
@@ -46,6 +47,12 @@ export class McpService {
           this.http = null;
           resolve();
         }
+      });
+      // A server that dies after binding must not leave isRunning() true and
+      // start() early-returning forever. stop() nulls this.http first, so the
+      // identity check keeps an intentional stop from clobbering a restart.
+      server.on('close', () => {
+        if (this.http === server) this.http = null;
       });
       server.listen(port, '127.0.0.1', () => {
         console.log(`[pm] MCP server on http://127.0.0.1:${port}/mcp`);
@@ -143,9 +150,11 @@ export class McpService {
 
     mcp.tool(
       'draft_writeback',
-      'File an outbound draft (jira/confluence/message) as an approval card. Never sends; the PM approves.',
+      'File an outbound draft (jira/confluence/message) as an approval card. Never sends; the PM approves. Actions: create_ticket (requires projectKey) | comment_ticket (requires issueKey) | update_page (requires pageId) | send_message.',
       {
-        system: z.enum(['jira', 'confluence', 'message']),
+        provider: z.enum(OUTBOUND_PROVIDERS).optional().describe('Where the draft is addressed.'),
+        /** Deprecated alias of `provider`, still accepted from older callers. */
+        system: z.enum(OUTBOUND_PROVIDERS).optional(),
         action: z.string(),
         title: z.string().optional(),
         body: z.string(),
@@ -158,19 +167,30 @@ export class McpService {
       async (args) => {
         const ctx = this.getContext();
         if (!ctx) return textResult('No workspace is open.');
+        // Normalize through the domain schema so the stored payload is always
+        // the generic shape (provider + generic action), whatever the caller sent.
+        const provider = args.provider ?? args.system;
+        const parsed = zOutboundPayload.safeParse({
+          ...args,
+          provider,
+          rationale: `Drafted via MCP for ${provider ?? 'unknown'}`,
+        });
+        if (!parsed.success) {
+          return textResult(`Rejected: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+        }
         const rec = createProposal(ctx, {
           kind: 'outbound',
           sessionId: 'mcp',
           sessionType: 'mcp',
           targetPath: null,
           baseHash: null,
-          payload: { ...args, rationale: `Drafted via MCP for ${args.system}` },
-          rationale: `Drafted via MCP for ${args.system}`,
+          payload: parsed.data,
+          rationale: parsed.data.rationale,
           evidence: args.sources.map((s) => ({ ref: s, resolved: true })),
           inference: false,
         });
         this.onChanged();
-        return textResult(`Outbound draft card ${rec.id} filed to the Inbox for approval (${args.system}).`);
+        return textResult(`Outbound draft card ${rec.id} filed to the Inbox for approval (${parsed.data.provider}).`);
       },
     );
 

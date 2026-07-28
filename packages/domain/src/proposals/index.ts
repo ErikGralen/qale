@@ -10,31 +10,145 @@ import { z } from 'zod';
 export const PROPOSAL_KINDS = ['note', 'update', 'decision', 'outbound'] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 
-export const OUTBOUND_SYSTEMS = ['jira', 'confluence', 'message'] as const;
-export type OutboundSystem = (typeof OUTBOUND_SYSTEMS)[number];
+/**
+ * Where an outbound draft is addressed. Provider-shaped ('jira', 'confluence')
+ * because that's honest data — but every consumer branches on the generic
+ * `action`, so a new provider is an entry here, never a new code path upstream.
+ * 'message' is the human "provider": drafts saved to the workspace, not sent.
+ */
+export const OUTBOUND_PROVIDERS = ['jira', 'confluence', 'message', 'google-calendar'] as const;
+export type OutboundProvider = (typeof OUTBOUND_PROVIDERS)[number];
+
+/** @deprecated legacy name for {@link OUTBOUND_PROVIDERS} (`system` era). */
+export const OUTBOUND_SYSTEMS = OUTBOUND_PROVIDERS;
+/** @deprecated legacy name for {@link OutboundProvider}. */
+export type OutboundSystem = OutboundProvider;
+
+/**
+ * Provider-generic outbound vocabulary (ticket/wikipage, not issue/page — the
+ * same genericization as the mirror note types). `update_ticket` is deliberately
+ * absent until an executor exists — advertising an action that always fails at
+ * approval would let agents file cards the PM can only watch break.
+ */
+export const OUTBOUND_ACTIONS = [
+  'create_ticket',
+  'comment_ticket',
+  'update_page',
+  'send_message',
+  // Calendar writes (docs/google-calendar-integration.md, phase 4). Each has an
+  // executor in the google-calendar connector — the "never advertise an action
+  // without an executor" rule holds.
+  'create_event',
+  'update_event',
+  'respond_to_event',
+] as const;
+export type OutboundAction = (typeof OUTBOUND_ACTIONS)[number];
+
+/** Pre-genericization action names, as they exist in persisted proposal rows. */
+const LEGACY_OUTBOUND_ACTIONS: Record<string, OutboundAction> = {
+  create_issue: 'create_ticket',
+  add_comment: 'comment_ticket',
+  update_page: 'update_page',
+  message: 'send_message',
+};
 
 /**
  * Outbound card (PLAN-V2 §3.4) — a draft addressed to an external system or a
  * human. This tier is draft-and-approve forever: there is no auto-apply path. The
  * exact payload is stored; the resulting link is built from the API response only.
+ *
+ * Legacy compat: proposal rows persist the payload as raw JSON and are only
+ * validated here at read/accept time, so pre-genericization records
+ * (`system: 'jira'`, `action: 'create_issue'`) are normalized by the preprocess
+ * step — no data migration. The parsed output always carries BOTH `provider`
+ * (canonical) and `system` (deprecated mirror) so existing readers keep working.
  */
-export const zOutboundPayload = z.object({
-  system: z.enum(OUTBOUND_SYSTEMS),
-  /** create_issue | add_comment | update_page | message */
-  action: z.string(),
-  projectKey: z.string().optional(),
-  issueType: z.string().optional(),
-  issueKey: z.string().optional(),
-  pageId: z.string().optional(),
-  /** Jira issue summary / message subject. */
-  title: z.string().optional(),
-  /** The drafted body (markdown), shown verbatim in the card preview. */
-  body: z.string().min(1),
-  audience: z.string().optional(),
-  /** Workspace note to append the resulting deterministic link back to. */
-  linkBackPath: z.string().optional(),
-  rationale: z.string().min(1),
-});
+export const zOutboundSearchReplace = z.object({ search: z.string().min(1), replace: z.string() });
+
+export const zOutboundPayload = z.preprocess(
+  (val) => {
+    if (!val || typeof val !== 'object') return val;
+    const rec = { ...(val as Record<string, unknown>) };
+    // `provider` is canonical: when both are present it wins outright, so a
+    // conflicting legacy `system` can never leak a different value to readers.
+    if (rec['provider'] == null && typeof rec['system'] === 'string') rec['provider'] = rec['system'];
+    if (typeof rec['provider'] === 'string') rec['system'] = rec['provider'];
+    if (typeof rec['action'] === 'string' && rec['action'] in LEGACY_OUTBOUND_ACTIONS) {
+      rec['action'] = LEGACY_OUTBOUND_ACTIONS[rec['action']];
+    }
+    return rec;
+  },
+  z
+    .object({
+      provider: z.enum(OUTBOUND_PROVIDERS),
+      /** @deprecated mirror of `provider`, kept so pre-genericization readers still resolve. */
+      system: z.enum(OUTBOUND_PROVIDERS),
+      action: z.enum(OUTBOUND_ACTIONS),
+      projectKey: z.string().optional(),
+      issueType: z.string().optional(),
+      issueKey: z.string().optional(),
+      pageId: z.string().optional(),
+      /** Ticket summary / message subject. */
+      title: z.string().optional(),
+      /** The drafted body (markdown), shown verbatim in the card preview. */
+      body: z.string().min(1),
+      /**
+       * For `update_page`: the localized edit as search/replace on the page's
+       * live text. When present the connector patches the page in place
+       * (replace semantics); absent, the body is appended as a new section.
+       */
+      patch: zOutboundSearchReplace.optional(),
+      /** One canonical provenance line ("Source: <origin>, <date>") appended to the pushed content. */
+      provenance: z.string().optional(),
+      /**
+       * Drafted-against snapshot: the mirror's `remote_updated` (and `version`
+       * for pages) at draft time. Accept compares these to the mirror and
+       * refuses with `stale` when the upstream item moved since drafting.
+       */
+      remote_updated: z.string().optional(),
+      version: z.number().int().nonnegative().optional(),
+      audience: z.string().optional(),
+      // Calendar-event fields (provider 'google-calendar'). calendarId defaults
+      // to 'primary' in the connector when omitted; times are RFC3339.
+      calendarId: z.string().optional(),
+      eventId: z.string().optional(),
+      /** Event start/end, RFC3339 with offset (create_event, reschedule). */
+      start: z.string().optional(),
+      end: z.string().optional(),
+      /** Invitee emails for a new event. */
+      attendees: z.array(z.string()).optional(),
+      /** respond_to_event: which attendee is answering (the connected account). */
+      attendeeEmail: z.string().optional(),
+      responseStatus: z.enum(['accepted', 'declined', 'tentative']).optional(),
+      /** Workspace note to append the resulting deterministic link back to. */
+      linkBackPath: z.string().optional(),
+      rationale: z.string().min(1),
+    })
+    // Required target per action, enforced at FILING time — a card missing its
+    // target must be rejected where the agent can react, not at approval.
+    .superRefine((p, refCtx) => {
+      const need = (field: 'projectKey' | 'issueKey' | 'pageId' | 'eventId' | 'title' | 'start' | 'attendeeEmail'): void => {
+        if (!p[field]?.toString().trim()) {
+          refCtx.addIssue({ code: 'custom', path: [field], message: `${p.action} requires ${field}` });
+        }
+      };
+      if (p.action === 'create_ticket') need('projectKey');
+      if (p.action === 'comment_ticket') need('issueKey');
+      if (p.action === 'update_page') need('pageId');
+      if (p.action === 'create_event') {
+        need('title'); // the event summary
+        need('start');
+      }
+      if (p.action === 'update_event') need('eventId');
+      if (p.action === 'respond_to_event') {
+        need('eventId');
+        need('attendeeEmail');
+        if (!p.responseStatus) {
+          refCtx.addIssue({ code: 'custom', path: ['responseStatus'], message: 'respond_to_event requires responseStatus' });
+        }
+      }
+    }),
+);
 export type OutboundPayload = z.infer<typeof zOutboundPayload>;
 
 export const PROPOSAL_STATUSES = ['pending', 'accepted', 'rejected', 'stale'] as const;
@@ -50,11 +164,26 @@ export const zNotePayload = z.object({
 });
 export type NotePayload = z.infer<typeof zNotePayload>;
 
-export const zUpdatePayload = z.object({
-  path: z.string().min(1),
-  patch: z.array(zSearchReplace).min(1),
-  rationale: z.string().min(1),
-});
+export const zUpdatePayload = z
+  .object({
+    path: z.string().min(1),
+    /** Body search/replace blocks. Optional: a card may change only frontmatter. */
+    patch: z.array(zSearchReplace).optional(),
+    /**
+     * Frontmatter keys to set on approval (shallow-merged over the note's current
+     * frontmatter) — the only way a card edits metadata like a todo's `due`/`status`,
+     * a meeting's `status`, or a person's `last_told`. Body-only edits omit it.
+     */
+    frontmatter: z.record(z.string(), z.unknown()).optional(),
+    rationale: z.string().min(1),
+    /** Retitle applied on approval via rename semantics (Process-Note names a dump). */
+    title: z.string().optional(),
+  })
+  // A no-op card is meaningless: require at least one real change.
+  .refine((d) => (d.patch?.length ?? 0) > 0 || Object.keys(d.frontmatter ?? {}).length > 0, {
+    message: 'an update must change the body (patch) or the frontmatter',
+    path: ['patch'],
+  });
 export type UpdatePayload = z.infer<typeof zUpdatePayload>;
 
 /** A decision card carries the new decision plus an optional supersede target. */

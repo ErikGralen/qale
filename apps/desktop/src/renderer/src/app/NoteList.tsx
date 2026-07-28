@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { CornerDownRight } from 'lucide-react';
 import type { NoteRefDTO } from '@pm/ipc';
 import { useApp } from '../state/app-state';
+import { navFromEvent } from '../lib/nav';
 import { TagChip } from '../components/TagChip';
 import { formatRefDate } from '../lib/contexts';
 
@@ -56,22 +57,26 @@ export function NoteList({
     <ul className="flex flex-col divide-y divide-border/70" onKeyDown={onListKeyDown}>
       {rows.map((n) => {
         const superseded = n.status === 'superseded';
+        // A cancelled synced meeting stays visible (its notes may matter) but
+        // reads as struck history, not an upcoming commitment.
+        const cancelled = n.eventStatus === 'cancelled';
         const chain = n.supersedes ? refSlug(n.supersedes) : null;
         const chainNote = chain ? bySlug.get(chain) : undefined;
         return (
-          <li key={n.path} className={`group relative hover:bg-accent/40 ${superseded ? 'opacity-65' : ''}`}>
+          <li key={n.path} className={`group relative hover:bg-accent/40 ${superseded || cancelled ? 'opacity-65' : ''}`}>
             <button
               data-note-row
               className="absolute inset-0 w-full cursor-pointer focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset focus-visible:outline-none"
-              onClick={() => void openDoc(n.path)}
-              onDoubleClick={() => void openDoc(n.path, { preview: false })}
+              onClick={(e) => void openDoc(n.path, navFromEvent(e))}
+              onAuxClick={(e) => e.button === 1 && void openDoc(n.path, navFromEvent(e))}
               aria-label={n.title}
             />
             <div className="pointer-events-none relative flex flex-col gap-0.5 px-2 py-2">
               <div className="flex items-baseline gap-2">
-                <span className="min-w-0 truncate text-sm font-medium">{n.title}</span>
+                <span className={`min-w-0 truncate text-sm font-medium ${cancelled ? 'line-through' : ''}`}>{n.title}</span>
                 {showType && <span className="shrink-0 text-xs text-muted-foreground">{n.type}</span>}
                 {superseded && <span className="shrink-0 text-xs text-muted-foreground">superseded</span>}
+                {cancelled && <span className="shrink-0 text-xs text-muted-foreground">cancelled</span>}
                 <span className="ml-auto flex shrink-0 items-center gap-1.5">
                   {(n.tags ?? []).filter((t) => t !== omitTag).map((t) => (
                     <span key={t} className="pointer-events-auto">
@@ -89,7 +94,7 @@ export function NoteList({
                   {chainNote ? (
                     <button
                       className="pointer-events-auto truncate font-medium text-foreground/80 hover:text-brand focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                      onClick={() => void openDoc(chainNote.path)}
+                      onClick={(e) => void openDoc(chainNote.path, navFromEvent(e))}
                     >
                       {chainNote.title}
                     </button>

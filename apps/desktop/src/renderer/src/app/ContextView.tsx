@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Hash } from 'lucide-react';
+import { dirForType } from '@pm/domain';
 import type { NoteRefDTO, NoteType } from '@pm/ipc';
 import { useApp } from '../state/app-state';
 import { NoteList } from './NoteList';
@@ -9,9 +10,8 @@ import { notesInContext, refDate, SPINE_ORDER } from '../lib/contexts';
 /** Section labels in spine order — how a context page reads. */
 const SECTION_LABEL: Record<NoteType, string> = {
   decision: 'Decisions',
-  problem: 'Problems',
+  theme: 'Themes',
   insight: 'Insights',
-  release: 'Releases',
   todo: 'Todos',
   customer: 'Customers',
   person: 'People',
@@ -20,6 +20,8 @@ const SECTION_LABEL: Record<NoteType, string> = {
   source: 'Sources',
   session: 'Sessions',
   skill: 'Skills',
+  ticket: 'Tickets',
+  wikipage: 'Wiki pages',
 };
 
 /** Long sections truncate to this; the folder browse page has the full list. */
@@ -62,7 +64,8 @@ export function ContextView({ tag }: { tag: string }) {
           ) : (
             <div className="flex flex-col gap-5">
               {sections.map((s) => {
-                const dirName = `${SECTION_LABEL[s.type].toLowerCase()}`;
+                // The on-disk folder, not the display label — 'wiki pages' opens nothing.
+                const dirName = dirForType(s.type);
                 const truncated = s.rows.length > SECTION_LIMIT;
                 return (
                   <section key={s.type}>
@@ -76,7 +79,7 @@ export function ContextView({ tag }: { tag: string }) {
                         className="mt-1 rounded px-2 text-xs font-medium text-brand hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                         onClick={() => openFolder(dirName)}
                       >
-                        See all {s.rows.length} in {dirName} →
+                        See all {s.rows.length} {SECTION_LABEL[s.type].toLowerCase()} →
                       </button>
                     )}
                   </section>

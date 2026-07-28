@@ -8,7 +8,8 @@
     "./ports": "./src/ports.ts"
   },
   "scripts": {
-    "check-types": "tsc --noEmit -p tsconfig.json"
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@pm/domain": "workspace:*",
@@ -16,6 +17,7 @@
   },
   "devDependencies": {
     "@pm/typescript-config": "workspace:*",
+    "tsx": "^4.23.1",
     "typescript": "~5.9.2"
   }
 }

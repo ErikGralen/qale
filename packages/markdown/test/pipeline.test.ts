@@ -41,3 +41,16 @@ test('extractLinks finds wikilinks with alias and anchor', () => {
   const links = extractLinks('See [[decisions/pick-x|the call]] and [[notes/y#section]].\n');
   assert.equal(links.length, 2);
 });
+
+test('extractLinks carries the canonical type of [[type::target]] links', () => {
+  const links = extractLinks('Held by [[blocked-by::PAY-155]], see [[evidence::sources/call|the call]] and [[notes/y]].\n');
+  assert.equal(links.length, 3);
+  assert.deepEqual(
+    links.map((l) => ({ target: l.target, linkType: l.linkType, reversed: l.reversed })),
+    [
+      { target: 'PAY-155', linkType: 'blocks', reversed: true },
+      { target: 'sources/call', linkType: 'evidence', reversed: undefined },
+      { target: 'notes/y', linkType: undefined, reversed: undefined },
+    ],
+  );
+});

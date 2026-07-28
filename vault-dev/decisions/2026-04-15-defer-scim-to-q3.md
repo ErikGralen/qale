@@ -6,7 +6,7 @@ status: "active"
 date: "2026-04-15"
 deciders: ["me", "Tom Devlin"]
 sources: ["[[meetings/2026-05-18-nordkap-qbr]]"]
-problem: "[[problems/enterprise-onboarding]]"
+theme: "[[themes/enterprise-onboarding]]"
 ---
 
 One auth migration at a time: SSO unblocks security reviews (pass/fail), SCIM removes ongoing

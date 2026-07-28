@@ -3,6 +3,7 @@ type: "person"
 summary: "Mikkel Sørensen — Head of Operations at Kranelund, exports pilot sponsor"
 tags: ["reporting"]
 role: "Head of Operations, Kranelund Logistics"
+email: "mikkel.sorensen@kranelund.example"
 cares_about: ["Monday ops report", "seasonal seat cost", "depot managers"]
 last_told: "2026-07-09"
 customer: "[[customers/kranelund-logistics]]"

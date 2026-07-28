@@ -8,6 +8,10 @@ import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import type { SearchHitDTO } from '@pm/ipc';
 import { invoke } from '../lib/ipc';
+import { isExternalRef, refMetaCached } from '../lib/connections';
+import { navFromEvent, type NavOpts } from '../lib/nav';
+import { webUrl } from '../lib/urls';
+import { useToast } from './toast';
 import { WikiLink } from './editor/wikilink';
 import { SlashCommand } from './editor/slash-command';
 import { WikilinkSuggest } from './editor/wikilink-suggest';
@@ -65,16 +69,18 @@ export function NoteEditor({
 }: {
   body: string;
   onSave: (body: string) => Promise<void>;
-  onOpenNote: (path: string) => void;
+  /** Receives the click's nav intent so ⌘click opens the note in a new tab. */
+  onOpenNote: (path: string, opts?: NavOpts) => void;
   onDirty?: () => void;
   /** Hand the selected text to an Ask session (bubble toolbar's Ask). */
   onAsk?: (text: string) => void;
   /** Workspace search backing the `[[` wikilink autocomplete. */
   searchNotes?: (query: string) => Promise<SearchHitDTO[]>;
 }) {
+  const toast = useToast();
   // Callbacks live in refs so the editor (created once) never sees stale closures.
-  const callbacks = useRef({ onSave, onOpenNote, onDirty, onAsk, searchNotes });
-  callbacks.current = { onSave, onOpenNote, onDirty, onAsk, searchNotes };
+  const callbacks = useRef({ onSave, onOpenNote, onDirty, onAsk, searchNotes, toast });
+  callbacks.current = { onSave, onOpenNote, onDirty, onAsk, searchNotes, toast };
 
   const lastSaved = useRef(body);
   const pendingMd = useRef<string | null>(null); // captured in onUpdate; survives editor destroy
@@ -90,18 +96,28 @@ export function NoteEditor({
     dirty.current = false;
     const md = pendingMd.current;
     if (md === null || sameBody(md, lastSaved.current)) return;
+    const previous = lastSaved.current;
     lastSaved.current = md;
     void callbacks.current.onSave(md).catch((err: unknown) => {
       console.error('note autosave failed', err);
+      lastSaved.current = previous;
       dirty.current = true;
+      callbacks.current.toast(
+        `Autosave failed: ${err instanceof Error ? err.message : 'the write was rejected.'} Your edit is kept and will retry.`,
+      );
     });
   }, []);
   const flushRef = useRef(flush);
   flushRef.current = flush;
 
-  const openLink = useCallback((target: string) => {
+  const openLink = useCallback((target: string, opts?: NavOpts) => {
     void invoke['note:resolveLink'](target).then((path) => {
-      if (path) callbacks.current.onOpenNote(path);
+      if (path) callbacks.current.onOpenNote(path, opts);
+      // A ticket/wikipage reference with no mirror note yet still opens — in
+      // the provider, from the shallow index. Never a dead click.
+      else if (isExternalRef(target)) {
+        void refMetaCached(target).then((meta) => meta?.url && window.open(meta.url));
+      }
     });
   }, []);
 
@@ -136,8 +152,11 @@ export function NoteEditor({
       // Wikilink pills are atom nodes — ProseMirror hands us the node directly.
       handleClickOn: (_view, _pos, node, _nodePos, event) => {
         if (node.type.name !== 'wikiLink') return false;
+        // The pill's relationship chevron lives inside the atom; it owns its
+        // own gesture (select the node, open the menu) and must not navigate.
+        if ((event.target as HTMLElement).closest('[data-link-type-button]')) return true;
         event.preventDefault();
-        openLink(node.attrs['target'] as string);
+        openLink(node.attrs['target'] as string, navFromEvent(event));
         return true;
       },
       // Regular links render as <a href>; route relative hrefs in-app,
@@ -147,8 +166,12 @@ export function NoteEditor({
         const href = anchor?.getAttribute('href');
         if (!href || href.startsWith('#')) return false;
         event.preventDefault();
-        if (/^[a-z][a-z0-9+.-]*:/i.test(href)) window.open(href);
-        else openLink(decodeURIComponent(href));
+        // A web address (`https://…`, a scheme-less `www.`/`host.tld`) or any
+        // other scheme (`mailto:`) opens externally; a relative href is a note.
+        const web = webUrl(href);
+        if (web) window.open(web);
+        else if (/^[a-z][a-z0-9+.-]*:/i.test(href)) window.open(href);
+        else openLink(decodeURIComponent(href), navFromEvent(event));
         return true;
       },
     },

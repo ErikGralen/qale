@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { FsVault, SqliteIndex, VaultWatcher, GitAdapter, AppDb, type VaultChange } from '@pm/vault';
 import { openVault, type UseCaseContext, type VaultInfo } from '@pm/application';
+import { isReservedFile } from '@pm/domain';
 
 /**
  * Owns the live vault: fs + index + git + watcher for the currently-open vault.
@@ -34,6 +35,11 @@ export class VaultService {
     return this.ctx;
   }
 
+  /** Sync-engine state for the OPEN vault (follows, marks, shallow index). */
+  syncStore(): AppDb['sync'] | null {
+    return this.appDb?.sync ?? null;
+  }
+
   requireContext(): UseCaseContext {
     if (!this.ctx) throw new Error('no vault open');
     return this.ctx;
@@ -50,26 +56,39 @@ export class VaultService {
     if (!this.index) this.index = new SqliteIndex(this.indexPath);
     // Switching to a different vault: the shared index must be rebuilt for it,
     // and the proposal/ping stores swap to that vault's own DB file.
-    if (this.currentPath !== vault.root() || !this.appDb) {
-      if (this.currentPath && this.currentPath !== vault.root()) this.index.clear();
-      this.appDb?.close();
-      this.appDb = new AppDb(this.appDbPathFor(vault.root()));
-    }
+    const switching = this.currentPath !== vault.root() || !this.appDb;
+    const appDb = switching ? new AppDb(this.appDbPathFor(vault.root())) : this.appDb!;
 
     const git = new GitAdapter(path);
-    const clock = { now: () => new Date().toISOString() };
+    const clock = { now: () => localIsoNow() };
     const ctx: UseCaseContext = {
       vault,
       index: this.index,
       git,
       clock,
-      proposals: this.appDb.proposals,
-      pings: this.appDb.pings,
+      proposals: appDb.proposals,
+      pings: appDb.pings,
+      checks: appDb.checks,
     };
 
-    // Only publish the context once the open fully succeeds — a mid-open throw
-    // must not leave requireContext() returning a half-open vault.
-    const info = await openVault(ctx);
+    if (this.currentPath && this.currentPath !== vault.root()) this.index.clear();
+    // Only publish the context (and tear down the old vault's state) once the
+    // open fully succeeds — a mid-open throw must not leave requireContext()
+    // returning a half-open vault or the old vault against closed stores.
+    let info: VaultInfo;
+    try {
+      info = await openVault(ctx);
+    } catch (err) {
+      if (appDb !== this.appDb) appDb.close();
+      if (this.ctx && this.currentPath && this.currentPath !== vault.root()) {
+        this.index.clear();
+        await openVault(this.ctx).catch(() => undefined);
+      }
+      if (this.currentPath) this.startWatcher(this.currentPath);
+      throw err;
+    }
+    if (this.appDb && this.appDb !== appDb) this.appDb.close();
+    this.appDb = appDb;
     this.ctx = ctx;
     this.currentPath = vault.root();
     this.startWatcher(vault.root());
@@ -81,6 +100,10 @@ export class VaultService {
       onBatch: async (changes: VaultChange[]) => {
         if (!this.ctx || !this.index) return;
         for (const change of changes) {
+          // Reserved files (index.md/log.md) are orientation, not notes — never
+          // index them, so the librarian regenerating index.md can't loop back
+          // in as a phantom note here.
+          if (isReservedFile(change.path)) continue;
           if (change.kind === 'remove') {
             this.index.removeByPath(change.path);
           } else {
@@ -107,4 +130,19 @@ export class VaultService {
     this.appDb = null;
     this.ctx = null;
   }
+}
+
+/** Local-offset ISO timestamp (e.g. `…T14:05:00.000+02:00`) — every consumer
+ *  that slices the date out gets the user's LOCAL day, not the UTC one. */
+function localIsoNow(): string {
+  const d = new Date();
+  const pad = (n: number, w = 2): string => String(n).padStart(w, '0');
+  const offset = -d.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  const abs = Math.abs(offset);
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}` +
+    `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+  );
 }

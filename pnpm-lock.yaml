@@ -44,6 +44,9 @@ importers:
       '@pm/atlassian':
         specifier: workspace:*
         version: link:../../packages/atlassian
+      '@pm/connectors':
+        specifier: workspace:*
+        version: link:../../packages/connectors
       '@pm/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -224,6 +227,9 @@ importers:
       '@pm/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      tsx:
+        specifier: ^4.23.1
+        version: 4.23.1
       typescript:
         specifier: ~5.9.2
         version: 5.9.3
@@ -243,6 +249,31 @@ importers:
       '@types/turndown':
         specifier: ^5.0.5
         version: 5.0.6
+      typescript:
+        specifier: ~5.9.2
+        version: 5.9.3
+
+  packages/connectors:
+    dependencies:
+      '@pm/atlassian':
+        specifier: workspace:*
+        version: link:../atlassian
+      '@pm/domain':
+        specifier: workspace:*
+        version: link:../domain
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@pm/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsx:
+        specifier: ^4.23.1
+        version: 4.23.1
       typescript:
         specifier: ~5.9.2
         version: 5.9.3

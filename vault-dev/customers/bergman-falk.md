@@ -17,7 +17,7 @@ teams. Deal owner: [[people/david-strand]]. Their side is run by [[people/elin-v
   then their review board ([[meetings/2026-07-02-bergman-falk-security-review]]).
 - SSO through their IdP is an automatic requirement for any firm-wide rollout. Our 2026-07-28
   SSO date lands inside their review window — tight but workable
-  ([[releases/2026-07-sso-saml]]).
+  ([[tickets/PAY-142]]).
 
 ## We owe them
 - Sent 2026-07-06: completed questionnaire, ISO 27001 certificate, subprocessor list,

@@ -2,6 +2,7 @@
 type: "person"
 summary: "David Strand — Head of Sales, owns Bergman & Falk and Fenno deals"
 role: "Head of Sales"
+email: "david@tavla.example"
 cares_about: ["Bergman & Falk deal", "pipeline", "pricing exceptions"]
 last_told: "2026-07-10"
 ---

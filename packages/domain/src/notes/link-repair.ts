@@ -1,4 +1,5 @@
-import { basename, normalizeLinkTarget, slugify } from './slug.js';
+import { linkTypeToken } from './link-types.js';
+import { asciiFold, basename, normalizeLinkTarget, slugify } from './slug.js';
 
 /**
  * Deterministic link repair (the librarian's work-ahead pass): given a wikilink
@@ -18,8 +19,7 @@ export interface LinkRepairCandidate {
 
 /** Lowercase-kebab form used for all comparisons ("Tom Devlin" ≈ tom-devlin). */
 function norm(text: string): string {
-  return text
-    .toLowerCase()
+  return asciiFold(text.toLowerCase())
     .replace(/[\s_]+/g, '-')
     .replace(/[^a-z0-9/-]/g, '')
     .replace(/-+/g, '-')
@@ -174,9 +174,12 @@ export function buildLinkRepairPatch(
   WIKILINK.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = WIKILINK.exec(body)) !== null) {
-    const { target, anchor, alias } = normalizeLinkTarget(match[1] ?? '');
+    const { target, anchor, alias, linkType, reversed } = normalizeLinkTarget(match[1] ?? '');
     if (target !== oldTarget) continue;
-    const replace = `[[${newSlug}${anchor ? `#${anchor}` : ''}${alias ? `|${alias}` : ''}]]`;
+    // Re-emit the type in the author's direction — a repair must repoint the
+    // link, never silently strip its relationship.
+    const type = linkType ? `${linkTypeToken(linkType, reversed)}::` : '';
+    const replace = `[[${type}${newSlug}${anchor ? `#${anchor}` : ''}${alias ? `|${alias}` : ''}]]`;
     if (match[0] === replace) continue;
     blocks.push({ search: match[0], replace });
   }

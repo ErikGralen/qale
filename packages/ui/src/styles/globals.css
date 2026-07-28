@@ -267,4 +267,28 @@
   .note-link[data-unresolved='true'] {
     @apply bg-destructive/8 text-destructive;
   }
+  /* The relationship chevron stays visible while its link is the selection —
+     the menu it opens is anchored there, so the pill must keep announcing it. */
+  .note-body .ProseMirror-selectednode .link-type-btn {
+    @apply opacity-100;
+  }
+
+  /*
+   * Person avatar. The hue comes from the person's slug (`--person-hue`), so
+   * the same face keeps the same colour in every meeting — recognition the PO
+   * never has to configure. Translucent fill sits on either theme; the initials
+   * darken on light and lift on dark so contrast holds both ways.
+   */
+  .person-avatar {
+    background-color: color-mix(in oklab, oklch(0.66 0.13 var(--person-hue)) 20%, transparent);
+    color: oklch(0.45 0.11 var(--person-hue));
+  }
+  .dark .person-avatar {
+    background-color: color-mix(in oklab, oklch(0.66 0.13 var(--person-hue)) 26%, transparent);
+    color: oklch(0.86 0.08 var(--person-hue));
+  }
+  /* Nobody has a page for them yet — a face without a file. */
+  .person-avatar[data-unknown='true'] {
+    @apply bg-transparent text-muted-foreground ring-1 ring-border ring-inset;
+  }
 }

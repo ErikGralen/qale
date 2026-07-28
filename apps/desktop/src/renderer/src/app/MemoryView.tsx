@@ -1,37 +1,41 @@
 import { useMemo } from 'react';
-import { isFolderIndex } from '@pm/domain';
-import { ChevronRight, Library } from 'lucide-react';
+import { dirForType, isFolderIndex, layerForType } from '@pm/domain';
+import { Button } from '@pm/ui';
+import { ChevronRight, FileUp, Inbox, Library, Mic } from 'lucide-react';
 import type { NoteRefDTO, NoteType, VaultTreeGroupDTO } from '@pm/ipc';
 import { useApp } from '../state/app-state';
+import { navFromEvent } from '../lib/nav';
+import { requestCapture } from '../lib/capture-event';
 import { noteTypeIcon } from '../lib/note-icons';
 import { isUnprocessedSource, needsReview } from '../lib/note-status';
 
-/** Page order: the working set first, then the reference shelves. */
-const TYPE_ORDER: readonly NoteType[] = [
-  'meeting',
-  'decision',
-  'problem',
-  'release',
-  'source',
-  'insight',
-  'customer',
-  'person',
-  'session',
-  'note',
+/**
+ * The shelves, clustered by what they are to the PO — four plain groups keep
+ * the full ceiling scannable where a flat wall of twelve types read as bloat.
+ * Notes sits alone on top as the desk. A type only renders once *revealed*
+ * (the memory has ever held one); a shelf with no revealed types doesn't
+ * render at all, so week one shows two rows and week six shows the instrument.
+ */
+const SHELVES: readonly { label: string; types: readonly NoteType[] }[] = [
+  { label: 'Record', types: ['meeting', 'source', 'session'] },
+  { label: 'Judgment', types: ['decision', 'insight', 'theme'] },
+  { label: 'People', types: ['customer', 'person'] },
+  { label: 'Delivery', types: ['ticket', 'wikipage'] },
 ];
 
 /** What each shelf holds — the whole subtitle: note titles here read as bloat. */
 const TYPE_DESC: Partial<Record<NoteType, string>> = {
-  meeting: 'Transcripts and their After-Meeting reviews.',
+  meeting: 'Meetings and their After-Meeting reviews — transcripts live in sources.',
   decision: 'The decision spine — active calls, and the chain of what they superseded.',
-  problem: 'Durable problem statements, accreting evidence.',
-  release: 'What is planned and what shipped.',
+  theme: 'The durable things worth solving, accreting evidence.',
   source: 'Raw dumped material — analyzed, never edited.',
   insight: 'Claims extracted from meetings, each citing its evidence.',
   customer: 'Accounts the memory knows, prospect to churned.',
   person: 'Stakeholders — what they care about, what they were last told.',
   session: 'Filed conversation logs.',
   note: 'Untyped notes and quick captures.',
+  ticket: 'Jira mirrors — delivery truth the memory links against.',
+  wikipage: 'Confluence mirrors — the pages your updates land on.',
 };
 
 /** The one number per shelf that means "waiting on you", in the flag voice. */
@@ -48,16 +52,21 @@ function attentionFor(type: NoteType, notes: NoteRefDTO[]): string | null {
 }
 
 function ShelfRow({ group }: { group: VaultTreeGroupDTO }) {
-  const { openFolder } = useApp();
+  const { openFolder, revealNew, markRevealSeen } = useApp();
   const notes = useMemo(() => group.notes.filter((n) => !isFolderIndex(n.path)), [group]);
   const Icon = noteTypeIcon(group.type);
   const attention = attentionFor(group.type, notes);
+  // Freshly earned: the memory just filed its first of this type. The word (not
+  // color alone) carries it; visiting the shelf clears it.
+  const isNew = revealNew.has(group.type);
   return (
     <li>
       <button
         className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors duration-150 hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-        onClick={() => openFolder(group.dir)}
-        onDoubleClick={() => openFolder(group.dir, { preview: false })}
+        onClick={(e) => {
+          if (isNew) markRevealSeen(group.type);
+          openFolder(group.dir, navFromEvent(e));
+        }}
         title={`Browse all ${group.dir}`}
       >
         <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -65,6 +74,12 @@ function ShelfRow({ group }: { group: VaultTreeGroupDTO }) {
           <span className="flex items-baseline gap-2">
             <span className="text-sm font-medium capitalize">{group.dir}</span>
             <span className="text-xs text-muted-foreground tabular-nums">{notes.length}</span>
+            {isNew && (
+              <span className="flex items-center gap-1 text-xs font-medium text-brand">
+                <span className="size-1.5 rounded-full bg-brand" aria-hidden />
+                New
+              </span>
+            )}
             {attention && <span className="text-xs font-medium text-warning">{attention}</span>}
           </span>
           <span className="block truncate text-xs text-muted-foreground">
@@ -80,24 +95,94 @@ function ShelfRow({ group }: { group: VaultTreeGroupDTO }) {
   );
 }
 
+/** One quiet sentence teaching the ceiling — what the memory hasn't grown yet. */
+function GrowthFooter({ unrevealed }: { unrevealed: readonly NoteType[] }) {
+  if (unrevealed.length === 0) return null;
+  return (
+    <p className="px-3 pt-4 text-xs text-muted-foreground/80">
+      As the memory grows: {unrevealed.map((t) => dirForType(t)).join(', ')}.
+    </p>
+  );
+}
+
 /**
- * The whole memory, one shelf per note type (the sidebar rail carries only the
- * working set — meetings, decisions, problems, releases). Each row: what the
- * shelf holds, how much, and anything on it waiting for the PO — never
- * individual note titles, which read as inventory bloat. Week 6 should still
- * read fuller than week 1 through the counts.
+ * Day one, before anything is filed: the Memory page teaches the loop instead
+ * of showing a wall of empty shelves. One real sequence — in, approve, accrete
+ * — and one action. The shelves replace this the moment the first note lands.
+ */
+function FirstRun() {
+  const steps = [
+    {
+      icon: Mic,
+      title: 'A transcript goes in',
+      desc: 'Any meeting you already have — drop the file anywhere, or paste it with ⇧⌘N.',
+    },
+    {
+      icon: Inbox,
+      title: 'You approve what it finds',
+      desc: 'Decisions, actions, and drafts arrive as cards. Nothing is written silently.',
+    },
+    {
+      icon: Library,
+      title: 'The memory accretes',
+      desc: 'Every claim files with its source. Week six answers what week one couldn’t.',
+    },
+  ];
+  return (
+    <div className="mx-auto flex w-full max-w-md flex-col gap-6 pt-10">
+      <h1 className="font-serif text-2xl font-semibold tracking-tight text-balance">
+        The memory starts with a meeting.
+      </h1>
+      <ol className="flex flex-col gap-4">
+        {steps.map((s) => (
+          <li key={s.title} className="flex items-start gap-3">
+            <s.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">{s.title}</span>
+              <span className="block text-sm text-muted-foreground">{s.desc}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <div>
+        <Button size="sm" onClick={() => requestCapture()}>
+          <FileUp className="size-3.5" /> Drop a transcript
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground/80">
+        Shelves appear here as it grows — decisions, insights, customers, themes, and the rest.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The whole memory, one shelf per *revealed* note type, clustered so the eye
+ * chunks the ceiling instead of scrolling a wall. Each row: what the shelf
+ * holds, how much, and anything on it waiting for the PO — never individual
+ * note titles, which read as inventory bloat. Week 6 should read fuller than
+ * week 1 through the shelves themselves, not just the counts.
  */
 export function MemoryView() {
-  const { tree } = useApp();
-  const groups = useMemo(() => {
-    const content = (tree?.groups ?? []).filter((g) => g.type !== 'skill' && g.type !== 'todo');
-    const rank = (g: VaultTreeGroupDTO): number => {
-      const i = TYPE_ORDER.indexOf(g.type);
-      return i === -1 ? TYPE_ORDER.length : i;
-    };
-    return [...content].sort((a, b) => rank(a) - rank(b) || a.dir.localeCompare(b.dir));
+  const { tree, revealed } = useApp();
+  const byType = useMemo(() => {
+    const m = new Map<NoteType, VaultTreeGroupDTO>();
+    for (const g of tree?.groups ?? []) m.set(g.type, g);
+    return m;
   }, [tree]);
-  const total = groups.reduce((sum, g) => sum + g.notes.filter((n) => !isFolderIndex(n.path)).length, 0);
+  // Earned stays earned: a revealed shelf renders even at zero, synthesized
+  // empty if the memory currently holds none.
+  const groupFor = (t: NoteType): VaultTreeGroupDTO =>
+    byType.get(t) ?? { dir: dirForType(t), type: t, layer: layerForType(t), notes: [] };
+  const shelves = SHELVES.map((s) => ({
+    label: s.label,
+    groups: s.types.filter((t) => revealed.has(t)).map(groupFor),
+  })).filter((s) => s.groups.length > 0);
+  const unrevealed = SHELVES.flatMap((s) => s.types).filter((t) => !revealed.has(t));
+
+  const total = [...byType.values()]
+    .filter((g) => g.type !== 'skill' && g.type !== 'todo')
+    .reduce((sum, g) => sum + g.notes.filter((n) => !isFolderIndex(n.path)).length, 0);
 
   return (
     <div className="flex h-full flex-col">
@@ -108,16 +193,28 @@ export function MemoryView() {
 
       <div className="flex-1 overflow-y-auto px-8 py-4">
         <div className="mx-auto w-full max-w-2xl">
-          {groups.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-muted-foreground">
-              Nothing filed yet — drop a transcript or capture anything with ⇧⌘N and the memory starts here.
-            </p>
+          {total === 0 ? (
+            <FirstRun />
           ) : (
-            <ul className="flex flex-col gap-0.5">
-              {groups.map((g) => (
-                <ShelfRow key={g.dir} group={g} />
+            <>
+              {/* The desk — the scratch pad rides on top, ungrouped. */}
+              <ul className="flex flex-col gap-0.5">
+                <ShelfRow group={groupFor('note')} />
+              </ul>
+              {shelves.map((s) => (
+                <section key={s.label} className="mt-5">
+                  <h2 className="px-3 pb-1 text-xs font-medium tracking-wide text-muted-foreground/80 uppercase">
+                    {s.label}
+                  </h2>
+                  <ul className="flex flex-col gap-0.5">
+                    {s.groups.map((g) => (
+                      <ShelfRow key={g.dir} group={g} />
+                    ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+              <GrowthFooter unrevealed={unrevealed} />
+            </>
           )}
         </div>
       </div>

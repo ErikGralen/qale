@@ -31,6 +31,13 @@ export const BlockHandle = Extension.create({
 
     const container = document.createElement('div');
     container.className = 'pm-block-handle';
+    // DragHandlePlugin only hides the handle after a mouseleave — it never
+    // hides it on mount. Without this, a freshly created editor (note switch
+    // remounts us) paints the handle at the wrapper's origin, floating over the
+    // text, until the first mousemove repositions it into the gutter. Start it
+    // in the plugin's own hidden state so the first hover is the first paint.
+    container.style.visibility = 'hidden';
+    container.style.pointerEvents = 'none';
 
     const addBtn = document.createElement('button');
     addBtn.type = 'button';

@@ -5,7 +5,7 @@ tags: ["enterprise-auth"]
 evidence: ["[[meetings/2026-05-18-nordkap-qbr]]", "[[meetings/2026-07-14-nordkap-checkin]]"]
 confidence: "high"
 customer: "[[customers/nordkap-payments]]"
-problem: "[[problems/enterprise-onboarding]]"
+theme: "[[themes/enterprise-onboarding]]"
 ---
 
 Nordkap onboarded 60 people in March and 14 more last week, every account created manually by

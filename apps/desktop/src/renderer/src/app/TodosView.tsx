@@ -11,14 +11,17 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { Spinner } from '@pm/ui';
+import { Spinner, cn } from '@pm/ui';
 import type { NoteRefDTO } from '@pm/ipc';
 import { byDue, todoLane, type TodoLane, isFolderIndex } from '@pm/domain';
 import { useApp } from '../state/app-state';
+import { navFromEvent } from '../lib/nav';
 import { useToast } from '../components/toast';
+import { AtRiskMarker, riskFor, useAtRisk } from '../components/ExternalRef';
 import { localDateStr } from '../lib/dates';
 import { parseTodoInput } from '../lib/todo-parse';
-import { overdueTriageSeed, type OverdueTodoRef } from '../lib/agent-nudges';
+import { handleTodoSeed } from '../lib/agent-nudges';
+import type { AtRiskLinkDTO } from '../lib/connections';
 
 /**
  * The commitment ledger (PLAN-V2 Todos): the PO's own todos lane-grouped by due
@@ -40,6 +43,17 @@ const LANE_LABEL: Record<TodoLane, string> = {
 
 const dueFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
 const dueFmtYear = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const todayHeadFmt = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+
+/** today + n days as a local YYYY-MM-DD string — the this-week / later cutoff. */
+function addDays(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00`);
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 /** "today" / "tomorrow" / "18 Jul" — compact, relative where it reads faster. */
 function dueLabel(due: string, today: string): string {
@@ -143,6 +157,7 @@ function TodoRowItem({
   today,
   peopleBySlug,
   busy,
+  risk,
   onToggle,
   onDrop,
   onReopen,
@@ -151,11 +166,13 @@ function TodoRowItem({
   today: string;
   peopleBySlug: Map<string, NoteRefDTO>;
   busy: boolean;
+  /** A linked ticket went blocked / drifted — the commitment may be at risk. */
+  risk?: AtRiskLinkDTO;
   onToggle: () => void;
   onDrop: () => void;
   onReopen: () => void;
 }) {
-  const { openDoc } = useApp();
+  const { openDoc, openSession } = useApp();
   const n = row.note;
   const closed = row.lane === 'closed';
   const dropped = n.status === 'dropped';
@@ -173,8 +190,8 @@ function TodoRowItem({
       <button
         data-todo-row
         className="absolute inset-0 w-full cursor-pointer focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset focus-visible:outline-none"
-        onClick={() => void openDoc(n.path)}
-        onDoubleClick={() => void openDoc(n.path, { preview: false })}
+        onClick={(e) => void openDoc(n.path, navFromEvent(e))}
+        onAuxClick={(e) => e.button === 1 && void openDoc(n.path, navFromEvent(e))}
         onKeyDown={(e) => {
           if (e.key === ' ') {
             e.preventDefault();
@@ -187,7 +204,9 @@ function TodoRowItem({
         }}
         aria-label={`${n.title}${n.due ? `, due ${dueLabel(n.due, today)}` : ''}${
           row.overdue ? ', overdue' : ''
-        }${ownerName ? `, waiting on ${ownerName}` : ''}${closed ? (dropped ? ', dropped' : ', done') : ''}`}
+        }${ownerName ? `, waiting on ${ownerName}` : ''}${
+          risk && !closed ? `, at risk — ${risk.externalId} ${risk.reason === 'blocked' ? 'blocked' : 'changed'}` : ''
+        }${closed ? (dropped ? ', dropped' : ', done') : ''}`}
         aria-keyshortcuts="Space Enter"
         title={n.title}
       />
@@ -221,6 +240,12 @@ function TodoRowItem({
         >
           {n.title}
         </span>
+
+        {risk && !closed && (
+          <span className="pointer-events-auto shrink-0">
+            <AtRiskMarker risk={risk} onOpen={(p) => void openDoc(p)} />
+          </span>
+        )}
 
         {ownerName && row.lane !== 'waiting' && !closed && (
           <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
@@ -275,6 +300,26 @@ function TodoRowItem({
 
         {!closed && (
           <button
+            className="pointer-events-auto shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-brand focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            onClick={() =>
+              openSession('commitment-check', {
+                initialPrompt: handleTodoSeed(
+                  { path: n.path, title: n.title, due: n.due, owner: n.owner },
+                  today,
+                ),
+                title: `Handle — ${n.title}`,
+                fresh: true,
+              })
+            }
+            aria-label={`Help me handle "${n.title}"`}
+            title="Help me handle this — the memory plans it out as approval cards"
+          >
+            <Sparkles className="size-3.5" aria-hidden />
+          </button>
+        )}
+
+        {!closed && (
+          <button
             className="pointer-events-auto shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
             onClick={onDrop}
             disabled={busy}
@@ -289,10 +334,56 @@ function TodoRowItem({
   );
 }
 
+/** Lane / band header: label + count pill, an optional flag and a trailing action. */
+function LaneHead({
+  label,
+  count,
+  focus = false,
+  dot = false,
+  flag,
+  action,
+}: {
+  label: string;
+  count: number;
+  focus?: boolean;
+  dot?: boolean;
+  flag?: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-1.5 flex items-center gap-1.5 px-1">
+      {dot && <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-hidden />}
+      <h3
+        className={cn(
+          'flex items-center gap-1.5 text-[0.6875rem] font-semibold tracking-[0.07em] uppercase',
+          focus ? 'text-foreground' : 'text-muted-foreground',
+        )}
+      >
+        {label}
+        <span className="rounded bg-muted px-1.5 py-px text-[0.6875rem] font-semibold text-muted-foreground tabular-nums">
+          {count}
+        </span>
+      </h3>
+      {flag}
+      {action && <div className="ml-auto flex items-center">{action}</div>}
+    </div>
+  );
+}
+
+/** Sub-tier divider inside a lane (this week / later). */
+function SubLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-2 pt-2 pb-0.5 text-[0.625rem] font-semibold tracking-wide text-muted-foreground/70 uppercase first:pt-0.5">
+      {children}
+    </div>
+  );
+}
+
 export function TodosView() {
-  const { tree, setTodoStatus, openFolder, openSession } = useApp();
+  const { tree, setTodoStatus, openFolder } = useApp();
   const toast = useToast();
   const today = localDateStr();
+  const risks = useAtRisk();
   const [showDone, setShowDone] = useState(false);
   /** Optimistic status while the write+reindex round-trips. */
   const [pending, setPending] = useState<Record<string, string>>({});
@@ -340,26 +431,24 @@ export function TodosView() {
   const waitingCount = lanes.get('waiting')?.length ?? 0;
   const closedRows = lanes.get('closed') ?? [];
 
-  // Every slipped commitment — the PO's own and waiting-on — for agent triage.
-  const triageTodos = useMemo(() => {
-    const toRef = (r: TodoRow): OverdueTodoRef => ({
-      path: r.note.path,
-      title: r.note.title,
-      due: r.note.due ?? '',
-      owner: r.note.owner ?? null,
-    });
-    return {
-      own: (lanes.get('overdue') ?? []).map(toRef),
-      waiting: (lanes.get('waiting') ?? []).filter((r) => r.overdue).map(toRef),
-    };
-  }, [lanes]);
+  // The board reads by time-horizon. "Now" fuses overdue + due-today into the one
+  // worklist to clear before the next meeting; the three horizon lanes sit below
+  // it, quieter and recessed. Overdue is folded in (not its own lane) because for
+  // a PO between meetings "already late" and "due today" are one act-now list.
+  const overdueRows = lanes.get('overdue') ?? [];
+  const nowRows = [...overdueRows, ...(lanes.get('today') ?? [])];
+  const upcomingRows = lanes.get('upcoming') ?? [];
+  const somedayRows = lanes.get('someday') ?? [];
+  const waitingRows = lanes.get('waiting') ?? [];
 
-  const triage = () =>
-    openSession('librarian', {
-      initialPrompt: overdueTriageSeed(triageTodos.own, triageTodos.waiting, today),
-      title: 'Triage overdue',
-      fresh: true,
-    });
+  // Split Upcoming so "next week and beyond" reads as its own tier from "this week".
+  const weekCutoff = addDays(today, 7);
+  const thisWeekRows = upcomingRows.filter((r) => (r.note.due ?? '') < weekCutoff);
+  const laterRows = upcomingRows.filter((r) => (r.note.due ?? '') >= weekCutoff);
+
+  const ownOverdue = overdueRows.length;
+  const waitingOverdue = waitingRows.filter((r) => r.overdue).length;
+  const todayHead = todayHeadFmt.format(new Date(`${today}T00:00`));
 
   const flip = async (path: string, status: 'open' | 'done' | 'dropped') => {
     setPending((p) => ({ ...p, [path]: status }));
@@ -389,6 +478,25 @@ export function TodosView() {
     buttons[Math.min(buttons.length - 1, Math.max(0, idx + (down ? 1 : -1)))]?.focus();
   };
 
+  /** One lane's rows as a divided list — shared by every band and column. */
+  const renderRows = (rows: TodoRow[]) => (
+    <ul className="flex flex-col divide-y divide-border/60">
+      {rows.map((row) => (
+        <TodoRowItem
+          key={row.note.path}
+          row={row}
+          today={today}
+          peopleBySlug={peopleBySlug}
+          busy={row.note.path in pending}
+          risk={riskFor(risks, row.note.path)}
+          onToggle={() => void flip(row.note.path, 'done')}
+          onDrop={() => void flip(row.note.path, 'dropped')}
+          onReopen={() => void flip(row.note.path, 'open')}
+        />
+      ))}
+    </ul>
+  );
+
   const empty = todos.length === 0;
   const allClear = !empty && LANE_ORDER.slice(0, 5).every((l) => (lanes.get(l)?.length ?? 0) === 0);
 
@@ -398,12 +506,18 @@ export function TodosView() {
         <ListTodo className="size-4" aria-hidden /> Todos
         {!empty && (
           <span className="text-xs">
-            · {openCount} open{waitingCount > 0 ? ` · ${waitingCount} waiting` : ''}
+            · {openCount} open
+            {ownOverdue > 0 && <span className="font-semibold text-warning"> · {ownOverdue} overdue</span>}
+            {waitingCount > 0 ? ` · ${waitingCount} waiting` : ''}
           </span>
         )}
+        <span className="ml-auto text-xs text-muted-foreground/80 tabular-nums">{todayHead}</span>
       </div>
 
-      <div className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-8 py-4" onKeyDown={onListKeyDown}>
+      <div
+        className="mx-auto w-full max-w-4xl flex-1 overflow-y-auto px-8 py-5"
+        onKeyDown={onListKeyDown}
+      >
         <QuickAdd />
 
         {empty ? (
@@ -417,110 +531,141 @@ export function TodosView() {
               them from transcripts as approval cards, each citing where it was said.
             </p>
           </div>
+        ) : allClear ? (
+          <section className="flex items-center gap-3 rounded-xl bg-card px-4 py-5 ring-1 ring-border">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success/10">
+              <Check className="size-5 text-success" aria-hidden />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">All clear — nothing open, nothing owed.</p>
+              <p className="text-sm text-muted-foreground">
+                New commitments land here as you capture them or approve them from a session.
+              </p>
+            </div>
+          </section>
         ) : (
-          <>
-            {allClear && (
-              <div className="mb-2 flex items-center gap-2 px-2 py-3 text-sm text-muted-foreground">
-                <Check className="size-4 text-success" aria-hidden />
-                All clear — nothing open, nothing owed.
+          <div className="flex flex-col gap-4">
+            {/* NOW — the raised worklist to clear today; overdue folded in and flagged. */}
+            <section className="rounded-xl bg-card p-3 ring-1 ring-border sm:p-4">
+              <LaneHead
+                label="Now"
+                count={nowRows.length}
+                focus
+                dot
+                flag={
+                  ownOverdue > 0 ? (
+                    <span className="flex items-center gap-1 text-[0.6875rem] font-semibold text-warning">
+                      <TriangleAlert className="size-3" aria-hidden />
+                      {ownOverdue} overdue
+                    </span>
+                  ) : undefined
+                }
+              />
+              {nowRows.length > 0 ? (
+                renderRows(nowRows)
+              ) : (
+                <div className="flex items-center gap-2 px-2 py-2.5 text-sm text-muted-foreground">
+                  <Check className="size-4 text-success" aria-hidden />
+                  Nothing due today — you're ahead.
+                </div>
+              )}
+            </section>
+
+            {/* HORIZON — full-width lanes below the fold so titles never truncate. */}
+            {upcomingRows.length + somedayRows.length + waitingRows.length > 0 && (
+              <div className="flex flex-col gap-6 border-t border-border/60 pt-4">
+                {upcomingRows.length > 0 && (
+                  <section>
+                    <LaneHead label="Upcoming" count={upcomingRows.length} />
+                    {thisWeekRows.length > 0 && (
+                      <>
+                        {laterRows.length > 0 && <SubLabel>This week</SubLabel>}
+                        {renderRows(thisWeekRows)}
+                      </>
+                    )}
+                    {laterRows.length > 0 && (
+                      <>
+                        {thisWeekRows.length > 0 && <SubLabel>Later</SubLabel>}
+                        {renderRows(laterRows)}
+                      </>
+                    )}
+                  </section>
+                )}
+
+                {somedayRows.length > 0 && (
+                  <section>
+                    <LaneHead label="Someday" count={somedayRows.length} />
+                    {renderRows(somedayRows)}
+                  </section>
+                )}
+
+                {waitingRows.length > 0 && (
+                  <section>
+                    <LaneHead
+                      label="Waiting on others"
+                      count={waitingRows.length}
+                      flag={
+                        waitingOverdue > 0 ? (
+                          <span className="flex items-center gap-1 text-[0.6875rem] font-semibold text-warning">
+                            <TriangleAlert className="size-3" aria-hidden />
+                            {waitingOverdue} overdue
+                          </span>
+                        ) : undefined
+                      }
+                    />
+                    {renderRows(waitingRows)}
+                  </section>
+                )}
               </div>
             )}
-            {LANE_ORDER.slice(0, 5).map((lane) => {
-              const rows = lanes.get(lane) ?? [];
-              if (rows.length === 0) return null;
-              // Slipped commitments get the agent's triage — reschedule, close,
-              // or draft a nudge; every change comes back as an approval card.
-              const showTriage =
-                lane === 'overdue' ||
-                (lane === 'waiting' && triageTodos.own.length === 0 && rows.some((r) => r.overdue));
-              return (
-                <section key={lane} className="mb-5">
-                  <div className="mb-1 flex items-baseline gap-1.5 px-2">
-                    <h3
-                      className={`flex items-baseline gap-1.5 text-xs font-medium uppercase tracking-wide ${
-                        lane === 'overdue' ? 'text-warning' : 'text-muted-foreground/80'
-                      }`}
-                    >
-                      {lane === 'overdue' && <TriangleAlert className="size-3 self-center" aria-hidden />}
-                      {LANE_LABEL[lane]}
-                      <span className="font-semibold tabular-nums">{rows.length}</span>
-                    </h3>
-                    {showTriage && (
-                      <button
-                        className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-brand focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                        onClick={triage}
-                        title="Reschedule, close, or draft nudges — each change is an approval card"
-                      >
-                        <Sparkles className="size-3" aria-hidden />
-                        Triage with the agent
-                      </button>
-                    )}
-                  </div>
-                  <ul className="flex flex-col divide-y divide-border/70">
-                    {rows.map((row) => (
-                      <TodoRowItem
-                        key={row.note.path}
-                        row={row}
-                        today={today}
-                        peopleBySlug={peopleBySlug}
-                        busy={row.note.path in pending}
-                        onToggle={() => void flip(row.note.path, 'done')}
-                        onDrop={() => void flip(row.note.path, 'dropped')}
-                        onReopen={() => void flip(row.note.path, 'open')}
-                      />
-                    ))}
-                  </ul>
-                </section>
-              );
-            })}
+          </div>
+        )}
 
-            {closedRows.length > 0 && (
-              <section className="mb-5">
-                <button
-                  className="mb-1 flex items-baseline gap-1.5 rounded px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                  onClick={() => setShowDone((s) => !s)}
-                  aria-expanded={showDone}
-                >
-                  {LANE_LABEL.closed}
-                  <span className="font-semibold tabular-nums">{closedRows.length}</span>
-                  <span className="normal-case tracking-normal">{showDone ? 'hide' : 'show'}</span>
-                </button>
-                {showDone && (
-                  <>
-                    <ul className="flex flex-col divide-y divide-border/70">
-                      {closedRows.slice(0, 30).map((row) => (
-                        <TodoRowItem
-                          key={row.note.path}
-                          row={row}
-                          today={today}
-                          peopleBySlug={peopleBySlug}
-                          busy={row.note.path in pending}
-                          onToggle={() => void flip(row.note.path, 'done')}
-                          onDrop={() => void flip(row.note.path, 'dropped')}
-                          onReopen={() => void flip(row.note.path, 'open')}
-                        />
-                      ))}
-                    </ul>
-                    {closedRows.length > 30 && (
-                      <button
-                        className="mt-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                        onClick={() => openFolder('todos')}
-                      >
-                        {closedRows.length - 30} more in todos/ →
-                      </button>
-                    )}
-                  </>
+        {closedRows.length > 0 && (
+          <section className="mt-5">
+            <button
+              className="mb-1 flex items-baseline gap-1.5 rounded px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              onClick={() => setShowDone((s) => !s)}
+              aria-expanded={showDone}
+            >
+              {LANE_LABEL.closed}
+              <span className="font-semibold tabular-nums">{closedRows.length}</span>
+              <span className="normal-case tracking-normal">{showDone ? 'hide' : 'show'}</span>
+            </button>
+            {showDone && (
+              <>
+                <ul className="flex flex-col divide-y divide-border/60">
+                  {closedRows.slice(0, 30).map((row) => (
+                    <TodoRowItem
+                      key={row.note.path}
+                      row={row}
+                      today={today}
+                      peopleBySlug={peopleBySlug}
+                      busy={row.note.path in pending}
+                      onToggle={() => void flip(row.note.path, 'done')}
+                      onDrop={() => void flip(row.note.path, 'dropped')}
+                      onReopen={() => void flip(row.note.path, 'open')}
+                    />
+                  ))}
+                </ul>
+                {closedRows.length > 30 && (
+                  <button
+                    className="mt-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    onClick={() => openFolder('todos')}
+                  >
+                    {closedRows.length - 30} more in todos/ →
+                  </button>
                 )}
-              </section>
+              </>
             )}
+          </section>
+        )}
 
-            {closedRows.length > 0 && !empty && (
-              <p className="flex items-center gap-1 px-2 pb-4 text-xs text-muted-foreground/70">
-                <RotateCcw className="size-3" aria-hidden />
-                Done and dropped todos stay on the ledger — the memory accretes.
-              </p>
-            )}
-          </>
+        {closedRows.length > 0 && (
+          <p className="mt-3 flex items-center gap-1 px-2 pb-4 text-xs text-muted-foreground/70">
+            <RotateCcw className="size-3" aria-hidden />
+            Done and dropped todos stay on the ledger — the memory accretes.
+          </p>
         )}
       </div>
     </div>

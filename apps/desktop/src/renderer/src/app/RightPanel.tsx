@@ -16,8 +16,8 @@ export function RightPanel() {
 
   if (!note) {
     return (
-      <div className="flex h-full flex-col border-l border-border bg-card/40">
-        <div className="flex h-9 items-center border-b border-border px-4 text-sm font-medium text-muted-foreground">
+      <div className="flex h-full flex-col bg-card/40">
+        <div className="flex h-10 items-center border-b border-border px-4 text-sm font-medium text-muted-foreground">
           Context
         </div>
       </div>
@@ -25,8 +25,8 @@ export function RightPanel() {
   }
 
   return (
-    <div className="flex h-full flex-col border-l border-border bg-card/40">
-      <div className="flex h-9 items-center gap-1.5 border-b border-border px-4 text-sm font-medium text-muted-foreground">
+    <div className="flex h-full flex-col bg-card/40">
+      <div className="flex h-10 items-center gap-1.5 border-b border-border px-4 text-sm font-medium text-muted-foreground">
         <MessageSquare className="size-3.5" /> Chat
       </div>
       <div className="flex min-h-0 flex-1 flex-col">

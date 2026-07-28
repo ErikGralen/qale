@@ -39,6 +39,30 @@ function hostOf(url: string): string {
   return host ? host.replace(/^www\./, '') : url.slice(0, 60);
 }
 
+/**
+ * A transcript's first line is a spoken turn ("me: thanks for making time…"),
+ * not a title — slugifying it yields garbage filenames. Prefer the dropped
+ * file's name; else a genuine heading-like line if one exists; else nothing, so
+ * naming falls to the model (capture) or a clean date-based default.
+ */
+function transcriptTitle(baseName: string, nonEmpty: string[]): string {
+  if (baseName) return baseName;
+  // Only the head of the file can plausibly be a title — a mid-file line that
+  // happens to look heading-ish is just a continuation of someone's turn.
+  const heading = nonEmpty.slice(0, 5).find(
+    (l) =>
+      l.length <= 60 &&
+      !SPEAKER_TURN.test(l) &&
+      !TIMESTAMP.test(l) &&
+      !URL_ANYWHERE.test(l) &&
+      !l.includes('-->') &&
+      // Transcript furniture, not titles: the WEBVTT magic line, SRT cue counters.
+      !/^WEBVTT\b/i.test(l) &&
+      !/^\d+$/.test(l),
+  );
+  return heading ? cleanTitle(heading) : '';
+}
+
 export function classifyCapture(text: string, fileName?: string): CaptureClassification {
   const body = text.trim();
   const baseName = fileName?.replace(/\.[a-z0-9]+$/i, '') ?? '';
@@ -48,7 +72,7 @@ export function classifyCapture(text: string, fileName?: string): CaptureClassif
 
   // Subtitle formats are transcripts regardless of content.
   if ((fileName && TRANSCRIPT_EXT.test(fileName)) || /^WEBVTT\b/.test(body)) {
-    return { kind: 'transcript', confidence: 'high', title: baseName || cleanTitle(firstLine) };
+    return { kind: 'transcript', confidence: 'high', title: transcriptTitle(baseName, nonEmpty) };
   }
 
   // A dumped link: one URL, at most a couple of comment lines around it.
@@ -69,13 +93,13 @@ export function classifyCapture(text: string, fileName?: string): CaptureClassif
   const timestamps = lines.filter((l) => TIMESTAMP.test(l)).length;
   const cues = lines.filter((l) => l.includes('-->')).length;
   if (cues >= 2) {
-    return { kind: 'transcript', confidence: 'high', title: baseName || cleanTitle(firstLine) };
+    return { kind: 'transcript', confidence: 'high', title: transcriptTitle(baseName, nonEmpty) };
   }
   if (speakerTurns >= 5 && body.length >= 400) {
     return {
       kind: 'transcript',
       confidence: speakerTurns >= 10 || timestamps >= 3 ? 'high' : 'low',
-      title: baseName || cleanTitle(firstLine),
+      title: transcriptTitle(baseName, nonEmpty),
     };
   }
 

@@ -47,13 +47,12 @@ export function notesInContext(tree: VaultTreeDTO | null, tag: string): NoteRefD
 
 /**
  * The spine order — how a context page reads: what we decided, what we're
- * working on, what we learned, what shipped, then the surrounding cast.
+ * working on, what we learned, then the surrounding cast.
  */
 export const SPINE_ORDER: readonly NoteType[] = [
   'decision',
-  'problem',
+  'theme',
   'insight',
-  'release',
   'todo',
   'customer',
   'person',

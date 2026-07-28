@@ -4,7 +4,7 @@ summary: "Ops teams need reports delivered on schedule — a person is the worka
 tags: ["reporting"]
 evidence: ["[[meetings/2026-06-12-kranelund-checkin]]", "[[meetings/2026-07-13-cs-sync]]"]
 confidence: "high"
-problem: "[[problems/scheduled-reporting]]"
+theme: "[[themes/scheduled-reporting]]"
 ---
 
 The recipients of the Monday numbers (depot managers, finance) don't open dashboards — someone

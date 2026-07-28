@@ -1,0 +1,40 @@
+{
+  "issues": [
+    {
+      "key": "PAY-140",
+      "fields": {
+        "summary": "SCIM group-mapping for Nordkap",
+        "status": { "name": "Att göra", "statusCategory": { "key": "new" } },
+        "assignee": null,
+        "updated": "2026-07-20T09:15:00.000+0200"
+      }
+    },
+    {
+      "key": "PAY-156",
+      "fields": {
+        "summary": "Provisioning audit log",
+        "status": { "name": "Klar", "statusCategory": { "key": "done" } },
+        "assignee": { "displayName": "Jonas Ek" },
+        "updated": "2026-07-20T16:40:00.000+0200"
+      }
+    },
+    {
+      "key": "PAY-142",
+      "fields": {
+        "summary": "SAML SSO (epic)",
+        "status": { "name": "Blocked", "statusCategory": { "key": "indeterminate" } },
+        "assignee": { "displayName": "Mika Ranta" },
+        "updated": "2026-07-21T14:03:00.000+0200"
+      }
+    },
+    {
+      "key": "PAY-161",
+      "fields": {
+        "summary": "Session revocation endpoint",
+        "status": { "name": "Väntar på granskning", "statusCategory": { "key": "indeterminate" } },
+        "assignee": { "displayName": "Mika Ranta" },
+        "updated": "2026-07-21T17:22:00.000+0200"
+      }
+    }
+  ]
+}

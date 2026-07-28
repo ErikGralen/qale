@@ -4,6 +4,7 @@ summary: Tom Devlin — engineering lead, owns auth migration and platform
 tags:
   - enterprise-auth
 role: Engineering Lead
+email: "tom@tavla.example"
 cares_about:
   - auth migration
   - reliability

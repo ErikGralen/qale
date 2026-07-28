@@ -7,7 +7,7 @@ tier: observe
 ---
 
 ## When
-Open-ended thinking — connections across meetings, decisions, insights and problems.
+Open-ended thinking — connections across meetings, decisions, insights and themes.
 
 ## Read
 The workspace via search_vault and vault_read.

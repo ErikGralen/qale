@@ -27,7 +27,8 @@ export function NoteHistory({ path, open, onOpenChange }: { path: string; open: 
   const { vault, enableGit } = useApp();
   const [commits, setCommits] = useState<NoteCommitDTO[] | null>(null);
   const [selected, setSelected] = useState<NoteCommitDTO | null>(null);
-  const [body, setBody] = useState<string | null>(null);
+  // undefined = version still loading; null = the note didn't exist at that commit.
+  const [body, setBody] = useState<string | null | undefined>(undefined);
   const [enabling, setEnabling] = useState(false);
 
   const gitOn = !!vault?.git;
@@ -42,10 +43,8 @@ export function NoteHistory({ path, open, onOpenChange }: { path: string; open: 
   }, [open, gitOn, path]);
 
   useEffect(() => {
-    if (!selected) {
-      setBody(null);
-      return;
-    }
+    setBody(undefined);
+    if (!selected) return;
     let cancelled = false;
     invoke['note:versionAt'](path, selected.hash).then((raw) => {
       if (!cancelled) setBody(raw === null ? null : stripFrontmatter(raw));
@@ -130,6 +129,10 @@ export function NoteHistory({ path, open, onOpenChange }: { path: string; open: 
             <div className="min-w-0 flex-1 overflow-y-auto">
               {!selected ? (
                 <p className="p-3 text-sm text-muted-foreground">Pick a version to view it.</p>
+              ) : body === undefined ? (
+                <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+                  <Spinner className="size-3.5" /> Loading…
+                </div>
               ) : body === null ? (
                 <p className="p-3 text-sm text-muted-foreground">This note didn't exist at that commit.</p>
               ) : (

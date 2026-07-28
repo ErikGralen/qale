@@ -7,10 +7,13 @@ sources: []
 
 # Rollout runbook
 
-Staged rollout for SSO/SAML behind the `enterprise-auth` flag.
+Staged rollout for SSO/SAML behind the `enterprise-auth` flag. Gated on
+[[blocked-by::PAY-142|the SSO epic]] clearing security sign-off; the staging IdP
+matrix lives in [[PAY-161]].
 
 1. Enable for internal workspace, soak 48h, watch auth error rates.
-2. Enable for Nordkap staging; Sara's team runs their IdP test matrix.
+2. Enable for Nordkap staging; Sara's team runs their IdP test matrix —
+   [[waiting on::people/sara-lindqvist]] for the Entra slot.
 3. Joint go/no-go call; enable production tenant.
 4. Rollback: flip the flag off — sessions fall back to password auth, no data migration involved.
 

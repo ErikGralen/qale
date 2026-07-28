@@ -1,0 +1,24 @@
+---
+type: wikipage
+summary: "Product weekly update — the Friday update page in the Product space, last published 2026-07-11"
+title: Product weekly update
+status: active
+provider: confluence
+external_id: "18350081"
+container: Product
+version: 41
+remote_updated: "2026-07-11T16:20:00Z"
+url: https://tavla.atlassian.net/wiki/spaces/PRODUCT/pages/18350081
+---
+
+# Product weekly update
+
+*Week of 2026-07-06 – 2026-07-10, published 2026-07-11. Older updates are archived under this page.*
+
+**Enterprise auth.** SSO rollout on track for 2026-07-28, Nordkap Payments first tenant behind a
+feature flag. Audit-log export for SSO events in progress as a split-out dependency. SCIM holds at
+September per the Q3 deferral.
+
+**Reporting.** Kranelund exports pilot kickoff being scheduled; scheduled-reporting scope holds.
+
+**Pricing.** Annual prepay discount live. Nordkap procurement review expected to start.

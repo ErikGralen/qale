@@ -1,4 +1,5 @@
 import { useApp } from '../state/app-state';
+import { navFromEvent } from '../lib/nav';
 
 /**
  * A context chip — the same visual vocabulary as a wikilink (`.note-link`),
@@ -34,11 +35,7 @@ export function TagChip({
       className="note-link text-xs focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
       onClick={(e) => {
         e.stopPropagation();
-        openContext(tag);
-      }}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        openContext(tag, { preview: false });
+        openContext(tag, navFromEvent(e));
       }}
       title={`Open #${tag}`}
     >

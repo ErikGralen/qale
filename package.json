@@ -14,7 +14,10 @@
     "test": "turbo test",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
     "desktop": "turbo dev --filter=@pm/desktop",
-    "refresh-demo": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/refresh-demo.ts"
+    "refresh-demo": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/refresh-demo.ts",
+    "reset-atlassian": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/reset-atlassian.ts",
+    "seed-google-calendar": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/seed-google-calendar.ts",
+    "reset": "pnpm refresh-demo && pnpm reset-atlassian && pnpm seed-google-calendar"
   },
   "devDependencies": {
     "prettier": "^3.4.2",

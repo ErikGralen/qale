@@ -22,6 +22,7 @@
     "@pm/agent": "workspace:*",
     "@pm/application": "workspace:*",
     "@pm/atlassian": "workspace:*",
+    "@pm/connectors": "workspace:*",
     "@pm/domain": "workspace:*",
     "@pm/ipc": "workspace:*",
     "@pm/markdown": "workspace:*",

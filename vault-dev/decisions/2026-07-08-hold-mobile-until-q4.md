@@ -6,7 +6,7 @@ status: "active"
 date: "2026-07-08"
 deciders: ["me"]
 sources: ["[[meetings/2026-07-08-sprint-planning]]"]
-problem: "[[problems/mobile-access]]"
+theme: "[[themes/mobile-access]]"
 ---
 
 Q3 is fully committed to enterprise onboarding and scheduled exports; mobile demand so far is

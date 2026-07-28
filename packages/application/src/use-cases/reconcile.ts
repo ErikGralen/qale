@@ -1,3 +1,4 @@
+import { isReservedFile } from '@pm/domain';
 import type { IndexPort, VaultPort } from '../ports.js';
 
 /**
@@ -17,6 +18,9 @@ export async function reconcileIndex(
 
   let changed = 0;
   for (const file of fsList) {
+    // Reserved files (index.md/log.md, §3.1) are orientation, not concept
+    // notes: never indexed, read by path instead. The librarian writes them.
+    if (isReservedFile(file.path)) continue;
     const existing = indexedByPath.get(file.path);
     if (existing && existing.mtime >= file.mtime) continue;
     const note = await vault.readNote(file.path);
@@ -28,7 +32,9 @@ export async function reconcileIndex(
 
   let removed = 0;
   for (const record of indexed) {
-    if (!fsByPath.has(record.path)) {
+    // Drop ghosts AND any reserved file a pre-reserved-handling index still
+    // holds — it must stop appearing as a note.
+    if (!fsByPath.has(record.path) || isReservedFile(record.path)) {
       index.removeByPath(record.path);
       removed++;
     }
@@ -46,6 +52,7 @@ export async function rebuildIndex(
   const fsList = await vault.list();
   let indexed = 0;
   for (const file of fsList) {
+    if (isReservedFile(file.path)) continue;
     const note = await vault.readNote(file.path);
     if (note) {
       index.reindex(note);

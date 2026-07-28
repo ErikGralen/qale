@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import type { UseCaseContext } from '@pm/application';
 import { createProposal, searchNotes, contentHash } from '@pm/application';
-import { fileSlug, isFolderIndex, refToSlug, validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload } from '@pm/domain';
+import { checkFrontmatterMutation, fileSlug, isBodyEditable, isFolderIndex, refToSlug, validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload, TYPE_RULES } from '@pm/domain';
 import type { SessionHarness } from '@pm/sessions';
 import type { AtlassianClient } from '@pm/atlassian';
 
@@ -16,6 +16,21 @@ import type { AtlassianClient } from '@pm/atlassian';
 
 function text(s: string) {
   return { content: [{ type: 'text' as const, text: s }], details: undefined };
+}
+
+/**
+ * Mirror-specific columns for `vault_list` rows: ticket/wikipage state lives in
+ * frontmatter the plain row format omits, so without this a skill that scopes by
+ * ticket state burns one `vault_read` per ticket just to learn it.
+ */
+function mirrorFields(n: { type: string; frontmatter: Record<string, unknown> }): string {
+  if (n.type !== 'ticket' && n.type !== 'wikipage') return '';
+  const fm = n.frontmatter;
+  const parts: string[] = [];
+  if (typeof fm['state'] === 'string' && fm['state']) parts.push(`state=${fm['state']}`);
+  if (typeof fm['state_category'] === 'string' && fm['state_category']) parts.push(`state_category=${fm['state_category']}`);
+  if (typeof fm['remote_updated'] === 'string' && fm['remote_updated']) parts.push(`remote_updated=${fm['remote_updated']}`);
+  return parts.length ? ` (${parts.join(', ')})` : '';
 }
 
 export const VAULT_TOOL_NAMES = ['vault_read', 'vault_list', 'vault_grep', 'search_vault'];
@@ -41,7 +56,7 @@ export function createVaultTools(ctx: UseCaseContext, harness?: SessionHarness):
     name: 'vault_list',
     label: 'List notes',
     description:
-      'List notes in the workspace, optionally filtered by type (meeting, decision, insight, customer, problem, release, person, …) and/or status. Returns path, type, status and one-line summary.',
+      'List notes in the workspace, optionally filtered by type (meeting, decision, insight, customer, theme, person, …) and/or status. Returns path, type, status and one-line summary. For orienting on a whole folder, reading that folder\'s "index.md" (e.g. "insights/index.md") gives the same map grouped by status; use this when you need to filter by type/status across folders.',
     parameters: Type.Object({
       type: Type.Optional(Type.String({ description: 'Filter by note type.' })),
       status: Type.Optional(Type.String({ description: 'Filter by status (e.g. "new").' })),
@@ -56,7 +71,7 @@ export function createVaultTools(ctx: UseCaseContext, harness?: SessionHarness):
       );
       if (rows.length === 0) return text('No matching notes.');
       const body = rows
-        .map((n) => `- ${n.path} [${n.type}${n.status ? `/${n.status}` : ''}] — ${n.summary}`)
+        .map((n) => `- ${n.path} [${n.type}${n.status ? `/${n.status}` : ''}]${mirrorFields(n)} — ${n.summary}`)
         .join('\n');
       return text(body);
     },
@@ -89,7 +104,7 @@ export function createVaultTools(ctx: UseCaseContext, harness?: SessionHarness):
     name: 'search_vault',
     label: 'Search vault',
     description:
-      'Full-text search over the vault index. Returns the top-k notes with path, summary, score and a snippet. Prefer this for open-ended questions.',
+      'Full-text keyword search over the vault index. Returns the top-k notes with path, summary, score and a snippet. Reach for this as the fallback when the index.md maps (root and per-folder) don\'t resolve which notes to read — or when you have a specific keyword to match — rather than as the first move on an open-ended question.',
     parameters: Type.Object({
       query: Type.String({ description: 'Search query.' }),
       k: Type.Optional(Type.Number({ description: 'Max results (default 8).' })),
@@ -175,7 +190,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
     name: 'propose_note',
     label: 'Propose note',
     description:
-      'Propose a NEW note (insight, meeting summary, customer/problem hub, release, person, or generic note). frontmatter must include type + summary; claim-like notes must list evidence/sources[] (wikilinks). Include tags[] with 1-2 contexts (kebab-case project/product/area, e.g. "pricing") drawn from tags already in use; name any brand-new context in the rationale. Every source must resolve unless inference:true. For decisions use propose_decision.',
+      'Propose a NEW note (insight, meeting summary, customer/theme hub, person, or generic note). frontmatter must include type + summary; claim-like notes must list evidence/sources[] (wikilinks). Include tags[] with 1-2 contexts (kebab-case project/product/area, e.g. "pricing") drawn from tags already in use; name any brand-new context in the rationale. Every source must resolve unless inference:true. For decisions use propose_decision.',
     parameters: Type.Object({
       path: Type.String({ description: 'Workspace path, e.g. "insights/acme-wants-scim.md".' }),
       frontmatter: Type.Record(Type.String(), Type.Any()),
@@ -255,11 +270,23 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
     name: 'propose_update',
     label: 'Propose update',
     description:
-      'Propose an edit to an EXISTING authored/derived note using search/replace blocks (exact anchor text + replacement). Use for answering an open question, adding evidence to a problem/customer hub, updating a meeting page, or flagging a contradiction.',
+      'Propose an edit to an EXISTING authored/derived note. Two levers, use either or both: `patch` = body search/replace blocks (exact anchor text + replacement) for prose changes (answer an open question, add evidence to a hub, update a meeting page, flag a contradiction); `frontmatter` = a map of metadata keys to set on approval, the ONLY way to change a note\'s properties (a todo\'s `due` to reschedule or `status`+`resolved` to close it, a meeting\'s `status`, a person\'s `last_told`). Provide at least one; omit `patch` for a metadata-only change.',
     parameters: Type.Object({
       path: Type.String(),
-      patch: Type.Array(Type.Object({ search: Type.String(), replace: Type.String() })),
+      patch: Type.Optional(Type.Array(Type.Object({ search: Type.String(), replace: Type.String() }))),
+      frontmatter: Type.Optional(
+        Type.Record(Type.String(), Type.Any(), {
+          description:
+            "Frontmatter keys to set, shallow-merged over the note's current properties. Use for a todo's due/status, a meeting's status, or a person's last_told — the note's body stays untouched.",
+        }),
+      ),
       rationale: Type.String(),
+      title: Type.Optional(
+        Type.String({
+          description:
+            'New display title for the note, applied on approval. Only when the note is untitled or its title no longer fits what it says — never rename gratuitously.',
+        }),
+      ),
       sources: Type.Optional(Type.Array(Type.String())),
       inference: Type.Optional(Type.Boolean()),
     }),
@@ -272,6 +299,22 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       if (!target) return text(`Rejected: target note not found: ${parsed.data.path}`);
       const note = await ctx.vault.readNote(target);
       if (!note) return text(`Rejected: cannot read ${target}`);
+      // Mutability guards at FILING time (same rules acceptUpdate enforces) —
+      // reject where the agent can react, not at approval.
+      if (parsed.data.patch?.length && !isBodyEditable(note.type)) {
+        const mutable = TYPE_RULES[note.type].mutableFields ?? 'all';
+        const allowed = mutable === 'all' ? 'frontmatter' : `frontmatter (${[...mutable].join(', ') || 'none'})`;
+        const upstream =
+          note.type === 'ticket' || note.type === 'wikipage'
+            ? ' To change the upstream content, use draft_jira_comment / draft_confluence_update instead.'
+            : '';
+        return text(`Rejected: the body of a ${note.type} note is immutable — drop \`patch\`. Only ${allowed} may change here.${upstream}`);
+      }
+      if (parsed.data.frontmatter) {
+        const merged = { ...note.frontmatter, ...parsed.data.frontmatter } as typeof note.frontmatter;
+        const mutation = checkFrontmatterMutation(note.type, note.frontmatter, merged);
+        if (!mutation.allowed) return text(`Rejected: ${mutation.reason}.`);
+      }
       const p = params as { sources?: string[]; inference?: boolean };
       const sources = p.sources ?? [];
       const check = validateEvidence(sources, !!p.inference, (ref) => !!ctx.index.resolve(stripLink(ref)));
@@ -355,15 +398,48 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
   return [proposeNote, proposeUpdate, proposeDecision, proposeTodo];
 }
 
-export const DRAFT_TOOL_NAMES = ['draft_jira_issue', 'draft_jira_comment', 'draft_confluence_update', 'draft_message'];
+export const DRAFT_TOOL_NAMES = [
+  'draft_jira_issue',
+  'draft_jira_comment',
+  'draft_confluence_update',
+  'draft_message',
+  'draft_calendar_event',
+  'draft_calendar_reschedule',
+  'draft_calendar_rsvp',
+];
 
 /**
  * Outbound draft tools (PLAN-V2 §3.4) — the agent DRAFTS, the human approves. These
  * only ever create outbound cards; the actual Jira/Confluence write happens in the
  * card-application layer on approval. There is no auto-apply path here, ever.
+ *
+ * Tool NAMES stay provider-flavored (skill files reference them verbatim); the
+ * payloads they emit are the provider-generic shape (`provider` + generic action).
+ * `system` is written alongside as a deprecated mirror of `provider` so payload
+ * readers from the pre-genericization era keep working.
  */
 export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness?: SessionHarness): ToolDefinition[] {
   const gate = (): string | null => (harness && !harness.canPropose() ? harness.gateMessage() : null);
+  /**
+   * Drafted-against snapshot (the staleness baseline): when the target has a
+   * mirror note, stamp the mirror's `remote_updated` (and `version` for pages)
+   * into the payload at draft time. Accept compares these against the live
+   * mirror and refuses when the upstream item moved since drafting. No mirror
+   * ⇒ no snapshot fields.
+   */
+  const draftSnapshot = (type: 'ticket' | 'wikipage' | 'meeting', externalId: string): { remote_updated?: string; version?: number } => {
+    const wanted = externalId.trim().toLowerCase();
+    const mirror = ctx.index
+      .listByType(type)
+      .find((n) => String(n.frontmatter['external_id'] ?? '').trim().toLowerCase() === wanted);
+    if (!mirror) return {};
+    const out: { remote_updated?: string; version?: number } = {};
+    const ru = mirror.frontmatter['remote_updated'];
+    if (typeof ru === 'string' && ru) out.remote_updated = ru;
+    const v = mirror.frontmatter['version'];
+    if (type === 'wikipage' && typeof v === 'number' && Number.isInteger(v) && v >= 0) out.version = v;
+    return out;
+  };
   const mkCard = (payload: Record<string, unknown>, rationale: string, sources: string[], label: string) => {
     const rec = createProposal(ctx, {
       kind: 'outbound',
@@ -384,7 +460,7 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
     name: 'draft_jira_issue',
     label: 'Draft Jira issue',
     description:
-      'Draft a NEW Jira issue as an approval card (never created until approved). Give the projectKey, a summary, and a markdown description. Cite sources[] (the meeting/decision it came from). Optionally linkBack: a workspace note path to append the resulting Jira link to on approval.',
+      'Draft a NEW tracker ticket (Jira) as an approval card (never created until approved). Give the projectKey (the container), a summary, and a markdown description ending with a provenance line ("Source: <meeting>, <date>"). Cite sources[] (the meeting/decision it came from). Optionally linkBack: a workspace note path to append the created ticket\'s link to on approval.',
     parameters: Type.Object({
       projectKey: Type.String(),
       issueType: Type.Optional(Type.String()),
@@ -400,7 +476,7 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
       const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
       const rec = mkCard(
-        { system: 'jira', action: 'create_issue', projectKey: params.projectKey, issueType: params.issueType, title: params.summary, body: params.description, linkBackPath: params.linkBack, rationale: params.rationale },
+        { provider: 'jira', system: 'jira', action: 'create_ticket', projectKey: params.projectKey, issueType: params.issueType, title: params.summary, body: params.description, linkBackPath: params.linkBack, rationale: params.rationale },
         params.rationale,
         params.sources,
         'jira-issue',
@@ -412,7 +488,8 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
   const draftJiraComment = defineTool({
     name: 'draft_jira_comment',
     label: 'Draft Jira comment',
-    description: 'Draft a comment on an existing Jira issue (issueKey) as an approval card. Cite sources[].',
+    description:
+      'Draft a comment on an existing ticket as an approval card. issueKey is the ticket\'s key — take it from the ticket\'s mirror note (tickets/, frontmatter external_id) when one exists, and cite that mirror in sources[] alongside the meeting/decision. End the body with a provenance line ("Source: <meeting>, <date>").',
     parameters: Type.Object({
       issueKey: Type.String(),
       body: Type.String(),
@@ -426,7 +503,7 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
       const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
       const rec = mkCard(
-        { system: 'jira', action: 'add_comment', issueKey: params.issueKey, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale },
+        { provider: 'jira', system: 'jira', action: 'comment_ticket', issueKey: params.issueKey, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale, ...draftSnapshot('ticket', params.issueKey) },
         params.rationale,
         params.sources,
         'jira-comment',
@@ -438,7 +515,8 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
   const draftConfluenceUpdate = defineTool({
     name: 'draft_confluence_update',
     label: 'Draft Confluence update',
-    description: 'Draft an append to a Confluence page (pageId) as an approval card. Cite sources[].',
+    description:
+      'Draft an append to a wikipage (Confluence) as an approval card. pageId is the page\'s id — take it from the wikipage\'s mirror note (wikipages/, frontmatter external_id) when one exists, and cite that mirror in sources[]. End the body with a provenance line ("Source: <session>, <date>").',
     parameters: Type.Object({
       pageId: Type.String(),
       body: Type.String(),
@@ -452,7 +530,7 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
       const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
       const rec = mkCard(
-        { system: 'confluence', action: 'update_page', pageId: params.pageId, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale },
+        { provider: 'confluence', system: 'confluence', action: 'update_page', pageId: params.pageId, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale, ...draftSnapshot('wikipage', params.pageId) },
         params.rationale,
         params.sources,
         'confluence-update',
@@ -480,7 +558,7 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
       const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
       const rec = mkCard(
-        { system: 'message', action: 'message', audience: params.audience, title: params.title, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale },
+        { provider: 'message', system: 'message', action: 'send_message', audience: params.audience, title: params.title, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale },
         params.rationale,
         params.sources,
         'message',
@@ -489,17 +567,122 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
     },
   });
 
-  return [draftJiraIssue, draftJiraComment, draftConfluenceUpdate, draftMessage];
+  const draftCalendarEvent = defineTool({
+    name: 'draft_calendar_event',
+    label: 'Draft calendar event',
+    description:
+      'Draft a NEW Google Calendar event as an approval card (never created until approved) — a follow-up meeting, a booked slot. Give a title (the invite summary), a start as RFC3339 with offset (e.g. 2026-08-04T15:00:00+02:00), optionally an end (defaults to +30 min) and attendee emails, and a body used as the invite description ending with a provenance line ("Source: <meeting>, <date>"). calendarId defaults to the primary calendar. Cite sources[]. linkBack: the meeting/todo note to append the created event\'s link to on approval.',
+    parameters: Type.Object({
+      title: Type.String(),
+      start: Type.String(),
+      end: Type.Optional(Type.String()),
+      attendees: Type.Optional(Type.Array(Type.String())),
+      calendarId: Type.Optional(Type.String()),
+      body: Type.String(),
+      sources: Type.Array(Type.String()),
+      linkBack: Type.Optional(Type.String()),
+      rationale: Type.String(),
+    }),
+    async execute(_id, params: { title: string; start: string; end?: string; attendees?: string[]; calendarId?: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
+      const g = gate();
+      if (g) return text(g);
+      const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const rec = mkCard(
+        { provider: 'google-calendar', system: 'google-calendar', action: 'create_event', title: params.title, start: params.start, end: params.end, attendees: params.attendees, calendarId: params.calendarId, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale },
+        params.rationale,
+        params.sources,
+        'calendar-event',
+      );
+      return text(`Drafted calendar event card (${rec.id}): "${params.title}". Awaiting approval.`);
+    },
+  });
+
+  const draftCalendarReschedule = defineTool({
+    name: 'draft_calendar_reschedule',
+    label: 'Draft calendar reschedule',
+    description:
+      'Draft a change to an EXISTING calendar event as an approval card — a new time, a new title. eventId is the event\'s id — take it from the synced meeting note (meetings/, frontmatter external_id) and cite that note in sources[]. Give the new start/end (RFC3339 with offset) and/or title, and a body describing the change. linkBack: the meeting note to append the confirmation to.',
+    parameters: Type.Object({
+      eventId: Type.String(),
+      calendarId: Type.Optional(Type.String()),
+      title: Type.Optional(Type.String()),
+      start: Type.Optional(Type.String()),
+      end: Type.Optional(Type.String()),
+      body: Type.String(),
+      sources: Type.Array(Type.String()),
+      linkBack: Type.Optional(Type.String()),
+      rationale: Type.String(),
+    }),
+    async execute(_id, params: { eventId: string; calendarId?: string; title?: string; start?: string; end?: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
+      const g = gate();
+      if (g) return text(g);
+      const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const rec = mkCard(
+        { provider: 'google-calendar', system: 'google-calendar', action: 'update_event', eventId: params.eventId, calendarId: params.calendarId, title: params.title, start: params.start, end: params.end, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale, ...draftSnapshot('meeting', params.eventId) },
+        params.rationale,
+        params.sources,
+        'calendar-reschedule',
+      );
+      return text(`Drafted calendar reschedule card (${rec.id}). Awaiting approval.`);
+    },
+  });
+
+  const draftCalendarRsvp = defineTool({
+    name: 'draft_calendar_rsvp',
+    label: 'Draft calendar RSVP',
+    description:
+      'Draft an RSVP to a calendar event on your behalf as an approval card. eventId is the event\'s id (from the synced meeting note\'s external_id — cite that note). attendeeEmail is your own calendar email; responseStatus is accepted/declined/tentative. Give a short body explaining the response. linkBack: the meeting note to note the RSVP on.',
+    parameters: Type.Object({
+      eventId: Type.String(),
+      attendeeEmail: Type.String(),
+      responseStatus: Type.Union([Type.Literal('accepted'), Type.Literal('declined'), Type.Literal('tentative')]),
+      calendarId: Type.Optional(Type.String()),
+      body: Type.String(),
+      sources: Type.Array(Type.String()),
+      linkBack: Type.Optional(Type.String()),
+      rationale: Type.String(),
+    }),
+    async execute(_id, params: { eventId: string; attendeeEmail: string; responseStatus: 'accepted' | 'declined' | 'tentative'; calendarId?: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
+      const g = gate();
+      if (g) return text(g);
+      const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const rec = mkCard(
+        { provider: 'google-calendar', system: 'google-calendar', action: 'respond_to_event', eventId: params.eventId, attendeeEmail: params.attendeeEmail, responseStatus: params.responseStatus, calendarId: params.calendarId, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale, ...draftSnapshot('meeting', params.eventId) },
+        params.rationale,
+        params.sources,
+        'calendar-rsvp',
+      );
+      return text(`Drafted calendar RSVP card (${rec.id}): ${params.responseStatus}. Awaiting approval.`);
+    },
+  });
+
+  return [draftJiraIssue, draftJiraComment, draftConfluenceUpdate, draftMessage, draftCalendarEvent, draftCalendarReschedule, draftCalendarRsvp];
 }
 
-export const ATLASSIAN_TOOL_NAMES = ['jira_search', 'jira_get_issue', 'confluence_search', 'confluence_get_page'];
+export const ATLASSIAN_TOOL_NAMES = [
+  'jira_search',
+  'jira_get_issue',
+  'confluence_search',
+  'confluence_get_page',
+  'track_external',
+];
+
+/** Start watching an external item locally. Injected by the host because it
+ *  touches the sync engine, not the Atlassian client. */
+export type TrackExternal = (kind: 'ticket' | 'wikipage', externalId: string) => Promise<boolean>;
 
 /**
  * The tracker seam (PLAN §3.3): read-only references into Jira/Confluence. Jira
  * stays the system of execution — we point at the *what*, hold the *why*. Results
  * are normalized to markdown with deep links so ask-answers can cite them.
  */
-export function createAtlassianTools(client: AtlassianClient): ToolDefinition[] {
+export function createAtlassianTools(
+  client: AtlassianClient,
+  track?: TrackExternal,
+): ToolDefinition[] {
   const jiraSearch = defineTool({
     name: 'jira_search',
     label: 'Search Jira',
@@ -548,7 +731,42 @@ export function createAtlassianTools(client: AtlassianClient): ToolDefinition[] 
     },
   });
 
-  return [jiraSearch, jiraGetIssue, confluenceSearch, confluenceGetPage];
+  /**
+   * The one that makes a lookup stick. Searching Jira answers a question once;
+   * this keeps the answer true — the item joins the local mirror, gets a status
+   * chip wherever it's referenced, and starts flagging the notes that depend on
+   * it when it moves.
+   *
+   * Deliberately NOT an outbound card: nothing is written to Jira, we're only
+   * deciding to read something. Reads are silent and free (integration plan
+   * §Design principles); the approval floor stays exactly where it was.
+   */
+  const trackExternal = defineTool({
+    name: 'track_external',
+    label: 'Watch item',
+    description:
+      'Keep an eye on a Jira issue or Confluence page: it is mirrored locally, kept up to date, ' +
+      'and surfaces its status wherever notes reference it. Use when an item matters to the ' +
+      "user's work — especially one outside the projects they follow, e.g. another team's " +
+      'blocker. Writes nothing to Jira or Confluence.',
+    parameters: Type.Object({
+      kind: Type.Union([Type.Literal('ticket'), Type.Literal('wikipage')], {
+        description: "'ticket' for a Jira issue, 'wikipage' for a Confluence page.",
+      }),
+      external_id: Type.String({ description: 'Issue key (e.g. INFRA-88) or Confluence page id.' }),
+    }),
+    async execute(_id, params: { kind: 'ticket' | 'wikipage'; external_id: string }) {
+      if (!track) return text('Watching items is not available in this session.');
+      const ok = await track(params.kind, params.external_id);
+      return text(
+        ok
+          ? `Now watching ${params.external_id}. It will stay up to date and show its status wherever it is referenced.`
+          : `Couldn't start watching ${params.external_id} just now.`,
+      );
+    },
+  });
+
+  return [jiraSearch, jiraGetIssue, confluenceSearch, confluenceGetPage, trackExternal];
 }
 
 /** Domain's ref parsing, with '' instead of null for plain-string call sites. */

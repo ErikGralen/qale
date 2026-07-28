@@ -61,13 +61,21 @@ export interface SessionFocusEvent {
   title: string;
 }
 
+/** Fired when connection state or the shallow mirror index changes (a sync
+ *  tick landed, a follow toggled, credentials changed). Renderer caches of
+ *  chips/hover metadata invalidate on this — nothing polls. */
+export interface ConnectionsChangedEvent {
+  channel: 'connections:changed';
+}
+
 export type PushEvent =
   | AgentStreamEvent
   | VaultChangedEvent
   | ProposalsChangedEvent
   | SessionStatusEvent
   | PingsChangedEvent
-  | SessionFocusEvent;
+  | SessionFocusEvent
+  | ConnectionsChangedEvent;
 
 export type PushChannel = PushEvent['channel'];
 
@@ -83,6 +91,7 @@ export const PUSH_CHANNELS = [
   'session:status',
   'pings:changed',
   'session:focus',
+  'connections:changed',
 ] as const satisfies readonly PushChannel[];
 
 // Compile-time completeness guard: every PushEvent channel must appear above.

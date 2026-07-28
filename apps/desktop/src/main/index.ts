@@ -36,6 +36,7 @@ function createWindow(): void {
     // Dev-only self-screenshot for verification (no desktop capture involved).
     const shot = process.env['PM_SCREENSHOT'];
     if (shot) {
+      const delay = Number(process.env['PM_SCREENSHOT_DELAY'] ?? 2500);
       setTimeout(async () => {
         try {
           const image = await mainWindow!.webContents.capturePage();
@@ -46,7 +47,7 @@ function createWindow(): void {
           console.error('[pm] screenshot failed', err);
         }
         app.quit();
-      }, 2500);
+      }, delay);
     }
   });
 
@@ -96,12 +97,26 @@ function buildMenu(): void {
 
 app.whenReady().then(async () => {
   buildMenu();
-  const { onReady } = registerHandlers(() => mainWindow);
+  const { onReady, dispose } = registerHandlers(() => mainWindow);
   await onReady();
   createWindow();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+
+  // Quit-time teardown: without this, dispose()s never run — the DB and
+  // watcher just die with the process.
+  let disposed = false;
+  app.on('will-quit', (event) => {
+    if (disposed) return;
+    event.preventDefault();
+    void dispose()
+      .catch((err) => console.error('[pm] quit teardown failed:', err))
+      .finally(() => {
+        disposed = true;
+        app.quit();
+      });
   });
 });
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@pm/ui';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup, TooltipProvider } from '@pm/ui';
 import { FileUp } from 'lucide-react';
 import { AppStateProvider, useApp } from './state/app-state';
 import { CAPTURE_EVENT } from './lib/capture-event';
@@ -19,6 +19,8 @@ import { RightPanel } from './app/RightPanel';
 import { TabStrip } from './app/TabStrip';
 import { QuickSwitcher } from './app/QuickSwitcher';
 import { CaptureDialog, type CaptureDraft } from './app/CaptureDialog';
+import { ExternalRefHoverLayer } from './components/ExternalRef';
+import { useToast } from './components/toast';
 
 function Center() {
   const { activeTab, bindTabSession, openSession } = useApp();
@@ -29,11 +31,13 @@ function Center() {
     case 'session':
       return (
         <ChatView
-          key={activeTab.id}
+          // Keyed by the history entry, not the tab: back/forward between two
+          // conversations in one tab must remount the transcript.
+          key={activeTab.key}
           sessionType={activeTab.sessionType}
           sessionId={activeTab.sessionId}
           initialPrompt={activeTab.initialPrompt}
-          onSessionId={(sessionId) => bindTabSession(activeTab.id, sessionId)}
+          onSessionId={(sessionId) => bindTabSession(activeTab.key, sessionId)}
           onNewChat={() => openSession(activeTab.sessionType, { fresh: true })}
         />
       );
@@ -78,13 +82,15 @@ function Shell() {
     }
   });
   const dragDepth = useRef(0);
-  const { openSession, activeTab, tabs, activeTabId, setActiveTab, closeTab, vault, captureNote, openDoc } = useApp();
+  const { openSession, activeTab, tabs, activeTabId, setActiveTab, closeTab, vault, captureNote, openDoc, goBack, goForward, reopenClosedTab } =
+    useApp();
+  const toast = useToast();
 
   // ⌘N: a blank note straight into the editor — capture (⇧⌘N) keeps the dialog.
   const newNote = useCallback(async () => {
     if (!vault) return;
     const note = await captureNote({ body: '', summary: 'Untitled' });
-    await openDoc(note.path, { preview: false });
+    await openDoc(note.path);
   }, [vault, captureNote, openDoc]);
 
   const toggleSidebar = useCallback(() => {
@@ -134,6 +140,19 @@ function Shell() {
           e.preventDefault();
           closeTab(activeTabId);
         }
+      } else if (key === 't') {
+        // Browser muscle memory: ⌘T a fresh tab (a chat — this app's new-tab
+        // page), ⇧⌘T restores the last closed tab with its history.
+        e.preventDefault();
+        if (e.shiftKey) reopenClosedTab();
+        else openSession('chat', { fresh: true });
+      } else if ((key === '[' || key === ']' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.altKey) {
+        // Per-tab history — both browser spellings (⌘[/⌘] and ⌘←/⌘→). Never
+        // inside an editable: there ⌘← is line-start and ⌘[ may be outdent.
+        if (inEditable(e)) return;
+        e.preventDefault();
+        if (key === '[' || e.key === 'ArrowLeft') goBack();
+        else goForward();
       } else if (key === '\\') {
         e.preventDefault();
         toggleSidebar();
@@ -154,13 +173,25 @@ function Shell() {
         if (next) setActiveTab(next.id);
       }
     };
+    // Mouse back/forward buttons navigate the active tab, like a browser.
+    const onMouseNav = (e: MouseEvent) => {
+      if (e.button === 3) {
+        e.preventDefault();
+        goBack();
+      } else if (e.button === 4) {
+        e.preventDefault();
+        goForward();
+      }
+    };
     window.addEventListener('keydown', onKey);
     window.addEventListener('keydown', onCycle);
+    window.addEventListener('mouseup', onMouseNav);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keydown', onCycle);
+      window.removeEventListener('mouseup', onMouseNav);
     };
-  }, [openSession, openCapture, newNote, toggleSidebar, activeTabId, tabs, setActiveTab, closeTab]);
+  }, [openSession, openCapture, newNote, toggleSidebar, activeTabId, tabs, setActiveTab, closeTab, goBack, goForward, reopenClosedTab]);
 
   // Shell-wide drop: anything dragged anywhere opens the capture dialog
   // prefilled — the classifier guesses, the user confirms. Never auto-run.
@@ -171,6 +202,10 @@ function Shell() {
       setDragging(false);
       const file = e.dataTransfer.files[0];
       if (!file || !vault) return;
+      // Capture is one-at-a-time; dropping a bundle must not silently eat the rest.
+      if (e.dataTransfer.files.length > 1) {
+        toast(`Capturing "${file.name}" — drop the other ${e.dataTransfer.files.length - 1} one at a time.`);
+      }
       if (file.type.startsWith('image/')) {
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const r = new FileReader();
@@ -183,7 +218,7 @@ function Shell() {
         openCapture({ text: await file.text(), fileName: file.name });
       }
     },
-    [openCapture, vault],
+    [openCapture, vault, toast],
   );
 
   const showRight = activeTab?.kind === 'doc';
@@ -216,22 +251,28 @@ function Shell() {
             <ResizableHandle />
           </>
         )}
-        <ResizablePanel defaultSize={showRight ? '52%' : '80%'} minSize="30%">
+        <ResizablePanel defaultSize="80%" minSize="40%">
+          {/* The tab strip spans the full workbench so it never reflows when a
+              tab without a chat panel becomes active; the panel splits below it. */}
           <div className="flex h-full flex-col">
             <TabStrip sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} />
             <div className="min-h-0 flex-1">
-              <Center />
+              <ResizablePanelGroup orientation="horizontal">
+                <ResizablePanel defaultSize={showRight ? '65%' : '100%'} minSize="40%">
+                  <Center />
+                </ResizablePanel>
+                {showRight && (
+                  <>
+                    <ResizableHandle />
+                    <ResizablePanel defaultSize="35%" minSize="22%" maxSize="50%">
+                      <RightPanel />
+                    </ResizablePanel>
+                  </>
+                )}
+              </ResizablePanelGroup>
             </div>
           </div>
         </ResizablePanel>
-        {showRight && (
-          <>
-            <ResizableHandle />
-            <ResizablePanel defaultSize="28%" minSize="18%" maxSize="40%">
-              <RightPanel />
-            </ResizablePanel>
-          </>
-        )}
       </ResizablePanelGroup>
 
       {dragging && vault && (
@@ -255,6 +296,9 @@ function Shell() {
         onNewNote={() => void newNote()}
       />
       <CaptureDialog open={captureOpen} onOpenChange={setCaptureOpen} draft={captureDraft} />
+      {/* One hover card serves every [[PAY-142]]-style reference — read view,
+          cards, and the editor's wikilink atoms all stamp data-external-ref. */}
+      <ExternalRefHoverLayer onOpen={(path) => void openDoc(path)} />
     </div>
   );
 }
@@ -262,7 +306,11 @@ function Shell() {
 export function App() {
   return (
     <AppStateProvider>
-      <Shell />
+      {/* Quick but not instant: hover long enough to want the hint, short
+          enough that the shortcut is always one glance away. */}
+      <TooltipProvider delayDuration={450} skipDelayDuration={300}>
+        <Shell />
+      </TooltipProvider>
     </AppStateProvider>
   );
 }

@@ -3,6 +3,7 @@ type: "person"
 summary: "Antti Korhonen — platform architect at Fenno Energi, brought the on-prem requirement"
 tags: ["compliance"]
 role: "Platform Architect, Fenno Energi"
+email: "antti.korhonen@fennoenergi.example"
 cares_about: ["deployment model", "data control", "auditability"]
 last_told: "2026-06-18"
 customer: "[[customers/fenno-energi]]"

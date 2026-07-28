@@ -9,7 +9,7 @@ import {
   Input,
 } from '@pm/ui';
 import { Image as ImageIcon, Link as LinkIcon, Mic, StickyNote, X, type LucideIcon } from 'lucide-react';
-import type { CaptureClassificationDTO, CaptureKind } from '@pm/ipc';
+import type { CaptureClassificationDTO, CaptureKind, CaptureMeetingMatchDTO } from '@pm/ipc';
 import { useApp } from '../state/app-state';
 import { useToast } from '../components/toast';
 import { invoke } from '../lib/ipc';
@@ -29,6 +29,14 @@ const KIND_META: Record<CaptureKind, { label: string; icon: LucideIcon }> = {
 };
 
 const URL_ANYWHERE = /https?:\/\/\S+/;
+
+/** "in progress" / "ended 4 min ago" / "starts in 12 min" for a matched meeting. */
+function matchTiming(m: CaptureMeetingMatchDTO): string {
+  const now = Date.now();
+  if (m.startMs <= now && m.endMs >= now) return 'in progress';
+  if (m.endMs < now) return `ended ${Math.max(1, Math.round((now - m.endMs) / 60_000))} min ago`;
+  return `starts in ${Math.max(1, Math.round((m.startMs - now) / 60_000))} min`;
+}
 
 /**
  * Universal capture (⇧⌘N and every drop): dump anything — a transcript, an
@@ -55,6 +63,8 @@ export function CaptureDialog({
   const [guess, setGuess] = useState<CaptureClassificationDTO | null>(null);
   const [external, setExternal] = useState(false);
   const [origin, setOrigin] = useState('');
+  const [match, setMatch] = useState<CaptureMeetingMatchDTO | null>(null);
+  const [attach, setAttach] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -74,6 +84,8 @@ export function CaptureDialog({
       setGuess(null);
       setExternal(false);
       setOrigin('');
+      setMatch(null);
+      setAttach(true);
       setDragOver(false);
     }
   }, [open, draft]);
@@ -105,6 +117,25 @@ export function CaptureDialog({
     : detectedUrl
       ? ['note', 'transcript', 'link']
       : ['note', 'transcript'];
+
+  // Capture matching: when this looks like the PO's own transcript, ask the
+  // calendar which synced meeting just happened, so we can attach rather than
+  // mint a duplicate. Time-based, so a single fetch when the kind settles.
+  const isOwnTranscript = kind === 'transcript' && !image && !external;
+  useEffect(() => {
+    if (!open || !isOwnTranscript) {
+      setMatch(null);
+      return;
+    }
+    let alive = true;
+    invoke['capture:matchMeeting']()
+      .then((m) => alive && setMatch(m))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [open, isOwnTranscript]);
+  const attaching = !!match && isOwnTranscript && attach;
 
   const acceptFile = useCallback(async (file: File) => {
     if (file.type.startsWith('image/')) {
@@ -142,6 +173,7 @@ export function CaptureDialog({
         url: kind === 'link' ? detectedUrl : undefined,
         external: kind === 'transcript' ? external : undefined,
         origin: kind === 'transcript' && external ? origin.trim() || undefined : undefined,
+        attachTo: attaching ? match!.notePath : undefined,
         attachment: image ? { name: image.name, dataBase64: image.dataUrl.split(',')[1] ?? '' } : undefined,
       });
       onOpenChange(false);
@@ -158,8 +190,10 @@ export function CaptureDialog({
     ? 'Open a workspace first.'
     : kind === 'transcript'
       ? external
-        ? 'Filed under sources/ as signal — insights and customer updates arrive in your Inbox, never decisions.'
-        : 'Lands in meetings/ — After-Meeting reviews it in the background; its cards arrive in your Inbox.'
+        ? 'Filed under sources/ as signal — approve the insights it finds here or in your Inbox, never decisions.'
+        : attaching
+          ? `Attaches to ${match!.title} — After-Meeting reviews it right on that page; approve its cards there or in the Inbox.`
+          : 'Lands in meetings/ — After-Meeting opens and reviews it; approve its cards right there or in the Inbox.'
       : kind === 'link'
         ? 'Filed in notes/ with the link — Intake connects it to your memory as cards you approve.'
         : kind === 'screenshot'
@@ -189,7 +223,12 @@ export function CaptureDialog({
           e.stopPropagation();
           setDragOver(false);
           const file = e.dataTransfer.files[0];
-          if (file) void acceptFile(file);
+          if (!file) return;
+          // One capture per file — say so instead of silently dropping the rest.
+          if (e.dataTransfer.files.length > 1) {
+            toast(`Using "${file.name}" — drop the other ${e.dataTransfer.files.length - 1} one at a time.`);
+          }
+          void acceptFile(file);
         }}
       >
         <DialogHeader>
@@ -199,7 +238,45 @@ export function CaptureDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {kind === 'transcript' && !image && (
+        {kind === 'transcript' && !image && match && !external && (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setAttach(true)}
+                aria-pressed={attach}
+                className={`flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
+                  attach ? 'border-brand/40 bg-brand/10 text-foreground' : 'border-input bg-card text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                <Mic className={`size-3.5 shrink-0 ${attach ? 'text-brand' : ''}`} aria-hidden />
+                <span className="truncate">
+                  Attach to <span className="font-medium">{match.title}</span>
+                  <span className="text-muted-foreground"> · {matchTiming(match)}</span>
+                </span>
+              </button>
+              <button
+                onClick={() => setAttach(false)}
+                aria-pressed={!attach}
+                className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
+                  !attach ? 'border-brand/40 bg-brand/10 text-foreground' : 'border-input bg-card text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                <StickyNote className={`size-3.5 shrink-0 ${!attach ? 'text-brand' : ''}`} aria-hidden />
+                New meeting
+              </button>
+            </div>
+            {!attach && (
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={fileName ? `Meeting title — ${guess?.title ?? fileName}` : 'Meeting title (e.g. Nordkap QBR — 2026-07-14)'}
+                aria-label="Meeting title"
+              />
+            )}
+          </div>
+        )}
+
+        {kind === 'transcript' && !image && (!match || external) && (
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}

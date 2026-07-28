@@ -17,5 +17,5 @@ job. Price was the second reason, mostly used as ammunition
 
 ## Win-back
 Johanna kept the relationship warm. Realistic once scheduled exports ship
-([[releases/2026-08-scheduled-exports]]) — the thing that killed the account is the thing we're
-building.
+([[decisions/2026-07-08-pilot-scheduled-exports]]) — the thing that killed the account is the
+thing we're building.

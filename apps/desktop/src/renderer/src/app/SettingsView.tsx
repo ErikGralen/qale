@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, useTheme } from '@pm/ui';
-import { Check, Copy, Eye, EyeOff, FolderOpen, KeyRound, Boxes, Gauge, CalendarClock, Play, Server, Sun, Moon, Monitor } from 'lucide-react';
+import { Check, Copy, Eye, EyeOff, FolderOpen, KeyRound, Gauge, CalendarClock, Play, Server, Sun, Moon, Monitor, UserRound, X } from 'lucide-react';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 import type { ModelInfoDTO, ProposalStatsDTO, SettingsDTO } from '@pm/ipc';
 import { invoke } from '../lib/ipc';
 import { useApp } from '../state/app-state';
 import { useToast } from '../components/toast';
+import { ConnectionsSettings } from './ConnectionsSettings';
 
 export function SettingsView() {
-  const { vault, openVaultDialog, activeTabId, keepTab } = useApp();
+  const { vault, openVaultDialog } = useApp();
   const { theme, setTheme } = useTheme();
   const toast = useToast();
   const [settings, setSettings] = useState<SettingsDTO | null>(null);
@@ -17,14 +18,7 @@ export function SettingsView() {
   const [stats, setStats] = useState<ProposalStatsDTO | null>(null);
   const [key, setKey] = useState('');
   const [savedKey, setSavedKey] = useState(false);
-  const [atl, setAtl] = useState({ baseUrl: '', email: '', token: '' });
-  const [savedAtl, setSavedAtl] = useState(false);
 
-  // Unsaved input commits the tab — a preview replacement must not eat a
-  // half-typed key. Everything else here saves instantly, so it can stay preview.
-  useEffect(() => {
-    if ((key || atl.baseUrl || atl.email || atl.token) && activeTabId) keepTab(activeTabId);
-  }, [key, atl, activeTabId, keepTab]);
 
   const reload = async () => {
     const [s, m, st] = await Promise.all([
@@ -84,16 +78,6 @@ export function SettingsView() {
       setSettings(await invoke['settings:setMcp'](patch));
     });
 
-  const saveAtlassian = () =>
-    trySave('Saving the Atlassian credentials', async () => {
-      if (!atl.baseUrl || !atl.email || !atl.token) return;
-      const s = await invoke['settings:setAtlassian'](atl);
-      setSettings(s);
-      setAtl({ baseUrl: '', email: '', token: '' });
-      setSavedAtl(true);
-      setTimeout(() => setSavedAtl(false), 2000);
-    });
-
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-10 items-center border-b border-border px-5 text-sm font-medium text-muted-foreground">
@@ -116,6 +100,25 @@ export function SettingsView() {
               </button>
             ))}
           </div>
+        </section>
+
+        <section className="space-y-2">
+          <div className="flex items-center gap-2">
+            <UserRound className="size-4 text-muted-foreground" />
+            <h2 className="text-base font-semibold">You</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Invites carry an address, not a name. This is how you appear in a meeting’s participants
+            — and which addresses the app recognises as you instead of as someone to file.
+          </p>
+          <IdentityCard
+            identity={settings?.identity ?? null}
+            onSave={(patch) =>
+              trySave('Saving your details', async () => {
+                setSettings(await invoke['settings:setIdentity'](patch));
+              })
+            }
+          />
         </section>
 
         <section className="space-y-2">
@@ -150,6 +153,12 @@ export function SettingsView() {
               </span>
             )}
           </div>
+          {settings?.secretsUnreadable && (
+            <p className="rounded-md bg-warning/10 px-2 py-1.5 text-sm text-warning">
+              Your saved keys can't be read anymore — the OS keychain was reset or changed. Re-enter
+              them below to keep the agent working.
+            </p>
+          )}
           {settings && !settings.secretsEncrypted ? (
             <p className="rounded-md bg-warning/10 px-2 py-1.5 text-sm text-warning">
               No OS keychain available on this system — keys are stored obfuscated, not encrypted.
@@ -282,12 +291,7 @@ export function SettingsView() {
                 enabled
               </label>
               <span className="text-xs text-muted-foreground">port</span>
-              <input
-                type="number"
-                value={settings.mcp.port}
-                onChange={(e) => setMcp({ port: Number(e.target.value) })}
-                className="w-20 rounded-md border border-input bg-card px-1.5 py-1 text-xs"
-              />
+              <McpPortInput port={settings.mcp.port} onCommit={(port) => setMcp({ port })} />
             </div>
             {settings.mcp.enabled && settings.mcp.token && (
               <McpConnection port={settings.mcp.port} token={settings.mcp.token} />
@@ -328,44 +332,105 @@ export function SettingsView() {
           </section>
         )}
 
-        <section className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Boxes className="size-4 text-muted-foreground" />
-            <h2 className="text-base font-semibold">Atlassian (Jira + Confluence)</h2>
-            {settings?.hasAtlassianCreds && (
-              <span className="flex items-center gap-1 text-xs text-brand">
-                <Check className="size-3.5" /> connected
-              </span>
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Tracker seam for Ask (read) and outbound drafts (write on approval). Create an{' '}
-            <em>unscoped</em> API token. Stored encrypted (safeStorage).
-          </p>
-          <div className="flex flex-col gap-2">
-            <Input
-              value={atl.baseUrl}
-              onChange={(e) => setAtl((a) => ({ ...a, baseUrl: e.target.value }))}
-              placeholder="https://your-domain.atlassian.net"
-            />
-            <Input
-              value={atl.email}
-              onChange={(e) => setAtl((a) => ({ ...a, email: e.target.value }))}
-              placeholder="you@company.com"
-            />
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                value={atl.token}
-                onChange={(e) => setAtl((a) => ({ ...a, token: e.target.value }))}
-                placeholder="Atlassian API token (unscoped)"
-              />
-              <Button size="sm" onClick={saveAtlassian} disabled={!atl.baseUrl || !atl.email || !atl.token}>
-                {savedAtl ? 'Saved' : 'Connect'}
-              </Button>
-            </div>
-          </div>
-        </section>
+        <ConnectionsSettings />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Your name, and every address that means you. The connected accounts are
+ * already known (a calendar grant carries its own address) and show as read-only
+ * — aliases exist for the ones they can't know, e.g. an invite that reached a
+ * second work address. Commits on blur/Enter, not per keystroke.
+ */
+function IdentityCard({
+  identity,
+  onSave,
+}: {
+  identity: SettingsDTO['identity'] | null;
+  onSave: (patch: { name?: string | null; aliases?: string[] }) => void;
+}) {
+  const [name, setName] = useState(identity?.name ?? '');
+  const [alias, setAlias] = useState('');
+  useEffect(() => setName(identity?.name ?? ''), [identity?.name]);
+
+  const connected = (identity?.emails ?? []).filter((e) => !(identity?.aliases ?? []).includes(e));
+  const aliases = identity?.aliases ?? [];
+
+  const commitName = () => {
+    const next = name.trim();
+    if (next !== (identity?.name ?? '')) onSave({ name: next || null });
+  };
+  const addAlias = () => {
+    const next = alias.trim().toLowerCase();
+    if (!next || aliases.includes(next)) {
+      setAlias('');
+      return;
+    }
+    onSave({ aliases: [...aliases, next] });
+    setAlias('');
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border bg-card p-3">
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground" htmlFor="pm-identity-name">
+          Your name
+        </label>
+        <Input
+          id="pm-identity-name"
+          value={name}
+          placeholder="Shown as “You” until you set it"
+          onChange={(e) => setName(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+          className="h-8"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <span className="text-xs font-medium text-muted-foreground">Addresses that are you</span>
+        <div className="flex flex-wrap items-center gap-1">
+          {connected.length === 0 && aliases.length === 0 && (
+            <span className="text-xs text-muted-foreground/70">
+              None yet — connect a calendar below, or add one here.
+            </span>
+          )}
+          {connected.map((e) => (
+            <span
+              key={e}
+              className="rounded-sm bg-accent px-1.5 py-px text-xs"
+              title="From a connected account"
+            >
+              {e}
+            </span>
+          ))}
+          {aliases.map((e) => (
+            <span key={e} className="flex items-center gap-1 rounded-sm bg-accent px-1.5 py-px text-xs">
+              {e}
+              <button
+                className="text-muted-foreground/70 hover:text-destructive"
+                onClick={() => onSave({ aliases: aliases.filter((a) => a !== e) })}
+                aria-label={`Remove ${e}`}
+              >
+                <X className="size-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <Input
+            value={alias}
+            placeholder="another@address.com"
+            onChange={(e) => setAlias(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addAlias()}
+            className="h-8"
+            aria-label="Add another address"
+          />
+          <Button size="sm" variant="outline" className="shrink-0" onClick={addAlias} disabled={!alias.trim()}>
+            Add
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -377,6 +442,34 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className="text-lg font-semibold tabular-nums">{value}</div>
       <div className="text-xs text-muted-foreground">{label}</div>
     </div>
+  );
+}
+
+/**
+ * The port commits on blur/Enter, not per keystroke — typing "3000" must not
+ * persist (and rebind the server to) ports 3, 30 and 300 along the way.
+ */
+function McpPortInput({ port, onCommit }: { port: number; onCommit: (port: number) => void }) {
+  const [draft, setDraft] = useState(String(port));
+  useEffect(() => setDraft(String(port)), [port]);
+  const commit = () => {
+    const n = Number(draft);
+    if (Number.isInteger(n) && n >= 1024 && n <= 65535) {
+      if (n !== port) onCommit(n);
+    } else {
+      setDraft(String(port));
+    }
+  };
+  return (
+    <input
+      type="number"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === 'Enter' && commit()}
+      aria-label="MCP server port"
+      className="w-20 rounded-md border border-input bg-card px-1.5 py-1 text-xs"
+    />
   );
 }
 

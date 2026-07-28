@@ -1,10 +1,10 @@
 # pm — a workspace OS for product managers
 
-An Electron desktop app that turns a plain-markdown vault (notes, meetings, decisions, people, problems, insights) into a product memory with an embedded AI agent. Everything the agent wants to change arrives as a **proposal card** in an approval inbox — nothing is written to your notes without review. The vault is git-backed for history, indexed into SQLite for search/links, and exposed over MCP so external agents can read it too.
+An Electron desktop app that turns a plain-markdown vault (notes, meetings, decisions, people, themes, insights) into a product memory with an embedded AI agent. Everything the agent wants to change arrives as a **proposal card** in an approval inbox — nothing is written to your notes without review. The vault is git-backed for history, indexed into SQLite for search/links, and exposed over MCP so external agents can read it too.
 
 ## Features
 
-- **Markdown vault** — plain `.md` files with typed frontmatter (meeting, decision, insight, problem, person, …), wikilinks, backlinks, and a live SQLite index.
+- **Markdown vault** — plain `.md` files with typed frontmatter (meeting, decision, insight, theme, person, …), wikilinks, backlinks, and a live SQLite index.
 - **Editor** — TipTap-based: selection toolbar, `/` block commands, `[[` wikilink autocomplete, drag block handles, structured properties block.
 - **Version history** — git-backed per-note history: a consent-gated `git init` per workspace, then a read-only history viewer on every note.
 - **Agent sessions** — skill-file driven (frontmatter + `## When / ## Produce / ## Then` sections) chat/ask/after-meeting/weekly sessions over the Anthropic API.

@@ -21,7 +21,7 @@ test('parseSkill reads frontmatter + When/Read/Produce/Then', () => {
   assert.ok(c.produce && /truth delta/i.test(c.produce));
   assert.ok(c.guardrails.completionBar && /cites/i.test(c.guardrails.completionBar));
   assert.equal(c.guardrails.stoppingConditions.length, 0);
-  assert.equal(c.guardrails.redFlags.length, 2);
+  assert.equal(c.guardrails.redFlags.length, 3);
 });
 
 test('the LAST section of a skill body is captured (regression: \\Z is not a JS anchor)', () => {
@@ -98,13 +98,13 @@ test('unknown tier is flagged and falls back to suggest', () => {
 });
 
 test('triggered binding without session_type is flagged', () => {
-  const raw = `---\ntype: skill\nsummary: s\nbindings:\n  - mode: triggered\n    event: todo.overdue\n---\n`;
+  const raw = `---\ntype: skill\nsummary: s\nbindings:\n  - mode: triggered\n    event: decision.superseded\n---\n`;
   const c = parseSkill(raw, 'skills/my-check');
   assert.ok(c.errors.some((e) => /requires an explicit session_type/.test(e)));
 });
 
 test('triggered binding on a non-session kind is flagged', () => {
-  const raw = `---\ntype: skill\nskill_kind: voice\nsession_type: v\nsummary: s\nbindings:\n  - mode: triggered\n    event: todo.overdue\n---\n`;
+  const raw = `---\ntype: skill\nskill_kind: voice\nsession_type: v\nsummary: s\nbindings:\n  - mode: triggered\n    event: decision.superseded\n---\n`;
   const c = parseSkill(raw, 'v');
   assert.ok(c.errors.some((e) => /never fires/.test(e)));
 });

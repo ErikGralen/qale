@@ -14,6 +14,8 @@ apps/desktop/dist/
 
 # Local vault / runtime data used in dev
 .vault-dev/
+.atlassian-demo.json
+.google-demo.json
 *.db
 *.db-shm
 *.db-wal

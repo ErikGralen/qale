@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   createAgentSession,
@@ -10,6 +10,7 @@ import {
   SettingsManager,
   type AgentSession,
 } from '@earendil-works/pi-coding-agent';
+import { completeSimple } from '@earendil-works/pi-ai/compat';
 import type { UseCaseContext } from '@pm/application';
 import { AtlassianClient } from '@pm/atlassian';
 import {
@@ -25,6 +26,7 @@ import {
   DRAFT_TOOL_NAMES,
   CHECKPOINT_TOOL_NAME,
   USE_SKILL_TOOL_NAME,
+  type TrackExternal,
 } from './tools.js';
 import { SHARED_PREAMBLE } from './prompts.js';
 import {
@@ -45,6 +47,13 @@ export interface AgentRuntimeConfig {
   modelId: string;
   apiKey: string | null;
   atlassian?: { baseUrl: string; email: string; token: string } | null;
+  /**
+   * Host callback behind the `track_external` tool — it reaches the sync engine,
+   * which lives in the desktop main process, not here. Identity-stable, so it is
+   * deliberately absent from `sameConfig`: swapping it must not tear down live
+   * sessions the way a credential or model change does.
+   */
+  trackExternal?: TrackExternal;
 }
 
 export interface RunInput {
@@ -129,14 +138,27 @@ export class AgentRuntime {
   private modelRegistry: ModelRegistry | null = null;
   private atlassian: AtlassianClient | null = null;
   private readonly sessions = new Map<string, SessionState>();
+  /** sessionId → in-flight createSession — two rapid runs must share one session. */
+  private readonly creating = new Map<string, Promise<SessionState>>();
   private readonly streamToSession = new Map<string, string>();
   /** sessionId → shelf state; only non-active entries are stored. */
   private lifecycles: Record<string, SessionLifecycle> = {};
+  /**
+   * listChats() re-reads every transcript in full — cache the result keyed by a
+   * cheap stat signature of the sessions dir so the frequent sidebar refresh
+   * with nothing changed costs a readdir + stats, not N file reads.
+   */
+  private chatListCache: { sig: string; chats: ChatRef[] } | null = null;
+  /** path → sessionType; the marker is stamped at creation and never changes. */
+  private readonly sessionTypeCache = new Map<string, string>();
   /** Lifecycle hook — main pushes these to the renderer as `session:status`. */
   onStatus: ((status: SessionStatus) => void) | null = null;
 
   configure(config: AgentRuntimeConfig): void {
+    // Re-applying identical settings must not kill live sessions mid-stream.
+    if (this.config && sameConfig(this.config, config)) return;
     this.config = config;
+    this.chatListCache = null;
     this.lifecycles = this.loadLifecycles();
     this.authStorage = AuthStorage.create(join(config.userDataDir, 'pi', 'auth.json'));
     if (config.apiKey) {
@@ -169,6 +191,84 @@ export class AgentRuntime {
     const available = this.modelRegistry.getAvailable();
     if (available.length === 0) throw new Error('No model available — set an Anthropic API key in Settings.');
     return available.find((m) => m.id === this.config!.modelId) ?? available[0]!;
+  }
+
+  /**
+   * A short, human title for a titleless capture (a dropped transcript) — so it
+   * files as `meetings/2026-07-20-nordkap-sso-checkin.md`, not a slug of its
+   * first spoken line. One cheap non-streaming completion; strictly best-effort:
+   * no key, no model, or any error returns null and the caller keeps its
+   * heuristic title. Never throws into the capture path.
+   */
+  async generateTitle(text: string): Promise<string | null> {
+    let model;
+    try {
+      model = this.resolveModel();
+    } catch {
+      return null;
+    }
+    const excerpt = text.replace(/\s+/g, ' ').trim().slice(0, 3000);
+    if (excerpt.length < 40) return null;
+    const context = {
+      systemPrompt:
+        'You title meeting notes. Reply with ONLY a short, specific title in Title Case ' +
+        '(3–8 words) — the customer or topic, no quotes, no trailing punctuation, no preamble. ' +
+        'Example: Nordkap SSO Go-Live Check-in',
+      messages: [{ role: 'user' as const, content: `Transcript excerpt:\n\n${excerpt}`, timestamp: 0 }],
+    };
+    try {
+      // pi-ai falls back to env vars without an explicit apiKey — pass the
+      // configured key so a Settings-pasted key works in packaged builds (no
+      // ANTHROPIC_API_KEY in the environment).
+      const msg = await completeSimple(model as Parameters<typeof completeSimple>[0], context, {
+        apiKey: this.config?.apiKey ?? undefined,
+      });
+      const out = (msg.content ?? [])
+        .filter((c): c is { type: 'text'; text: string } => (c as { type?: string }).type === 'text')
+        .map((c) => c.text)
+        .join(' ');
+      const title = out
+        .replace(/^["'`\s]+|["'`.\s]+$/g, '')
+        .replace(/\s+/g, ' ')
+        .slice(0, 80)
+        .trim();
+      return title.length >= 2 ? title : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * One-shot, non-streaming completion for background judgments (the
+   * librarian's page-contradiction checks). Returns null when no model/key is
+   * configured — the caller treats that as "cannot judge, skip quietly".
+   * Unlike generateTitle, API errors THROW: the sweep must know the judgment
+   * didn't happen so it can retry next tick instead of recording a verdict.
+   */
+  async completeText(input: { system: string; prompt: string }): Promise<string | null> {
+    let model;
+    try {
+      model = this.resolveModel();
+    } catch {
+      return null;
+    }
+    const context = {
+      systemPrompt: input.system,
+      messages: [{ role: 'user' as const, content: input.prompt, timestamp: 0 }],
+    };
+    const msg = await completeSimple(model as Parameters<typeof completeSimple>[0], context, {
+      apiKey: this.config?.apiKey ?? undefined,
+    });
+    // completeSimple resolves (never rejects) on API failure, with an error
+    // stop reason. Surface that as a throw — returning the empty text here
+    // would be ledgered as a verdict and permanently suppress the check.
+    if (msg.stopReason === 'error' || msg.stopReason === 'aborted') {
+      throw new Error(msg.errorMessage ?? 'completion failed');
+    }
+    return (msg.content ?? [])
+      .filter((c): c is { type: 'text'; text: string } => (c as { type?: string }).type === 'text')
+      .map((c) => c.text)
+      .join('\n');
   }
 
   /**
@@ -223,7 +323,9 @@ export class AgentRuntime {
       // the Skills view describes this scoping, so the prompt must carry it too.
       const audiences = cfg.bindings.filter((b) => b.mode === 'forced' && b.audience).map((b) => b.audience);
       const scope = audiences.length > 0 ? ` (applies when drafting for ${audiences.join(', ')})` : '';
-      bodies.push(`### ${note.frontmatter.summary}${scope}\n${note.body.trim()}`);
+      // A voice file without a summary must not inject "### undefined" into
+      // every outbound prompt — the skill name is always present.
+      bodies.push(`### ${note.frontmatter.summary?.trim() || cfg.name}${scope}\n${note.body.trim()}`);
     }
     return bodies.length ? `\n\n## Voice guides (apply to outbound drafts)\n${bodies.join('\n\n')}` : '';
   }
@@ -238,6 +340,20 @@ export class AgentRuntime {
     if (guides.length === 0) return null;
     const lines = guides.map((g) => `- \`${g.slug.split('/').pop()}\` — ${g.summary}`);
     return `\n\n## Guides available on demand\nCall \`use_skill\` with a guide name to load it when relevant:\n${lines.join('\n')}`;
+  }
+
+  /**
+   * Seed the root `index.md` vault map into the session context (OKF §8, the
+   * strongest of the three retrieval levers): because the map is compact (one
+   * line per folder), injecting it means the agent starts every session already
+   * holding the whole-vault orientation, then drills into folder maps via
+   * `vault_read` — never spending a tool call just to find the map. Absent (a
+   * fresh vault before the first librarian pass) contributes nothing.
+   */
+  private async vaultMap(ctx: UseCaseContext): Promise<string> {
+    const raw = await ctx.vault.readRaw('index.md');
+    if (!raw || !raw.trim()) return '';
+    return `\n\n## Vault map (root index.md)\nYour orientation layer. Each folder also has its own index.md; read the relevant one, then vault_read the notes it points to.\n\n${raw.trim()}`;
   }
 
   /** Where the pi JSONL transcripts live — the machine replay store (off the vault). */
@@ -272,6 +388,9 @@ export class AgentRuntime {
   setLifecycle(sessionId: string, lifecycle: SessionLifecycle): void {
     if (lifecycle === 'active') delete this.lifecycles[sessionId];
     else this.lifecycles[sessionId] = lifecycle;
+    // Lifecycle lives in a sidecar, not the sessions dir — the dir signature
+    // won't notice this change, so drop the cache by hand.
+    this.chatListCache = null;
     try {
       writeFileSync(this.lifecycleFile(), JSON.stringify(this.lifecycles));
     } catch (err) {
@@ -294,11 +413,15 @@ export class AgentRuntime {
 
   /** Read the pm.session marker stamped at creation (line 2 of the JSONL). */
   private readSessionType(file: string): string {
+    const cached = this.sessionTypeCache.get(file);
+    if (cached) return cached;
     try {
       for (const line of readFileSync(file, 'utf8').split('\n').slice(0, 6)) {
         if (!line.trim()) continue;
         const entry = JSON.parse(line) as { type?: string; customType?: string; data?: { sessionType?: string } };
         if (entry.type === 'custom' && entry.customType === META_ENTRY_TYPE && entry.data?.sessionType) {
+          // The marker is written once at creation — safe to cache forever.
+          this.sessionTypeCache.set(file, entry.data.sessionType);
           return entry.data.sessionType;
         }
       }
@@ -319,7 +442,8 @@ export class AgentRuntime {
     const harness = new SessionHarness(id, skillConfig, ctx.clock.now());
     const voice = skillConfig.tier === 'outbound' ? await this.voiceGuides(ctx) : '';
     const guides = this.guideIndex(ctx);
-    const systemPrompt = buildSystemPrompt(SHARED_PREAMBLE, skillConfig) + voice + (guides ?? '');
+    const vaultMap = await this.vaultMap(ctx);
+    const systemPrompt = buildSystemPrompt(SHARED_PREAMBLE, skillConfig) + voice + (guides ?? '') + vaultMap;
 
     // The ask session gains the tracker seam (Jira/Confluence) when configured.
     const atlassianActive = type === 'ask' && this.atlassian;
@@ -330,7 +454,7 @@ export class AgentRuntime {
       ...(skillConfig.tier === 'outbound' ? createDraftTools(ctx, id, harness) : []),
       ...(skillConfig.checkpoints.length > 0 ? [createCheckpointTool(harness)] : []),
       ...(guides ? [createUseSkillTool(ctx)] : []),
-      ...(atlassianActive ? createAtlassianTools(this.atlassian!) : []),
+      ...(atlassianActive ? createAtlassianTools(this.atlassian!, this.config.trackExternal) : []),
     ];
 
     const loader = new DefaultResourceLoader({
@@ -413,7 +537,17 @@ export class AgentRuntime {
   ): Promise<RunHandle> {
     if (!this.config?.apiKey) throw new Error('Set an Anthropic API key in Settings to chat.');
     const sessionId = input.sessionId ?? randomUUID();
-    const state = this.sessions.get(sessionId) ?? (await this.createSession(input.sessionType, sessionId, ctx));
+    let state = this.sessions.get(sessionId);
+    if (!state) {
+      let pending = this.creating.get(sessionId);
+      if (!pending) {
+        pending = this.createSession(input.sessionType, sessionId, ctx).finally(() => {
+          this.creating.delete(sessionId);
+        });
+        this.creating.set(sessionId, pending);
+      }
+      state = await pending;
+    }
     // One turn at a time per session: a second run would reroute the live
     // bridge mid-stream and interleave pi prompts on the same session.
     if (state.activeStreamId) throw new Error('This conversation is still responding — wait or stop it first.');
@@ -477,16 +611,35 @@ export class AgentRuntime {
     return live;
   }
 
+  /** name:mtime:size per transcript — changes iff a full re-list would differ. */
+  private sessionsDirSignature(): string | null {
+    try {
+      const dir = this.sessionsDir();
+      return readdirSync(dir)
+        .filter((f) => f.endsWith('.jsonl'))
+        .sort()
+        .map((f) => {
+          const s = statSync(join(dir, f));
+          return `${f}:${s.mtimeMs}:${s.size}`;
+        })
+        .join('|');
+    } catch {
+      return null;
+    }
+  }
+
   /** All stored conversations for this vault, newest first. */
   async listChats(): Promise<ChatRef[]> {
     if (!this.config) return [];
+    const sig = this.sessionsDirSignature();
+    if (sig !== null && this.chatListCache?.sig === sig) return this.chatListCache.chats;
     let infos;
     try {
       infos = await SessionManager.list(this.config.vaultDir, this.sessionsDir());
     } catch {
       return [];
     }
-    return infos
+    const chats = infos
       .filter((info) => info.messageCount > 0)
       .map((info) => ({
         id: info.id,
@@ -498,6 +651,8 @@ export class AgentRuntime {
         preview: truncate(info.allMessagesText, 140) ?? '',
         lifecycle: this.getLifecycle(info.id),
       }));
+    if (sig !== null) this.chatListCache = { sig, chats };
+    return chats;
   }
 
   /** Replay a stored conversation as UI messages (live sessions read their open manager). */
@@ -546,6 +701,18 @@ export class AgentRuntime {
   dispose(): void {
     this.disposeSessions();
   }
+}
+
+function sameConfig(a: AgentRuntimeConfig, b: AgentRuntimeConfig): boolean {
+  return (
+    a.vaultDir === b.vaultDir &&
+    a.userDataDir === b.userDataDir &&
+    a.modelId === b.modelId &&
+    a.apiKey === b.apiKey &&
+    (a.atlassian?.baseUrl ?? null) === (b.atlassian?.baseUrl ?? null) &&
+    (a.atlassian?.email ?? null) === (b.atlassian?.email ?? null) &&
+    (a.atlassian?.token ?? null) === (b.atlassian?.token ?? null)
+  );
 }
 
 function truncate(s: string | undefined, n: number): string | undefined {

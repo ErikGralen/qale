@@ -11,6 +11,12 @@ participants:
   - Sara Lindqvist
 customer: "[[customers/nordkap-payments]]"
 series: nordkap-checkin
+provider: google-calendar
+external_id: gcal-nordkap-checkin-0718
+calendar: erik@tavla.example
+event_status: confirmed
+remote_updated: "2026-07-17T08:00:00+02:00"
+url: "https://calendar.google.com/calendar/event?eid=demo-nordkap-checkin"
 ---
 
 ## Notes

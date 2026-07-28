@@ -16,6 +16,7 @@ const WORKSPACE_PACKAGES = [
   '@pm/agent',
   '@pm/atlassian',
   '@pm/sessions',
+  '@pm/connectors',
 ];
 
 // One config drives all three Electron layers (PLAN §2). Main is ESM; the

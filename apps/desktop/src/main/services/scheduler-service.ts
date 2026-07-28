@@ -1,10 +1,5 @@
-import { skillsForEvent, type UseCaseContext } from '@pm/application';
+import type { UseCaseContext } from '@pm/application';
 import type { SettingsService } from './settings-service.js';
-
-/** Local "YYYY-MM-DD" for overdue-todo detection. */
-function todayIso(now: Date): string {
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-}
 
 /**
  * The app-open scheduler (PLAN-V2 §3.5): fires scheduled sessions on their weekly
@@ -22,6 +17,9 @@ export class SchedulerService {
     private readonly onChanged: () => void,
     /** Librarian maintenance pass (ping sweep) — runs each tick, errors swallowed. */
     private readonly maintenance?: () => void,
+    /** Before-meeting auto-prep: synced meetings starting within the hour get
+     *  their brief prepared on the meeting page. Runs each tick, errors swallowed. */
+    private readonly beforeMeetingSweep?: () => Promise<void> | void,
   ) {}
 
   start(): void {
@@ -55,42 +53,25 @@ export class SchedulerService {
         );
       }
     }
-    // Triggered reactions (Skills v2): a slipped commitment fires any skill bound
-    // to `todo.overdue`, which produces approval cards. Depth-1 loop guard — only
-    // this scheduler-origin event dispatches; the reaction's own writes never
-    // re-trigger.
-    await this.fireOverdueReactions(ctx, now).catch((err) =>
-      console.error('[pm] overdue reaction failed:', err),
-    );
+    // Overdue todos are handled on demand now, not on a timer: the PO picks a
+    // slipped commitment and asks the memory to help (the `commitment-check`
+    // session, fired per-todo from the Todos view / the todo page). An interval
+    // sweep piled up duplicate, un-actioned cards, so it's gone.
 
     try {
       this.maintenance?.();
     } catch (err) {
       console.error('[pm] ping sweep failed:', err);
     }
-  }
 
-  /** Once per day at most: if any of the PO's own todos have slipped, fire the reactions bound to `todo.overdue`. */
-  private lastOverdueSweep: string | null = null;
-  private async fireOverdueReactions(ctx: UseCaseContext, now: Date): Promise<void> {
-    const today = todayIso(now);
-    if (this.lastOverdueSweep === today) return;
-    const overdue = ctx.index
-      .listByType('todo')
-      .some((n) => {
-        const fm = n.frontmatter as Record<string, unknown>;
-        return (fm['status'] ?? 'open') === 'open' && !fm['owner'] && typeof fm['due'] === 'string' && fm['due'] < today;
-      });
-    if (!overdue) return;
-    this.lastOverdueSweep = today;
-    const skills = await skillsForEvent(ctx, 'todo.overdue', { date: today });
-    for (const s of skills) {
-      await this.fireSession(
-        s.sessionType,
-        `A commitment has slipped overdue as of ${today}. Review the overdue todos and propose how to handle each (reschedule, close, or draft a nudge) as approval cards.`,
-      ).catch((err) => console.error('[pm] reaction session failed:', err));
+    // Time-aware auto-prep: reads the (previous tick's) shallow event index and
+    // prepares the brief for meetings an hour out. Independent of sync latency —
+    // a meeting an hour away tolerates being one tick behind on the mirror.
+    try {
+      await this.beforeMeetingSweep?.();
+    } catch (err) {
+      console.error('[pm] before-meeting sweep failed:', err);
     }
-    if (skills.length > 0) this.onChanged();
   }
 }
 

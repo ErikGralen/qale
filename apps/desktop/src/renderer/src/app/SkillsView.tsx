@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { SkillDTO } from '@pm/ipc';
 import { useApp } from '../state/app-state';
+import { navFromEvent } from '../lib/nav';
 
 /**
  * The Skills view (Skills v2) — how the agent behaves, made legible. Skills group
@@ -57,8 +58,7 @@ function SkillRow({ skill }: { skill: SkillDTO }) {
     <li>
       <button
         className="group flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset focus-visible:outline-none"
-        onClick={() => void openDoc(skill.path)}
-        onDoubleClick={() => void openDoc(skill.path, { preview: false })}
+        onClick={(e) => void openDoc(skill.path, navFromEvent(e))}
         title={`Open ${skill.path}`}
       >
         <div className="min-w-0 flex-1">

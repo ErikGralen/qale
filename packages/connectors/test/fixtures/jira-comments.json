@@ -1,0 +1,32 @@
+{
+  "comments": [
+    {
+      "author": { "displayName": "Mika Ranta" },
+      "created": "2026-07-21T14:03:00.000+0200",
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [{ "type": "text", "text": "Blocked on the infra security review." }]
+          }
+        ]
+      }
+    },
+    {
+      "author": { "displayName": "Jonas Ek" },
+      "created": "2026-07-18T10:30:00.000+0200",
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [{ "type": "text", "text": "Metadata endpoint deployed to staging." }]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -24,12 +24,12 @@ not a meeting to process.
 
 ## Read
 The source note (its `origin` says whose meeting it was), the customer page it concerns, the
-problem hubs and existing insights it touches, and the decision spine for anything the conversation
+theme hubs and existing insights it touches, and the decision spine for anything the conversation
 contradicts (search_vault).
 
 ## Produce
 Approval cards — insights and hub updates ONLY, never decisions:
-- **Insights** — cited claims about the customer/problem (propose_note, type insight), each quoting
+- **Insights** — cited claims about the customer/theme (propose_note, type insight), each quoting
   the transcript. The verbatim customer voice is strong evidence; what is secondhand is the
   interpretation, so set confidence honestly on the claim, not reflexively low.
 - **Customer signals** — updates to the customer hub (propose_update) where the call genuinely adds

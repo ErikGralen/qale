@@ -12,3 +12,5 @@ tags:
 
 > "I'll send over the [[notes/rollout-runbook|rollout runbook]] so your team can review it before the 28th."
 > — [[meetings/2026-07-14-nordkap-checkin]]
+
+Rollout delivery is tracked on [[tickets/PAY-142|PAY-142]].

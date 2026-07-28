@@ -15,12 +15,14 @@ red_flags:
 A customer-call transcript is dropped.
 
 ## Read
-The transcript, the customer page, and the problems it touches (search_vault).
+The transcript, the customer page, and the themes it touches (search_vault).
 
 ## Produce
 Signals and insights as approval cards (propose_note type insight), each citing the transcript and a
 confidence level. Where a finding contradicts an existing belief, flag it as an update to the relevant
-insight/problem (propose_update) — never resolve silently.
+insight/theme (propose_update) — never resolve silently.
 
 ## Then
 Approved cards update the customer and insight pages; contradictions surface for the PM to resolve.
+One interview is one account. Turning several of these into a pattern is the Synthesis session's
+job, not this one's — never promote a single call to a theme here.

@@ -9,10 +9,10 @@ sources: ["[[meetings/2026-07-08-sprint-planning]]"]
 
 Three bets, in order:
 
-1. **Enterprise onboarding** ([[problems/enterprise-onboarding]]) — SSO 2026-07-28, then SCIM
+1. **Enterprise onboarding** ([[themes/enterprise-onboarding]]) — SSO 2026-07-28, then SCIM
    scoping in August for September delivery. This protects the Nordkap renewal (2026-11-01) and
    is the gate on Bergman & Falk. Nothing is allowed to bump it.
-2. **Scheduled exports** ([[problems/scheduled-reporting]]) — v1 with Kranelund, ship end of
+2. **Scheduled exports** ([[themes/scheduled-reporting]]) — v1 with Kranelund, ship end of
    August. Mid-market retention play; Rondo already churned over this gap, and it's the
    win-back key.
 3. **Hold the line** — no on-prem ([[decisions/2026-06-18-no-on-prem]]), no mobile

@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "content": {
+        "id": "98342",
+        "title": "Enterprise Onboarding",
+        "version": { "number": 17, "when": "2026-07-18T09:12:00.000+0200" },
+        "_links": { "webui": "/spaces/PROD/pages/98342/Enterprise+Onboarding" }
+      },
+      "excerpt": "SCIM ships in <b>Q2</b> together with SSO"
+    },
+    {
+      "content": {
+        "id": "98410",
+        "title": "SSO rollout runbook",
+        "version": { "number": 4, "when": "2026-07-21T11:05:00.000+0200" },
+        "_links": { "webui": "/spaces/PROD/pages/98410/SSO+rollout+runbook" }
+      },
+      "excerpt": "Tenant cutover steps"
+    }
+  ]
+}

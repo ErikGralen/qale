@@ -1,9 +1,9 @@
-import { isBodyEditable, titleFromSlug, type Note } from '@pm/domain';
+import { backlinkTypeLabel, isBodyEditable, titleFromSlug, zOutboundPayload, type Note } from '@pm/domain';
 import type {
   Backlink,
   IndexedNote,
   PingRecord,
-  ProblemHeatRow,
+  ThemeHeatRow,
   ProposalRecord,
   SkillSummary,
   VaultInfo,
@@ -14,8 +14,8 @@ import type {
   BacklinkDTO,
   NoteDTO,
   NoteRefDTO,
-  ProblemHeatDTO,
-  ProblemStance,
+  ThemeHeatDTO,
+  ThemeStance,
   ProposalDTO,
   SearchHitDTO,
   SkillDTO,
@@ -58,6 +58,10 @@ export function indexedToRefDTO(n: IndexedNote): NoteRefDTO {
     date: typeof fm['date'] === 'string' ? fm['date'] : undefined,
     time: typeof fm['time'] === 'string' ? fm['time'] : undefined,
     durationMin: typeof fm['duration_minutes'] === 'number' ? fm['duration_minutes'] : undefined,
+    eventStatus:
+      fm['event_status'] === 'confirmed' || fm['event_status'] === 'tentative' || fm['event_status'] === 'cancelled'
+        ? fm['event_status']
+        : undefined,
     supersedes: typeof fm['supersedes'] === 'string' ? fm['supersedes'] : undefined,
     supersededBy: typeof fm['superseded_by'] === 'string' ? fm['superseded_by'] : undefined,
     due: typeof fm['due'] === 'string' ? fm['due'] : undefined,
@@ -67,7 +71,16 @@ export function indexedToRefDTO(n: IndexedNote): NoteRefDTO {
       Array.isArray(fm['sources']) && typeof fm['sources'][0] === 'string'
         ? (fm['sources'][0] as string)
         : undefined,
+    stateCategory: isStateCategory(fm['state_category']) ? fm['state_category'] : undefined,
+    state: typeof fm['state'] === 'string' ? fm['state'] : undefined,
+    assignee: typeof fm['assignee'] === 'string' ? fm['assignee'] : undefined,
+    remoteUpdated: typeof fm['remote_updated'] === 'string' ? fm['remote_updated'] : undefined,
   };
+}
+
+const STATE_CATEGORIES = ['open', 'in_progress', 'blocked', 'done'] as const;
+function isStateCategory(v: unknown): v is (typeof STATE_CATEGORIES)[number] {
+  return typeof v === 'string' && (STATE_CATEGORIES as readonly string[]).includes(v);
 }
 
 export function treeToDTO(groups: VaultTreeGroup[]): VaultTreeDTO {
@@ -98,8 +111,14 @@ export function skillToDTO(s: SkillSummary): SkillDTO {
 export function backlinkToDTO(b: Backlink): BacklinkDTO {
   return {
     from: indexedToRefDTO(b.from),
+    type: b.type,
+    typeLabel: b.type ? capitalize(backlinkTypeLabel(b.type, b.reversed)) : undefined,
     context: b.line !== undefined ? `line ${b.line}` : undefined,
   };
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export function hitToDTO(h: SearchHit): SearchHitDTO {
@@ -124,23 +143,35 @@ export function vaultInfoToDTO(info: VaultInfo): VaultInfoDTO {
   };
 }
 
-export function problemHeatToDTO(row: ProblemHeatRow): ProblemHeatDTO {
+export function themeHeatToDTO(row: ThemeHeatRow): ThemeHeatDTO {
   return {
     ...indexedToRefDTO(row.note),
-    stance: ((row.note.frontmatter['stance'] as string) ?? 'exploring') as ProblemStance,
+    stance: ((row.note.frontmatter['stance'] as string) ?? 'exploring') as ThemeStance,
     evidenceCount: row.count,
     newest: row.newest,
   };
 }
 
 export function proposalToDTO(rec: ProposalRecord): ProposalDTO {
+  // Outbound payloads persisted before the provider-generic vocabulary carry
+  // `system` + legacy action names; normalize so the renderer always sees
+  // `provider` + generic actions. Best-effort — an unparsable payload passes
+  // through as-is rather than hiding the card.
+  let payload = rec.payload;
+  if (rec.kind === 'outbound') {
+    const parsed = zOutboundPayload.safeParse(rec.payload);
+    if (parsed.success) payload = parsed.data;
+  }
   return {
     id: rec.id,
     kind: rec.kind as ProposalDTO['kind'],
     sessionId: rec.sessionId,
     sessionType: rec.sessionType,
     targetPath: rec.targetPath,
-    payload: rec.payload as ProposalDTO['payload'],
+    payload: payload as ProposalDTO['payload'],
+    // The agent authors the headline inside the payload (no DB column); surface
+    // it as a first-class field so the renderer never reaches into payload shape.
+    headline: (rec.payload as { headline?: string }).headline?.trim() || undefined,
     rationale: rec.rationale,
     evidence: rec.evidence,
     inference: rec.inference,
@@ -167,3 +198,28 @@ export function pingToDTO(rec: PingRecord): AgentPingDTO {
 
 // Title-cased so legacy files without an explicit `title` don't read as raw slugs.
 const deriveTitle = titleFromSlug;
+
+// ---------------------------------------------------------------------------
+// Contract drift guards (R3): @pm/ipc deliberately re-declares domain unions
+// (it must stay dependency-free), so this module — which imports both — pins
+// them together. A value added on one side only fails to compile HERE, not at
+// a customer's runtime (`update_ticket` shipped exactly that way).
+// ---------------------------------------------------------------------------
+type _MutualLock<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+const _outboundActionLock: _MutualLock<
+  import('@pm/ipc').OutboundAction,
+  import('@pm/domain').OutboundAction
+> = true;
+const _outboundProviderLock: _MutualLock<
+  import('@pm/ipc').OutboundProvider,
+  import('@pm/domain').OutboundProvider
+> = true;
+const _noteTypeLock: _MutualLock<import('@pm/ipc').NoteType, import('@pm/domain').NoteType> = true;
+const _stateCategoryLock: _MutualLock<
+  import('@pm/ipc').StateCategory,
+  import('@pm/domain').StateCategory
+> = true;
+void _outboundActionLock;
+void _outboundProviderLock;
+void _noteTypeLock;
+void _stateCategoryLock;

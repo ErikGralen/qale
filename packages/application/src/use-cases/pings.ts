@@ -6,9 +6,11 @@ import {
   suggestLinkCandidates,
   suggestLinkTarget,
   type LinkRepairCandidate,
+  type NoteType,
   type UpdatePayload,
 } from '@pm/domain';
 import type {
+  OrphanKind,
   PingLinkChoiceItem,
   PingOrphanItem,
   PingPayload,
@@ -16,7 +18,8 @@ import type {
   UseCaseContext,
 } from '../ports.js';
 import { applyPatch, createProposal } from './proposals.js';
-import { getMaintenanceReport, type MaintenanceReport } from './vault.js';
+import { getMaintenanceReport, type MaintenanceReport, type OrphanCandidate } from './vault.js';
+import { REDEDUPE_MS, logSweepError, sweepWikipageDrift } from './wikipage-drift.js';
 
 /**
  * The librarian sweep — the proactive half of "nothing silent". It works ahead:
@@ -34,10 +37,12 @@ import { getMaintenanceReport, type MaintenanceReport } from './vault.js';
 const MAX_PENDING_PINGS = 5;
 /** Never queue more prepared fixes than a PO clears in one sitting. */
 const MAX_PENDING_FIXES = 8;
-/** A dismissed finding or declined fix stays quiet for a week. */
-const REDEDUPE_MS = 7 * 24 * 60 * 60 * 1000;
+// The quiet window (REDEDUPE_MS) is shared with the drift sweep — imported
+// from wikipage-drift.ts so the two can't silently diverge.
 /** At most this many mention hosts offered per orphan. */
 const MAX_MENTION_HOSTS = 3;
+/** Below this, a note naming other pages in prose is a coincidence, not a dump. */
+const CAPTURE_NAME_FLOOR = 2;
 
 interface Candidate {
   key: string;
@@ -56,7 +61,7 @@ interface Candidate {
  * load-bearing: a lingering old-format ping (pending or recently dismissed)
  * would block its replacement via hasRecent for a week if the key were reused.
  * Leftovers are retired on the next tick. */
-const RETIRED_KEY = /^(overdue-todos$|meeting-prep-|dangling-links$|orphans$)/;
+const RETIRED_KEY = /^(overdue-todos$|meeting-prep-|dangling-links$|orphans$|orphan-connect$)/;
 
 /** True when a patch block's search text is a wikilink on `target`. */
 function searchesTarget(search: string, target: string): boolean {
@@ -68,6 +73,8 @@ function searchesTarget(search: string, target: string): boolean {
 
 /** The sweep's shared budget/dedupe view of existing librarian cards. */
 interface FixLedger {
+  /** ALL pending librarian prepared fixes — link repairs AND page-drift cards
+   * share the one queue the cap protects. */
   pending: number;
   /** Librarian update cards that are pending or resolved within the dedupe window. */
   recent: { targetPath: string | null; patch: { search: string; replace: string }[] }[];
@@ -76,12 +83,13 @@ interface FixLedger {
 function readFixLedger(ctx: UseCaseContext, now: number): FixLedger {
   const librarian = ctx.proposals
     .list()
-    .filter((p) => p.sessionId === 'librarian' && p.kind === 'update');
+    .filter((p) => p.sessionId === 'librarian' && (p.kind === 'update' || p.kind === 'outbound'));
+  const updates = librarian.filter((p) => p.kind === 'update');
   return {
     pending: librarian.filter((p) => p.status === 'pending').length,
-    recent: librarian
+    recent: updates
       .filter((p) => p.status === 'pending' || (p.resolved ?? 0) > now - REDEDUPE_MS)
-      .map((p) => ({ targetPath: p.targetPath, patch: (p.payload as UpdatePayload).patch })),
+      .map((p) => ({ targetPath: p.targetPath, patch: (p.payload as UpdatePayload).patch ?? [] })),
   };
 }
 
@@ -159,32 +167,196 @@ async function proposeLinkFixes(
 }
 
 /**
- * Orphan adoption options: for each unlinked note, find other notes that
- * mention its title as plain text (FTS-prefiltered — the sweep never reads the
- * whole vault). Each host becomes a one-tap "link it there"; orphans nothing
- * mentions stay skip-or-chat.
+ * Who already mentions this note in prose, as link-it-there options. Every
+ * search term gets its own pass: a ticket is cited by its key ("chase PAY-5"),
+ * never by its composed title, so hunting only the title finds nothing and
+ * reports "nothing mentions it" — technically true, materially wrong.
+ */
+async function findMentionHosts(
+  ctx: UseCaseContext,
+  orphan: OrphanCandidate,
+): Promise<PingOrphanItem['mentions']> {
+  const mentions: PingOrphanItem['mentions'] = [];
+  const seen = new Set<string>();
+  for (const term of [orphan.title, ...orphan.aliases]) {
+    if (term.trim().length < 4) continue;
+    for (const hit of ctx.index.search(term, 6)) {
+      if (mentions.length >= MAX_MENTION_HOSTS) return mentions;
+      if (hit.path === orphan.path || isFolderIndex(hit.path) || seen.has(hit.path)) continue;
+      const note = await ctx.vault.readNote(hit.path);
+      if (!note) continue;
+      const lines = findUnlinkedMentions(note.body, term);
+      if (lines.length === 0) continue;
+      seen.add(hit.path);
+      mentions.push({ host: hit.path, hostTitle: hit.title, line: lines[0]!, term });
+    }
+  }
+  return mentions;
+}
+
+/**
+ * Note types titled with a proper name, which prose shortens ("Kranelund
+ * Logistics" → "kranelund"). Deliberately excludes themes: their titles are
+ * descriptive phrases, so a leading word like "Scheduled" or "Mobile" is a
+ * common adjective, not a name, and matching on it would invent references.
+ */
+const PROPER_NAME_TYPES = new Set<NoteType>(['person', 'customer']);
+
+interface NameKey {
+  path: string;
+  slug: string;
+  title: string;
+  /** The literal text to hunt for — a full title, or a hub's first name. */
+  key: string;
+}
+
+/**
+ * The vocabulary a dump would plausibly use for each existing page. Full titles
+ * count, but nobody writing at speed types them: the vault knows "Kranelund
+ * Logistics" and "Sara Lindqvist" while the scratch pad says "kranelund" and
+ * "sara". So a proper-name page also contributes its leading word, and only
+ * when that word is unambiguous across the whole vocabulary. A short name two
+ * pages could claim buys nothing here and would misattribute the evidence.
+ */
+function buildNameKeys(pool: OrphanScanPool): NameKey[] {
+  const keys: NameKey[] = [];
+  for (const n of pool) {
+    const title = n.title.trim();
+    if (title.length >= 4) keys.push({ ...n, key: title });
+    const first = title.split(/[\s·—-]+/)[0]?.trim() ?? '';
+    if (PROPER_NAME_TYPES.has(n.type) && first.length >= 4 && first !== title) {
+      keys.push({ ...n, key: first });
+    }
+  }
+  const byKey = new Map<string, NameKey[]>();
+  for (const k of keys) {
+    const lower = k.key.toLowerCase();
+    byKey.set(lower, [...(byKey.get(lower) ?? []), k]);
+  }
+  return keys.filter((k) => (byKey.get(k.key.toLowerCase()) ?? []).every((o) => o.path === k.path));
+}
+
+/**
+ * The reverse direction: existing pages THIS note names in prose without
+ * linking. A scratch pad naming half the vault isn't a hygiene defect, it's the
+ * densest unabsorbed signal in the workspace — and it's what tells a dump apart
+ * from a page nobody ever cited. The lowercase-substring prefilter is exactly
+ * equivalent to the (case-insensitive, literal) mention regex, so it skips the
+ * work without changing the answer.
+ */
+function findNamedPages(body: string, orphanPath: string, keys: NameKey[]): { slug: string; title: string }[] {
+  const haystack = body.toLowerCase();
+  const names = new Map<string, { slug: string; title: string }>();
+  for (const cand of keys) {
+    if (cand.path === orphanPath || names.has(cand.path)) continue;
+    if (!haystack.includes(cand.key.toLowerCase())) continue;
+    if (findUnlinkedMentions(body, cand.key).length === 0) continue;
+    names.set(cand.path, { slug: cand.slug, title: cand.title });
+  }
+  return [...names.values()];
+}
+
+type OrphanScanPool = { path: string; slug: string; title: string; type: NoteType }[];
+
+/**
+ * Turn each unlinked note into an item that carries its own right answer. The
+ * kind is decided here rather than in the index scan because telling a dump
+ * from a stray page needs the body: a note that names pages it never links is
+ * capture waiting to be processed, whatever its frontmatter claims.
  */
 async function collectOrphanItems(ctx: UseCaseContext, report: MaintenanceReport): Promise<PingOrphanItem[]> {
+  const pool: OrphanScanPool = ctx.index
+    .all()
+    .filter((n) => !isFolderIndex(n.path) && n.type !== 'skill')
+    .map((n) => ({ path: n.path, slug: n.slug, title: n.title, type: n.type }));
+  const nameKeys = buildNameKeys(pool);
+
   const items: PingOrphanItem[] = [];
   for (const orphan of report.orphans) {
-    const mentions: PingOrphanItem['mentions'] = [];
-    if (orphan.title.trim().length >= 4) {
-      for (const hit of ctx.index.search(orphan.title, 6)) {
-        if (mentions.length >= MAX_MENTION_HOSTS) break;
-        if (hit.path === orphan.path || isFolderIndex(hit.path)) continue;
-        const note = await ctx.vault.readNote(hit.path);
-        if (!note) continue;
-        const lines = findUnlinkedMentions(note.body, orphan.title);
-        if (lines.length === 0) continue;
-        mentions.push({ host: hit.path, hostTitle: hit.title, line: lines[0]! });
-      }
-    }
-    items.push({ id: orphan.path, path: orphan.path, title: orphan.title, mentions });
+    const mentions = await findMentionHosts(ctx, orphan);
+    const note = orphan.external ? null : await ctx.vault.readNote(orphan.path);
+    const names = note ? findNamedPages(note.body, orphan.path, nameKeys) : [];
+    const kind: OrphanKind = orphan.external
+      ? 'external'
+      : names.length >= CAPTURE_NAME_FLOOR
+        ? 'capture'
+        : 'stray';
+    items.push({
+      id: orphan.path,
+      path: orphan.path,
+      title: orphan.title,
+      kind,
+      detail: orphan.detail,
+      mentions,
+      ...(names.length > 0 ? { names } : {}),
+    });
   }
   // Ready answers lead: orphans someone already mentions come first, so the
   // one-tap rows aren't buried under a wall of "nothing mentions it".
   return items.sort((a, b) => b.mentions.length - a.mentions.length);
 }
+
+/**
+ * One finding per cause. Splitting is the point: "4 notes have no links at all"
+ * names a symptom nobody can act on, and forces one action vocabulary onto
+ * three unrelated situations. Each group states its own cause, carries its own
+ * answers, and seeds its own conversation.
+ */
+interface OrphanGroup {
+  kind: OrphanKind;
+  key: string;
+  /** Below this many items the finding isn't worth a card of its own. */
+  floor: number;
+  title: (items: PingOrphanItem[]) => string;
+  body: string;
+  seed: (items: PingOrphanItem[]) => string;
+}
+
+/** "1 ticket" / "3 tickets" — the noun the group is actually about. */
+function countOf(items: PingOrphanItem[], one: string, many: string): string {
+  return `${items.length} ${items.length === 1 ? one : many}`;
+}
+
+const ORPHAN_GROUPS: OrphanGroup[] = [
+  {
+    kind: 'external',
+    key: 'unconnected-mirrors',
+    floor: 2,
+    title: (items) => {
+      const noun = items.every((i) => i.path.startsWith('tickets/'))
+        ? ['open ticket', 'open tickets']
+        : ['tracked item', 'tracked items'];
+      return `${countOf(items, noun[0]!, noun[1]!)} aren't linked from anywhere in the workspace`;
+    },
+    body: `These mirror records live in another system — the workspace can't delete them, only say what they serve. Right now nothing here points at them at all.`,
+    seed: (items) =>
+      `These tracked items are still open upstream, and nothing in the workspace links them:\n${items
+        .map((i) => `- ${i.path} — ${i.title}${i.detail ? ` (${i.detail})` : ''}`)
+        .join('\n')}\n\nRead each one and work out what it serves, then propose the link from whatever page actually explains it — a theme, a customer, a meeting, a decision. The link goes in that page, never in the mirror itself (those are re-synced wholesale and local edits are lost). A ticket does not need a hub to be legitimate: where a piece of work plainly stands on its own, say so and leave it rather than inventing a parent for it. Where you genuinely can't tell what an item is for, ask.`,
+  },
+  {
+    kind: 'capture',
+    key: 'unprocessed-captures',
+    floor: 1,
+    title: (items) => `${countOf(items, 'capture note', 'capture notes')} waiting to be processed`,
+    body: `Raw jottings naming people, customers and themes that were never wired in. Processing turns those names into links, commitments into todos, and claims into insights.`,
+    seed: (items) =>
+      `These notes are raw captures — they name pages that exist without linking any of them:\n${items
+        .map((i) => `- ${i.path} — ${i.title}${i.names?.length ? ` (names: ${i.names.map((n) => n.slug).join(', ')})` : ''}`)
+        .join('\n')}\n\nRun the Process-Note pass over each: propose one update per note cleaning it up and turning plain-text mentions into wikilinks, updates to the hubs it adds signal to, and the todos, insights or decisions it implies. Nothing invented — every card cites the note.`,
+  },
+  {
+    kind: 'stray',
+    key: 'stray-notes',
+    floor: 3,
+    title: (items) => `${countOf(items, 'note has', 'notes have')} no links at all`,
+    body: `Unlinked notes are invisible to the memory — nothing cites them, they cite nothing. Where they're already mentioned, one tap wires them in; the rest, chat or skip.`,
+    seed: (items) =>
+      `These notes are orphans (no inbound or outbound links):\n${items
+        .map((i) => `- ${i.path} — ${i.title}`)
+        .join('\n')}\n\nRead each one and propose where it belongs: link it into the relevant customer/theme/decision hubs, or say plainly that it's noise worth deleting.`,
+  },
+];
 
 /**
  * The librarian's maintenance pass: prepared fixes first (approval cards),
@@ -205,7 +377,25 @@ export async function runLibrarianSweep(ctx: UseCaseContext): Promise<{ pings: n
   const report = getMaintenanceReport(ctx);
   const ledger = readFixLedger(ctx, now);
   const links = await proposeLinkFixes(ctx, report, ledger);
-  const { fixes } = links;
+  let { fixes } = links;
+
+  // Wikipage stewardship: the decision spine vs. deep-tracked mirror pages.
+  // Confident, localizable contradictions land as redline update_page cards
+  // (sharing the prepared-fix budget); diffuse ones queue as judgment-call
+  // pings below. Best-effort like everything else in the tick.
+  try {
+    // Drift candidates are pushed FIRST (before link/orphan pings below), so
+    // the slots handed to the sweep are exactly the ones its findings will
+    // consume in the creation loop — a capped finding defers unrecorded.
+    const pingBudget = { slots: Math.max(0, MAX_PENDING_PINGS - pings.pendingCount()) };
+    const drift = await sweepWikipageDrift(ctx, ledger, MAX_PENDING_FIXES, now, pingBudget);
+    fixes += drift.fixes;
+    candidates.push(...drift.candidates);
+  } catch (err) {
+    // The sweep never fails over stewardship — but a permanently-broken tick
+    // must be diagnosable, not indistinguishable from "no drift".
+    logSweepError('[pm] wikipage stewardship sweep failed:', err instanceof Error ? err.message : err);
+  }
 
   if (links.unfixed.length > 0) {
     const sample = links.unfixed.slice(0, 5);
@@ -235,19 +425,18 @@ export async function runLibrarianSweep(ctx: UseCaseContext): Promise<{ pings: n
   }
 
   const orphanItems = await collectOrphanItems(ctx, report);
-  if (orphanItems.length >= 3) {
-    const sample = orphanItems.slice(0, 5);
+  for (const group of ORPHAN_GROUPS) {
+    const items = orphanItems.filter((o) => o.kind === group.kind);
+    if (items.length < group.floor) continue;
     candidates.push({
-      key: 'orphan-connect',
-      title: `${orphanItems.length} notes have no links at all`,
-      body: `Unlinked notes are invisible to the memory — nothing cites them, they cite nothing. Where they're already mentioned, one tap wires them in; the rest, chat or skip.`,
-      evidence: sample.map((o) => ({ ref: `[[${o.path.replace(/\.md$/, '')}]]`, resolved: true })),
+      key: group.key,
+      title: group.title(items),
+      body: group.body,
+      evidence: items.slice(0, 5).map((o) => ({ ref: `[[${o.path.replace(/\.md$/, '')}]]`, resolved: true })),
       sessionType: 'librarian',
-      seedPrompt: `These notes are orphans (no inbound or outbound links):\n${orphanItems
-        .map((o) => `- ${o.path} — ${o.title}`)
-        .join('\n')}\n\nRead each one and propose where it belongs: link it into the relevant customer/problem/decision hubs, or say plainly that it's noise worth deleting.`,
+      seedPrompt: group.seed(items),
       targetPath: null,
-      payload: { kind: 'orphans', items: orphanItems },
+      payload: { kind: 'orphans', items },
     });
   }
 
@@ -277,7 +466,12 @@ export function dismissPing(ctx: UseCaseContext, id: string): void {
   ctx.pings?.setStatus(id, 'dismissed', Date.parse(ctx.clock.now()));
 }
 
-export type PingResolveAction = { action: 'fix'; choice: string } | { action: 'skip' };
+export type PingResolveAction =
+  | { action: 'fix'; choice: string }
+  | { action: 'skip' }
+  /** The PO took this item into a Process-Note session — record the handoff so
+   *  the card can retire; the session does the actual work as approval cards. */
+  | { action: 'process' };
 
 /**
  * Resolve one suggestion item on a ping — the tap IS the approval. A fix
@@ -306,6 +500,9 @@ export async function resolvePingItem(
 
   if (action.action === 'skip') {
     item.resolution = { action: 'skipped' };
+  } else if (action.action === 'process') {
+    if (payload.kind !== 'orphans') throw new Error('only an unlinked note can be processed');
+    (item as PingOrphanItem).resolution = { action: 'processing' };
   } else if (payload.kind === 'link-choices') {
     const link = item as PingLinkChoiceItem;
     const slug = action.choice;
@@ -318,10 +515,14 @@ export async function resolvePingItem(
   } else {
     const orphan = item as PingOrphanItem;
     const host = action.choice;
-    if (!orphan.mentions.some((m) => m.host === host)) throw new Error(`not an offered host: ${host}`);
+    const mention = orphan.mentions.find((m) => m.host === host);
+    if (!mention) throw new Error(`not an offered host: ${host}`);
     const slug = orphan.path.replace(/\.md$/, '');
-    await applyLibrarianPatch(ctx, host, (body) => buildMentionLinkPatch(body, orphan.title, slug), {
-      missing: `“${orphan.title}” is no longer mentioned in ${host} — nothing to link.`,
+    // The term that actually matched — a ticket is cited by its key, not its
+    // title. Pings written before terms were recorded fall back to the title.
+    const term = mention.term ?? orphan.title;
+    await applyLibrarianPatch(ctx, host, (body) => buildMentionLinkPatch(body, term, slug), {
+      missing: `“${term}” is no longer mentioned in ${host} — nothing to link.`,
       commit: `librarian: link ${slug} into ${host}`,
     });
     orphan.resolution = { action: 'fixed', host };
@@ -345,7 +546,7 @@ async function applyLibrarianPatch(
   const patch = build(note.body);
   const applied = patch.length > 0 ? applyPatch(note.body, patch) : null;
   if (applied === null) throw new Error(msg.missing);
-  const written = await ctx.vault.writeNote(path, note.frontmatter, applied);
+  const written = await ctx.vault.writeBody(path, applied);
   ctx.index.reindex(written);
   await ctx.git.commitPaths([path], msg.commit);
 }

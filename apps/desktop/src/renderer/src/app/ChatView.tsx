@@ -5,6 +5,7 @@ import { Button, Spinner } from '@pm/ui';
 import { AlertTriangle, ArrowUp, Check, Square, Wrench, Brain, ChevronDown, MessageSquarePlus, RotateCcw, Star } from 'lucide-react';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { Markdown } from '../components/Markdown';
+import { SessionReview } from '../components/inbox/SessionReview';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { useChatMentions } from './ChatMentions';
@@ -32,24 +33,178 @@ interface AnyPart {
   text?: string;
   toolName?: string;
   state?: string;
+  input?: unknown;
   output?: unknown;
   errorText?: string;
 }
 
-function ReasoningPart({ text }: { text: string }) {
+function isActivityPart(part: AnyPart): boolean {
+  return part.type === 'reasoning' || part.type.startsWith('tool-') || part.type === 'dynamic-tool';
+}
+
+function isToolPart(part: AnyPart): boolean {
+  return part.type.startsWith('tool-') || part.type === 'dynamic-tool';
+}
+
+function toolNameOf(part: AnyPart): string {
+  return part.type.startsWith('tool-') ? part.type.slice(5) : part.toolName ?? 'tool';
+}
+
+function toolInputOf(part: AnyPart): Record<string, unknown> {
+  return typeof part.input === 'object' && part.input !== null ? (part.input as Record<string, unknown>) : {};
+}
+
+/** Past-tense verb + monospace detail for one tool step in the expanded trail. */
+function stepLabel(part: AnyPart): { verb: string; detail?: string } {
+  const name = toolNameOf(part);
+  const input = toolInputOf(part);
+  const str = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : undefined);
+  switch (name) {
+    case 'vault_read':
+      return { verb: 'Read', detail: str('path') };
+    case 'search_vault':
+      return { verb: 'Searched', detail: str('query') && `“${str('query')}”` };
+    case 'vault_grep':
+      return { verb: 'Scanned for', detail: str('pattern') && `“${str('pattern')}”` };
+    case 'vault_list':
+      return { verb: 'Listed notes', detail: [str('type'), str('status')].filter(Boolean).join('/') || undefined };
+    case 'jira_search':
+      return { verb: 'Searched Jira', detail: str('jql') ?? str('query') };
+    case 'jira_get_issue':
+      return { verb: 'Read Jira issue', detail: str('key') ?? str('issueKey') };
+    case 'confluence_search':
+      return { verb: 'Searched Confluence', detail: str('query') ?? str('cql') };
+    case 'confluence_get_page':
+      return { verb: 'Read Confluence page', detail: str('title') ?? str('id') };
+    case 'use_skill':
+      return { verb: 'Used guide', detail: str('name') };
+    case 'advance_checkpoint':
+      return { verb: 'Advanced checkpoint' };
+    default:
+      if (name.startsWith('propose_'))
+        return { verb: `Proposed a ${name.slice(8).replace(/_/g, ' ')}`, detail: str('path') ?? str('title') };
+      if (name.startsWith('draft_'))
+        return { verb: `Drafted a ${name.slice(6).replace(/_/g, ' ')}`, detail: str('title') ?? str('summary') };
+      return { verb: name, detail: str('path') ?? str('query') ?? str('name') };
+  }
+}
+
+/** Present-tense label for the step currently running, shown on the collapsed row. */
+function liveLabel(part: AnyPart | undefined): string {
+  if (!part || part.type === 'reasoning') return 'Thinking…';
+  const name = toolNameOf(part);
+  const input = toolInputOf(part);
+  const str = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : undefined);
+  switch (name) {
+    case 'vault_read':
+      return str('path') ? `Reading ${str('path')}` : 'Reading the memory…';
+    case 'search_vault':
+      return str('query') ? `Searching “${str('query')}”` : 'Searching the memory…';
+    case 'vault_grep':
+      return str('pattern') ? `Scanning for “${str('pattern')}”` : 'Scanning the memory…';
+    case 'vault_list':
+      return 'Listing notes…';
+    case 'jira_search':
+    case 'jira_get_issue':
+      return 'Checking Jira…';
+    case 'confluence_search':
+    case 'confluence_get_page':
+      return 'Checking Confluence…';
+    default:
+      if (name.startsWith('propose_') || name.startsWith('draft_')) return 'Drafting a card…';
+      return 'Working…';
+  }
+}
+
+/** One tool step inside the expanded trail — raw receipt stays one click away. */
+function ToolStep({ part }: { part: AnyPart }) {
   const [open, setOpen] = useState(false);
+  const { verb, detail } = stepLabel(part);
+  const done = part.state === 'output-available' || part.state === 'output-error' || part.output !== undefined;
+  const hasOutput = typeof part.output === 'string' && part.output.length > 0;
   return (
-    <div className="my-1 rounded-md border border-border/60 bg-muted/40 text-xs">
+    <div>
       <button
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-muted-foreground"
+        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+        onClick={() => hasOutput && setOpen((o) => !o)}
+        aria-expanded={open}
+        disabled={!hasOutput}
+      >
+        {done ? <Wrench className="size-3 shrink-0" /> : <Spinner className="size-3 shrink-0" />}
+        <span className="shrink-0 font-medium">{verb}</span>
+        {detail && <span className="truncate font-mono">{detail}</span>}
+        {hasOutput && (
+          <ChevronDown
+            className={`ml-auto size-3 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+          />
+        )}
+      </button>
+      {part.errorText && <div className="px-1.5 pb-1 text-destructive">{part.errorText}</div>}
+      {open && hasOutput && (
+        <pre className="mt-0.5 mb-1 max-h-48 overflow-y-auto rounded-md bg-muted/40 px-2 py-1.5 whitespace-pre-wrap text-muted-foreground">
+          {(part.output as string).slice(0, 2000)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The whole working phase of an assistant turn — reasoning, vault reads,
+ * searches, mid-work narration — folded into one quiet row. Collapsed it reads
+ * as provenance ("Reasoning · 7 sources · 4 searches"); while streaming it
+ * narrates the current step; expanded it shows the chronological trail.
+ */
+function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
+  const [open, setOpen] = useState(false);
+  const sources = new Set<string>();
+  let searches = 0;
+  let actions = 0;
+  let failed = 0;
+  for (const part of parts) {
+    if (!isToolPart(part)) continue;
+    const name = toolNameOf(part);
+    const input = toolInputOf(part);
+    if (name === 'vault_read' && typeof input.path === 'string') sources.add(input.path);
+    else if (name === 'jira_get_issue' || name === 'confluence_get_page') sources.add(`${name}:${JSON.stringify(input)}`);
+    else if (['search_vault', 'vault_grep', 'vault_list', 'jira_search', 'confluence_search'].includes(name)) searches++;
+    else actions++;
+    if (part.errorText || part.state === 'output-error') failed++;
+  }
+  const bits: string[] = [];
+  if (sources.size > 0) bits.push(`${sources.size} source${sources.size === 1 ? '' : 's'}`);
+  if (searches > 0) bits.push(`${searches} search${searches === 1 ? '' : 'es'}`);
+  if (actions > 0) bits.push(`${actions} action${actions === 1 ? '' : 's'}`);
+  return (
+    <div className="my-1 text-xs">
+      <button
+        className="flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
       >
-        <Brain className="size-3.5" />
-        <span className="font-medium">Reasoning</span>
-        <ChevronDown className={`ml-auto size-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+        {live ? <Spinner className="size-3.5 shrink-0" /> : <Brain className="size-3.5 shrink-0" />}
+        <span className="truncate font-medium">{live ? liveLabel(parts[parts.length - 1]) : 'Reasoning'}</span>
+        {!live && bits.length > 0 && <span className="shrink-0">· {bits.join(' · ')}</span>}
+        {failed > 0 && (
+          <span className="shrink-0 text-destructive">· {failed} failed</span>
+        )}
+        <ChevronDown
+          className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+        />
       </button>
-      {open && <div className="whitespace-pre-wrap px-2 pb-2 text-muted-foreground">{text}</div>}
+      {open && (
+        <div className="mt-1 ml-2 flex flex-col border-l border-border pl-3">
+          {parts.map((part, i) => {
+            if (part.type === 'reasoning' || part.type === 'text')
+              return (
+                <div key={i} className="px-1.5 py-1 leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                  {part.text}
+                </div>
+              );
+            return <ToolStep key={i} part={part} />;
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -86,42 +241,8 @@ function GoldenButton({ question, answer }: { question: string; answer: string }
   );
 }
 
-/**
- * Tool activity — one quiet line while running, expandable receipt when done.
- * The raw output stays one click away instead of scrolling past as a log dump.
- */
-function ToolPart({ part }: { part: AnyPart }) {
-  const [open, setOpen] = useState(false);
-  const name = part.type.startsWith('tool-') ? part.type.slice(5) : part.toolName ?? 'tool';
-  const done = part.state === 'output-available' || part.output !== undefined;
-  const hasOutput = done && typeof part.output === 'string' && part.output.length > 0;
-  return (
-    <div className="my-1 rounded-md border border-border/60 bg-card text-xs">
-      <button
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-left"
-        onClick={() => hasOutput && setOpen((o) => !o)}
-        aria-expanded={open}
-        disabled={!hasOutput}
-      >
-        {done ? <Wrench className="size-3.5 shrink-0 text-brand" /> : <Spinner className="size-3.5 shrink-0" />}
-        <span className="font-mono font-medium">{name}</span>
-        {!done && <span className="text-muted-foreground">running…</span>}
-        {hasOutput && (
-          <ChevronDown className={`ml-auto size-3.5 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
-        )}
-      </button>
-      {part.errorText && <div className="px-2 pb-1.5 text-destructive">{part.errorText}</div>}
-      {open && hasOutput && (
-        <pre className="max-h-48 overflow-y-auto border-t border-border/60 px-2 py-1.5 whitespace-pre-wrap text-muted-foreground">
-          {(part.output as string).slice(0, 2000)}
-        </pre>
-      )}
-    </div>
-  );
-}
-
 const EMPTY_HINT: Record<string, string> = {
-  ask: 'Ask about a decision, a customer, or a problem — answers cite their sources, or say "I don\'t know".',
+  ask: 'Ask about a decision, a customer, or a theme — answers cite their sources, or say "I don\'t know".',
   chat: 'A free-form chat over the workspace. Nothing is written without an approval card.',
 };
 
@@ -229,7 +350,7 @@ function ChatSession({
   onOwnStream?: (busy: boolean) => void;
 }) {
   const proposesWrites = sessionType !== 'chat' && sessionType !== 'ask';
-  const { openDoc, refreshProposals, openInbox, openSettings, pendingCount, activeTabId, keepTab, markSessionSeen, sessions, setSessionLifecycle, tree } = useApp();
+  const { openDoc, refreshProposals, openSettings, markSessionSeen, sessions, setSessionLifecycle, tree } = useApp();
   const [needsKey, setNeedsKey] = useState(false);
   const onSessionIdRef = useRef(onSessionId);
   onSessionIdRef.current = onSessionId;
@@ -251,11 +372,6 @@ function ChatSession({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mentions = useChatMentions(tree, inputRef, input, setInput);
 
-  // A draft in the composer commits the tab — a preview replacement must not
-  // eat an unsent message. Sent messages promote via onSessionId → bindTabSession.
-  useEffect(() => {
-    if (input && activeTabId) keepTab(activeTabId);
-  }, [input, activeTabId, keepTab]);
   const sentInitial = useRef(false);
   const firstMsg = useRef(initialMessages.length === 0);
 
@@ -278,8 +394,11 @@ function ChatSession({
     if (status === 'ready' && currentSessionId.current) markSessionSeen(currentSessionId.current);
   }, [status, markSessionSeen]);
 
+  // Follow the stream only while the PO is at the bottom — scrolling up to
+  // reread must not get yanked back down by the next chunk.
+  const atBottom = useRef(true);
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (atBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, status]);
 
   const send = (raw: string) => {
@@ -361,7 +480,14 @@ function ChatSession({
         </span>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-6"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+      >
         <div className="mx-auto flex max-w-2xl flex-col gap-4 py-4">
           {messages.length === 0 && !busy && (
             <p className="mt-16 text-center text-sm text-muted-foreground">
@@ -369,7 +495,8 @@ function ChatSession({
             </p>
           )}
           {messages.map((message, mi) => {
-            const answerText = (message.parts as AnyPart[])
+            const parts = message.parts as AnyPart[];
+            const answerText = parts
               .filter((p) => p.type === 'text')
               .map((p) => p.text ?? '')
               .join('\n');
@@ -379,30 +506,38 @@ function ChatSession({
               : '';
             const canGolden =
               sessionType === 'ask' && message.role === 'assistant' && status === 'ready' && answerText.trim().length > 0;
-            return (
-              <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : ''}>
-                <div
-                  className={
-                    message.role === 'user'
-                      ? 'max-w-[85%] rounded-2xl bg-secondary px-3.5 py-2 text-[15px] text-secondary-foreground'
-                      : 'w-full'
-                  }
-                >
-                  {(message.parts as AnyPart[]).map((part, i) => {
-                    if (part.type === 'text') {
-                      return message.role === 'user' ? (
-                        <span key={i} className="whitespace-pre-wrap">{part.text}</span>
-                      ) : (
-                        <Markdown key={i} content={linkifyNotePaths(part.text ?? '')} onOpenNote={openDoc} />
-                      );
-                    }
-                    if (part.type === 'reasoning') return <ReasoningPart key={i} text={part.text ?? ''} />;
-                    if (part.type.startsWith('tool-') || part.type === 'dynamic-tool')
-                      return <ToolPart key={i} part={part} />;
-                    return null;
-                  })}
-                  {canGolden && <GoldenButton question={question} answer={answerText} />}
+            if (message.role === 'user') {
+              return (
+                <div key={message.id} className="flex justify-end">
+                  <div className="max-w-[85%] rounded-2xl bg-secondary px-3.5 py-2 text-[15px] whitespace-pre-wrap text-secondary-foreground">
+                    {parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n')}
+                  </div>
                 </div>
+              );
+            }
+            // The working phase (reasoning, tool calls, mid-work narration)
+            // folds into one ActivityBlock; only the final text renders as the
+            // answer. While streaming, a trailing text is treated as the answer
+            // until a later tool call proves it was narration.
+            let lastTextIdx = -1;
+            for (let i = parts.length - 1; i >= 0; i--) {
+              if (parts[i]!.type === 'text') {
+                lastTextIdx = i;
+                break;
+              }
+            }
+            const activity = parts.filter(
+              (p, i) => isActivityPart(p) || (p.type === 'text' && i !== lastTextIdx),
+            );
+            const answer = lastTextIdx >= 0 ? parts[lastTextIdx]! : undefined;
+            const isLastMessage = mi === messages.length - 1;
+            const live =
+              busy && isLastMessage && activity.length > 0 && isActivityPart(parts[parts.length - 1]!);
+            return (
+              <div key={message.id} className="w-full">
+                {activity.length > 0 && <ActivityBlock parts={activity} live={live} />}
+                {answer && <Markdown content={linkifyNotePaths(answer.text ?? '')} onOpenNote={openDoc} />}
+                {canGolden && <GoldenButton question={question} answer={answerText} />}
               </div>
             );
           })}
@@ -431,6 +566,10 @@ function ChatSession({
               The session hit an error: {error.message}. Your messages are still here — send again to retry.
             </div>
           )}
+
+          {/* The cards this session proposed — approvable right here, so the PO
+              never has to hop to the Inbox to close out a meeting. */}
+          {proposesWrites && boundSessionId && <SessionReview sessionId={boundSessionId} />}
         </div>
       </div>
 
@@ -446,18 +585,6 @@ function ChatSession({
               Open Settings
             </button>
           </div>
-        </div>
-      )}
-
-      {proposesWrites && pendingCount > 0 && (
-        <div className="mx-6 mb-2">
-          <button
-            className="mx-auto flex max-w-2xl w-full items-center gap-2 rounded-lg border border-brand/40 bg-brand/8 px-3 py-2 text-sm text-brand hover:bg-brand/12 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={() => openInbox()}
-          >
-            <span className="font-medium">{pendingCount} proposal{pendingCount === 1 ? '' : 's'} to review</span>
-            <span className="ml-auto">Open Inbox →</span>
-          </button>
         </div>
       )}
 

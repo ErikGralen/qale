@@ -114,6 +114,60 @@ export async function captureMeeting(ctx: UseCaseContext, input: CaptureMeetingI
   return note;
 }
 
+export interface AttachTranscriptInput {
+  /** The existing (typically calendar-synced) meeting note to attach to. */
+  meetingPath: string;
+  body: string;
+  source?: SourceRef;
+}
+
+/**
+ * Attach a captured transcript to a meeting note that ALREADY exists — the
+ * capture-matching path (docs/google-calendar-integration.md, job 3). Instead of
+ * minting a second `meeting` note for a slot the calendar mirror already
+ * created, file the transcript as an immutable source and link it onto the
+ * synced note. Only the meeting-mutable fields move (`transcript`, `status`):
+ * the machine-owned scheduling fields the mirror set (date/time/participants/
+ * series/external_id…) and the PM's body are left untouched. After-Meeting then
+ * reads both and proposes the truth delta, exactly as for a fresh capture.
+ */
+export async function attachTranscriptToMeeting(
+  ctx: UseCaseContext,
+  input: AttachTranscriptInput,
+): Promise<Note> {
+  const meeting = await ctx.vault.readNote(input.meetingPath);
+  if (!meeting || meeting.type !== 'meeting') {
+    throw new Error(`attach target is not a meeting note: ${input.meetingPath}`);
+  }
+  const now = ctx.clock.now();
+  const date = now.slice(0, 10);
+  const fm = meeting.frontmatter as Record<string, unknown>;
+  const summary = (typeof fm['summary'] === 'string' && fm['summary']) || titleFromSlug(meeting.slug);
+
+  const tPath = await freePath(
+    ctx,
+    `${dirForType('source')}/${fileSlug(`${summary} transcript`, date)}.md`,
+  );
+  const tFrontmatter: SourceNoteFrontmatter = {
+    type: 'source',
+    summary: `Transcript — ${summary}`,
+    status: 'new',
+    source: input.source ?? { system: 'transcript' },
+    captured: date,
+  };
+  const tNote = await ctx.vault.writeNote(tPath, tFrontmatter, input.body.trim());
+  ctx.index.reindex(tNote);
+
+  // Link the transcript and flag the meeting for review. `status: 'new'` is what
+  // makes the freshness spine mark dependents stale — same signal captureMeeting
+  // emits. Provenance and the machine-owned mirror fields ride through the spread.
+  const next = { ...meeting.frontmatter, transcript: `[[${tNote.slug}]]`, status: 'new' } as Frontmatter;
+  const note = await ctx.vault.writeNote(input.meetingPath, next, meeting.body);
+  ctx.index.reindex(note);
+  await ctx.git.commitPaths([tNote.path, note.path], `transcript: ${summary}`);
+  return note;
+}
+
 export interface CaptureExternalTranscriptInput {
   title: string;
   body: string;
@@ -162,6 +216,10 @@ export interface IngestCaptureInput {
   external?: boolean;
   /** External transcript only — whose meeting it was. */
   origin?: string;
+  /** Transcript only — attach to this existing (calendar-synced) meeting note
+   *  instead of creating a new one (capture matching, job 3). Ignored when
+   *  `external` is set. */
+  attachTo?: string;
   /** Screenshot only — the dropped image bytes, stored under attachments/. */
   attachment?: { name: string; data: Uint8Array };
 }
@@ -244,7 +302,11 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
       );
       return { note, kind, ...dispatched };
     }
-    const note = await captureMeeting(ctx, { title, body: input.text });
+    // Capture matching: attach to the meeting the calendar already mirrored,
+    // rather than minting a duplicate note for the same slot.
+    const note = input.attachTo
+      ? await attachTranscriptToMeeting(ctx, { meetingPath: input.attachTo, body: input.text })
+      : await captureMeeting(ctx, { title, body: input.text });
     const dispatched = await boundFollowUps(
       ctx,
       'capture.transcript',
@@ -431,6 +493,11 @@ export async function saveFrontmatter(
 
 export interface Backlink {
   from: IndexedNote;
+  /** Canonical link type of the inbound edge; absent = untyped mention. */
+  type?: string;
+  /** True when the semantic edge runs from THIS note to `from` ("blocked by" authored on the other side). */
+  reversed?: boolean;
+  origin?: BacklinkRow['origin'];
   line?: number;
 }
 
@@ -442,7 +509,7 @@ export function getBacklinks(ctx: UseCaseContext, path: string): Backlink[] {
   const out: Backlink[] = [];
   for (const row of rows) {
     const from = ctx.index.get(row.fromPath);
-    if (from) out.push({ from, line: row.line });
+    if (from) out.push({ from, type: row.type, reversed: row.reversed, origin: row.origin, line: row.line });
   }
   return out;
 }

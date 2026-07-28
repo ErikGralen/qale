@@ -1,9 +1,10 @@
 import type {
   Frontmatter,
+  LinkOrigin,
   Note,
   NoteType,
   SearchHit,
-  ProblemStance,
+  ThemeStance,
 } from '@pm/domain';
 
 /**
@@ -21,6 +22,12 @@ export interface LinkRecord {
   target: string;
   anchor?: string;
   alias?: string;
+  /** Canonical link type (docs/typed-links.md); absent = untyped. */
+  type?: string;
+  /** True when the semantic edge runs target → source ("blocked by"). */
+  reversed?: boolean;
+  /** Where the edge came from: body wikilink, frontmatter ref, or provider sync. */
+  origin?: LinkOrigin;
   line?: number;
 }
 
@@ -40,6 +47,10 @@ export interface IndexedNote {
 
 export interface BacklinkRow {
   fromPath: string;
+  /** Canonical link type of the inbound edge; absent = untyped. */
+  type?: string;
+  reversed?: boolean;
+  origin?: LinkOrigin;
   line?: number;
 }
 
@@ -186,14 +197,37 @@ export interface PingLinkChoiceItem {
   resolution?: { action: 'fixed'; slug: string } | { action: 'skipped' };
 }
 
+/**
+ * Why a note has no links — the cause decides which answers are honest.
+ * - `external` — a mirror of an upstream record (Jira issue, Confluence page).
+ *   The workspace does not own it, so it is never locally deletable; the real
+ *   finding is that nothing in the workspace mentions it at all.
+ * - `capture` — a raw dump that names people, customers and themes in prose
+ *   without linking any of them. The answer is a Process-Note session, not tidying.
+ * - `stray` — workspace-owned, cites nothing, cited by nothing. The hygiene case,
+ *   and the only one where offering to delete the note makes sense.
+ */
+export type OrphanKind = 'external' | 'capture' | 'stray';
+
 export interface PingOrphanItem {
   id: string;
   /** The unlinked note. */
   path: string;
   title: string;
-  /** Notes that mention this orphan as plain text — link-it-there options. */
-  mentions: { host: string; hostTitle: string; line: string }[];
-  resolution?: { action: 'fixed'; host: string } | { action: 'skipped' };
+  kind: OrphanKind;
+  /** Upstream state for a mirror ("In Progress") — display only. */
+  detail?: string | null;
+  /** Notes that mention this orphan as plain text — link-it-there options.
+   *  `term` is the text that actually matched (a ticket's key, not its title). */
+  mentions: { host: string; hostTitle: string; line: string; term?: string }[];
+  /** Existing notes THIS note names in prose but never links — the evidence
+   *  that a dump is full of signal the memory hasn't absorbed. */
+  names?: { slug: string; title: string }[];
+  resolution?:
+    | { action: 'fixed'; host: string }
+    | { action: 'skipped' }
+    /** Handed to a Process-Note session — the work moved to a conversation. */
+    | { action: 'processing' };
 }
 
 export type PingPayload =
@@ -247,21 +281,43 @@ export interface PingPort {
   hasRecent(key: string, since: number): boolean;
 }
 
+/**
+ * One-shot, non-streaming text completion for background judgments (the
+ * librarian's contradiction checks). Deliberately narrow — no tools, no
+ * session, no history — so the application layer can ask a single question
+ * without importing an agent. Absent when no model is configured; callers
+ * must skip silently, never queue retries loudly.
+ */
+export interface CompletionPort {
+  complete(input: { system: string; prompt: string }): Promise<string>;
+}
+
+/**
+ * Durable check ledger (app.db) — remembers what background sweeps already
+ * judged, keyed by finding + revision, so an unchanged decision/page pair is
+ * never re-judged (no LLM spend per tick) and a dismissed finding stays quiet
+ * until its inputs actually change.
+ */
+export interface CheckLedgerPort {
+  get(key: string): string | null;
+  set(key: string, value: string, now: number): void;
+}
+
 /** The deterministic result of an outbound write — the link is from the API. */
 export interface OutboundResult {
+  /** Provider id of the touched item (issue key like "PAY-171", page id). */
+  externalId: string;
   url: string;
-  ref?: string;
 }
 
 /**
  * Outbound port (PLAN-V2 §3.4) — the seam the card-application layer calls on
- * approval to write to Jira/Confluence. Implemented in the composition root over
- * the Atlassian client; absent when no integration is configured.
+ * approval to write external systems. ONE dispatch site: the composition root
+ * hands in the connector's `execute`, which re-validates the stored payload and
+ * routes by provider/action. Absent when no integration is configured.
  */
 export interface OutboundPort {
-  createJiraIssue(input: { projectKey: string; issueType?: string; summary: string; body: string }): Promise<OutboundResult>;
-  addJiraComment(input: { issueKey: string; body: string }): Promise<OutboundResult>;
-  updateConfluencePage(input: { pageId: string; body: string }): Promise<OutboundResult>;
+  execute(payload: unknown): Promise<OutboundResult>;
 }
 
 export interface UseCaseContext {
@@ -274,6 +330,10 @@ export interface UseCaseContext {
   pings?: PingPort;
   /** Present only when an outbound integration (Atlassian) is configured. */
   outbound?: OutboundPort;
+  /** One-shot LLM completions for background judgments; absent when no key is set. */
+  completions?: CompletionPort;
+  /** Sweep check ledger; absent in contexts that never run background sweeps. */
+  checks?: CheckLedgerPort;
 }
 
-export type { Note, SearchHit, ProblemStance, NoteType, Frontmatter };
+export type { Note, SearchHit, ThemeStance, NoteType, Frontmatter };

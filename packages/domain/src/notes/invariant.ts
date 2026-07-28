@@ -44,13 +44,23 @@ export const TYPE_RULES: Record<NoteType, TypeRule> = {
   },
   insight: { bodyEditable: true, mutableFields: 'all' },
   customer: { bodyEditable: true, mutableFields: 'all' },
-  problem: { bodyEditable: true, mutableFields: 'all' },
-  release: { bodyEditable: true, mutableFields: 'all' },
+  theme: { bodyEditable: true, mutableFields: 'all' },
   person: { bodyEditable: true, mutableFields: 'all' },
   session: { bodyEditable: false, mutableFields: [] },
   skill: { bodyEditable: true, mutableFields: 'all' },
   todo: { bodyEditable: true, mutableFields: 'all' },
   note: { bodyEditable: true, mutableFields: 'all' },
+  // External mirrors: locally read-only like `source`; the mutable fields are
+  // exactly what a re-sync refreshes. Identity (provider/external_id/container/
+  // url) never changes — a moved item is a new mirror.
+  ticket: {
+    bodyEditable: false,
+    mutableFields: ['status', 'summary', 'title', 'tags', 'state', 'state_category', 'assignee', 'remote_updated'],
+  },
+  wikipage: {
+    bodyEditable: false,
+    mutableFields: ['status', 'summary', 'title', 'tags', 'version', 'remote_updated'],
+  },
 };
 
 export interface MutationCheck {
@@ -77,7 +87,10 @@ export function checkFrontmatterMutation(
   const rule = TYPE_RULES[type];
   const mutable = rule.mutableFields ?? 'all';
   if (mutable === 'all') return { allowed: true };
-  const allowed = new Set<string>([...mutable, 'type']);
+  // `type` is deliberately NOT allowed: retyping a restricted note (e.g. a
+  // mirror → `note`) would unlock every other field. An unchanged `type`
+  // compares equal below and passes anyway.
+  const allowed = new Set<string>([...mutable]);
 
   const prevRec = prev as Record<string, unknown>;
   const nextRec = next as Record<string, unknown>;

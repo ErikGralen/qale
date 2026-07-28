@@ -44,7 +44,6 @@ export const SKILL_EVENTS = [
   'capture.ingested',
   'capture.transcript',
   'decision.superseded',
-  'todo.overdue',
 ] as const;
 export type SkillEvent = (typeof SKILL_EVENTS)[number];
 
@@ -52,7 +51,6 @@ const EVENT_PHRASE: Record<SkillEvent, string> = {
   'capture.ingested': 'anything is captured',
   'capture.transcript': 'a meeting transcript is captured',
   'decision.superseded': 'a decision is superseded',
-  'todo.overdue': 'a commitment slips overdue',
 };
 
 /** One binding parsed from a skill's frontmatter. */

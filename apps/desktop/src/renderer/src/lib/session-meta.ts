@@ -6,10 +6,11 @@ const SESSION_LABEL: Record<string, string> = {
   'before-meeting': 'Before-Meeting',
   'external-transcript': 'External transcript',
   intake: 'Intake',
+  'process-note': 'Process Note',
   'weekly-update': 'Weekly Update',
-  'sprint-review': 'Sprint Review',
   'interview-synthesis': 'Interview Synthesis',
-  'spec-review': 'Spec Review',
+  synthesis: 'Synthesis',
+  'supersede-sweep': 'Repoint references',
   librarian: 'Librarian',
 };
 

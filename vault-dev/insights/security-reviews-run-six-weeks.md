@@ -5,7 +5,7 @@ tags: ["compliance"]
 evidence: ["[[meetings/2026-07-02-bergman-falk-security-review]]"]
 confidence: "med"
 customer: "[[customers/bergman-falk]]"
-problem: "[[problems/enterprise-onboarding]]"
+theme: "[[themes/enterprise-onboarding]]"
 ---
 
 Bergman & Falk's process: questionnaire → evidence collection → review board, six weeks if

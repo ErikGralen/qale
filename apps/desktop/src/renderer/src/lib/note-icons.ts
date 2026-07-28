@@ -1,14 +1,15 @@
 import {
+  BookOpen,
   Building2,
   FileInput,
   GitBranch,
   History,
   Mic,
-  Rocket,
   Sparkles,
   SquareCheck,
   StickyNote,
   Target,
+  Ticket,
   User,
   Wand2,
   type LucideIcon,
@@ -23,13 +24,14 @@ export const NOTE_TYPE_ICON: Record<NoteType, LucideIcon> = {
   decision: GitBranch,
   insight: Sparkles,
   customer: Building2,
-  problem: Target,
-  release: Rocket,
+  theme: Target,
   person: User,
   session: History,
   skill: Wand2,
   todo: SquareCheck,
   note: StickyNote,
+  ticket: Ticket,
+  wikipage: BookOpen,
 };
 
 /** Icon for a note type, falling back to the untyped-note glyph. */

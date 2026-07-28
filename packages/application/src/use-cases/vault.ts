@@ -107,20 +107,20 @@ export function getVaultTree(ctx: UseCaseContext): VaultTreeGroup[] {
   return groups;
 }
 
-export interface ProblemHeatRow {
+export interface ThemeHeatRow {
   note: IndexedNote;
   count: number;
   newest: string | null;
 }
 
 /**
- * Problems (the durable hubs that absorbed themes) ranked by evidence heat —
+ * Themes (the durable hubs where insights accrete) ranked by evidence heat —
  * count + newest evidence date. Evidence dates come from each referenced note's
  * `date`/`captured` via the index.
  */
-export function getProblemsByHeat(ctx: UseCaseContext): ProblemHeatRow[] {
-  const problems = ctx.index.listByType('problem').filter((n) => !isFolderIndex(n.path));
-  const rows = problems.map((note) => {
+export function getThemesByHeat(ctx: UseCaseContext): ThemeHeatRow[] {
+  const themes = ctx.index.listByType('theme').filter((n) => !isFolderIndex(n.path));
+  const rows = themes.map((note) => {
     const evidence = Array.isArray(note.frontmatter['evidence'])
       ? (note.frontmatter['evidence'] as string[])
       : [];
@@ -169,22 +169,84 @@ export function queryNotes(ctx: UseCaseContext, q: NoteQuery): IndexedNote[] {
   return q.limit ? rows.slice(0, q.limit) : rows;
 }
 
+/**
+ * One note with no links, and enough context to answer it honestly. "Has no
+ * links" is a symptom with several causes, and they do NOT share an answer: a
+ * mirror of an upstream Jira issue is unconnected because nobody has said what
+ * it serves yet, a scratch pad is unconnected because it hasn't been worked
+ * yet, and only a workspace-owned page nothing cites is the hygiene case. The
+ * sweep classifies before it offers, so "Delete" is never proposed for a note
+ * whose truth lives somewhere else.
+ */
+export interface OrphanCandidate {
+  path: string;
+  title: string;
+  type: NoteType;
+  /** True when the note mirrors an upstream record — a local delete is a lie,
+   *  not a cleanup, and the next sync would undo it anyway. */
+  external: boolean;
+  /** Plain-text keys worth hunting for besides the title. A ticket's full title
+   *  ("PAY-5 · Webhook delivery retries…") never appears in prose; "PAY-5" does. */
+  aliases: string[];
+  /** Upstream state, verbatim, for a mirror ("In Progress"). Display only. */
+  detail: string | null;
+}
+
 export interface MaintenanceReport {
   /** Notes with no inbound and no outbound links (candidates for adoption). */
-  orphans: { path: string; title: string }[];
+  orphans: OrphanCandidate[];
   /** Links whose target does not resolve (link repair candidates). */
   danglingLinks: { from: string; target: string }[];
+}
+
+/** Note types whose content is a projection of an external system of record. */
+const MIRROR_TYPES = new Set<NoteType>(['ticket', 'wikipage']);
+
+/**
+ * Types the sweep never reports as unlinked. A calendar-mirrored meeting is
+ * unlinked for as long as nobody has written about it, which for an upcoming
+ * one is simply the normal state of the world — and its lifecycle belongs to
+ * the before/after-meeting flow, on the meeting page, not to link hygiene.
+ */
+const NEVER_ORPHAN = new Set<NoteType>(['skill', 'meeting']);
+
+function str(fm: Record<string, unknown>, key: string): string | null {
+  const v = fm[key];
+  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
+}
+
+/**
+ * Classify one unlinked note, or return null when it isn't a finding at all.
+ * The only suppression is deliberate: a mirror the upstream system has already
+ * closed, which nobody ever cited, is history — surfacing it as maintenance
+ * work asks the PO to tidy something that is already over.
+ */
+function classifyOrphan(n: IndexedNote): OrphanCandidate | null {
+  const fm = n.frontmatter;
+  const external = MIRROR_TYPES.has(n.type) || str(fm, 'provider') !== null;
+  if (!external) {
+    return { path: n.path, title: n.title, type: n.type, external: false, aliases: [], detail: null };
+  }
+  if (fm['state_category'] === 'done') return null;
+  // The human half of "PAY-5 · Webhook delivery retries with backoff" — prose
+  // cites one or the other, never the composed title.
+  const tail = n.title.includes('·') ? n.title.split('·').slice(1).join('·').trim() : null;
+  const aliases = [str(fm, 'external_id'), tail].filter((a): a is string => a !== null && a !== n.title);
+  return { path: n.path, title: n.title, type: n.type, external: true, aliases, detail: str(fm, 'state') };
 }
 
 /** Librarian maintenance scan (PLAN-V2 §3.5): orphans + dangling links. */
 export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
   const all = ctx.index.all().filter((n) => !isFolderIndex(n.path));
-  const orphans: { path: string; title: string }[] = [];
+  const orphans: OrphanCandidate[] = [];
   const danglingLinks: { from: string; target: string }[] = [];
   for (const n of all) {
     const hasOut = n.links.length > 0;
     const hasIn = ctx.index.backlinks(n.slug).length > 0;
-    if (!hasOut && !hasIn && n.type !== 'skill') orphans.push({ path: n.path, title: n.title });
+    if (!hasOut && !hasIn && !NEVER_ORPHAN.has(n.type)) {
+      const finding = classifyOrphan(n);
+      if (finding) orphans.push(finding);
+    }
     for (const link of n.links) {
       if (!ctx.index.resolve(link.target)) danglingLinks.push({ from: n.path, target: link.target });
     }

@@ -14,14 +14,14 @@ which starts mid-August. Champion and economic buyer: [[people/sara-lindqvist]] 
 
 ## Commitments
 - SAML SSO live before their security review — rollout 2026-07-28, Nordkap is the first tenant
-  ([[releases/2026-07-sso-saml]], [[decisions/2026-05-20-adopt-workos]])
+  ([[tickets/PAY-142]], [[decisions/2026-05-20-adopt-workos]])
 - SCIM provisioning in September ([[decisions/2026-04-15-defer-scim-to-q3]])
 - All data stored and processed in the EU ([[decisions/2026-06-05-single-region-eu]])
 
 ## What they've been told
 - 2026-07-14: SSO date confirmed as 2026-07-28; SCIM reconfirmed for September
   ([[meetings/2026-07-14-nordkap-checkin]])
-- 2026-05-18: audit log in June — delivered 2026-06-20 ([[releases/2026-06-audit-log]])
+- 2026-05-18: audit log in June — delivered 2026-06-20 ([[tickets/PAY-156]])
 
 ## Watch
 - Their procurement started a review of the per-seat commercial model the week of 2026-07-13.

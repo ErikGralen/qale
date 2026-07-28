@@ -1,0 +1,11 @@
+{
+  "id": "98342",
+  "title": "Enterprise Onboarding",
+  "version": { "number": 17, "createdAt": "2026-07-18T07:12:00Z" },
+  "_links": { "webui": "/spaces/PROD/pages/98342/Enterprise+Onboarding" },
+  "body": {
+    "storage": {
+      "value": "<h1>Enterprise Onboarding</h1><p>SCIM ships in Q2 together with SSO.</p><ul><li>SAML metadata exchange</li><li>Provisioning</li></ul>"
+    }
+  }
+}

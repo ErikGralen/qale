@@ -1,12 +1,12 @@
-import { useMemo, useState } from 'react';
-import { isFolderIndex } from '@pm/domain';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isFolderIndex, dirForType, layerForType } from '@pm/domain';
 import { Button, Spinner } from '@pm/ui';
 import {
   FolderOpen,
   Sparkles,
   Check,
   Wand2,
-  Star,
+  X,
   FileUp,
   Search,
   Settings,
@@ -14,20 +14,20 @@ import {
   Inbox,
   ChevronRight,
   ListTodo,
-  type LucideIcon,
 } from 'lucide-react';
 import { useApp, type SessionOverview } from '../state/app-state';
+import { navFromEvent } from '../lib/nav';
 import { localDateStr } from '../lib/dates';
 import { noteTypeIcon } from '../lib/note-icons';
+import { ToolbarButton } from '../components/ToolbarButton';
 import {
   byRecent,
-  isUnprocessedSource,
   isUpcomingMeeting,
   meetingMeta,
   meetingStart,
   needsReview,
 } from '../lib/note-status';
-import type { NoteRefDTO, NoteType, ProblemHeatDTO, VaultTreeGroupDTO } from '@pm/ipc';
+import type { NoteRefDTO, NoteType, VaultTreeGroupDTO } from '@pm/ipc';
 
 // Clear the macOS traffic lights in the frameless window (hiddenInset).
 const isMac = navigator.userAgent.includes('Macintosh');
@@ -154,8 +154,6 @@ function ActivitySection() {
   return (
     <Section
       label="Activity"
-      count={attention}
-      countTone="brand"
       open={open}
       onToggle={toggle}
       locked={locked}
@@ -189,7 +187,7 @@ function ActivitySection() {
               <li key={s.id}>
                 <button
                   className="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 pl-2 text-left text-[13px] transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                  onClick={() => openChat({ id: s.id, sessionType: s.sessionType, title: s.title })}
+                  onClick={(e) => openChat({ id: s.id, sessionType: s.sessionType, title: s.title }, navFromEvent(e))}
                   title={`${s.title} — ${s.running ? 'running' : wants ? 'needs you' : 'done'}`}
                 >
                   <span className="flex size-3.5 shrink-0 items-center justify-center" aria-hidden>
@@ -236,123 +234,64 @@ function ActivitySection() {
   );
 }
 
-/** The PO's curated shortlist — starred notes, in the order they were pinned. */
-function FavoritesSection({ notes }: { notes: NoteRefDTO[] }) {
-  const { openDoc, activeTab, toggleFavorite } = useApp();
-  const [open, toggle] = useSection('favourites', true);
-  return (
-    <Section label="Favourites" open={open} onToggle={toggle}>
-      {notes.length === 0 ? (
-        <p className="px-2 py-1 text-xs text-muted-foreground">
-          Star <Star className="inline size-3 align-[-1px]" aria-hidden /> a note to keep it here.
-        </p>
-      ) : (
-        <ul className="flex flex-col">
-          {notes.map((n) => {
-            const Icon = noteTypeIcon(n.type);
-            const active = activeTab?.kind === 'doc' && activeTab.path === n.path;
-            return (
-              <li key={n.path} className="group relative">
-                <button
-                  className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1 pr-6 text-left text-[13px] transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
-                    active ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground' : 'text-sidebar-foreground'
-                  }`}
-                  onClick={() => void openDoc(n.path)}
-                  onDoubleClick={() => void openDoc(n.path, { preview: false })}
-                  title={n.title}
-                >
-                  <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                  <span className="truncate">{n.title}</span>
-                </button>
-                <button
-                  className="absolute top-1/2 right-1 -translate-y-1/2 rounded p-0.5 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                  onClick={() => toggleFavorite(n.path)}
-                  aria-label={`Remove ${n.title} from favourites`}
-                  title="Remove from favourites"
-                >
-                  <Star className="size-3 fill-current" />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </Section>
-  );
-}
-
-const SHORTLIST = 5;
-
-interface Shortlist {
-  /** The most-relevant handful for this type. */
-  notes: NoteRefDTO[];
-  /** Everything in the folder, to decide whether a "more" row is needed. */
-  total: number;
+/**
+ * How a type's pins order on the rail. Meetings read best upcoming-first (soonest
+ * on top) with the rest trailing by recency; every other type is simply
+ * most-recently-relevant first — the note you touched last is the one you want.
+ */
+function railOrder(notes: NoteRefDTO[], type: NoteType): NoteRefDTO[] {
+  if (type !== 'meeting') return [...notes].sort(byRecent);
+  const upcoming = notes.filter(isUpcomingMeeting).sort((a, b) => meetingStart(a) - meetingStart(b));
+  const rest = notes.filter((n) => !isUpcomingMeeting(n)).sort(byRecent);
+  return [...upcoming, ...rest];
 }
 
 /**
- * What each type opens to: not "all N", but the handful that actually earns a
- * glance. Live things first (open problems, active decisions, planned releases),
- * everything else by recency — the note you touched last is the one you want.
+ * One type's pins. The header name browses the whole folder; the chevron folds the
+ * list away. The rail shows exactly what's pinned for this type — no ranking it
+ * away, no cap, no "N more". Each row carries one action: the X that unpins it.
  */
-function shortlistFor(g: VaultTreeGroupDTO, problems: ProblemHeatDTO[]): Shortlist {
-  const all = g.notes.filter((n) => !isFolderIndex(n.path));
-  const take = (list: NoteRefDTO[]): Shortlist => ({ notes: list.slice(0, SHORTLIST), total: all.length });
-  switch (g.type) {
-    case 'source': {
-      const unprocessed = all.filter((n) => n.status === 'new' || n.status === 'stale');
-      return unprocessed.length ? take(unprocessed.sort(byRecent)) : take([...all].sort(byRecent));
-    }
-    case 'meeting': {
-      // Upcoming first (soonest on top), then unreviewed, then the recent past.
-      const upcoming = all.filter(isUpcomingMeeting).sort((a, b) => meetingStart(a) - meetingStart(b));
-      const unreviewed = all.filter(needsReview).sort(byRecent);
-      const rest = all
-        .filter((n) => !isUpcomingMeeting(n) && !needsReview(n))
-        .sort(byRecent);
-      return take([...upcoming, ...unreviewed, ...rest]);
-    }
-    case 'problem': {
-      const open = problems.filter((p) => p.stance !== 'wont-do');
-      return open.length ? take(open) : take([...all].sort(byRecent));
-    }
-    case 'decision': {
-      const active = all.filter((n) => (n.status ?? 'active') !== 'superseded' && !n.supersededBy);
-      return active.length ? take(active.sort(byRecent)) : take([...all].sort(byRecent));
-    }
-    case 'release': {
-      const planned = all.filter((n) => (n.status ?? 'planned') !== 'shipped');
-      return planned.length ? take(planned.sort(byRecent)) : take([...all].sort(byRecent));
-    }
-    case 'customer': {
-      const live = all.filter((n) => (n.status ?? 'active') !== 'churned');
-      return take((live.length ? live : all).sort(byRecent));
-    }
-    default:
-      return take([...all].sort(byRecent));
-  }
-}
-
-/**
- * One note type, opened to its most-relevant handful (PLAN-V2 §3.3). The header
- * name browses the whole folder; the chevron folds the shortlist away. No counts:
- * the memory's size isn't the point on the way past it — the live items are.
- */
-function TypeSection({ group, problems }: { group: VaultTreeGroupDTO; problems: ProblemHeatDTO[] }) {
-  const { openFolder, openDoc, activeTab } = useApp();
+function TypeSection({
+  group,
+  onUnpin,
+  onNewNote,
+  onIngest,
+}: {
+  group: VaultTreeGroupDTO;
+  onUnpin: (n: NoteRefDTO) => void;
+  onNewNote?: () => void;
+  onIngest?: () => void;
+}) {
+  const { openFolder, openDoc, activeTab, favorites, revealNew, markRevealSeen } = useApp();
   const [open, toggle] = useSection(`type.${group.type}`, true);
-  const { notes, total } = useMemo(() => shortlistFor(group, problems), [group, problems]);
-  if (total === 0) return null;
+  const notes = useMemo(() => {
+    const pinned = new Set(favorites);
+    return railOrder(
+      group.notes.filter((n) => pinned.has(n.path) && !isFolderIndex(n.path)),
+      group.type,
+    );
+  }, [group, favorites]);
+  const isNote = group.type === 'note';
+  // The transcript invitation only shows while the memory holds no meetings at
+  // all — "meetings exist but none pinned" gets the honest placeholder instead.
+  const inviteTranscript =
+    group.type === 'meeting' && !group.notes.some((n) => !isFolderIndex(n.path));
   const Icon = noteTypeIcon(group.type);
   const folderActive = activeTab?.kind === 'folder' && activeTab.dir === group.dir;
-  const more = total - notes.length;
+  // A section the memory just earned: it announces itself once, quietly, and
+  // any interaction with it counts as "seen".
+  const isNew = revealNew.has(group.type);
+  const acknowledge = () => isNew && markRevealSeen(group.type);
 
   return (
     <li>
       <div className="group/row flex items-center gap-0.5 pr-1">
         <button
           className="shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-          onClick={toggle}
+          onClick={() => {
+            acknowledge();
+            toggle();
+          }}
           aria-expanded={open}
           aria-label={`${open ? 'Collapse' : 'Expand'} ${group.dir}`}
         >
@@ -360,16 +299,30 @@ function TypeSection({ group, problems }: { group: VaultTreeGroupDTO; problems: 
             className={`size-3 transition-transform duration-150 motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
           />
         </button>
+        {/* A group label, not a row: quieter and smaller than the notes under it,
+            so the eye chunks the tree by section instead of reading one flat list. */}
         <button
-          className={`flex flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[13px] capitalize transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
-            folderActive ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground' : 'text-sidebar-foreground'
+          className={`flex flex-1 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-xs font-medium capitalize transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
+            folderActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-muted-foreground'
           }`}
-          onClick={() => openFolder(group.dir)}
-          onDoubleClick={() => openFolder(group.dir, { preview: false })}
-          title={`Browse all ${group.dir}`}
+          onClick={(e) => {
+            acknowledge();
+            openFolder(group.dir, navFromEvent(e));
+          }}
+          title={
+            isNew
+              ? `Browse all ${group.dir} — the memory just filed its first`
+              : `Browse all ${group.dir}`
+          }
         >
-          <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          <Icon className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
           <span className="flex-1 truncate">{group.dir}</span>
+          {isNew && (
+            <>
+              <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-hidden />
+              <span className="sr-only">, new in the memory</span>
+            </>
+          )}
         </button>
       </div>
 
@@ -380,48 +333,85 @@ function TypeSection({ group, problems }: { group: VaultTreeGroupDTO; problems: 
       >
         <div className="overflow-hidden" inert={!open ? true : undefined}>
           <ul className="flex flex-col pb-0.5">
-            {notes.map((n) => {
-              const activeNote = activeTab?.kind === 'doc' && activeTab.path === n.path;
-              return (
-                <li key={n.path}>
+            {notes.length === 0 ? (
+              isNote ? (
+                // The scratch pad is always on the rail — an empty one invites the
+                // first jot rather than sitting blank.
+                <li>
                   <button
-                    className={`flex w-full items-center gap-2 rounded-md py-1 pr-2 pl-[30px] text-left text-[13px] transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
-                      activeNote ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground' : 'text-sidebar-foreground'
-                    }`}
-                    onClick={() => void openDoc(n.path)}
-                    onDoubleClick={() => void openDoc(n.path, { preview: false })}
-                    title={n.title}
+                    className="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 pl-[30px] text-left text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    onClick={onNewNote}
+                    title="Start a note (⌘N)"
                   >
-                    <span className="truncate">{n.title}</span>
-                    {group.type === 'meeting' && needsReview(n) && (
-                      <span
-                        className="size-1.5 shrink-0 rounded-full bg-warning"
-                        title="Happened — awaiting its After-Meeting review"
-                        aria-label="Awaiting review"
-                      />
-                    )}
-                    {group.type === 'meeting' && (
-                      <span
-                        className={`ml-auto shrink-0 text-xs tabular-nums ${
-                          isUpcomingMeeting(n) ? 'font-medium text-brand' : 'text-muted-foreground'
-                        }`}
-                      >
-                        {meetingMeta(n)}
-                      </span>
-                    )}
+                    <SquarePen className="size-3 shrink-0 text-muted-foreground/70" aria-hidden />
+                    <span className="truncate">Jot something down</span>
+                    <span className="ml-auto shrink-0 text-muted-foreground/60">⌘N</span>
                   </button>
                 </li>
-              );
-            })}
-            {more > 0 && (
-              <li>
-                <button
-                  className="flex w-full items-center rounded-md py-1 pr-2 pl-[30px] text-left text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                  onClick={() => openFolder(group.dir)}
-                >
-                  {more} more →
-                </button>
-              </li>
+              ) : inviteTranscript ? (
+                // Meetings are the memory's front door — an empty section IS the
+                // day-one state, so it invites the first transcript.
+                <li>
+                  <button
+                    className="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 pl-[30px] text-left text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    onClick={onIngest}
+                    title="Drop a transcript (⇧⌘N) — any meeting you already have"
+                  >
+                    <FileUp className="size-3 shrink-0 text-muted-foreground/70" aria-hidden />
+                    <span className="truncate">Drop a transcript</span>
+                    <span className="ml-auto shrink-0 text-muted-foreground/60">⇧⌘N</span>
+                  </button>
+                </li>
+              ) : // Meetings exist but none are pinned: the header alone is the
+              // browse affordance — no placeholder row (pinned-only rail).
+              null
+            ) : (
+              notes.map((n) => {
+                const activeNote = activeTab?.kind === 'doc' && activeTab.path === n.path;
+                return (
+                  <li key={n.path} className="group/note relative">
+                    <button
+                      className={`flex w-full items-center gap-2 rounded-md py-1 pr-2 pl-[30px] text-left text-[13px] transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
+                        activeNote ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground' : 'text-sidebar-foreground'
+                      }`}
+                      onClick={(e) => void openDoc(n.path, navFromEvent(e))}
+                      onAuxClick={(e) => e.button === 1 && void openDoc(n.path, navFromEvent(e))}
+                      title={n.title}
+                    >
+                      <span className="truncate">{n.title}</span>
+                      {group.type === 'meeting' && needsReview(n) && (
+                        <span
+                          className="size-1.5 shrink-0 rounded-full bg-warning transition-opacity group-hover/note:opacity-0 group-focus-within/note:opacity-0"
+                          title="Happened — awaiting its After-Meeting review"
+                          aria-label="Awaiting review"
+                        />
+                      )}
+                      {group.type === 'meeting' && (
+                        <span
+                          className={`ml-auto shrink-0 text-xs tabular-nums transition-opacity group-hover/note:opacity-0 group-focus-within/note:opacity-0 ${
+                            isUpcomingMeeting(n) ? 'font-medium text-brand' : 'text-muted-foreground'
+                          }`}
+                        >
+                          {meetingMeta(n)}
+                        </span>
+                      )}
+                    </button>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-r-md bg-gradient-to-l from-sidebar-accent from-65% to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover/note:opacity-100 group-focus-within/note:opacity-100">
+                      <button
+                        className="pointer-events-auto rounded p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUnpin(n);
+                        }}
+                        aria-label={`Unpin ${n.title}`}
+                        title="Unpin — remove from the sidebar"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </div>
+                  </li>
+                );
+              })
             )}
           </ul>
         </div>
@@ -431,89 +421,81 @@ function TypeSection({ group, problems }: { group: VaultTreeGroupDTO; problems: 
 }
 
 /**
- * The rail carries only the PO's working set — the four types the between-
- * meetings loops actually touch: meetings (review them), decisions (answer
- * "what did we decide"), problems (what's live), releases (what's shipping).
- * Reference shelves — sources, insights, customers, people, sessions, notes —
- * are reached by ⌘K, wikilinks, or the full Memory page behind "All".
+ * The core rail — always present, even empty, because they carry the day-one
+ * invitations: meetings (drop a transcript) and notes (the scratch pad).
  */
-const RAIL_TYPES: readonly NoteType[] = ['meeting', 'decision', 'problem', 'release'];
+const CORE_RAIL: readonly NoteType[] = ['meeting', 'note'];
 
-/** The memory, opened to what's live in each working type — never an inventory. */
-function MemoryTree() {
-  const { tree, problems, openMemory } = useApp();
-  // Skills have their footer button; todos have the first-class Todos view.
-  const all = (tree?.groups ?? []).filter((g) => g.type !== 'skill' && g.type !== 'todo');
-  const groups = all
-    .filter((g) => RAIL_TYPES.includes(g.type))
-    .sort((a, b) => RAIL_TYPES.indexOf(a.type) - RAIL_TYPES.indexOf(b.type));
-  // Nothing that needs you should hide: unprocessed sources live off-rail, so
-  // their count surfaces here in the flag voice, next to the door to them.
-  const unprocessed = all
-    .filter((g) => g.type === 'source')
-    .flatMap((g) => g.notes)
-    .filter((n) => !isFolderIndex(n.path) && isUnprocessedSource(n)).length;
-  if (all.length === 0) return null;
+/**
+ * Preferred ordering for pin-holding sections — the between-meetings working
+ * set first (tickets, decisions, themes), anything else after.
+ */
+const RAIL_ORDER: readonly NoteType[] = ['meeting', 'note', 'ticket', 'decision', 'theme'];
+
+/**
+ * The rail: the two core sections always, plus a section for any type that
+ * currently holds a pin — which vanishes with its last pin. No placeholders:
+ * anything in the sidebar IS pinned, so an unpinned category has no row here
+ * (its home is the Memory page). Skills/todos keep their first-class homes.
+ */
+function MemoryTree({
+  onUnpin,
+  onNewNote,
+  onIngest,
+}: {
+  onUnpin: (n: NoteRefDTO) => void;
+  onNewNote: () => void;
+  onIngest: () => void;
+}) {
+  const { tree, favorites, openMemory } = useApp();
+  const [open, toggle] = useSection('memory', true);
+  const groups = useMemo(() => {
+    const byType = new Map<NoteType, VaultTreeGroupDTO>();
+    for (const g of tree?.groups ?? []) byType.set(g.type, g);
+    const core = CORE_RAIL.map(
+      (t) => byType.get(t) ?? { dir: dirForType(t), type: t, layer: layerForType(t), notes: [] },
+    );
+    const pinned = new Set(favorites);
+    const rest = (tree?.groups ?? []).filter(
+      (g) =>
+        !CORE_RAIL.includes(g.type) &&
+        g.type !== 'skill' &&
+        g.type !== 'todo' &&
+        g.notes.some((n) => pinned.has(n.path) && !isFolderIndex(n.path)),
+    );
+    const rank = (t: NoteType): number => {
+      const i = RAIL_ORDER.indexOf(t);
+      return i === -1 ? RAIL_ORDER.length : i;
+    };
+    rest.sort((a, b) => rank(a.type) - rank(b.type) || a.dir.localeCompare(b.dir));
+    return [...core, ...rest];
+  }, [tree, favorites]);
+  if (!tree) return null;
   return (
-    <div className="px-2 pt-1">
-      <div className="flex items-center gap-1 pr-1 pb-0.5">
-        <div className="flex-1 px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground/80">Memory</div>
-        {unprocessed > 0 && (
-          <span
-            className="text-xs font-medium text-warning tabular-nums"
-            title={`${unprocessed} unprocessed source${unprocessed === 1 ? '' : 's'}`}
-          >
-            {unprocessed}
-          </span>
-        )}
+    <Section
+      label="Memory"
+      open={open}
+      onToggle={toggle}
+      action={
         <button
           className="rounded px-1.5 py-0.5 text-xs text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-          onClick={() => openMemory()}
-          onDoubleClick={() => openMemory({ preview: false })}
+          onClick={(e) => openMemory(navFromEvent(e))}
           title="The whole memory — sources, insights, customers, people, sessions, notes"
         >
           All
         </button>
-      </div>
-      <ul className="flex flex-col">
+      }
+    >
+      <ul className="flex flex-col gap-1">
         {groups.map((g) => (
-          <TypeSection key={g.dir} group={g} problems={problems} />
+          <TypeSection key={g.dir} group={g} onUnpin={onUnpin} onNewNote={onNewNote} onIngest={onIngest} />
         ))}
       </ul>
-    </div>
+    </Section>
   );
 }
 
 /** One always-available header action: 28px hit area, quiet until hovered. */
-function HeaderButton({
-  label,
-  title,
-  icon: Icon,
-  className = '',
-  onClick,
-  onDoubleClick,
-}: {
-  label: string;
-  title: string;
-  icon: LucideIcon;
-  className?: string;
-  onClick: () => void;
-  onDoubleClick?: () => void;
-}) {
-  return (
-    <button
-      className={`rounded-md p-1.5 text-muted-foreground transition-colors duration-150 hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${className}`}
-      style={{ WebkitAppRegion: 'no-drag' } as never}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      aria-label={label}
-      title={title}
-    >
-      <Icon className="size-4" />
-    </button>
-  );
-}
-
 export function Sidebar({
   onSearch,
   onNewNote,
@@ -533,8 +515,28 @@ export function Sidebar({
     openTodos,
     openSkills,
     attentionCount,
-    favorites,
+    toggleFavorite,
   } = useApp();
+
+  // Unpinning a note is reversible: it leaves a one-tap Undo strip for a few
+  // seconds, then quietly settles. (The red toast is errors-only.)
+  const [unpinned, setUnpinned] = useState<{ path: string; title: string } | null>(null);
+  const unpinTimer = useRef<number | null>(null);
+  useEffect(() => () => void (unpinTimer.current && window.clearTimeout(unpinTimer.current)), []);
+  const unpinNote = useCallback(
+    (n: NoteRefDTO) => {
+      toggleFavorite(n.path);
+      setUnpinned({ path: n.path, title: n.title });
+      if (unpinTimer.current) window.clearTimeout(unpinTimer.current);
+      unpinTimer.current = window.setTimeout(() => setUnpinned(null), 6000);
+    },
+    [toggleFavorite],
+  );
+  const undoUnpin = useCallback(() => {
+    if (unpinned) toggleFavorite(unpinned.path); // re-pin: the exact inverse of the unpin
+    setUnpinned(null);
+    if (unpinTimer.current) window.clearTimeout(unpinTimer.current);
+  }, [unpinned, toggleFavorite]);
 
   const skillsGroup = tree?.groups.find((g) => g.type === 'skill');
   // The PO's own open todos due today or slipped — the "deal with these" count.
@@ -550,32 +552,24 @@ export function Sidebar({
         n.due <= iso,
     ).length;
   }, [tree]);
-  // Resolve favourite paths against the live tree — deleted notes drop out.
-  const favoriteNotes = useMemo(() => {
-    const byPath = new Map<string, NoteRefDTO>();
-    for (const g of tree?.groups ?? []) for (const n of g.notes) byPath.set(n.path, n);
-    return favorites.map((p) => byPath.get(p)).filter((n): n is NoteRefDTO => !!n);
-  }, [tree, favorites]);
 
   return (
     <div className="flex h-full flex-col">
       <div
-        className={`flex h-11 shrink-0 items-center gap-0.5 pr-2 ${isMac ? 'pl-[70px]' : 'pl-2'}`}
+        className={`flex h-10 shrink-0 items-center gap-0.5 pr-1.5 ${isMac ? 'pl-[70px]' : 'pl-1.5'}`}
         style={{ WebkitAppRegion: 'drag' } as never}
       >
         {vault && (
           <>
-            <HeaderButton label="New note" title="New note (⌘N)" icon={SquarePen} onClick={onNewNote} />
-            <HeaderButton label="Ingest" title="Ingest — drop anything (⇧⌘N)" icon={FileUp} onClick={onIngest} />
+            <ToolbarButton label="New note" keys={['⌘', 'N']} icon={SquarePen} onClick={onNewNote} />
+            <ToolbarButton label="Ingest" keys={['⇧', '⌘', 'N']} icon={FileUp} onClick={onIngest} />
           </>
         )}
-        <HeaderButton
+        <ToolbarButton
           label="Settings"
-          title="Settings"
           icon={Settings}
           className="ml-auto"
           onClick={() => openSettings()}
-          onDoubleClick={() => openSettings({ preview: false })}
         />
       </div>
 
@@ -596,8 +590,7 @@ export function Sidebar({
         <div className="flex flex-col gap-0.5 px-2 pb-1.5">
           <button
             className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={() => openInbox()}
-            onDoubleClick={() => openInbox({ preview: false })}
+            onClick={(e) => openInbox(navFromEvent(e))}
           >
             <Inbox className="size-4 text-brand" aria-hidden />
             Inbox
@@ -609,8 +602,7 @@ export function Sidebar({
           </button>
           <button
             className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={() => openTodos()}
-            onDoubleClick={() => openTodos({ preview: false })}
+            onClick={(e) => openTodos(navFromEvent(e))}
           >
             <ListTodo className="size-4 text-muted-foreground" aria-hidden />
             Todos
@@ -622,8 +614,7 @@ export function Sidebar({
           </button>
           <button
             className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={() => openSession('ask')}
-            onDoubleClick={() => openSession('ask', { preview: false })}
+            onClick={(e) => openSession('ask', navFromEvent(e))}
           >
             <Sparkles className="size-4 text-muted-foreground" aria-hidden />
             Ask
@@ -644,19 +635,32 @@ export function Sidebar({
         <>
           <div className="flex-1 overflow-y-auto pb-2">
             <ActivitySection />
-            <FavoritesSection notes={favoriteNotes} />
-            <MemoryTree />
-            {(tree?.groups ?? []).every((g) => g.type === 'skill' || g.notes.every((n) => isFolderIndex(n.path))) && (
-              <p className="px-4 py-4 text-sm text-muted-foreground">
-                Empty workspace — start a note with ⌘N, or dump anything with ⇧⌘N or a drop.
-              </p>
-            )}
+            {/* Day one teaches itself: the Meetings and Notes sections carry their
+                own invitations, so no extra empty-workspace paragraph. */}
+            <MemoryTree onUnpin={unpinNote} onNewNote={onNewNote} onIngest={onIngest} />
           </div>
+
+          {unpinned && (
+            <div
+              role="status"
+              className="mx-2 mb-1.5 flex items-center gap-2 rounded-lg border border-sidebar-border bg-card/70 px-2.5 py-1.5 text-xs text-muted-foreground"
+            >
+              <Check className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">
+                Unpinned <span className="text-foreground">{unpinned.title}</span>
+              </span>
+              <button
+                className="shrink-0 rounded px-1 font-medium text-brand transition-colors hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                onClick={undoUnpin}
+              >
+                Undo
+              </button>
+            </div>
+          )}
 
           <button
             className="flex items-center gap-2 border-t border-sidebar-border px-3.5 py-2 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={() => openSkills()}
-            onDoubleClick={() => openSkills({ preview: false })}
+            onClick={(e) => openSkills(navFromEvent(e))}
             title="Skills — how the agent behaves: voices, playbooks, triggers, and what it may do on its own"
           >
             <Wand2 className="size-3.5" aria-hidden /> Skills{skillsGroup ? ` (${skillsGroup.notes.length})` : ''}

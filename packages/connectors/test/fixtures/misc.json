@@ -1,0 +1,20 @@
+{
+  "myself": { "displayName": "Erik Gralén", "emailAddress": "erik@leveret.io" },
+  "tenantInfo": { "cloudId": "11223344-5566-7788-99aa-bbccddeeff00" },
+  "projects": {
+    "values": [
+      { "key": "PAY", "name": "Payments" },
+      { "key": "CORE", "name": "Core Platform" }
+    ]
+  },
+  "spaces": {
+    "results": [{ "key": "PROD", "name": "Product" }]
+  },
+  "createIssue": { "key": "PAY-201" },
+  "createComment": { "id": "5001" },
+  "putPage": {
+    "id": "98342",
+    "title": "Enterprise Onboarding",
+    "_links": { "webui": "/spaces/PROD/pages/98342/Enterprise+Onboarding" }
+  }
+}

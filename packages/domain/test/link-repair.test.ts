@@ -41,6 +41,16 @@ test('suggestLinkTarget expands unique short names, not short noise', () => {
   assert.equal(suggestLinkTarget('tom', cands), null);
 });
 
+test('suggestLinkTarget folds Swedish diacritics, keeping distinct names distinct', () => {
+  const cands = [c('people/hook', 'Höök'), c('people/hok', 'Hök')];
+  assert.equal(suggestLinkTarget('Hök', cands), 'people/hok');
+  assert.equal(suggestLinkTarget('Höök', cands), 'people/hook');
+  assert.equal(
+    suggestLinkTarget('Möte med Åsa', [c('meetings/2026-07-20-mote-med-asa', 'Möte med Åsa')]),
+    'meetings/2026-07-20-mote-med-asa',
+  );
+});
+
 test('suggestLinkTarget declines ambiguous and hopeless targets', () => {
   const twins = [c('people/tom-devlin'), c('meetings/tom-devlin')];
   assert.equal(suggestLinkTarget('tom-devlin-x', twins), null);
@@ -123,4 +133,16 @@ test('buildLinkRepairPatch duplicate occurrences apply sequentially', () => {
 
 test('buildLinkRepairPatch returns empty for frontmatter-only links', () => {
   assert.deepEqual(buildLinkRepairPatch('No links to it here.', 'nordkap', 'customers/nordkap-shipping'), []);
+});
+
+test('buildLinkRepairPatch re-emits the link type in the author direction', () => {
+  const body = 'Held by [[blocked-by::nordkap]], we track [[evidence::nordkap#SSO|the deal]].';
+  const patch = buildLinkRepairPatch(body, 'nordkap', 'customers/nordkap-shipping');
+  assert.deepEqual(patch, [
+    { search: '[[blocked-by::nordkap]]', replace: '[[blocked-by::customers/nordkap-shipping]]' },
+    {
+      search: '[[evidence::nordkap#SSO|the deal]]',
+      replace: '[[evidence::customers/nordkap-shipping#SSO|the deal]]',
+    },
+  ]);
 });

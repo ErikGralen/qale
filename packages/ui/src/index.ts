@@ -41,7 +41,7 @@ export {
   CommandItem,
   CommandSeparator,
 } from './components/ui/command';
-export { Tooltip, TooltipTrigger, TooltipContent } from './components/ui/tooltip';
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './components/ui/tooltip';
 export {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -50,6 +50,7 @@ export {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from './components/ui/dropdown-menu';
+export { Popover, PopoverTrigger, PopoverAnchor, PopoverContent } from './components/ui/popover';
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
 export {
   ResizableHandle,

@@ -96,6 +96,14 @@ export interface SkillConfig {
   checkpoints: string[];
   /** When true, propose-tools stay locked until a checkpoint is advanced. */
   gateOutput: boolean;
+  /**
+   * Sessions v2 Part 1 — this skill may keep working files under
+   * `sessions/.files/<session-id>/`: a scratch folder it writes to freely, which
+   * is NOT the memory. Opt-in per skill, because capability and spend are
+   * separate gates: every session being able to scatter files is as wrong as
+   * having to pick a mode before you can do ad-hoc analysis.
+   */
+  sessionFiles: boolean;
   guardrails: SkillGuardrails;
   /** How this skill attaches to the workspace (v2). Empty = inert. */
   bindings: SkillBinding[];
@@ -301,6 +309,7 @@ export function parseSkill(raw: string, fallbackName: string): SkillConfig {
     then: section(body, 'Then'),
     checkpoints,
     gateOutput,
+    sessionFiles: fm['session_files'] === true,
     guardrails: {
       completionBar: typeof fm['completion_bar'] === 'string' ? (fm['completion_bar'] as string) : undefined,
       stoppingConditions: asStringArray(fm['stopping_conditions']),

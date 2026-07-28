@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { X, Plus, PanelLeft, Inbox, History, MessageSquare, FileText, Folder, Hash, Settings, Wand2, ListTodo, Library, ArrowLeft, ArrowRight } from 'lucide-react';
+import { X, Plus, PanelLeft, Inbox, History, MessageSquare, FileCode, FileText, Folder, Hash, Settings, Wand2, ListTodo, Library, ArrowLeft, ArrowRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Spinner } from '@pm/ui';
 import { ToolbarButton } from '../components/ToolbarButton';
@@ -13,6 +13,9 @@ function iconFor(tab: Tab): LucideIcon {
       return tab.noteType ? (NOTE_TYPE_ICON[tab.noteType] ?? FileText) : FileText;
     case 'session':
       return MessageSquare;
+    // Working material, not a note — a plain page icon, never a note-type one.
+    case 'sessionFile':
+      return FileCode;
     case 'chats':
       return History;
     case 'inbox':

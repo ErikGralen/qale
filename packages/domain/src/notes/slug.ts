@@ -37,6 +37,25 @@ export function isReservedFile(path: string): boolean {
 /** The OKF spec version this workspace conforms to — stamped in the root index.md (§12). */
 export const OKF_VERSION = '0.2';
 
+/**
+ * Where a session's own working files live (Sessions v2 Part 1).
+ * `sessions/2026-07-28-synthesis-a1b2c3.md` is the session's git-tracked, indexed
+ * *face*; `sessions/.files/a1b2c3/` is its untracked *body* — the relationship is
+ * legible from the filesystem alone.
+ *
+ * The leading dot is what keeps it out of the memory for free: `FsVault.walk`
+ * skips any entry whose name starts with `.` at every level, so nothing under
+ * here is indexed, searched, retrieved, linkable or counted in freshness
+ * (invariant 1). It is also seeded into the vault's `.gitignore`.
+ */
+export const SESSION_FILES_DIR = 'sessions/.files';
+
+/** Is this vault-relative path inside some session's working files? */
+export function isSessionFile(path: string): boolean {
+  const p = path.replace(/^\.?\//, '');
+  return p === SESSION_FILES_DIR || p.startsWith(`${SESSION_FILES_DIR}/`);
+}
+
 /** The final path segment (basename without extension). */
 export function basename(slug: string): string {
   const s = slugFromPath(slug);

@@ -7,6 +7,8 @@ import {
   checkSupersede,
   refToSlug,
   slugify,
+  isSessionFile,
+  validateEvidence,
   todoLane,
   isOverdueTodo,
   isExternalTodo,
@@ -156,4 +158,27 @@ test('todoLane: buckets by status, owner and due date', () => {
 test('byDue: dated before undated, earlier first', () => {
   const sorted = [{ due: undefined }, { due: '2026-07-20' }, { due: '2026-07-18' }].sort(byDue);
   assert.deepEqual(sorted.map((t) => t.due), ['2026-07-18', '2026-07-20', undefined]);
+});
+
+// --- Sessions v2 invariant 2: citations pass THROUGH session files ---
+
+test('evidence may not cite a session file — the card must cite the original source', () => {
+  const resolves = () => true;
+  const bad = validateEvidence(['[[sessions/.files/a1b2c3/per-item/nordkap]]'], false, resolves);
+  assert.equal(bad.ok, false);
+  assert.match(bad.reason ?? '', /session files/);
+  // Even flagged as inference — this is the failure that otherwise stays silent
+  // until someone follows a link months later and finds deleted scratch.
+  assert.equal(validateEvidence(['sessions/.files/a1b2c3/brief.md'], true, resolves).ok, false);
+  // The source the file was written FROM is exactly what should be cited.
+  assert.equal(validateEvidence(['[[sources/2026-06-12-nordkap]]'], false, resolves).ok, true);
+  // A real session receipt is still citable — only its `.files` body is not.
+  assert.equal(validateEvidence(['[[sessions/2026-07-28-synthesis-a1b2c3]]'], false, resolves).ok, true);
+});
+
+test('isSessionFile matches the folder and its contents, nothing adjacent', () => {
+  assert.equal(isSessionFile('sessions/.files'), true);
+  assert.equal(isSessionFile('sessions/.files/a1/brief.md'), true);
+  assert.equal(isSessionFile('sessions/2026-07-28-synthesis.md'), false);
+  assert.equal(isSessionFile('sessions/.filesystem/x.md'), false);
 });

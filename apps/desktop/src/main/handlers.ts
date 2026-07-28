@@ -285,6 +285,12 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     }
   };
 
+  // Session files landing one at a time is the signature interaction — the tree
+  // must fill live, not after the turn settles.
+  agent.onFilesChanged = (sessionId) => {
+    pushEvent(getWindow(), { channel: 'session:files', sessionId });
+  };
+
   // Session lifecycle → renderer rail/badges, plus an OS notification when a
   // background run finishes while the PO is elsewhere (nothing silent).
   agent.onStatus = (s) => {
@@ -669,6 +675,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     return { ok: true };
   });
   handle('sessions:live', () => agent.listLive());
+  handle('sessions:files', (sessionId) => agent.listFiles(sessionId));
+  handle('sessions:fileText', (sessionId, path) => agent.readFile(sessionId, path));
 
   handle('pings:list', () => listPings(vaultService.requireContext()).map(pingToDTO));
   handle('pings:open', (id) => {

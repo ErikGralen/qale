@@ -95,3 +95,31 @@ test('history is empty (not an error) when the vault is not a repo', async () =>
   assert.deepEqual(await git.history('note.md'), []);
   assert.equal(await git.fileAt('note.md', 'HEAD'), null);
 });
+
+test('session working files are ignored — the memory is versioned, scratch is not', async () => {
+  const vault = await tmp();
+  const git = new GitAdapter(vault);
+  await git.init();
+  assert.ok((await readFile(join(vault, '.gitignore'), 'utf8')).includes('sessions/.files/'));
+
+  await mkdir(join(vault, 'sessions/.files/a1b2c3'), { recursive: true });
+  await writeFile(join(vault, 'sessions/.files/a1b2c3/brief.md'), 'scratch\n');
+  await writeFile(join(vault, 'sessions/2026-07-28-synthesis-a1b2c3.md'), '# receipt\n');
+  await git.commitPaths(['sessions/2026-07-28-synthesis-a1b2c3.md', 'sessions/.files/a1b2c3/brief.md'], 'session: synthesis');
+
+  const tracked = await simpleGit(vault).raw(['ls-files']);
+  assert.ok(tracked.includes('sessions/2026-07-28-synthesis-a1b2c3.md'), 'the receipt is tracked');
+  assert.ok(!tracked.includes('.files'), 'the scratch body is not');
+});
+
+test('ensureIgnored is additive and idempotent — a vault that predates a rule catches up', async () => {
+  const vault = await tmp();
+  const git = new GitAdapter(vault);
+  await writeFile(join(vault, '.gitignore'), '.DS_Store\nmy-own-rule\n');
+  await git.ensureIgnored(['sessions/.files/', '.DS_Store']);
+  let ignore = await readFile(join(vault, '.gitignore'), 'utf8');
+  assert.equal(ignore, '.DS_Store\nmy-own-rule\nsessions/.files/\n');
+  await git.ensureIgnored(['sessions/.files/']);
+  ignore = await readFile(join(vault, '.gitignore'), 'utf8');
+  assert.equal(ignore.match(/sessions\/\.files\//g)?.length, 1);
+});

@@ -499,6 +499,18 @@ export interface ChatHistoryDTO {
   messages: unknown[];
 }
 
+/**
+ * One file in a session's working folder (Sessions v2 Part 1). These are NOT
+ * notes: never indexed, never searched, never citable, never committed — so they
+ * have no NoteDTO and open in their own read-only viewer.
+ */
+export interface SessionFileDTO {
+  /** Path relative to the session's folder, e.g. "per-item/kranelund.md". */
+  path: string;
+  bytes: number;
+  mtime: number;
+}
+
 /** A session with a turn currently in flight (the sidebar rail's live rows). */
 export interface LiveSessionDTO {
   sessionId: string;

@@ -16,6 +16,12 @@ export function buildSessionReceipt(
   harness: SessionHarness,
   now: string,
   sourceMeeting?: string,
+  /**
+   * How many working files the session wrote (Sessions v2 Part 1). Session files
+   * are never committed and never swept, so this count is the only trace they
+   * leave in the git-tracked record once nobody remembers running the session.
+   */
+  files = 0,
 ): SessionReceipt {
   const date = harness.started.slice(0, 10);
   const path = `sessions/${date}-${fileSlug(harness.config.name, date).replace(/^\d{4}-\d{2}-\d{2}-/, '')}-${harness.sessionId.slice(0, 8)}.md`;
@@ -41,6 +47,7 @@ export function buildSessionReceipt(
   // Which skills were in force, not just the one the session opened with — a
   // session that pulled in Synthesis halfway through says so (Sessions v2 Part 4).
   if (harness.invoked.length > 0) lines.push(`Skills: ${harness.skillNames.join(' → ')}`);
+  if (files > 0) lines.push(`Session files: ${files} (working material, not kept in the memory)`);
   if (harness.reachedCheckpoint) lines.push(`Reached checkpoint: **${harness.reachedCheckpoint}**`);
   lines.push('', '## Turns');
   for (const [i, turn] of harness.turns.entries()) {

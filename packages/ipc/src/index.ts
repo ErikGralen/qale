@@ -37,6 +37,7 @@ import type {
   ChatRefDTO,
   ChatHistoryDTO,
   SessionLifecycle,
+  SessionFileDTO,
   LiveSessionDTO,
   SettingsDTO,
   SkillDTO,
@@ -142,6 +143,10 @@ export interface InvokeMap {
   'chats:forNote': { args: [path: string]; result: ChatRefDTO[] };
   // Live session state (the sidebar rail) + agent-initiated pings
   'sessions:live': { args: []; result: LiveSessionDTO[] };
+  /** A session's working files — the right-panel tree (Sessions v2 Part 1). */
+  'sessions:files': { args: [sessionId: string]; result: SessionFileDTO[] };
+  /** One working file's text, read-only. Null when it's gone. */
+  'sessions:fileText': { args: [sessionId: string, path: string]; result: string | null };
   'pings:list': { args: []; result: AgentPingDTO[] };
   'pings:open': { args: [id: string]; result: AgentPingDTO | null };
   'pings:dismiss': { args: [id: string]; result: { ok: boolean } };
@@ -240,6 +245,8 @@ export const INVOKE_CHANNELS = [
   'chats:setLifecycle',
   'chats:forNote',
   'sessions:live',
+  'sessions:files',
+  'sessions:fileText',
   'pings:list',
   'pings:open',
   'pings:dismiss',

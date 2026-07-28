@@ -87,6 +87,11 @@ export class SessionHarness {
     return src.gateOutput && src.checkpoints.length > 0;
   }
 
+  /** Whether any skill in force keeps working files (Sessions v2 Part 1). */
+  get sessionFiles(): boolean {
+    return this.config.sessionFiles || this.invoked.some((c) => c.sessionFiles);
+  }
+
   /**
    * The tool tier in force: the highest any active skill grants. Arrival ADDS
    * permissions — invoking a read-only skill inside an outbound session must not

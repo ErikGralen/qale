@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { refToSlug } from '../notes/decisions.js';
+import { isSessionFile } from '../notes/slug.js';
 
 /**
  * Proposals (approval cards) are the ONLY write path for the agent (PLAN-V2 §3.3).
@@ -212,6 +214,21 @@ export function validateEvidence(
   inference: boolean,
   resolve: (ref: string) => boolean,
 ): EvidenceValidation {
+  // Sessions v2 invariant 2: citations pass THROUGH session files, never
+  // terminate in them. A subagent reads sources/2026-06-12-kranelund.md and
+  // writes per-item/kranelund.md; the card must cite the former. Checked even
+  // for inference cards, and before the empty check, because this is the failure
+  // that stays silent: you get a memory full of insights whose evidence points
+  // at deleted scratch, and nothing complains until someone follows a link.
+  const scratch = sources.filter((s) => isSessionFile(refToSlug(s) ?? s));
+  if (scratch.length > 0) {
+    return {
+      ok: false,
+      reason:
+        `evidence cannot cite session files (${scratch.join(', ')}) — they are working material and get deleted. ` +
+        'Cite the original source the file was written from; that path is carried inside the file.',
+    };
+  }
   if (inference) return { ok: true };
   if (sources.length === 0) {
     return { ok: false, reason: 'proposal has no sources[]; set inference:true to allow' };

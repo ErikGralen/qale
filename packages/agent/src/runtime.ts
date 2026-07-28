@@ -29,6 +29,16 @@ import {
   USE_SKILL_TOOL_NAME,
   type TrackExternal,
 } from './tools.js';
+import {
+  createSessionFileTools,
+  listSessionFiles,
+  readSessionFile,
+  sessionFilesPrompt,
+  sessionFilesRelRoot,
+  sessionFilesRoot,
+  SESSION_FILE_TOOL_NAMES,
+  type SessionFileEntry,
+} from './session-files.js';
 import { SHARED_PREAMBLE } from './prompts.js';
 import {
   parseSkill,
@@ -154,6 +164,8 @@ export class AgentRuntime {
   private readonly sessionTypeCache = new Map<string, string>();
   /** Lifecycle hook — main pushes these to the renderer as `session:status`. */
   onStatus: ((status: SessionStatus) => void) | null = null;
+  /** Fired when a session writes a working file — main pushes `session:files`. */
+  onFilesChanged: ((sessionId: string) => void) | null = null;
 
   configure(config: AgentRuntimeConfig): void {
     // Re-applying identical settings must not kill live sessions mid-stream.
@@ -303,6 +315,7 @@ export class AgentRuntime {
     // otherwise gate output with no way to advance past the gate.
     if (config.checkpoints.length > 0 || canInvokeSkills) names.push(CHECKPOINT_TOOL_NAME);
     if (canInvokeSkills) names.push(USE_SKILL_TOOL_NAME);
+    if (config.sessionFiles) names.push(...SESSION_FILE_TOOL_NAMES);
     if (atlassianActive) names.push(...ATLASSIAN_TOOL_NAMES);
     return names;
   }
@@ -463,7 +476,10 @@ export class AgentRuntime {
     const voice = skillConfig.tier === 'outbound' ? await this.voiceGuides(ctx) : '';
     const skillIndex = await this.skillIndex(ctx, skillConfig.name);
     const vaultMap = await this.vaultMap(ctx);
-    const systemPrompt = buildSystemPrompt(SHARED_PREAMBLE, skillConfig) + voice + (skillIndex ?? '') + vaultMap;
+    const filesRoot = sessionFilesRoot(this.config.vaultDir, id);
+    const files = skillConfig.sessionFiles ? sessionFilesPrompt(sessionFilesRelRoot(id)) : '';
+    const systemPrompt =
+      buildSystemPrompt(SHARED_PREAMBLE, skillConfig) + voice + (skillIndex ?? '') + files + vaultMap;
 
     // The ask session gains the tracker seam (Jira/Confluence) when configured.
     const atlassianActive = type === 'ask' && this.atlassian;
@@ -475,6 +491,9 @@ export class AgentRuntime {
       ...(skillConfig.tier === 'outbound' ? createDraftTools(ctx, id, harness) : []),
       ...(skillConfig.checkpoints.length > 0 || canInvokeSkills ? [createCheckpointTool(harness)] : []),
       ...(canInvokeSkills ? [createUseSkillTool(ctx, harness)] : []),
+      ...(skillConfig.sessionFiles
+        ? createSessionFileTools(filesRoot, () => this.onFilesChanged?.(id))
+        : []),
       ...(atlassianActive ? createAtlassianTools(this.atlassian!, this.config.trackExternal) : []),
     ];
 
@@ -537,7 +556,8 @@ export class AgentRuntime {
   private async fileReceipt(state: SessionState, ctx: UseCaseContext): Promise<void> {
     if (state.harness.turns.length === 0 && state.harness.writes.length === 0) return;
     try {
-      const receipt = buildSessionReceipt(state.harness, ctx.clock.now());
+      const files = state.harness.sessionFiles ? (await this.listFiles(state.id)).length : 0;
+      const receipt = buildSessionReceipt(state.harness, ctx.clock.now(), undefined, files);
       const note = await ctx.vault.writeNote(receipt.path, receipt.frontmatter, receipt.body);
       ctx.index.reindex(note);
       await ctx.git.commitPaths([receipt.path], `session: ${state.harness.config.name}`);
@@ -614,6 +634,22 @@ export class AgentRuntime {
       status,
       updated: Date.now(),
     });
+  }
+
+  /**
+   * A session's working files (Sessions v2 Part 1) — what the right-panel tree
+   * shows, filling live as the session writes. Off the index by construction, so
+   * this is the only door to them; a session that never wrote returns [].
+   */
+  async listFiles(sessionId: string): Promise<SessionFileEntry[]> {
+    if (!this.config) return [];
+    return listSessionFiles(sessionFilesRoot(this.config.vaultDir, sessionId));
+  }
+
+  /** One session file's text, read-only. Null when it escapes the folder or is gone. */
+  async readFile(sessionId: string, path: string): Promise<string | null> {
+    if (!this.config) return null;
+    return readSessionFile(sessionFilesRoot(this.config.vaultDir, sessionId), path);
   }
 
   /** Sessions with a turn in flight — the sidebar rail's running rows. */

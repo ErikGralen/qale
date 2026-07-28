@@ -110,6 +110,8 @@ export interface GitPort {
   available(): Promise<boolean>;
   isRepo(): Promise<boolean>;
   init(): Promise<void>;
+  /** Add any missing patterns to the vault's `.gitignore` (additive, idempotent). */
+  ensureIgnored(patterns: string[]): Promise<void>;
   commitPaths(paths: string[], message: string): Promise<void>;
   /** Commits that touched `relPath`, newest first (empty if not a repo). */
   history(relPath: string): Promise<GitCommit[]>;

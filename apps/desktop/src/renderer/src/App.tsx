@@ -8,6 +8,7 @@ import { Landing } from './app/Landing';
 import { NoteView } from './app/NoteView';
 import { ChatView } from './app/ChatView';
 import { ChatsView } from './app/ChatsView';
+import { SessionFileView } from './app/SessionFileView';
 import { SettingsView } from './app/SettingsView';
 import { SkillsView } from './app/SkillsView';
 import { InboxView } from './app/InboxView';
@@ -39,6 +40,14 @@ function Center() {
           initialPrompt={activeTab.initialPrompt}
           onSessionId={(sessionId) => bindTabSession(activeTab.key, sessionId)}
           onNewChat={() => openSession(activeTab.sessionType, { fresh: true })}
+        />
+      );
+    case 'sessionFile':
+      return (
+        <SessionFileView
+          key={`${activeTab.sessionId}:${activeTab.path}`}
+          sessionId={activeTab.sessionId}
+          path={activeTab.path}
         />
       );
     case 'chats':
@@ -82,7 +91,7 @@ function Shell() {
     }
   });
   const dragDepth = useRef(0);
-  const { openSession, activeTab, tabs, activeTabId, setActiveTab, closeTab, vault, captureNote, openDoc, goBack, goForward, reopenClosedTab } =
+  const { openSession, activeTab, tabs, activeTabId, setActiveTab, closeTab, vault, captureNote, openDoc, goBack, goForward, reopenClosedTab, sessionFiles } =
     useApp();
   const toast = useToast();
 
@@ -221,7 +230,12 @@ function Shell() {
     [openCapture, vault, toast],
   );
 
-  const showRight = activeTab?.kind === 'doc';
+  // The right panel is the note's chat corner, or a session's working-file tree.
+  // A session with no files gets no panel: an empty 35% column would read as a
+  // broken feature on every ordinary conversation.
+  const sessionHasFiles =
+    activeTab?.kind === 'session' && !!activeTab.sessionId && (sessionFiles[activeTab.sessionId]?.length ?? 0) > 0;
+  const showRight = activeTab?.kind === 'doc' || sessionHasFiles;
 
   return (
     <div

@@ -1,9 +1,17 @@
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { existsSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
+import { SESSION_FILES_DIR } from '@pm/domain';
 import type { GitCommit, GitPort } from '@pm/application';
+
+/**
+ * Seeded into every vault's `.gitignore`: OS junk, plus session working files —
+ * a session's scratch folder is deliberately untracked (Sessions v2 invariant 1:
+ * session files are not the memory, and the memory is what git versions).
+ */
+const IGNORED = ['.DS_Store', `${SESSION_FILES_DIR}/`];
 
 /**
  * Git layer (PLAN §3.5): thin wrapper over system git via simple-git, with a
@@ -44,9 +52,7 @@ export class GitAdapter implements GitPort {
 
   async init(): Promise<void> {
     await this.git.init();
-    // Seed an ignore so OS junk never gets committed into the vault.
-    const ignorePath = join(this.root, '.gitignore');
-    if (!existsSync(ignorePath)) await writeFile(ignorePath, '.DS_Store\n', 'utf8');
+    await this.ensureIgnored(IGNORED);
     // Repo-local identity fallback: without user.email, every commit fails on
     // machines that never configured git globally.
     const email = await this.git.raw(['config', 'user.email']).catch(() => '');
@@ -54,6 +60,30 @@ export class GitAdapter implements GitPort {
       await this.git.raw(['config', 'user.name', 'pm']).catch(() => undefined);
       await this.git.raw(['config', 'user.email', 'pm@localhost']).catch(() => undefined);
     }
+  }
+
+  /**
+   * Append any missing patterns to the vault's `.gitignore` (creating it).
+   * Idempotent, and safe on a vault whose ignore file the PM has edited — we
+   * only ever add lines. Called on every open, not just `init`: session files
+   * (`sessions/.files/`) landed after workspaces already existed, and a vault
+   * that missed the seed must not start committing scratch.
+   */
+  async ensureIgnored(patterns: string[]): Promise<void> {
+    const ignorePath = join(this.root, '.gitignore');
+    let current = '';
+    try {
+      current = existsSync(ignorePath) ? await readFile(ignorePath, 'utf8') : '';
+    } catch {
+      return;
+    }
+    const have = new Set(current.split('\n').map((l) => l.trim()));
+    const missing = patterns.filter((p) => !have.has(p));
+    if (missing.length === 0) return;
+    const body = current && !current.endsWith('\n') ? `${current}\n` : current;
+    await writeFile(ignorePath, `${body}${missing.join('\n')}\n`, 'utf8').catch((err) => {
+      console.error('[git] .gitignore update failed:', err instanceof Error ? err.message : err);
+    });
   }
 
   async history(relPath: string): Promise<GitCommit[]> {

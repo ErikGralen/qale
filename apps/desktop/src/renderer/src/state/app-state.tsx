@@ -27,6 +27,7 @@ import type {
   ThemeHeatDTO,
   ProposalDTO,
   SearchHitDTO,
+  SessionFileDTO,
   SessionLifecycle,
   SkillDTO,
   TodoStatus,
@@ -58,6 +59,8 @@ export type ChatSessionType = 'chat' | 'ask' | 'after-meeting' | 'weekly-update'
 export type ViewBody = { title: string } & (
   | { kind: 'doc'; path: string; noteType?: NoteType }
   | { kind: 'session'; sessionType: string; sessionId?: string; initialPrompt?: string }
+  /** A session's working file, read-only and visibly not a note (Sessions v2). */
+  | { kind: 'sessionFile'; sessionId: string; path: string }
   | { kind: 'chats' }
   | { kind: 'inbox' }
   | { kind: 'todos' }
@@ -90,6 +93,10 @@ function sameTarget(a: View, b: ViewBody): boolean {
   switch (a.kind) {
     case 'doc':
       return a.path === (b as Extract<ViewBody, { kind: 'doc' }>).path;
+    case 'sessionFile': {
+      const f = b as Extract<ViewBody, { kind: 'sessionFile' }>;
+      return a.sessionId === f.sessionId && a.path === f.path;
+    }
     case 'folder':
       return a.dir === (b as Extract<ViewBody, { kind: 'folder' }>).dir;
     case 'context':
@@ -215,6 +222,11 @@ interface AppState {
   openChat: (chat: { id: string; sessionType: string; title: string }, opts?: NavOpts) => void;
   /** Open the chat-history list. */
   openChats: (opts?: NavOpts) => void;
+  /** Working files of a session, keyed by session id (Sessions v2 Part 1). */
+  sessionFiles: Record<string, SessionFileDTO[]>;
+  refreshSessionFiles: (sessionId: string) => Promise<void>;
+  /** Open one working file read-only, as its own tab. */
+  openSessionFile: (sessionId: string, path: string, opts?: NavOpts) => void;
   /** Record the session id the agent assigned to a session view's conversation. */
   bindTabSession: (viewKey: string, sessionId: string) => void;
   openInbox: (opts?: NavOpts) => void;
@@ -433,6 +445,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [pings, setPings] = useState<AgentPingDTO[]>([]);
   const [skills, setSkills] = useState<SkillDTO[]>([]);
   const [seen, setSeen] = useState<Record<string, number>>({});
+  /**
+   * Working files of the session the PO is looking at (Sessions v2 Part 1).
+   * Kept per session id rather than as one list: the tree must survive tab
+   * switches, and a `session:files` push for a background run must land even
+   * when a different tab is in front.
+   */
+  const [sessionFiles, setSessionFiles] = useState<Record<string, SessionFileDTO[]>>({});
 
   // Consumers see each tab as its current view, flattened next to the id.
   const tabs = useMemo<Tab[]>(
@@ -655,6 +674,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const openChats = useCallback(
     (opts?: NavOpts) => navigate({ kind: 'chats', title: 'Sessions' }, opts),
+    [navigate],
+  );
+
+  const openSessionFile = useCallback(
+    (sessionId: string, path: string, opts?: NavOpts) =>
+      navigate({ kind: 'sessionFile', sessionId, path, title: path.split('/').pop() ?? path }, opts),
     [navigate],
   );
 
@@ -986,6 +1011,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     } catch {
       setChats([]);
       setLive({});
+    }
+  }, []);
+
+  const refreshSessionFiles = useCallback(async (sessionId: string) => {
+    try {
+      const files = await invoke['sessions:files'](sessionId);
+      setSessionFiles((prev) => (prev[sessionId]?.length === 0 && files.length === 0 ? prev : { ...prev, [sessionId]: files }));
+    } catch {
+      /* a session with no folder is the common case, not an error */
     }
   }, []);
 
@@ -1340,6 +1374,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           });
           void refreshSessions();
         }
+      } else if (event.channel === 'session:files') {
+        void refreshSessionFiles(event.sessionId);
       } else if (event.channel === 'pings:changed') {
         void refreshPings();
       } else if (event.channel === 'session:focus') {
@@ -1352,12 +1388,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     refreshThemes,
     refreshProposals,
     refreshSessions,
+    refreshSessionFiles,
     refreshPings,
     refreshSkills,
     openChat,
     loadDoc,
     docData,
   ]);
+
+  // Opening (or landing back on) a conversation loads its working files once.
+  // Live growth arrives by push; this is the cold read for a session that
+  // already ran, or one whose files landed while another tab was in front.
+  const activeSessionId = activeTab?.kind === 'session' ? activeTab.sessionId : undefined;
+  useEffect(() => {
+    if (activeSessionId) void refreshSessionFiles(activeSessionId);
+  }, [activeSessionId, refreshSessionFiles]);
 
   const value = useMemo<AppState>(
     () => ({
@@ -1396,6 +1441,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openSession,
       openChat,
       openChats,
+      sessionFiles,
+      refreshSessionFiles,
+      openSessionFile,
       bindTabSession,
       openInbox,
       openTodos,
@@ -1468,6 +1516,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openSession,
       openChat,
       openChats,
+      sessionFiles,
+      refreshSessionFiles,
+      openSessionFile,
       bindTabSession,
       openInbox,
       openTodos,

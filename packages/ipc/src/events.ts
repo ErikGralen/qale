@@ -47,6 +47,18 @@ export interface SessionStatusEvent {
   updated: number;
 }
 
+/**
+ * A session wrote to its working folder (Sessions v2 Part 1). The tree fills
+ * live off this: files landing one at a time as work finishes is the signature
+ * interaction — honest progress, and visible proof the agent read each item
+ * rather than skimming a blob. Hide it behind a spinner and the feature feels
+ * like the agent wandered off with your machine.
+ */
+export interface SessionFilesChangedEvent {
+  channel: 'session:files';
+  sessionId: string;
+}
+
 /** Fired when the agent-ping queue changes (created by a sweep, opened, dismissed). */
 export interface PingsChangedEvent {
   channel: 'pings:changed';
@@ -73,6 +85,7 @@ export type PushEvent =
   | VaultChangedEvent
   | ProposalsChangedEvent
   | SessionStatusEvent
+  | SessionFilesChangedEvent
   | PingsChangedEvent
   | SessionFocusEvent
   | ConnectionsChangedEvent;
@@ -89,6 +102,7 @@ export const PUSH_CHANNELS = [
   'vault:changed',
   'proposals:changed',
   'session:status',
+  'session:files',
   'pings:changed',
   'session:focus',
   'connections:changed',

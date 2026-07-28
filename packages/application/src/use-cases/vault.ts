@@ -4,6 +4,7 @@ import {
   computeHeat,
   isFolderIndex,
   refToSlug,
+  SESSION_FILES_DIR,
   type NoteType,
 } from '@pm/domain';
 import type { GitCommit, IndexedNote, UseCaseContext } from '../ports.js';
@@ -35,6 +36,12 @@ async function vaultInfo(ctx: UseCaseContext): Promise<VaultInfo> {
 /** Open (or re-open) a workspace: scaffold folders, reconcile the index. */
 export async function openVault(ctx: UseCaseContext): Promise<VaultInfo> {
   await ctx.vault.ensureScaffold();
+  // Session working files must never be committed (Sessions v2 invariant 1).
+  // Done on open, not just on init: workspaces predate the feature, and a vault
+  // that missed the seed would start versioning scratch on the next commit.
+  if (await ctx.git.isRepo().catch(() => false)) {
+    await ctx.git.ensureIgnored([`${SESSION_FILES_DIR}/`]).catch(() => undefined);
+  }
   await reconcileIndex(ctx.vault, ctx.index);
   return vaultInfo(ctx);
 }

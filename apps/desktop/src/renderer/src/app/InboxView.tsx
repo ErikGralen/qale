@@ -705,7 +705,6 @@ export function InboxView() {
             <span>approval {Math.round(stats.approvalRate * 100)}%</span>
           )}
           {stats.avgApproveMs !== null && <span>· ~{Math.round(stats.avgApproveMs / 1000)}s to approve</span>}
-          <span>· {stats.edited} edited</span>
           <span className="ml-auto">
             {stats.accepted} accepted · {stats.rejected} dismissed all-time
           </span>

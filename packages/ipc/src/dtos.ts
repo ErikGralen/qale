@@ -391,7 +391,6 @@ export interface ProposalStatsDTO {
   accepted: number;
   rejected: number;
   stale: number;
-  edited: number;
   avgApproveMs: number | null;
   approvalRate: number | null;
   byType: Record<string, { accepted: number; rejected: number }>;

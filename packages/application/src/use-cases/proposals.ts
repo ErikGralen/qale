@@ -158,11 +158,6 @@ export async function acceptProposal(
     else if (rec.kind === 'decision') result = await acceptDecision(ctx, rec, edited);
     else if (rec.kind === 'outbound') result = await acceptOutbound(ctx, rec, edited);
     else return { ok: false };
-
-    // Telemetry: record how far the human edited the card before approving.
-    if (result.ok && edited !== undefined) {
-      ctx.proposals.markEdited(id);
-    }
     return result;
   } finally {
     acceptsInFlight.delete(id);

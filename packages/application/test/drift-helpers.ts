@@ -171,14 +171,12 @@ export function fakeDriftWorld(args: {
         const rec = proposals.find((p) => p.id === id);
         if (rec) Object.assign(rec, { status, resolved });
       },
-      markEdited: () => {},
       pendingCount: () => proposals.filter((p) => p.status === 'pending').length,
       stats: () => ({
         pending: 0,
         accepted: 0,
         rejected: 0,
         stale: 0,
-        edited: 0,
         avgApproveMs: null,
         approvalRate: null,
         byType: {},

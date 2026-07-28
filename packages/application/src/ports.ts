@@ -161,8 +161,6 @@ export interface ProposalStats {
   accepted: number;
   rejected: number;
   stale: number;
-  /** Cards accepted with an edit before approval. */
-  edited: number;
   /** Mean time-to-approve for accepted cards, milliseconds (null if none). */
   avgApproveMs: number | null;
   /** Approval rate = accepted / (accepted + rejected), null if none resolved. */
@@ -176,8 +174,6 @@ export interface ProposalPort {
   list(status?: string): ProposalRecord[];
   get(id: string): ProposalRecord | null;
   setStatus(id: string, status: string, resolved: number | null): void;
-  /** Record that this card was edited before it was accepted. */
-  markEdited(id: string): void;
   pendingCount(): number;
   stats(): ProposalStats;
 }

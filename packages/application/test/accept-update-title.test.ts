@@ -76,7 +76,6 @@ function fakeContext(files: Record<string, Stored>, opts?: { backlinked?: boolea
       setStatus: (id: string, status) => {
         statuses[id] = status;
       },
-      markEdited: () => {},
       pendingCount: () => 0,
       stats: () => ({ total: 0, accepted: 0, rejected: 0, pending: 0, stale: 0, approvalRate: null, medianMsToResolve: null }),
     } as never,

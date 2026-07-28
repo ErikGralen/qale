@@ -43,9 +43,6 @@ export class ProposalStore implements ProposalPort {
     `);
     // Columns added post-v1; guard for existing databases.
     const cols = this.db.prepare('PRAGMA table_info(proposals)').all() as { name: string }[];
-    if (!cols.some((c) => c.name === 'edit_distance')) {
-      this.db.exec('ALTER TABLE proposals ADD COLUMN edit_distance INTEGER');
-    }
     if (!cols.some((c) => c.name === 'session_type')) {
       this.db.exec('ALTER TABLE proposals ADD COLUMN session_type TEXT');
     }
@@ -95,14 +92,6 @@ export class ProposalStore implements ProposalPort {
     this.db.prepare('UPDATE proposals SET status = ?, resolved = ? WHERE id = ?').run(status, resolved, id);
   }
 
-  /**
-   * Legacy column name: it used to hold a cheap diff score, but the only
-   * consumer is `stats().edited`, which asks `> 0`. It holds a flag now.
-   */
-  markEdited(id: string): void {
-    this.db.prepare('UPDATE proposals SET edit_distance = 1 WHERE id = ?').run(id);
-  }
-
   pendingCount(): number {
     const row = this.db.prepare("SELECT COUNT(*) AS c FROM proposals WHERE status = 'pending'").get() as {
       c: number;
@@ -117,10 +106,6 @@ export class ProposalStore implements ProposalPort {
     const by = (s: string): number => counts.find((r) => r.status === s)?.c ?? 0;
     const accepted = by('accepted');
     const rejected = by('rejected');
-
-    const edited = (
-      this.db.prepare('SELECT COUNT(*) AS c FROM proposals WHERE edit_distance > 0').get() as { c: number }
-    ).c;
     const avgRow = this.db
       .prepare("SELECT AVG(resolved - created) AS a FROM proposals WHERE status = 'accepted' AND resolved IS NOT NULL")
       .get() as { a: number | null };
@@ -143,7 +128,6 @@ export class ProposalStore implements ProposalPort {
       accepted,
       rejected,
       stale: by('stale'),
-      edited,
       avgApproveMs: avgRow.a ?? null,
       approvalRate: accepted + rejected > 0 ? accepted / (accepted + rejected) : null,
       byType,

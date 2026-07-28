@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, useTheme } from '@pm/ui';
-import { Check, Copy, Eye, EyeOff, FolderOpen, KeyRound, Gauge, CalendarClock, Play, Server, Sun, Moon, Monitor, UserRound, X } from 'lucide-react';
+import { Check, Copy, Eye, EyeOff, FolderOpen, KeyRound, CalendarClock, Play, Server, Sun, Moon, Monitor, UserRound, X } from 'lucide-react';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-import type { ModelInfoDTO, ProposalStatsDTO, SettingsDTO } from '@pm/ipc';
+import type { ModelInfoDTO, SettingsDTO } from '@pm/ipc';
 import { invoke } from '../lib/ipc';
 import { useApp } from '../state/app-state';
 import { useToast } from '../components/toast';
@@ -15,20 +15,13 @@ export function SettingsView() {
   const toast = useToast();
   const [settings, setSettings] = useState<SettingsDTO | null>(null);
   const [models, setModels] = useState<ModelInfoDTO[]>([]);
-  const [stats, setStats] = useState<ProposalStatsDTO | null>(null);
   const [key, setKey] = useState('');
   const [savedKey, setSavedKey] = useState(false);
 
-
   const reload = async () => {
-    const [s, m, st] = await Promise.all([
-      invoke['settings:get'](),
-      invoke['models:list'](),
-      invoke['proposals:stats']().catch(() => null),
-    ]);
+    const [s, m] = await Promise.all([invoke['settings:get'](), invoke['models:list']()]);
     setSettings(s);
     setModels(m);
-    setStats(st);
   };
 
   useEffect(() => {
@@ -299,39 +292,6 @@ export function SettingsView() {
           </section>
         )}
 
-        {stats && stats.accepted + stats.rejected > 0 && (
-          <section className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Gauge className="size-4 text-muted-foreground" />
-              <h2 className="text-base font-semibold">Approval telemetry</h2>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Verification cost — the north-star metric. Trending down at stable accuracy is the goal.
-            </p>
-            <div className="grid grid-cols-3 gap-2 text-sm">
-              <Stat label="Approval rate" value={stats.approvalRate !== null ? `${Math.round(stats.approvalRate * 100)}%` : '—'} />
-              <Stat label="Avg to approve" value={stats.avgApproveMs !== null ? `${Math.round(stats.avgApproveMs / 1000)}s` : '—'} />
-              <Stat label="Edited before approve" value={`${stats.edited}`} />
-            </div>
-            <div className="mt-1 flex flex-col gap-1">
-              {Object.entries(stats.byType).map(([kind, t]) => {
-                const total = t.accepted + t.rejected;
-                return (
-                  <div key={kind} className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="w-20 capitalize">{kind}</span>
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-brand" style={{ width: `${total ? (t.accepted / total) * 100 : 0}%` }} />
-                    </div>
-                    <span className="tabular-nums">
-                      {t.accepted}/{total}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
         <ConnectionsSettings />
       </div>
     </div>
@@ -432,15 +392,6 @@ function IdentityCard({
           </Button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-2.5">
-      <div className="text-lg font-semibold tabular-nums">{value}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
     </div>
   );
 }

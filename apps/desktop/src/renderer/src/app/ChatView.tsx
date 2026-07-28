@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowUp, Check, Square, Wrench, Brain, ChevronDown, Mess
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { Markdown } from '../components/Markdown';
 import { SessionReview } from '../components/inbox/SessionReview';
+import { SpawnCard } from '../components/inbox/SpawnCard';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { useChatMentions } from './ChatMentions';
@@ -78,6 +79,17 @@ function stepLabel(part: AnyPart): { verb: string; detail?: string } {
       return { verb: 'Read Confluence page', detail: str('title') ?? str('id') };
     case 'use_skill':
       return { verb: 'Loaded skill', detail: str('name') };
+    case 'spawn':
+      return { verb: 'Ran subagents' };
+    case 'files_write':
+    case 'write_result':
+      return { verb: 'Wrote', detail: str('path') };
+    case 'files_edit':
+      return { verb: 'Edited', detail: str('path') };
+    case 'files_read':
+      return { verb: 'Read session file', detail: str('path') };
+    case 'files_list':
+      return { verb: 'Listed session files' };
     case 'advance_checkpoint':
       return { verb: 'Advanced checkpoint' };
     default:
@@ -104,6 +116,15 @@ function liveLabel(part: AnyPart | undefined): string {
       return str('pattern') ? `Scanning for “${str('pattern')}”` : 'Scanning the memory…';
     case 'vault_list':
       return 'Listing notes…';
+    case 'spawn':
+      return 'Running subagents…';
+    case 'files_write':
+    case 'files_edit':
+    case 'write_result':
+      return str('path') ? `Writing ${str('path')}` : 'Writing a session file…';
+    case 'files_read':
+    case 'files_list':
+      return 'Reading its own notes…';
     case 'jira_search':
     case 'jira_get_issue':
       return 'Checking Jira…';
@@ -350,7 +371,8 @@ function ChatSession({
   onOwnStream?: (busy: boolean) => void;
 }) {
   const proposesWrites = sessionType !== 'chat' && sessionType !== 'ask';
-  const { openDoc, refreshProposals, openSettings, markSessionSeen, sessions, setSessionLifecycle, tree } = useApp();
+  const { openDoc, refreshProposals, openSettings, markSessionSeen, sessions, setSessionLifecycle, tree, spawnRequests } =
+    useApp();
   const [needsKey, setNeedsKey] = useState(false);
   const onSessionIdRef = useRef(onSessionId);
   onSessionIdRef.current = onSessionId;
@@ -565,6 +587,12 @@ function ChatSession({
             <div className="rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
               The session hit an error: {error.message}. Your messages are still here — send again to retry.
             </div>
+          )}
+
+          {/* A fan-out waiting on approval. Above the proposal cards: nothing
+              else in this conversation can move until it settles. */}
+          {boundSessionId && spawnRequests[boundSessionId] && (
+            <SpawnCard request={spawnRequests[boundSessionId]!} />
           )}
 
           {/* The cards this session proposed — approvable right here, so the PO

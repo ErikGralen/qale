@@ -84,3 +84,51 @@ arriving skill's *instructions* land but its *tools* do not.
 **Open question surfaced while building:** nothing sweeps these files and nothing shows their
 total size. The plan accepts that ("known debt"). The receipt count is the only trace; a size
 readout in Settings is the obvious next move if it becomes real.
+
+---
+
+## Phase 2 — fan-out
+
+**What changed**
+
+- `packages/agent/src/spawn.ts` — `planSpawn()` expands the work list into concrete children
+  (pure, so the card renders exactly what runs and nothing is re-derived after approval), and
+  `createSpawnTool()` asks for approval, runs the batch and returns the rollup.
+- `runChild()` in the runtime: a throwaway `createAgentSession()` on `SessionManager.inMemory()`
+  with `CHILD_PREAMBLE`, vault read tools, session-folder read, and `write_result` — a subset of
+  the parent's tools, never a superset. No propose, no draft, no outbound, ever.
+- The spawn card: `session:spawn` push → `SpawnCard` inline in the chat (not a modal), with the
+  work listed one line per entry, an expandable `brief.md`, and the model picker.
+  `sessions:pendingSpawn` lets a reopened tab pick up a card that is still waiting.
+- `sessionFilesPrompt` gained a "Working in parallel" section: write `brief.md` first, and say
+  what you are about to do before the card appears.
+
+**Deviations / decisions**
+
+- **Children write via `write_result(content)`, not a scoped `files_write(path, content)`.** A
+  single-argument tool has no path to get wrong, so "write only into your own file" is a shape
+  rather than a rule. A child that reasons well but forgets the call still gets its closing text
+  filed to the assigned path — the parent asked for a file.
+- **`over: []` is an empty template, not a single child.** An entry whose target list came back
+  empty means the scope found nothing; turning it into one child with no material would answer a
+  question nobody asked. A batch that expands to zero children is refused with that explanation.
+- **`{target}` is sanitized to one path segment.** `over: ['../../../etc/passwd']` interpolates
+  to `passwd`, and `write_to` containing `..` is refused outright.
+- **Hard ceilings**: `SPAWN_MAX_CHILDREN = 40` (a runaway is not a fan-out), `SPAWN_CONCURRENCY
+  = 4` (above that it is queue depth, not speed). Both are constants, not settings, until
+  someone hits them for a real reason.
+- **`spawn` rides with `session_files`.** Children write into the folder and reading their
+  output back is the whole point of having one, so a skill that declares one gets the other. The
+  plan lists them as separate phases but not as separate switches.
+- **No timeout on the approval card.** The answer is yes, no, or the PM stops the run; abort,
+  delete and reconfigure all cancel pending cards, so nothing can hang forever.
+
+**Open questions the plan raised, and where they landed**
+
+- *"What happens to a fan-out when the app quits mid-run?"* — still open. Children are in-memory
+  sessions: their written files survive, their in-flight work does not, and nothing marks the
+  gap. The parent's rollup only counts children that returned, so a crash mid-batch reads as a
+  smaller batch rather than a broken one.
+- *"Cost ceiling — does the PM see a number they understand?"* — they see the child count and
+  the model, which is what the plan's mockup shows. Not a token or currency estimate; that needs
+  per-model pricing the app does not hold.

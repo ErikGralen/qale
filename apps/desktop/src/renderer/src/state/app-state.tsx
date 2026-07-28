@@ -29,6 +29,7 @@ import type {
   SearchHitDTO,
   SessionFileDTO,
   SessionLifecycle,
+  SpawnRequestDTO,
   SkillDTO,
   TodoStatus,
   VaultInfoDTO,
@@ -222,6 +223,9 @@ interface AppState {
   openChat: (chat: { id: string; sessionType: string; title: string }, opts?: NavOpts) => void;
   /** Open the chat-history list. */
   openChats: (opts?: NavOpts) => void;
+  /** Fan-out approval cards waiting on the PM, keyed by session id. */
+  spawnRequests: Record<string, SpawnRequestDTO>;
+  resolveSpawn: (request: SpawnRequestDTO, decision: { approved: boolean; modelId?: string }) => Promise<void>;
   /** Working files of a session, keyed by session id (Sessions v2 Part 1). */
   sessionFiles: Record<string, SessionFileDTO[]>;
   refreshSessionFiles: (sessionId: string) => Promise<void>;
@@ -452,6 +456,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
    * when a different tab is in front.
    */
   const [sessionFiles, setSessionFiles] = useState<Record<string, SessionFileDTO[]>>({});
+  /** Fan-outs waiting on the PM, by session id (Sessions v2 Part 2). */
+  const [spawnRequests, setSpawnRequests] = useState<Record<string, SpawnRequestDTO>>({});
 
   // Consumers see each tab as its current view, flattened next to the id.
   const tabs = useMemo<Tab[]>(
@@ -1023,6 +1029,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  /**
+   * Answer a fan-out card. Clearing the row locally rather than waiting for the
+   * push keeps Approve feeling instant — the children take seconds to start.
+   */
+  const resolveSpawn = useCallback(async (request: SpawnRequestDTO, decision: { approved: boolean; modelId?: string }) => {
+    setSpawnRequests((prev) => {
+      const next = { ...prev };
+      delete next[request.sessionId];
+      return next;
+    });
+    await invoke['sessions:resolveSpawn'](request.id, decision).catch(() => undefined);
+  }, []);
+
   const refreshPings = useCallback(async () => {
     try {
       setPings(await invoke['pings:list']());
@@ -1376,6 +1395,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }
       } else if (event.channel === 'session:files') {
         void refreshSessionFiles(event.sessionId);
+      } else if (event.channel === 'session:spawn') {
+        setSpawnRequests((prev) => {
+          const next = { ...prev };
+          if (event.request) next[event.sessionId] = event.request;
+          else delete next[event.sessionId];
+          return next;
+        });
       } else if (event.channel === 'pings:changed') {
         void refreshPings();
       } else if (event.channel === 'session:focus') {
@@ -1401,7 +1427,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // already ran, or one whose files landed while another tab was in front.
   const activeSessionId = activeTab?.kind === 'session' ? activeTab.sessionId : undefined;
   useEffect(() => {
-    if (activeSessionId) void refreshSessionFiles(activeSessionId);
+    if (!activeSessionId) return;
+    void refreshSessionFiles(activeSessionId);
+    // A fan-out parked on approval outlives the tab that started it: without
+    // this, reopening the conversation would show a run that is waiting on a
+    // card nobody can see.
+    void invoke['sessions:pendingSpawn'](activeSessionId)
+      .then((request) => {
+        if (request) setSpawnRequests((prev) => ({ ...prev, [request.sessionId]: request }));
+      })
+      .catch(() => undefined);
   }, [activeSessionId, refreshSessionFiles]);
 
   const value = useMemo<AppState>(
@@ -1441,6 +1476,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openSession,
       openChat,
       openChats,
+      spawnRequests,
+      resolveSpawn,
       sessionFiles,
       refreshSessionFiles,
       openSessionFile,
@@ -1516,6 +1553,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openSession,
       openChat,
       openChats,
+      spawnRequests,
+      resolveSpawn,
       sessionFiles,
       refreshSessionFiles,
       openSessionFile,

@@ -30,16 +30,27 @@ import {
   type TrackExternal,
 } from './tools.js';
 import {
+  createChildFileTools,
   createSessionFileTools,
   listSessionFiles,
   readSessionFile,
+  writeSessionFile,
   sessionFilesPrompt,
   sessionFilesRelRoot,
   sessionFilesRoot,
+  CHILD_FILE_TOOL_NAMES,
   SESSION_FILE_TOOL_NAMES,
   type SessionFileEntry,
 } from './session-files.js';
-import { SHARED_PREAMBLE } from './prompts.js';
+import {
+  createSpawnTool,
+  spawnRequestId,
+  SPAWN_TOOL_NAME,
+  type SpawnChild,
+  type SpawnDecision,
+  type SpawnPlan,
+} from './spawn.js';
+import { CHILD_PREAMBLE, SHARED_PREAMBLE } from './prompts.js';
 import {
   parseSkill,
   buildSystemPrompt,
@@ -48,8 +59,35 @@ import {
   DEFAULT_SKILL_BY_TYPE,
   type SkillConfig,
 } from '@pm/sessions';
+
 import { PiUiBridge, type Chunk } from './bridge.js';
 import { entriesToUiMessages, type UiMessage } from './history.js';
+
+/** The file every child reads before starting. One write, N smarter readers. */
+const BRIEF_FILE = 'brief.md';
+
+/** Structural slice of a pi assistant message — enough to pull its closing text. */
+interface PiLikeMessage {
+  role: string;
+  content: string | { type: string; text?: string }[];
+}
+
+/** The last thing the assistant said — a child's answer to its parent. */
+function lastAssistantText(messages: PiLikeMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m || m.role !== 'assistant') continue;
+    const text =
+      typeof m.content === 'string'
+        ? m.content
+        : m.content
+            .filter((c) => c.type === 'text')
+            .map((c) => c.text ?? '')
+            .join('\n');
+    if (text.trim()) return text.trim();
+  }
+  return '';
+}
 
 export interface AgentRuntimeConfig {
   vaultDir: string;
@@ -120,6 +158,35 @@ export interface LiveSession {
   startedAt: number;
 }
 
+/**
+ * One line of the spawn card. It lists the WORK, not a target count: "9 targets"
+ * becomes a lie the moment two entries do different things.
+ */
+export interface SpawnEntryInfo {
+  label: string;
+  count: number;
+}
+
+/** The spawn approval card, as the renderer draws it. */
+export interface SpawnRequestInfo {
+  id: string;
+  sessionId: string;
+  entries: SpawnEntryInfo[];
+  total: number;
+  /**
+   * The brief every child will read. Expandable on the card and it matters more
+   * than the count: approving *what they'll be asked* is the real quality lever.
+   */
+  brief: string | null;
+  models: ModelInfo[];
+  defaultModelId: string;
+}
+
+interface PendingSpawn {
+  request: SpawnRequestInfo;
+  resolve: (decision: SpawnDecision) => void;
+}
+
 interface SessionState {
   id: string;
   type: string;
@@ -166,6 +233,13 @@ export class AgentRuntime {
   onStatus: ((status: SessionStatus) => void) | null = null;
   /** Fired when a session writes a working file — main pushes `session:files`. */
   onFilesChanged: ((sessionId: string) => void) | null = null;
+  /**
+   * A fan-out is waiting on the PM (`request`), or its card has settled
+   * (`null`). The only moment the PM steers before money is spent.
+   */
+  onSpawnRequest: ((sessionId: string, request: SpawnRequestInfo | null) => void) | null = null;
+  /** requestId → the card in flight and the promise the `spawn` tool is parked on. */
+  private readonly pendingSpawns = new Map<string, PendingSpawn>();
 
   configure(config: AgentRuntimeConfig): void {
     // Re-applying identical settings must not kill live sessions mid-stream.
@@ -315,7 +389,9 @@ export class AgentRuntime {
     // otherwise gate output with no way to advance past the gate.
     if (config.checkpoints.length > 0 || canInvokeSkills) names.push(CHECKPOINT_TOOL_NAME);
     if (canInvokeSkills) names.push(USE_SKILL_TOOL_NAME);
-    if (config.sessionFiles) names.push(...SESSION_FILE_TOOL_NAMES);
+    // Fan-out rides with session files: children write into the folder, and
+    // reading their output back is the whole point of having one.
+    if (config.sessionFiles) names.push(...SESSION_FILE_TOOL_NAMES, SPAWN_TOOL_NAME);
     if (atlassianActive) names.push(...ATLASSIAN_TOOL_NAMES);
     return names;
   }
@@ -492,7 +568,14 @@ export class AgentRuntime {
       ...(skillConfig.checkpoints.length > 0 || canInvokeSkills ? [createCheckpointTool(harness)] : []),
       ...(canInvokeSkills ? [createUseSkillTool(ctx, harness)] : []),
       ...(skillConfig.sessionFiles
-        ? createSessionFileTools(filesRoot, () => this.onFilesChanged?.(id))
+        ? [
+            ...createSessionFileTools(filesRoot, () => this.onFilesChanged?.(id)),
+            createSpawnTool({
+              readBrief: () => readSessionFile(filesRoot, BRIEF_FILE),
+              requestApproval: (plan, brief) => this.askToSpawn(id, plan, brief),
+              runChild: (child, opts) => this.runChild(id, child, opts, ctx, harness),
+            }),
+          ]
         : []),
       ...(atlassianActive ? createAtlassianTools(this.atlassian!, this.config.trackExternal) : []),
     ];
@@ -637,6 +720,138 @@ export class AgentRuntime {
   }
 
   /**
+   * Park the `spawn` tool on a card and wait for the PM (invariant 6: spend is
+   * always approved). No timeout: the answer is "yes", "no", or the PM stops the
+   * run, and every one of those settles the promise. `cancelSpawns` covers abort,
+   * delete and reconfigure.
+   */
+  private askToSpawn(sessionId: string, plan: SpawnPlan, brief: string | null): Promise<SpawnDecision> {
+    const request: SpawnRequestInfo = {
+      id: spawnRequestId(),
+      sessionId,
+      entries: plan.entries.map((e) => ({ label: e.label, count: e.count })),
+      total: plan.total,
+      brief,
+      models: this.listModels(),
+      defaultModelId: this.config?.modelId ?? '',
+    };
+    return new Promise<SpawnDecision>((resolve) => {
+      this.pendingSpawns.set(request.id, { request, resolve });
+      this.onSpawnRequest?.(sessionId, request);
+    });
+  }
+
+  /**
+   * One fan-out child (Sessions v2 Part 2): a throwaway in-memory session with
+   * vault read + session-folder read + exactly one output file. It inherits a
+   * SUBSET of the parent's tools, never a superset — which is what makes future
+   * non-vault cases safe by construction rather than by a decision nobody
+   * remembers making. Returns its closing text for the parent's rollup.
+   */
+  private async runChild(
+    parentId: string,
+    child: SpawnChild,
+    opts: { modelId?: string; brief: string | null },
+    ctx: UseCaseContext,
+    harness: SessionHarness,
+  ): Promise<string> {
+    if (!this.config || !this.authStorage || !this.modelRegistry) throw new Error('agent runtime not configured');
+    const available = this.modelRegistry.getAvailable();
+    const model = available.find((m) => m.id === opts.modelId) ?? this.resolveModel();
+    const filesRoot = sessionFilesRoot(this.config.vaultDir, parentId);
+
+    const parts = [CHILD_PREAMBLE, ''];
+    if (opts.brief) parts.push(`## The brief (what everyone working on this was told)\n${opts.brief.trim()}`);
+    parts.push(`## Your output\nWrite exactly one file with write_result: \`${child.writeTo}\`.`);
+    if (child.read.length > 0) {
+      parts.push(`## Read first\n${child.read.map((p) => `- ${p}`).join('\n')}`);
+    }
+    const systemPrompt = parts.join('\n\n');
+
+    const loader = new DefaultResourceLoader({
+      cwd: this.config.vaultDir,
+      agentDir: join(this.config.userDataDir, 'pi', 'agent'),
+      systemPrompt,
+      noSkills: true,
+      noPromptTemplates: true,
+      noContextFiles: true,
+      noThemes: true,
+      noExtensions: true,
+      systemPromptOverride: () => systemPrompt,
+      agentsFilesOverride: () => ({ agentsFiles: [] }),
+    });
+    await loader.reload();
+
+    let wrote = false;
+    const { session } = await createAgentSession({
+      cwd: this.config.vaultDir,
+      model,
+      noTools: 'all',
+      tools: [...VAULT_TOOL_NAMES, ...CHILD_FILE_TOOL_NAMES],
+      customTools: [
+        // Reads land in the parent's receipt: the ledger must be honest about
+        // what the session as a whole read, children included.
+        ...createVaultTools(ctx, harness),
+        ...createChildFileTools(filesRoot, child.writeTo, () => {
+          wrote = true;
+          this.onFilesChanged?.(parentId);
+        }),
+      ],
+      authStorage: this.authStorage,
+      modelRegistry: this.modelRegistry,
+      resourceLoader: loader,
+      // Throwaway: a child leaves its FILE behind, never a transcript. Its
+      // reasoning is scratch by definition, and thirty of them in the chat list
+      // would bury the conversations the PM actually had.
+      sessionManager: SessionManager.inMemory(),
+      settingsManager: SettingsManager.inMemory(),
+    });
+
+    try {
+      await session.prompt(child.prompt);
+      const closing = lastAssistantText(session.messages as unknown as PiLikeMessage[]);
+      // A child that reasoned but never called write_result still has an answer
+      // worth keeping — the parent asked for a file, so file it rather than
+      // losing the work to a missed tool call.
+      if (!wrote && closing.trim()) {
+        await writeSessionFile(filesRoot, child.writeTo, closing);
+        this.onFilesChanged?.(parentId);
+      }
+      return closing || `(no closing summary; see ${child.writeTo})`;
+    } finally {
+      session.dispose();
+    }
+  }
+
+  /**
+   * A pending spawn approval card, for a tab that reopened while the fan-out was
+   * waiting. Without this the card would exist only in the push that announced it.
+   */
+  pendingSpawn(sessionId: string): SpawnRequestInfo | null {
+    for (const p of this.pendingSpawns.values()) if (p.request.sessionId === sessionId) return p.request;
+    return null;
+  }
+
+  /** The PM answered the spawn card. Unknown ids are ignored (already settled). */
+  resolveSpawn(requestId: string, decision: SpawnDecision): void {
+    const pending = this.pendingSpawns.get(requestId);
+    if (!pending) return;
+    this.pendingSpawns.delete(requestId);
+    this.onSpawnRequest?.(pending.request.sessionId, null);
+    pending.resolve(decision);
+  }
+
+  /** Cancel every card waiting on this session (abort, delete, reconfigure). */
+  private cancelSpawns(sessionId?: string): void {
+    for (const [id, pending] of [...this.pendingSpawns]) {
+      if (sessionId && pending.request.sessionId !== sessionId) continue;
+      this.pendingSpawns.delete(id);
+      this.onSpawnRequest?.(pending.request.sessionId, null);
+      pending.resolve({ approved: false });
+    }
+  }
+
+  /**
    * A session's working files (Sessions v2 Part 1) — what the right-panel tree
    * shows, filling live as the session writes. Off the index by construction, so
    * this is the only door to them; a session that never wrote returns [].
@@ -723,6 +938,7 @@ export class AgentRuntime {
   }
 
   async deleteChat(sessionId: string): Promise<void> {
+    this.cancelSpawns(sessionId);
     const live = this.sessions.get(sessionId);
     if (live) {
       await live.session.abort().catch(() => undefined);
@@ -740,6 +956,9 @@ export class AgentRuntime {
   async abort(streamId: string): Promise<void> {
     const sessionId = this.streamToSession.get(streamId);
     if (!sessionId) return;
+    // Stop also answers a spawn card the turn is parked on — otherwise Stop
+    // looks dead while the tool waits for an approval nobody will give.
+    this.cancelSpawns(sessionId);
     const state = this.sessions.get(sessionId);
     if (!state) return;
     await state.session.abort().catch(() => undefined);
@@ -747,6 +966,7 @@ export class AgentRuntime {
   }
 
   private disposeSessions(): void {
+    this.cancelSpawns();
     for (const state of this.sessions.values()) {
       state.unsubscribe();
       state.session.dispose();

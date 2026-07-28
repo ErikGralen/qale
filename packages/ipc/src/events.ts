@@ -1,3 +1,5 @@
+import type { SpawnRequestDTO } from './dtos.js';
+
 /**
  * Push events from main → renderer (webContents.send). These are the flattened,
  * structured-clone-safe stream chunks (PLAN §3.2, §6.11): the pi agent stream is
@@ -59,6 +61,18 @@ export interface SessionFilesChangedEvent {
   sessionId: string;
 }
 
+/**
+ * A fan-out is waiting on the PM (`request`), or its card has settled
+ * (`request: null`). Rendered inline in the chat, never as a modal: it is the
+ * same approve/cancel vocabulary as the other cards, at the one moment that
+ * decides whether money gets spent.
+ */
+export interface SpawnRequestEvent {
+  channel: 'session:spawn';
+  sessionId: string;
+  request: SpawnRequestDTO | null;
+}
+
 /** Fired when the agent-ping queue changes (created by a sweep, opened, dismissed). */
 export interface PingsChangedEvent {
   channel: 'pings:changed';
@@ -86,6 +100,7 @@ export type PushEvent =
   | ProposalsChangedEvent
   | SessionStatusEvent
   | SessionFilesChangedEvent
+  | SpawnRequestEvent
   | PingsChangedEvent
   | SessionFocusEvent
   | ConnectionsChangedEvent;
@@ -103,6 +118,7 @@ export const PUSH_CHANNELS = [
   'proposals:changed',
   'session:status',
   'session:files',
+  'session:spawn',
   'pings:changed',
   'session:focus',
   'connections:changed',

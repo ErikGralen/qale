@@ -1,7 +1,9 @@
 import { promises as fs } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { Type } from 'typebox';
 import {
   createEditToolDefinition,
+  defineTool,
   createLsToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
@@ -84,6 +86,14 @@ export async function readSessionFile(root: string, relPath: string): Promise<st
   const abs = contain(root, join(root, relPath));
   if (!abs) return null;
   return fs.readFile(abs, 'utf8').catch(() => null);
+}
+
+/** Write one session file by its folder-relative path (host side, not a tool). */
+export async function writeSessionFile(root: string, relPath: string, content: string): Promise<void> {
+  const abs = contain(root, join(root, relPath));
+  if (!abs) throw new Error(REFUSED);
+  await fs.mkdir(dirname(abs), { recursive: true });
+  await fs.writeFile(abs, content, 'utf8');
 }
 
 /** Resolve inside the root, or null when the path escapes it. */
@@ -186,6 +196,39 @@ export function createSessionFileTools(root: string, onWrite?: () => void): Tool
   return [list, read, write, edit] as ToolDefinition[];
 }
 
+export const CHILD_FILE_TOOL_NAMES = ['files_list', 'files_read', 'write_result'];
+
+/**
+ * A subagent's file tools (Sessions v2 Part 2, child privileges). It READS the
+ * whole session folder — so a second wave can build on the first wave's output,
+ * which buys multi-stage fan-out with no new machinery — and writes exactly one
+ * path, the one it was assigned. Not a scoped `files_write`: a single-argument
+ * `write_result` has no path to get wrong, so "write only into your own file" is
+ * a shape rather than a rule.
+ */
+export function createChildFileTools(root: string, writeTo: string, onWrite?: () => void): ToolDefinition[] {
+  const operations = rootedOps(root);
+  const [list, read] = createSessionFileTools(root);
+  const writeResult = defineTool({
+    name: 'write_result',
+    label: 'Write result',
+    description:
+      `Write your result to your assigned file (${writeTo}). Call it once, when you are done. ` +
+      'Carry the ORIGINAL source path and the verbatim quotes you relied on into the file — whoever ' +
+      'reads it must be able to cite the source, not this file. Say plainly what was NOT there: a ' +
+      'silent item recorded as silent is a finding, an unmentioned one is a hole.',
+    parameters: Type.Object({
+      content: Type.String({ description: 'The full markdown content of your result file.' }),
+    }),
+    async execute(_id, params: { content: string }) {
+      await operations.writeFile(join(root, writeTo), params.content);
+      onWrite?.();
+      return { content: [{ type: 'text' as const, text: `Wrote ${params.content.length} bytes to ${writeTo}.` }], details: undefined };
+    },
+  });
+  return [list!, read!, writeResult];
+}
+
 /**
  * What the model is told about its folder. The layout is a *suggestion*, not a
  * schema — a skill that wants a different shape just writes a different shape —
@@ -208,5 +251,21 @@ delete the lot without losing anything. Two rules follow from that:
 
 A conventional layout, worth following unless your skill says otherwise: \`brief.md\` (what everyone
 working on this needs to know), \`per-item/<name>.md\` (one file per thing you read), \`meta.md\`
-(what you covered, what was silent, what you could not answer).`;
+(what you covered, what was silent, what you could not answer).
+
+## Working in parallel
+\`spawn\` runs several independent pieces of work at once and writes each result into this folder.
+Reach for it when the material does not fit in one context, when every item deserves its own honest
+pass (so "six of nine accounts" is a fact and not an impression), or when you want two readings of the
+SAME document that cannot colour each other.
+
+**Write \`brief.md\` first.** Every child reads it before starting: what is currently believed, the
+themes in play and their stances, what a good answer looks like. Without it fan-out makes the work
+*dumber* than one big read, because a child handed one document in isolation cannot flag a
+contradiction. The brief is what every child needs to KNOW, not the question — in a per-item sweep it
+carries the shared question too, but in a three-lens fan over one document each entry's own prompt
+carries its lens.
+
+The PM approves each batch (and picks the model) before anything runs. Say what you are about to do in
+plain language first; the card shows the work, and they can only steer if they know why.`;
 }

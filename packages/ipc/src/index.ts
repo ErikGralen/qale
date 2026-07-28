@@ -38,6 +38,7 @@ import type {
   ChatHistoryDTO,
   SessionLifecycle,
   SessionFileDTO,
+  SpawnRequestDTO,
   LiveSessionDTO,
   SettingsDTO,
   SkillDTO,
@@ -147,6 +148,13 @@ export interface InvokeMap {
   'sessions:files': { args: [sessionId: string]; result: SessionFileDTO[] };
   /** One working file's text, read-only. Null when it's gone. */
   'sessions:fileText': { args: [sessionId: string, path: string]; result: string | null };
+  /** The fan-out card this session is parked on, for a tab that reopened. */
+  'sessions:pendingSpawn': { args: [sessionId: string]; result: SpawnRequestDTO | null };
+  /** Answer a fan-out card: approve (with the chosen model) or cancel. */
+  'sessions:resolveSpawn': {
+    args: [requestId: string, decision: { approved: boolean; modelId?: string }];
+    result: { ok: boolean };
+  };
   'pings:list': { args: []; result: AgentPingDTO[] };
   'pings:open': { args: [id: string]; result: AgentPingDTO | null };
   'pings:dismiss': { args: [id: string]; result: { ok: boolean } };
@@ -247,6 +255,8 @@ export const INVOKE_CHANNELS = [
   'sessions:live',
   'sessions:files',
   'sessions:fileText',
+  'sessions:pendingSpawn',
+  'sessions:resolveSpawn',
   'pings:list',
   'pings:open',
   'pings:dismiss',

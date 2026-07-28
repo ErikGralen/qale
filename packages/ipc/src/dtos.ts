@@ -511,6 +511,32 @@ export interface SessionFileDTO {
   mtime: number;
 }
 
+/**
+ * One line of the spawn approval card (Sessions v2 Part 2). It lists the WORK,
+ * not a target count: "9 targets" becomes a lie the moment two entries in the
+ * batch do different things.
+ */
+export interface SpawnEntryDTO {
+  label: string;
+  count: number;
+}
+
+/**
+ * A fan-out waiting on the PM. The only moment they steer before money is spent,
+ * so it carries what will be asked (the brief) and what it will be asked ON
+ * (the model), not just how many children.
+ */
+export interface SpawnRequestDTO {
+  id: string;
+  sessionId: string;
+  entries: SpawnEntryDTO[];
+  total: number;
+  /** The brief every child reads — expandable, and the real quality lever. */
+  brief: string | null;
+  models: ModelInfoDTO[];
+  defaultModelId: string;
+}
+
 /** A session with a turn currently in flight (the sidebar rail's live rows). */
 export interface LiveSessionDTO {
   sessionId: string;

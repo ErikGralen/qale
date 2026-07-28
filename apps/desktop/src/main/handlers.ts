@@ -291,6 +291,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     pushEvent(getWindow(), { channel: 'session:files', sessionId });
   };
 
+  // The fan-out approval card, inline in the chat. Nothing runs until it settles.
+  agent.onSpawnRequest = (sessionId, request) => {
+    pushEvent(getWindow(), { channel: 'session:spawn', sessionId, request });
+  };
+
   // Session lifecycle → renderer rail/badges, plus an OS notification when a
   // background run finishes while the PO is elsewhere (nothing silent).
   agent.onStatus = (s) => {
@@ -677,6 +682,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('sessions:live', () => agent.listLive());
   handle('sessions:files', (sessionId) => agent.listFiles(sessionId));
   handle('sessions:fileText', (sessionId, path) => agent.readFile(sessionId, path));
+  handle('sessions:pendingSpawn', (sessionId) => agent.pendingSpawn(sessionId));
+  handle('sessions:resolveSpawn', (requestId, decision) => {
+    agent.resolveSpawn(requestId, decision);
+    return { ok: true };
+  });
 
   handle('pings:list', () => listPings(vaultService.requireContext()).map(pingToDTO));
   handle('pings:open', (id) => {

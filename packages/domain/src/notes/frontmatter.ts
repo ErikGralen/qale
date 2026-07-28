@@ -263,6 +263,12 @@ export const zSession = z.object({
   type: z.literal('session'),
   ...base,
   session_type: z.string(),
+  /**
+   * Every skill in force during the session, arrival order (Sessions v2): a
+   * session is no longer one mode, so the single `session_type` above only names
+   * what it opened with.
+   */
+  skills: z.array(z.string()).optional(),
   /** Full pi session id — resolves this receipt back to the stored chat. */
   session_id: z.string().optional(),
   started: z.string().optional(),

@@ -3,7 +3,7 @@ import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent
 import type { UseCaseContext } from '@pm/application';
 import { createProposal, searchNotes, contentHash } from '@pm/application';
 import { checkFrontmatterMutation, fileSlug, isBodyEditable, isFolderIndex, refToSlug, validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload, TYPE_RULES } from '@pm/domain';
-import type { SessionHarness } from '@pm/sessions';
+import { buildSkillBrief, isDynamicSkill, parseSkill, type SessionHarness, type SkillConfig } from '@pm/sessions';
 import type { AtlassianClient } from '@pm/atlassian';
 
 /**
@@ -133,18 +133,32 @@ export const PROPOSE_TOOL_NAMES = ['propose_note', 'propose_update', 'propose_de
  */
 export const CHECKPOINT_TOOL_NAME = 'advance_checkpoint';
 
-/** Records a session's checkpoint progress; gated skills unlock output after it. */
+/**
+ * Records a session's checkpoint progress; gated skills unlock output after it.
+ * Reads the plan LIVE off the harness rather than closing over one at creation:
+ * a skill that arrives mid-session brings its own checkpoints (Sessions v2).
+ */
 export function createCheckpointTool(harness: SessionHarness): ToolDefinition {
+  const initial = harness.checkpoints;
   return defineTool({
     name: CHECKPOINT_TOOL_NAME,
     label: 'Advance checkpoint',
-    description: `Advance to a named session checkpoint (one of: ${harness.config.checkpoints.join(', ')}). Call it as you pass each stage — the digest, then the outline — before drafting. Proposing is unlocked once you have advanced.`,
+    description:
+      `Advance to a named checkpoint of the skill you are running${initial.length ? ` (it opened with: ${initial.join(', ')})` : ''}. ` +
+      'Call it as you pass each stage — the digest, then the outline — before drafting. Proposing is unlocked once you have advanced. ' +
+      'A skill that arrives mid-conversation replaces the checkpoint plan; its own instructions name its stages.',
     parameters: Type.Object({
       checkpoint: Type.String({ description: 'The checkpoint you have just reached.' }),
     }),
     async execute(_id, params: { checkpoint: string }) {
+      const known = harness.checkpoints;
       const r = harness.advanceCheckpoint(params.checkpoint);
-      if (!r.ok) return text(`Unknown checkpoint "${params.checkpoint}". Known: ${harness.config.checkpoints.join(', ')}.`);
+      if (!r.ok)
+        return text(
+          known.length
+            ? `Unknown checkpoint "${params.checkpoint}". Known: ${known.join(', ')}.`
+            : `No skill with checkpoints is active — nothing to advance.`,
+        );
       return text(`Checkpoint "${params.checkpoint}" reached. Proposing is now ${harness.canPropose() ? 'unlocked' : 'still locked'}.`);
     },
   });
@@ -152,34 +166,78 @@ export function createCheckpointTool(harness: SessionHarness): ToolDefinition {
 
 export const USE_SKILL_TOOL_NAME = 'use_skill';
 
+/** One on-demand skill: its parsed config plus where the file lives. */
+export interface DynamicSkill {
+  path: string;
+  slug: string;
+  config: SkillConfig;
+}
+
 /**
- * Dynamic-skill loader (Skills v2): the guide index lists every `skill_kind:
- * guide` file by name + summary in the system prompt; calling this pulls the
- * chosen guide's body into context on demand. Keeps rarely-needed reference out
- * of every prompt while staying one tool-call away.
+ * Every skill a session may pull in mid-conversation (Sessions v2 Part 3.1):
+ * `skill_kind: guide` reference AND any skill with a `dynamic` binding. Before
+ * this, `dynamic` was declared, described in the Skills view, and inert for
+ * session skills — the UI promised a behaviour the runtime never implemented.
  */
-export function createUseSkillTool(ctx: UseCaseContext): ToolDefinition {
+export async function listDynamicSkills(ctx: UseCaseContext): Promise<DynamicSkill[]> {
+  const out: DynamicSkill[] = [];
+  for (const n of ctx.index.all()) {
+    if (n.type !== 'skill') continue;
+    const raw = await ctx.vault.readRaw(n.path);
+    if (!raw) continue;
+    const config = parseSkill(raw, n.slug.split('/').pop() ?? n.slug);
+    if (isDynamicSkill(config)) out.push({ path: n.path, slug: n.slug, config });
+  }
+  return out;
+}
+
+/** Match a model-supplied name against a skill's invocation name or its filename. */
+export function matchSkill(skills: DynamicSkill[], name: string): DynamicSkill | undefined {
+  const wanted = name.trim().replace(/\.md$/, '').toLowerCase();
+  const file = (s: DynamicSkill) => (s.slug.split('/').pop() ?? s.slug).toLowerCase();
+  return (
+    skills.find((s) => s.config.name.toLowerCase() === wanted) ??
+    skills.find((s) => file(s) === wanted) ??
+    skills.find((s) => s.slug.toLowerCase() === wanted)
+  );
+}
+
+/**
+ * Dynamic-skill loader (Sessions v2): the skill index lists every on-demand skill
+ * by name + summary in the system prompt; calling this pulls the chosen one into
+ * context. A *guide* is reference material. A *session skill* is more than that —
+ * it arrives with its tier, checkpoints and gate, so loading one tells the harness
+ * (and, via `onInvoke`, the runtime that re-activates the tool set).
+ */
+export function createUseSkillTool(
+  ctx: UseCaseContext,
+  harness?: SessionHarness,
+  onInvoke?: (skill: DynamicSkill) => void | Promise<void>,
+): ToolDefinition {
   return defineTool({
     name: USE_SKILL_TOOL_NAME,
     label: 'Use skill',
     description:
-      'Load a guide skill into your context by name (see "Guides available on demand" in your instructions). Use it when a guide is relevant to the current task.',
+      'Load a skill into this conversation by name (see "Skills available on demand" in your instructions). ' +
+      'A guide is reference you read; a session skill takes over how you work from here — its instructions, ' +
+      'its checkpoints and the cards it is allowed to produce. Call it the moment the conversation turns into ' +
+      'work that skill describes, rather than improvising the workflow yourself.',
     parameters: Type.Object({
-      name: Type.String({ description: 'The guide name, e.g. "spec-review-checklist".' }),
+      name: Type.String({ description: 'The skill name, e.g. "synthesis" or "spec-review-checklist".' }),
     }),
     async execute(_id, params: { name: string }) {
-      const guides = ctx.index
-        .all()
-        .filter((n) => n.type === 'skill' && (n.frontmatter as Record<string, unknown>)['skill_kind'] === 'guide');
-      const wanted = params.name.replace(/\.md$/, '').toLowerCase();
-      const hit = guides.find((g) => g.slug.toLowerCase() === wanted || g.slug.toLowerCase().endsWith(`/${wanted}`));
+      const skills = await listDynamicSkills(ctx);
+      const hit = matchSkill(skills, params.name);
       if (!hit) {
-        const names = guides.map((g) => g.slug.split('/').pop()).join(', ');
-        return text(`No guide named "${params.name}". Available: ${names || 'none'}.`);
+        const names = skills.map((s) => s.config.name).join(', ');
+        return text(`No skill named "${params.name}" is available on demand. Available: ${names || 'none'}.`);
       }
-      const note = await ctx.vault.readNote(hit.path);
-      if (!note) return text(`Guide "${params.name}" could not be read.`);
-      return text(`## Guide: ${note.frontmatter.summary}\n\n${note.body.trim()}`);
+      if (hit.config.kind !== 'guide') {
+        harness?.invokeSkill(hit.config);
+        await onInvoke?.(hit);
+      }
+      harness?.recordRead(hit.path);
+      return text(buildSkillBrief(hit.config));
     },
   });
 }
@@ -211,7 +269,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const rec = createProposal(ctx, {
         kind: 'note',
         sessionId,
-        sessionType: harness?.config.name,
+        sessionType: harness?.activeSkillName,
         targetPath: parsed.data.path,
         baseHash: null,
         payload: parsed.data,
@@ -253,7 +311,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const rec = createProposal(ctx, {
         kind: 'decision',
         sessionId,
-        sessionType: harness?.config.name,
+        sessionType: harness?.activeSkillName,
         targetPath: parsed.data.path,
         baseHash: null,
         payload: { ...parsed.data, ...(p.supersedes ? { supersedes: stripLink(p.supersedes) } : {}) },
@@ -322,7 +380,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const rec = createProposal(ctx, {
         kind: 'update',
         sessionId,
-        sessionType: harness?.config.name,
+        sessionType: harness?.activeSkillName,
         targetPath: target,
         baseHash: contentHash(note.body),
         payload: { ...parsed.data, path: target },
@@ -368,7 +426,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const rec = createProposal(ctx, {
         kind: 'note',
         sessionId,
-        sessionType: harness?.config.name,
+        sessionType: harness?.activeSkillName,
         targetPath: path,
         baseHash: null,
         payload: {
@@ -444,7 +502,7 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
     const rec = createProposal(ctx, {
       kind: 'outbound',
       sessionId,
-      sessionType: harness?.config.name,
+      sessionType: harness?.activeSkillName,
       targetPath: null,
       baseHash: null,
       payload,

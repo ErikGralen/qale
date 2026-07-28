@@ -8,7 +8,12 @@ import {
   buildSessionReceipt,
   AFTER_MEETING_SKILL,
   ASK_SKILL,
+  CHAT_SKILL,
+  SYNTHESIS_SKILL,
+  PROCESS_NOTE_SKILL,
   DEFAULT_SKILL_BY_TYPE,
+  isDynamicSkill,
+  buildSkillBrief,
 } from '../src/index.js';
 
 test('parseSkill reads frontmatter + When/Read/Produce/Then', () => {
@@ -147,4 +152,71 @@ test('receipt records reads, writes and turns', () => {
   assert.deepEqual(r.frontmatter.writes, ['[[decisions/adopt-x]]']);
   assert.ok(r.body.includes('Reached checkpoint: **outline**'));
   assert.ok(r.body.includes('decision: [[decisions/adopt-x]] (p_1)'));
+});
+
+// --- Sessions v2 Part 3: skills arrive, they aren't a mode you're locked in ---
+
+test('isDynamicSkill: guides always, others only with a dynamic binding', () => {
+  assert.equal(isDynamicSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis')), true);
+  assert.equal(isDynamicSkill(parseSkill(PROCESS_NOTE_SKILL, 'process-note')), true);
+  assert.equal(isDynamicSkill(parseSkill(AFTER_MEETING_SKILL, 'after-meeting')), false);
+  const guide = `---\ntype: skill\nskill_kind: guide\nsummary: A checklist\n---\n\nCheck the thing.\n`;
+  assert.equal(isDynamicSkill(parseSkill(guide, 'a-checklist')), true);
+});
+
+test('buildSkillBrief: a session skill arrives as rules in force, a guide as prose', () => {
+  const brief = buildSkillBrief(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
+  assert.match(brief, /Skill now in force: synthesis/);
+  assert.match(brief, /govern the rest of this conversation/);
+  assert.match(brief, /## Produce/);
+  const guide = `---\ntype: skill\nskill_kind: guide\nsummary: A checklist\n---\n\nCheck the thing.\n`;
+  const g = buildSkillBrief(parseSkill(guide, 'a-checklist'));
+  assert.match(g, /## Guide: A checklist/);
+  assert.match(g, /Check the thing\./);
+  assert.doesNotMatch(g, /in force/);
+});
+
+test('an arriving skill brings its tier, checkpoints and gate — and resets the counter', () => {
+  const chat = parseSkill(CHAT_SKILL, 'chat');
+  const h = new SessionHarness('s1', chat, '2026-07-28T09:00:00Z');
+  assert.equal(h.tier, 'observe');
+  assert.deepEqual(h.checkpoints, []);
+  assert.equal(h.canPropose(), true, 'un-gated base skill proposes freely');
+
+  h.invokeSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
+  assert.equal(h.tier, 'outbound', 'arrival adds permissions');
+  assert.deepEqual(h.checkpoints, ['gather', 'cluster', 'draft']);
+  assert.equal(h.gateOutput, true);
+  assert.equal(h.canPropose(), false, 'the arriving gate locks output');
+  h.advanceCheckpoint('gather');
+  assert.equal(h.canPropose(), true);
+  assert.equal(h.activeSkillName, 'synthesis', 'cards are tagged with the skill that made them');
+  assert.deepEqual(h.skillNames, ['chat', 'synthesis']);
+});
+
+test('a checkpoint recorded against the old plan cannot unlock a newly arrived gate', () => {
+  const after = parseSkill(AFTER_MEETING_SKILL, 'after-meeting');
+  const h = new SessionHarness('s2', after, '2026-07-28T09:00:00Z');
+  h.advanceCheckpoint('digest');
+  assert.equal(h.canPropose(), true);
+  h.invokeSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
+  assert.equal(h.canPropose(), false);
+  assert.equal(h.reachedCheckpoint, null);
+});
+
+test('an observe-tier arrival never strips permissions the session already had', () => {
+  const after = parseSkill(AFTER_MEETING_SKILL, 'after-meeting');
+  const h = new SessionHarness('s3', after, '2026-07-28T09:00:00Z');
+  h.invokeSkill(parseSkill(ASK_SKILL, 'ask'));
+  assert.equal(h.tier, 'outbound');
+});
+
+test('the receipt records every skill that was in force, not just the opener', () => {
+  const h = new SessionHarness('abcd1234ef', parseSkill(CHAT_SKILL, 'chat'), '2026-07-28T09:00:00Z');
+  h.beginTurn('what do these nine interviews add up to?', '2026-07-28T09:00:00Z');
+  h.invokeSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
+  const r = buildSessionReceipt(h, '2026-07-28T09:30:00Z');
+  assert.equal(r.frontmatter.session_type, 'chat');
+  assert.deepEqual(r.frontmatter.skills, ['chat', 'synthesis']);
+  assert.ok(r.body.includes('Skills: chat → synthesis'));
 });

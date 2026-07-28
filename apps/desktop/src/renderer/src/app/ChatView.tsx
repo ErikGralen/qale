@@ -77,7 +77,7 @@ function stepLabel(part: AnyPart): { verb: string; detail?: string } {
     case 'confluence_get_page':
       return { verb: 'Read Confluence page', detail: str('title') ?? str('id') };
     case 'use_skill':
-      return { verb: 'Used guide', detail: str('name') };
+      return { verb: 'Loaded skill', detail: str('name') };
     case 'advance_checkpoint':
       return { verb: 'Advanced checkpoint' };
     default:

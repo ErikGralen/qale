@@ -1,9 +1,12 @@
 export {
   parseSkill,
   buildSystemPrompt,
+  buildSkillBrief,
   describeBinding,
   bindingMatches,
+  isDynamicSkill,
   SKILL_EVENTS,
+  TIER_RANK,
   type SkillConfig,
   type SkillTier,
   type SkillGuardrails,

@@ -20,6 +20,7 @@ import {
   createDraftTools,
   createAtlassianTools,
   createUseSkillTool,
+  listDynamicSkills,
   ATLASSIAN_TOOL_NAMES,
   VAULT_TOOL_NAMES,
   PROPOSE_TOOL_NAMES,
@@ -293,12 +294,15 @@ export class AgentRuntime {
     return parseSkill(DEFAULT_SKILL_BY_TYPE[type] ?? '', type);
   }
 
-  private toolNamesFor(config: SkillConfig, atlassianActive: boolean, hasGuides: boolean): string[] {
+  private toolNamesFor(config: SkillConfig, atlassianActive: boolean, canInvokeSkills: boolean): string[] {
     const names = [...VAULT_TOOL_NAMES];
     if (config.tier === 'suggest' || config.tier === 'outbound') names.push(...PROPOSE_TOOL_NAMES);
     if (config.tier === 'outbound') names.push(...DRAFT_TOOL_NAMES);
-    if (config.checkpoints.length > 0) names.push(CHECKPOINT_TOOL_NAME);
-    if (hasGuides) names.push(USE_SKILL_TOOL_NAME);
+    // A session that can pull in skills gets the checkpoint tool even when its
+    // OWN skill declares no plan: the arriving skill's checkpoints would
+    // otherwise gate output with no way to advance past the gate.
+    if (config.checkpoints.length > 0 || canInvokeSkills) names.push(CHECKPOINT_TOOL_NAME);
+    if (canInvokeSkills) names.push(USE_SKILL_TOOL_NAME);
     if (atlassianActive) names.push(...ATLASSIAN_TOOL_NAMES);
     return names;
   }
@@ -331,15 +335,31 @@ export class AgentRuntime {
   }
 
   /**
-   * The guide index (Skills v2): every `skill_kind: guide` file listed by name +
-   * summary so the model knows what it can pull in via `use_skill`, without paying
-   * for the bodies until one is relevant. Returns null when there are no guides.
+   * The on-demand skill index (Sessions v2 Part 3.1): every guide AND every skill
+   * with a `dynamic` binding, listed by name + summary so the model knows what it
+   * can pull in via `use_skill` without paying for the bodies until one is
+   * relevant. Returns null when nothing is loadable.
+   *
+   * Widening this from `skill_kind: guide` is what makes the Skills view stop
+   * lying: `describeBinding` has always rendered "Available on demand" for a
+   * dynamic binding, while a dynamic *session* skill was listed nowhere.
    */
-  private guideIndex(ctx: UseCaseContext): string | null {
-    const guides = ctx.index.all().filter((n) => n.type === 'skill' && (n.frontmatter as Record<string, unknown>)['skill_kind'] === 'guide');
-    if (guides.length === 0) return null;
-    const lines = guides.map((g) => `- \`${g.slug.split('/').pop()}\` — ${g.summary}`);
-    return `\n\n## Guides available on demand\nCall \`use_skill\` with a guide name to load it when relevant:\n${lines.join('\n')}`;
+  private async skillIndex(ctx: UseCaseContext, current: string): Promise<string | null> {
+    const skills = (await listDynamicSkills(ctx)).filter((s) => s.config.name !== current);
+    if (skills.length === 0) return null;
+    const guides = skills.filter((s) => s.config.kind === 'guide');
+    const sessions = skills.filter((s) => s.config.kind !== 'guide');
+    const parts = [
+      '\n\n## Skills available on demand',
+      'Call `use_skill` with one of these names when the conversation turns into the work it describes. ' +
+        'A session skill takes over how you work from that point on — its instructions, its checkpoints, ' +
+        'and the cards it may produce. Load one rather than improvising a workflow it already describes.',
+    ];
+    if (sessions.length > 0)
+      parts.push(sessions.map((s) => `- \`${s.config.name}\` — ${s.config.summary}`).join('\n'));
+    if (guides.length > 0)
+      parts.push(`Reference guides (read-only):\n${guides.map((g) => `- \`${g.config.name}\` — ${g.config.summary}`).join('\n')}`);
+    return parts.join('\n');
   }
 
   /**
@@ -441,19 +461,20 @@ export class AgentRuntime {
     const skillConfig = await this.resolveSkill(type, ctx);
     const harness = new SessionHarness(id, skillConfig, ctx.clock.now());
     const voice = skillConfig.tier === 'outbound' ? await this.voiceGuides(ctx) : '';
-    const guides = this.guideIndex(ctx);
+    const skillIndex = await this.skillIndex(ctx, skillConfig.name);
     const vaultMap = await this.vaultMap(ctx);
-    const systemPrompt = buildSystemPrompt(SHARED_PREAMBLE, skillConfig) + voice + (guides ?? '') + vaultMap;
+    const systemPrompt = buildSystemPrompt(SHARED_PREAMBLE, skillConfig) + voice + (skillIndex ?? '') + vaultMap;
 
     // The ask session gains the tracker seam (Jira/Confluence) when configured.
     const atlassianActive = type === 'ask' && this.atlassian;
-    const toolNames = this.toolNamesFor(skillConfig, !!atlassianActive, !!guides);
+    const canInvokeSkills = !!skillIndex;
+    const toolNames = this.toolNamesFor(skillConfig, !!atlassianActive, canInvokeSkills);
     const customTools = [
       ...createVaultTools(ctx, harness),
       ...(skillConfig.tier !== 'observe' ? createProposeTools(ctx, id, harness) : []),
       ...(skillConfig.tier === 'outbound' ? createDraftTools(ctx, id, harness) : []),
-      ...(skillConfig.checkpoints.length > 0 ? [createCheckpointTool(harness)] : []),
-      ...(guides ? [createUseSkillTool(ctx)] : []),
+      ...(skillConfig.checkpoints.length > 0 || canInvokeSkills ? [createCheckpointTool(harness)] : []),
+      ...(canInvokeSkills ? [createUseSkillTool(ctx, harness)] : []),
       ...(atlassianActive ? createAtlassianTools(this.atlassian!, this.config.trackExternal) : []),
     ];
 

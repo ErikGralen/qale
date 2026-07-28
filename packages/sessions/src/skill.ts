@@ -12,6 +12,14 @@ export type SkillTier = 'observe' | 'suggest' | 'outbound';
 const TIERS: SkillTier[] = ['observe', 'suggest', 'outbound'];
 
 /**
+ * Tier ordering — a skill that arrives mid-session ADDS permissions, never
+ * removes them (Sessions v2, invariant 3: permissions attach to the material and
+ * the skill). Comparing ranks is how the harness merges an arrival's tier with
+ * whatever is already in force.
+ */
+export const TIER_RANK: Record<SkillTier, number> = { observe: 0, suggest: 1, outbound: 2 };
+
+/**
  * Skills v2 (PLAN-V2 §skills) — the four kinds a skill file can declare:
  * - `session` — a packaged PO workflow (After-Meeting, Sprint Review, …);
  * - `voice` — a writing register forced into outbound drafts;
@@ -74,7 +82,7 @@ export interface SkillGuardrails {
 }
 
 export interface SkillConfig {
-  /** The session-type key this skill defines (e.g. "after-meeting"). */
+  /** The skill's invocation name (e.g. "after-meeting"). Frontmatter `session_type`. */
   name: string;
   summary: string;
   /** Which of the four families this skill belongs to (frontmatter `skill_kind`). */
@@ -93,6 +101,8 @@ export interface SkillConfig {
   bindings: SkillBinding[];
   /** Frontmatter problems surfaced on the Skills view (validation, not fatal). */
   errors: string[];
+  /** The markdown body, frontmatter stripped — what a guide (no ## sections) carries. */
+  body: string;
   raw: string;
 }
 
@@ -205,6 +215,41 @@ export function describeBinding(binding: SkillBinding, kind: SkillKind): string 
   return 'Available on demand — the agent loads it when it is relevant.';
 }
 
+/**
+ * Is this skill loadable on demand — listed in the session's skill index and
+ * pullable with `use_skill` (Sessions v2 Part 3.1)?
+ *
+ * A `guide` is on-demand reference by definition, so it qualifies with or
+ * without an explicit binding (back-compat: the shipped guides declare none).
+ * Everything else needs a `dynamic` binding, which is exactly what the Skills
+ * view already promises the PO — before this, a `mode: dynamic` session skill
+ * was listed nowhere and loadable by nothing.
+ */
+export function isDynamicSkill(config: SkillConfig): boolean {
+  if (config.kind === 'guide') return true;
+  return config.bindings.some((b) => b.mode === 'dynamic');
+}
+
+/**
+ * The text a skill hands the model when it ARRIVES mid-session (via `use_skill`
+ * or an explicit pick), as opposed to being baked into the system prompt at
+ * creation. Same content as {@link buildSystemPrompt} minus the shared preamble,
+ * wrapped in a line that says the rules are now in force — the model must not
+ * read an arriving skill as reference material it may weigh against the session
+ * it is already in.
+ */
+export function buildSkillBrief(config: SkillConfig): string {
+  const head =
+    config.kind === 'guide'
+      ? `## Guide: ${config.summary}`
+      : `## Skill now in force: ${config.name} — ${config.summary}\nThese instructions govern the rest of this conversation. Follow them as you would your own; where they conflict with what you were told before, the more restrictive rule wins.`;
+  // Session skills carry their content in ## When/Read/Produce/Then; guides are
+  // plain prose with no sections at all, so fall back to the whole body.
+  const structured = buildSystemPrompt('', config).trim();
+  const body = structured || config.body.trim();
+  return body ? `${head}\n\n${body}` : `${head}\n\n_(This skill file has no body.)_`;
+}
+
 /** Does a triggered binding fire for this event + payload? (dispatcher helper.) */
 export function bindingMatches(
   binding: SkillBinding,
@@ -263,6 +308,7 @@ export function parseSkill(raw: string, fallbackName: string): SkillConfig {
     },
     bindings,
     errors,
+    body,
     raw,
   };
 }

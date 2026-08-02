@@ -1,13 +1,16 @@
 ---
 type: "insight"
-summary: "Per-seat pricing chafes in mid-market where headcount is seasonal"
+summary: "Per-seat pricing chafes in mid-market accounts where headcount is seasonal"
 tags: ["pricing"]
 evidence: ["[[meetings/2026-06-12-kranelund-checkin]]"]
 confidence: "low"
 customer: "[[customers/kranelund-logistics]]"
 ---
 
-Kranelund takes on ~40 seasonal drivers each summer and objects to paying a full seat for
-someone who checks one screen for three months. One account so far — but Rondo's exit interview
-used price as a secondary reason, and Nordkap's procurement is now reviewing the model too.
-Worth watching whether these are the same complaint or three different ones.
+Kranelund take on around 40 seasonal drivers every summer, and Mikkel won't pay a full seat
+for someone who opens one screen for three months. He's raised it twice now and says it will
+come up at renewal whether he brings it or we do.
+
+That's one account. But price was the second reason in Rondo's exit interview, and Nordkap
+procurement has now opened a review of the per-seat model. Could be one complaint or three
+unrelated ones. Worth another quarter of watching before anyone touches the model.

@@ -7,7 +7,12 @@ import { normalizeLinkType } from './link-types.js';
  */
 
 export function slugFromPath(path: string): string {
-  return path.replace(/\.md$/i, '');
+  const slug = path.replace(/\.md$/i, '');
+  // A runnable folder's entry file IS the runnable, so its slug is the FOLDER
+  // (`skills/spec-review`, never `skills/spec-review/SKILL`). That is what keeps
+  // the name a skill is invoked by — the last slug segment — identical in both
+  // layouts, so every caller that reads a name off a slug works unchanged.
+  return isRunnableEntry(path) ? slug.slice(0, slug.lastIndexOf('/')) : slug;
 }
 
 /**
@@ -32,6 +37,100 @@ export const RESERVED_BASENAMES = ['index.md', 'log.md'] as const;
 export function isReservedFile(path: string): boolean {
   const base = path.slice(path.lastIndexOf('/') + 1).toLowerCase();
   return (RESERVED_BASENAMES as readonly string[]).includes(base);
+}
+
+/**
+ * A skill and an agent are FOLDERS. `skills/spec-review/SKILL.md` holds the
+ * instructions; anything beside it (`checklist.md`, `examples/`) is the skill's
+ * own material. Three loading tiers fall out of that, which is the whole point:
+ * name + summary are always in the prompt, the entry file loads when the skill
+ * is used, and a sibling only loads when the instructions name its path and the
+ * agent reads it. Nothing beside the entry file is ever indexed, listed or
+ * searched, so a long reference table costs nothing until it is asked for.
+ *
+ * Every runnable gets a folder, including the ones carrying nothing extra: one
+ * layout beats two, and a skill that grows a file later doesn't have to move.
+ */
+export const RUNNABLE_DIRS = ['skills', 'agents'] as const;
+
+/** The entry file each folder WRITES. Reads tolerate either (see {@link isRunnableEntry}). */
+export const RUNNABLE_ENTRY: Record<string, string> = { skills: 'SKILL.md', agents: 'AGENT.md' };
+
+const ENTRY_BASENAMES = Object.values(RUNNABLE_ENTRY).map((f) => f.toLowerCase());
+
+/** `skills/spec-review/checklist.md` → dir `skills`, name `spec-review`. Null when not inside one. */
+function insideRunnableFolder(path: string): { dir: string; name: string; rest: string } | null {
+  const parts = path.split('/');
+  if (parts.length < 3) return null;
+  const [dir, name, ...rest] = parts;
+  if (!dir || !name || !(RUNNABLE_DIRS as readonly string[]).includes(dir)) return null;
+  return { dir, name, rest: rest.join('/') };
+}
+
+/**
+ * Is this the file that IS the runnable? Either reserved basename counts in
+ * either folder: a hand-made `agents/x/SKILL.md` should resolve rather than
+ * sit inert, and indexing has to agree with resolution or a file would list
+ * under one name and run under another.
+ */
+export function isRunnableEntry(path: string): boolean {
+  const inside = insideRunnableFolder(path);
+  return !!inside && ENTRY_BASENAMES.includes(inside.rest.toLowerCase());
+}
+
+/**
+ * A file beside the entry — the skill's own material. Never indexed (so it
+ * cannot show up as a second skill, in search, or in the prompt's skill index),
+ * only ever read by the path its skill's instructions name.
+ */
+export function isRunnableResource(path: string): boolean {
+  const inside = insideRunnableFolder(path);
+  return !!inside && !ENTRY_BASENAMES.includes(inside.rest.toLowerCase());
+}
+
+/** The name a runnable file is invoked by, in either layout. Null when it is neither. */
+export function runnableNameFromPath(path: string): string | null {
+  const inside = insideRunnableFolder(path);
+  if (inside) return isRunnableEntry(path) ? inside.name : null;
+  const parts = path.split('/');
+  const [dir, file] = parts;
+  if (parts.length !== 2 || !dir || !file || !(RUNNABLE_DIRS as readonly string[]).includes(dir)) return null;
+  return file.toLowerCase().endsWith('.md') && !isReservedFile(path) ? slugFromPath(file) : null;
+}
+
+/** Where a runnable of this name is WRITTEN: `skills` + `spec-review` → `skills/spec-review/SKILL.md`. */
+export function runnableEntryPath(dir: string, name: string): string {
+  return `${dir}/${name}/${RUNNABLE_ENTRY[dir] ?? RUNNABLE_ENTRY['skills']}`;
+}
+
+/**
+ * Every path a runnable called `name` could live at, in RESOLUTION order:
+ * `skills/` before `agents/` (a customised copy beats the agent file of the
+ * same name — the precedence the runtime has always had), and inside each
+ * folder the entry file before the legacy flat file, so a migrated vault reads
+ * the new layout and a half-migrated one still finds the old.
+ */
+export function runnableCandidates(name: string): string[] {
+  return RUNNABLE_DIRS.flatMap((dir) => [
+    runnableEntryPath(dir, name),
+    `${dir}/${name}/${dir === 'skills' ? RUNNABLE_ENTRY['agents'] : RUNNABLE_ENTRY['skills']}`,
+    `${dir}/${name}.md`,
+  ]);
+}
+
+/**
+ * Both layouts of ONE runnable file, canonical first. Callers that must catch a
+ * file whichever pass a vault is on — seeding a default, deleting a retired one
+ * — walk this instead of guessing. Any other path is returned as itself.
+ */
+export function runnableForms(path: string): string[] {
+  const inside = insideRunnableFolder(path);
+  if (inside && isRunnableEntry(path)) {
+    return [runnableEntryPath(inside.dir, inside.name), `${inside.dir}/${inside.name}.md`];
+  }
+  const name = runnableNameFromPath(path);
+  const dir = path.split('/')[0] ?? '';
+  return name ? [runnableEntryPath(dir, name), path] : [path];
 }
 
 /** The OKF spec version this workspace conforms to — stamped in the root index.md (§12). */
@@ -64,7 +163,7 @@ export function basename(slug: string): string {
 }
 
 /**
- * Split a `type::target#heading|alias` wikilink inner text (docs/typed-links.md).
+ * Split a `type::target#heading|alias` wikilink inner text.
  * The type is optional; a malformed type prefix (empty side, unusable token)
  * degrades to an untyped link on the full text — a type never fails a parse.
  * Known inverse spellings canonicalize (`blocked-by::X` → type `blocks`,
@@ -107,13 +206,44 @@ export function normalizeLinkTarget(raw: string): {
 
 const TITLE_CASE = /[-_]+/g;
 
+/**
+ * Words a title keeps lowercase unless they lead or close it. Without this,
+ * "defer-scim-to-q3" reads "Defer Scim To Q3" — machine-made, and visibly not
+ * how the PO wrote it down.
+ */
+const SMALL_WORDS = new Set([
+  'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'from', 'in', 'into', 'nor',
+  'of', 'on', 'or', 'per', 'the', 'to', 'via', 'vs', 'with',
+]);
+
+/**
+ * Acronyms and wordmarks a slug flattens to lowercase. A derived title is the
+ * app speaking a note's name back to the PO, and a PO who writes "SCIM" never
+ * reads "Scim" as their own word. Deliberately narrow: this vocabulary, not a
+ * general dictionary — an unknown token stays plain title case.
+ */
+const WORDMARKS: Record<string, string> = {
+  api: 'API', arr: 'ARR', b2b: 'B2B', b2c: 'B2C', crm: 'CRM', csv: 'CSV',
+  eu: 'EU', gdpr: 'GDPR', ios: 'iOS', kpi: 'KPI', mrr: 'MRR', mvp: 'MVP',
+  nda: 'NDA', nps: 'NPS', oauth: 'OAuth', okr: 'OKR', pdf: 'PDF', pii: 'PII',
+  poc: 'PoC', qa: 'QA', qbr: 'QBR', rfc: 'RFC', roi: 'ROI', saas: 'SaaS',
+  saml: 'SAML', scim: 'SCIM', sdk: 'SDK', seo: 'SEO', sla: 'SLA', slo: 'SLO',
+  sso: 'SSO', ui: 'UI', url: 'URL', ux: 'UX',
+};
+
 /** Derive a human title from a slug's basename when no explicit title exists. */
 export function titleFromSlug(slug: string): string {
   const name = basename(slug).replace(/^\d{4}-\d{2}-\d{2}-/, '');
-  return name
-    .replace(TITLE_CASE, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .trim();
+  const words = name.replace(TITLE_CASE, ' ').trim().split(' ').filter(Boolean);
+  return words
+    .map((word, i) => {
+      const lower = word.toLowerCase();
+      const mark = WORDMARKS[lower];
+      if (mark) return mark;
+      if (i > 0 && i < words.length - 1 && SMALL_WORDS.has(lower)) return lower;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
 }
 
 const ASCII_FOLD: Record<string, string> = {

@@ -17,7 +17,7 @@ export interface WikiLinkData {
   target: string;
   anchor?: string;
   alias?: string;
-  /** Canonical link type from a `[[type::target]]` link (docs/typed-links.md). */
+  /** Canonical link type from a `[[type::target]]` link. */
   linkType?: string;
   /** True when the type was an inverse spelling — the semantic edge runs target → source. */
   reversed?: boolean;

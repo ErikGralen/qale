@@ -1,9 +1,11 @@
+import { typeForDir } from './frontmatter.js';
+import { lifecycleValueLabel } from './lifecycle.js';
 import { OKF_VERSION } from './slug.js';
 
 /**
  * OKF `index.md` rendering (§8) — the directory-map orientation layer. These are
  * PURE string builders: the application layer reads the vault index, projects
- * each note's `summary` to an OKF `description` (Phase 3 of docs/okf-alignment.md),
+ * each note's `summary` to an OKF `description` (OKF alignment, phase 3),
  * and hands the shaped data here. Nothing in this module touches the filesystem.
  *
  * Links are written vault-root-relative (the vault root IS the OKF bundle root),
@@ -17,8 +19,12 @@ export interface IndexEntry {
   path: string;
   title: string;
   description: string;
-  /** Lifecycle status, when the note's type carries one — drives the grouping. */
-  status?: string | null;
+  /**
+   * The note's lifecycle value, when its type carries a lifecycle at all: a
+   * decision's `standing`, a customer's `relationship`, a source's `processing`.
+   * Drives the grouping, and the folder's own type names the sections.
+   */
+  lifecycle?: string | null;
 }
 
 /** A folder's worth of entries, plus the copy the root map and folder header show. */
@@ -38,35 +44,39 @@ function oneLine(s: string): string {
 }
 
 /**
- * Section order within a folder index: the freshness-relevant buckets first (so
- * "what needs attention" reads top-down), then any other status verbatim, then
- * the statusless bucket. Statuses the workspace doesn't privilege still group,
- * they just sort after the known ones.
+ * Section order within a folder index: the buckets that still want something
+ * first (so "what needs attention" reads top-down), then the settled ones, then
+ * the lifecycle-less bucket. One flat list across every lifecycle, since a
+ * folder only ever holds one of them. Values the workspace doesn't privilege
+ * still group, they just sort after the known ones.
  */
-const STATUS_ORDER = [
+const LIFECYCLE_ORDER = [
   'new',
   'active',
   'open',
+  'exploring',
+  'committed',
+  'prospect',
+  'watching',
   'processed',
-  'planned',
-  'shipped',
   'done',
   'stale',
   'superseded',
   'dropped',
+  'churned',
+  'wont-do',
 ];
 
-function statusRank(status: string | null): number {
-  if (status === null) return STATUS_ORDER.length + 1;
-  const i = STATUS_ORDER.indexOf(status);
-  return i === -1 ? STATUS_ORDER.length : i;
+function lifecycleRank(value: string | null): number {
+  if (value === null) return LIFECYCLE_ORDER.length + 1;
+  const i = LIFECYCLE_ORDER.indexOf(value);
+  return i === -1 ? LIFECYCLE_ORDER.length : i;
 }
 
-/** Title-case a status token for its section heading ("in_progress" → "In progress"). */
-function statusHeading(status: string | null): string {
-  if (!status) return 'Unfiled';
-  const words = status.replace(/[_-]+/g, ' ').trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
+/** The section heading for one lifecycle value, in the folder type's own words. */
+function lifecycleHeading(dir: string, value: string | null): string {
+  if (!value) return 'Unfiled';
+  return lifecycleValueLabel(typeForDir(dir), value);
 }
 
 function entryLine(entry: IndexEntry): string {
@@ -76,12 +86,12 @@ function entryLine(entry: IndexEntry): string {
 }
 
 /**
- * Render one folder's `index.md`. Entries group by `status` when any carry one
- * (one section per group, §8), else a single flat list. Within a group they are
- * ordered by title so the file is stable across regenerations.
+ * Render one folder's `index.md`. Entries group by lifecycle value when any
+ * carry one (one section per group, §8), else a single flat list. Within a group
+ * they are ordered by title so the file is stable across regenerations.
  */
 export function renderFolderIndex(folder: IndexFolder): string {
-  const anyStatus = folder.entries.some((e) => e.status != null && e.status !== '');
+  const anyLifecycle = folder.entries.some((e) => e.lifecycle != null && e.lifecycle !== '');
   const fm = `---\ndescription: ${oneLine(`${folder.label} — ${folder.purpose}`)}\n---\n`;
   const head = `\n# ${folder.label}\n\n${oneLine(folder.purpose)}\n`;
 
@@ -90,21 +100,22 @@ export function renderFolderIndex(folder: IndexFolder): string {
   const byTitle = (a: IndexEntry, b: IndexEntry): number =>
     oneLine(a.title).localeCompare(oneLine(b.title));
 
-  if (!anyStatus) {
+  if (!anyLifecycle) {
     const list = [...folder.entries].sort(byTitle).map(entryLine).join('\n');
     return `${fm}${head}\n${list}\n`;
   }
 
   const groups = new Map<string | null, IndexEntry[]>();
   for (const e of folder.entries) {
-    const key = e.status != null && e.status !== '' ? e.status : null;
+    const key = e.lifecycle != null && e.lifecycle !== '' ? e.lifecycle : null;
     (groups.get(key) ?? groups.set(key, []).get(key)!).push(e);
   }
+  const heading = (v: string | null): string => lifecycleHeading(folder.dir, v);
   const sections = [...groups.keys()]
-    .sort((a, b) => statusRank(a) - statusRank(b) || statusHeading(a).localeCompare(statusHeading(b)))
-    .map((status) => {
-      const list = groups.get(status)!.sort(byTitle).map(entryLine).join('\n');
-      return `## ${statusHeading(status)}\n\n${list}`;
+    .sort((a, b) => lifecycleRank(a) - lifecycleRank(b) || heading(a).localeCompare(heading(b)))
+    .map((value) => {
+      const list = groups.get(value)!.sort(byTitle).map(entryLine).join('\n');
+      return `## ${heading(value)}\n\n${list}`;
     });
   return `${fm}${head}\n${sections.join('\n\n')}\n`;
 }

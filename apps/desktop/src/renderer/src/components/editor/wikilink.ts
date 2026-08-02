@@ -147,7 +147,7 @@ export const WikiLink = Node.create({
         // as the ticket state pill, never louder than the link itself.
         dom.classList.add('inline-flex', 'items-baseline', 'gap-1');
         const typeChip = document.createElement('span');
-        typeChip.className = 'self-center rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground';
+        typeChip.className = 'self-center rounded bg-muted px-1 text-2xs font-medium text-muted-foreground';
         typeChip.textContent = linkTypeLabel(attrs.linkType, attrs.reversed);
         dom.appendChild(typeChip);
       }
@@ -164,7 +164,7 @@ export const WikiLink = Node.create({
         chevron.type = 'button';
         chevron.dataset['linkTypeButton'] = '';
         chevron.className =
-          'link-type-btn self-center rounded px-0.5 text-[10px] leading-none opacity-0 transition-opacity hover:bg-brand/20 group-hover/link:opacity-70 focus-visible:opacity-100 focus-visible:outline-none';
+          'link-type-btn self-center rounded px-0.5 text-2xs leading-none opacity-0 transition-opacity hover:bg-brand/20 group-hover/link:opacity-70 focus-visible:opacity-100 focus-visible:outline-none';
         chevron.textContent = '▾';
         chevron.setAttribute(
           'aria-label',

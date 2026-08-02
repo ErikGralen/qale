@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@pm/ui';
 import { Check, MessageSquare, Sparkles, Trash2, Wrench, X } from 'lucide-react';
 import type {
@@ -10,9 +10,10 @@ import type {
 import { useApp } from '../../state/app-state';
 import { processNoteSeed } from '../../lib/agent-nudges';
 import { timeAgo } from '../../lib/session-meta';
+import { rowFocusClass, useQueueFocus } from './shared';
 
 /**
- * A librarian finding as one quiet row — the full story lives in the chat it
+ * A librarian finding as one quiet row — the full story lives in the session it
  * opens, not here. Dismissing is cheap; the finding stays quiet for a week.
  */
 export function PingItem({
@@ -28,17 +29,14 @@ export function PingItem({
   onOpen: () => void;
   onDismiss: () => void;
 }) {
-  const ref = useRef<HTMLLIElement>(null);
-  useEffect(() => {
-    if (focused) ref.current?.scrollIntoView({ block: 'nearest' });
-  }, [focused]);
+  const ref = useQueueFocus<HTMLLIElement>(focused);
   return (
     <li
       ref={ref}
+      tabIndex={-1}
       onClick={onFocus}
-      className={`group flex items-center gap-2 rounded-lg bg-card py-1.5 pr-1.5 pl-3 ring-1 transition-shadow ${
-        focused ? 'ring-2 ring-ring/60' : 'ring-foreground/10'
-      }`}
+      onFocus={onFocus}
+      className={`group flex items-center gap-2 rounded-lg bg-card py-1.5 pr-1.5 pl-3 ${rowFocusClass(focused)}`}
     >
       <Wrench className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       <button className="min-w-0 flex-1 truncate text-left text-sm focus-visible:outline-none" onClick={onOpen} title={ping.body}>
@@ -46,7 +44,7 @@ export function PingItem({
       </button>
       <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{timeAgo(ping.created)}</span>
       <Button size="sm" variant="ghost" onClick={onOpen}>
-        <MessageSquare className="size-3.5" /> Chat about this
+        <MessageSquare className="size-3.5" /> Ask about this
       </Button>
       <button
         className="rounded p-1 text-muted-foreground opacity-0 group-focus-within:opacity-70 group-hover:opacity-70 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
@@ -64,7 +62,7 @@ export function PingItem({
  * A ping that carries its own prepared answers (PLAN-V2 §3.5): each finding is
  * one row with one-tap choices — pick the right link target, wire an orphan
  * into the note that already mentions it, or skip. The tap IS the approval;
- * the card retires itself when every row is settled. Chat stays one click away.
+ * the card retires itself when every row is settled. A session stays one click away.
  */
 export function SuggestionPing({
   ping,
@@ -82,10 +80,7 @@ export function SuggestionPing({
   const { resolvePingItem, openDoc, deleteNote, openSession } = useApp();
   const [busyItem, setBusyItem] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const ref = useRef<HTMLLIElement>(null);
-  useEffect(() => {
-    if (focused) ref.current?.scrollIntoView({ block: 'nearest' });
-  }, [focused]);
+  const ref = useQueueFocus<HTMLLIElement>(focused);
 
   const resolve = async (itemId: string, action: PingResolveActionDTO) => {
     setBusyItem(itemId);
@@ -103,8 +98,10 @@ export function SuggestionPing({
   return (
     <li
       ref={ref}
+      tabIndex={-1}
       onClick={onFocus}
-      className={`rounded-xl bg-card ring-1 transition-shadow ${focused ? 'ring-2 ring-ring/60' : 'ring-foreground/10'}`}
+      onFocus={onFocus}
+      className={`rounded-xl bg-card ${rowFocusClass(focused)}`}
     >
       <div className="flex items-center gap-2 px-3 pt-2.5">
         <Wrench className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
@@ -113,7 +110,7 @@ export function SuggestionPing({
         </span>
         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{timeAgo(ping.created)}</span>
         <Button size="sm" variant="ghost" onClick={onOpen}>
-          <MessageSquare className="size-3.5" /> Chat about this
+          <MessageSquare className="size-3.5" /> Ask about this
         </Button>
         <button
           className="rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
@@ -162,7 +159,10 @@ export function SuggestionPing({
       </ul>
 
       {error && (
-        <div className="mx-3 mb-2.5 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-1.5 text-sm text-destructive">
+        <div
+          role="alert"
+          className="mx-3 mb-2.5 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-1.5 text-sm text-destructive"
+        >
           {error}
         </div>
       )}
@@ -248,7 +248,7 @@ function LinkChoiceRow({
         <ChoiceChip key={o.slug} label={o.slug} title={o.title || o.slug} disabled={busy} onClick={() => onFix(o.slug)} />
       ))}
       {item.options.length === 0 && (
-        <span className="text-xs text-muted-foreground italic">no close match — chat it through</span>
+        <span className="text-xs text-muted-foreground italic">no close match — ask about it</span>
       )}
       <span className="ml-auto">
         <SkipButton disabled={busy} onClick={onSkip} />
@@ -262,17 +262,15 @@ const MAX_NAMES_SHOWN = 4;
 
 /** What "nothing mentions it" actually means for this kind of note. */
 const NO_MENTION_COPY: Record<PingOrphanItemDTO['kind'], string> = {
-  external: 'nothing says what it serves',
   capture: 'not wired into anything yet',
   stray: 'nothing mentions it',
 };
 
 /**
- * One unlinked note, offering only the answers its cause admits. A mirror of an
- * upstream record is never deletable from here — the note isn't the truth, and
- * the next sync would bring it straight back; a raw capture's answer is a
- * Process-Note session, not tidying. Delete survives for exactly one case: a
- * workspace-owned page that cites nothing and that nothing cites.
+ * One unlinked note, offering only the answers its cause admits. A raw
+ * capture's answer is a Process-Note session, not tidying; Delete survives for
+ * exactly one case: a workspace-owned page that cites nothing and that nothing
+ * cites. Mirrors of upstream records never reach this row at all.
  */
 function OrphanRow({
   item,
@@ -323,11 +321,6 @@ function OrphanRow({
       >
         {item.title}
       </button>
-      {/* The upstream state, verbatim — an open ticket nobody connected reads
-          very differently from one already in review. */}
-      {item.detail && (
-        <span className="rounded bg-foreground/8 px-1.5 py-0.5 text-xs text-muted-foreground">{item.detail}</span>
-      )}
       {item.mentions.length > 0 ? (
         <>
           <span className="text-xs text-muted-foreground">— mentioned in</span>
@@ -384,7 +377,7 @@ function OrphanRow({
           </>
         ) : (
           <button
-            className="rounded px-1.5 py-0.5 text-xs text-destructive/70 hover:bg-destructive/8 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
+            className="rounded px-1.5 py-0.5 text-xs text-destructive hover:bg-destructive/8 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
             onClick={() => setConfirmDelete(true)}
             disabled={busy}
             title={`Delete ${item.path}`}

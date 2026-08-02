@@ -1,14 +1,18 @@
 import { useMemo } from 'react';
 import { Hash } from 'lucide-react';
-import { dirForType } from '@pm/domain';
+import { dirForType, noteTypeLabel } from '@pm/domain';
 import type { NoteRefDTO, NoteType } from '@pm/ipc';
 import { useApp } from '../state/app-state';
 import { NoteList } from './NoteList';
+import { PageHeader } from '../components/PageHeader';
 import { ScopedAskComposer } from '../components/ScopedAskComposer';
 import { notesInContext, refDate, SPINE_ORDER } from '../lib/contexts';
 
-/** Section labels in spine order — how a context page reads. */
-const SECTION_LABEL: Record<NoteType, string> = {
+/**
+ * Section labels in spine order — how a context page reads. Only the content
+ * types get one: sessions and skills are chrome, never sections here.
+ */
+const SECTION_LABEL: Partial<Record<NoteType, string>> = {
   decision: 'Decisions',
   theme: 'Themes',
   insight: 'Insights',
@@ -18,10 +22,10 @@ const SECTION_LABEL: Record<NoteType, string> = {
   meeting: 'Meetings',
   note: 'Notes',
   source: 'Sources',
-  session: 'Sessions',
-  skill: 'Skills',
-  ticket: 'Tickets',
-  wikipage: 'Wiki pages',
+  // Mirrors read as the system they copy ("Jira mirrors"), not as a shelf of
+  // the memory — one vocabulary, from @pm/domain.
+  ticket: `${noteTypeLabel('ticket')}s`,
+  wikipage: `${noteTypeLabel('wikipage')}s`,
 };
 
 /** Long sections truncate to this; the folder browse page has the full list. */
@@ -49,10 +53,7 @@ export function ContextView({ tag }: { tag: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-5 text-sm font-medium text-muted-foreground">
-        <Hash className="size-4 text-brand" /> {tag}
-        <span className="text-xs tabular-nums">· {notes.length}</span>
-      </div>
+      <PageHeader icon={Hash} iconClassName="text-brand" label={tag} meta={notes.length} />
 
       <div className="flex-1 overflow-y-auto px-8 py-4">
         <div className="mx-auto w-full max-w-2xl">
@@ -66,11 +67,12 @@ export function ContextView({ tag }: { tag: string }) {
               {sections.map((s) => {
                 // The on-disk folder, not the display label — 'wiki pages' opens nothing.
                 const dirName = dirForType(s.type);
+                const label = SECTION_LABEL[s.type] ?? dirName;
                 const truncated = s.rows.length > SECTION_LIMIT;
                 return (
                   <section key={s.type}>
                     <div className="mb-0.5 flex items-baseline gap-2 px-2">
-                      <h2 className="text-xs font-medium text-muted-foreground">{SECTION_LABEL[s.type]}</h2>
+                      <h2 className="text-xs font-medium text-muted-foreground">{label}</h2>
                       <span className="text-xs text-muted-foreground tabular-nums">{s.rows.length}</span>
                     </div>
                     <NoteList rows={truncated ? s.rows.slice(0, SECTION_LIMIT) : s.rows} empty="" omitTag={tag} />
@@ -79,7 +81,7 @@ export function ContextView({ tag }: { tag: string }) {
                         className="mt-1 rounded px-2 text-xs font-medium text-brand hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                         onClick={() => openFolder(dirName)}
                       >
-                        See all {s.rows.length} {SECTION_LABEL[s.type].toLowerCase()} →
+                        See all {s.rows.length} {label.toLowerCase()} →
                       </button>
                     )}
                   </section>
@@ -91,7 +93,7 @@ export function ContextView({ tag }: { tag: string }) {
       </div>
 
       <ScopedAskComposer
-        placeholder={`Ask about #${tag}…`}
+        scope={{ kind: 'context', label: tag }}
         sessionTitle={`Ask · #${tag}`}
         scopePrefix={`Scoped to notes tagged "${tag}".`}
       />

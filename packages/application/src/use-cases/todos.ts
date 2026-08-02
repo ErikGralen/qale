@@ -1,11 +1,11 @@
 import {
-  TODO_STATUSES,
+  TODO_COMMITMENTS,
   dirForType,
   fileSlug,
   type Frontmatter,
   type Note,
+  type TodoCommitment,
   type TodoFrontmatter,
-  type TodoStatus,
 } from '@pm/domain';
 import type { UseCaseContext } from '../ports.js';
 
@@ -52,7 +52,7 @@ export async function captureTodo(ctx: UseCaseContext, input: CaptureTodoInput):
     summary,
     // Explicit title — the slug-derived fallback would lose case and punctuation.
     title: summary,
-    status: 'open',
+    commitment: 'open',
     sources: input.source ? [input.source] : [],
     ...(input.due ? { due: input.due } : {}),
     ...(input.owner?.trim() ? { owner: input.owner.trim() } : {}),
@@ -67,16 +67,18 @@ export async function captureTodo(ctx: UseCaseContext, input: CaptureTodoInput):
 export async function setTodoStatus(
   ctx: UseCaseContext,
   path: string,
-  status: TodoStatus,
+  commitment: TodoCommitment,
 ): Promise<Note> {
-  if (!TODO_STATUSES.includes(status)) throw new Error(`invalid todo status: ${status}`);
+  if (!TODO_COMMITMENTS.includes(commitment)) {
+    throw new Error(`invalid todo commitment: ${commitment}`);
+  }
   const existing = await ctx.vault.readNote(path);
   if (!existing || existing.type !== 'todo') throw new Error(`not a todo: ${path}`);
-  const frontmatter = { ...existing.frontmatter, status } as Record<string, unknown>;
-  if (status === 'open') delete frontmatter['resolved'];
+  const frontmatter = { ...existing.frontmatter, commitment } as Record<string, unknown>;
+  if (commitment === 'open') delete frontmatter['resolved'];
   else frontmatter['resolved'] = ctx.clock.now().slice(0, 10);
   const note = await ctx.vault.writeNote(path, frontmatter as Frontmatter, existing.body);
   ctx.index.reindex(note);
-  await ctx.git.commitPaths([note.path], `todo: ${note.slug} → ${status}`);
+  await ctx.git.commitPaths([note.path], `todo: ${note.slug} → ${commitment}`);
   return note;
 }

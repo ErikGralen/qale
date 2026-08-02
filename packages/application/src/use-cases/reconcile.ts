@@ -1,5 +1,14 @@
-import { isReservedFile } from '@pm/domain';
+import { isReservedFile, isRunnableResource } from '@pm/domain';
 import type { IndexPort, VaultPort } from '../ports.js';
+
+/**
+ * Files that are not concept notes: orientation (`index.md`/`log.md`) and the
+ * material sitting beside a skill's `SKILL.md`. Neither is indexed, so neither
+ * can surface as a note in a listing, a search or the prompt's skill index — a
+ * skill's own reference table is read by path when its instructions ask, and
+ * never before.
+ */
+const notContent = (path: string): boolean => isReservedFile(path) || isRunnableResource(path);
 
 /**
  * Startup reconciliation — a three-way diff between the filesystem and the index
@@ -18,9 +27,7 @@ export async function reconcileIndex(
 
   let changed = 0;
   for (const file of fsList) {
-    // Reserved files (index.md/log.md, §3.1) are orientation, not concept
-    // notes: never indexed, read by path instead. The librarian writes them.
-    if (isReservedFile(file.path)) continue;
+    if (notContent(file.path)) continue;
     const existing = indexedByPath.get(file.path);
     if (existing && existing.mtime >= file.mtime) continue;
     const note = await vault.readNote(file.path);
@@ -32,9 +39,9 @@ export async function reconcileIndex(
 
   let removed = 0;
   for (const record of indexed) {
-    // Drop ghosts AND any reserved file a pre-reserved-handling index still
-    // holds — it must stop appearing as a note.
-    if (!fsByPath.has(record.path) || isReservedFile(record.path)) {
+    // Drop ghosts AND anything an older index still holds that is not content —
+    // a reserved file, or a sibling indexed before skills became folders.
+    if (!fsByPath.has(record.path) || notContent(record.path)) {
       index.removeByPath(record.path);
       removed++;
     }
@@ -52,7 +59,7 @@ export async function rebuildIndex(
   const fsList = await vault.list();
   let indexed = 0;
   for (const file of fsList) {
-    if (isReservedFile(file.path)) continue;
+    if (notContent(file.path)) continue;
     const note = await vault.readNote(file.path);
     if (note) {
       index.reindex(note);

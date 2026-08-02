@@ -7,10 +7,11 @@ import { fakeDriftWorld, inote } from './drift-helpers.js';
 
 /**
  * "Has no links" is a symptom with several causes, and the sweep must answer
- * each on its own terms: an open Jira mirror is unconnected (never deletable
- * here), a closed one is history (not a finding at all), a scratch pad naming
- * pages it never links is capture waiting to be processed, and only a
- * workspace-owned page nothing cites is the hygiene case that may offer Delete.
+ * each on its own terms: a scratch pad naming pages it never links is capture
+ * waiting to be processed, and only a workspace-owned page nothing cites is the
+ * hygiene case that may offer Delete. A mirror of an upstream record is neither
+ * — the workspace doesn't own it and has no action to offer, so it is never a
+ * finding, open or closed.
  */
 
 function ticket(id: string, state: string, category: string) {
@@ -80,11 +81,14 @@ function world(search = false) {
 const orphanItems = (ping: PingRecord): PingOrphanItem[] =>
   (ping.payload as { kind: 'orphans'; items: PingOrphanItem[] }).items;
 
-test('a mirror the upstream system already closed is not a maintenance finding', () => {
+test('a mirror of an upstream record is never a maintenance finding', () => {
   const { ctx } = world();
   const paths = getMaintenanceReport(ctx).orphans.map((o) => o.path);
-  assert.ok(paths.includes('tickets/PAY-5.md'), 'an open unconnected ticket is still a finding');
-  assert.ok(!paths.includes('tickets/PAY-4.md'), 'a closed ticket nobody cited is history, not work');
+  // An open ticket nothing links is the normal state of a tracker, not a defect
+  // — and there is no honest action to offer: the workspace can't delete it, and
+  // inventing a parent page for it would be worse than leaving it alone.
+  assert.deepEqual(paths.filter((p) => p.startsWith('tickets/')), []);
+  assert.ok(paths.includes('notes/leftover.md'), 'workspace-owned pages are still findings');
 });
 
 test('a calendar-mirrored meeting is never reported as unlinked', () => {
@@ -105,45 +109,39 @@ test('a calendar-mirrored meeting is never reported as unlinked', () => {
   assert.deepEqual(getMaintenanceReport(ctx).orphans, []);
 });
 
-test('mirrors carry their key as a search alias and their upstream state', () => {
-  const { ctx } = world();
-  const pay5 = getMaintenanceReport(ctx).orphans.find((o) => o.path === 'tickets/PAY-5.md')!;
-  assert.equal(pay5.external, true);
-  assert.equal(pay5.detail, 'In Progress');
-  // Prose cites "PAY-5", never the composed title — hunting only the title finds nothing.
-  assert.ok(pay5.aliases.includes('PAY-5'));
-  assert.ok(pay5.aliases.includes('Webhook delivery retries with backoff'));
-});
-
-test('a workspace-owned page carries no external identity', () => {
-  const { ctx } = world();
-  const leftover = getMaintenanceReport(ctx).orphans.find((o) => o.path === 'notes/leftover.md')!;
-  assert.equal(leftover.external, false);
-  assert.deepEqual(leftover.aliases, []);
-  assert.equal(leftover.detail, null);
-});
-
 test('the sweep splits one symptom into findings by cause', async () => {
   const w = world();
   await runLibrarianSweep(w.ctx);
   const keys = w.pings.map((p) => p.key);
 
-  // Two open mirrors clear the floor; the single capture note clears its own.
-  assert.ok(keys.includes('unconnected-mirrors'));
+  // The single capture note clears its own floor.
   assert.ok(keys.includes('unprocessed-captures'));
   // One stray is below the hygiene floor of three — not worth a card.
   assert.ok(!keys.includes('stray-notes'));
+  // Unlinked mirrors are not a finding, so they never get a card of their own.
+  assert.ok(!keys.includes('unconnected-mirrors'));
   // The old undifferentiated key must not come back: it would offer Delete on
   // everything, which is exactly what the split exists to prevent.
   assert.ok(!keys.includes('orphan-connect'));
+});
 
-  const mirrors = w.pings.find((p) => p.key === 'unconnected-mirrors')!;
-  assert.match(mirrors.title, /^2 open tickets aren't linked from anywhere in the workspace$/);
-  assert.deepEqual(
-    orphanItems(mirrors).map((i) => i.path).sort(),
-    ['tickets/PAY-5.md', 'tickets/PAY-6.md'],
+test('a lingering mirror card is retired on the next tick', async () => {
+  const w = world();
+  w.ctx.pings!.create(
+    {
+      key: 'unconnected-mirrors',
+      title: "2 open tickets aren't linked from anywhere in the workspace",
+      body: '',
+      evidence: [],
+      skill: 'librarian',
+      seedPrompt: '',
+      targetPath: null,
+    },
+    Date.parse(w.ctx.clock.now()),
   );
-  assert.ok(orphanItems(mirrors).every((i) => i.kind === 'external'));
+  await runLibrarianSweep(w.ctx);
+  const stale = w.pings.find((p) => p.key === 'unconnected-mirrors')!;
+  assert.equal(stale.status, 'dismissed', 'the inbox must not keep a finding the sweep dropped');
 });
 
 test('a note that names pages it never links is capture, not a stray', async () => {
@@ -194,40 +192,40 @@ test('processing an item records the handoff and retires the card', async () => 
   assert.equal(after!.status, 'resolved', 'every item settled, so the card retires itself');
 });
 
-test('a mirror is offered where its KEY is mentioned, not just its title', async () => {
+test('an unlinked note is offered where its title is already mentioned', async () => {
   const w = fakeDriftWorld({
     notes: [
-      ticket('PAY-5', 'In Progress', 'in_progress'),
-      ticket('PAY-6', 'To Do', 'open'),
+      // Three unlinked notes: the hygiene floor for a card of their own.
+      inote({ path: 'notes/payout-runbook.md', type: 'note', title: 'Payout Runbook' }),
+      inote({ path: 'notes/idea-dump.md', type: 'note', title: 'Idea Dump' }),
+      inote({ path: 'notes/old-stub.md', type: 'note', title: 'Old Stub' }),
       inote({ path: 'notes/standup.md', type: 'note', title: 'Standup Log', links: ['themes/exports'] }),
       inote({ path: 'themes/exports.md', type: 'theme', title: 'Scheduled Exports', links: ['notes/standup'] }),
     ],
     bodies: {
-      'tickets/PAY-5.md': 'Retry failed webhook deliveries.',
-      'tickets/PAY-6.md': 'Reconciliation filter.',
-      'notes/standup.md': 'tom is picking up PAY-5 this week\nsee [[themes/exports]]',
+      'notes/payout-runbook.md': 'a stub nobody ever came back to',
+      'notes/idea-dump.md': 'half a sentence',
+      'notes/old-stub.md': 'nothing here yet',
+      'notes/standup.md': 'tom is redoing the Payout Runbook this week\nsee [[themes/exports]]',
       'themes/exports.md': 'see [[notes/standup]]',
     },
     completions: null,
     search: true,
   });
   await runLibrarianSweep(w.ctx);
-  const mirrors = w.pings.find((p) => p.key === 'unconnected-mirrors')!;
-  const pay5 = orphanItems(mirrors).find((i) => i.path === 'tickets/PAY-5.md')!;
-  assert.deepEqual(
-    pay5.mentions.map((m) => ({ host: m.host, term: m.term })),
-    [{ host: 'notes/standup.md', term: 'PAY-5' }],
-  );
+  const strays = w.pings.find((p) => p.key === 'stray-notes')!;
+  const runbook = orphanItems(strays).find((i) => i.path === 'notes/payout-runbook.md')!;
+  assert.deepEqual(runbook.mentions.map((m) => m.host), ['notes/standup.md']);
 
-  // And the applied patch links the key that actually appears in the prose.
+  // And the applied patch links the mention that actually appears in the prose.
   const written: { path: string; body: string }[] = [];
   w.ctx.vault.writeBody = async (path: string, body: string) => {
     written.push({ path, body });
     return (await w.ctx.vault.readNote(path))!;
   };
-  await resolvePingItem(w.ctx, mirrors.id, 'tickets/PAY-5.md', {
+  await resolvePingItem(w.ctx, strays.id, 'notes/payout-runbook.md', {
     action: 'fix',
     choice: 'notes/standup.md',
   });
-  assert.match(written[0]!.body, /\[\[tickets\/PAY-5\]\]/);
+  assert.match(written[0]!.body, /\[\[notes\/payout-runbook\|Payout Runbook\]\]/);
 });

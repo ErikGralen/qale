@@ -183,7 +183,7 @@ test('a full prepared-fix queue defers judgment instead of spending it', async (
       {
         kind: 'update',
         sessionId: 'librarian',
-        sessionType: 'librarian',
+        skill: 'librarian',
         targetPath: `notes/n${i}.md`,
         baseHash: null,
         payload: { path: `notes/n${i}.md`, patch: [{ search: 'a', replace: 'b' }], rationale: 'x' },

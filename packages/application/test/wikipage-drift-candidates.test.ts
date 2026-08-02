@@ -37,7 +37,7 @@ function tavlaNotes() {
     type: 'decision',
     title: 'Defer SCIM to Q3',
     mtime: 500,
-    frontmatter: { status: 'active', theme: '[[themes/enterprise-onboarding]]', date: '2026-04-15' },
+    frontmatter: { standing: 'active', theme: '[[themes/enterprise-onboarding]]', date: '2026-04-15' },
     links: ['themes/enterprise-onboarding'],
   });
   const workos = inote({
@@ -45,7 +45,7 @@ function tavlaNotes() {
     type: 'decision',
     title: 'Adopt WorkOS',
     frontmatter: {
-      status: 'active',
+      standing: 'active',
       supersedes: '[[decisions/2026-02-10-use-firebase-auth]]',
       theme: '[[themes/enterprise-onboarding]]',
     },
@@ -55,7 +55,7 @@ function tavlaNotes() {
     path: 'decisions/2026-02-10-use-firebase-auth.md',
     type: 'decision',
     title: 'Use Firebase Auth',
-    frontmatter: { status: 'superseded', superseded_by: '[[decisions/2026-05-20-adopt-workos]]' },
+    frontmatter: { standing: 'superseded', superseded_by: '[[decisions/2026-05-20-adopt-workos]]' },
   });
   return { page, hub, scim, workos, firebase };
 }
@@ -83,7 +83,7 @@ test('a superseded decision never heads a pair, but rides along as chain context
   assert.ok(!pairs.some((p) => p.decision.slug.includes('use-firebase-auth')));
   const workosPair = pairs.find((p) => p.decision.slug.includes('adopt-workos'))!;
   assert.deepEqual(
-    workosPair.chain.map((c) => `${c.slug}:${c.status}`),
+    workosPair.chain.map((c) => `${c.slug}:${c.standing}`),
     ['decisions/2026-02-10-use-firebase-auth:superseded', 'decisions/2026-05-20-adopt-workos:active'],
   );
 });
@@ -101,7 +101,7 @@ test('a decision linking the page directly pairs without any hub', () => {
   const decision = inote({
     path: 'decisions/2026-04-15-defer-scim-to-q3.md',
     type: 'decision',
-    frontmatter: { status: 'active' },
+    frontmatter: { standing: 'active' },
     links: ['wikipages/enterprise-onboarding'],
   });
   const notes = [page, decision];

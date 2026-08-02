@@ -100,7 +100,7 @@ test('fixture: superseded chain — page still matches the OLD decision → fix 
       {
         title: 'Use Firebase Auth',
         summary: 'Build enterprise auth on Firebase Auth',
-        status: 'superseded',
+        standing: 'superseded',
         date: '2026-02-10',
       },
     ],

@@ -18,7 +18,7 @@ import { ExternalRefChip } from './ExternalRef';
 function TypeChip({ label }: { label?: string }) {
   if (!label) return null;
   return (
-    <span className="mr-1 rounded bg-muted px-1 align-[1px] text-[10px] font-medium text-muted-foreground">
+    <span className="mr-1 rounded bg-muted px-1 align-[1px] text-2xs font-medium text-muted-foreground">
       {label}
     </span>
   );
@@ -40,7 +40,7 @@ export function Markdown({
         components={{
           a: (props: ComponentProps<'a'> & { 'data-target'?: string; 'data-link-type'?: string }) => {
             // Wikilinks carry data-target; a relative href is a note path too
-            // (e.g. a chat answer's [label](decisions/x.md)). Both route in-app.
+            // (e.g. a session answer's [label](decisions/x.md)). Both route in-app.
             const dataTarget = props['data-target'];
             // `[[type::target]]` links carry their relationship as a display
             // label — rendered as a muted prefix chip before the link.

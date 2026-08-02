@@ -1,6 +1,6 @@
 ---
 type: person
-summary: Tom Devlin — engineering lead, owns auth migration and platform
+summary: "Tom Devlin: engineering lead, owns the auth migration and the platform"
 tags:
   - enterprise-auth
 role: Engineering Lead
@@ -12,10 +12,10 @@ cares_about:
 ---
 
 Engineering lead on platform. Owns the WorkOS migration
-([[decisions/2026-05-20-adopt-workos]]) and retired Firebase in July. Conservative with dates in
-customer meetings; when he says a date out loud he means it.
+([[decisions/2026-05-20-adopt-workos]]) and retired Firebase in July. Careful with dates in
+front of customers, so when he says one out loud he means it.
 
-Starts SCIM scoping in August, after the SSO rollout settles.
+Starts SCIM scoping in August, once the SSO rollout has settled.
 
 ## 1:1 log
-- 2026-07-09 [[meetings/2026-07-09-tom-1on1]] — private, no notes kept.
+- 2026-07-09 [[meetings/2026-07-09-tom-1on1]]. Private, no notes kept.

@@ -77,7 +77,6 @@ function fakeContext(files: Record<string, Stored>, opts?: { backlinked?: boolea
         statuses[id] = status;
       },
       pendingCount: () => 0,
-      stats: () => ({ total: 0, accepted: 0, rejected: 0, pending: 0, stale: 0, approvalRate: null, medianMsToResolve: null }),
     } as never,
   };
   return { ctx, store, statuses };
@@ -88,7 +87,7 @@ function updateCard(ctx: UseCaseContext, body: string, payload: Record<string, u
     {
       kind: 'update',
       sessionId: 's1',
-      sessionType: 'process-note',
+      skill: 'process-note',
       targetPath: payload['path'] as string,
       baseHash: contentHash(body),
       payload,

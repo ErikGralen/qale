@@ -1,4 +1,5 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
+import { stripExternalMarkers } from './external.js';
 
 /**
  * pi session entries → AI SDK UIMessage JSON (the replay side of the bridge).
@@ -97,9 +98,14 @@ export function entriesToUiMessages(entries: SessionEntry[]): UiMessage[] {
     if (msg.role === 'toolResult' && msg.toolCallId) {
       const part = toolParts.get(msg.toolCallId);
       if (!part) continue;
-      const text = Array.isArray(msg.content)
-        ? msg.content.map((c) => (c.type === 'text' ? c.text ?? '' : `[${c.type}]`)).join('\n')
-        : String(msg.content ?? '');
+      // Same strip as the live path in bridge.ts: the origin envelope around
+      // external material is model-facing, and a reopened session renders this
+      // text in the expanded tool step.
+      const text = stripExternalMarkers(
+        Array.isArray(msg.content)
+          ? msg.content.map((c) => (c.type === 'text' ? c.text ?? '' : `[${c.type}]`)).join('\n')
+          : String(msg.content ?? ''),
+      );
       if (msg.isError) {
         part.state = 'output-error';
         part.errorText = text;

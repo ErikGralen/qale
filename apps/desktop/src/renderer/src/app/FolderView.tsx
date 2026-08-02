@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
-import { isFolderIndex } from '@pm/domain';
+import { isFolderIndex, lifecycleValueLabel } from '@pm/domain';
 import { Button } from '@pm/ui';
 import { AlertTriangle, Folder, Search, X } from 'lucide-react';
 import type { NoteRefDTO, NoteType } from '@pm/ipc';
 import { useApp } from '../state/app-state';
+import { navFromEvent } from '../lib/nav';
+import { PageHeader } from '../components/PageHeader';
 import { NoteList } from './NoteList';
 import { MeetingWeek } from './MeetingWeek';
 import { TicketBoard } from './TicketBoard';
@@ -46,22 +48,37 @@ const EMPTY_TEACH: Partial<Record<NoteType, string>> = {
   person:
     'No people yet. Stakeholders appear here with what they care about and what they were last told.',
   skill: 'No skills yet. Session playbooks — markdown files the agent follows — live here.',
+  // Mirrors, in the mirror voice: the folder holds copies, the real items live
+  // in Jira and Confluence. The edit rule waits for the note page, where it
+  // answers a question the reader is actually asking.
   ticket:
-    'No tickets yet. Jira issues the agent tracks mirror here — the board fills as sessions link work to your meetings and decisions.',
+    'No mirrors yet. Jira issues the agent tracks appear here, and the board fills as sessions link work to your meetings and decisions.',
+  wikipage:
+    'No mirrors yet. Confluence pages the agent tracks appear here, ready for your updates to land on.',
   note: 'No notes yet. Start one with ⌘N; captures that are not typed records land here too.',
 };
 
-/** Statuses worth a facet chip, per folder (frontmatter `status` values). */
-const STATUS_ORDER = [
+/**
+ * Lifecycle values worth a facet chip, in chip order. A folder holds one note
+ * type, so a folder only ever shows one lifecycle: a decision's `standing`, a
+ * customer's `relationship`, a source's `processing`. The chip reads as the
+ * value's own label, never the raw token.
+ */
+const LIFECYCLE_ORDER = [
   'new',
   'processed',
   'active',
   'stale',
   'superseded',
-  'planned',
-  'shipped',
   'prospect',
   'churned',
+  'exploring',
+  'committed',
+  'watching',
+  'wont-do',
+  'open',
+  'done',
+  'dropped',
 ];
 
 function FacetChip({
@@ -108,7 +125,7 @@ function FacetChip({
  * together. Docked Ask composer stays scoped to the folder.
  */
 export function FolderView({ dir }: { dir: string }) {
-  const { tree } = useApp();
+  const { tree, openMemory } = useApp();
   // Some folders default to a spatial layout (week calendar, ticket board),
   // with the flat list one click away.
   const altLayout = altLayoutFor(dir);
@@ -120,7 +137,7 @@ export function FolderView({ dir }: { dir: string }) {
   const [filter, setFilter] = useState('');
   const [contextFacet, setContextFacet] = useState<string | null>(null);
   // Decisions default to the live spine — superseded ones are one click away.
-  const [statusFacet, setStatusFacet] = useState<string | null>(
+  const [lifecycleFacet, setLifecycleFacet] = useState<string | null>(
     dir === 'decisions' ? 'active' : null,
   );
   const [chosenGroupBy, setChosenGroupBy] = useState<GroupBy | null>(null);
@@ -138,9 +155,9 @@ export function FolderView({ dir }: { dir: string }) {
       .map(([t]) => t);
   }, [notes]);
 
-  const statuses = useMemo(() => {
-    const present = new Set(notes.map((n) => n.status).filter((s): s is string => !!s));
-    return STATUS_ORDER.filter((s) => present.has(s));
+  const lifecycles = useMemo(() => {
+    const present = new Set(notes.map((n) => n.lifecycle).filter((v): v is string => !!v));
+    return LIFECYCLE_ORDER.filter((v) => present.has(v));
   }, [notes]);
 
   // Group by context when the folder has any; meetings and untagged folders read by date.
@@ -151,13 +168,13 @@ export function FolderView({ dir }: { dir: string }) {
     return notes
       .filter((n) => {
         if (contextFacet && !n.tags?.includes(contextFacet)) return false;
-        if (statusFacet && n.status !== statusFacet) return false;
+        if (lifecycleFacet && n.lifecycle !== lifecycleFacet) return false;
         if (!q) return true;
         const hay = `${n.title} ${n.summary} ${(n.tags ?? []).join(' ')}`.toLowerCase();
         return hay.includes(q);
       })
       .sort((a, b) => refDate(b).getTime() - refDate(a).getTime());
-  }, [notes, filter, contextFacet, statusFacet]);
+  }, [notes, filter, contextFacet, lifecycleFacet]);
 
   const sections = useMemo((): {
     key: string;
@@ -192,7 +209,7 @@ export function FolderView({ dir }: { dir: string }) {
     return out;
   }, [groupBy, contextFacet, filtered, allTags]);
 
-  const filtersActive = filter.trim() !== '' || contextFacet !== null || statusFacet !== null;
+  const filtersActive = filter.trim() !== '' || contextFacet !== null || lifecycleFacet !== null;
   const emptyTeach = group
     ? (EMPTY_TEACH[group.type] ?? `No notes in ${dir}/ yet.`)
     : `No notes in ${dir}/ yet.`;
@@ -200,7 +217,7 @@ export function FolderView({ dir }: { dir: string }) {
   const clearFilters = () => {
     setFilter('');
     setContextFacet(null);
-    setStatusFacet(null);
+    setLifecycleFacet(null);
     filterRef.current?.focus();
   };
 
@@ -241,14 +258,13 @@ export function FolderView({ dir }: { dir: string }) {
         }
       }}
     >
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-5 text-sm font-medium text-muted-foreground">
-        <Folder className="size-4" /> <span className="capitalize">{dir}</span>
-        <span className="text-xs tabular-nums">
-          {!altMode && filtersActive
-            ? `· ${filtered.length} of ${notes.length}`
-            : `· ${notes.length}`}
-        </span>
-      </div>
+      <PageHeader
+        icon={Folder}
+        crumbs={[{ label: 'Memory', onClick: (e) => openMemory(navFromEvent(e)) }]}
+        label={dir}
+        labelClassName="capitalize"
+        meta={!altMode && filtersActive ? `${filtered.length} of ${notes.length}` : notes.length}
+      />
 
       {altMode && altLayout === 'week' && (
         <MeetingWeek
@@ -271,7 +287,7 @@ export function FolderView({ dir }: { dir: string }) {
       )}
 
       {!altMode && notes.length > 0 && (
-        <div className="shrink-0 border-b border-border/70 px-5 py-2">
+        <div className="shrink-0 border-b border-border/70 px-4 py-2">
           <div className="mx-auto flex w-full max-w-2xl flex-wrap items-center gap-x-3 gap-y-1.5">
             {viewToggle}
             <div className="flex h-7 min-w-40 flex-1 items-center gap-1.5 rounded-lg border border-border bg-card px-2 transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
@@ -306,7 +322,7 @@ export function FolderView({ dir }: { dir: string }) {
               )}
             </div>
 
-            {(allTags.length > 0 || statuses.length > 0) && (
+            {(allTags.length > 0 || lifecycles.length > 0) && (
               <div className="flex flex-wrap items-center gap-1">
                 {allTags.map((t) => (
                   <TagChip
@@ -316,12 +332,12 @@ export function FolderView({ dir }: { dir: string }) {
                     onToggle={() => setContextFacet((c) => (c === t ? null : t))}
                   />
                 ))}
-                {statuses.map((s) => (
+                {lifecycles.map((v) => (
                   <FacetChip
-                    key={s}
-                    label={s}
-                    active={statusFacet === s}
-                    onToggle={() => setStatusFacet((c) => (c === s ? null : s))}
+                    key={v}
+                    label={lifecycleValueLabel(group?.type ?? null, v)}
+                    active={lifecycleFacet === v}
+                    onToggle={() => setLifecycleFacet((c) => (c === v ? null : v))}
                   />
                 ))}
               </div>
@@ -398,7 +414,7 @@ export function FolderView({ dir }: { dir: string }) {
       )}
 
       <ScopedAskComposer
-        placeholder={`Ask about ${dir}…`}
+        scope={{ kind: 'folder', label: dir }}
         sessionTitle={`Ask · ${dir}`}
         scopePrefix={`Scoped to the ${dir}/ folder.`}
       />

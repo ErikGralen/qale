@@ -13,7 +13,7 @@ import { join } from 'node:path';
  */
 /** A scheduled session slot (PLAN-V2 §3.5): fires on a weekly day/hour. */
 export interface ScheduleEntry {
-  sessionType: string;
+  skill: string;
   /** 0–6 (Sun–Sat). */
   dayOfWeek: number;
   /** 0–23 local hour. */
@@ -28,7 +28,7 @@ export interface PersistedSettings {
   modelId: string;
   anthropicKeyEnc: string | null;
   atlassian: { baseUrl: string; email: string; tokenEnc: string } | null;
-  /** Google OAuth grant (docs/google-calendar-integration.md §Auth). Only the
+  /** Google OAuth grant. Only the
    *  long-lived refresh token persists — access tokens live in memory. `email`
    *  arrives with the first successful verify (the primary calendar's id). */
   google: { email: string | null; refreshTokenEnc: string; scopes?: string } | null;
@@ -44,6 +44,12 @@ export interface PersistedSettings {
   mcpEnabled: boolean;
   mcpPort: number;
   mcpToken: string | null;
+  /**
+   * LEGACY — agent off switches now live in the agent file's frontmatter
+   * (`agents/<name>/AGENT.md`, `enabled: false`). Kept optional so old settings files
+   * parse; read once by the migration in handlers.ts, then cleared.
+   */
+  agents?: Record<string, boolean>;
 }
 
 const DEFAULTS: PersistedSettings = {
@@ -52,7 +58,7 @@ const DEFAULTS: PersistedSettings = {
   anthropicKeyEnc: null,
   atlassian: null,
   google: null,
-  schedules: [{ sessionType: 'weekly-update', dayOfWeek: 5, hour: 15, enabled: false, lastRun: null }],
+  schedules: [{ skill: 'weekly-update', dayOfWeek: 5, hour: 15, enabled: false, lastRun: null }],
   identity: { name: null, aliases: [] },
   mcpEnabled: false,
   mcpPort: 7717,
@@ -76,11 +82,30 @@ export class SettingsService {
     } catch {
       this.data = { ...DEFAULTS };
     }
+    // A schedule names a skill; it used to name a "session type". Carry settings
+    // written before the rename over rather than silently losing the slot.
+    this.data.schedules = this.data.schedules.map((s) => ({
+      ...s,
+      skill: s.skill ?? (s as { session_type?: string; sessionType?: string }).sessionType ?? 'weekly-update',
+    }));
     // Mint the MCP token on first run (bearer secret for the local server).
     if (!this.data.mcpToken) {
       this.data.mcpToken = randomUUID().replace(/-/g, '');
       await this.persist();
     }
+  }
+
+  /**
+   * The legacy agent-switch map, handed over exactly once: the caller migrates
+   * any off switch into the agent file's frontmatter, and the map is cleared
+   * here so the next launch has nothing to migrate.
+   */
+  async takeAgentOverrides(): Promise<Record<string, boolean> | undefined> {
+    const overrides = this.data.agents;
+    if (!overrides) return undefined;
+    delete this.data.agents;
+    await this.persist();
+    return overrides;
   }
 
   async setMcp(patch: { enabled?: boolean; port?: number }): Promise<void> {
@@ -216,10 +241,10 @@ export class SettingsService {
       .filter((e, i, all) => all.indexOf(e) === i);
   }
 
-  async setSchedule(sessionType: string, patch: Partial<ScheduleEntry>): Promise<void> {
-    const existing = this.data.schedules.find((s) => s.sessionType === sessionType);
+  async setSchedule(skill: string, patch: Partial<ScheduleEntry>): Promise<void> {
+    const existing = this.data.schedules.find((s) => s.skill === skill);
     if (existing) Object.assign(existing, patch);
-    else this.data.schedules.push({ sessionType, dayOfWeek: 5, hour: 15, enabled: false, lastRun: null, ...patch });
+    else this.data.schedules.push({ skill, dayOfWeek: 5, hour: 15, enabled: false, lastRun: null, ...patch });
     await this.persist();
   }
 

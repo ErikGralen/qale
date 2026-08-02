@@ -8,7 +8,7 @@ import { isFolderIndex } from '@pm/domain';
  */
 
 /** Chrome types never participate in context navigation. */
-const NON_CONTENT_TYPES: ReadonlySet<NoteType> = new Set(['session', 'skill'] satisfies NoteType[]);
+const NON_CONTENT_TYPES: ReadonlySet<NoteType> = new Set(['session', 'skill', 'agent'] satisfies NoteType[]);
 
 export interface ContextInfo {
   tag: string;

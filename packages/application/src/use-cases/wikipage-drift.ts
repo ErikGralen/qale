@@ -52,7 +52,7 @@ export interface DriftPair {
   };
   decision: { path: string; slug: string; title: string; summary: string };
   /** The supersedes-chain the decision heads, oldest → newest (head last). */
-  chain: { slug: string; title: string; summary: string; status: string; date?: string }[];
+  chain: { slug: string; title: string; summary: string; standing: string; date?: string }[];
   /** How the page entered the decision's orbit — the hub/decision that links it. */
   via: string;
   /**
@@ -110,7 +110,7 @@ export function selectDriftPairs(
 
   const isActive = (d: IndexedNote): boolean => {
     const fm = d.frontmatter as Record<string, unknown>;
-    return fm['status'] !== 'superseded' && !fm['superseded_by'];
+    return fm['standing'] !== 'superseded' && !fm['superseded_by'];
   };
 
   const pairs = new Map<string, DriftPair>();
@@ -165,7 +165,7 @@ export function selectDriftPairs(
           slug: node.slug,
           title: note?.title ?? node.slug,
           summary: note?.summary ?? node.frontmatter.summary,
-          status: node.frontmatter.status ?? 'active',
+          standing: node.frontmatter.standing ?? 'active',
           ...(node.frontmatter.date ? { date: node.frontmatter.date } : {}),
         };
       });
@@ -217,7 +217,7 @@ export interface ContradictionVerdict {
 export interface ContradictionInput {
   decision: { title: string; date?: string; summary: string; body: string };
   /** Older links of the supersedes-chain, oldest first (head excluded). */
-  chain: { title: string; summary: string; status: string; date?: string }[];
+  chain: { title: string; summary: string; standing: string; date?: string }[];
   page: { title: string; body: string };
 }
 
@@ -253,7 +253,7 @@ export function buildContradictionPrompt(input: ContradictionInput): { system: s
   const chain =
     input.chain.length > 0
       ? `\n\nEarlier decisions this one replaced (history, no longer true):\n${input.chain
-          .map((c) => `- [${c.status}${c.date ? `, ${c.date}` : ''}] ${c.title} — ${c.summary}`)
+          .map((c) => `- [${c.standing}${c.date ? `, ${c.date}` : ''}] ${c.title} — ${c.summary}`)
           .join('\n')}`
       : '';
 
@@ -353,7 +353,7 @@ export interface DriftPingCandidate {
   title: string;
   body: string;
   evidence: { ref: string; label?: string; resolved: boolean }[];
-  sessionType: string;
+  skill: string;
   seedPrompt: string;
   targetPath: string | null;
   payload?: null;
@@ -472,7 +472,7 @@ export async function sweepWikipageDrift(
         createProposal(ctx, {
           kind: 'outbound',
           sessionId: 'librarian',
-          sessionType: 'librarian',
+          skill: 'librarian',
           targetPath: pair.page.path,
           baseHash: null,
           payload: {
@@ -512,7 +512,7 @@ export async function sweepWikipageDrift(
           title: `"${pair.page.title}" may contradict ${pair.decision.title}`,
           body: `${verdict.explanation.trim() || 'The page and the decision seem to disagree.'} The mismatch is too diffuse for a prepared edit — worth a look.`,
           evidence,
-          sessionType: 'librarian',
+          skill: 'librarian',
           seedPrompt: `The mirrored page [[${pair.page.slug}]] may contradict the decision [[${pair.decision.slug}]].\n\nModel's read: ${verdict.explanation.trim() || '(none)'}\n\nRead both (and the decision's supersedes-chain, if any), confirm with me whether the page really disagrees with the decision as it stands, and if it does, draft the page update as an approval card with the decision as evidence. If it doesn't, say plainly why not.`,
           targetPath: pair.page.path,
           payload: null,

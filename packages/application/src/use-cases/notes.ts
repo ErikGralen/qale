@@ -16,9 +16,8 @@ import {
   type SourceNoteFrontmatter,
   type SourceRef,
 } from '@pm/domain';
-import { ARRIVAL_SKILL_NAME, type SkillEvent } from '@pm/sessions';
+import { ARRIVAL_AGENT_NAME, buildKickoff } from '@pm/sessions';
 import type { BacklinkRow, IndexedNote, UseCaseContext } from '../ports.js';
-import { skillsForEvent } from './skills.js';
 
 export async function getNote(ctx: UseCaseContext, path: string): Promise<Note | null> {
   return ctx.vault.readNote(path);
@@ -88,7 +87,7 @@ export async function captureMeeting(ctx: UseCaseContext, input: CaptureMeetingI
   const tFrontmatter: SourceNoteFrontmatter = {
     type: 'source',
     summary: `Transcript — ${summary}`,
-    status: 'new',
+    processing: 'new',
     source: input.source ?? { system: 'transcript' },
     captured: date,
   };
@@ -101,7 +100,7 @@ export async function captureMeeting(ctx: UseCaseContext, input: CaptureMeetingI
     type: 'meeting',
     summary,
     date,
-    status: 'new' as const,
+    processing: 'new' as const,
     ...(input.participants ? { participants: input.participants } : {}),
     ...(input.source ? { source: input.source } : {}),
     transcript: transcriptRef,
@@ -123,10 +122,10 @@ export interface AttachTranscriptInput {
 
 /**
  * Attach a captured transcript to a meeting note that ALREADY exists — the
- * capture-matching path (docs/google-calendar-integration.md, job 3). Instead of
+ * capture-matching path. Instead of
  * minting a second `meeting` note for a slot the calendar mirror already
  * created, file the transcript as an immutable source and link it onto the
- * synced note. Only the meeting-mutable fields move (`transcript`, `status`):
+ * synced note. Only the meeting-mutable fields move (`transcript`, `processing`):
  * the machine-owned scheduling fields the mirror set (date/time/participants/
  * series/external_id…) and the PM's body are left untouched. After-Meeting then
  * reads both and proposes the truth delta, exactly as for a fresh capture.
@@ -151,20 +150,53 @@ export async function attachTranscriptToMeeting(
   const tFrontmatter: SourceNoteFrontmatter = {
     type: 'source',
     summary: `Transcript — ${summary}`,
-    status: 'new',
+    processing: 'new',
     source: input.source ?? { system: 'transcript' },
     captured: date,
   };
   const tNote = await ctx.vault.writeNote(tPath, tFrontmatter, input.body.trim());
   ctx.index.reindex(tNote);
 
-  // Link the transcript and flag the meeting for review. `status: 'new'` is what
+  // Link the transcript and flag the meeting for review. `processing: 'new'` is what
   // makes the freshness spine mark dependents stale — same signal captureMeeting
   // emits. Provenance and the machine-owned mirror fields ride through the spread.
-  const next = { ...meeting.frontmatter, transcript: `[[${tNote.slug}]]`, status: 'new' } as Frontmatter;
+  const next = { ...meeting.frontmatter, transcript: `[[${tNote.slug}]]`, processing: 'new' } as Frontmatter;
   const note = await ctx.vault.writeNote(input.meetingPath, next, meeting.body);
   ctx.index.reindex(note);
   await ctx.git.commitPaths([tNote.path, note.path], `transcript: ${summary}`);
+  return note;
+}
+
+export interface CaptureDocumentInput {
+  title: string;
+  body: string;
+  /** The file it arrived as, when there was one — provenance on the source ref. */
+  fileName?: string;
+}
+
+/**
+ * Material that arrived — a spec someone sent, a pasted thread, an exported
+ * page. Raw layer, `sources/`, exactly like a link or a screenshot: the PO is
+ * its reader, not its author. Anything derived from it (a note, an insight, a
+ * decision) is proposed later and cites this.
+ */
+export async function captureDocument(
+  ctx: UseCaseContext,
+  input: CaptureDocumentInput,
+): Promise<Note> {
+  const date = ctx.clock.now().slice(0, 10);
+  const summary = input.title.slice(0, 200) || 'document';
+  const path = await freePath(ctx, `${dirForType('source')}/${fileSlug(summary, date)}.md`);
+  const frontmatter: SourceNoteFrontmatter = {
+    type: 'source',
+    summary,
+    processing: 'new',
+    source: input.fileName ? { system: 'file', author: input.fileName } : { system: 'paste' },
+    captured: date,
+  };
+  const note = await ctx.vault.writeNote(path, frontmatter, input.body.trim());
+  ctx.index.reindex(note);
+  await ctx.git.commitPaths([note.path], `source: ${summary}`);
   return note;
 }
 
@@ -193,7 +225,7 @@ export async function captureExternalTranscript(
   const frontmatter: SourceNoteFrontmatter = {
     type: 'source',
     summary,
-    status: 'new',
+    processing: 'new',
     source: input.source ?? { system: 'transcript' },
     captured: date,
     ...(input.origin ? { origin: input.origin } : {}),
@@ -217,6 +249,13 @@ export interface IngestCaptureInput {
   /** The dumped content: transcript body, note text, link + comment, or a screenshot caption. */
   text: string;
   title?: string;
+  /**
+   * The file this came from, when there was one. The classifier reads it for
+   * both kind (`.vtt` is a transcript whatever it says) and title — without it
+   * a dropped `nordkap-qbr.txt` files as "Meeting", because a transcript's
+   * first line is a spoken turn and never a name.
+   */
+  fileName?: string;
   /** Primary URL for a link capture. */
   url?: string;
   /** Transcript only — someone else's meeting: filed as a source (signal), not a meeting. */
@@ -232,17 +271,17 @@ export interface IngestCaptureInput {
 }
 
 export interface IngestFollowUp {
-  sessionType: string;
+  skill: string;
   prompt: string;
   tabTitle: string;
   /**
-   * Tier the firing binding grants this arrival — the material's permissions,
-   * not the session's (Sessions v2 invariant 3). A colleague's sales call fires
-   * the same skill as the PM's own meeting and gets `suggest`, so "never propose
-   * a decision from an external transcript" is enforced by the tool set rather
-   * than by the model remembering a rule.
+   * Whether the firing trigger lets this arrival draft outbound — the
+   * material's permission, not the session's (Sessions v2 invariant 3). A
+   * colleague's sales call fires the same agent as the PM's own meeting but
+   * without outbound, so "never draft outbound from an external transcript" is
+   * enforced by the tool set rather than by the model remembering a rule.
    */
-  tier?: 'observe' | 'suggest' | 'outbound';
+  outbound?: boolean;
   /** Run headlessly on ingest — the gate is the review, not the run, so nothing
    * waits on the PO to start it; cards land in the Inbox when the session settles. */
   background?: boolean;
@@ -253,38 +292,25 @@ export interface IngestCaptureResult {
   kind: CaptureKind;
   /** The session the capture should kick off, if it needs processing. */
   followUp?: IngestFollowUp;
-  /** Further bound skills the same event fires — always run headlessly. */
-  extras?: IngestFollowUp[];
 }
 
 /**
- * Which sessions a capture event fires (Skills v2): the workspace's triggered
- * bindings decide; the hardwired default is the fallback when nothing is bound
- * (e.g. a workspace whose skill copies predate bindings). The first hit keeps
- * the branch's foreground/background semantics; any further hits run headless.
+ * The session a capture fires: always the pipeline's own skill (arrival) — how
+ * material is handled is the product's, not a binding the workspace can lose.
  */
-async function boundFollowUps(
-  ctx: UseCaseContext,
-  event: SkillEvent,
-  payload: Record<string, unknown>,
-  fallbackType: string | null,
-  mk: (sessionType: string) => IngestFollowUp,
+function pipelineFollowUp(
+  mk: (skill: string) => IngestFollowUp,
   /** The `process` toggle: false means file it and run nothing (Part 5). */
-  process = true,
-): Promise<{ followUp?: IngestFollowUp; extras?: IngestFollowUp[] }> {
+  process: boolean,
+  /**
+   * Whether this run may draft outbound. The product invariant lives here, in
+   * code: a transcript of the PM's own meeting may draft outbound, everything
+   * else may not — a property of the material, not a rule the file remembers.
+   */
+  fallbackOutbound = false,
+): { followUp?: IngestFollowUp } {
   if (!process) return {};
-  const hits = await skillsForEvent(ctx, event, payload);
-  const fired = hits.length > 0 ? hits : fallbackType ? [{ sessionType: fallbackType }] : [];
-  if (fired.length === 0) return {};
-  const [first, ...rest] = fired as { sessionType: string; tier?: 'observe' | 'suggest' | 'outbound' }[];
-  const withTier = (h: { sessionType: string; tier?: 'observe' | 'suggest' | 'outbound' }): IngestFollowUp => ({
-    ...mk(h.sessionType),
-    ...(h.tier ? { tier: h.tier } : {}),
-  });
-  return {
-    followUp: withTier(first!),
-    ...(rest.length > 0 ? { extras: rest.map((h) => ({ ...withTier(h), background: true })) } : {}),
-  };
+  return { followUp: { ...mk(ARRIVAL_AGENT_NAME), ...(fallbackOutbound ? { outbound: true } : {}) } };
 }
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
@@ -297,7 +323,7 @@ const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
  * After-Meeting; links and screenshots hand off to Intake.
  */
 export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInput): Promise<IngestCaptureResult> {
-  const guess = classifyCapture(input.text, input.attachment?.name);
+  const guess = classifyCapture(input.text, input.attachment?.name ?? input.fileName);
   const kind = input.kind ?? (input.attachment ? 'screenshot' : guess.kind);
   const title = input.title?.trim() || guess.title || (kind === 'transcript' ? 'Meeting' : 'capture');
   const now = ctx.clock.now();
@@ -310,14 +336,15 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
         body: input.text,
         origin: input.origin,
       });
-      const dispatched = await boundFollowUps(
-        ctx,
-        'capture.transcript',
-        { origin: 'external', path: note.path },
-        ARRIVAL_SKILL_NAME,
-        (sessionType) => ({
-          sessionType,
-          prompt: `Run the ${sessionType} skill on ${note.path}: the PM was NOT in this meeting, so this is signal to mine, not a meeting to process. Extract what needs to happen — commitments anyone made, dates, customer signals — and flag anything that contradicts what the memory holds. Never a decision.`,
+      const dispatched = pipelineFollowUp(
+        (skill) => ({
+          skill,
+          prompt: buildKickoff({
+            skill,
+            target: note.path,
+            instruction:
+              'the PM was NOT in this meeting, so this is signal to mine, not a meeting to process. Extract what needs to happen (commitments anyone made, dates, customer signals) and flag anything that contradicts what the memory holds. Never a decision.',
+          }),
           tabTitle: `Signals: ${title}`,
           background: true,
         }),
@@ -330,25 +357,33 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
     const note = input.attachTo
       ? await attachTranscriptToMeeting(ctx, { meetingPath: input.attachTo, body: input.text })
       : await captureMeeting(ctx, { title, body: input.text });
-    const dispatched = await boundFollowUps(
-      ctx,
-      'capture.transcript',
-      { origin: 'po', path: note.path },
-      ARRIVAL_SKILL_NAME,
-      (sessionType) => ({
-        sessionType,
-        prompt: `Run the ${sessionType} skill on ${note.path}: this was the PM's own meeting. Read the meeting note and its linked transcript plus the memory it touches, then extract the truth delta as approval cards — decisions with their decider, every commitment made, the summary, and anything that contradicts what the memory holds.`,
+    const dispatched = pipelineFollowUp(
+      (skill) => ({
+        skill,
+        prompt: buildKickoff({
+          skill,
+          target: note.path,
+          instruction:
+            "this was the PM's own meeting. Read the meeting note and its linked transcript plus the memory it touches, then extract what it changes as approval cards: decisions with their decider, every commitment made, the summary, and anything that contradicts what the memory holds.",
+        }),
         tabTitle: `After-Meeting: ${title}`,
         background: true,
       }),
       input.process ?? true,
+      // The PM's own meeting is the one capture that may draft outbound.
+      true,
     );
     return { note, kind, ...dispatched };
   }
 
-  const intakeFollowUp = (note: Note, display: string) => (sessionType: string): IngestFollowUp => ({
-    sessionType,
-    prompt: `Run the ${sessionType} skill on ${note.path}: read the capture, search the memory it might touch, and extract what needs to happen or to be wired in, as approval cards. Ask me if something is unclear.`,
+  const intakeFollowUp = (note: Note, display: string) => (skill: string): IngestFollowUp => ({
+    skill,
+    prompt: buildKickoff({
+      skill,
+      target: note.path,
+      instruction:
+        'read the capture, search the memory it might touch, and extract what needs to happen or to be linked, as approval cards. Ask me if something is unclear.',
+    }),
     tabTitle: `Intake: ${display}`,
   });
 
@@ -360,21 +395,14 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
     const frontmatter: SourceNoteFrontmatter = {
       type: 'source',
       summary,
-      status: 'new',
+      processing: 'new',
       source: { system: 'web', url },
       captured: date,
     };
     const note = await ctx.vault.writeNote(path, frontmatter, input.text.trim());
     ctx.index.reindex(note);
     await ctx.git.commitPaths([note.path], `source: ${summary}`);
-    const dispatched = await boundFollowUps(
-      ctx,
-      'capture.ingested',
-      { kind, path: note.path },
-      ARRIVAL_SKILL_NAME,
-      intakeFollowUp(note, summary),
-        input.process ?? true,
-    );
+    const dispatched = pipelineFollowUp(intakeFollowUp(note, summary), input.process ?? true);
     return { note, kind, ...dispatched };
   }
 
@@ -391,35 +419,31 @@ export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInp
     const frontmatter: SourceNoteFrontmatter = {
       type: 'source',
       summary,
-      status: 'new',
+      processing: 'new',
       source: { system: 'screenshot' },
       captured: date,
     };
     const note = await ctx.vault.writeNote(path, frontmatter, body);
     ctx.index.reindex(note);
     await ctx.git.commitPaths([note.path, assetPath], `source: ${summary}`);
-    const dispatched = await boundFollowUps(
-      ctx,
-      'capture.ingested',
-      { kind, path: note.path },
-      ARRIVAL_SKILL_NAME,
-      intakeFollowUp(note, summary),
-        input.process ?? true,
-    );
+    const dispatched = pipelineFollowUp(intakeFollowUp(note, summary), input.process ?? true);
     return { note, kind, ...dispatched };
   }
 
-  const note = await captureNote(ctx, { body: input.text, summary: title });
-  // Quick notes have no default follow-up, but a workspace binding on
-  // `capture.ingested` with `when: {kind: note}` can opt in.
-  const dispatched = await boundFollowUps(
-    ctx,
-    'capture.ingested',
-    { kind: 'note', path: note.path },
-    null,
-    intakeFollowUp(note, title),
-      input.process ?? true,
-  );
+  /**
+   * Ingest is ARRIVAL, and arrival never authors. Everything that comes through
+   * this door is raw material in `sources/` — a dropped file, a pasted thread,
+   * a link, a screenshot. `notes/` is the authored layer and is reachable only
+   * by writing one (`captureNote`, ⌘N): the workspace must never claim to have
+   * written something that was handed to it, because once the memory starts
+   * citing that claim it cannot be corrected.
+   */
+  const note = await captureDocument(ctx, {
+    title,
+    body: input.text,
+    ...(input.fileName ? { fileName: input.fileName } : {}),
+  });
+  const dispatched = pipelineFollowUp(intakeFollowUp(note, title), input.process ?? true);
   return { note, kind: 'note', ...dispatched };
 }
 

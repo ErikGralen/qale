@@ -1,9 +1,50 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import {
+  CalendarCheck,
+  CalendarClock,
+  CalendarPlus,
+  FilePen,
+  MessageSquarePlus,
+  Send,
+  TicketPlus,
+  type LucideIcon,
+} from 'lucide-react';
 import type { OutboundPayloadDTO } from '@pm/ipc';
 import { normalizeLinkTarget } from '@pm/domain';
 import { invoke } from '../../lib/ipc';
 import { isExternalRef } from '../../lib/connections';
 import { ExternalRefChip } from '../ExternalRef';
+
+/**
+ * Real focus for the queue's roving cursor. The Inbox drives selection with an
+ * index, but a painted ring is a lie to anyone not looking at it: a screen
+ * reader announces nothing, and ⌫ acts on a row the AT never named. So the
+ * selected row takes DOM focus too, and the ring is only ever a picture of
+ * where focus actually is.
+ *
+ * Two guards keep that from being rude. Focus moves only while the queue
+ * already holds it — arriving in the Inbox must never yank the caret out of
+ * whatever the PO was doing — and never out of a control inside the row, so
+ * tabbing to a card's own button is not undone by the cursor catching up.
+ */
+export function useQueueFocus<T extends HTMLElement>(focused: boolean) {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!focused || !el) return;
+    el.scrollIntoView({ block: 'nearest' });
+    const queue = el.closest('[data-queue]');
+    const active = document.activeElement;
+    if (queue?.contains(active) && !el.contains(active)) el.focus({ preventScroll: true });
+  }, [focused]);
+  return ref;
+}
+
+/** Shared shell classes for a queue row — the ring is the focus indicator, so
+ *  the row suppresses the browser's own outline and never paints two. */
+export function rowFocusClass(focused: boolean): string {
+  return `outline-none ring-1 transition-shadow ${focused ? 'ring-2 ring-ring/60' : 'ring-foreground/10'}`;
+}
 
 const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
 
@@ -54,11 +95,14 @@ export function stripWikilinks(text: string): string {
   });
 }
 
-export const KIND_LABEL: Record<string, string> = { note: 'new note', decision: 'decision', update: 'update', outbound: 'outbound draft' };
-
 /** Proper names for the providers we ship; an unknown provider (a future
  *  connector) degrades to a capitalized word instead of an inbox code change. */
-const PROVIDER_LABEL: Record<string, string> = { jira: 'Jira', confluence: 'Confluence', message: 'Message' };
+const PROVIDER_LABEL: Record<string, string> = {
+  jira: 'Jira',
+  confluence: 'Confluence',
+  message: 'Message',
+  'google-calendar': 'Google Calendar',
+};
 
 /** Human name of where an outbound card goes — never the raw provider id. */
 export function providerLabel(ob: OutboundPayloadDTO): string {
@@ -67,6 +111,47 @@ export function providerLabel(ob: OutboundPayloadDTO): string {
   if (provider === 'message') return ob.audience ?? 'the recipient';
   if (!provider) return ob.audience ?? 'the recipient';
   return PROVIDER_LABEL[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
+}
+
+/** The system's proper name, or null when the card goes to a person rather
+ *  than a system — "Send an update to Sara" has no product name in it. */
+export function providerName(ob: OutboundPayloadDTO): string | null {
+  const provider = ob.provider ?? ob.system;
+  if (!provider || provider === 'message') return null;
+  return PROVIDER_LABEL[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
+}
+
+/**
+ * What a card actually does, said once and reused everywhere it appears: the
+ * approve button's verb, the glyph on the card, and the receipt line after it
+ * lands. Only a message is *sent* — an `update_page` rewrites a page that
+ * already exists, and calling that "send" invents a delivery that never
+ * happens while hiding the edit that does.
+ */
+export interface OutboundAct {
+  /** Completes "Approve & …" — an imperative the PO would say out loud. */
+  verb: string;
+  /** The action's own glyph. A page edit is not a paper plane. */
+  Icon: LucideIcon;
+}
+
+export function outboundAct(ob: OutboundPayloadDTO): OutboundAct {
+  switch (ob.action) {
+    case 'update_page':
+      return { verb: 'update the page', Icon: FilePen };
+    case 'comment_ticket':
+      return { verb: 'post the comment', Icon: MessageSquarePlus };
+    case 'create_ticket':
+      return { verb: 'create the ticket', Icon: TicketPlus };
+    case 'create_event':
+      return { verb: 'create the event', Icon: CalendarPlus };
+    case 'update_event':
+      return { verb: 'change the event', Icon: CalendarClock };
+    case 'respond_to_event':
+      return { verb: 'reply', Icon: CalendarCheck };
+    default:
+      return { verb: 'send', Icon: Send };
+  }
 }
 
 /**
@@ -82,8 +167,32 @@ export function outboundTarget(ob: OutboundPayloadDTO): string {
     case 'create_ticket':
       return `File a ${ob.issueType?.toLowerCase() ?? 'ticket'}${ob.projectKey ? ` in ${ob.projectKey}` : ''}`;
     case 'update_page':
-      return 'Update a page';
+      return ob.title ? `Update ${ob.title}` : 'Update a page';
     default:
       return `Send an update${ob.audience ? ` to ${ob.audience}` : ''}`;
+  }
+}
+
+/**
+ * The receipt line after a card lands — past tense, and naming the thing it
+ * touched. "Update a page" told the PO nothing about which page just changed
+ * under their name.
+ */
+export function outboundReceipt(ob: OutboundPayloadDTO): string {
+  switch (ob.action) {
+    case 'update_page':
+      return `Updated ${ob.title ?? 'a page'}`;
+    case 'comment_ticket':
+      return `Commented on ${ob.issueKey ?? 'a ticket'}`;
+    case 'create_ticket':
+      return `Created a ${ob.issueType?.toLowerCase() ?? 'ticket'}${ob.projectKey ? ` in ${ob.projectKey}` : ''}`;
+    case 'create_event':
+      return `Added ${ob.title ?? 'an event'} to your calendar`;
+    case 'update_event':
+      return `Changed ${ob.title ?? 'an event'} in your calendar`;
+    case 'respond_to_event':
+      return `Replied ${ob.responseStatus ?? ''} to ${ob.title ?? 'an invite'}`.replace('  ', ' ');
+    default:
+      return `Sent an update${ob.audience ? ` to ${ob.audience}` : ''}`;
   }
 }

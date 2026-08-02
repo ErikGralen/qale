@@ -4,12 +4,9 @@ import { History, GitCommitHorizontal } from 'lucide-react';
 import type { NoteCommitDTO } from '@pm/ipc';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
+import { stripFrontmatter } from '../lib/frontmatter';
 import { Markdown } from './Markdown';
 
-/** Strip the leading frontmatter block (optional BOM) so the viewer shows just the prose. */
-function stripFrontmatter(raw: string): string {
-  return raw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim();
-}
 
 function shortDate(iso: string): string {
   const d = new Date(iso);

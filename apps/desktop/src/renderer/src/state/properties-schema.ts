@@ -14,27 +14,82 @@ import type { NoteType } from '@pm/ipc';
  *  form is never shown to the PO. */
 export type Widget = 'text' | 'textarea' | 'select' | 'tags' | 'date' | 'readonly' | 'people';
 
+export interface SelectOption {
+  value: string;
+  /** What the PO reads. Never the raw token. */
+  label: string;
+}
+
 export interface FieldSpec {
   key: string;
   label: string;
   widget: Widget;
-  options?: readonly string[];
+  options?: readonly SelectOption[];
 }
 
 const SUMMARY: FieldSpec = { key: 'summary', label: 'Summary', widget: 'textarea' };
 const TAGS: FieldSpec = { key: 'tags', label: 'Tags', widget: 'tags' };
-/** Generic lifecycle status — mirrors NOTE_STATUSES in @pm/domain (enum, never free text). */
-const STATUS: FieldSpec = {
-  key: 'status',
-  label: 'Status',
+
+/**
+ * Lifecycle rows. Each type carries its OWN lifecycle under its own name, so no
+ * two of them ever appear as "Status" (see NOTE_LIFECYCLES in @pm/domain, the
+ * authority these mirror). Values are enums, never free text.
+ */
+const PROCESSING: FieldSpec = {
+  key: 'processing',
+  label: 'Processing',
   widget: 'select',
-  options: ['new', 'processed', 'active', 'stale'],
+  options: [
+    { value: 'new', label: 'New' },
+    { value: 'processed', label: 'Processed' },
+    { value: 'stale', label: 'Stale' },
+  ],
+};
+const STANDING: FieldSpec = {
+  key: 'standing',
+  label: 'Standing',
+  widget: 'select',
+  options: [
+    { value: 'active', label: 'Active' },
+    { value: 'superseded', label: 'Superseded' },
+  ],
+};
+const RELATIONSHIP: FieldSpec = {
+  key: 'relationship',
+  label: 'Relationship',
+  widget: 'select',
+  options: [
+    { value: 'prospect', label: 'Prospect' },
+    { value: 'active', label: 'Active' },
+    { value: 'churned', label: 'Churned' },
+  ],
+};
+const COMMITMENT: FieldSpec = {
+  key: 'commitment',
+  label: 'Commitment',
+  widget: 'select',
+  options: [
+    { value: 'open', label: 'Open' },
+    { value: 'done', label: 'Done' },
+    { value: 'dropped', label: 'Dropped' },
+  ],
+};
+const STANCE: FieldSpec = {
+  key: 'stance',
+  label: 'Stance',
+  widget: 'select',
+  options: [
+    { value: 'exploring', label: 'Exploring' },
+    { value: 'watching', label: 'Watching' },
+    { value: 'committed', label: 'Committed' },
+    { value: 'wont-do', label: "Won't do" },
+  ],
 };
 
-export const FIELDS: Record<NoteType, FieldSpec[]> = {
+export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[] } = {
   source: [
     SUMMARY,
-    STATUS,
+    PROCESSING,
     { key: 'captured', label: 'Captured', widget: 'date' },
     { key: 'updated', label: 'Last synced', widget: 'date' },
     { key: 'origin', label: 'Origin (whose material)', widget: 'text' },
@@ -42,7 +97,7 @@ export const FIELDS: Record<NoteType, FieldSpec[]> = {
   ],
   meeting: [
     SUMMARY,
-    STATUS,
+    PROCESSING,
     { key: 'date', label: 'Date', widget: 'date' },
     { key: 'participants', label: 'Participants', widget: 'people' },
     { key: 'series', label: 'Series', widget: 'text' },
@@ -50,26 +105,35 @@ export const FIELDS: Record<NoteType, FieldSpec[]> = {
   ],
   decision: [
     SUMMARY,
-    { key: 'status', label: 'Status', widget: 'select', options: ['active', 'superseded'] },
+    STANDING,
     { key: 'date', label: 'Date', widget: 'date' },
     { key: 'deciders', label: 'Deciders', widget: 'people' },
     TAGS,
   ],
   insight: [
     SUMMARY,
-    STATUS,
-    { key: 'confidence', label: 'Confidence', widget: 'select', options: ['high', 'med', 'low'] },
+    PROCESSING,
+    {
+      key: 'confidence',
+      label: 'Confidence',
+      widget: 'select',
+      options: [
+        { value: 'high', label: 'High' },
+        { value: 'med', label: 'Medium' },
+        { value: 'low', label: 'Low' },
+      ],
+    },
     TAGS,
   ],
   customer: [
     SUMMARY,
-    { key: 'status', label: 'Status', widget: 'select', options: ['prospect', 'active', 'churned'] },
+    RELATIONSHIP,
     { key: 'segment', label: 'Segment', widget: 'text' },
     TAGS,
   ],
   theme: [
     SUMMARY,
-    { key: 'stance', label: 'Stance', widget: 'select', options: ['exploring', 'watching', 'committed', 'wont-do'] },
+    STANCE,
     TAGS,
   ],
   person: [
@@ -79,37 +143,45 @@ export const FIELDS: Record<NoteType, FieldSpec[]> = {
     { key: 'last_told', label: 'Last told', widget: 'date' },
     TAGS,
   ],
-  session: [SUMMARY, { key: 'session_type', label: 'Session type', widget: 'text' }],
+  session: [SUMMARY, { key: 'skill', label: 'Skill', widget: 'text' }],
   todo: [
     SUMMARY,
-    { key: 'status', label: 'Status', widget: 'select', options: ['open', 'done', 'dropped'] },
+    COMMITMENT,
     { key: 'due', label: 'Due', widget: 'date' },
     { key: 'owner', label: 'Waiting on', widget: 'text' },
     { key: 'resolved', label: 'Resolved', widget: 'date' },
     TAGS,
   ],
-  skill: [
-    SUMMARY,
-    { key: 'skill_kind', label: 'Kind', widget: 'select', options: ['session', 'voice', 'filing', 'guide', 'reaction'] },
-    TAGS,
-  ],
-  note: [SUMMARY, STATUS, TAGS],
+  // `skill` and `agent` have no entries: they render as purpose-built pages
+  // (SkillAgentPage), never through PropertiesBlock — the frontmatter is the
+  // app's machinery there, not something a person edits row by row.
+  note: [SUMMARY, PROCESSING, TAGS],
   // External mirrors: re-sync owns the delivery facts, so they display but
   // never edit (a hand-flipped state_category is exactly the drift the sync
   // exists to catch, and main rejects the write anyway). Only the PO's own
-  // summary/status/tags stay live.
+  // summary/processing/tags stay live.
   ticket: [
     SUMMARY,
-    STATUS,
+    PROCESSING,
     { key: 'state', label: 'State (as in tracker)', widget: 'readonly' },
-    { key: 'state_category', label: 'State category', widget: 'readonly' },
+    {
+      key: 'state_category',
+      label: 'State category',
+      widget: 'readonly',
+      options: [
+        { value: 'open', label: 'Open' },
+        { value: 'in_progress', label: 'In progress' },
+        { value: 'blocked', label: 'Blocked' },
+        { value: 'done', label: 'Done' },
+      ],
+    },
     { key: 'assignee', label: 'Assignee', widget: 'readonly' },
     { key: 'remote_updated', label: 'Changed upstream', widget: 'readonly' },
     TAGS,
   ],
   wikipage: [
     SUMMARY,
-    STATUS,
+    PROCESSING,
     { key: 'version', label: 'Version', widget: 'readonly' },
     { key: 'remote_updated', label: 'Changed upstream', widget: 'readonly' },
     TAGS,

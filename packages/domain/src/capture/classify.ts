@@ -20,6 +20,33 @@ export interface CaptureClassification {
 }
 
 const TRANSCRIPT_EXT = /\.(vtt|srt)$/i;
+
+/** Formats we can read as text, and as pixels. Everything else we refuse. */
+const READABLE_TEXT = /\.(md|markdown|txt|text|vtt|srt|csv|tsv|json|ya?ml|log|html?|xml)$/i;
+const READABLE_IMAGE = /\.(png|jpe?g|gif|webp)$/i;
+
+/**
+ * Can we honestly take this file? One source of truth for both sides of the
+ * IPC boundary, because guessing differently in the renderer and the main
+ * process is how a `.docx` ends up decoded as UTF-8 and filed as a note whose
+ * body starts with `PK` and runs for pages of mojibake.
+ *
+ * An extensionless file is assumed to be text and sniffed for NUL bytes where
+ * the content is actually available.
+ */
+export function readableAs(fileName: string): 'text' | 'image' | null {
+  if (READABLE_IMAGE.test(fileName)) return 'image';
+  if (READABLE_TEXT.test(fileName)) return 'text';
+  return /\.[a-z0-9]+$/i.test(fileName) ? null : 'text';
+}
+
+/** Why we are refusing it, in words the PO can act on. */
+export function unreadableReason(fileName: string): string {
+  const ext = /\.([a-z0-9]+)$/i.exec(fileName)?.[1]?.toLowerCase();
+  if (ext === 'docx' || ext === 'doc' || ext === 'pages') return `.${ext} — save it as .txt or .md`;
+  if (ext === 'pdf') return '.pdf can’t be read yet';
+  return ext ? `.${ext} can’t be read yet` : 'not readable text';
+}
 const URL_LINE = /^https?:\/\/\S+$/;
 const URL_ANYWHERE = /https?:\/\/\S+/;
 /** "Anna: we should…" / "ERIK GRALÉN: …" — a speaker turn at line start. */
@@ -27,11 +54,19 @@ const SPEAKER_TURN = /^[\p{L}][\p{L} .'’-]{1,39}:\s+\S/u;
 const TIMESTAMP = /(?:^|[\s[(])\d{1,2}:\d{2}(?::\d{2})?(?:[\s\])]|$)/;
 
 function cleanTitle(line: string): string {
-  return line
+  const clean = line
     .replace(/^#+\s*/, '')
     .replace(/^[>*-]\s*/, '')
-    .trim()
-    .slice(0, 80);
+    .trim();
+  if (clean.length <= 80) return clean;
+  // This string becomes the note's summary, so cut it where a reader would.
+  // A sentence that ends inside the window is the best title we will get; a
+  // word boundary is the fallback. "…the September release. They" is
+  // truncation damage — "…the September release" is a title.
+  const cut = clean.slice(0, 80);
+  const sentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+  const at = sentence > 40 ? sentence : cut.lastIndexOf(' ') > 40 ? cut.lastIndexOf(' ') : 80;
+  return cut.slice(0, at).replace(/[\s.,;:—-]+$/, '');
 }
 
 function hostOf(url: string): string {

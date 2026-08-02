@@ -1,8 +1,8 @@
 ---
 type: wikipage
-summary: "Enterprise Onboarding — the Confluence runbook for enterprise tenants; still describes the pre-deferral SCIM plan"
+summary: "Enterprise Onboarding: the Confluence runbook for enterprise tenants; still describes the pre-deferral SCIM plan"
 title: Enterprise Onboarding
-status: active
+processing: processed
 provider: confluence
 external_id: "910231"
 container: Product

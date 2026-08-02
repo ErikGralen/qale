@@ -6,7 +6,7 @@ import { useApp } from '../../state/app-state';
 
 /**
  * The fan-out approval card (Sessions v2 Part 2) — the only moment the PM steers
- * before money is spent. Inline in the chat, same vocabulary as the other
+ * before money is spent. Inline in the session, same vocabulary as the other
  * approval cards, deliberately **not a modal**: a fan-out is a cheap yes, and a
  * modal would teach the PM to dread it.
  *

@@ -13,16 +13,22 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
   private sessionId: string | undefined;
 
   constructor(
-    private readonly sessionType: string = 'chat',
+    /**
+     * The skill this conversation opens on, when it was started from a tile or
+     * an entry-point button. Spent on the first send: it is an instruction for
+     * the first turn, not a property of the conversation. A picked skill on that
+     * same turn overrides it — the PM's later choice wins.
+     */
+    private openingSkill?: string,
     initialSessionId?: string,
     /** Fired once when the main process assigns the conversation its id. */
     private readonly onSessionId?: (sessionId: string) => void,
     /**
-     * Skill the PM picked for the NEXT turn (Sessions v2 explicit invocation).
-     * Read fresh on each send and cleared by the caller once it lands, so the
-     * pick applies to one turn rather than sticking to the transport.
+     * Skill the PM picked for the NEXT turn. Read fresh on each send and cleared
+     * by the caller once it lands, so the pick applies to one turn rather than
+     * sticking to the transport.
      */
-    private readonly takeInvokeSkill?: () => string | undefined,
+    private readonly takePickedSkill?: () => string | undefined,
   ) {
     this.sessionId = initialSessionId;
   }
@@ -60,11 +66,12 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
         });
 
         try {
+          const skill = this.takePickedSkill?.() ?? this.openingSkill;
+          this.openingSkill = undefined;
           const handle = await invoke['agent:run']({
-            sessionType: this.sessionType,
             sessionId: this.sessionId,
             prompt,
-            invokeSkill: this.takeInvokeSkill?.(),
+            ...(skill ? { skill } : {}),
           });
           this.sessionId = handle.sessionId;
           // Reported on every run, not just id changes — the shell also uses

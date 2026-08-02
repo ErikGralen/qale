@@ -1,11 +1,14 @@
 import type { UseCaseContext } from '@pm/application';
+import { buildKickoff } from '@pm/sessions';
+import { MAINTENANCE_TICK_MS } from '../agents.js';
 import type { SettingsService } from './settings-service.js';
 
 /**
  * The app-open scheduler (PLAN-V2 §3.5): fires scheduled sessions on their weekly
- * slot while the app runs, catching up missed slots on launch. It also runs the
- * earned auto-apply pass each tick. A desktop scheduler only runs while the app is
- * open — catch-up-on-launch is the honest v1 (no "overnight" promise).
+ * slot while the app runs, catching up missed slots on launch, and drives the two
+ * per-tick sweeps (maintenance, before-meeting prep). Nothing here applies a card:
+ * every proposal still goes through the Inbox. A desktop scheduler only runs while
+ * the app is open — catch-up-on-launch is the honest v1 (no "overnight" promise).
  */
 export class SchedulerService {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -13,19 +16,27 @@ export class SchedulerService {
   constructor(
     private readonly getContext: () => UseCaseContext | null,
     private readonly settings: SettingsService,
-    private readonly fireSession: (sessionType: string, prompt: string) => Promise<void>,
+    private readonly fireSession: (
+      skill: string,
+      prompt: string,
+      opts?: { scheduled?: boolean },
+    ) => Promise<void>,
     private readonly onChanged: () => void,
-    /** Librarian maintenance pass (ping sweep) — runs each tick, errors swallowed. */
+    /** Maintenance pass (connector sync, then the librarian sweep) — runs each
+     *  tick, errors swallowed. */
     private readonly maintenance?: () => void,
-    /** Before-meeting auto-prep: synced meetings starting within the hour get
-     *  their brief prepared on the meeting page. Runs each tick, errors swallowed. */
+    /** Before-meeting auto-prep (the `meeting-prep` agent): synced meetings
+     *  starting within its lead window get their brief prepared on the meeting
+     *  page. Runs each tick, errors swallowed. */
     private readonly beforeMeetingSweep?: () => Promise<void> | void,
   ) {}
 
   start(): void {
     if (this.timer) return; // idempotent
     void this.tick(); // catch-up on launch
-    this.timer = setInterval(() => void this.tick(), 5 * 60 * 1000);
+    // The same constant the librarian's `interval` trigger shows the PM — the
+    // clock and its description are one number, in agents.ts.
+    this.timer = setInterval(() => void this.tick(), MAINTENANCE_TICK_MS);
   }
 
   stop(): void {
@@ -33,9 +44,13 @@ export class SchedulerService {
     this.timer = null;
   }
 
-  /** Fire a session immediately (dry-run / run-now). */
-  async runNow(sessionType: string): Promise<void> {
-    await this.fireSession(sessionType, defaultPrompt(sessionType));
+  /**
+   * Fire a session immediately (dry-run / run-now). Deliberately NOT marked
+   * scheduled: the PM pressed a button and is watching for something to happen,
+   * so this run owes them a receipt and a row even if it found nothing.
+   */
+  async runNow(skill: string): Promise<void> {
+    await this.fireSession(skill, defaultPrompt(skill));
     this.onChanged();
   }
 
@@ -47,8 +62,11 @@ export class SchedulerService {
       if (!s.enabled) continue;
       const slot = mostRecentSlot(now, s.dayOfWeek, s.hour);
       if (!s.lastRun || new Date(s.lastRun) < slot) {
-        await this.settings.setSchedule(s.sessionType, { lastRun: now.toISOString() });
-        await this.fireSession(s.sessionType, defaultPrompt(s.sessionType)).catch((err) =>
+        await this.settings.setSchedule(s.skill, { lastRun: now.toISOString() });
+        // The clock started this one, so it is allowed to end with nothing (QM
+        // ticket 2): a weekly pass with no new material leaves no receipt, no
+        // Sessions row and no badge, only a line on the agent's own page.
+        await this.fireSession(s.skill, defaultPrompt(s.skill), { scheduled: true }).catch((err) =>
           console.error('[pm] scheduled session failed:', err),
         );
       }
@@ -61,7 +79,7 @@ export class SchedulerService {
     try {
       this.maintenance?.();
     } catch (err) {
-      console.error('[pm] ping sweep failed:', err);
+      console.error('[pm] maintenance pass failed:', err);
     }
 
     // Time-aware auto-prep: reads the (previous tick's) shallow event index and
@@ -86,9 +104,10 @@ export function mostRecentSlot(now: Date, dayOfWeek: number, hour: number): Date
   return slot;
 }
 
-function defaultPrompt(sessionType: string): string {
-  if (sessionType === 'weekly-update') {
-    return 'Produce this week\'s update. Read the week\'s deltas (the "This week" scope) and draft per-audience updates (exec, CS, team) as approval cards, every claim cited. If nothing material changed, say so and produce nothing.';
-  }
-  return `Run the ${sessionType} session.`;
+function defaultPrompt(skill: string): string {
+  const instruction =
+    skill === 'weekly-update'
+      ? 'produce this week\'s update. Read the week\'s deltas (the "This week" scope) and draft per-audience updates (exec, CS, team) as approval cards, every claim cited. If nothing material changed, end quietly rather than writing an update that says so.'
+      : '';
+  return buildKickoff({ skill, instruction });
 }

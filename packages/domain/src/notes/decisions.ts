@@ -4,7 +4,7 @@ import type { DecisionFrontmatter } from './frontmatter.js';
 /**
  * Decision supersedes-chains (PLAN-V2 §3.1, risk §6). Decisions are the append-
  * only spine: superseding one creates a NEW file with a `supersedes` back-pointer
- * and flips the old file's `status` to `superseded` (+ a `superseded_by` forward
+ * and flips the old file's `standing` to `superseded` (+ a `superseded_by` forward
  * pointer). Bodies are never edited. These helpers walk and validate the chain;
  * cycle/lineage guards live here so a corrupted chain is caught at write time,
  * not excavated later.
@@ -100,7 +100,7 @@ export function checkSupersede(
   if (!target) {
     return { allowed: false, reason: `decision to supersede not found: ${targetSlug}` };
   }
-  if (target.frontmatter.status === 'superseded' || target.frontmatter.superseded_by) {
+  if (target.frontmatter.standing === 'superseded' || target.frontmatter.superseded_by) {
     const by = refToSlug(target.frontmatter.superseded_by);
     return {
       allowed: false,

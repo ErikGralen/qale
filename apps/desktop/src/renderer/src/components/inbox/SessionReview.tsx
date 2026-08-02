@@ -7,7 +7,7 @@ import { CardItem } from './CardItem';
 import { orderCards } from './cardMeta';
 
 /**
- * The in-session review (the "chat-focused" path): the cards a session just
+ * The in-session review (the session-focused path): the cards a session just
  * proposed, approvable right where they were produced instead of only in the
  * Inbox. The PO just had the meeting — they can rip through the changes without
  * a context hop. Same cards, same order as the Inbox; approving here or there

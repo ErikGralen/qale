@@ -1,261 +1,358 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parseSkill,
+  parseRunnable,
+  governs,
+  describeStarts,
   buildSystemPrompt,
-  bindingMatches,
   SessionHarness,
   buildSessionReceipt,
   ARRIVAL_SKILL,
+  LIBRARIAN_AGENT,
+  MEETING_PREP_AGENT,
   ASK_SKILL,
   WEEKLY_UPDATE_SKILL,
   CHAT_SKILL,
   SYNTHESIS_SKILL,
-  PROCESS_NOTE_SKILL,
+  VOICE_EXEC,
+  FILING_RULES,
   DEFAULT_SKILL_BY_NAME,
-  isDynamicSkill,
   DEFAULT_SKILLS,
+  DEFAULT_AGENTS,
   RETIRED_SKILL_FILES,
   buildSkillBrief,
+  buildKickoff,
+  parseKickoff,
 } from '../src/index.js';
 
-test('parseSkill reads frontmatter + When/Read/Produce/Then', () => {
-  const c = parseSkill(ARRIVAL_SKILL, 'arrival');
-  assert.equal(c.name, 'arrival');
-  // The FILE's tier is the floor; each triggered binding names the tier its
-  // material gets (Sessions v2 Part 5).
-  assert.equal(c.tier, 'suggest');
-  assert.deepEqual(c.checkpoints, ['digest', 'delta']);
-  assert.equal(c.gateOutput, true);
-  assert.ok(c.when && /landed/i.test(c.when));
-  assert.ok(c.produce && /truth delta/i.test(c.produce));
-  assert.ok(c.guardrails.completionBar && /cite/i.test(c.guardrails.completionBar));
-  assert.equal(c.guardrails.stoppingConditions.length, 2);
-  assert.equal(c.guardrails.redFlags.length, 4);
-});
-
-test('the LAST section of a skill body is captured (regression: \\Z is not a JS anchor)', () => {
-  const raw = `---\ntype: skill\nsession_type: t\nsummary: s\n---\n## When\nDo it when X.\n\n## Then\nProduce Y.\n`;
-  const c = parseSkill(raw, 't');
-  assert.equal(c.when, 'Do it when X.');
-  assert.equal(c.then, 'Produce Y.');
-  // every shipped skill ends with ## Then — none may lose it
-  for (const [type, skill] of Object.entries(DEFAULT_SKILL_BY_NAME)) {
-    const parsed = parseSkill(skill, type);
-    if (/^##\s*Then/im.test(skill)) assert.ok(parsed.then, `${type} lost its ## Then section`);
-  }
-});
-
-test('ask skill is observe-tier with no checkpoints', () => {
-  const c = parseSkill(ASK_SKILL, 'ask');
-  assert.equal(c.tier, 'observe');
-  assert.equal(c.checkpoints.length, 0);
-  assert.equal(c.gateOutput, false);
-});
-
-test('buildSystemPrompt composes preamble + sections + guardrails', () => {
-  const c = parseSkill(ARRIVAL_SKILL, 'arrival');
+test('the instructions are the whole body, verbatim — nothing is dropped for lacking a heading', () => {
+  const raw = `---\ntype: skill\nsummary: s\n---\nJust prose. No headings at all.\n\nA second paragraph.\n`;
+  const c = parseRunnable(raw, 'plain');
   const p = buildSystemPrompt('PREAMBLE', c);
   assert.ok(p.startsWith('PREAMBLE'));
+  assert.ok(p.includes('Just prose. No headings at all.'));
+  assert.ok(p.includes('A second paragraph.'));
+  // The regression this whole model exists to prevent: a file written as plain
+  // prose used to reach the model as an empty prompt.
+  assert.ok(!/^PREAMBLE\s*$/.test(p));
+});
+
+test('a file with headings keeps them — they are prose now, not a schema', () => {
+  const c = parseRunnable(ARRIVAL_SKILL, 'arrival');
+  const p = buildSystemPrompt('PRE', c);
   assert.ok(p.includes('## When'));
   assert.ok(p.includes('## Produce'));
-  assert.ok(p.includes('digest → delta'));
-  assert.ok(p.includes('Completion bar:'));
-  assert.ok(p.includes('advance_checkpoint'));
+  // And every word between them, in file order.
+  assert.equal(p, `PRE\n\n${c.body.trim()}`);
 });
 
-test('harness gate: locked until a checkpoint is advanced', () => {
-  const c = parseSkill(ARRIVAL_SKILL, 'arrival');
-  const h = new SessionHarness('sess-1', c, '2026-07-15T09:00:00Z');
-  assert.equal(h.canPropose(), false); // gated skill, no checkpoint yet
-  h.advanceCheckpoint('digest');
-  assert.equal(h.canPropose(), true);
-  assert.equal(h.reachedCheckpoint, 'digest');
-  // monotonic: advancing to a later checkpoint moves forward, not back
-  h.advanceCheckpoint('delta');
-  assert.equal(h.reachedCheckpoint, 'delta');
-  h.advanceCheckpoint('digest');
-  assert.equal(h.reachedCheckpoint, 'delta');
+test('starts: what puts a file in force, defaulting to reachable', () => {
+  assert.deepEqual(parseRunnable(ASK_SKILL, 'ask').starts, ['you-run-it', 'model-picks-it-up']);
+  assert.deepEqual(parseRunnable(VOICE_EXEC, 'voice-exec').starts, ['always']);
+  assert.equal(parseRunnable(VOICE_EXEC, 'voice-exec').audience, 'executives');
+  assert.deepEqual(parseRunnable(FILING_RULES, '_filing-rules').starts, ['always']);
+  // A file that says nothing is one you can run — never silently unreachable.
+  const bare = parseRunnable(`---\ntype: skill\nsummary: s\n---\nX.\n`, 't');
+  assert.deepEqual(bare.starts, ['you-run-it', 'model-picks-it-up']);
+  assert.deepEqual(bare.errors, []);
 });
 
-test('un-gated skill can always propose', () => {
-  const c = parseSkill(ASK_SKILL, 'ask');
-  const h = new SessionHarness('s', c, '2026-07-15T09:00:00Z');
-  assert.equal(h.canPropose(), true);
+test('an unknown start is flagged and dropped, and the file stays reachable', () => {
+  const junk = parseRunnable(`---\ntype: skill\nstarts: [whenever]\nsummary: s\n---\nX.\n`, 't');
+  assert.ok(junk.errors.some((e) => /unknown starts "whenever"/.test(e)));
+  assert.deepEqual(junk.starts, ['you-run-it', 'model-picks-it-up']);
 });
 
-test('gate_output without checkpoints is ignored, flagged, and never locks', () => {
-  const raw = `---\ntype: skill\nsession_type: t\nsummary: s\ngate_output: true\n---\n## When\nx\n`;
-  const c = parseSkill(raw, 't');
-  assert.equal(c.gateOutput, false);
-  assert.ok(c.errors.some((e) => /gate_output needs checkpoints/.test(e)));
-  const h = new SessionHarness('s', c, '2026-07-15T09:00:00Z');
-  assert.equal(h.canPropose(), true);
+test('governs: material is read, everything else takes over the session', () => {
+  const ref = parseRunnable(`---\ntype: skill\nstarts: [read-when-relevant]\nsummary: s\n---\nX.\n`, 'g');
+  assert.equal(governs(ref), false);
+  assert.equal(describeStarts(ref), 'The agent reads it when it becomes relevant.');
+  assert.equal(governs(parseRunnable(SYNTHESIS_SKILL, 'synthesis')), true);
+  assert.equal(describeStarts(parseRunnable(VOICE_EXEC, 'voice-exec')), 'Always applied when drafting for executives.');
 });
 
-test('no shipped default skill can gate-lock itself', () => {
-  for (const [type, raw] of Object.entries(DEFAULT_SKILL_BY_NAME)) {
-    const c = parseSkill(raw, type);
-    assert.deepEqual(c.errors, [], `${type} has frontmatter errors: ${c.errors.join('; ')}`);
-    if (c.gateOutput) assert.ok(c.checkpoints.length > 0, `${type} gates without checkpoints`);
+test('can: capabilities are a list, and the floor is empty', () => {
+  assert.deepEqual(parseRunnable(ASK_SKILL, 'ask').can, []);
+  assert.deepEqual(parseRunnable(WEEKLY_UPDATE_SKILL, 'weekly-update').can, ['draft-outbound']);
+  assert.deepEqual(parseRunnable(SYNTHESIS_SKILL, 'synthesis').can, ['draft-outbound', 'keep-working-files']);
+  const junk = parseRunnable(`---\ntype: skill\ncan: [rm-rf]\nsummary: s\n---\nX.\n`, 't');
+  assert.deepEqual(junk.can, [], 'a typo must never read as a capability');
+  assert.ok(junk.errors.some((e) => /unknown can "rm-rf"/.test(e)));
+});
+
+test('a file written before this vocabulary keeps working, and says what to change', () => {
+  // A workspace is seeded once: old files sit on disk everywhere. Dropping
+  // their config would quietly turn a house rule into a playbook nobody runs.
+  const old = parseRunnable(
+    `---\ntype: skill\nuse: always\naudience: executives\nsummary: s\n---\nX.\n`,
+    'voice',
+  );
+  assert.deepEqual(old.starts, ['always'], 'still a house rule');
+  assert.equal(old.audience, 'executives');
+  assert.ok(old.errors.some((e) => /`use` moved/.test(e)));
+
+  const ref = parseRunnable(`---\ntype: skill\nuse: reference\nsummary: s\n---\nX.\n`, 'g');
+  assert.equal(governs(ref), false);
+
+  const caps = parseRunnable(
+    `---\ntype: skill\noutbound: true\nsession_files: true\nsummary: s\n---\nX.\n`,
+    'w',
+  );
+  assert.deepEqual(caps.can, ['draft-outbound', 'keep-working-files'], 'permissions survive');
+  assert.ok(caps.errors.some((e) => /`outbound: true` moved/.test(e)));
+
+  // An explicit `starts` wins over a stale `use` — the new key is the answer.
+  const both = parseRunnable(
+    `---\ntype: skill\nuse: always\nstarts: [you-run-it]\nsummary: s\n---\nX.\n`,
+    'b',
+  );
+  assert.deepEqual(both.starts, ['you-run-it']);
+});
+
+test('keys whose machinery is gone are flagged and honour nothing', () => {
+  const raw = [
+    '---',
+    'type: skill',
+    'summary: s',
+    'use: playbook',
+    'outbound: true',
+    'session_files: true',
+    'checkpoints: [a, b]',
+    'gate_output: true',
+    'completion_bar: every line cited',
+    'red_flags:',
+    '  - guessing',
+    'stopping_conditions:',
+    '  - nothing changed',
+    'on:',
+    '  - event: capture.transcript',
+    'skill_kind: voice',
+    'tier: suggest',
+    'bindings:',
+    '  - mode: forced',
+    '---',
+    'X.',
+  ].join('\n');
+  const c = parseRunnable(raw, 'legacy');
+  for (const key of [
+    'use', 'outbound', 'session_files', 'checkpoints', 'gate_output',
+    'completion_bar', 'red_flags', 'stopping_conditions', 'on', 'skill_kind', 'tier', 'bindings',
+  ]) {
+    assert.ok(c.errors.some((e) => e.includes(key)), `${key} was not flagged`);
   }
 });
 
-test('unknown tier is flagged and falls back to suggest', () => {
-  const c = parseSkill(`---\ntype: skill\ntier: outbund\nsummary: s\n---\n`, 't');
-  assert.equal(c.tier, 'suggest');
-  assert.ok(c.errors.some((e) => /unknown tier/.test(e)));
+test('audience only means something on an always-on rule', () => {
+  const stray = parseRunnable(`---\ntype: skill\naudience: executives\nsummary: s\n---\nX.\n`, 't');
+  assert.ok(stray.errors.some((e) => /audience/.test(e)));
 });
 
-test('triggered binding without session_type is flagged', () => {
-  const raw = `---\ntype: skill\nsummary: s\nbindings:\n  - mode: triggered\n    event: decision.superseded\n---\n`;
-  const c = parseSkill(raw, 'skills/my-check');
-  assert.ok(c.errors.some((e) => /requires an explicit session_type/.test(e)));
+test('title is the human name; the filename is only the fallback', () => {
+  assert.equal(parseRunnable(SYNTHESIS_SKILL, 'synthesis').title, 'Find the pattern');
+  // No title: the filename, made readable — never a path, even if the caller
+  // hands over a vault slug (the picker used to render "skills/synthesis").
+  const bare = `---\ntype: skill\nsummary: s\n---\nX.\n`;
+  assert.equal(parseRunnable(bare, 'before-meeting').title, 'Before meeting');
+  assert.equal(parseRunnable(bare, 'skills/before-meeting').title, 'Before meeting');
+  for (const [name, skill] of Object.entries(DEFAULT_SKILL_BY_NAME)) {
+    const { title } = parseRunnable(skill, name);
+    assert.ok(title && !title.includes('/'), `${name} has no readable title`);
+  }
 });
 
-test('triggered binding on a non-session kind is flagged', () => {
-  const raw = `---\ntype: skill\nskill_kind: voice\nsession_type: v\nsummary: s\nbindings:\n  - mode: triggered\n    event: decision.superseded\n---\n`;
-  const c = parseSkill(raw, 'v');
-  assert.ok(c.errors.some((e) => /never fires/.test(e)));
+test('a file is named by its file, not by its frontmatter', () => {
+  const c = parseRunnable(`---\ntype: skill\nsummary: s\n---\nX.\n`, 'my-check');
+  assert.equal(c.name, 'my-check');
+  assert.deepEqual(c.errors, []);
 });
 
-test('note.stale is no longer a known event', () => {
-  const raw = `---\ntype: skill\nsession_type: t\nsummary: s\nbindings:\n  - mode: triggered\n    event: note.stale\n---\n`;
-  const c = parseSkill(raw, 't');
-  assert.equal(c.bindings.length, 0);
-  assert.ok(c.errors.some((e) => /known event/.test(e)));
+test('enabled: false is the off switch; absent means on', () => {
+  const off = parseRunnable(`---\ntype: agent\nsummary: s\nenabled: false\n---\nX.\n`, 'a');
+  assert.equal(off.enabled, false);
+  assert.equal(parseRunnable(LIBRARIAN_AGENT, 'librarian').enabled, true);
 });
 
-test('one arrival skill routes every drop, and the MATERIAL sets its tier', () => {
-  const c = parseSkill(ARRIVAL_SKILL, 'arrival');
-  const firing = (event: 'capture.transcript' | 'capture.ingested', payload: Record<string, string>) =>
-    c.bindings.find((b) => bindingMatches(b, event, payload));
-
-  // The PM's own meeting may draft outbound; a colleague's sales call may not.
-  // That difference is a property of what landed, not of which mode was opened —
-  // and it is the tool set, not a rule the model has to remember (invariant 3).
-  assert.equal(firing('capture.transcript', { origin: 'po' })?.tier, 'outbound');
-  assert.equal(firing('capture.transcript', { origin: 'external' })?.tier, 'suggest');
-  assert.equal(firing('capture.ingested', { kind: 'link' })?.tier, 'suggest');
-  assert.equal(firing('capture.ingested', { kind: 'screenshot' })?.tier, 'suggest');
-  // A quick note still fires nothing by default.
-  assert.equal(firing('capture.ingested', { kind: 'note' }), undefined);
+test('agents are parsed by the same door as skills, and declare no clock', () => {
+  const lib = parseRunnable(LIBRARIAN_AGENT, 'librarian');
+  assert.deepEqual(lib.errors, []);
+  assert.ok(/repoint/i.test(lib.body));
+  const prep = parseRunnable(MEETING_PREP_AGENT, 'meeting-prep');
+  assert.deepEqual(prep.errors, []);
+  assert.ok(/ledger is empty/i.test(prep.body));
+  // The app holds the clock, so no shipped agent describes its own schedule —
+  // a sentence here would be a second copy of what code already decides.
+  for (const raw of [LIBRARIAN_AGENT, MEETING_PREP_AGENT]) {
+    assert.doesNotMatch(raw, /every 5 minutes/i);
+    assert.doesNotMatch(raw, /within the hour/i);
+  }
 });
 
-test('an unknown binding tier is flagged rather than silently granting one', () => {
-  const raw = `---\ntype: skill\nsession_type: t\nsummary: s\nbindings:\n  - mode: triggered\n    event: capture.ingested\n    tier: godmode\n---\n`;
-  const c = parseSkill(raw, 't');
-  assert.equal(c.bindings[0]?.tier, undefined);
-  assert.ok(c.errors.some((e) => /unknown tier/.test(e)));
+test('no shipped default carries a frontmatter error, and every one has instructions', () => {
+  // Both registries, because they overlap without either containing the other:
+  // the always-on files ship without being invocable, so checking only the
+  // by-name registry would let a broken house rule reach a workspace and
+  // surface as a red flag on the Skills page instead of a red test.
+  const shipped: [string, string][] = [
+    ...Object.entries(DEFAULT_SKILL_BY_NAME),
+    ...[...DEFAULT_SKILLS, ...DEFAULT_AGENTS].map(({ file, content }): [string, string] => [file, content]),
+  ];
+  for (const [name, raw] of shipped) {
+    const c = parseRunnable(raw, name);
+    assert.deepEqual(c.errors, [], `${name} has frontmatter errors: ${c.errors.join('; ')}`);
+    assert.ok(c.body.trim().length > 0, `${name} has no instructions`);
+  }
 });
 
-test('interview-synthesis is gone from the pack — insights no longer arrive automatically', () => {
-  assert.equal(DEFAULT_SKILL_BY_NAME['interview-synthesis'], undefined);
-  assert.equal(DEFAULT_SKILL_BY_NAME['after-meeting'], undefined);
-  assert.equal(DEFAULT_SKILL_BY_NAME['external-transcript'], undefined);
-  assert.equal(DEFAULT_SKILL_BY_NAME['intake'], undefined);
-  assert.ok(DEFAULT_SKILL_BY_NAME['arrival']);
-  const files = DEFAULT_SKILLS.map((s) => s.file);
-  for (const gone of RETIRED_SKILL_FILES) assert.ok(!files.includes(gone), `${gone} is still shipped`);
+test('ask and chat dissolved into built-ins: resolvable by name, never shipped as files', () => {
+  assert.ok(DEFAULT_SKILL_BY_NAME['ask']);
+  assert.ok(DEFAULT_SKILL_BY_NAME['chat']);
+  const files = [...DEFAULT_SKILLS, ...DEFAULT_AGENTS].map((s) => s.file);
+  assert.ok(!files.some((f) => f.startsWith('skills/ask/')));
+  assert.ok(!files.some((f) => f.startsWith('skills/chat/')));
+  // Arrival ships as a skill again — the pipeline invokes it, no trigger needed.
+  assert.ok(files.includes('skills/arrival/SKILL.md'));
+  // The roster of self-starting agents: the librarian and meeting prep.
+  assert.ok(files.includes('agents/librarian/AGENT.md'));
+  assert.ok(files.includes('agents/meeting-prep/AGENT.md'));
+  // Every shipped file is a folder entry: one layout, no exceptions.
+  for (const f of files) assert.ok(/^(skills|agents)\/[^/]+\/(SKILL|AGENT)\.md$/.test(f), f);
+  // Retired files are named in the layout they were shipped in; seeding removes
+  // both forms (see ensureDefaultSkills), so what matters is that none is back.
+  for (const gone of RETIRED_SKILL_FILES) {
+    const folder = gone.replace(/\.md$/, '');
+    assert.ok(!files.some((f) => f.startsWith(`${folder}/`)), `${gone} is still shipped`);
+  }
+});
+
+test('old names still resolve: before-meeting is an alias for meeting-prep', () => {
+  assert.equal(DEFAULT_SKILL_BY_NAME['before-meeting'], MEETING_PREP_AGENT);
 });
 
 test('receipt records reads, writes and turns', () => {
-  const c = parseSkill(ARRIVAL_SKILL, 'arrival');
+  const c = parseRunnable(ARRIVAL_SKILL, 'arrival');
   const h = new SessionHarness('abcd1234ef', c, '2026-07-15T09:00:00Z');
   h.beginTurn('Run After-Meeting on meetings/acme.md', '2026-07-15T09:00:00Z');
   h.recordRead('meetings/acme.md');
   h.recordRead('customers/acme-co.md');
-  h.advanceCheckpoint('delta');
   h.recordWrite('decisions/adopt-x.md', 'p_1', 'decision');
   const r = buildSessionReceipt(h, '2026-07-15T09:05:00Z');
   assert.ok(r.path.startsWith('sessions/2026-07-15-'));
   assert.equal(r.frontmatter.type, 'session');
-  assert.equal(r.frontmatter.session_type, 'arrival');
+  assert.equal(r.frontmatter.skill, 'arrival');
   assert.deepEqual(r.frontmatter.reads, ['[[meetings/acme]]', '[[customers/acme-co]]']);
   assert.deepEqual(r.frontmatter.writes, ['[[decisions/adopt-x]]']);
-  assert.ok(r.body.includes('Reached checkpoint: **delta**'));
   assert.ok(r.body.includes('decision: [[decisions/adopt-x]] (p_1)'));
 });
 
 // --- Sessions v2 Part 3: skills arrive, they aren't a mode you're locked in ---
 
-test('isDynamicSkill: guides always, others only with a dynamic binding', () => {
-  assert.equal(isDynamicSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis')), true);
-  assert.equal(isDynamicSkill(parseSkill(PROCESS_NOTE_SKILL, 'process-note')), true);
-  assert.equal(isDynamicSkill(parseSkill(ARRIVAL_SKILL, 'arrival')), false);
-  const guide = `---\ntype: skill\nskill_kind: guide\nsummary: A checklist\n---\n\nCheck the thing.\n`;
-  assert.equal(isDynamicSkill(parseSkill(guide, 'a-checklist')), true);
-});
-
-test('buildSkillBrief: a session skill arrives as rules in force, a guide as prose', () => {
-  const brief = buildSkillBrief(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
+test('buildSkillBrief: a playbook arrives as rules in force, material as prose', () => {
+  const brief = buildSkillBrief(parseRunnable(SYNTHESIS_SKILL, 'synthesis'));
   assert.match(brief, /Skill now in force: synthesis/);
   assert.match(brief, /govern the rest of this conversation/);
   assert.match(brief, /## Produce/);
-  const guide = `---\ntype: skill\nskill_kind: guide\nsummary: A checklist\n---\n\nCheck the thing.\n`;
-  const g = buildSkillBrief(parseSkill(guide, 'a-checklist'));
-  assert.match(g, /## Guide: A checklist/);
+  const ref = `---\ntype: skill\nstarts: [read-when-relevant]\nsummary: A checklist\n---\n\nCheck the thing.\n`;
+  const g = buildSkillBrief(parseRunnable(ref, 'a-checklist'));
+  assert.match(g, /## Reference: A checklist/);
   assert.match(g, /Check the thing\./);
   assert.doesNotMatch(g, /in force/);
 });
 
-test('an arriving skill brings its tier, checkpoints and gate — and resets the counter', () => {
-  const chat = parseSkill(CHAT_SKILL, 'chat');
+test('an arriving skill brings its capabilities', () => {
+  const chat = parseRunnable(CHAT_SKILL, 'chat');
   const h = new SessionHarness('s1', chat, '2026-07-28T09:00:00Z');
-  assert.equal(h.tier, 'observe');
-  assert.deepEqual(h.checkpoints, []);
-  assert.equal(h.canPropose(), true, 'un-gated base skill proposes freely');
+  assert.equal(h.outbound, false);
 
-  h.invokeSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
-  assert.equal(h.tier, 'outbound', 'arrival adds permissions');
+  h.invokeSkill(parseRunnable(SYNTHESIS_SKILL, 'synthesis'));
+  assert.equal(h.outbound, true, 'arrival adds permissions');
   assert.equal(h.sessionFiles, true, 'and its working files');
-  assert.deepEqual(h.checkpoints, ['scope', 'read', 'cluster', 'draft']);
-  assert.equal(h.gateOutput, true);
-  assert.equal(h.canPropose(), false, 'the arriving gate locks output');
-  h.advanceCheckpoint('scope');
-  assert.equal(h.canPropose(), true);
+  assert.equal(h.grants('draft-outbound'), true);
   assert.equal(h.activeSkillName, 'synthesis', 'cards are tagged with the skill that made them');
   assert.deepEqual(h.skillNames, ['chat', 'synthesis']);
 });
 
-test('a checkpoint recorded against the old plan cannot unlock a newly arrived gate', () => {
-  const arrival = parseSkill(ARRIVAL_SKILL, 'arrival');
-  const h = new SessionHarness('s2', arrival, '2026-07-28T09:00:00Z');
-  h.advanceCheckpoint('digest');
-  assert.equal(h.canPropose(), true);
-  h.invokeSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
-  assert.equal(h.canPropose(), false);
-  assert.equal(h.reachedCheckpoint, null);
+test('the switch is a floor, so it is deliberately outside the composing OR', () => {
+  const off = SYNTHESIS_SKILL.replace('type: skill', 'type: skill\nenabled: false');
+  const cfg = parseRunnable(off, 'synthesis');
+  assert.equal(cfg.enabled, false);
+  // Still parsed in full. The floor is enforced before a session is fired
+  // (runnableEnabled, @pm/application), never by quietly emptying `can`: a file
+  // whose capabilities vanished when it was switched off would show the PM a
+  // page claiming it does less than it does.
+  assert.deepEqual(cfg.can, ['draft-outbound', 'keep-working-files']);
+  // And the harness composes capabilities ONLY. Teaching grants() about the
+  // switch would move a floor into the one path that widens, where the next
+  // arrival's OR could climb back over it.
+  const h = new SessionHarness('s4', parseRunnable(CHAT_SKILL, 'chat'), '2026-07-28T09:00:00Z');
+  h.invokeSkill(cfg);
+  assert.equal(h.grants('draft-outbound'), true);
 });
 
-test('an observe-tier arrival never strips permissions the session already had', () => {
-  const weekly = parseSkill(WEEKLY_UPDATE_SKILL, 'weekly-update');
+test('a quieter arrival never strips permissions the session already had', () => {
+  const weekly = parseRunnable(WEEKLY_UPDATE_SKILL, 'weekly-update');
   const h = new SessionHarness('s3', weekly, '2026-07-28T09:00:00Z');
-  assert.equal(h.tier, 'outbound');
-  h.invokeSkill(parseSkill(ASK_SKILL, 'ask'));
-  assert.equal(h.tier, 'outbound');
+  assert.equal(h.outbound, true);
+  h.invokeSkill(parseRunnable(ASK_SKILL, 'ask'));
+  assert.equal(h.outbound, true);
 });
 
 test('the receipt records every skill that was in force, not just the opener', () => {
-  const h = new SessionHarness('abcd1234ef', parseSkill(CHAT_SKILL, 'chat'), '2026-07-28T09:00:00Z');
+  const h = new SessionHarness('abcd1234ef', parseRunnable(CHAT_SKILL, 'chat'), '2026-07-28T09:00:00Z');
   h.beginTurn('what do these nine interviews add up to?', '2026-07-28T09:00:00Z');
-  h.invokeSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
+  h.invokeSkill(parseRunnable(SYNTHESIS_SKILL, 'synthesis'));
   const r = buildSessionReceipt(h, '2026-07-28T09:30:00Z');
   // The receipt is named for what the session was ABOUT — the first skill that
   // arrived — not the base every session opens with.
-  assert.equal(r.frontmatter.session_type, 'synthesis');
+  assert.equal(r.frontmatter.skill, 'synthesis');
   assert.ok(r.path.includes('-synthesis-'));
   assert.deepEqual(r.frontmatter.skills, ['chat', 'synthesis']);
   assert.ok(r.body.includes('Skills: chat → synthesis'));
 });
 
 test('a skill invoked on a later turn does not rename an already-filed receipt', () => {
-  const h = new SessionHarness('abcd1234ef', parseSkill(CHAT_SKILL, 'chat'), '2026-07-28T09:00:00Z');
+  const h = new SessionHarness('abcd1234ef', parseRunnable(CHAT_SKILL, 'chat'), '2026-07-28T09:00:00Z');
   h.beginTurn('what changed this week?', '2026-07-28T09:00:00Z');
   const first = buildSessionReceipt(h, '2026-07-28T09:05:00Z');
   assert.ok(first.path.includes('-chat-'));
-  h.invokeSkill(parseSkill(SYNTHESIS_SKILL, 'synthesis'));
+  h.invokeSkill(parseRunnable(SYNTHESIS_SKILL, 'synthesis'));
   const later = buildSessionReceipt(h, '2026-07-28T09:40:00Z');
   assert.equal(later.path, first.path, 'a renamed receipt would orphan the one already on disk');
   assert.deepEqual(later.frontmatter.skills, ['chat', 'synthesis']);
+});
+
+test('a kickoff round-trips: the chat reads back the skill, the page, and the wording', () => {
+  const prompt = buildKickoff({
+    skill: 'arrival',
+    target: 'sources/2026-07-30-meeting-with-xavier.md',
+    instruction: 'read the capture, search the memory it might touch.',
+  });
+  assert.equal(
+    prompt,
+    'Run the arrival skill on sources/2026-07-30-meeting-with-xavier.md: read the capture, search the memory it might touch.',
+  );
+  assert.deepEqual(parseKickoff(prompt), {
+    skill: 'arrival',
+    target: 'sources/2026-07-30-meeting-with-xavier.md',
+    instruction: 'read the capture, search the memory it might touch.',
+  });
+});
+
+test('a kickoff without a page, and transcripts written before this contract', () => {
+  assert.equal(buildKickoff({ skill: 'weekly-update', instruction: '' }), 'Run the weekly-update skill.');
+  assert.deepEqual(parseKickoff('Run the weekly-update skill.'), {
+    skill: 'weekly-update',
+    instruction: '',
+  });
+  // "session" was the older word for the same thing — old conversations still say it.
+  assert.deepEqual(parseKickoff('Run the before-meeting session on meetings/2026-07-30-nordkap.md: prep it.'), {
+    skill: 'before-meeting',
+    target: 'meetings/2026-07-30-nordkap.md',
+    instruction: 'prep it.',
+  });
+});
+
+test('a message the PM typed is never mistaken for a kickoff', () => {
+  assert.equal(parseKickoff('what did we decide about pricing?'), null);
+  assert.equal(parseKickoff('Run the numbers on decisions/adopt-workos.md before Friday'), null);
+  assert.equal(parseKickoff('I just added these to the workspace:\n- sources/a.md'), null);
 });

@@ -2,16 +2,17 @@
 type: "decision"
 summary: "Price per seat across all tiers"
 tags: ["pricing"]
-status: "active"
+standing: "active"
 date: "2026-03-01"
 deciders: ["me", "Jonas Palm"]
 sources: []
 ---
 
-Per-seat pricing on every tier: simple to quote, scales with account size, and matches how the
-incumbents price. Known risk: seats that barely log in feel expensive.
+Per-seat pricing on every tier. It's simple to quote, it scales with account size, and it's how
+the incumbents price, so nobody has to be talked through it. The risk we accepted: seats that
+barely get used feel expensive.
 
-Holding the line so far — seasonal-worker pushback from Kranelund
-([[insights/per-seat-resistance-midmarket]]) was answered with the prepay discount
-([[decisions/2026-06-26-annual-prepay-discount]]) rather than a model change. Nordkap
-procurement's review may reopen this.
+Holding so far. The seasonal-worker pushback from Kranelund
+([[insights/per-seat-resistance-midmarket]]) got answered with the prepay discount
+([[decisions/2026-06-26-annual-prepay-discount]]) instead of a change to the model. Nordkap
+procurement's review may force us to look at it again.

@@ -63,10 +63,36 @@ function CommandDialog({
   )
 }
 
+/**
+ * `bare` is the menu variant: a full-bleed search line with a hairline under it,
+ * for command lists that live in a small anchored popover. The boxed field reads
+ * well in the ⌘K dialog and reads as a box-inside-a-box at menu width.
+ */
 function CommandInput({
   className,
+  bare,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.Input>) {
+}: React.ComponentProps<typeof CommandPrimitive.Input> & { bare?: boolean }) {
+  // No search glyph: with none of the rows carrying an icon either, the field's
+  // text lines up with the item titles and the menu gets one left edge. `px-4`
+  // is the list's own inset (p-1.5 + item px-2.5).
+  if (bare) {
+    return (
+      <div
+        data-slot="command-input-wrapper"
+        className="flex h-10 shrink-0 items-center border-b border-border px-4"
+      >
+        <CommandPrimitive.Input
+          data-slot="command-input"
+          className={cn(
+            "w-full bg-transparent text-sm outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+            className
+          )}
+          {...props}
+        />
+      </div>
+    )
+  }
   return (
     <div data-slot="command-input-wrapper" className="p-1 pb-0">
       <InputGroup className="h-8! rounded-lg! border-input/30 bg-input/30 shadow-none! *:data-[slot=input-group-addon]:pl-2!">
@@ -153,7 +179,10 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "group/command-item relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-muted data-selected:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-selected:*:[svg]:text-foreground",
+        // `data-[selected=true]`, never bare `data-selected`: cmdk writes
+        // data-selected="false" on every unselected item, and the bare variant
+        // matches on presence — which tinted every row in every command list.
+        "group/command-item relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-muted data-[selected=true]:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[selected=true]:*:[svg]:text-foreground",
         className
       )}
       {...props}
@@ -172,7 +201,7 @@ function CommandShortcut({
     <span
       data-slot="command-shortcut"
       className={cn(
-        "ml-auto text-xs tracking-widest text-muted-foreground group-data-selected/command-item:text-foreground",
+        "ml-auto text-xs tracking-widest text-muted-foreground group-data-[selected=true]/command-item:text-foreground",
         className
       )}
       {...props}

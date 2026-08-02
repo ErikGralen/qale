@@ -2,7 +2,7 @@ import { createProposal, type UseCaseContext } from '@pm/application';
 
 /**
  * Dev-only: seed a spread of approval cards so the whole Inbox / in-session
- * review is demoable without an API key. One after-meeting review (a new
+ * review is demoable without an API key. One arrival review (a new
  * insight, a decision that replaces an earlier one, a note on the meeting
  * summary, an exec update to send) plus a supersede sweep (one decision changed,
  * so a couple of notes still point at the old plan — the cause block) and an
@@ -21,7 +21,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
     createProposal(ctx, {
       kind: 'note',
       sessionId: 'seed',
-      sessionType: 'after-meeting',
+      skill: 'arrival',
       targetPath: 'insights/seed-demo.md',
       baseHash: null,
       payload: {
@@ -46,7 +46,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
     createProposal(ctx, {
       kind: 'decision',
       sessionId: 'seed',
-      sessionType: 'after-meeting',
+      skill: 'arrival',
       targetPath: `${decisionSlug}.md`,
       baseHash: null,
       payload: {
@@ -80,7 +80,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
       createProposal(ctx, {
         kind: 'update',
         sessionId: 'seed',
-        sessionType: 'after-meeting',
+        skill: 'arrival',
         targetPath: meeting.path,
         baseHash: null,
         payload: {
@@ -104,7 +104,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
     createProposal(ctx, {
       kind: 'outbound',
       sessionId: 'seed',
-      sessionType: 'after-meeting',
+      skill: 'arrival',
       targetPath: null,
       baseHash: null,
       payload: {
@@ -129,7 +129,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
       {
         kind: 'outbound',
         sessionId: 'seed',
-        sessionType: 'after-meeting',
+        skill: 'arrival',
         targetPath: null,
         baseHash: null,
         payload: {
@@ -155,7 +155,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
     createProposal(ctx, {
       kind: 'outbound',
       sessionId: 'seed',
-      sessionType: 'librarian',
+      skill: 'librarian',
       targetPath: null,
       baseHash: null,
       payload: {
@@ -207,7 +207,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
       createProposal(ctx, {
         kind: 'update',
         sessionId: 'seed-sweep',
-        sessionType: 'supersede-sweep',
+        skill: 'supersede-sweep',
         targetPath: cand.path,
         baseHash: null,
         payload: {
@@ -235,7 +235,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
           title: 'Status page still says v2.2 — two meetings mention v2.3',
           body: 'Two meetings mention v2.3 shipping, but the status page still describes v2.2. Want to reconcile them together?',
           evidence: ev,
-          sessionType: 'librarian',
+          skill: 'librarian',
           seedPrompt:
             'The status page and recent meetings disagree: the meetings mention a newer ship (v2.3) than the status page describes (v2.2). Read the status page and the recent meetings, then propose updates for what changed.',
           targetPath: null,

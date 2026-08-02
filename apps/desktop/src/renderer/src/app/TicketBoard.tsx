@@ -87,20 +87,20 @@ function TicketCard({
       />
       <div className="pointer-events-none relative z-10 flex flex-col gap-1.5 p-2.5">
         <div className="flex items-center gap-1.5">
-          <span className="rounded-sm bg-brand/10 px-1 py-px font-mono text-[0.6875rem] font-medium tracking-tight text-brand">
+          <span className="rounded-sm bg-brand/10 px-1 py-px font-mono text-micro font-medium tracking-tight text-brand">
             {key}
           </span>
           {blocked && (
             <AlertTriangle className="size-3 shrink-0 text-warning" aria-hidden />
           )}
           {showState && (
-            <span className="ml-auto truncate text-[0.6875rem] text-muted-foreground">
+            <span className="ml-auto truncate text-micro text-muted-foreground">
               {note.state}
             </span>
           )}
         </div>
 
-        <div className="text-[13px] leading-snug font-medium text-foreground">{name}</div>
+        <div className="text-dense leading-snug font-medium text-foreground">{name}</div>
         {detail && (
           <div className="line-clamp-2 text-xs leading-snug text-muted-foreground">{detail}</div>
         )}
@@ -115,11 +115,11 @@ function TicketCard({
           </div>
         )}
 
-        <div className="mt-0.5 flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
+        <div className="mt-0.5 flex items-center gap-1.5 text-micro text-muted-foreground">
           {note.assignee ? (
             <>
               <span
-                className="flex size-4.5 shrink-0 items-center justify-center rounded-full bg-accent text-[0.6875rem] font-semibold text-accent-foreground"
+                className="flex size-4.5 shrink-0 items-center justify-center rounded-full bg-accent text-micro font-semibold text-accent-foreground"
                 aria-hidden
               >
                 {initials(note.assignee)}
@@ -173,7 +173,7 @@ export function TicketBoard({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border/70 px-5 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border/70 px-4 py-2">
         {toolbarLead}
         {allTags.length > 0 && (
           <div className="ml-auto flex flex-wrap items-center gap-1">
@@ -200,7 +200,7 @@ export function TicketBoard({
             >
               <div className="flex shrink-0 items-center gap-2 px-3 pt-2.5 pb-2">
                 <span className={`size-2 shrink-0 rounded-full ${col.dot}`} aria-hidden />
-                <span className="text-[13px] font-semibold text-foreground">{col.label}</span>
+                <span className="text-dense font-semibold text-foreground">{col.label}</span>
                 <span className={`text-xs tabular-nums ${col.count}`}>{rows.length}</span>
               </div>
               {rows.length === 0 ? (

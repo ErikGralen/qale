@@ -32,9 +32,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={toast}>
       {children}
-      {toasts.length > 0 && (
-        <div className="fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2">
-          {toasts.map((t) => (
+      {/* One bottom-right rail for everything that reports on the app's own
+          behaviour. Transient failures stack on top; the arrival receipt mounts
+          into the slot below them, so an eight-second error can never cover a
+          persistent Undo. The rail ignores the pointer where it is empty. */}
+      <div
+        className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 flex-col items-stretch gap-2 *:pointer-events-auto"
+        data-slot="notification-rail"
+      >
+        {toasts.length > 0 && (
+          <>
+            {toasts.map((t) => (
             <div
               key={t.id}
               role="alert"
@@ -50,9 +58,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <X className="size-3.5" />
               </button>
             </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </>
+        )}
+        <div id={RAIL_SLOT_ID} className="contents" />
+      </div>
     </ToastContext.Provider>
   );
 }
+
+/**
+ * Where persistent rail items mount (the arrival receipt). A slot rather than a
+ * second fixed container, so the two never overlap and neither has to know the
+ * other's height.
+ */
+export const RAIL_SLOT_ID = 'pm-notification-rail-slot';

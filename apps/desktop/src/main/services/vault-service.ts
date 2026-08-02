@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { FsVault, SqliteIndex, VaultWatcher, GitAdapter, AppDb, type VaultChange } from '@pm/vault';
 import { openVault, type UseCaseContext, type VaultInfo } from '@pm/application';
-import { isReservedFile } from '@pm/domain';
+import { isReservedFile, isRunnableResource } from '@pm/domain';
 
 /**
  * Owns the live vault: fs + index + git + watcher for the currently-open vault.
@@ -68,6 +68,7 @@ export class VaultService {
       clock,
       proposals: appDb.proposals,
       pings: appDb.pings,
+      asks: appDb.asks,
       checks: appDb.checks,
     };
 
@@ -102,8 +103,9 @@ export class VaultService {
         for (const change of changes) {
           // Reserved files (index.md/log.md) are orientation, not notes — never
           // index them, so the librarian regenerating index.md can't loop back
-          // in as a phantom note here.
-          if (isReservedFile(change.path)) continue;
+          // in as a phantom note here. Same for a skill's own material: a file
+          // beside SKILL.md is read when its skill says so, and is not a note.
+          if (isReservedFile(change.path) || isRunnableResource(change.path)) continue;
           if (change.kind === 'remove') {
             this.index.removeByPath(change.path);
           } else {

@@ -3,7 +3,21 @@
     "allow": [
       "Bash(pnpm refresh-demo)",
       "Bash(pnpm refresh-demo:*)",
-      "Bash(find vault-dev/sessions:*)"
+      "Bash(find vault-dev/sessions:*)",
+      "Bash(pnpm kill-dev:*)"
+    ]
+  },
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && pnpm kill-dev --sandboxed >/dev/null 2>&1 || true",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   }
 }

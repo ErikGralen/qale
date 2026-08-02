@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import type {
+  AgentDTO,
   AgentPingDTO,
   BacklinkDTO,
   CaptureNoteInput,
@@ -16,7 +17,13 @@ import type {
   ChatRefDTO,
   IngestCaptureInputDTO,
   IngestCaptureResultDTO,
+  ArrivalAmbitionDTO,
+  ArrivalItemInputDTO,
+  ArrivalPlanDTO,
+  ArrivalResultDTO,
+  ArrivalUndoResultDTO,
   LiveSessionDTO,
+  MeetingReviewAskDTO,
   NoteDTO,
   NoteQueryDTO,
   NoteRefDTO,
@@ -30,15 +37,19 @@ import type {
   SessionFileDTO,
   SessionLifecycle,
   SpawnRequestDTO,
+  AskRequestDTO,
+  AskAnswerDTO,
   SkillDTO,
-  TodoStatus,
+  TodoCommitment,
   VaultInfoDTO,
   VaultTreeDTO,
 } from '@pm/ipc';
 import { isFolderIndex } from '@pm/domain';
 import { invoke, onEvent } from '../lib/ipc';
+import { outcomeOf } from '../lib/arrival-outcome';
 import { requestCapture } from '../lib/capture-event';
 import { meetingRailHorizon, qualifiesForRail } from '../lib/note-status';
+import { buildAttention, waitingOnYou, type AttentionItem } from '../lib/attention';
 import {
   CORE_TYPES,
   contentTypes,
@@ -56,8 +67,21 @@ import type { NavOpts } from '../lib/nav';
  * own back/forward.
  */
 export type ViewBody = { title: string } & (
+  /** The gateway: greeting, one composer, what's waiting. Also what an empty
+   *  workbench falls back to, so Home is never a place you can lose. */
+  | { kind: 'home' }
   | { kind: 'doc'; path: string; noteType?: NoteType }
-  | { kind: 'session'; sessionType: string; sessionId?: string; initialPrompt?: string }
+  /** `skill` is the invocation the FIRST turn carries — not a kind of session.
+   *  A bound conversation (sessionId set) has already spent it and passes none.
+   *  `autoTitle` marks a placeholder title ("Ask", "Session") that the session
+   *  itself replaces once it has a first message to name itself with. */
+  | {
+      kind: 'session';
+      skill?: string;
+      sessionId?: string;
+      initialPrompt?: string;
+      autoTitle?: boolean;
+    }
   /** A session's working file, read-only and visibly not a note (Sessions v2). */
   | { kind: 'sessionFile'; sessionId: string; path: string }
   | { kind: 'chats' }
@@ -68,6 +92,8 @@ export type ViewBody = { title: string } & (
   | { kind: 'context'; tag: string }
   | { kind: 'settings' }
   | { kind: 'skills' }
+  /** The background watchers and their off switches — Skills' sibling. */
+  | { kind: 'agents' }
 );
 
 /** A history entry. `key` is stable for the entry's lifetime — React remount
@@ -102,10 +128,10 @@ function sameTarget(a: View, b: ViewBody): boolean {
       return a.tag === (b as Extract<ViewBody, { kind: 'context' }>).tag;
     case 'session': {
       const s = b as Extract<ViewBody, { kind: 'session' }>;
-      // Bound conversations match by id; two unbound blanks of the same type
-      // (e.g. re-clicking Ask) are the same fresh composer.
+      // Bound conversations match by id; two unbound blanks opening on the same
+      // skill (e.g. re-clicking Ask) are the same fresh composer.
       if (a.sessionId || s.sessionId) return a.sessionId === s.sessionId;
-      return a.sessionType === s.sessionType && !a.initialPrompt && !s.initialPrompt;
+      return a.skill === s.skill && !a.initialPrompt && !s.initialPrompt;
     }
     default:
       return true;
@@ -128,7 +154,6 @@ interface DocData {
  */
 export interface SessionOverview {
   id: string;
-  sessionType: string;
   title: string;
   updated: number;
   running: boolean;
@@ -189,7 +214,14 @@ interface AppState {
   revealNew: Set<NoteType>;
   /** Acknowledge a newly earned type (clears its "new" mark). */
   markRevealSeen: (type: NoteType) => void;
-  pendingCount: number;
+  /**
+   * Paths the auto-pinner put on the rail that the PO hasn't opened from there
+   * yet — they carry the same quiet mark a freshly revealed type does. Only the
+   * system's additions land here; a hand-pin is never marked.
+   */
+  autoPinNew: Set<string>;
+  /** Acknowledge an auto-pinned row (clears its mark). */
+  markPinSeen: (path: string) => void;
   proposals: ProposalDTO[];
   themes: ThemeHeatDTO[];
   /** Merged session rows (stored + live + cards + seen) — rail, Inbox, history. */
@@ -198,9 +230,20 @@ interface AppState {
   /** The parsed skill catalogue (Skills v2) — refreshed on skill-file changes. */
   skills: SkillDTO[];
   refreshSkills: () => Promise<void>;
-  /** What genuinely awaits the PO: pending cards + unread sessions. Maintenance
-   * pings are visible in the Inbox but never counted — they can wait. */
-  attentionCount: number;
+  /** The agent roster — refreshed on agent-file changes, new cards, and settled runs. */
+  agents: AgentDTO[];
+  refreshAgents: () => Promise<void>;
+  /** Flip an agent's switch (a frontmatter edit in its file), optimistically. */
+  setAgentEnabled: (id: string, enabled: boolean) => Promise<void>;
+  /**
+   * The one attention list — everything waiting on the PO, ranked, in one
+   * place (`lib/attention.ts`). Home, the sidebar badge, ⌘K and the Inbox are
+   * all named filters over THIS array; none of them counts anything itself.
+   */
+  attention: AttentionItem[];
+  /** `waitingOnYou(attention).length` — the single number every "N waiting"
+   *  badge prints. Kept here so the filter is applied exactly once. */
+  waitingCount: number;
   markSessionSeen: (sessionId: string) => void;
   refreshSessions: () => Promise<void>;
   openPing: (ping: AgentPingDTO) => Promise<void>;
@@ -213,17 +256,22 @@ interface AppState {
   // navigation — every open* navigates the active tab in place unless the
   // NavOpts (from a ⌘click via navFromEvent) ask for a new tab.
   openDoc: (path: string, opts?: NavOpts) => Promise<void>;
+  /** Open a fresh conversation, optionally invoking a skill on its first turn. */
   openSession: (
-    sessionType: string,
+    skill?: string,
     opts?: { initialPrompt?: string; title?: string; fresh?: boolean } & NavOpts,
   ) => void;
   /** Reopen a stored conversation (replayed from the pi JSONL). */
-  openChat: (chat: { id: string; sessionType: string; title: string }, opts?: NavOpts) => void;
+  openChat: (chat: { id: string; title: string }, opts?: NavOpts) => void;
   /** Open the chat-history list. */
   openChats: (opts?: NavOpts) => void;
   /** Fan-out approval cards waiting on the PM, keyed by session id. */
   spawnRequests: Record<string, SpawnRequestDTO>;
   resolveSpawn: (request: SpawnRequestDTO, decision: { approved: boolean; modelId?: string }) => Promise<void>;
+  /** Question cards a running turn is parked on, keyed by session id. */
+  askRequests: Record<string, AskRequestDTO>;
+  /** Answer one — `null` skips it, which un-parks the turn rather than stopping it. */
+  resolveAsk: (request: AskRequestDTO, answers: AskAnswerDTO[] | null) => Promise<void>;
   /** Working files of a session, keyed by session id (Sessions v2 Part 1). */
   sessionFiles: Record<string, SessionFileDTO[]>;
   refreshSessionFiles: (sessionId: string) => Promise<void>;
@@ -231,6 +279,8 @@ interface AppState {
   openSessionFile: (sessionId: string, path: string, opts?: NavOpts) => void;
   /** Record the session id the agent assigned to a session view's conversation. */
   bindTabSession: (viewKey: string, sessionId: string) => void;
+  /** Open Home — the gateway (⇧⌘H; ⌘T opens it in a fresh tab). */
+  openHome: (opts?: NavOpts) => void;
   openInbox: (opts?: NavOpts) => void;
   /** Open the Todos view — the commitment ledger. */
   openTodos: (opts?: NavOpts) => void;
@@ -242,6 +292,8 @@ interface AppState {
   openSettings: (opts?: NavOpts) => void;
   /** Open the Skills view — the parsed skill catalogue (Skills v2). */
   openSkills: (opts?: NavOpts) => void;
+  /** Open the Agents view — the background watchers and their off switches. */
+  openAgents: (opts?: NavOpts) => void;
   /** Per-tab history — back/forward act on the active tab (browser semantics). */
   goBack: () => void;
   goForward: () => void;
@@ -263,6 +315,20 @@ interface AppState {
   query: (q: NoteQueryDTO) => Promise<NoteRefDTO[]>;
   /** Universal ingest: file the capture, then open the follow-up session or the note. */
   ingestCapture: (input: IngestCaptureInputDTO) => Promise<IngestCaptureResultDTO>;
+  /** Native multi-select picker; returns items ready for `inspectArrival`. */
+  pickMaterial: () => Promise<ArrivalItemInputDTO[]>;
+  /** What an arrival will do, computed by the code that will do it. */
+  inspectArrival: (
+    items: ArrivalItemInputDTO[],
+    ambition?: ArrivalAmbitionDTO,
+  ) => Promise<ArrivalPlanDTO>;
+  /** File a whole batch; the receipt it returns owns the undo. */
+  ingestArrival: (
+    items: ArrivalItemInputDTO[],
+    ambition?: ArrivalAmbitionDTO,
+  ) => Promise<ArrivalResultDTO>;
+  /** Take a whole arrival back — created files removed, modified ones restored. */
+  undoArrival: (id: string) => Promise<ArrivalUndoResultDTO>;
   previewProposal: (
     id: string,
   ) => Promise<{
@@ -272,16 +338,26 @@ interface AppState {
     staleReason?: 'changed' | 'unanchored';
   } | null>;
   refreshProposals: () => Promise<void>;
+  /** Both resolves can hand back a `review` ask: the session emptied with
+   *  nothing kept, so the Inbox asks whether its meeting is reviewed anyway. */
   acceptProposal: (
     id: string,
     edited?: unknown,
-  ) => Promise<{ ok: boolean; stale?: boolean; error?: string; url?: string }>;
-  rejectProposal: (id: string) => Promise<void>;
+  ) => Promise<{
+    ok: boolean;
+    stale?: boolean;
+    error?: string;
+    url?: string;
+    review?: MeetingReviewAskDTO;
+  }>;
+  rejectProposal: (id: string) => Promise<{ ok: boolean; review?: MeetingReviewAskDTO }>;
+  /** The PO's answer to that ask: take the meeting out of "needs review". */
+  markMeetingReviewed: (path: string) => Promise<{ ok: boolean }>;
   captureNote: (input: CaptureNoteInput) => Promise<NoteDTO>;
   /** Quick-add a todo (already parsed from the one-liner). */
   captureTodo: (input: CaptureTodoInputDTO) => Promise<NoteDTO>;
   /** Flip a todo open/done/dropped. */
-  setTodoStatus: (path: string, status: TodoStatus) => Promise<void>;
+  setTodoStatus: (path: string, commitment: TodoCommitment) => Promise<void>;
   saveNote: (path: string, body: string) => Promise<void>;
   saveFrontmatter: (path: string, frontmatter: Record<string, unknown>) => Promise<void>;
   /** Retitle a note; the file may move, so open tabs/favourites follow the new path. */
@@ -303,6 +379,13 @@ const LEGACY_TABS_KEY = 'pm.tabs.v2';
 const FAVORITES_KEY = 'pm.favorites.v1';
 /** Unpinned-off-rail paths, per workspace: `pm.dismissed.v1:<vault path>` → string[]. */
 const DISMISSED_KEY = 'pm.dismissed.v1';
+/**
+ * Auto-pinned paths the PO hasn't opened from the rail yet, per workspace:
+ * `pm.autoPinNew.v1:<vault path>` → string[]. View-only state (never a vault
+ * write), written the moment the auto-pinner adds a path and emptied one path
+ * at a time as the PO clicks the rows.
+ */
+const AUTO_PIN_NEW_KEY = 'pm.autoPinNew.v1';
 /**
  * Per-workspace "last looked at this session" timestamps. `__init` grandfathers
  * pre-existing conversations so the feature's first launch doesn't mark the
@@ -371,6 +454,25 @@ function persistDismissed(vaultPath: string, next: string[]) {
   }
 }
 
+function loadAutoPinNew(vaultPath: string): string[] {
+  try {
+    const raw = localStorage.getItem(`${AUTO_PIN_NEW_KEY}:${vaultPath}`);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Write the per-workspace unseen-auto-pin set back to localStorage (best-effort). */
+function persistAutoPinNew(vaultPath: string, next: string[]) {
+  try {
+    localStorage.setItem(`${AUTO_PIN_NEW_KEY}:${vaultPath}`, JSON.stringify(next));
+  } catch {
+    /* ignore quota */
+  }
+}
+
 /** Retired view kinds from older persists — dropped on load. */
 const RETIRED_KINDS = new Set(['meeting-drop', 'smartview']);
 
@@ -423,6 +525,17 @@ function loadPersistedTabs(): { tabs: TabState[]; activeTabId: string | null } {
   }
 }
 
+/** A clock the attention list can age against: one read a minute, which is the
+ *  finest granularity anything in that list is stated in ("in 20m", "due today"). */
+function useMinuteClock(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+  return now;
+}
+
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [vault, setVault] = useState<VaultInfoDTO | null>(null);
   const [tree, setTree] = useState<VaultTreeDTO | null>(null);
@@ -433,7 +546,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   /** Recently closed tabs, histories intact — ⇧⌘T restores the last one. */
   const closedTabs = useRef<TabState[]>([]);
   const [docData, setDocData] = useState<Record<string, DocData>>({});
-  const [pendingCount, setPendingCount] = useState(0);
   const [proposals, setProposals] = useState<ProposalDTO[]>([]);
   const [themes, setThemes] = useState<ThemeHeatDTO[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -442,10 +554,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [revealedStored, setRevealedStored] = useState<NoteType[]>([]);
   /** Earned types whose reveal the PO has acknowledged. */
   const [revealSeen, setRevealSeen] = useState<NoteType[]>([]);
+  /** Auto-pinned paths still wearing their mark (persisted). */
+  const [autoPinNewPaths, setAutoPinNewPaths] = useState<string[]>([]);
   const [chats, setChats] = useState<ChatRefDTO[]>([]);
   const [live, setLive] = useState<Record<string, LiveSessionDTO>>({});
   const [pings, setPings] = useState<AgentPingDTO[]>([]);
   const [skills, setSkills] = useState<SkillDTO[]>([]);
+  const [agents, setAgents] = useState<AgentDTO[]>([]);
   const [seen, setSeen] = useState<Record<string, number>>({});
   /**
    * Working files of the session the PO is looking at (Sessions v2 Part 1).
@@ -456,6 +571,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [sessionFiles, setSessionFiles] = useState<Record<string, SessionFileDTO[]>>({});
   /** Fan-outs waiting on the PM, by session id (Sessions v2 Part 2). */
   const [spawnRequests, setSpawnRequests] = useState<Record<string, SpawnRequestDTO>>({});
+  /** Questions the agent is parked on, by session id. One per session at a time. */
+  const [askRequests, setAskRequests] = useState<Record<string, AskRequestDTO>>({});
 
   // Consumers see each tab as its current view, flattened next to the id.
   const tabs = useMemo<Tab[]>(
@@ -514,6 +631,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSkills([]);
     }
   }, []);
+
+  const refreshAgents = useCallback(async () => {
+    try {
+      setAgents(await invoke['agents:list']());
+    } catch {
+      setAgents([]);
+    }
+  }, []);
+
+  const setAgentEnabled = useCallback(
+    async (id: string, enabled: boolean) => {
+      // Optimistic: the switch answers the finger, then the truth from main lands.
+      setAgents((prev) => prev.map((a) => (a.id === id ? { ...a, enabled } : a)));
+      try {
+        setAgents(await invoke['agents:setEnabled'](id, enabled));
+      } catch {
+        void refreshAgents();
+      }
+    },
+    [refreshAgents],
+  );
 
   const loadDoc = useCallback(async (path: string) => {
     const [note, backlinks] = await Promise.all([
@@ -644,21 +782,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const openSession = useCallback(
-    (
-      sessionType: string,
-      opts?: { initialPrompt?: string; title?: string; fresh?: boolean } & NavOpts,
-    ) => {
-      const title =
-        opts?.title ??
-        (sessionType === 'ask'
-          ? 'Ask'
-          : sessionType === 'after-meeting'
-            ? 'After-Meeting'
-            : sessionType === 'chat'
-              ? 'Chat'
-              : sessionType.replace(/-/g, ' '));
+    (skill?: string, opts?: { initialPrompt?: string; title?: string; fresh?: boolean } & NavOpts) => {
+      const title = opts?.title ?? (skill ? skill.replace(/-/g, ' ') : 'Session');
       navigate(
-        { kind: 'session', sessionType, initialPrompt: opts?.initialPrompt, title },
+        {
+          kind: 'session',
+          skill,
+          initialPrompt: opts?.initialPrompt,
+          title,
+          // Nobody named this tab — the first message will (see the retitle effect).
+          autoTitle: !opts?.title,
+        },
         // A deliberately fresh conversation always gets its own focused tab.
         opts?.fresh ? { newTab: true, foreground: true } : opts,
       );
@@ -667,11 +801,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const openChat = useCallback(
-    (chat: { id: string; sessionType: string; title: string }, opts?: NavOpts) => {
-      navigate(
-        { kind: 'session', sessionType: chat.sessionType, sessionId: chat.id, title: chat.title },
-        opts,
-      );
+    (chat: { id: string; title: string }, opts?: NavOpts) => {
+      // A stored conversation has already spent its opening skill — reopening it
+      // invokes nothing, it just resumes.
+      navigate({ kind: 'session', sessionId: chat.id, title: chat.title }, opts);
     },
     [navigate],
   );
@@ -687,21 +820,39 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [navigate],
   );
 
+  /** Session titles by id — the running row already carries the first message by
+   *  the time a tab learns its session id, and this survives between renders. */
+  const sessionTitles = useRef(new Map<string, string>());
+
   const bindTabSession = useCallback(
     (viewKey: string, sessionId: string) => {
       // Clearing initialPrompt is essential: the view keeps its identity across
-      // ChatView remounts (back/forward, background-settle reload), and a
+      // SessionView remounts (back/forward, background-settle reload), and a
       // lingering prompt would auto-send again on every remount — spamming the
       // agent with the same seed message.
-      mapViews((v) =>
-        v.key === viewKey && v.kind === 'session' && (v.sessionId !== sessionId || v.initialPrompt)
-          ? { ...v, sessionId, initialPrompt: undefined }
-          : v,
-      );
+      mapViews((v) => {
+        if (v.key !== viewKey || v.kind !== 'session') return v;
+        // Binding is also the moment a placeholder-titled tab can take the
+        // conversation's own name.
+        const named = v.autoTitle ? sessionTitles.current.get(sessionId) : undefined;
+        const title = named && named !== v.title ? named : undefined;
+        if (v.sessionId === sessionId && !v.initialPrompt && !title) return v;
+        return { ...v, sessionId, initialPrompt: undefined, ...(title ? { title } : {}) };
+      });
     },
     [mapViews],
   );
 
+  const openHome = useCallback(
+    (opts?: NavOpts) => {
+      // An empty workbench already *is* Home (App falls back to it), so going
+      // Home from there is a no-op rather than a tab you then have to close.
+      // ⌘T and ⌘-click still ask for a tab explicitly, and still get one.
+      if (!opts?.newTab && !tabStates.some((t) => t.id === activeTabId)) return;
+      navigate({ kind: 'home', title: 'Home' }, opts);
+    },
+    [navigate, tabStates, activeTabId],
+  );
   const openInbox = useCallback(
     (opts?: NavOpts) => navigate({ kind: 'inbox', title: 'Inbox' }, opts),
     [navigate],
@@ -732,6 +883,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       navigate({ kind: 'skills', title: 'Skills' }, opts);
     },
     [navigate, refreshSkills],
+  );
+  const openAgents = useCallback(
+    (opts?: NavOpts) => {
+      void refreshAgents();
+      navigate({ kind: 'agents', title: 'Agents' }, opts);
+    },
+    [navigate, refreshAgents],
   );
 
   /** Remember closed tabs (history intact) for ⇧⌘T — a dozen deep, like a
@@ -831,6 +989,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setFavorites(vault ? loadFavorites(vault.path) : []);
     setDismissed(vault ? loadDismissed(vault.path) : []);
+    setAutoPinNewPaths(vault ? loadAutoPinNew(vault.path) : []);
     setRevealedStored([]);
     setRevealSeen(vault ? loadRevealSeen(vault.path) : []);
   }, [vault]);
@@ -869,6 +1028,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [vault],
   );
 
+  // The auto-pin mark is spent on first contact with the row, exactly like a
+  // newly revealed section's.
+  const markPinSeen = useCallback(
+    (path: string) => {
+      setAutoPinNewPaths((prev) => {
+        if (!prev.includes(path)) return prev;
+        const next = prev.filter((p) => p !== path);
+        if (vault) persistAutoPinNew(vault.path, next);
+        return next;
+      });
+    },
+    [vault],
+  );
+
+  const autoPinNew = useMemo(() => new Set(autoPinNewPaths), [autoPinNewPaths]);
+
   const revealed = useMemo(() => new Set([...CORE_TYPES, ...revealedStored]), [revealedStored]);
   const revealNew = useMemo(
     () => new Set(revealedStored.filter((t) => !CORE_TYPES.includes(t) && !revealSeen.includes(t))),
@@ -899,8 +1074,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         if (vault) persistDismissed(vault.path, next);
         return next;
       });
+      // Either direction is the PO's own hand on this note, so the "the system
+      // put this here" mark has nothing left to announce.
+      markPinSeen(path);
     },
-    [vault, favorites],
+    [vault, favorites, markPinSeen],
   );
 
   // Liveness for meetings is a fact about the clock, not just the vault: a meeting
@@ -937,12 +1115,69 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (vault) persistFavorites(vault.path, next);
       return next;
     });
+    // A row that appeared on its own says so. Only this path marks anything, so
+    // a hand-pin never wears the mark.
+    setAutoPinNewPaths((prev) => {
+      const next = [...prev, ...additions.filter((p) => !prev.includes(p))];
+      if (vault) persistAutoPinNew(vault.path, next);
+      return next;
+    });
     // favorites/dismissed intentionally omitted: the guard is recomputed from the
     // freshest sets inside the loop, and listing them would re-run on every pin.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vault, tree, themes, clockTick]);
 
   const query = useCallback((q: NoteQueryDTO) => invoke['vault:query'](q), []);
+
+  const pickMaterial = useCallback(() => invoke['arrival:pick'](), []);
+  const inspectArrival = useCallback(
+    (items: ArrivalItemInputDTO[], ambition?: ArrivalAmbitionDTO) =>
+      invoke['arrival:inspect'](items, ambition),
+    [],
+  );
+
+  /**
+   * File a batch, then land the PO on its result where there is one to land on.
+   * `landsOnResult` owns that judgement, and the receipt reads the same rule to
+   * decide whether it has anything left to add (lib/arrival-outcome).
+   */
+  const ingestArrival = useCallback(
+    async (items: ArrivalItemInputDTO[], ambition?: ArrivalAmbitionDTO) => {
+      const result = await invoke['arrival:ingest'](items, ambition);
+      await refreshTree();
+      const { sessions, filed } = outcomeOf(result);
+      if (sessions.length === 1) {
+        const only = sessions[0]!;
+        navigate(
+          { kind: 'session', sessionId: only.session!.id, title: only.session!.label },
+          { newTab: true, foreground: true },
+        );
+      } else if (sessions.length === 0 && filed.length === 1) {
+        const only = filed[0]!;
+        navigate({ kind: 'doc', path: only.path!, title: only.title ?? only.name });
+        await loadDoc(only.path!);
+      }
+      return result;
+    },
+    [refreshTree, navigate, loadDoc],
+  );
+
+  const undoArrival = useCallback(
+    async (id: string) => {
+      const result = await invoke['arrival:undo'](id);
+      // A tab still showing a note this just deleted would render an empty
+      // shell forever — undo has to take the views back too, exactly as
+      // deleting a note does.
+      if (result.removed.length > 0) {
+        const gone = new Set(result.removed);
+        setDocData((d) => Object.fromEntries(Object.entries(d).filter(([p]) => !gone.has(p))));
+        dropViews((v) => v.kind === 'doc' && gone.has(v.path));
+      }
+      await refreshTree();
+      return result;
+    },
+    [refreshTree, dropViews],
+  );
 
   const ingestCapture = useCallback(
     async (input: IngestCaptureInputDTO) => {
@@ -955,7 +1190,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         navigate(
           {
             kind: 'session',
-            sessionType: result.processing.sessionType,
             sessionId: result.processing.sessionId,
             title: result.processing.label,
           },
@@ -967,7 +1201,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         navigate(
           {
             kind: 'session',
-            sessionType: result.followUp.sessionType,
+            skill: result.followUp.skill,
             initialPrompt: result.followUp.prompt,
             title: result.followUp.tabTitle,
           },
@@ -987,12 +1221,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const refreshProposals = useCallback(async () => {
     try {
-      const list = await invoke['proposals:list']('pending');
-      setProposals(list);
-      setPendingCount(list.length);
+      setProposals(await invoke['proposals:list']('pending'));
     } catch {
       setProposals([]);
-      setPendingCount(0);
     }
   }, []);
 
@@ -1006,12 +1237,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const refreshSessions = useCallback(async () => {
     try {
-      const [chatList, liveList] = await Promise.all([
+      const [chatList, liveList, asks] = await Promise.all([
         invoke['chats:list'](),
         invoke['sessions:live'](),
+        // Parked questions are durable (QM ticket 9), so they are read back here
+        // rather than only arriving as pushes: one asked before a quit has to be
+        // waiting in the badge and on Home at the next launch, not only once its
+        // session is opened. Main is authoritative, so this replaces the map.
+        invoke['sessions:pendingAsks'](),
       ]);
       setChats(chatList);
       setLive(Object.fromEntries(liveList.map((l) => [l.sessionId, l])));
+      setAskRequests(Object.fromEntries(asks.map((a) => [a.sessionId, a])));
     } catch {
       setChats([]);
       setLive({});
@@ -1038,6 +1275,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return next;
     });
     await invoke['sessions:resolveSpawn'](request.id, decision).catch(() => undefined);
+  }, []);
+
+  /**
+   * Answer (or skip) a question card. Cleared locally on submit for the same
+   * reason as the spawn card: the turn picks up where it left off and the next
+   * thing on screen should be the agent working, not the question again.
+   */
+  const resolveAsk = useCallback(async (request: AskRequestDTO, answers: AskAnswerDTO[] | null) => {
+    setAskRequests((prev) => {
+      const next = { ...prev };
+      delete next[request.sessionId];
+      return next;
+    });
+    await invoke['sessions:resolveAsk'](request.id, answers).catch(() => undefined);
   }, []);
 
   const refreshPings = useCallback(async () => {
@@ -1083,7 +1334,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const running = !!live[chat.id];
       rows.set(chat.id, {
         id: chat.id,
-        sessionType: chat.sessionType,
         title: chat.title,
         updated: chat.updated,
         running,
@@ -1099,7 +1349,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (rows.has(l.sessionId)) continue;
       rows.set(l.sessionId, {
         id: l.sessionId,
-        sessionType: l.sessionType,
         title: l.title,
         updated: l.startedAt,
         running: true,
@@ -1113,12 +1362,29 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return [...rows.values()].sort((a, b) => b.updated - a.updated);
   }, [chats, live, proposals, seen]);
 
-  const attentionCount = useMemo(
-    () =>
-      pendingCount +
-      sessions.filter((s) => s.lifecycle === 'active' && s.unread && s.pendingCards === 0).length,
-    [pendingCount, sessions],
+  // A session names its own tab: the placeholder the tab opened with ("Ask",
+  // "Session") gives way to the session's title — its first message — which arrives
+  // with the live row the moment that first turn starts.
+  useEffect(() => {
+    const titles = new Map(sessions.map((s) => [s.id, s.title]));
+    sessionTitles.current = titles;
+    mapViews((v) => {
+      if (v.kind !== 'session' || !v.autoTitle || !v.sessionId) return v;
+      const title = titles.get(v.sessionId);
+      return title && title !== v.title ? { ...v, title } : v;
+    });
+  }, [sessions, mapViews]);
+
+  // The one attention list, and the one number over it. Membership is partly a
+  // fact about the clock (a meeting starts, a commitment comes due), so it ages
+  // on a minute tick — the same clock Home used to keep to itself, moved here
+  // now that every surface reads the same list.
+  const now = useMinuteClock();
+  const attention = useMemo(
+    () => buildAttention({ proposals, sessions, askRequests, pings, tree }, now),
+    [proposals, sessions, askRequests, pings, tree, now],
   );
+  const waitingCount = useMemo(() => waitingOnYou(attention).length, [attention]);
 
   const acceptProposal = useCallback(
     async (id: string, edited?: unknown) => {
@@ -1131,10 +1397,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const rejectProposal = useCallback(
     async (id: string) => {
-      await invoke['proposals:reject'](id);
+      const result = await invoke['proposals:reject'](id);
       await refreshProposals();
+      return result;
     },
     [refreshProposals],
+  );
+
+  const markMeetingReviewed = useCallback(
+    async (path: string) => {
+      const result = await invoke['meeting:markReviewed'](path);
+      // The status change is what takes the meeting off the review surfaces.
+      if (result.ok) await refreshTree();
+      return result;
+    },
+    [refreshTree],
   );
 
   // Taking the conversation: mark the ping opened, seed a fresh session with it.
@@ -1145,7 +1422,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       } finally {
         await refreshPings();
       }
-      openSession(ping.sessionType, {
+      openSession(ping.skill, {
         initialPrompt: ping.seedPrompt,
         title: ping.title,
         fresh: true,
@@ -1213,6 +1490,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           refreshSessions(),
           refreshPings(),
           refreshSkills(),
+          refreshAgents(),
         ]);
     },
     [
@@ -1222,6 +1500,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       refreshSessions,
       refreshPings,
       refreshSkills,
+      refreshAgents,
       dropViews,
     ],
   );
@@ -1254,8 +1533,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const setTodoStatus = useCallback(
-    async (path: string, status: TodoStatus) => {
-      await invoke['todos:setStatus'](path, status);
+    async (path: string, commitment: TodoCommitment) => {
+      await invoke['todos:setStatus'](path, commitment);
       await refreshTree();
     },
     [refreshTree],
@@ -1302,11 +1581,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           if (vault) persistFavorites(vault.path, next);
           return next;
         });
+        // The old path is gone; renaming is hands-on enough to spend the mark.
+        markPinSeen(path);
       }
       await refreshTree();
       return note;
     },
-    [vault, refreshTree, mapViews],
+    [vault, refreshTree, mapViews, markPinSeen],
   );
 
   const deleteNote = useCallback(
@@ -1325,9 +1606,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         if (vault) persistFavorites(vault.path, next);
         return next;
       });
+      markPinSeen(path); // no row left to mark
       await refreshTree();
     },
-    [vault, refreshTree, dropViews],
+    [vault, refreshTree, dropViews, markPinSeen],
   );
 
   const search = useCallback(async (q: string) => {
@@ -1346,12 +1628,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const open = new URLSearchParams(window.location.search).get('open');
       if (info && open === '__settings') openSettings();
       else if (info && open === '__skills') openSkills();
-      else if (info && open === '__chat') openSession('chat');
+      else if (info && open === '__agents') openAgents();
+      else if (info && open === '__chat') openSession(undefined);
       else if (info && open === '__review') openInbox();
       else if (info && open === '__todos') openTodos();
       else if (info && open === '__memory') openMemory();
       else if (info && (open === '__capture' || open === '__meeting')) requestCapture();
-      else if (info && open?.startsWith('__folder:')) openFolder(open.slice('__folder:'.length));
+      else if (info && open?.startsWith('__session:')) {
+        // A conversation by id — the deep link the session surfaces (working
+        // files, fan-out cards) are reachable through.
+        const id = open.slice('__session:'.length);
+        const known = await invoke['chats:list']().catch(() => []);
+        openChat(known.find((c) => c.id === id) ?? { id, title: 'Session' });
+      } else if (info && open?.startsWith('__folder:')) openFolder(open.slice('__folder:'.length));
       else if (info && open?.startsWith('__context:')) openContext(open.slice('__context:'.length));
       else if (info && open) void openDoc(open);
     });
@@ -1365,10 +1654,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         void refreshTree();
         void refreshThemes();
         if (event.paths.some((p) => p.startsWith('skills/'))) void refreshSkills();
+        if (event.paths.some((p) => p.startsWith('agents/'))) void refreshAgents();
         for (const path of event.paths) if (docData[path]) void loadDoc(path);
       } else if (event.channel === 'proposals:changed') {
-        setPendingCount(event.pendingCount);
+        // The event carries a count, but the renderer never reads it: the card
+        // count is `countOf(attention, 'card')` over the list we refresh here,
+        // and a second number is exactly what this app is not allowed to have.
         void refreshProposals();
+        // Agent rows carry a pending-card count — keep it honest.
+        void refreshAgents();
       } else if (event.channel === 'session:status') {
         // The rail's heartbeat: track runs as they start, refresh rows on settle.
         if (event.status === 'running') {
@@ -1376,7 +1670,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             ...prev,
             [event.sessionId]: {
               sessionId: event.sessionId,
-              sessionType: event.sessionType,
               title: event.title,
               streamId: '',
               startedAt: event.updated,
@@ -1390,6 +1683,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             return next;
           });
           void refreshSessions();
+          // A settled run may have been an agent's — its "last ran" moved.
+          void refreshAgents();
         }
       } else if (event.channel === 'session:files') {
         void refreshSessionFiles(event.sessionId);
@@ -1400,11 +1695,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           else delete next[event.sessionId];
           return next;
         });
+      } else if (event.channel === 'session:ask') {
+        setAskRequests((prev) => {
+          const next = { ...prev };
+          if (event.request) next[event.sessionId] = event.request;
+          else delete next[event.sessionId];
+          return next;
+        });
       } else if (event.channel === 'pings:changed') {
         void refreshPings();
       } else if (event.channel === 'session:focus') {
         // OS notification click — land the PO in that conversation.
-        openChat({ id: event.sessionId, sessionType: event.sessionType, title: event.title });
+        openChat({ id: event.sessionId, title: event.title });
       }
     });
   }, [
@@ -1415,6 +1717,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     refreshSessionFiles,
     refreshPings,
     refreshSkills,
+    refreshAgents,
     openChat,
     loadDoc,
     docData,
@@ -1433,6 +1736,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     void invoke['sessions:pendingSpawn'](activeSessionId)
       .then((request) => {
         if (request) setSpawnRequests((prev) => ({ ...prev, [request.sessionId]: request }));
+      })
+      .catch(() => undefined);
+    // Same for a question the agent is parked on: it outlives the tab that
+    // asked it, and a turn stuck behind an invisible question reads as a hang.
+    void invoke['sessions:pendingAsk'](activeSessionId)
+      .then((request) => {
+        if (request) setAskRequests((prev) => ({ ...prev, [request.sessionId]: request }));
       })
       .catch(() => undefined);
   }, [activeSessionId, refreshSessionFiles]);
@@ -1455,14 +1765,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       revealed,
       revealNew,
       markRevealSeen,
-      pendingCount,
+      autoPinNew,
+      markPinSeen,
       proposals,
       themes,
       sessions,
       pings,
       skills,
       refreshSkills,
-      attentionCount,
+      agents,
+      refreshAgents,
+      setAgentEnabled,
+      attention,
+      waitingCount,
       markSessionSeen,
       refreshSessions,
       openPing,
@@ -1476,10 +1791,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openChats,
       spawnRequests,
       resolveSpawn,
+      askRequests,
+      resolveAsk,
       sessionFiles,
       refreshSessionFiles,
       openSessionFile,
       bindTabSession,
+      openHome,
       openInbox,
       openTodos,
       openMemory,
@@ -1487,6 +1805,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openContext,
       openSettings,
       openSkills,
+      openAgents,
       goBack,
       goForward,
       canGoBack,
@@ -1502,10 +1821,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       loadDoc,
       query,
       ingestCapture,
+      pickMaterial,
+      inspectArrival,
+      ingestArrival,
+      undoArrival,
       previewProposal,
       refreshProposals,
       acceptProposal,
       rejectProposal,
+      markMeetingReviewed,
       captureNote,
       captureTodo,
       setTodoStatus,
@@ -1532,14 +1856,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       revealed,
       revealNew,
       markRevealSeen,
-      pendingCount,
+      autoPinNew,
+      markPinSeen,
       proposals,
       themes,
       sessions,
       pings,
       skills,
       refreshSkills,
-      attentionCount,
+      agents,
+      refreshAgents,
+      setAgentEnabled,
+      attention,
+      waitingCount,
       markSessionSeen,
       refreshSessions,
       openPing,
@@ -1553,10 +1882,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openChats,
       spawnRequests,
       resolveSpawn,
+      askRequests,
+      resolveAsk,
       sessionFiles,
       refreshSessionFiles,
       openSessionFile,
       bindTabSession,
+      openHome,
       openInbox,
       openTodos,
       openMemory,
@@ -1564,6 +1896,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openContext,
       openSettings,
       openSkills,
+      openAgents,
       goBack,
       goForward,
       canGoBack,
@@ -1578,10 +1911,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setActiveTab,
       query,
       ingestCapture,
+      pickMaterial,
+      inspectArrival,
+      ingestArrival,
+      undoArrival,
       previewProposal,
       refreshProposals,
       acceptProposal,
       rejectProposal,
+      markMeetingReviewed,
       captureNote,
       captureTodo,
       setTodoStatus,

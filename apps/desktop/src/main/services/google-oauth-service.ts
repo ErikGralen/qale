@@ -5,7 +5,7 @@ import { CalendarAuthError } from '@pm/connectors';
 import type { SettingsService } from './settings-service.js';
 
 /**
- * Google OAuth for installed apps (docs/google-calendar-integration.md §Auth):
+ * Google OAuth for installed apps:
  * loopback redirect + PKCE, the flow Google sanctions for public desktop
  * clients — the embedded client "secret" is officially non-confidential. The
  * surface is provider-level, not calendar-level: Drive/Gmail later are a scope

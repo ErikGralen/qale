@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, TooltipProvider } from '@pm/ui';
+import type { ArrivalItemInputDTO, ArrivalResultDTO } from '@pm/ipc';
+import { readableAs } from '@pm/domain';
 import { FileUp } from 'lucide-react';
 import { AppStateProvider, useApp } from './state/app-state';
-import { CAPTURE_EVENT } from './lib/capture-event';
+import { CAPTURE_EVENT, type CaptureRequest } from './lib/capture-event';
 import { Sidebar } from './app/Sidebar';
-import { Landing } from './app/Landing';
+import { Home } from './app/Home';
 import { NoteView } from './app/NoteView';
-import { ChatView } from './app/ChatView';
-import { ChatsView } from './app/ChatsView';
+import { SessionView } from './app/SessionView';
+import { SessionsView } from './app/SessionsView';
 import { SessionFileView } from './app/SessionFileView';
 import { SettingsView } from './app/SettingsView';
 import { SkillsView } from './app/SkillsView';
+import { AgentsView } from './app/AgentsView';
 import { InboxView } from './app/InboxView';
 import { TodosView } from './app/TodosView';
 import { MemoryView } from './app/MemoryView';
@@ -19,27 +22,31 @@ import { ContextView } from './app/ContextView';
 import { RightPanel } from './app/RightPanel';
 import { TabStrip } from './app/TabStrip';
 import { QuickSwitcher } from './app/QuickSwitcher';
-import { CaptureDialog, type CaptureDraft } from './app/CaptureDialog';
+import { AddMaterial, type MaterialDraft } from './app/AddMaterial';
+import { ArrivalReceipt } from './components/ArrivalReceipt';
+import { worthAReceipt } from './lib/arrival-outcome';
 import { ExternalRefHoverLayer } from './components/ExternalRef';
-import { useToast } from './components/toast';
 
 function Center() {
   const { activeTab, bindTabSession, openSession } = useApp();
-  if (!activeTab) return <Landing />;
+  // No tabs at all is Home too — the gateway is never a place you can lose.
+  if (!activeTab) return <Home />;
   switch (activeTab.kind) {
+    case 'home':
+      return <Home />;
     case 'doc':
       return <NoteView key={activeTab.path} path={activeTab.path} />;
     case 'session':
       return (
-        <ChatView
+        <SessionView
           // Keyed by the history entry, not the tab: back/forward between two
-          // conversations in one tab must remount the transcript.
+          // sessions in one tab must remount the transcript.
           key={activeTab.key}
-          sessionType={activeTab.sessionType}
+          skill={activeTab.skill}
           sessionId={activeTab.sessionId}
           initialPrompt={activeTab.initialPrompt}
           onSessionId={(sessionId) => bindTabSession(activeTab.key, sessionId)}
-          onNewChat={() => openSession(activeTab.sessionType, { fresh: true })}
+          onNewSession={() => openSession(activeTab.skill, { fresh: true })}
         />
       );
     case 'sessionFile':
@@ -51,7 +58,7 @@ function Center() {
         />
       );
     case 'chats':
-      return <ChatsView />;
+      return <SessionsView />;
     case 'inbox':
       return <InboxView />;
     case 'todos':
@@ -66,8 +73,10 @@ function Center() {
       return <SettingsView />;
     case 'skills':
       return <SkillsView />;
+    case 'agents':
+      return <AgentsView />;
     default:
-      return <Landing />;
+      return <Home />;
   }
 }
 
@@ -81,7 +90,13 @@ function inEditable(e: KeyboardEvent): boolean {
 function Shell() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
-  const [captureDraft, setCaptureDraft] = useState<CaptureDraft | null>(null);
+  const [captureDraft, setCaptureDraft] = useState<MaterialDraft | null>(null);
+  /**
+   * The last arrival's receipt — persistent until dismissed. Only set when the
+   * arrival has something to report that the screen doesn't already show; a
+   * capture whose result the PO is now looking at gets no card at all.
+   */
+  const [receipt, setReceipt] = useState<ArrivalResultDTO | null>(null);
   const [dragging, setDragging] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
@@ -90,10 +105,16 @@ function Shell() {
       return true;
     }
   });
+  const [rightOpen, setRightOpen] = useState(() => {
+    try {
+      return localStorage.getItem('pm.rightPanel.visible') !== '0';
+    } catch {
+      return true;
+    }
+  });
   const dragDepth = useRef(0);
-  const { openSession, activeTab, tabs, activeTabId, setActiveTab, closeTab, vault, captureNote, openDoc, goBack, goForward, reopenClosedTab, sessionFiles } =
+  const { openSession, openHome, openSettings, activeTab, tabs, activeTabId, setActiveTab, closeTab, vault, captureNote, openDoc, goBack, goForward, reopenClosedTab, sessionFiles } =
     useApp();
-  const toast = useToast();
 
   // ⌘N: a blank note straight into the editor — capture (⇧⌘N) keeps the dialog.
   const newNote = useCallback(async () => {
@@ -113,14 +134,49 @@ function Shell() {
     });
   }, []);
 
-  const openCapture = useCallback((draft?: CaptureDraft) => {
+  // The right rail hides like the sidebar does: one workbench-wide preference,
+  // remembered across launches, so a session's file tree never takes the window
+  // back after the PM has pushed it away.
+  const toggleRightPanel = useCallback(() => {
+    setRightOpen((o) => {
+      try {
+        localStorage.setItem('pm.rightPanel.visible', o ? '0' : '1');
+      } catch {
+        /* ignore quota */
+      }
+      return !o;
+    });
+  }, []);
+
+  const openCapture = useCallback((draft?: MaterialDraft) => {
     setCaptureDraft(draft ?? null);
     setCaptureOpen(true);
   }, []);
 
-  // Landing, deep links, and anything outside the Shell request capture by event.
+  /**
+   * The drag overlay's kill switch. The Shell counts dragenter/dragleave, but a
+   * drop that lands on the Add material tray stops propagating before the
+   * Shell's own handler runs — so without this the counter never returns to
+   * zero and the "Drop anything" overlay stays on screen for good. Capture
+   * phase on the window catches every drop, ours or not.
+   */
   useEffect(() => {
-    const onCapture = () => openCapture();
+    const clear = () => {
+      dragDepth.current = 0;
+      setDragging(false);
+    };
+    window.addEventListener('drop', clear, true);
+    window.addEventListener('dragend', clear, true);
+    return () => {
+      window.removeEventListener('drop', clear, true);
+      window.removeEventListener('dragend', clear, true);
+    };
+  }, []);
+
+  // Home, deep links, and anything outside the Shell request capture by event —
+  // with a draft when they already hold the material (a pasted transcript).
+  useEffect(() => {
+    const onCapture = (e: Event) => openCapture((e as CustomEvent<CaptureRequest | undefined>).detail ?? undefined);
     window.addEventListener(CAPTURE_EVENT, onCapture);
     return () => window.removeEventListener(CAPTURE_EVENT, onCapture);
   }, [openCapture]);
@@ -140,7 +196,9 @@ function Shell() {
       } else if (e.key === 'Enter') {
         // ⌘↵ submits inside composers (capture, quick capture) — only open Ask
         // from non-editable context, otherwise one keystroke does two things.
-        if (inEditable(e)) return;
+        // Capture owns the chord outright while it is open: its own ⌘↵ files
+        // from anywhere in the dialog, including its chips, which are buttons.
+        if (inEditable(e) || captureOpen) return;
         e.preventDefault();
         openSession('ask');
       } else if (key === 'w') {
@@ -150,11 +208,21 @@ function Shell() {
           closeTab(activeTabId);
         }
       } else if (key === 't') {
-        // Browser muscle memory: ⌘T a fresh tab (a chat — this app's new-tab
-        // page), ⇧⌘T restores the last closed tab with its history.
+        // Browser muscle memory: ⌘T a fresh tab — and this app's new-tab page is
+        // Home. ⇧⌘T restores the last closed tab with its history.
         e.preventDefault();
         if (e.shiftKey) reopenClosedTab();
-        else openSession('chat', { fresh: true });
+        else openHome({ newTab: true, foreground: true });
+      } else if (key === ',') {
+        // ⌘, — the platform's word for preferences. Settings moved under the
+        // cog's menu with Skills and Agents; the keystroke keeps it one step.
+        e.preventDefault();
+        openSettings();
+      } else if (key === 'h' && e.shiftKey) {
+        // ⇧⌘H — the Home button's keyboard path. Navigates the active tab, the
+        // way a browser's home button does; ⌘T is the one that opens a new one.
+        e.preventDefault();
+        openHome();
       } else if ((key === '[' || key === ']' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.altKey) {
         // Per-tab history — both browser spellings (⌘[/⌘] and ⌘←/⌘→). Never
         // inside an editable: there ⌘← is line-start and ⌘[ may be outdent.
@@ -162,9 +230,12 @@ function Shell() {
         e.preventDefault();
         if (key === '[' || e.key === 'ArrowLeft') goBack();
         else goForward();
-      } else if (key === '\\') {
+      } else if (key === '\\' || key === '|') {
+        // ⌘\ the left rail, ⇧⌘\ the right one — mirrored keys for mirrored
+        // panels. Shift makes the backslash a pipe on a US layout, so accept both.
         e.preventDefault();
-        toggleSidebar();
+        if (e.shiftKey) toggleRightPanel();
+        else toggleSidebar();
       } else if (key >= '1' && key <= '9') {
         const tab = tabs[Number(key) - 1];
         if (tab) {
@@ -200,42 +271,65 @@ function Shell() {
       window.removeEventListener('keydown', onCycle);
       window.removeEventListener('mouseup', onMouseNav);
     };
-  }, [openSession, openCapture, newNote, toggleSidebar, activeTabId, tabs, setActiveTab, closeTab, goBack, goForward, reopenClosedTab]);
+  }, [openSession, openHome, openSettings, openCapture, newNote, toggleSidebar, toggleRightPanel, activeTabId, tabs, setActiveTab, closeTab, goBack, goForward, reopenClosedTab, captureOpen]);
 
-  // Shell-wide drop: anything dragged anywhere opens the capture dialog
-  // prefilled — the classifier guesses, the user confirms. Never auto-run.
+  /**
+   * Shell-wide drop: everything dragged anywhere lands in the Add material
+   * tray, however many files it is. The drop is an accelerator for the button,
+   * not a second door with its own behaviour — discovering one has to teach the
+   * other (docs/vision/arrival.md §7).
+   */
   const onDrop = useCallback(
     async (e: React.DragEvent) => {
       e.preventDefault();
       dragDepth.current = 0;
       setDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (!file || !vault) return;
-      // Capture is one-at-a-time; dropping a bundle must not silently eat the rest.
-      if (e.dataTransfer.files.length > 1) {
-        toast(`Capturing "${file.name}" — drop the other ${e.dataTransfer.files.length - 1} one at a time.`);
+      const dropped = Array.from(e.dataTransfer.files);
+      if (dropped.length === 0 || !vault) return;
+      const files: ArrivalItemInputDTO[] = [];
+      for (const file of dropped) {
+        if (readableAs(file.name) === null) {
+          files.push({ name: file.name, lastModified: file.lastModified });
+          continue;
+        }
+        if (file.type.startsWith('image/')) {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(r.result as string);
+            r.onerror = () => reject(r.error);
+            r.readAsDataURL(file);
+          });
+          files.push({
+            name: file.name,
+            dataBase64: dataUrl.split(',')[1] ?? '',
+            lastModified: file.lastModified,
+          });
+        } else {
+          files.push({ name: file.name, text: await file.text(), lastModified: file.lastModified });
+        }
       }
-      if (file.type.startsWith('image/')) {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const r = new FileReader();
-          r.onload = () => resolve(r.result as string);
-          r.onerror = () => reject(r.error);
-          r.readAsDataURL(file);
-        });
-        openCapture({ image: { name: file.name, dataUrl } });
-      } else {
-        openCapture({ text: await file.text(), fileName: file.name });
-      }
+      openCapture({ files });
     },
-    [openCapture, vault, toast],
+    [openCapture, vault],
   );
 
-  // The right panel is the note's chat corner, or a session's working-file tree.
-  // A session with no files gets no panel: an empty 35% column would read as a
-  // broken feature on every ordinary conversation.
-  const sessionHasFiles =
-    activeTab?.kind === 'session' && !!activeTab.sessionId && (sessionFiles[activeTab.sessionId]?.length ?? 0) > 0;
-  const showRight = activeTab?.kind === 'doc' || sessionHasFiles;
+  // The right panel is the note's session corner, or a session's working-file
+  // tree. A session with no files gets no panel: an empty 35% column would read
+  // as a broken feature on every ordinary session.
+  const sessionFileCount =
+    activeTab?.kind === 'session' && activeTab.sessionId ? sessionFiles[activeTab.sessionId]?.length ?? 0 : 0;
+  const rightAvailable = activeTab?.kind === 'doc' || sessionFileCount > 0;
+  const showRight = rightAvailable && rightOpen;
+  // The toggle names what it would open — "session files", not "panel" — and
+  // stays in the strip (disabled) on tabs that have no rail, so the cluster
+  // beside it never reflows.
+  const rightPanel = {
+    open: rightOpen,
+    available: rightAvailable,
+    name: activeTab?.kind === 'session' ? 'session files' : activeTab?.kind === 'doc' ? 'the session' : 'panel',
+    count: sessionFileCount,
+    onToggle: toggleRightPanel,
+  };
 
   return (
     <div
@@ -267,9 +361,9 @@ function Shell() {
         )}
         <ResizablePanel defaultSize="80%" minSize="40%">
           {/* The tab strip spans the full workbench so it never reflows when a
-              tab without a chat panel becomes active; the panel splits below it. */}
+              tab without a session panel becomes active; the panel splits below it. */}
           <div className="flex h-full flex-col">
-            <TabStrip sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} />
+            <TabStrip sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} rightPanel={rightPanel} />
             <div className="min-h-0 flex-1">
               <ResizablePanelGroup orientation="horizontal">
                 <ResizablePanel defaultSize={showRight ? '65%' : '100%'} minSize="40%">
@@ -278,7 +372,7 @@ function Shell() {
                 {showRight && (
                   <>
                     <ResizableHandle />
-                    <ResizablePanel defaultSize="35%" minSize="22%" maxSize="50%">
+                    <ResizablePanel defaultSize="35%" minSize="22%" maxSize="58%">
                       <RightPanel />
                     </ResizablePanel>
                   </>
@@ -289,7 +383,7 @@ function Shell() {
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      {dragging && vault && (
+      {dragging && vault && !captureOpen && (
         <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-background/80">
           <div className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-brand bg-card px-10 py-8">
             <FileUp className="size-8 text-brand" />
@@ -309,7 +403,13 @@ function Shell() {
         onOpenCapture={() => openCapture()}
         onNewNote={() => void newNote()}
       />
-      <CaptureDialog open={captureOpen} onOpenChange={setCaptureOpen} draft={captureDraft} />
+      <AddMaterial
+        open={captureOpen}
+        onOpenChange={setCaptureOpen}
+        draft={captureDraft}
+        onArrived={(r) => setReceipt(worthAReceipt(r) ? r : null)}
+      />
+      {receipt && <ArrivalReceipt arrival={receipt} onDismiss={() => setReceipt(null)} />}
       {/* One hover card serves every [[PAY-142]]-style reference — read view,
           cards, and the editor's wikilink atoms all stamp data-external-ref. */}
       <ExternalRefHoverLayer onOpen={(path) => void openDoc(path)} />

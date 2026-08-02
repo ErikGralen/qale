@@ -1,17 +1,23 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@pm/ui';
-import { AlertTriangle, Check, ChevronDown, MessageSquare, Pencil, RefreshCw, Send, X } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, Check, ChevronDown, Clock, MessageSquare, Pencil, RefreshCw, X } from 'lucide-react';
 import type { OutboundPayloadDTO, ProposalDTO, UpdatePayloadDTO } from '@pm/ipc';
 import { normalizeLinkTarget } from '@pm/domain';
 import { useApp } from '../../state/app-state';
 import { invoke } from '../../lib/ipc';
-import { connections, isExternalRef, refMetaCached, type ExternalRefMetaDTO } from '../../lib/connections';
+import {
+  connections,
+  externalSlugOf,
+  isExternalRef,
+  refMetaCached,
+  type ExternalRefMetaDTO,
+} from '../../lib/connections';
 import { relativeTime } from '../../lib/dates';
 import { navFromEvent, type NavOpts } from '../../lib/nav';
 import { Markdown } from '../Markdown';
 import { ExternalRefChip } from '../ExternalRef';
-import { providerLabel, WikiText } from './shared';
-import { cardHeadline, iconForRef, sourceHint, stripFrontmatter, titleForRef } from './cardMeta';
+import { outboundAct, providerName, rowFocusClass, useQueueFocus, WikiText } from './shared';
+import { bareRef, cardHeadline, iconForRef, sourceHint, stripFrontmatter, titleForRef } from './cardMeta';
 
 export interface CardItemProps {
   proposal: ProposalDTO;
@@ -69,6 +75,18 @@ function NoteChip({
   );
 }
 
+/** The app started this run on its own clock. Said in the card's own words
+ *  ("Prepared itself, an hour before your 14:00."), because a brief nobody
+ *  asked for must never look like one the PO requested. */
+function SelfStartedLine({ text }: { text: string }) {
+  return (
+    <span className="inline-flex items-center gap-1" title="You didn’t ask for this one.">
+      <Clock className="size-3 shrink-0" aria-hidden />
+      {text}
+    </span>
+  );
+}
+
 /** Amber flag — an unsourced claim is never the quietest thing on screen. */
 function InferenceFlag() {
   return (
@@ -89,10 +107,7 @@ function InferenceFlag() {
 export function HousekeepingItem(props: CardItemProps) {
   const { proposal, busy, focused, error, onFocus, onAccept, onReject, onOpen } = props;
   const [expanded, setExpanded] = useState(false);
-  const ref = useRef<HTMLLIElement>(null);
-  useEffect(() => {
-    if (focused) ref.current?.scrollIntoView({ block: 'nearest' });
-  }, [focused]);
+  const ref = useQueueFocus<HTMLLIElement>(focused);
 
   // Expanding opens the full card WITH its detail (that's what the click asked
   // for), and the card's collapse chevron folds it back to this one-line row.
@@ -112,10 +127,10 @@ export function HousekeepingItem(props: CardItemProps) {
   return (
     <li
       ref={ref}
+      tabIndex={-1}
       onClick={onFocus}
-      className={`group flex items-center gap-2 rounded-lg bg-card py-1.5 pr-1.5 pl-3 ring-1 transition-shadow ${
-        focused ? 'ring-2 ring-ring/60' : 'ring-foreground/10'
-      }`}
+      onFocus={onFocus}
+      className={`group flex items-center gap-2 rounded-lg bg-card py-1.5 pr-1.5 pl-3 ${rowFocusClass(focused)}`}
     >
       <button
         className="min-w-0 flex-1 truncate text-left text-sm text-foreground/85 focus-visible:outline-none"
@@ -178,9 +193,11 @@ export function CardItem({
   const [draftBody, setDraftBody] = useState('');
   const [draftPatch, setDraftPatch] = useState<{ search: string; replace: string }[]>([]);
   const [whyOpen, setWhyOpen] = useState(false);
-  const ref = useRef<HTMLLIElement>(null);
+  const ref = useQueueFocus<HTMLLIElement>(focused);
 
   const outbound = proposal.kind === 'outbound' ? (proposal.payload as OutboundPayloadDTO) : null;
+  // What this card does, in one vocabulary: the button's verb and the glyph.
+  const act = outbound ? outboundAct(outbound) : null;
   // An outbound send is the review's own last decision — never a one-line row.
   // It always shows its detail so nothing leaves the workspace unseen.
   const open = expanded || editing || !!outbound;
@@ -194,11 +211,22 @@ export function CardItem({
   };
 
   const { Icon, headline, authored, verb, note, replaces, retitle } = cardHeadline(proposal);
-  // Suppress the provenance line when it just repeats the note the card is about.
+  // Provenance is stated once. Closed, it is this line — the only thing telling
+  // the PO where a change came from. Open, the evidence chips below say it
+  // better (they open), so the line goes rather than sit above its own echo.
   const source = (() => {
     const s = sourceHint(proposal);
-    return s && s !== note?.title ? s : null;
+    return s && s !== note?.title && !open ? s : null;
   })();
+
+  // The record a send writes to is the card's subject, not its reasoning, so it
+  // never doubles as its own citation — "Based on" is for what made this true.
+  const target = useOutboundRefMeta(outbound);
+  const evidence = proposal.evidence.filter((e) => {
+    if (!outbound) return true;
+    const bare = bareRef(e.ref);
+    return bare !== target?.slug && bare !== externalSlugOf(outboundRef(outbound) ?? '');
+  });
 
   // Fetch the preview lazily — only once the card is open, so a 24-card review
   // doesn't fire two dozen preview reads up front.
@@ -211,10 +239,6 @@ export function CardItem({
     };
   }, [open, preview, proposal.id, previewProposal]);
 
-  useEffect(() => {
-    if (focused) ref.current?.scrollIntoView({ block: 'nearest' });
-  }, [focused]);
-
   const startEdit = () => {
     if (proposal.kind === 'update') {
       setDraftPatch(((proposal.payload as UpdatePayloadDTO).patch ?? []).map((p) => ({ ...p })));
@@ -225,8 +249,8 @@ export function CardItem({
     setEditing(true);
   };
 
-  // The escape hatch: talk the card through in a seeded chat. The card stays
-  // pending — the conversation can end in approval here or a revised card.
+  // The escape hatch: talk the card through in a seeded session. The card stays
+  // pending — the session can end in approval here or a revised card.
   const discuss = () => {
     const prompt = [
       "I'm looking at a pending approval card and want to talk it through before deciding. Don't apply anything — the card stays pending until I act on it.",
@@ -244,7 +268,7 @@ export function CardItem({
     ]
       .filter((line) => line !== null)
       .join('\n');
-    openSession('chat', {
+    openSession(undefined, {
       initialPrompt: prompt,
       title: `About: ${headline.slice(0, 48)}`,
       fresh: true,
@@ -263,32 +287,43 @@ export function CardItem({
   return (
     <li
       ref={ref}
+      tabIndex={-1}
       onClick={onFocus}
-      className={`overflow-hidden rounded-xl bg-card ring-1 transition-shadow ${
-        focused ? 'ring-2 ring-ring/60' : 'ring-foreground/10'
-      } ${outbound ? 'ring-brand/30' : ''}`}
+      onFocus={onFocus}
+      className={`overflow-hidden rounded-xl bg-card ${rowFocusClass(focused)} ${
+        outbound && !focused ? 'ring-brand/30' : ''
+      }`}
     >
-      {outbound && (
-        <div className="border-b border-brand/20 bg-brand/6 px-4 py-2">
+      {/* A send's head is one statement, not a banner stacked on a headline:
+          where it goes, what it touches, what it says. The warning strip and the
+          title row were two containers narrating the same fact, and the card
+          spent three bordered regions before showing a word of the change. */}
+      {outbound ? (
+        <div className="border-b border-brand/20 bg-brand/6 px-4 py-3">
           <div className="flex items-center gap-2 text-xs">
-            <Send className="size-3.5 shrink-0 text-brand" />
-            <span className="font-medium text-foreground">
-              Leaves your workspace — goes to {providerLabel(outbound)}
-            </span>
+            <ArrowUpRight className="size-3.5 shrink-0 text-brand" />
+            <span className="font-medium text-foreground">Leaves your workspace</span>
           </div>
           <OutboundTargetLine payload={outbound} onOpen={onOpen} />
+          {/* The target line names the record; this names the change. Full ink,
+              regular weight — the longest line in the head shouldn't also be
+              the faintest one. 4px binds the label to its target, 8px separates
+              the pair from the sentence: one beat, not three even ones. */}
+          <p className="mt-2 text-sm leading-snug text-balance break-words text-foreground">{headline}</p>
+          {(proposal.inference || proposal.selfStarted) && (
+            <span className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+              {proposal.inference && <InferenceFlag />}
+              {proposal.selfStarted && <SelfStartedLine text={proposal.selfStarted} />}
+            </span>
+          )}
         </div>
-      )}
-
-      {/* Header: the scannable human headline + inline approve/discard. The whole
-          line toggles the detail. Actions stay top-aligned and reachable even
-          when the headline wraps to two lines. */}
-      <div className="flex items-start gap-2.5 px-3.5 py-3">
+      ) : (
+      /* Header: the scannable human headline + inline approve/discard. The whole
+         line toggles the detail. Actions stay top-aligned and reachable even
+         when the headline wraps to two lines. */
+      <div className="flex items-start gap-2 px-4 py-3">
         <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <div
-          className={`min-w-0 flex-1 ${outbound ? '' : 'cursor-pointer'}`}
-          onClick={() => !outbound && toggleDetail()}
-        >
+        <div className="min-w-0 flex-1 cursor-pointer" onClick={toggleDetail}>
           <span className="block text-sm leading-snug font-medium text-balance break-words text-foreground">
             {note && !authored ? (
               // "Update <note>" — the note is the subject, so it renders as a
@@ -301,7 +336,7 @@ export function CardItem({
               headline
             )}
           </span>
-          {(replaces || retitle || (note && authored) || source || proposal.inference) && (
+          {(replaces || retitle || (note && authored) || source || proposal.inference || proposal.selfStarted) && (
             <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
               {note && authored && (
                 <NoteChip title={note.title} path={note.path} onOpen={(opts) => onOpen(note.path, opts)} small />
@@ -317,6 +352,7 @@ export function CardItem({
                 </span>
               )}
               {proposal.inference ? <InferenceFlag /> : source && <span>from {source}</span>}
+              {proposal.selfStarted && <SelfStartedLine text={proposal.selfStarted} />}
             </span>
           )}
         </div>
@@ -344,21 +380,27 @@ export function CardItem({
               </button>
             </>
           )}
-          {!outbound && (
-            <button
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-              onClick={toggleDetail}
-              aria-label={open ? 'Collapse' : 'Show detail'}
-              title={open ? 'Collapse' : 'Show detail'}
-            >
-              <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
-            </button>
-          )}
+          <button
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            onClick={toggleDetail}
+            aria-label={open ? 'Collapse' : 'Show detail'}
+            title={open ? 'Collapse' : 'Show detail'}
+          >
+            <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+          </button>
         </div>
       </div>
+      )}
 
       {open && (
-        <div className="border-t border-border/60 px-3.5 pt-3 pb-3.5">
+        <div className="border-t border-border/60 px-4 pt-3 pb-4">
+          {/* What approving DOES, and who it reaches — composed from the payload
+              in the main process, so it is the same sentence on every card of a
+              kind. It sits above the "why" and carries full ink: the reason is
+              the agent's, the consequence is the PO's. Outbound cards only. */}
+          {proposal.effect && (
+            <p className="mb-2 text-sm leading-relaxed text-foreground">{proposal.effect}</p>
+          )}
           {/* The human "why" — clamped to two lines so a long agent rationale
               never becomes a wall; the change itself is the point, not the essay. */}
           {proposal.rationale && (
@@ -368,7 +410,7 @@ export function CardItem({
               </p>
               {proposal.rationale.length > 150 && (
                 <button
-                  className="mt-0.5 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  className="mt-1 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                   onClick={() => setWhyOpen((v) => !v)}
                 >
                   {whyOpen ? 'Show less' : 'Show more'}
@@ -377,15 +419,28 @@ export function CardItem({
             </div>
           )}
 
-          {proposal.evidence.length > 0 && (
-            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          {evidence.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span className="text-xs text-muted-foreground">Based on</span>
-              {proposal.evidence.map((e) => {
+              {evidence.map((e) => {
                 // Evidence refs are wikilink slugs — resolve through the index
                 // like every other link surface, but show the human title only.
                 const { target: evTarget } = normalizeLinkTarget(
                   e.ref.replace(/^\[\[/, '').replace(/\]\]$/, ''),
                 );
+                // An external source is the same object here as anywhere else,
+                // so it renders as the same chip: typed, hover-carded, and
+                // honest about being a local copy. Rolling our own button drew
+                // a Confluence page with a ticket's glyph.
+                if (isExternalRef(evTarget))
+                  return (
+                    <ExternalRefChip
+                      key={e.ref}
+                      target={evTarget}
+                      onOpen={onOpen}
+                      kind={evTarget.startsWith('wikipages/') ? 'Confluence page' : 'Jira ticket'}
+                    />
+                  );
                 const EvIcon = iconForRef(e.ref);
                 // Resolve then open, honoring browser-style modifiers so ⌘/middle
                 // click drops the note into a background tab. Snapshot the intent
@@ -428,21 +483,29 @@ export function CardItem({
             />
           ) : outbound ? (
             <OutboundDetail payload={outbound} onOpen={onOpen} />
+          ) : preview ? (
+            <ChangePreview kind={proposal.kind} preview={preview} onOpen={onOpen} />
           ) : (
-            preview && <ChangePreview kind={proposal.kind} preview={preview} onOpen={onOpen} />
+            // The preview is read on open, so the card would otherwise sit with
+            // its "why" and no change under it — the one thing being approved,
+            // absent. Shaped like the diff it becomes, per the reader skeleton.
+            <PreviewSkeleton />
           )}
 
           {preview?.stale && (
-            <div className="mt-2.5 flex items-start gap-2.5 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
+            <div
+              role="alert"
+              className="mt-3 flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive"
+            >
               <span className="flex-1">
                 {preview.staleReason === 'unanchored'
                   ? "Couldn't line this edit up with the note's current text, so there's nothing to apply."
                   : 'The note changed since this card was proposed, so the edit no longer fits.'}{' '}
-                {proposal.sessionType
+                {proposal.skill
                   ? 'Re-run the session to regenerate it against the current note.'
                   : 'Discard it and let the agent propose a fresh one.'}
               </span>
-              {proposal.sessionType && (
+              {proposal.skill && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -450,7 +513,7 @@ export function CardItem({
                   onClick={async () => {
                     setRerunning(true);
                     try {
-                      await invoke['schedule:runNow'](proposal.sessionType!);
+                      await invoke['schedule:runNow'](proposal.skill!);
                     } finally {
                       setRerunning(false);
                     }
@@ -464,7 +527,10 @@ export function CardItem({
           )}
 
           {error && (
-            <div className="mt-2.5 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
+            <div
+              role="alert"
+              className="mt-3 flex items-center gap-3 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive"
+            >
               <span className="flex-1">{error}</span>
               {outbound && staleSend ? (
                 // Main refused the send because the target moved after
@@ -477,7 +543,7 @@ export function CardItem({
                   disabled={busy}
                   onClick={() => void withFreshSnapshot(outbound).then((p) => onAccept(p))}
                 >
-                  <Send className="size-3.5" /> Approve anyway
+                  {act && <act.Icon className="size-3.5" />} Approve anyway
                 </Button>
               ) : (
                 <Button size="sm" variant="outline" onClick={() => onAccept()} disabled={busy}>
@@ -487,11 +553,17 @@ export function CardItem({
             </div>
           )}
 
-          <div className="mt-3.5 flex flex-wrap items-center gap-2">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             {editing ? (
               <>
-                <Button size="sm" onClick={approveEdited} disabled={busy || preview?.stale}>
-                  <Check className="size-3.5" /> {outbound ? 'Approve & send edited' : 'Approve edited'}
+                <Button
+                  size="sm"
+                  data-send={outbound ? proposal.id : undefined}
+                  onClick={approveEdited}
+                  disabled={busy || preview?.stale}
+                >
+                  {act ? <act.Icon className="size-3.5" /> : <Check className="size-3.5" />}
+                  {act ? `Approve edits & ${act.verb}` : 'Approve edited'}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
                   Cancel
@@ -499,18 +571,31 @@ export function CardItem({
               </>
             ) : (
               <>
-                <Button size="sm" onClick={() => onAccept()} disabled={busy || preview?.stale}>
-                  {outbound ? <Send className="size-3.5" /> : <Check className="size-3.5" />}
-                  {outbound ? 'Approve & send' : 'Approve'}
+                {/* The queue's ↵ lands here rather than firing — `data-send` is
+                    the handle it focuses, so a send always costs a second,
+                    deliberate press on the button itself. The label names the
+                    act: only a message is sent, a page is updated in place. */}
+                <Button
+                  size="sm"
+                  data-send={outbound ? proposal.id : undefined}
+                  onClick={() => onAccept()}
+                  disabled={busy || preview?.stale}
+                >
+                  {act ? <act.Icon className="size-3.5" /> : <Check className="size-3.5" />}
+                  {act ? `Approve & ${act.verb}` : 'Approve'}
                 </Button>
-                <Button size="sm" variant="outline" onClick={startEdit} disabled={busy || preview?.stale}>
+                {/* One filled control on the row. Edit and Discard were two
+                    identical outlines flanking it, so three buttons competed at
+                    the same weight; as ghosts they read as what they are —
+                    adjuncts to the one decision the card is asking for. */}
+                <Button size="sm" variant="ghost" onClick={startEdit} disabled={busy || preview?.stale}>
                   <Pencil className="size-3.5" /> Edit
                 </Button>
-                <Button size="sm" variant="outline" onClick={onReject} disabled={busy}>
+                <Button size="sm" variant="ghost" onClick={onReject} disabled={busy}>
                   <X className="size-3.5" /> Discard
                 </Button>
                 <Button size="sm" variant="ghost" className="ml-auto" onClick={discuss}>
-                  <MessageSquare className="size-3.5" /> Chat about this
+                  <MessageSquare className="size-3.5" /> Ask about this
                 </Button>
               </>
             )}
@@ -599,9 +684,9 @@ async function withFreshSnapshot(payload: OutboundPayloadDTO): Promise<OutboundP
   return next;
 }
 
-function useOutboundRefMeta(ob: OutboundPayloadDTO): ExternalRefMetaDTO | null {
+function useOutboundRefMeta(ob: OutboundPayloadDTO | null): ExternalRefMetaDTO | null {
   const [meta, setMeta] = useState<ExternalRefMetaDTO | null>(null);
-  const ref = outboundRef(ob);
+  const ref = ob ? outboundRef(ob) : null;
   useEffect(() => {
     if (!ref) return;
     let alive = true;
@@ -614,31 +699,62 @@ function useOutboundRefMeta(ob: OutboundPayloadDTO): ExternalRefMetaDTO | null {
 }
 
 /**
- * The target line under the outbound banner — where this goes, in the PO's
- * words, with the touched item as a live chip: "Comment on [PAY-142 · Blocked]
- * — SAML SSO (epic)". A message card's audience already lives in the banner.
+ * The target line under the outbound banner — what happens, to what, in the
+ * PO's words, with the touched item as a live chip that names its own kind:
+ * "Comment on the Jira ticket [PAY-142 · Blocked] — SAML SSO (epic)".
+ * Every branch names the system, because a card with no chip (a message, a
+ * calendar event) would otherwise never say where it lands.
  */
 function OutboundTargetLine({ payload, onOpen }: { payload: OutboundPayloadDTO; onOpen: (p: string) => void }) {
   const meta = useOutboundRefMeta(payload);
   const ref = outboundRef(payload);
+  const system = providerName(payload);
+  const line = 'mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-medium text-foreground';
+  const quiet = 'text-muted-foreground';
 
   if (payload.action === 'create_ticket') {
     return (
-      <div className="mt-1 text-sm font-medium text-foreground">
-        New {payload.issueType?.toLowerCase() ?? 'ticket'}
-        {payload.projectKey && <span className="text-muted-foreground"> in {payload.projectKey}</span>}
-        {payload.title && <span className="text-muted-foreground"> — {payload.title}</span>}
+      <div className={line}>
+        <span>
+          Create a{system ? ` ${system}` : ''} {payload.issueType?.toLowerCase() ?? 'ticket'}
+          {payload.projectKey && <span className={quiet}> in {payload.projectKey}</span>}
+        </span>
+        {payload.title && <span className={quiet}>— {payload.title}</span>}
       </div>
     );
   }
-  if (!ref) return null;
 
-  const verb = payload.action === 'comment_ticket' ? 'Comment on' : 'Update the page';
+  // Calendar and message cards touch no mirrored record, so the sentence is
+  // the whole target: it must carry the name and the system on its own.
+  if (!ref) {
+    const event = payload.title ?? 'the event';
+    const where = system ? ` in ${system}` : '';
+    if (payload.action === 'create_event')
+      return <div className={line}>Add {event}{system ? ` to ${system}` : ''}</div>;
+    if (payload.action === 'update_event') return <div className={line}>Change {event}{where}</div>;
+    if (payload.action === 'respond_to_event')
+      return (
+        <div className={line}>
+          Reply {payload.responseStatus ?? ''} to {event}
+          {where}
+        </div>
+      );
+    return <div className={line}>Send an update to {payload.audience ?? 'stakeholders'}</div>;
+  }
+
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-medium text-foreground">
-      <span>{verb}</span>
-      <ExternalRefChip target={ref} onOpen={onOpen} />
-      {meta?.kind === 'ticket' && meta.title && <span className="text-muted-foreground">— {meta.title}</span>}
+    <div className={line}>
+      <span>{payload.action === 'comment_ticket' ? `Comment on the${system ? ` ${system}` : ''} ticket` : 'Update'}</span>
+      {/* A page is addressed by an opaque id, so the draft's own title is the
+          fallback label — an unsynced connection must never leave the PO
+          approving a write to "910231". A ticket key needs no such rescue. */}
+      <ExternalRefChip
+        target={ref}
+        alias={payload.action === 'update_page' ? (payload.title ?? null) : null}
+        onOpen={onOpen}
+        kind={payload.action === 'update_page' ? `${system ?? 'Wiki'} page` : null}
+      />
+      {meta?.kind === 'ticket' && meta.title && <span className={quiet}>— {meta.title}</span>}
     </div>
   );
 }
@@ -710,7 +826,7 @@ function OutboundDetail({ payload, onOpen }: { payload: OutboundPayloadDTO; onOp
   return (
     <div className="mt-3">
       {changedSince && (
-        <div className="mb-2.5 flex items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
+        <div className="mb-3 flex items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <span>
             <span className="font-medium">{refName} changed since this was drafted</span>
@@ -722,16 +838,83 @@ function OutboundDetail({ payload, onOpen }: { payload: OutboundPayloadDTO; onOp
           </span>
         </div>
       )}
-      <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-        {redline ? 'How the page changes' : 'What gets sent'}
+      {/* Name what the box holds. "What gets sent" over a page redline
+          promised a delivery and showed an edit. */}
+      <div className="mb-2 text-xs font-medium text-muted-foreground">
+        {redline
+          ? 'How the page changes'
+          : payload.action === 'update_page'
+            ? 'What gets added to the page'
+            : payload.action === 'comment_ticket'
+              ? 'The comment'
+              : payload.action === 'create_ticket'
+                ? 'The ticket'
+                : payload.action.endsWith('_event')
+                  ? 'The event'
+                  : 'What gets sent'}
       </div>
-      <div className="max-h-[26rem] overflow-y-auto rounded-lg border border-border/70 bg-muted/25 px-3.5 py-3">
+      <PreviewSurface>
         {redline && diffPair ? (
           <RenderedDiff before={diffPair.before} after={diffPair.after} onOpen={onOpen} />
         ) : (
           <Markdown content={payload.body} onOpenNote={onOpen} />
         )}
+      </PreviewSurface>
+    </div>
+  );
+}
+
+/** The change, still loading — same pulse vocabulary as the session reader's
+ *  skeleton, shaped like the lines it becomes rather than a spinner parked in
+ *  the middle of the card. */
+function PreviewSkeleton() {
+  return (
+    <div className="mt-4" role="status" aria-label="Loading the change">
+      <div className="mb-2 h-3 w-24 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+      <div className="flex flex-col gap-2.5 rounded-lg bg-muted/30 px-4 py-3">
+        {[92, 76, 84].map((w, i) => (
+          <div
+            key={i}
+            className="h-2.5 animate-pulse rounded bg-muted motion-reduce:animate-none"
+            style={{ width: `${w}%`, animationDelay: `${i * 90}ms` }}
+          />
+        ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The surface every preview sits on — one capped, scrollable region, shared so
+ * a redline and a filed note never drift apart. The cap has to be legible: a
+ * region that simply stops at 26rem reads as the whole change, so when the
+ * content is taller than the box it fades at the bottom edge. Measured, not
+ * assumed — a short comment gets no fade, because a fade over content that
+ * isn't clipped is a lie about there being more.
+ */
+function PreviewSurface({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [clipped, setClipped] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setClipped(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    // The box is capped, so it never resizes when its content grows — watch the
+    // content itself (a late-loading font can push a preview past the cap).
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className={`max-h-[26rem] overflow-y-auto rounded-lg bg-muted/30 px-4 py-3 ${
+        clipped ? 'pm-scroll-fade' : ''
+      }`}
+    >
+      {children}
     </div>
   );
 }
@@ -745,7 +928,7 @@ function fmValue(v: unknown): string {
 }
 
 /**
- * The property changes an update sets — a todo's due/status, a person's ledger.
+ * The property changes an update sets — a todo's due/commitment, a person's ledger.
  * The body diff deliberately hides frontmatter, so a metadata edit would preview
  * as blank; this surfaces it as `key: was → now`. Values render through the same
  * inline pass as the body diff, so an evidence ref reads as its note title, not
@@ -761,7 +944,7 @@ function PropertyChanges({
   return (
     <ul className="flex flex-col gap-1.5">
       {changes.map((c) => (
-        <li key={c.key} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[13px]">
+        <li key={c.key} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-dense">
           <span className="font-medium text-foreground/80 capitalize">{c.key.replace(/_/g, ' ')}</span>
           <span className="text-muted-foreground/70 line-through decoration-destructive/40">
             {renderInline(fmValue(c.before), onOpen, `${c.key}-was`)}
@@ -797,10 +980,10 @@ function ChangePreview({
   const bodyChanged = kind === 'update' && preview.before !== preview.after;
   return (
     <div className="mt-3">
-      <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+      <div className="mb-2 text-xs font-medium text-muted-foreground">
         {kind === 'update' ? 'What this changes' : 'What gets filed'}
       </div>
-      <div className="max-h-[26rem] overflow-y-auto rounded-lg border border-border/70 bg-muted/25 px-3.5 py-3">
+      <PreviewSurface>
         {kind === 'update' ? (
           <div className="flex flex-col gap-3">
             {fmChanges.length > 0 && <PropertyChanges changes={fmChanges} onOpen={onOpen} />}
@@ -809,7 +992,7 @@ function ChangePreview({
         ) : (
           <Markdown content={stripFrontmatter(preview.after)} onOpenNote={onOpen} />
         )}
-      </div>
+      </PreviewSurface>
     </div>
   );
 }
@@ -865,8 +1048,10 @@ function withContext(rows: DiffRow[], ctx: number): DiffView[] {
   });
   const out: DiffView[] = [];
   let hidden = 0;
+  // The marker carries its own count: "⋯" alone left the PO unable to tell a
+  // one-line skip from half the page, in the view they use to judge a write.
   const flush = () => {
-    if (hidden > 0) out.push({ kind: 'gap', text: '⋯' });
+    if (hidden > 0) out.push({ kind: 'gap', text: `${hidden} unchanged line${hidden === 1 ? '' : 's'}` });
     hidden = 0;
   };
   rows.forEach((r, i) => {
@@ -1063,9 +1248,12 @@ function ReplaceLine({ before, after, onOpen }: { before: string; after: string;
             </span>
           )}
           {d.suf && renderInline(d.suf, onOpen, 'suf')}
+          {/* The one control that answers "what did it say before?" — it was the
+              faintest thing on the card (2.8:1) in the one place the PO is
+              checking the agent's work. */}
           {added && removed && (
             <button
-              className="ml-1.5 align-baseline text-xs text-muted-foreground/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              className="ml-1.5 align-baseline text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
               onClick={(e) => {
                 e.stopPropagation();
                 setShowOld((v) => !v);
@@ -1103,11 +1291,15 @@ function RenderedDiff({
     [before, after],
   );
   return (
-    <div className="flex flex-col gap-0.5 text-[13px] leading-relaxed">
+    <div className="flex flex-col gap-0.5 text-dense leading-relaxed">
       {rows.map((r, i) =>
         r.kind === 'gap' ? (
-          <div key={i} className="py-0.5 text-center text-muted-foreground/50 select-none" aria-label="unchanged content">
-            {r.text}
+          // A rule through the middle says "the page continues here" better than
+          // a floating ellipsis, and the count rides on it at readable weight.
+          <div key={i} className="flex items-center gap-2 py-1 select-none" aria-hidden>
+            <span className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">{r.text}</span>
+            <span className="h-px flex-1 bg-border" />
           </div>
         ) : r.kind === 'replace' ? (
           <ReplaceLine key={i} before={r.before} after={r.after} onOpen={onOpen} />

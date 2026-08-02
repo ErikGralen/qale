@@ -1,15 +1,26 @@
-import { backlinkTypeLabel, isBodyEditable, titleFromSlug, zOutboundPayload, type Note } from '@pm/domain';
+import {
+  backlinkTypeLabel,
+  isBodyEditable,
+  outboundEffect,
+  titleFromSlug,
+  zOutboundPayload,
+  type Note,
+  type OutboundEffectFacts,
+} from '@pm/domain';
 import type {
   Backlink,
   IndexedNote,
   PingRecord,
   ThemeHeatRow,
   ProposalRecord,
-  SkillSummary,
+  RunnableSummary,
+  UseCaseContext,
   VaultInfo,
   VaultTreeGroup,
 } from '@pm/application';
+import type { Start } from '@pm/sessions';
 import type {
+  AgentDTO,
   AgentPingDTO,
   BacklinkDTO,
   NoteDTO,
@@ -19,10 +30,12 @@ import type {
   ProposalDTO,
   SearchHitDTO,
   SkillDTO,
+  StartDTO,
   VaultInfoDTO,
   VaultTreeDTO,
 } from '@pm/ipc';
 import type { SearchHit } from '@pm/domain';
+import type { CodeRunFacts } from './agents.js';
 
 /** Map domain/application entities to structured-clone-safe IPC DTOs. */
 
@@ -53,7 +66,7 @@ export function indexedToRefDTO(n: IndexedNote): NoteRefDTO {
     title: n.title,
     summary: n.summary,
     mtime: n.mtime,
-    status: n.status,
+    lifecycle: n.lifecycle,
     tags: tags && tags.length > 0 ? tags : undefined,
     date: typeof fm['date'] === 'string' ? fm['date'] : undefined,
     time: typeof fm['time'] === 'string' ? fm['time'] : undefined,
@@ -94,17 +107,77 @@ export function treeToDTO(groups: VaultTreeGroup[]): VaultTreeDTO {
   };
 }
 
-export function skillToDTO(s: SkillSummary): SkillDTO {
+/**
+ * A skill in the Skills view's row shape. `starts` and `can` cross the wire as
+ * the file wrote them — no clocks merged in, because nothing in the app starts
+ * a skill by itself; that is the whole difference between the two folders.
+ */
+export function skillToDTO(s: RunnableSummary): SkillDTO {
   return {
     path: s.path,
     slug: s.slug,
     name: s.name,
-    kind: s.kind,
+    title: s.title,
     summary: s.summary,
-    tier: s.tier,
-    bindings: s.bindings.map((b) => ({ mode: b.mode, event: b.event, sentence: b.sentence })),
+    starts: s.starts.map((x) => fileStartToDTO(x, s.audience)),
+    can: s.can,
+    enabled: s.enabled,
+    sentence: s.sentence,
     errors: s.errors,
     mtime: s.mtime,
+    files: s.files,
+    lastUsedMs: s.lastUsedMs,
+  };
+}
+
+/**
+ * A file-declared start, widened to the wire union. `always` carries its
+ * audience so the chip can say who the rule applies to without a second field.
+ */
+function fileStartToDTO(start: Start, audience?: string): StartDTO {
+  return start === 'always' && audience ? { kind: 'always', audience } : { kind: start };
+}
+
+/**
+ * An agent in the Agents view's row shape: the file's own words (title,
+ * summary, starts, can) plus the facts only main knows — its clocks, the key,
+ * when it last fired, when it last merely looked, pending cards. A file whose frontmatter has
+ * errors reads as blocked, not quietly "on" — same doctrine as a missing key.
+ */
+export function agentFileToDTO(
+  a: RunnableSummary,
+  lastRunMs: number | null,
+  lastCheckedMs: number | null,
+  facts: CodeRunFacts | undefined,
+  hasKey: boolean,
+  pendingCards: number,
+): AgentDTO {
+  const broken = a.errors.length > 0;
+  const blocked = a.enabled && (broken || (!!facts?.needsApiKey && !hasKey));
+  return {
+    id: a.name,
+    title: a.title,
+    summary: a.summary,
+    path: a.path,
+    enabled: a.enabled,
+    status: !a.enabled ? 'off' : blocked ? 'blocked' : 'on',
+    ...(blocked
+      ? { blockedReason: broken ? `Its file needs fixing: ${a.errors[0]}` : facts!.blockedReason }
+      : {}),
+    // This app-run's ledger first (it knows about runs that produced nothing
+    // yet), then the durable stamp, so quitting doesn't reset an agent to
+    // "never ran".
+    lastRunMs: lastRunMs ?? a.lastUsedMs,
+    lastCheckedMs,
+    lastQuietMs: a.lastQuietMs,
+    lastStoppedMs: a.lastStoppedMs,
+    // The file's own starts, then the app's clocks. No facts entry means no
+    // clock at all: the app genuinely never begins this one on its own.
+    starts: [...a.starts.map((s) => fileStartToDTO(s, a.audience)), ...(facts?.starts ?? [])],
+    can: a.can,
+    errors: a.errors,
+    pendingCards,
+    files: a.files,
   };
 }
 
@@ -139,6 +212,7 @@ export function vaultInfoToDTO(info: VaultInfo): VaultInfoDTO {
     name: info.name,
     git: info.git,
     gitAvailable: info.gitAvailable,
+    syncedBy: info.syncedBy,
     noteCount: info.noteCount,
   };
 }
@@ -152,26 +226,64 @@ export function themeHeatToDTO(row: ThemeHeatRow): ThemeHeatDTO {
   };
 }
 
-export function proposalToDTO(rec: ProposalRecord): ProposalDTO {
+/**
+ * The lookups the outbound effect line needs, gathered ONCE per list call: who
+ * an attendee address belongs to, and what the page/event behind an external id
+ * is actually called. Two index scans for a whole queue, so a card never costs a
+ * request to say what approving it does.
+ */
+export function outboundEffectFacts(ctx: UseCaseContext, selfEmails: string[]): OutboundEffectFacts {
+  const names = new Map<string, string>();
+  for (const n of ctx.index.listByType('person')) {
+    const email = n.frontmatter['email'];
+    if (typeof email === 'string' && email.trim()) names.set(email.trim().toLowerCase(), n.title);
+  }
+  const titles = new Map<string, string>();
+  for (const type of ['wikipage', 'meeting'] as const) {
+    for (const n of ctx.index.listByType(type)) {
+      const id = n.frontmatter['external_id'];
+      if (typeof id === 'string' && id.trim()) titles.set(id.trim().toLowerCase(), n.title);
+    }
+  }
+  return { selfEmails, names, titles };
+}
+
+export function proposalToDTO(
+  rec: ProposalRecord,
+  selfStarted?: string | null,
+  effectFacts?: OutboundEffectFacts,
+): ProposalDTO {
   // Outbound payloads persisted before the provider-generic vocabulary carry
   // `system` + legacy action names; normalize so the renderer always sees
   // `provider` + generic actions. Best-effort — an unparsable payload passes
   // through as-is rather than hiding the card.
   let payload = rec.payload;
+  let effect: string | undefined;
   if (rec.kind === 'outbound') {
     const parsed = zOutboundPayload.safeParse(rec.payload);
-    if (parsed.success) payload = parsed.data;
+    if (parsed.success) {
+      payload = parsed.data;
+      // Composed here, not in the renderer: the sentence is a property of the
+      // card, so anything that shows one later says the same thing. Composed at
+      // serialisation rather than at draft time so a card filed before the PO
+      // named their own address still gets the "outside your company" flag.
+      effect = outboundEffect(parsed.data, effectFacts);
+    }
   }
   return {
     id: rec.id,
     kind: rec.kind as ProposalDTO['kind'],
     sessionId: rec.sessionId,
-    sessionType: rec.sessionType,
+    skill: rec.skill,
     targetPath: rec.targetPath,
     payload: payload as ProposalDTO['payload'],
     // The agent authors the headline inside the payload (no DB column); surface
     // it as a first-class field so the renderer never reaches into payload shape.
     headline: (rec.payload as { headline?: string }).headline?.trim() || undefined,
+    // No DB column either: the sweep that started the run writes the sentence to
+    // the check ledger against its session id, and the caller reads it back.
+    selfStarted: selfStarted?.trim() || undefined,
+    effect,
     rationale: rec.rationale,
     evidence: rec.evidence,
     inference: rec.inference,
@@ -187,7 +299,7 @@ export function pingToDTO(rec: PingRecord): AgentPingDTO {
     title: rec.title,
     body: rec.body,
     evidence: rec.evidence,
-    sessionType: rec.sessionType,
+    skill: rec.skill,
     seedPrompt: rec.seedPrompt,
     targetPath: rec.targetPath,
     payload: rec.payload as AgentPingDTO['payload'],

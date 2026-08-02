@@ -1,8 +1,8 @@
-import type { TodoStatus } from '../notes/frontmatter.js';
+import type { TodoCommitment } from '../notes/lifecycle.js';
 
 /**
  * Todo lanes — how the commitment ledger reads at a glance. Buckets are pure
- * functions of (status, due, owner) against "today" so the UI, the librarian
+ * functions of (commitment, due, owner) against "today" so the UI, the librarian
  * sweep and tests all agree on what "overdue" means:
  * - external commitments (owner set) live in `waiting`, whatever their date —
  *   they are watched, not worked;
@@ -12,7 +12,7 @@ import type { TodoStatus } from '../notes/frontmatter.js';
 export type TodoLane = 'overdue' | 'today' | 'upcoming' | 'someday' | 'waiting' | 'closed';
 
 export interface TodoShape {
-  status?: TodoStatus | string;
+  commitment?: TodoCommitment | string;
   due?: string | null;
   owner?: string | null;
 }
@@ -23,8 +23,8 @@ export function isExternalTodo(todo: TodoShape): boolean {
 }
 
 export function todoLane(todo: TodoShape, today: string): TodoLane {
-  const status = todo.status ?? 'open';
-  if (status !== 'open') return 'closed';
+  const commitment = todo.commitment ?? 'open';
+  if (commitment !== 'open') return 'closed';
   if (isExternalTodo(todo)) return 'waiting';
   if (!todo.due) return 'someday';
   if (todo.due < today) return 'overdue';
@@ -34,7 +34,7 @@ export function todoLane(todo: TodoShape, today: string): TodoLane {
 
 /** An open commitment past its date — the PO's own or one being waited on. */
 export function isOverdueTodo(todo: TodoShape, today: string): boolean {
-  return (todo.status ?? 'open') === 'open' && !!todo.due && todo.due < today;
+  return (todo.commitment ?? 'open') === 'open' && !!todo.due && todo.due < today;
 }
 
 /**

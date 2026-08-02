@@ -49,7 +49,7 @@ interface Candidate {
   title: string;
   body: string;
   evidence: { ref: string; label?: string; resolved: boolean }[];
-  sessionType: string;
+  skill: string;
   seedPrompt: string;
   targetPath: string | null;
   payload?: PingPayload | null;
@@ -57,11 +57,13 @@ interface Candidate {
 
 /** Ping kinds this sweep no longer produces — their nudges moved into the
  * views that own them, or (dangling-links/orphans) were superseded by the
- * payload-carrying suggestion pings, which live under NEW keys. The rename is
+ * payload-carrying suggestion pings, which live under NEW keys, or
+ * (unconnected-mirrors) turned out not to be a finding at all. The rename is
  * load-bearing: a lingering old-format ping (pending or recently dismissed)
  * would block its replacement via hasRecent for a week if the key were reused.
  * Leftovers are retired on the next tick. */
-const RETIRED_KEY = /^(overdue-todos$|meeting-prep-|dangling-links$|orphans$|orphan-connect$)/;
+const RETIRED_KEY =
+  /^(overdue-todos$|meeting-prep-|dangling-links$|orphans$|orphan-connect$|unconnected-mirrors$)/;
 
 /** True when a patch block's search text is a wikilink on `target`. */
 function searchesTarget(search: string, target: string): boolean {
@@ -149,7 +151,7 @@ async function proposeLinkFixes(
     createProposal(ctx, {
       kind: 'update',
       sessionId: 'librarian',
-      sessionType: 'librarian',
+      skill: 'librarian',
       targetPath: link.from,
       // No baseHash: several fixes may share one file, and each earlier accept
       // would strand the rest as stale. The patch's search text is the real
@@ -166,30 +168,22 @@ async function proposeLinkFixes(
   return { fixes, unfixed };
 }
 
-/**
- * Who already mentions this note in prose, as link-it-there options. Every
- * search term gets its own pass: a ticket is cited by its key ("chase PAY-5"),
- * never by its composed title, so hunting only the title finds nothing and
- * reports "nothing mentions it" — technically true, materially wrong.
- */
+/** Who already mentions this note in prose, by title, as link-it-there options. */
 async function findMentionHosts(
   ctx: UseCaseContext,
   orphan: OrphanCandidate,
 ): Promise<PingOrphanItem['mentions']> {
   const mentions: PingOrphanItem['mentions'] = [];
-  const seen = new Set<string>();
-  for (const term of [orphan.title, ...orphan.aliases]) {
-    if (term.trim().length < 4) continue;
-    for (const hit of ctx.index.search(term, 6)) {
-      if (mentions.length >= MAX_MENTION_HOSTS) return mentions;
-      if (hit.path === orphan.path || isFolderIndex(hit.path) || seen.has(hit.path)) continue;
-      const note = await ctx.vault.readNote(hit.path);
-      if (!note) continue;
-      const lines = findUnlinkedMentions(note.body, term);
-      if (lines.length === 0) continue;
-      seen.add(hit.path);
-      mentions.push({ host: hit.path, hostTitle: hit.title, line: lines[0]!, term });
-    }
+  const term = orphan.title.trim();
+  if (term.length < 4) return mentions;
+  for (const hit of ctx.index.search(term, 6)) {
+    if (mentions.length >= MAX_MENTION_HOSTS) return mentions;
+    if (hit.path === orphan.path || isFolderIndex(hit.path)) continue;
+    const note = await ctx.vault.readNote(hit.path);
+    if (!note) continue;
+    const lines = findUnlinkedMentions(note.body, term);
+    if (lines.length === 0) continue;
+    mentions.push({ host: hit.path, hostTitle: hit.title, line: lines[0]! });
   }
   return mentions;
 }
@@ -274,19 +268,14 @@ async function collectOrphanItems(ctx: UseCaseContext, report: MaintenanceReport
   const items: PingOrphanItem[] = [];
   for (const orphan of report.orphans) {
     const mentions = await findMentionHosts(ctx, orphan);
-    const note = orphan.external ? null : await ctx.vault.readNote(orphan.path);
+    const note = await ctx.vault.readNote(orphan.path);
     const names = note ? findNamedPages(note.body, orphan.path, nameKeys) : [];
-    const kind: OrphanKind = orphan.external
-      ? 'external'
-      : names.length >= CAPTURE_NAME_FLOOR
-        ? 'capture'
-        : 'stray';
+    const kind: OrphanKind = names.length >= CAPTURE_NAME_FLOOR ? 'capture' : 'stray';
     items.push({
       id: orphan.path,
       path: orphan.path,
       title: orphan.title,
       kind,
-      detail: orphan.detail,
       mentions,
       ...(names.length > 0 ? { names } : {}),
     });
@@ -318,22 +307,6 @@ function countOf(items: PingOrphanItem[], one: string, many: string): string {
 }
 
 const ORPHAN_GROUPS: OrphanGroup[] = [
-  {
-    kind: 'external',
-    key: 'unconnected-mirrors',
-    floor: 2,
-    title: (items) => {
-      const noun = items.every((i) => i.path.startsWith('tickets/'))
-        ? ['open ticket', 'open tickets']
-        : ['tracked item', 'tracked items'];
-      return `${countOf(items, noun[0]!, noun[1]!)} aren't linked from anywhere in the workspace`;
-    },
-    body: `These mirror records live in another system — the workspace can't delete them, only say what they serve. Right now nothing here points at them at all.`,
-    seed: (items) =>
-      `These tracked items are still open upstream, and nothing in the workspace links them:\n${items
-        .map((i) => `- ${i.path} — ${i.title}${i.detail ? ` (${i.detail})` : ''}`)
-        .join('\n')}\n\nRead each one and work out what it serves, then propose the link from whatever page actually explains it — a theme, a customer, a meeting, a decision. The link goes in that page, never in the mirror itself (those are re-synced wholesale and local edits are lost). A ticket does not need a hub to be legitimate: where a piece of work plainly stands on its own, say so and leave it rather than inventing a parent for it. Where you genuinely can't tell what an item is for, ask.`,
-  },
   {
     kind: 'capture',
     key: 'unprocessed-captures',
@@ -410,7 +383,7 @@ export async function runLibrarianSweep(ctx: UseCaseContext): Promise<{ pings: n
       title: `${links.unfixed.length} broken link${links.unfixed.length === 1 ? '' : 's'} need${links.unfixed.length === 1 ? 's' : ''} a judgment call`,
       body: `The librarian couldn't pick a single confident target for these, so it won't guess — pick the right one, or chat it through.`,
       evidence: sample.map((l) => ({ ref: `[[${l.from.replace(/\.md$/, '')}]]`, resolved: true })),
-      sessionType: 'librarian',
+      skill: 'librarian',
       seedPrompt: `These wikilinks don't resolve, and no single existing note is a confident match:\n${links.unfixed
         .map(
           (l) =>
@@ -433,7 +406,7 @@ export async function runLibrarianSweep(ctx: UseCaseContext): Promise<{ pings: n
       title: group.title(items),
       body: group.body,
       evidence: items.slice(0, 5).map((o) => ({ ref: `[[${o.path.replace(/\.md$/, '')}]]`, resolved: true })),
-      sessionType: 'librarian',
+      skill: 'librarian',
       seedPrompt: group.seed(items),
       targetPath: null,
       payload: { kind: 'orphans', items },
@@ -518,8 +491,8 @@ export async function resolvePingItem(
     const mention = orphan.mentions.find((m) => m.host === host);
     if (!mention) throw new Error(`not an offered host: ${host}`);
     const slug = orphan.path.replace(/\.md$/, '');
-    // The term that actually matched — a ticket is cited by its key, not its
-    // title. Pings written before terms were recorded fall back to the title.
+    // The text that actually matched. Now always the title, but older pings
+    // recorded an alias (a ticket's key) and must still apply cleanly.
     const term = mention.term ?? orphan.title;
     await applyLibrarianPatch(ctx, host, (body) => buildMentionLinkPatch(body, term, slug), {
       missing: `“${term}” is no longer mentioned in ${host} — nothing to link.`,

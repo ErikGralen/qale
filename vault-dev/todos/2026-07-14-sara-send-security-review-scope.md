@@ -1,8 +1,8 @@
 ---
 type: todo
-summary: Sara to send Nordkap's security-review scope so we know what August audits
+summary: Sara to send Nordkap's security-review scope so we know what August will audit
 title: Send Nordkap's security-review scope
-status: open
+commitment: open
 due: 2026-07-16
 owner: "[[people/sara-lindqvist]]"
 sources:
@@ -12,4 +12,4 @@ tags:
 ---
 
 > "I'll forward the review scope this week so you can see what they'll poke at."
-> — [[meetings/2026-07-14-nordkap-checkin]]
+> from [[meetings/2026-07-14-nordkap-checkin]]

@@ -1,3 +1,4 @@
+export * from './lifecycle.js';
 export * from './frontmatter.js';
 export * from './trust.js';
 export * from './index-files.js';
@@ -5,6 +6,7 @@ export * from './slug.js';
 export * from './link-types.js';
 export * from './link-repair.js';
 export * from './invariant.js';
+export * from './edit-layer.js';
 export * from './decisions.js';
 export * from './event-mirror.js';
 export * from './note.js';

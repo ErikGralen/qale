@@ -1,55 +1,55 @@
-me: Thanks for doing this as a working session rather than a status call. I want to watch how you actually build the Friday reports, not hear a summary of it.
+me: Thanks for doing this as a working session instead of a status call. I'd rather watch how you actually build the Friday reports than hear a summary of it.
 
-Mikkel: Happy to, because "summary" undersells the pain. Every Friday morning I open three dashboards — utilisation, on-time delivery, cost-per-route — and I rebuild each one as a PDF, by hand, and email them to five regional managers. It takes me two to three hours. Before I've had coffee. Every single week.
+Mikkel: Happy to, because "summary" undersells it. Every Friday morning I open three dashboards, utilisation, on-time delivery, cost-per-route, and I rebuild each one as a PDF by hand and email them to five regional managers. Two to three hours. Before coffee. Every week.
 
-me: Two to three hours, every week. Walk me through where the time actually goes — is it the building, or the sending?
+me: Two to three hours. Where does the time actually go? Is it the building or the sending?
 
-Mikkel: Neither, really. It's the reshaping. Each regional manager only wants their region. So I filter the dashboard to North, export, rename the file, filter to West, export, rename — five times, three dashboards. Fifteen exports, fifteen filenames, five emails. If I fat-finger one filter, someone in West gets North's numbers and I hear about it for a week.
+Mikkel: Neither really. It's the reshaping. Each regional manager only wants their own region. So I filter the dashboard to North, export, rename the file, filter to West, export, rename. Five times, three dashboards. Fifteen exports, fifteen filenames, five emails. And if I fat-finger one filter, someone in West gets North's numbers and I hear about it for a week.
 
-me: So the job isn't "look at a dashboard." The job is "deliver five region-specific report packs, reliably, first thing Friday."
+me: So the job isn't looking at a dashboard. It's getting five region-specific packs out reliably, first thing Friday.
 
-Mikkel: That's exactly it. And it has to be there before they arrive. If it lands at nine-thirty they've already started asking me for it in Slack. I need it sitting in their inbox at six a.m. Friday, filtered to their region, without me touching it.
+Mikkel: That's it. And it has to be there before they arrive. If it lands at half nine they've already been asking me for it in Slack. I need it sitting in their inbox at six on Friday morning, filtered to their region, without me touching it.
 
-me: If I could give you that — scheduled, auto-filtered per region, delivered before you're awake — what would that be worth to you?
+me: If I could give you that. Scheduled, auto-filtered per region, delivered before you're awake. What's that worth to you?
 
-Mikkel: You'd have solved the worst hour of my week. I'm not exaggerating. That's the thing I'd renew for on its own.
+Mikkel: You'd have taken out the worst hour of my week. I'm not exaggerating. I'd renew for that on its own.
 
-me: Let me push on the format, because this is where we usually get it wrong. PDF for everyone?
+me: Let me push on format, because that's where we usually get it wrong. PDF for everyone?
 
-Mikkel: PDF for three of the managers — they forward it to their teams, they like that it's clean and locked. But two of them pull it into their own spreadsheets, so those two need Excel, or at least CSV. Right now I export PDF and then separately export CSV for those two, which is why it's fifteen exports and not five.
+Mikkel: PDF for three of the managers. They forward it to their teams and they like that it's clean and locked. Two of them pull it into their own spreadsheets though, so those two need Excel, or CSV at minimum. Right now I export PDF and then separately export CSV for those two, which is why it's fifteen exports and not five.
 
-me: Good — so it's not "PDF versus Excel," it's per-recipient format. Some want the locked pack, some want the raw numbers.
+me: So it's not PDF or Excel as a global setting. It's per recipient.
 
-Mikkel: Per-recipient, yes. And per-recipient region. If your scheduled export can't send different cuts to different people, it only solves half my Friday.
+Mikkel: Per recipient, yes. And per region. If your scheduled export can't send different cuts to different people it only solves half my Friday.
 
-me: What about the delivery itself — straight to their individual emails?
+me: What about delivery? Straight to their individual email addresses?
 
-Mikkel: Actually, no — send it to a distribution list. We have ops-north@, ops-west@, and so on. People change roles here constantly; if it's wired to a person's address I'm back to maintaining it by hand every time someone moves. Send it to the group inbox and let the group membership be someone else's problem.
+Mikkel: No, actually. Send it to a distribution list. We have ops-north@, ops-west@ and so on. People change roles here constantly, and if it's wired to a person's address I'm back to maintaining it by hand every time someone moves. Send it to the group inbox and let group membership be someone else's problem.
 
-me: That's a useful correction — a shared list, not a person. Noted hard. Now I have to ask the uncomfortable one. Have you looked at anyone else for this?
+me: Good, that's a useful correction. Shared list, not a person. Now I have to ask the uncomfortable one. Have you looked at anyone else for this?
 
-Mikkel: I'll be straight with you, because you've earned it. We took a demo from Insikt last month. Ops set it up, not me, but I sat in.
+Mikkel: I'll be straight with you, since you've been straight with me. We took a demo from Insikt last month. Ops set it up, not me, but I sat in.
 
-me: I appreciate you telling me directly. What was their pitch?
+me: I appreciate you telling me. What was the pitch?
 
-Mikkel: "Reports without the dashboard." Which is a good line, honestly — it's aimed exactly at my Friday. You send them your data, they email out scheduled reports, no dashboard to log into. For the five managers who never open your dashboard anyway, that's tempting.
+Mikkel: "Reports without the dashboard." Which is a good line, honestly. It's aimed exactly at my Friday. You send them your data, they email out scheduled reports, nothing to log into. For five managers who never open your dashboard anyway, that's tempting.
 
 me: And why are you still talking to me?
 
-Mikkel: Two reasons. One, ripping out the dashboard means my analysts lose the thing they actually use daily — Insikt only does the outbound reports, nothing interactive. Two, moving all our route data to a second vendor for one feature felt insane when you already have the data. If you ship scheduled exports, their whole pitch evaporates for us. If you don't, by autumn the "why are we paying for a dashboard nobody reads" conversation writes itself.
+Mikkel: Two reasons. One, ripping out the dashboard means my analysts lose the thing they use every day. Insikt only does the outbound reports, there's nothing interactive. Two, moving all our route data to a second vendor for one feature felt insane when you already have the data. If you ship scheduled exports their pitch stops working on us. If you don't, by autumn someone here starts asking why we pay for a dashboard nobody reads.
 
-me: That's fair and I'd rather hear it plainly. Let me shift to something adjacent — the summer ramp. Where are you on headcount?
+me: That's fair, and I'd rather hear it plainly. Let me change subject. The summer ramp, where are you on headcount?
 
-Mikkel: Six weeks out from adding about forty seasonal drivers. And here's my standing complaint, since you're writing things down: I am not paying a full annual seat for a driver who opens one screen to check their route for three months. Last summer I paid for forty seats that averaged maybe four logins each. That math is going to come up at renewal whether I raise it or you do.
+Mikkel: Six weeks out from adding about forty seasonal drivers. And here's my standing complaint, since you're writing things down. I'm not paying a full annual seat for a driver who opens one screen to check their route for three months. Last summer I paid for forty seats that averaged maybe four logins each. That's coming up at renewal whether I raise it or you do.
 
-me: I know it will, and I'm not going to pretend the per-seat model fits your shape. I can't fix pricing in this call, but I can make sure it's documented as your position and not lost.
+me: I know it is, and I'm not going to pretend the per-seat model fits your shape. I can't fix pricing in this call, but I can make sure your position is written down properly instead of getting lost.
 
-Mikkel: Document it. Seasonal, view-only, should not cost what an analyst seat costs. That's the whole sentence.
+Mikkel: Write it down. Seasonal, view-only, shouldn't cost what an analyst seat costs. That's the whole sentence.
 
-me: Got it, word for word. Back to exports — if I got you into a v1 beta in a few weeks, would you actually run your real Friday on it?
+me: Got it. Back to exports. If I got you into a v1 beta in a few weeks, would you run your real Friday on it?
 
-Mikkel: Gladly. I'll send you my five current report templates so you're building against reality, not a mock-up. If it survives one real Friday I'll tell every regional manager it's coming, and I'll say it loudly at renewal.
+Mikkel: Gladly. I'll send you my five current report templates so you're building against the real thing and not a mock-up. If it survives one real Friday I'll tell every regional manager it's coming, and I'll say so at renewal.
 
-me: Deal. Send me the five templates and I'll get you the v1 spec to react to before we build, so we don't guess on the format-per-recipient thing.
+me: Deal. Send me the five templates and I'll get you the v1 spec to react to before we build, so we don't guess on the per-recipient format thing.
 
-Mikkel: Send it. And don't overthink it — scheduled, per-region, per-format, to a group inbox, Friday 6 a.m. That's the whole product. Ship that and I stop taking competitor demos.
+Mikkel: Send it. And don't overthink it. Scheduled, per region, per format, to a group inbox, six a.m. Friday. That's the whole product. Ship that and I stop taking competitor demos.

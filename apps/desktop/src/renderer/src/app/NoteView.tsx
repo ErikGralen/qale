@@ -1,16 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
-import type { LucideIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { isMirrorType, lifecycleValue, lifecycleValueLabel, noteTypeLabel, readOnlyReason } from '@pm/domain';
 import type { BacklinkDTO } from '@pm/ipc';
 import { Badge, Button, Separator } from '@pm/ui';
-import { CalendarDays, ChevronRight, Link2, MoreHorizontal, Pin, Play, Sparkles, Trash2, History } from 'lucide-react';
-import { useApp } from '../state/app-state';
+import { CalendarDays, Link2, Lock, MessageSquare, Pin, Sparkles, Trash2, History } from 'lucide-react';
+import { useApp, type SessionOverview } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
 import { noteTypeIcon } from '../lib/note-icons';
 import { Markdown } from '../components/Markdown';
+import { HeaderAction, HeaderActions, HeaderMenu, PageHeader } from '../components/PageHeader';
 import { MeetingDelivery } from '../components/DeliveryStrip';
 import { NoteEditor } from '../components/NoteEditor';
 import { NoteHistory } from '../components/NoteHistory';
 import { PropertiesBlock } from '../components/PropertiesBlock';
+import { TitleEditor } from '../components/TitleEditor';
+import { SkillAgentPage } from './SkillAgentPage';
 import { askSelectionSeed, beforeMeetingSeed, handleTodoSeed, processNoteSeed } from '../lib/agent-nudges';
 import { localDateStr } from '../lib/dates';
 
@@ -25,128 +28,6 @@ function upcomingLabel(frontmatter: Record<string, unknown>): string | null {
   if (new Date(t).toDateString() === new Date().toDateString()) return time ? `today ${time}` : 'today';
   const days = Math.ceil((t - Date.now()) / 86_400_000);
   return days === 1 ? 'tomorrow' : `in ${days} days`;
-}
-
-/**
- * The note's display name — an input styled as the page h1. Commits on blur or
- * Enter (which hands focus to the body); Escape reverts. A fresh untitled note
- * arrives with the title selected, so typing replaces it immediately.
- */
-function TitleEditor({
-  value,
-  autoFocus,
-  onCommit,
-}: {
-  value: string;
-  autoFocus: boolean;
-  onCommit: (title: string) => void;
-}) {
-  const [draft, setDraft] = useState(value);
-  return (
-    <input
-      className="mb-1 w-full rounded-md bg-transparent font-serif text-2xl font-semibold tracking-tight placeholder:text-muted-foreground/40 focus-visible:outline-none"
-      value={draft}
-      placeholder="Untitled"
-      autoFocus={autoFocus}
-      onFocus={(e) => {
-        if (autoFocus) e.currentTarget.select();
-      }}
-      onChange={(e) => setDraft(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          e.currentTarget.blur();
-        } else if (e.key === 'Escape') {
-          setDraft(value);
-          e.currentTarget.blur();
-        }
-      }}
-      onBlur={() => {
-        const next = draft.trim();
-        if (next && next !== value) onCommit(next);
-        else setDraft(value);
-      }}
-      aria-label="Note title"
-    />
-  );
-}
-
-/**
- * Overflow for the note's occasional/destructive actions — version history and
- * delete — kept out of the header's resting state so it reads as a location bar,
- * not an editor toolbar. Fixed-positioned to escape the header's flow (same
- * approach as the tab strip's context menu).
- */
-function NoteActionsMenu({ onHistory, onDelete }: { onHistory: () => void; onDelete: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
-
-  const toggle = () => {
-    const r = btnRef.current?.getBoundingClientRect();
-    if (r) setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) });
-    setOpen((o) => !o);
-  };
-
-  const items: { label: string; icon: LucideIcon; action: () => void; danger?: boolean }[] = [
-    { label: 'Version history', icon: History, action: onHistory },
-    { label: 'Delete note', icon: Trash2, action: onDelete, danger: true },
-  ];
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none aria-expanded:bg-accent aria-expanded:text-foreground"
-        onClick={toggle}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="More actions"
-        title="More actions"
-      >
-        <MoreHorizontal className="size-4" />
-      </button>
-      {open && pos && (
-        <>
-          <div className="fixed inset-0 z-50" onClick={() => setOpen(false)} />
-          <div
-            role="menu"
-            aria-label="Note actions"
-            className="fixed z-50 min-w-44 rounded-lg border border-border bg-card py-1 shadow-md"
-            style={{ top: pos.top, right: pos.right }}
-          >
-            {items.map((item) => (
-              <button
-                key={item.label}
-                role="menuitem"
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] focus-visible:outline-none ${
-                  item.danger
-                    ? 'text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10'
-                    : 'hover:bg-accent focus-visible:bg-accent'
-                }`}
-                onClick={() => {
-                  item.action();
-                  setOpen(false);
-                }}
-              >
-                <item.icon className="size-3.5" aria-hidden />
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </>
-  );
 }
 
 /** Typed groups first, alphabetical; untyped mentions last as "Linked from". */
@@ -165,8 +46,25 @@ function groupBacklinks(backlinks: BacklinkDTO[]): { label: string; items: Backl
     );
 }
 
+/**
+ * The stored conversation a session receipt was filed from, or null if it is no
+ * longer in the chat store. `session_id` is the join; receipts written before
+ * that field existed end in the id's first 8 characters, which is the same
+ * fallback the main process uses to answer "which chats touched this note".
+ */
+function chatForReceipt(
+  path: string,
+  frontmatter: Record<string, unknown>,
+  sessions: SessionOverview[],
+): SessionOverview | null {
+  const id = frontmatter['session_id'];
+  if (typeof id === 'string') return sessions.find((s) => s.id === id) ?? null;
+  const m = /-([0-9a-f]{8})\.md$/.exec(path);
+  return m ? (sessions.find((s) => s.id.startsWith(m[1]!)) ?? null) : null;
+}
+
 export function NoteView({ path }: { path: string }) {
-  const { docData, openDoc, openFolder, loadDoc, saveNote, renameNote, deleteNote, openSession, favorites, toggleFavorite, search } =
+  const { docData, openDoc, openFolder, loadDoc, saveNote, renameNote, deleteNote, openSession, openChat, sessions, favorites, toggleFavorite, search } =
     useApp();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -198,8 +96,29 @@ export function NoteView({ path }: { path: string }) {
     );
   }
 
+  // Skills and agents are stored as markdown but never shown as markdown —
+  // they get a purpose-built page (title, one-liner, instructions; the
+  // machinery stays hidden). One branch here catches every door in: lists,
+  // wikilinks, search, ⌘K, backlinks.
+  if (currentNote.type === 'skill' || currentNote.type === 'agent') {
+    return <SkillAgentPage note={currentNote} />;
+  }
+
   const editable = currentNote.bodyEditable;
-  const stance = currentNote.frontmatter['stance'] as string | undefined;
+  // A mirror's read-only line ends in a door: "edits happen there" is only
+  // useful next to the way there, and the URL property row is a collapse away.
+  const mirrorUrl =
+    isMirrorType(currentNote.type) && typeof currentNote.frontmatter['url'] === 'string'
+      ? currentNote.frontmatter['url']
+      : null;
+  // The note's own lifecycle value ('wont-do', 'superseded', …), read under
+  // whatever key its type calls it. Only themes and superseded decisions wear it
+  // as a badge; the rest carry it quietly in properties.
+  const lifecycle = lifecycleValue(currentNote.type, currentNote.frontmatter);
+  const lifecycleBadge =
+    currentNote.type === 'theme' || lifecycle === 'superseded'
+      ? lifecycle && lifecycleValueLabel(currentNote.type, lifecycle)
+      : null;
   // An upcoming meeting without prep gets the brief offer here,
   // on the page it would write to — never as an inbox item.
   // Synced-meeting chrome (google-calendar mirror): a quiet glyph + open link,
@@ -217,12 +136,15 @@ export function NoteView({ path }: { path: string }) {
   const offerBrief = upcoming !== null && !/^## Prep\b/m.test(currentNote.body);
   // An open commitment can be handed to the memory to plan/close/reschedule.
   const todoOpen =
-    currentNote.type === 'todo' && (currentNote.frontmatter['status'] ?? 'open') === 'open';
-  const sessionSkill =
-    currentNote.type === 'skill' && currentNote.frontmatter['skill_kind'] === 'session'
-      ? (currentNote.frontmatter['session_type'] as string | undefined)
-      : undefined;
-
+    currentNote.type === 'todo' && (currentNote.frontmatter['commitment'] ?? 'open') === 'open';
+  // A session receipt is the filed, git-tracked half of a session, and the
+  // session itself is the fuller record: every read, every card, in order.
+  // So a [[sessions/…]] link lands here and this button carries on into it.
+  // Resolved by `session_id`, falling back to the id prefix older receipts
+  // carry in their filename. Null when the session is gone, and then the receipt
+  // is the whole record.
+  const receiptChat =
+    currentNote.type === 'session' ? chatForReceipt(currentNote.path, currentNote.frontmatter, sessions) : null;
   // The path as a location, not a raw file label: type glyph → folder (opens
   // it) → filename. Root-level notes drop the folder segment.
   const slash = currentNote.path.lastIndexOf('/');
@@ -232,29 +154,23 @@ export function NoteView({ path }: { path: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-10 items-center gap-2 border-b border-border px-4">
-        <nav aria-label="Location" className="flex min-w-0 items-center gap-1 text-xs">
-          <TypeIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-          {folder && (
-            <>
-              <button
-                className="shrink-0 rounded px-1 py-0.5 font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                onClick={(e) => openFolder(folder, navFromEvent(e))}
-                title={`Open ${folder}`}
-              >
-                {folder}
-              </button>
-              <ChevronRight className="size-3 shrink-0 text-muted-foreground/50" aria-hidden />
-            </>
-          )}
-          <span className="truncate font-mono text-foreground/80" title={currentNote.path}>
-            {filename}
-          </span>
-        </nav>
-        <div className="ml-auto flex items-center gap-1.5">
-          {sessionSkill && (
-            <Button size="sm" onClick={() => openSession(sessionSkill, { title: currentNote.title })}>
-              <Play className="size-3.5" /> Start session
+      <PageHeader
+        icon={TypeIcon}
+        crumbs={folder ? [{ label: folder, onClick: (e) => openFolder(folder, navFromEvent(e)) }] : undefined}
+        label={filename}
+        labelClassName="font-mono"
+        labelTitle={currentNote.path}
+      >
+        <>
+          {receiptChat && (
+            <Button
+              size="sm"
+              onClick={(e) =>
+                openChat({ id: receiptChat.id, title: receiptChat.title }, navFromEvent(e))
+              }
+              title="Open the session this record was filed from, with everything it read and proposed"
+            >
+              <MessageSquare className="size-3.5" /> Open the session
             </Button>
           )}
           {currentNote.type === 'note' && editable && (
@@ -306,32 +222,41 @@ export function NoteView({ path }: { path: string }) {
               </Button>
             </div>
           ) : (
-            <div className="flex items-center gap-0.5 pl-1">
-              <button
-                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            <HeaderActions>
+              <HeaderAction
+                icon={Pin}
+                label={favorites.includes(currentNote.path) ? 'Unpin' : 'Pin'}
+                title={
+                  favorites.includes(currentNote.path) ? 'Unpin' : 'Pin — keep on the sidebar'
+                }
                 onClick={() => toggleFavorite(currentNote.path)}
-                aria-pressed={favorites.includes(currentNote.path)}
-                aria-label={favorites.includes(currentNote.path) ? 'Unpin' : 'Pin to keep on the sidebar'}
-                title={favorites.includes(currentNote.path) ? 'Unpin' : 'Pin — keep on the sidebar'}
-              >
-                <Pin className={`size-4 ${favorites.includes(currentNote.path) ? 'fill-brand text-brand' : ''}`} />
-              </button>
-              <NoteActionsMenu onHistory={() => setShowHistory(true)} onDelete={() => setConfirmDelete(true)} />
-            </div>
+                pressed={favorites.includes(currentNote.path)}
+                iconClassName={favorites.includes(currentNote.path) ? 'fill-brand text-brand' : undefined}
+              />
+              <HeaderMenu
+                items={[
+                  { label: 'Version history', icon: History, action: () => setShowHistory(true) },
+                  { label: 'Delete note', icon: Trash2, action: () => setConfirmDelete(true), danger: true },
+                ]}
+              />
+            </HeaderActions>
           )}
-        </div>
-      </div>
+        </>
+      </PageHeader>
 
       {/* px-14: the left gutter must seat the block handle (+ ⋮⋮, 54px) without
           clipping against the panel edge. */}
       <div className="flex-1 overflow-y-auto px-14 py-4">
         <div className="mx-auto max-w-2xl">
           <div className="mb-1 flex flex-wrap items-center gap-2">
-            <Badge variant="secondary" className="capitalize">
-              {currentNote.type}
+            {/* A mirror names the system it copies ("Jira mirror"), not our
+                folder — calling it a ticket beside meetings and decisions
+                implies the workspace owns it, and it does not. */}
+            <Badge variant="secondary">
+              {noteTypeLabel(currentNote.type, currentNote.frontmatter)}
             </Badge>
-            {stance && <Badge className="capitalize">{stance}</Badge>}
-            {currentNote.frontmatter['status'] === 'superseded' && <Badge variant="outline">superseded</Badge>}
+            {currentNote.type === 'theme' && lifecycleBadge && <Badge>{lifecycleBadge}</Badge>}
+            {lifecycle === 'superseded' && <Badge variant="outline">{lifecycleBadge}</Badge>}
             {eventCancelled && <Badge variant="outline">cancelled</Badge>}
             {syncedMeeting &&
               (eventUrl ? (
@@ -382,7 +307,7 @@ export function NoteView({ path }: { path: string }) {
               <Button
                 size="sm"
                 onClick={() =>
-                  openSession('before-meeting', {
+                  openSession('meeting-prep', {
                     initialPrompt: beforeMeetingSeed(currentNote.path),
                     title: `Brief — ${currentNote.title}`,
                     fresh: true,
@@ -394,12 +319,27 @@ export function NoteView({ path }: { path: string }) {
             </div>
           )}
 
+          {/* Why there is no cursor here, one line, right where the eye lands
+              when the click does nothing. A box would read as a warning; this
+              is orientation. The sentence is the domain's (@pm/domain
+              readOnlyReason), so every read-only surface says the same thing. */}
           {!editable && (
-            <div className="mb-4 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              {currentNote.type === 'decision'
-                ? 'Decisions are append-only — the body is never edited. To change course, supersede this decision; only its status flips.'
-                : `This is a ${currentNote.type} — its body is immutable. Edit metadata via the properties above.`}
-            </div>
+            <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <Lock className="size-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
+                {readOnlyReason(currentNote.type, currentNote.frontmatter)}
+              </span>
+              {mirrorUrl && (
+                <a
+                  href={mirrorUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                >
+                  Open the original
+                </a>
+              )}
+            </p>
           )}
 
           {editable ? (
@@ -423,7 +363,7 @@ export function NoteView({ path }: { path: string }) {
 
           <Separator className="my-6" />
 
-          {/* Inbound edges grouped by relationship (docs/typed-links.md):
+          {/* Inbound edges grouped by relationship:
               typed groups first ("Blocked by", "Evidence for"), the untyped
               mentions last under the familiar "Linked from". */}
           {backlinks.length === 0 ? (

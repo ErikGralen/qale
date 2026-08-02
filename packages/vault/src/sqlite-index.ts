@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { basename as slugBasename, refToSlug, type Note, type NoteType, type SearchHit } from '@pm/domain';
+import { basename as slugBasename, lifecycleValue, refToSlug, type Note, type NoteType, type SearchHit } from '@pm/domain';
 import { noteTitle } from '@pm/domain';
 import { extractLinks } from '@pm/markdown';
 import type { BacklinkRow, IndexedNote, IndexPort, LinkRecord } from '@pm/application';
@@ -12,7 +12,7 @@ import type { BacklinkRow, IndexedNote, IndexPort, LinkRecord } from '@pm/applic
  */
 
 /** Bump when the table shapes change — migrate() drops and lets reconcile rebuild. */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /** Frontmatter ref key → canonical edge type (+ reversed for inverse keys). */
 const FRONTMATTER_EDGE_KEYS: [key: string, type: string, reversed: boolean][] = [
@@ -36,7 +36,8 @@ interface FileRow {
   layer: string;
   title: string;
   summary: string;
-  status: string | null;
+  /** The note type's lifecycle value, whatever that lifecycle is named. */
+  lifecycle: string | null;
   mtime: number;
   frontmatter_json: string;
 }
@@ -71,7 +72,7 @@ export class SqliteIndex implements IndexPort {
         layer TEXT NOT NULL,
         title TEXT NOT NULL,
         summary TEXT NOT NULL,
-        status TEXT,
+        lifecycle TEXT,
         mtime INTEGER NOT NULL,
         frontmatter_json TEXT NOT NULL
       );
@@ -123,17 +124,17 @@ export class SqliteIndex implements IndexPort {
         layer: n.layer,
         title: noteTitle(n),
         summary: n.frontmatter.summary,
-        status: (n.frontmatter as Record<string, unknown>)['status'] as string | undefined ?? null,
+        lifecycle: lifecycleValue(n.type, n.frontmatter as Record<string, unknown>),
         mtime: n.mtime,
         frontmatter_json: JSON.stringify(n.frontmatter),
       };
       this.db
         .prepare(
-          `INSERT INTO files (path, slug, name, type, layer, title, summary, status, mtime, frontmatter_json)
-           VALUES (@path, @slug, @name, @type, @layer, @title, @summary, @status, @mtime, @frontmatter_json)
+          `INSERT INTO files (path, slug, name, type, layer, title, summary, lifecycle, mtime, frontmatter_json)
+           VALUES (@path, @slug, @name, @type, @layer, @title, @summary, @lifecycle, @mtime, @frontmatter_json)
            ON CONFLICT(path) DO UPDATE SET
              slug=@slug, name=@name, type=@type, layer=@layer, title=@title,
-             summary=@summary, status=@status, mtime=@mtime, frontmatter_json=@frontmatter_json`,
+             summary=@summary, lifecycle=@lifecycle, mtime=@mtime, frontmatter_json=@frontmatter_json`,
         )
         .run(row);
 
@@ -339,7 +340,7 @@ export class SqliteIndex implements IndexPort {
       layer: row.layer,
       title: row.title,
       summary: row.summary,
-      status: row.status,
+      lifecycle: row.lifecycle,
       mtime: row.mtime,
       frontmatter: JSON.parse(row.frontmatter_json) as Record<string, unknown>,
       links: links.map((l) => ({

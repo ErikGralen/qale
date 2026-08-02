@@ -11,7 +11,7 @@ import {
 
 /**
  * OKF §8 index.md rendering + §3.1 reserved-filename handling
- * (docs/okf-alignment.md Phase 1). Pure builders, so asserted on their exact
+ * (OKF alignment, phase 1). Pure builders, so asserted on their exact
  * output — the app compares generated content byte-for-byte to decide whether to
  * rewrite, so format stability is a real contract here.
  */
@@ -28,30 +28,30 @@ test('isReservedFile matches index.md/log.md at root and in folders; isFolderInd
   assert.equal(isReservedFile('index.md'), true);
 });
 
-test('renderFolderIndex groups by status, projects summary to description, sorts by title', () => {
+test('renderFolderIndex groups by lifecycle, projects summary to description, sorts by title', () => {
   const folder: IndexFolder = {
     dir: 'insights',
     label: 'Insights',
     purpose: 'analyses over the raw layer',
     entries: [
-      { path: 'insights/zeta.md', title: 'Zeta', description: 'Zeta wants SSO.', status: 'active' },
-      { path: 'insights/acme.md', title: 'Acme', description: 'Acme wants SCIM.', status: 'active' },
-      { path: 'insights/old.md', title: 'Old finding', description: 'No longer holds.', status: 'stale' },
+      { path: 'insights/zeta.md', title: 'Zeta', description: 'Zeta wants SSO.', lifecycle: 'processed' },
+      { path: 'insights/acme.md', title: 'Acme', description: 'Acme wants SCIM.', lifecycle: 'processed' },
+      { path: 'insights/old.md', title: 'Old finding', description: 'No longer holds.', lifecycle: 'stale' },
     ],
   };
   const out = renderFolderIndex(folder);
   assert.match(out, /^---\ndescription: Insights — analyses over the raw layer\n---\n/);
   assert.match(out, /# Insights/);
-  // Active section precedes Stale (freshness-relevant order), Acme before Zeta (title sort).
-  const active = out.indexOf('## Active');
+  // Processed precedes Stale (attention-first order), Acme before Zeta (title sort).
+  const processed = out.indexOf('## Processed');
   const stale = out.indexOf('## Stale');
-  assert.ok(active > 0 && stale > active, 'Active section comes before Stale');
+  assert.ok(processed > 0 && stale > processed, 'Processed section comes before Stale');
   assert.ok(out.indexOf('[Acme]') < out.indexOf('[Zeta]'), 'entries sort by title');
   // Description projected from summary, entry links are vault-relative.
   assert.match(out, /\* \[Acme\]\(insights\/acme\.md\) — Acme wants SCIM\./);
 });
 
-test('renderFolderIndex with no statuses renders one flat list', () => {
+test('renderFolderIndex with no lifecycle values renders one flat list', () => {
   const folder: IndexFolder = {
     dir: 'people',
     label: 'People',
@@ -62,7 +62,7 @@ test('renderFolderIndex with no statuses renders one flat list', () => {
     ],
   };
   const out = renderFolderIndex(folder);
-  assert.doesNotMatch(out, /## /, 'no status subsections when nothing carries a status');
+  assert.doesNotMatch(out, /## /, 'no subsections when nothing carries a lifecycle');
   assert.match(out, /\* \[Jonas\]\(people\/jonas\.md\) — PM at Kranelund\./);
 });
 
@@ -73,8 +73,8 @@ test('renderRootIndex stamps okf_version, links non-empty folders with counts', 
       label: 'Decisions',
       purpose: 'the append-only decision spine',
       entries: [
-        { path: 'decisions/a.md', title: 'A', description: 'x', status: 'active' },
-        { path: 'decisions/b.md', title: 'B', description: 'y', status: 'active' },
+        { path: 'decisions/a.md', title: 'A', description: 'x', lifecycle: 'active' },
+        { path: 'decisions/b.md', title: 'B', description: 'y', lifecycle: 'active' },
       ],
     },
     { dir: 'notes', label: 'Notes', purpose: 'authored notes', entries: [] },

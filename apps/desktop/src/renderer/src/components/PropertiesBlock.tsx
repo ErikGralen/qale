@@ -43,8 +43,10 @@ import { PersonChip } from './PersonChip';
  * on change, text on blur or Enter, Escape reverts). Fields come from the
  * per-type schema; ref arrays render as clickable wikilink chips (provenance
  * is a first-class citizen here, not a footnote); unknown frontmatter keys
- * surface as removable custom rows, and `+ Add property` writes new ones —
- * the domain schema preserves keys it doesn't know.
+ * surface as removable custom rows behind a `N more` fold — a synced note
+ * carries a dozen of them and they'd otherwise bury the six a human reads —
+ * and `+ Add property` writes new ones; the domain schema preserves keys it
+ * doesn't know.
  */
 
 /** Borderless until hovered/focused — values read as text, edit on approach. */
@@ -119,7 +121,7 @@ function coerceVerified(value: unknown): Verification[] {
 }
 
 /**
- * The OKF trust tier (docs/okf-alignment.md Phase 2), shown next to the freshness
+ * The OKF trust tier (OKF alignment, phase 2), shown next to the freshness
  * status: who last confirmed the note is still true, and when. Absence is the
  * "unverified" default and shows no row — this only appears once something has
  * actually been verified.
@@ -149,11 +151,15 @@ function TrustRow({ verifications }: { verifications: Verification[] }) {
 }
 
 const COLLAPSE_KEY = 'pm.properties.collapsed';
+const SHOW_ALL_KEY = 'pm.properties.showAll';
 
 export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: () => void }) {
   const { saveFrontmatter, loadDoc, tree, openContext, openDoc } = useApp();
   const tagSuggestions = useMemo(() => collectContexts(tree), [tree]);
   const [open, setOpen] = useState(() => localStorage.getItem(COLLAPSE_KEY) !== '1');
+  // Whether the machine-written tail is unfolded. A preference, not per-note
+  // state: someone who wants to see `external_id` wants to see it everywhere.
+  const [showAll, setShowAll] = useState(() => localStorage.getItem(SHOW_ALL_KEY) === '1');
 
   // Later commits build on the latest local state, not stale props; the queue
   // serializes saves so rapid edits can't interleave (last write wins).
@@ -190,7 +196,7 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
     const targets = arr.map((r) => String(r).replace(/^\[\[/, '').replace(/\]\]$/, ''));
     return targets.length > 0 ? [{ key, targets }] : [];
   });
-  // Ticket relationships written by sync (docs/typed-links.md): `parent` reads
+  // Ticket relationships written by sync: `parent` reads
   // as "Part of"; `links` entries group under their relationship label. They
   // render as the same ref chips — synced, so no remove affordance.
   const relationRows =
@@ -209,6 +215,13 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
     ...REF_FIELDS,
   ]);
   const customKeys = Object.keys(note.frontmatter).filter((k) => !known.has(k));
+  // The type's own schema is what a human came here to read; everything else is
+  // sync provenance (`provider`, `external_id`, `calendar`, `event_status`…) —
+  // true, worth keeping, but not worth a row until asked for. The exception is
+  // a link out: a mirror's `url` is the one machine-written key someone
+  // actually clicks, so it stays with the schema rows.
+  const linkOutKeys = customKeys.filter((k) => webUrl(note.frontmatter[k]));
+  const tailKeys = customKeys.filter((k) => !webUrl(note.frontmatter[k]));
   const filledCount =
     specs.filter((s) => note.frontmatter[s.key] !== undefined).length +
     customKeys.length +
@@ -299,43 +312,42 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
               </PropertyRow>
             ))}
 
-            {customKeys.map((key) => {
-              const value = note.frontmatter[key];
-              const locked = !canEdit(key);
-              return (
-                <PropertyRow
+            {linkOutKeys.map((key) => (
+              <CustomRow
+                key={key}
+                propKey={key}
+                value={note.frontmatter[key]}
+                locked={!canEdit(key)}
+                onCommit={commit}
+              />
+            ))}
+
+            {showAll &&
+              tailKeys.map((key) => (
+                <CustomRow
                   key={key}
-                  icon={Type}
-                  label={humanize(key)}
-                  // Harness-written keys stay visible but lose the hover-X — a
-                  // stray click must not delete part of a receipt or the spine.
-                  // Same for anything the type's invariant freezes.
-                  onRemove={SYSTEM_KEYS.has(key) || locked ? undefined : () => commit(key, undefined)}
-                >
-                  {locked || typeof value === 'object' ? (
-                    // Arrays/objects don't survive a text-input round trip
-                    // (they'd come back as strings) — show them read-only.
-                    <p
-                      className="min-h-[26px] truncate px-1.5 py-0.5 text-sm text-muted-foreground"
-                      title={typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                    >
-                      {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                    </p>
-                  ) : webUrl(value) ? (
-                    <UrlValue
-                      value={value as string}
-                      href={webUrl(value) as string}
-                      onCommit={(v) => commit(key, v)}
-                    />
-                  ) : (
-                    <TextValue
-                      value={typeof value === 'string' ? value : String(value)}
-                      onCommit={(v) => commit(key, typeof v === 'string' ? coerceScalar(v, value) : v)}
-                    />
-                  )}
-                </PropertyRow>
-              );
-            })}
+                  propKey={key}
+                  value={note.frontmatter[key]}
+                  locked={!canEdit(key)}
+                  onCommit={commit}
+                />
+              ))}
+
+            {tailKeys.length > 0 && (
+              <button
+                className="group/more -mx-1.5 mt-px flex h-[26px] items-center gap-1.5 rounded-md px-1.5 text-xs font-medium text-muted-foreground/70 transition-colors hover:bg-accent/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                onClick={() => {
+                  setShowAll(!showAll);
+                  localStorage.setItem(SHOW_ALL_KEY, showAll ? '0' : '1');
+                }}
+              >
+                <ChevronRight
+                  className={`size-3.5 transition-transform duration-150 motion-reduce:transition-none ${showAll ? 'rotate-90' : ''}`}
+                  aria-hidden
+                />
+                {showAll ? 'Show less' : `${tailKeys.length} more`}
+              </button>
+            )}
 
             {/* A type with frozen frontmatter has no room for new keys either —
                 main rejects them, so the affordance doesn't appear. */}
@@ -353,6 +365,61 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
         </CollapsibleContent>
       </Collapsible>
     </div>
+  );
+}
+
+/**
+ * A frontmatter key the type's schema doesn't know: rendered from the value's
+ * own shape rather than a widget spec.
+ */
+function CustomRow({
+  propKey,
+  value,
+  locked,
+  onCommit,
+}: {
+  propKey: string;
+  value: unknown;
+  /** The type's invariant freezes this field (sync owns it). */
+  locked: boolean;
+  onCommit: (key: string, value: unknown) => void;
+}) {
+  // A frozen field is still a link: a mirror's `url` is sync-owned
+  // (uneditable) but is exactly the row a human wants to click, so the link
+  // test comes before the read-only fallback.
+  const href = webUrl(value);
+  return (
+    <PropertyRow
+      icon={href ? Link2 : Type}
+      label={humanize(propKey)}
+      // Harness-written keys stay visible but lose the hover-X — a stray click
+      // must not delete part of a receipt or the spine. Same for anything the
+      // type's invariant freezes.
+      onRemove={SYSTEM_KEYS.has(propKey) || locked ? undefined : () => onCommit(propKey, undefined)}
+    >
+      {href ? (
+        <UrlValue
+          value={value as string}
+          href={href}
+          readOnly={locked}
+          onCommit={(v) => onCommit(propKey, v)}
+        />
+      ) : locked || typeof value === 'object' ? (
+        // Arrays/objects don't survive a text-input round trip (they'd come
+        // back as strings) — show them read-only.
+        <p
+          className="min-h-[26px] truncate px-1.5 py-0.5 text-sm text-muted-foreground"
+          title={typeof value === 'object' ? JSON.stringify(value) : String(value)}
+        >
+          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+        </p>
+      ) : (
+        <TextValue
+          value={typeof value === 'string' ? value : String(value)}
+          onCommit={(v) => onCommit(propKey, typeof v === 'string' ? coerceScalar(v, value) : v)}
+        />
+      )}
+    </PropertyRow>
   );
 }
 
@@ -414,12 +481,12 @@ function SummaryEditor({
   const echo = !norm || norm === title.trim().toLowerCase() || norm === 'untitled';
 
   if (readOnly) {
-    return echo ? null : <p className="mb-4 text-[15px] text-muted-foreground">{value}</p>;
+    return echo ? null : <p className="mb-4 text-body text-muted-foreground">{value}</p>;
   }
   if (draft === null) {
     return (
       <p
-        className="mb-4 cursor-text rounded-md text-[15px] text-muted-foreground transition-colors hover:bg-accent/40"
+        className="mb-4 cursor-text rounded-md text-body text-muted-foreground transition-colors hover:bg-accent/40"
         onClick={() => setDraft(echo ? '' : value)}
         title="Click to edit summary"
       >
@@ -429,7 +496,7 @@ function SummaryEditor({
   }
   return (
     <textarea
-      className="mb-4 w-full field-sizing-content resize-none rounded-md border border-input bg-card px-2 py-1 text-[15px] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      className="mb-4 w-full field-sizing-content resize-none rounded-md border border-input bg-card px-2 py-1 text-body text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       value={draft}
       autoFocus
       onChange={(e) => setDraft(e.target.value)}
@@ -492,13 +559,14 @@ function PropertyValue({
   if (spec.widget === 'readonly' || readOnly) {
     // Sync-owned facts (a mirror's state, assignee, upstream timestamp)
     // display but never edit — re-sync is their only writer, and main rejects
-    // any other. Timestamps read as local time, not raw ISO.
+    // any other. Timestamps read as local time, not raw ISO, and an enum-valued
+    // row reads as its label ("In progress"), never its token.
     const text =
       value === undefined || value === null || value === ''
         ? '—'
         : Array.isArray(value)
           ? value.join(', ')
-          : String(value);
+          : (spec.options?.find((o) => o.value === value)?.label ?? String(value));
     const asDate =
       typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && !Number.isNaN(Date.parse(value))
         ? new Date(value).toLocaleString()
@@ -519,8 +587,8 @@ function PropertyValue({
       >
         <option value="">Empty</option>
         {spec.options?.map((o) => (
-          <option key={o} value={o}>
-            {o}
+          <option key={o.value} value={o.value}>
+            {o.label}
           </option>
         ))}
       </select>
@@ -592,17 +660,21 @@ function TextValue({ value, onCommit }: { value: string; onCommit: (v: unknown) 
 /**
  * A URL property reads as its link and opens the page on click (routed to the
  * OS browser via the window's open handler) — the mirror's back-reference to
- * Jira/Confluence is one click, not a select-and-copy. Still editable: the
- * trailing pencil-free affordance is a focusable input revealed on hover, so
- * the value can be corrected without losing the click-to-open default.
+ * Jira/Confluence is one click, not a select-and-copy. Still editable where the
+ * type allows it: the trailing pencil-free affordance is a focusable input
+ * revealed on hover, so the value can be corrected without losing the
+ * click-to-open default. `readOnly` (sync owns the address) drops the Edit
+ * affordance only — the link itself stays live.
  */
 function UrlValue({
   value,
   href,
+  readOnly,
   onCommit,
 }: {
   value: string;
   href: string;
+  readOnly?: boolean;
   onCommit: (v: unknown) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -644,14 +716,16 @@ function UrlValue({
         {value}
       </a>
       <ExternalLink className="size-3.5 shrink-0 text-muted-foreground/50" aria-hidden />
-      <button
-        className="shrink-0 rounded-sm px-1 py-0.5 text-xs text-muted-foreground/0 transition-colors group-hover/url:text-muted-foreground/60 hover:!text-foreground focus-visible:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-        onClick={() => setDraft(value)}
-        title="Edit URL"
-        aria-label="Edit URL"
-      >
-        Edit
-      </button>
+      {!readOnly && (
+        <button
+          className="shrink-0 rounded-sm px-1 py-0.5 text-xs text-muted-foreground/0 transition-colors group-hover/url:text-muted-foreground/60 hover:!text-foreground focus-visible:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={() => setDraft(value)}
+          title="Edit URL"
+          aria-label="Edit URL"
+        >
+          Edit
+        </button>
+      )}
     </div>
   );
 }

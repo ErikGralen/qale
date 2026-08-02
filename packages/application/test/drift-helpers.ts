@@ -34,7 +34,7 @@ export function inote(args: {
     layer: 'authored',
     title: args.title ?? slug.split('/').pop()!,
     summary: args.summary ?? `summary of ${slug}`,
-    status: null,
+    lifecycle: null,
     mtime: args.mtime ?? 100,
     frontmatter: { type: args.type, summary: args.summary ?? `summary of ${slug}`, ...args.frontmatter },
     links: (args.links ?? []).map((target) => ({ target })),
@@ -156,7 +156,7 @@ export function fakeDriftWorld(args: {
       create: (input: CreateProposalInput, created: number) => {
         const rec: ProposalRecord = {
           ...input,
-          sessionType: input.sessionType ?? null,
+          skill: input.skill ?? null,
           id: `p${++pid}`,
           status: 'pending',
           created,
@@ -172,15 +172,6 @@ export function fakeDriftWorld(args: {
         if (rec) Object.assign(rec, { status, resolved });
       },
       pendingCount: () => proposals.filter((p) => p.status === 'pending').length,
-      stats: () => ({
-        pending: 0,
-        accepted: 0,
-        rejected: 0,
-        stale: 0,
-        avgApproveMs: null,
-        approvalRate: null,
-        byType: {},
-      }),
     },
     pings: {
       create: (input: CreatePingInput, now: number) => {

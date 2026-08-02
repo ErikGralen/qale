@@ -33,7 +33,7 @@ export function buildSessionReceipt(
   const frontmatter: SessionFrontmatter = {
     type: 'session',
     summary: `${name} session — ${harness.writes.length} card(s) proposed`,
-    session_type: name,
+    skill: name,
     ...(harness.invoked.length > 0 ? { skills: harness.skillNames } : {}),
     session_id: harness.sessionId,
     started: harness.started,
@@ -49,7 +49,6 @@ export function buildSessionReceipt(
   // session that pulled in Synthesis halfway through says so (Sessions v2 Part 4).
   if (harness.invoked.length > 0) lines.push(`Skills: ${harness.skillNames.join(' → ')}`);
   if (files > 0) lines.push(`Session files: ${files} (working material, not kept in the memory)`);
-  if (harness.reachedCheckpoint) lines.push(`Reached checkpoint: **${harness.reachedCheckpoint}**`);
   lines.push('', '## Turns');
   for (const [i, turn] of harness.turns.entries()) {
     lines.push(`${i + 1}. ${truncate(turn.prompt, 200)}${turn.cardIds.length ? ` — ${turn.cardIds.length} card(s)` : ''}`);

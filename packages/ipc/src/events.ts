@@ -1,4 +1,4 @@
-import type { SpawnRequestDTO } from './dtos.js';
+import type { AskRequestDTO, SpawnRequestDTO } from './dtos.js';
 
 /**
  * Push events from main → renderer (webContents.send). These are the flattened,
@@ -41,12 +41,17 @@ export interface ProposalsChangedEvent {
 export interface SessionStatusEvent {
   channel: 'session:status';
   sessionId: string;
-  sessionType: string;
   title: string;
   status: 'running' | 'settled';
   /** Pending approval cards this session has open at emit time. */
   pendingCards: number;
   updated: number;
+  /**
+   * The run was started by a clock and ended with nothing to report (QM ticket
+   * 2). Set on the settle only. The session is already out of `chats:list` by
+   * the time this arrives, so the refresh this event triggers drops its row.
+   */
+  quiet?: boolean;
 }
 
 /**
@@ -73,6 +78,18 @@ export interface SpawnRequestEvent {
   request: SpawnRequestDTO | null;
 }
 
+/**
+ * A session is asking the PM a question mid-turn (`request`), or its card has
+ * settled (`request: null`). Inline in the chat, never a modal — but unlike the
+ * other cards the turn is PARKED on this one: nothing else in that conversation
+ * moves until it is answered, skipped, or the run is stopped.
+ */
+export interface AskRequestEvent {
+  channel: 'session:ask';
+  sessionId: string;
+  request: AskRequestDTO | null;
+}
+
 /** Fired when the agent-ping queue changes (created by a sweep, opened, dismissed). */
 export interface PingsChangedEvent {
   channel: 'pings:changed';
@@ -83,7 +100,6 @@ export interface PingsChangedEvent {
 export interface SessionFocusEvent {
   channel: 'session:focus';
   sessionId: string;
-  sessionType: string;
   title: string;
 }
 
@@ -101,6 +117,7 @@ export type PushEvent =
   | SessionStatusEvent
   | SessionFilesChangedEvent
   | SpawnRequestEvent
+  | AskRequestEvent
   | PingsChangedEvent
   | SessionFocusEvent
   | ConnectionsChangedEvent;
@@ -119,6 +136,7 @@ export const PUSH_CHANNELS = [
   'session:status',
   'session:files',
   'session:spawn',
+  'session:ask',
   'pings:changed',
   'session:focus',
   'connections:changed',

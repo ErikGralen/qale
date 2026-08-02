@@ -38,7 +38,7 @@ const PILL_TONE: Record<StateCategory, string> = {
 /** The pill's full class string — shared with the editor node view, which
  *  builds plain DOM and can't render <StatePill>. */
 export function pillClass(category: StateCategory): string {
-  return `inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[0.6875rem] font-medium whitespace-nowrap ${PILL_TONE[category]}`;
+  return `inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-micro font-medium whitespace-nowrap ${PILL_TONE[category]}`;
 }
 
 export function StatePill({
@@ -70,16 +70,36 @@ function StaleDot() {
   );
 }
 
+/** The type badge on a chip — the state pill's neutral sibling, same geometry
+ *  so a row of chips keeps one silhouette whichever pill it carries. */
+function KindPill({ label }: { label: string }) {
+  return (
+    <span className={`${pillClass('open')} self-center font-normal`}>{label}</span>
+  );
+}
+
 export function ExternalRefChip({
   target,
   alias,
   onOpen,
+  kind,
 }: {
   /** Wikilink target — "tickets/PAY-142", "wikipages/…", or a bare key. */
   target: string;
   alias?: string | null;
   /** Route to the mirror note when it exists (⌘click → new tab); absent chips open the provider URL. */
   onOpen?: (path: string, opts?: NavOpts) => void;
+  /**
+   * Name the object on the chip itself, e.g. "Confluence page". A ticket key
+   * announces its own kind — "PAY-142" could be nothing else — but a page title
+   * is an ordinary human phrase, so "Enterprise Onboarding" reads as a note, a
+   * theme, or a heading unless the chip says otherwise. On approval surfaces,
+   * where the PO is deciding whether something may leave the workspace, it must
+   * say otherwise. Passed in rather than read off the mirror, so an unsynced
+   * connection still names what it is. Suppressed when a state pill already
+   * types the reference.
+   */
+  kind?: string | null;
 }) {
   const [meta, setMeta] = useState<ExternalRefMetaDTO | null | undefined>(undefined);
 
@@ -109,8 +129,12 @@ export function ExternalRefChip({
     >
       {meta?.kind === 'wikipage' && <BookOpen className="size-3 shrink-0 self-center opacity-70" aria-hidden />}
       <span className="truncate">{label}</span>
-      {meta?.kind === 'ticket' && meta.state && meta.stateCategory && (
+      {/* One pill slot, one job: saying what this reference is. A live state
+          answers that for a ticket, so the kind pill yields to it. */}
+      {meta?.kind === 'ticket' && meta.state && meta.stateCategory ? (
         <StatePill state={meta.state} category={meta.stateCategory} className="self-center" />
+      ) : (
+        kind && <KindPill label={kind} />
       )}
       {meta?.stale && <StaleDot />}
     </button>

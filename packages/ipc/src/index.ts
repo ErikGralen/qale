@@ -1,6 +1,12 @@
 import type {
+  AgentDTO,
   AgentRunInput,
   AgentRunHandle,
+  ArrivalAmbitionDTO,
+  ArrivalItemInputDTO,
+  ArrivalPlanDTO,
+  ArrivalResultDTO,
+  ArrivalUndoResultDTO,
   AtRiskLinkDTO,
   BacklinkDTO,
   ConnectionDTO,
@@ -16,6 +22,7 @@ import type {
   IngestCaptureInputDTO,
   IngestCaptureResultDTO,
   MaintenanceReportDTO,
+  MeetingReviewAskDTO,
   NoteCommitDTO,
   NoteQueryDTO,
   NoteRefDTO,
@@ -23,7 +30,6 @@ import type {
   ProposalPreviewDTO,
   NoteDTO,
   ProposalDTO,
-  ProposalStatsDTO,
   ThemeHeatDTO,
   PeopleDirectoryDTO,
   PersonCardDTO,
@@ -38,10 +44,12 @@ import type {
   SessionLifecycle,
   SessionFileDTO,
   SpawnRequestDTO,
+  AskRequestDTO,
+  AskAnswerDTO,
   LiveSessionDTO,
   SettingsDTO,
   SkillDTO,
-  TodoStatus,
+  TodoCommitment,
   VaultInfoDTO,
   VaultTreeDTO,
 } from './dtos.js';
@@ -69,7 +77,7 @@ export interface InvokeMap {
   };
   'settings:setModel': { args: [modelId: string]; result: SettingsDTO };
   'settings:setSchedule': {
-    args: [sessionType: string, patch: { dayOfWeek?: number; hour?: number; enabled?: boolean }];
+    args: [skill: string, patch: { dayOfWeek?: number; hour?: number; enabled?: boolean }];
     result: SettingsDTO;
   };
   'settings:setMcp': { args: [patch: { enabled?: boolean; port?: number }]; result: SettingsDTO };
@@ -78,11 +86,15 @@ export interface InvokeMap {
     args: [patch: { name?: string | null; aliases?: string[] }];
     result: SettingsDTO;
   };
-  'schedule:runNow': { args: [sessionType: string]; result: { ok: boolean } };
+  'schedule:runNow': { args: [skill: string]; result: { ok: boolean } };
   'models:list': { args: []; result: ModelInfoDTO[] };
 
   // Skills (v2) — the parsed skill catalogue behind the Skills view
   'skills:list': { args: []; result: SkillDTO[] };
+
+  // Agents — the background watchers behind the Agents view, and their off switches
+  'agents:list': { args: []; result: AgentDTO[] };
+  'agents:setEnabled': { args: [id: string, enabled: boolean]; result: AgentDTO[] };
 
   // Vault
   'vault:pick': { args: []; result: VaultInfoDTO | null };
@@ -112,21 +124,38 @@ export interface InvokeMap {
 
   // Todos (the commitment ledger)
   'todos:capture': { args: [input: CaptureTodoInputDTO]; result: NoteDTO };
-  'todos:setStatus': { args: [path: string, status: TodoStatus]; result: NoteDTO };
+  'todos:setStatus': { args: [path: string, commitment: TodoCommitment]; result: NoteDTO };
 
   // Capture / search
   'note:capture': { args: [input: CaptureNoteInput]; result: NoteDTO };
   'capture:classify': { args: [text: string, fileName?: string]; result: CaptureClassificationDTO };
   'capture:ingest': { args: [input: IngestCaptureInputDTO]; result: IngestCaptureResultDTO };
   'capture:matchMeeting': { args: []; result: CaptureMeetingMatchDTO | null };
+
+  // Arrival (docs/vision/arrival.md) — pick, preview the plan, file the batch,
+  // take it back. `inspect` runs the same planner `ingest` does, so the tray's
+  // outcome line is the plan itself rather than a description of it.
+  'arrival:pick': { args: []; result: ArrivalItemInputDTO[] };
+  'arrival:inspect': {
+    args: [items: ArrivalItemInputDTO[], ambition?: ArrivalAmbitionDTO];
+    result: ArrivalPlanDTO;
+  };
+  'arrival:ingest': {
+    args: [items: ArrivalItemInputDTO[], ambition?: ArrivalAmbitionDTO];
+    result: ArrivalResultDTO;
+  };
+  'arrival:undo': { args: [id: string]; result: ArrivalUndoResultDTO };
   'search:query': { args: [query: string, limit?: number]; result: SearchHitDTO[] };
 
   // Proposals
   'proposals:list': { args: [status?: string]; result: ProposalDTO[] };
   'proposals:preview': { args: [id: string]; result: ProposalPreviewDTO | null };
-  'proposals:accept': { args: [id: string, edited?: unknown]; result: { ok: boolean; stale?: boolean; error?: string; url?: string } };
-  'proposals:reject': { args: [id: string]; result: { ok: boolean } };
-  'proposals:stats': { args: []; result: ProposalStatsDTO };
+  // `review` rides along on the resolve that empties a session: the question to
+  // put to the PO when their cards were all discarded (see MeetingReviewAskDTO).
+  'proposals:accept': { args: [id: string, edited?: unknown]; result: { ok: boolean; stale?: boolean; error?: string; url?: string; review?: MeetingReviewAskDTO } };
+  'proposals:reject': { args: [id: string]; result: { ok: boolean; review?: MeetingReviewAskDTO } };
+  /** The PO's answer to that question: take the meeting out of "needs review". */
+  'meeting:markReviewed': { args: [path: string]; result: { ok: boolean } };
 
   // Agent / sessions
   'agent:run': { args: [input: AgentRunInput]; result: AgentRunHandle };
@@ -151,6 +180,23 @@ export interface InvokeMap {
   /** Answer a fan-out card: approve (with the chosen model) or cancel. */
   'sessions:resolveSpawn': {
     args: [requestId: string, decision: { approved: boolean; modelId?: string }];
+    result: { ok: boolean };
+  };
+  /** The question card this session is parked on, for a tab that reopened. */
+  'sessions:pendingAsk': { args: [sessionId: string]; result: AskRequestDTO | null };
+  /**
+   * Every question still waiting on the PM, across sessions. A parked question
+   * outlives the app run that asked it (QM ticket 9), so the surfaces that rank
+   * it first — the badge, Home, the sidebar — have to be able to learn about one
+   * they never saw arrive.
+   */
+  'sessions:pendingAsks': { args: []; result: AskRequestDTO[] };
+  /**
+   * Answer a question card. `answers: null` is a skip — the run continues and
+   * the agent is told to decide for itself, rather than being left parked.
+   */
+  'sessions:resolveAsk': {
+    args: [requestId: string, answers: AskAnswerDTO[] | null];
     result: { ok: boolean };
   };
   'pings:list': { args: []; result: AgentPingDTO[] };
@@ -210,6 +256,8 @@ export const INVOKE_CHANNELS = [
   'schedule:runNow',
   'models:list',
   'skills:list',
+  'agents:list',
+  'agents:setEnabled',
   'vault:pick',
   'vault:open',
   'vault:current',
@@ -236,12 +284,16 @@ export const INVOKE_CHANNELS = [
   'capture:classify',
   'capture:ingest',
   'capture:matchMeeting',
+  'arrival:pick',
+  'arrival:inspect',
+  'arrival:ingest',
+  'arrival:undo',
   'search:query',
   'proposals:list',
   'proposals:preview',
   'proposals:accept',
   'proposals:reject',
-  'proposals:stats',
+  'meeting:markReviewed',
   'agent:run',
   'agent:abort',
   'chats:list',
@@ -254,6 +306,9 @@ export const INVOKE_CHANNELS = [
   'sessions:fileText',
   'sessions:pendingSpawn',
   'sessions:resolveSpawn',
+  'sessions:pendingAsk',
+  'sessions:pendingAsks',
+  'sessions:resolveAsk',
   'pings:list',
   'pings:open',
   'pings:dismiss',

@@ -1,6 +1,6 @@
 ---
 type: meeting
-summary: Nordkap check-in — SSO date 2026-07-28 confirmed (they're first tenant), SCIM September reconfirmed, procurement pricing review has started
+summary: "Nordkap check-in: SSO date 2026-07-28 confirmed with them as first tenant, September reconfirmed for SCIM, procurement's pricing review has started"
 tags:
   - enterprise-auth
   - pricing
@@ -17,7 +17,6 @@ transcript: "[[sources/2026-07-14-nordkap-checkin-transcript]]"
 
 ## Summary
 
-Gave Sara the firm SSO date: 2026-07-28, Nordkap as first tenant behind a flag, run jointly with her team. Her security review starts mid-August, so the margin is thin but real. SCIM: September reconfirmed ("September", not a date — per Tom); her team hand-created 14 more accounts last week and her patience is visibly finite. New: procurement's pricing review has started, question list coming our way. She'll flag anything unreasonable before it reaches us.
+Gave Sara the firm SSO date: 2026-07-28, Nordkap as first tenant behind a flag, rollout run jointly with her team since they're on Entra. Her security review starts mid-August, so there are two weeks of margin and she made it clear she doesn't want us spending them. SCIM: September holds, but only as "September" and not a date, per Tom. Her team hand-created another 14 accounts last week and she's running out of patience with it. New this week: procurement's pricing review has kicked off and a question list is coming. She'll flag anything unreasonable before it reaches us.
 
-Updates [[insights/nordkap-needs-scim]]; watch item on [[customers/nordkap-payments]].
-
+Updates [[insights/nordkap-needs-scim]]. Watch item on [[customers/nordkap-payments]].

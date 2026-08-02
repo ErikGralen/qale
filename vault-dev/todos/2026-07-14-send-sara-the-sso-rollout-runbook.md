@@ -2,7 +2,7 @@
 type: todo
 summary: Send Sara the SSO rollout runbook before the joint flag rollout
 title: Send Sara the SSO rollout runbook
-status: open
+commitment: open
 due: 2026-07-15
 sources:
   - "[[meetings/2026-07-14-nordkap-checkin]]"
@@ -11,6 +11,6 @@ tags:
 ---
 
 > "I'll send over the [[notes/rollout-runbook|rollout runbook]] so your team can review it before the 28th."
-> — [[meetings/2026-07-14-nordkap-checkin]]
+> from [[meetings/2026-07-14-nordkap-checkin]]
 
 Rollout delivery is tracked on [[tickets/PAY-142|PAY-142]].

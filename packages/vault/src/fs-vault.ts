@@ -5,6 +5,7 @@ import {
   NOTE_TYPE_META,
   NOTE_TYPES,
   makeNote,
+  normalizeLifecycleKeys,
   parseFrontmatter,
   typeForDir,
   titleFromSlug,
@@ -85,10 +86,14 @@ export class FsVault implements VaultPort {
   }
 
   async writeNote(relPath: string, frontmatter: Frontmatter, body: string): Promise<Note> {
-    const content = serializeNote(frontmatter as unknown as Record<string, unknown>, body);
+    // Same compat fold as the read side: a caller (or an agent card) that still
+    // says `status:` lands on the type's own lifecycle key, so no write puts the
+    // old polymorphic key back on disk.
+    const fm = normalizeLifecycleKeys(frontmatter) as Frontmatter;
+    const content = serializeNote(fm as unknown as Record<string, unknown>, body);
     await this.writeRaw(relPath, content);
     const stat = await this.statOf(relPath);
-    return makeNote({ path: relPath, frontmatter, body, mtime: stat });
+    return makeNote({ path: relPath, frontmatter: fm, body, mtime: stat });
   }
 
   async writeBody(relPath: string, body: string): Promise<Note> {
@@ -135,6 +140,21 @@ export class FsVault implements VaultPort {
     const out: FileListing[] = [];
     await this.walk(this.rootDir, out);
     return out;
+  }
+
+  async listDir(relPath: string): Promise<string[]> {
+    const abs = this.contain(relPath);
+    if (!abs) return [];
+    let entries;
+    try {
+      entries = await fs.readdir(abs, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    return entries
+      .filter((e) => e.isFile() && !e.name.startsWith('.'))
+      .map((e) => `${relPath.replace(/\/$/, '')}/${e.name}`)
+      .sort();
   }
 
   private async walk(dir: string, out: FileListing[]): Promise<void> {

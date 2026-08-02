@@ -16,6 +16,14 @@
   --font-heading: var(--font-serif);
   --font-sans: 'Inter Variable', sans-serif;
   --font-serif: 'Fraunces Variable', 'Iowan Old Style', Georgia, serif;
+  /* Type scale steps not covered by Tailwind's default sizes — DESIGN.md's
+     Body/Dense/Micro roles. Named here so retuning the scale is a one-line
+     edit instead of a find-and-replace across text-[Npx] call sites. */
+  --text-greeting: 1.75rem;
+  --text-body: 0.9375rem;
+  --text-dense: 0.8125rem;
+  --text-micro: 0.6875rem;
+  --text-2xs: 0.625rem;
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -61,7 +69,21 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Warm-gray palette — hue ~70 (clay/sand), low chroma. Brand accent is a warm clay/terracotta. */
+/*
+ * Warm-gray palette — hue ~70 (clay/sand), low chroma. Brand accent is a warm
+ * clay/terracotta.
+ *
+ * The accent is one value, not two. It is read as text far more often than it
+ * is filled (chips, wikilinks, counts — the visible fiber of the memory), so it
+ * sits at the lightness where terracotta *type* is legible: L 0.52 in light,
+ * where it clears AA on paper (5.8:1), on its own 8% wash (5.2:1), and on the
+ * 15% hover wash (4.7:1) — and carries near-white type on a fill at 5.6:1.
+ * The earlier 0.62 was chosen as a fill and failed every one of those as text.
+ *
+ * Dark mode is not the inverse. The accent lifts to 0.72 so it reads on a dark
+ * card, which makes a fill too light for near-white type — so a filled control
+ * flips to near-black ink instead. Same hue, same job, opposite ink.
+ */
 :root {
   --background: oklch(0.987 0.003 70);
   --foreground: oklch(0.24 0.008 60);
@@ -69,7 +91,7 @@
   --card-foreground: oklch(0.24 0.008 60);
   --popover: oklch(1 0.002 70);
   --popover-foreground: oklch(0.24 0.008 60);
-  --primary: oklch(0.62 0.13 42);
+  --primary: oklch(0.52 0.13 42);
   --primary-foreground: oklch(0.99 0.01 70);
   --secondary: oklch(0.955 0.006 70);
   --secondary-foreground: oklch(0.3 0.01 60);
@@ -77,7 +99,10 @@
   --muted-foreground: oklch(0.53 0.012 62);
   --accent: oklch(0.94 0.012 68);
   --accent-foreground: oklch(0.3 0.01 60);
-  --destructive: oklch(0.577 0.2 27.325);
+  /* Deep enough to stay legible ON its own soft fill: the destructive control
+     is a 10% wash that deepens to 20% on hover, and at 0.577 the label sank
+     into its own hover state (3.5:1). */
+  --destructive: oklch(0.5 0.2 27.325);
   /* Freshness/caution voice — stays in the warm family but reads as a flag (AA on paper). */
   --warning: oklch(0.5 0.11 72);
   --warning-foreground: oklch(0.99 0.01 70);
@@ -85,10 +110,10 @@
   --success: oklch(0.52 0.1 150);
   --border: oklch(0.9 0.008 68);
   --input: oklch(0.9 0.008 68);
-  --ring: oklch(0.62 0.13 42);
-  --brand: oklch(0.62 0.13 42);
+  --ring: oklch(0.52 0.13 42);
+  --brand: oklch(0.52 0.13 42);
   --brand-foreground: oklch(0.99 0.01 70);
-  --chart-1: oklch(0.62 0.13 42);
+  --chart-1: oklch(0.52 0.13 42);
   --chart-2: oklch(0.7 0.09 55);
   --chart-3: oklch(0.55 0.03 65);
   --chart-4: oklch(0.68 0.02 68);
@@ -96,12 +121,12 @@
   --radius: 0.7rem;
   --sidebar: oklch(0.965 0.005 70);
   --sidebar-foreground: oklch(0.24 0.008 60);
-  --sidebar-primary: oklch(0.62 0.13 42);
+  --sidebar-primary: oklch(0.52 0.13 42);
   --sidebar-primary-foreground: oklch(0.99 0.01 70);
   --sidebar-accent: oklch(0.93 0.012 68);
   --sidebar-accent-foreground: oklch(0.3 0.01 60);
   --sidebar-border: oklch(0.9 0.008 68);
-  --sidebar-ring: oklch(0.62 0.13 42);
+  --sidebar-ring: oklch(0.52 0.13 42);
 }
 
 .dark {
@@ -111,41 +136,72 @@
   --card-foreground: oklch(0.9 0.006 75);
   --popover: oklch(0.235 0.006 68);
   --popover-foreground: oklch(0.9 0.006 75);
-  --primary: oklch(0.66 0.13 44);
-  --primary-foreground: oklch(0.99 0.01 70);
+  /* Lifted to read as type on a dark card; a fill this light takes dark ink. */
+  --primary: oklch(0.72 0.13 45);
+  --primary-foreground: oklch(0.22 0.015 60);
   --secondary: oklch(0.28 0.007 68);
   --secondary-foreground: oklch(0.9 0.006 75);
   --muted: oklch(0.28 0.007 68);
   --muted-foreground: oklch(0.66 0.01 72);
   --accent: oklch(0.305 0.008 68);
   --accent-foreground: oklch(0.92 0.006 75);
-  --destructive: oklch(0.704 0.16 22.216);
+  --destructive: oklch(0.75 0.16 22.216);
   --warning: oklch(0.78 0.11 78);
   --warning-foreground: oklch(0.2 0.02 70);
   --success: oklch(0.72 0.12 150);
   --border: oklch(0.31 0.007 68);
   --input: oklch(0.33 0.008 68);
-  --ring: oklch(0.66 0.13 44);
-  --brand: oklch(0.68 0.13 45);
-  --brand-foreground: oklch(0.99 0.01 70);
-  --chart-1: oklch(0.68 0.13 45);
+  --ring: oklch(0.72 0.13 45);
+  --brand: oklch(0.72 0.13 45);
+  --brand-foreground: oklch(0.22 0.015 60);
+  --chart-1: oklch(0.72 0.13 45);
   --chart-2: oklch(0.72 0.09 58);
   --chart-3: oklch(0.6 0.03 68);
   --chart-4: oklch(0.5 0.02 65);
   --chart-5: oklch(0.72 0.015 70);
   --sidebar: oklch(0.18 0.005 68);
   --sidebar-foreground: oklch(0.9 0.006 75);
-  --sidebar-primary: oklch(0.66 0.13 44);
-  --sidebar-primary-foreground: oklch(0.99 0.01 70);
+  --sidebar-primary: oklch(0.72 0.13 45);
+  --sidebar-primary-foreground: oklch(0.22 0.015 60);
   --sidebar-accent: oklch(0.28 0.007 68);
   --sidebar-accent-foreground: oklch(0.92 0.006 75);
   --sidebar-border: oklch(0.3 0.007 68);
-  --sidebar-ring: oklch(0.66 0.13 44);
+  --sidebar-ring: oklch(0.72 0.13 45);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+
+  /*
+   * Reduced motion, once, for the whole app — the transitions here are 150ms
+   * state feedback, so collapsing them costs nothing and the UI stays instant.
+   *
+   * Two deliberate survivors. A loading spinner is damped, not frozen: a
+   * motionless spinner reads as a hung app, which is worse than the motion it
+   * was meant to spare. And scroll-driven animations (`.pm-scroll-fade`) are
+   * the user's own scroll made visible — there is no motion here the reader
+   * didn't ask for, and `animation-duration` doesn't drive them anyway.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+    .animate-spin {
+      animation-duration: 1.8s !important;
+      animation-iteration-count: infinite !important;
+    }
+    /* Progress-based, not time-based: a clamped duration would collapse the
+       fade at the first scrolled pixel instead of at the end of the region. */
+    .pm-scroll-fade {
+      animation-duration: auto !important;
+    }
   }
   body {
     @apply bg-background text-foreground;
@@ -158,7 +214,7 @@
 /* Markdown note body — themable from CSS variables alone. */
 @layer components {
   .note-body {
-    @apply text-[15px] leading-relaxed text-foreground/90 outline-none;
+    @apply text-body leading-relaxed text-foreground/90 outline-none;
   }
   .note-body h1 {
     @apply mt-6 mb-2 font-serif text-xl font-semibold first:mt-0;
@@ -252,6 +308,28 @@
     }
   }
 
+  /*
+   * A capped scroll region fades at its bottom edge, so "there is more below"
+   * is legible without a scrollbar. Scroll-driven where the engine supports it:
+   * the fade lifts exactly as the last line arrives, instead of permanently
+   * dimming the end of a change the PO has already scrolled to.
+   */
+  .pm-scroll-fade {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
+  }
+  @supports (animation-timeline: scroll()) {
+    .pm-scroll-fade {
+      animation: pm-scroll-fade-out linear both;
+      animation-timeline: scroll(self block);
+      animation-range: 80% 100%;
+    }
+  }
+  @keyframes pm-scroll-fade-out {
+    to {
+      mask-image: linear-gradient(to bottom, #000 100%, transparent 100%);
+    }
+  }
+
   /* Block selected via the grip (ProseMirror NodeSelection). */
   .note-body .ProseMirror-selectednode {
     @apply rounded-sm bg-brand/8;
@@ -290,5 +368,111 @@
   /* Nobody has a page for them yet — a face without a file. */
   .person-avatar[data-unknown='true'] {
     @apply bg-transparent text-muted-foreground ring-1 ring-border ring-inset;
+  }
+}
+
+/* Registered so the tab's fill and hairline can transition as colours (a plain
+   custom property would snap); both drive the flare gradients too, which keeps
+   curve and body in lockstep through a state change. */
+@property --tab-fill {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --tab-line {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+
+/*
+ * Workspace tab (TabStrip) — browser geometry. The top corners round; the
+ * bottom corners flare *outward*, sweeping the tab's hairline into the strip's
+ * so the active tab and the content below read as one continuous surface
+ * instead of a box parked on a bar. Every tab carries the 1px border in
+ * transparent, so activating one never nudges its label by a pixel.
+ */
+@layer components {
+  .pm-tab {
+    --tab-radius: 10px;
+    /* Half the strip's tab gap: two neighbouring flares meet, never overlap. */
+    --tab-flare: 6px;
+    /* Flares are placed against the padding box, so every offset carries the
+       border width — without it the curve lands a pixel off its own hairline. */
+    --tab-flare-offset: calc((var(--tab-flare) + 1px) * -1);
+    /* Resting fill is the strip's own colour: an inactive tab disappears into
+       the chrome, and the flares have something opaque to paint with. */
+    --tab-fill: var(--sidebar);
+    --tab-line: transparent;
+    border: 1px solid var(--tab-line);
+    border-bottom-width: 0;
+    border-radius: var(--tab-radius) var(--tab-radius) 0 0;
+    background-color: var(--tab-fill);
+    transition:
+      --tab-fill 120ms ease-out,
+      --tab-line 120ms ease-out,
+      color 120ms ease-out;
+  }
+  /* Inactive tabs light toward the active fill rather than darkening — the
+     hover previews where the tab is going. Fills stay opaque: the flares are
+     painted from this colour, and a translucent one would let the strip read
+     straight through them. */
+  .pm-tab:hover,
+  .pm-tab:focus-within {
+    --tab-fill: color-mix(in oklab, var(--background) 52%, var(--sidebar));
+  }
+  .pm-tab[data-active='true'] {
+    --tab-fill: var(--background);
+    --tab-line: var(--border);
+  }
+  /*
+   * The flares are 7px squares tucked into the gap, overlapping the tab by 1px
+   * so they cap the side border where the curve takes over. Each is the tab's
+   * own fill with a quarter-disc of strip cut out of it: the arc leaves the
+   * side border tangent-vertical and lands on the strip hairline
+   * tangent-horizontal, so both joins are seamless.
+   */
+  .pm-tab::before,
+  .pm-tab::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    width: calc(var(--tab-flare) + 1px);
+    height: calc(var(--tab-flare) + 1px);
+    pointer-events: none;
+  }
+  .pm-tab::before {
+    left: var(--tab-flare-offset);
+    background: radial-gradient(
+      circle calc(var(--tab-flare) + 1px) at 0 0,
+      transparent var(--tab-flare),
+      var(--tab-line) var(--tab-flare) calc(var(--tab-flare) + 1px),
+      var(--tab-fill) calc(var(--tab-flare) + 1px)
+    );
+  }
+  .pm-tab::after {
+    right: var(--tab-flare-offset);
+    background: radial-gradient(
+      circle calc(var(--tab-flare) + 1px) at 100% 0,
+      transparent var(--tab-flare),
+      var(--tab-line) var(--tab-flare) calc(var(--tab-flare) + 1px),
+      var(--tab-fill) calc(var(--tab-flare) + 1px)
+    );
+  }
+  /*
+   * A title too long for its tab dissolves rather than ending in an ellipsis
+   * (browser-style): the last 16px of the label are masked to transparent.
+   * Only titles that actually overflow are masked — `data-clipped` is set by
+   * measurement, so a short label never has its final letter dimmed. The tab
+   * reserves the close button's width in padding, so the X lands beyond this
+   * fade and never sits on top of the text.
+   */
+  .pm-tab-title[data-clipped] {
+    mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pm-tab {
+      transition: none;
+    }
   }
 }

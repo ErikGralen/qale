@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rename } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rename, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { simpleGit } from 'simple-git';
-import { GitAdapter } from '../src/git.js';
+import { GitAdapter, resetGitAvailability } from '../src/git.js';
 
 // Isolate from the developer's global/system git config so identity-fallback
 // behavior is deterministic.
@@ -110,6 +110,69 @@ test('session working files are ignored — the memory is versioned, scratch is 
   const tracked = await simpleGit(vault).raw(['ls-files']);
   assert.ok(tracked.includes('sessions/2026-07-28-synthesis-a1b2c3.md'), 'the receipt is tracked');
   assert.ok(!tracked.includes('.files'), 'the scratch body is not');
+});
+
+/**
+ * A stand-in `xcode-select` at the front of PATH, so the macOS probe can be
+ * steered on a machine that does have the developer tools. It records every
+ * call, which is how the caching assertions count probes.
+ */
+async function fakeXcodeSelect(exitCode: number): Promise<{ dir: string; calls: () => Promise<number> }> {
+  const dir = await mkdtemp(join(tmpdir(), 'pm-bin-'));
+  const log = join(dir, 'calls.txt');
+  const bin = join(dir, 'xcode-select');
+  await writeFile(bin, `#!/bin/sh\necho call >> "${log}"\nexit ${exitCode}\n`);
+  await chmod(bin, 0o755);
+  return {
+    dir,
+    calls: async () => (await readFile(log, 'utf8').catch(() => '')).split('\n').filter(Boolean).length,
+  };
+}
+
+async function withPath<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+  const original = process.env['PATH'];
+  process.env['PATH'] = `${dir}:${original ?? ''}`;
+  resetGitAvailability();
+  try {
+    return await fn();
+  } finally {
+    process.env['PATH'] = original;
+    resetGitAvailability();
+  }
+}
+
+test('macOS: no developer tools means no git — history stays empty and the stub is never run', { skip: process.platform !== 'darwin' }, async () => {
+  const vault = await tmp();
+  const git = new GitAdapter(vault);
+  await git.init();
+  await writeFile(join(vault, 'note.md'), 'v1\n');
+  await git.commitPaths(['note.md'], 'create: note');
+
+  const fake = await fakeXcodeSelect(1);
+  await withPath(fake.dir, async () => {
+    assert.equal(await git.available(), false);
+    // A real repo with a real commit: the empty answer can only come from the
+    // developer-tools check, which is the point — we never touch /usr/bin/git.
+    assert.deepEqual(await git.history('note.md'), []);
+    assert.equal(await git.fileAt('note.md', 'HEAD'), null);
+    assert.ok((await fake.calls()) >= 1, 'the safe check ran');
+  });
+});
+
+test('the availability probe is cached — a save does not spawn a process per call', { skip: process.platform !== 'darwin' }, async () => {
+  const vault = await tmp();
+  const git = new GitAdapter(vault);
+  const fake = await fakeXcodeSelect(0);
+  await withPath(fake.dir, async () => {
+    // Concurrent and sequential: neither may probe twice.
+    const [a, b] = await Promise.all([git.available(), git.available()]);
+    assert.equal(a, true);
+    assert.equal(b, true);
+    assert.equal(await git.available(), true);
+    // A second adapter asks about the same machine, not a second machine.
+    assert.equal(await new GitAdapter(await tmp()).available(), true);
+    assert.equal(await fake.calls(), 1);
+  });
 });
 
 test('ensureIgnored is additive and idempotent — a vault that predates a rule catches up', async () => {

@@ -38,8 +38,7 @@ import type { GoogleOAuthService } from './google-oauth-service.js';
  * keeps the shallow index current, and promotes anything the vault actually
  * links to a full mirror note. This file is the ONLY code path that writes
  * `ticket`/`wikipage` files — and, for calendar sync, the only writer of the
- * machine-owned fields on `meeting` notes (the ownership-split mirror,
- * docs/google-calendar-integration.md).
+ * machine-owned fields on `meeting` notes (the ownership-split mirror).
  *
  * Hard rules (integration plan): reads are silent — no Inbox cards, no dialogs;
  * health is a quiet DTO field. Offline/expired keeps serving the mirror.
@@ -542,12 +541,6 @@ export class SyncService {
       });
 
       if (plan.action === 'skip') return null;
-      if (plan.action === 'delete') {
-        await ctx.vault.remove(notePath!);
-        ctx.index.removeByPath(notePath!);
-        store.setNotePath(GOOGLE_PROVIDER, change.external_id, null);
-        return notePath!;
-      }
       if (plan.action === 'patch') {
         const written = await ctx.vault.writeNote(notePath!, plan.frontmatter as unknown as Frontmatter, note!.body);
         ctx.index.reindex(written);
@@ -745,7 +738,7 @@ export class SyncService {
    * THE mirror-note writer — the only code allowed to write ticket/wikipage
    * files. Skips unchanged items (same remote_updated/version as the note on
    * disk) so re-pull slack can't churn commits or reset freshness; a real
-   * change writes the full body and sets `status: new`, which is exactly what
+   * change writes the full body and sets `processing: new`, which is exactly what
    * makes the freshness spine mark dependents stale.
    */
   private async writeMirror(
@@ -789,7 +782,7 @@ export class SyncService {
               type: 'ticket',
               title: `${change.external_id} · ${full.title}`,
               summary: `${change.external_id} — ${full.title} (${full.state ?? change.state})`,
-              status: 'new',
+              processing: 'new',
               provider: 'jira',
               external_id: change.external_id,
               container: change.container,
@@ -798,7 +791,7 @@ export class SyncService {
               ...(full.assignee ?? change.assignee
                 ? { assignee: full.assignee ?? change.assignee }
                 : {}),
-              // Provider relationships (docs/typed-links.md): the indexer turns
+              // Provider relationships: the indexer turns
               // these into `synced` edges (parent → part-of, links verbatim).
               ...(full.parentKey ? { parent: full.parentKey } : {}),
               ...(full.links?.length ? { links: full.links } : {}),
@@ -809,7 +802,7 @@ export class SyncService {
               type: 'wikipage',
               title: full.title,
               summary: `${full.title} — mirrored page in ${change.container}`,
-              status: 'new',
+              processing: 'new',
               provider: 'confluence',
               external_id: change.external_id,
               container: change.container,

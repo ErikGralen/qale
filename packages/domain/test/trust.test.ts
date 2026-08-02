@@ -10,7 +10,7 @@ import {
 } from '../src/index.js';
 
 /**
- * OKF trust family (docs/okf-alignment.md Phase 2): the actor convention (§7)
+ * OKF trust family (OKF alignment, phase 2): the actor convention (§7)
  * and tier derivation (§5.3). Additive by contract — no `verified` means
  * `unverified`, never a rejection (§11).
  */

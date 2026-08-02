@@ -8,12 +8,13 @@ import {
   checkFrontmatterMutation,
   isBodyEditable,
   refToSlug,
+  titleFromSlug,
   type DecisionNode,
   type DecisionFrontmatter,
   type Frontmatter,
   type OutboundPayload,
 } from '@pm/domain';
-import type { CreateProposalInput, ProposalRecord, ProposalStats, UseCaseContext } from '../ports.js';
+import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../ports.js';
 import { renameNote } from './notes.js';
 
 /**
@@ -44,11 +45,6 @@ export function listProposals(ctx: UseCaseContext, status?: string): ProposalRec
   return ctx.proposals.list(status);
 }
 
-/** Card telemetry — approval rate + time-to-approve (the kill-criteria metric). */
-export function getProposalStats(ctx: UseCaseContext): ProposalStats {
-  return ctx.proposals.stats();
-}
-
 export interface ProposalPreview {
   before: string;
   after: string;
@@ -64,7 +60,7 @@ export interface ProposalPreview {
   staleReason?: 'changed' | 'unanchored';
   /**
    * Frontmatter keys this update changes, so the card can SHOW a metadata edit
-   * (a todo's due/status) — the body diff deliberately hides frontmatter, so a
+   * (a todo's due/commitment) — the body diff deliberately hides frontmatter, so a
    * pure-frontmatter card would otherwise preview as blank.
    */
   frontmatterChanges?: { key: string; before: unknown; after: unknown }[];
@@ -201,17 +197,17 @@ async function markCitedSourcesProcessed(ctx: UseCaseContext, fm: Frontmatter): 
     const indexed = path ? ctx.index.get(path) : null;
     if (!indexed || !path) continue;
     if (indexed.type !== 'source' && indexed.type !== 'meeting') continue;
-    const status = (indexed.frontmatter as Record<string, unknown>)['status'];
-    if (status !== 'new' && status !== 'stale') continue;
+    const processing = (indexed.frontmatter as Record<string, unknown>)['processing'];
+    if (processing !== 'new' && processing !== 'stale') continue;
     const note = await ctx.vault.readNote(path);
     if (!note) continue;
     const written = await ctx.vault.writeNote(
       path,
-      { ...note.frontmatter, status: 'processed' } as Frontmatter,
+      { ...note.frontmatter, processing: 'processed' } as Frontmatter,
       note.body,
     );
     ctx.index.reindex(written);
-    await ctx.git.commitPaths([path], `status: ${written.slug} → processed`);
+    await ctx.git.commitPaths([path], `processing: ${written.slug} → processed`);
   }
 }
 
@@ -268,7 +264,7 @@ async function acceptUpdate(ctx: UseCaseContext, rec: ProposalRecord, edited?: u
 
 /**
  * Accept a decision card: write the new decision (append-only spine) and, when it
- * supersedes an existing one, flip the old file's status + set the forward pointer
+ * supersedes an existing one, flip the old file's standing + set the forward pointer
  * — never editing the old body. Cycle/lineage guarded (PLAN-V2 §5.6).
  */
 async function acceptDecision(ctx: UseCaseContext, rec: ProposalRecord, edited?: unknown): Promise<AcceptResult> {
@@ -304,10 +300,10 @@ async function acceptDecision(ctx: UseCaseContext, rec: ProposalRecord, edited?:
     const targetPath = ctx.index.resolve(targetSlug);
     const target = targetPath ? await ctx.vault.readNote(targetPath) : null;
     if (!target || !targetPath) return { ok: false, error: `supersede target not found: ${targetSlug}` };
-    // Flip the old decision: status → superseded, forward pointer set. Body frozen.
+    // Flip the old decision: standing → superseded, forward pointer set. Body frozen.
     const oldFm = {
       ...target.frontmatter,
-      status: 'superseded',
+      standing: 'superseded',
       superseded_by: `[[${newSlug}]]`,
     } as Frontmatter;
     const writtenOld = await ctx.vault.writeNote(targetPath, oldFm, target.body);
@@ -439,36 +435,79 @@ function findOutboundMirror(
   );
 }
 
+/** The meeting a closed-with-nothing-kept session leaves behind, for the one
+ *  question the Inbox puts to the PO ("Mark it reviewed?"). */
+export interface MeetingReviewAsk {
+  path: string;
+  title: string;
+}
+
+export interface MeetingReviewResult {
+  /** The meeting that flipped to `processed`, when the review really closed. */
+  completed: string | null;
+  /** The meeting to ask about, when the session's cards were all discarded. */
+  ask: MeetingReviewAsk | null;
+}
+
 /**
- * Meeting-review closure: when the LAST card of an after-meeting session is
- * resolved (accepted or rejected), the review is done and the meeting flips
+ * Take a meeting out of "needs review": `new`/`stale` → `processed`. The write
+ * behind both the silent close below and the PO answering the Inbox's question.
+ * `ok: false` when the note is gone or was already processed, so a caller with
+ * nothing to report stays quiet.
+ */
+export async function markMeetingReviewed(
+  ctx: UseCaseContext,
+  path: string,
+): Promise<{ ok: boolean }> {
+  const note = await ctx.vault.readNote(path);
+  if (!note || note.type !== 'meeting') return { ok: false };
+  const processing = (note.frontmatter as Record<string, unknown>)['processing'];
+  if (processing !== 'new' && processing !== 'stale') return { ok: false };
+  const written = await ctx.vault.writeNote(
+    path,
+    { ...note.frontmatter, processing: 'processed' } as Frontmatter,
+    note.body,
+  );
+  ctx.index.reindex(written);
+  await ctx.git.commitPaths([path], `processing: ${written.slug} → processed`);
+  return { ok: true };
+}
+
+/**
+ * Meeting-review closure: when the LAST card a session produced is resolved and
+ * those cards were about a meeting, the review is done and the meeting flips
  * `new` → `processed`. Evidence-citation flips may have landed it earlier; this
- * is the backstop that also covers all-discarded reviews. Best-effort.
+ * is the backstop. Which skill did the reviewing is not part of the question:
+ * the checks below (a meeting target, still awaiting processing) already are it.
+ *
+ * Discarding EVERY card is not a review: nothing was kept, so nothing here knows
+ * whether the PO read the meeting or swept the pile away. That case flips
+ * nothing and hands back an `ask` instead, which the Inbox puts to them in one
+ * line; until they answer, the meeting stays in "needs review". Best-effort.
  */
 export async function completeMeetingReview(
   ctx: UseCaseContext,
   sessionId: string,
-): Promise<{ completed: string | null }> {
+): Promise<MeetingReviewResult> {
+  const nothing: MeetingReviewResult = { completed: null, ask: null };
   const mine = ctx.proposals.list().filter((p) => p.sessionId === sessionId);
-  if (mine.length === 0) return { completed: null };
-  // `arrival` is the skill that reviews a dropped meeting now; `after-meeting`
-  // stays recognised for cards a workspace filed before the merge.
-  if (mine[0]!.sessionType !== 'arrival' && mine[0]!.sessionType !== 'after-meeting') return { completed: null };
-  if (mine.some((p) => p.status === 'pending')) return { completed: null };
+  if (mine.length === 0) return nothing;
+  if (mine.some((p) => p.status === 'pending')) return nothing;
   const meetingPath = mine.map((p) => p.targetPath).find((t) => t?.startsWith('meetings/'));
-  if (!meetingPath) return { completed: null };
+  if (!meetingPath) return nothing;
   const note = await ctx.vault.readNote(meetingPath);
-  if (!note || note.type !== 'meeting') return { completed: null };
-  const status = (note.frontmatter as Record<string, unknown>)['status'];
-  if (status !== 'new' && status !== 'stale') return { completed: null };
-  const written = await ctx.vault.writeNote(
-    meetingPath,
-    { ...note.frontmatter, status: 'processed' } as Frontmatter,
-    note.body,
-  );
-  ctx.index.reindex(written);
-  await ctx.git.commitPaths([meetingPath], `status: ${written.slug} → processed`);
-  return { completed: meetingPath };
+  if (!note || note.type !== 'meeting') return nothing;
+  const fm = note.frontmatter as Record<string, unknown>;
+  if (fm['processing'] !== 'new' && fm['processing'] !== 'stale') return nothing;
+  if (mine.some((p) => p.status === 'accepted')) {
+    const { ok } = await markMeetingReviewed(ctx, meetingPath);
+    return { completed: ok ? meetingPath : null, ask: null };
+  }
+  // A cancelled meeting never asked to be reviewed in the first place (the
+  // renderer's `needsReview` agrees), so it is not worth a question either.
+  if (fm['event_status'] === 'cancelled') return nothing;
+  const title = typeof fm['title'] === 'string' && fm['title'].trim() ? (fm['title'] as string) : titleFromSlug(note.slug);
+  return { completed: null, ask: { path: meetingPath, title } };
 }
 
 /**

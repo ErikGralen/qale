@@ -15,8 +15,7 @@ import type {
 } from '../types.js';
 
 /**
- * Google Calendar connector (docs/google-calendar-integration.md §Connector
- * mapping): calendars → `calendar` containers, events → `event` shallow changes
+ * Google Calendar connector: calendars → `calendar` containers, events → `event` shallow changes
  * that the sync engine materializes as `meeting` notes. Auth is a callback —
  * the main-process OAuth service owns tokens/refresh; the connector only ever
  * sees a fresh access token, so it stays fixture-testable with a stub supplier.

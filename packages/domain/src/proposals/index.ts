@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { refToSlug } from '../notes/decisions.js';
 import { isSessionFile } from '../notes/slug.js';
 
+/** The "what will happen" line an outbound card carries above its rationale. */
+export { outboundEffect, type OutboundEffectFacts } from './effect.js';
+
 /**
  * Proposals (approval cards) are the ONLY write path for the agent (PLAN-V2 §3.3).
  * The trust mechanic — evidence must resolve, or the card is flagged inference — is
@@ -37,7 +40,7 @@ export const OUTBOUND_ACTIONS = [
   'comment_ticket',
   'update_page',
   'send_message',
-  // Calendar writes (docs/google-calendar-integration.md, phase 4). Each has an
+  // Calendar writes. Each has an
   // executor in the google-calendar connector — the "never advertise an action
   // without an executor" rule holds.
   'create_event',
@@ -153,9 +156,6 @@ export const zOutboundPayload = z.preprocess(
 );
 export type OutboundPayload = z.infer<typeof zOutboundPayload>;
 
-export const PROPOSAL_STATUSES = ['pending', 'accepted', 'rejected', 'stale'] as const;
-export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
-
 export const zSearchReplace = z.object({ search: z.string().min(1), replace: z.string() });
 
 export const zNotePayload = z.object({
@@ -173,8 +173,9 @@ export const zUpdatePayload = z
     patch: z.array(zSearchReplace).optional(),
     /**
      * Frontmatter keys to set on approval (shallow-merged over the note's current
-     * frontmatter) — the only way a card edits metadata like a todo's `due`/`status`,
-     * a meeting's `status`, or a person's `last_told`. Body-only edits omit it.
+     * frontmatter) — the only way a card edits metadata like a todo's
+     * `due`/`commitment`, a meeting's `processing`, or a person's `last_told`.
+     * Body-only edits omit it.
      */
     frontmatter: z.record(z.string(), z.unknown()).optional(),
     rationale: z.string().min(1),
@@ -194,7 +195,7 @@ export const zDecisionPayload = z.object({
   frontmatter: z.record(z.string(), z.unknown()),
   body: z.string(),
   rationale: z.string().min(1),
-  /** Slug of an existing decision this one supersedes (flips its status). */
+  /** Slug of an existing decision this one supersedes (flips its standing). */
   supersedes: z.string().optional(),
 });
 export type DecisionPayload = z.infer<typeof zDecisionPayload>;

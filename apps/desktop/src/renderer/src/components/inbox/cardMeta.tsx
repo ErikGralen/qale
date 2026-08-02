@@ -1,10 +1,10 @@
 import {
+  BookOpen,
   FileText,
   GitCommitHorizontal,
   Lightbulb,
   ListChecks,
   Pencil,
-  Send,
   Ticket,
   Users,
   type LucideIcon,
@@ -13,7 +13,7 @@ import { titleFromSlug, typeForDir } from '@pm/domain';
 import type { OutboundPayloadDTO, ProposalDTO } from '@pm/ipc';
 import { isExternalRef } from '../../lib/connections';
 import { noteTypeIcon } from '../../lib/note-icons';
-import { outboundTarget, providerLabel } from './shared';
+import { outboundAct, outboundTarget, providerLabel } from './shared';
 
 /**
  * Turns a raw proposal into the one thing the PO reads to decide: a plain-language
@@ -56,7 +56,7 @@ const NOUN_FOR_DIR: Record<string, string> = {
 const dirOf = (path?: string | null): string => (path ? path.split('/')[0] ?? '' : '');
 
 /** Strip wikilink brackets + alias, hand back the bare target slug/ref. */
-function bareRef(ref: string): string {
+export function bareRef(ref: string): string {
   return ref.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.trim();
 }
 
@@ -68,9 +68,12 @@ export function titleForRef(ref?: string | null): string {
 
 /** The note-type glyph for an evidence ref — derived from its dir segment, so a
  *  "Based on" chip tells you at a glance whether it points at a decision, a
- *  meeting, a customer. External refs (Jira keys) read as tickets. */
+ *  meeting, a customer. External refs carry their own kind: a wiki page is a
+ *  book, a ticket is a ticket — typing a Confluence page as a ticket told the
+ *  PO the wrong thing about the source they were trusting. */
 export function iconForRef(ref: string): LucideIcon {
   const bare = bareRef(ref);
+  if (bare.startsWith('wikipages/')) return BookOpen;
   if (isExternalRef(bare)) return Ticket;
   const type = typeForDir(bare.split('/')[0] ?? '');
   return type ? noteTypeIcon(type) : FileText;
@@ -88,7 +91,9 @@ function payloadTitle(p: ProposalDTO): string {
 }
 
 function iconFor(p: ProposalDTO): LucideIcon {
-  if (p.kind === 'outbound') return Send;
+  // An outbound card wears its action's glyph, not a blanket paper plane —
+  // the same one the approve button carries, so the card reads as one act.
+  if (p.kind === 'outbound') return outboundAct(p.payload as OutboundPayloadDTO).Icon;
   if (p.kind === 'decision') return GitCommitHorizontal;
   if (p.kind === 'update') return dirOf(p.targetPath) === 'todos' ? ListChecks : Pencil;
   const type = typeof frontmatter(p)['type'] === 'string' ? (frontmatter(p)['type'] as string) : 'note';
@@ -203,7 +208,4 @@ export function orderCards(cards: ProposalDTO[]): ProposalDTO[] {
 }
 
 /** Drop a leading YAML frontmatter block so the preview renders as clean prose. */
-export function stripFrontmatter(md: string): string {
-  const m = /^---\n[\s\S]*?\n---\n?/.exec(md);
-  return m ? md.slice(m[0].length).replace(/^\s+/, '') : md;
-}
+export { stripFrontmatter } from '../../lib/frontmatter';

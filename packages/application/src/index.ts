@@ -2,6 +2,7 @@ export * from './ports.js';
 export * from './use-cases/reconcile.js';
 export * from './use-cases/vault.js';
 export * from './use-cases/notes.js';
+export * from './use-cases/arrival.js';
 export * from './use-cases/people.js';
 export * from './use-cases/search.js';
 export * from './use-cases/index-files.js';

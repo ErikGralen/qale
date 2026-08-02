@@ -6,7 +6,7 @@ import type { ProposalRecord, UseCaseContext } from '../src/ports.js';
 
 // An update card can carry `frontmatter` — a shallow merge over the note's
 // current properties. It's the only card path that edits metadata (a todo's
-// `due`/`status`), so a reschedule/close applies without touching the body, and
+// `due`/`commitment`), so a reschedule/close applies without touching the body, and
 // a metadata-only card is never reported as an unanchored patch.
 
 interface Stored {
@@ -78,7 +78,6 @@ function fakeContext(files: Record<string, Stored>) {
         statuses[id] = status;
       },
       pendingCount: () => 0,
-      stats: () => ({ total: 0, accepted: 0, rejected: 0, pending: 0, stale: 0, approvalRate: null, medianMsToResolve: null }),
     } as never,
   };
   return { ctx, store, statuses };
@@ -89,7 +88,7 @@ function updateCard(ctx: UseCaseContext, body: string, payload: Record<string, u
     {
       kind: 'update',
       sessionId: 's1',
-      sessionType: 'commitment-check',
+      skill: 'commitment-check',
       targetPath: payload['path'] as string,
       baseHash: contentHash(body),
       payload,
@@ -106,7 +105,7 @@ const todo = (over: Partial<Record<string, unknown>> = {}): Stored => ({
     type: 'todo',
     summary: 'Send Nordkap the SSO rollout dates',
     title: 'Send Nordkap the SSO rollout dates',
-    status: 'open',
+    commitment: 'open',
     sources: [],
     due: '2026-07-10',
     ...over,
@@ -128,23 +127,23 @@ test('a frontmatter-only update reschedules the due date without touching the bo
   assert.equal(statuses[rec.id], 'accepted');
   const after = store.get('todos/nordkap-sso.md')!;
   assert.equal((after.frontmatter as Record<string, unknown>)['due'], '2026-08-01');
-  assert.equal((after.frontmatter as Record<string, unknown>)['status'], 'open');
+  assert.equal((after.frontmatter as Record<string, unknown>)['commitment'], 'open');
   assert.equal(after.body, body, 'body must be untouched by a metadata-only edit');
 });
 
-test('a frontmatter-only update closes the todo (status + resolved)', async () => {
+test('a frontmatter-only update closes the todo (commitment + resolved)', async () => {
   const { ctx, store } = fakeContext({ 'todos/nordkap-sso.md': todo() });
   const body = store.get('todos/nordkap-sso.md')!.body;
   const rec = updateCard(ctx, body, {
     path: 'todos/nordkap-sso.md',
-    frontmatter: { status: 'done', resolved: '2026-07-22' },
+    frontmatter: { commitment: 'done', resolved: '2026-07-22' },
     rationale: 'the dates went out in the Friday recap',
   });
 
   const result = await acceptProposal(ctx, rec.id);
   assert.equal(result.ok, true);
   const after = store.get('todos/nordkap-sso.md')!.frontmatter as Record<string, unknown>;
-  assert.equal(after['status'], 'done');
+  assert.equal(after['commitment'], 'done');
   assert.equal(after['resolved'], '2026-07-22');
 });
 
@@ -191,7 +190,7 @@ test('preview reports the frontmatter change and is never unanchored for a metad
   const body = store.get('todos/nordkap-sso.md')!.body;
   const rec = updateCard(ctx, body, {
     path: 'todos/nordkap-sso.md',
-    frontmatter: { due: '2026-08-01', status: 'open' },
+    frontmatter: { due: '2026-08-01', commitment: 'open' },
     rationale: 'reschedule',
   });
 
@@ -199,6 +198,6 @@ test('preview reports the frontmatter change and is never unanchored for a metad
   assert.ok(preview);
   assert.equal(preview!.stale, false);
   assert.equal(preview!.staleReason, undefined);
-  // `status` is unchanged (open → open) so it drops out; only `due` is reported.
+  // `commitment` is unchanged (open → open) so it drops out; only `due` is reported.
   assert.deepEqual(preview!.frontmatterChanges, [{ key: 'due', before: '2026-07-10', after: '2026-08-01' }]);
 });

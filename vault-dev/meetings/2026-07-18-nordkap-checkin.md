@@ -1,6 +1,6 @@
 ---
 type: meeting
-summary: Nordkap check-in (upcoming) — SSO go-live week; expect SCIM timing and the competitor call to come up
+summary: "Nordkap check-in (upcoming): SSO go-live week, expect SCIM timing and the competitor call to come up"
 tags:
   - enterprise-auth
 date: 2026-07-18
@@ -23,7 +23,7 @@ url: "https://calendar.google.com/calendar/event?eid=demo-nordkap-checkin"
 
 ## Summary
 
-*Unprocessed — After-Meeting proposes this section as a card.*
+*Unprocessed. After-Meeting proposes this section as a card.*
 
 
 

@@ -135,7 +135,7 @@ export class McpService {
         const rec = createProposal(ctx, {
           kind: 'decision',
           sessionId: 'mcp',
-          sessionType: 'mcp',
+          skill: 'mcp',
           targetPath: path,
           baseHash: null,
           payload: { path, frontmatter: { type: 'decision', summary, sources }, body, rationale: `Logged via MCP: ${summary}`, ...(supersedes ? { supersedes } : {}) },
@@ -181,7 +181,7 @@ export class McpService {
         const rec = createProposal(ctx, {
           kind: 'outbound',
           sessionId: 'mcp',
-          sessionType: 'mcp',
+          skill: 'mcp',
           targetPath: null,
           baseHash: null,
           payload: parsed.data,

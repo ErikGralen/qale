@@ -1,16 +1,16 @@
 import type Database from 'better-sqlite3';
-import type { CreateProposalInput, ProposalPort, ProposalRecord, ProposalStats } from '@pm/application';
+import type { CreateProposalInput, ProposalPort, ProposalRecord } from '@pm/application';
 import { idHash } from './hash.js';
 
 /**
- * The proposal queue + the accept/reject/edit log (the core eval signal,
- * PLAN §6.12). Lives in the per-vault AppDb, which owns the connection.
+ * The proposal queue + its accept/reject log. Lives in the per-vault AppDb,
+ * which owns the connection.
  */
 interface Row {
   id: string;
   kind: string;
   session_id: string;
-  session_type: string | null;
+  skill: string | null;
   target_path: string | null;
   base_hash: string | null;
   payload_json: string;
@@ -41,10 +41,14 @@ export class ProposalStore implements ProposalPort {
       );
       CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status);
     `);
-    // Columns added post-v1; guard for existing databases.
+    // Columns added post-v1; guard for existing databases. `session_type` became
+    // `skill` when session types were removed — carry its values over.
     const cols = this.db.prepare('PRAGMA table_info(proposals)').all() as { name: string }[];
-    if (!cols.some((c) => c.name === 'session_type')) {
-      this.db.exec('ALTER TABLE proposals ADD COLUMN session_type TEXT');
+    if (!cols.some((c) => c.name === 'skill')) {
+      this.db.exec('ALTER TABLE proposals ADD COLUMN skill TEXT');
+      if (cols.some((c) => c.name === 'session_type')) {
+        this.db.exec('UPDATE proposals SET skill = session_type');
+      }
     }
   }
 
@@ -54,7 +58,7 @@ export class ProposalStore implements ProposalPort {
       id,
       kind: input.kind,
       session_id: input.sessionId,
-      session_type: input.sessionType ?? null,
+      skill: input.skill ?? null,
       target_path: input.targetPath,
       base_hash: input.baseHash,
       payload_json: JSON.stringify(input.payload),
@@ -67,9 +71,9 @@ export class ProposalStore implements ProposalPort {
     };
     this.db
       .prepare(
-        `INSERT INTO proposals (id, kind, session_id, session_type, target_path, base_hash, payload_json,
+        `INSERT INTO proposals (id, kind, session_id, skill, target_path, base_hash, payload_json,
            rationale, evidence_json, inference, status, created, resolved)
-         VALUES (@id, @kind, @session_id, @session_type, @target_path, @base_hash, @payload_json,
+         VALUES (@id, @kind, @session_id, @skill, @target_path, @base_hash, @payload_json,
            @rationale, @evidence_json, @inference, @status, @created, @resolved)`,
       )
       .run(row);
@@ -99,47 +103,12 @@ export class ProposalStore implements ProposalPort {
     return row.c;
   }
 
-  stats(): ProposalStats {
-    const counts = this.db
-      .prepare('SELECT status, COUNT(*) AS c FROM proposals GROUP BY status')
-      .all() as { status: string; c: number }[];
-    const by = (s: string): number => counts.find((r) => r.status === s)?.c ?? 0;
-    const accepted = by('accepted');
-    const rejected = by('rejected');
-    const avgRow = this.db
-      .prepare("SELECT AVG(resolved - created) AS a FROM proposals WHERE status = 'accepted' AND resolved IS NOT NULL")
-      .get() as { a: number | null };
-
-    const typeRows = this.db
-      .prepare(
-        `SELECT kind, status, COUNT(*) AS c FROM proposals
-          WHERE status IN ('accepted','rejected') GROUP BY kind, status`,
-      )
-      .all() as { kind: string; status: string; c: number }[];
-    const byType: Record<string, { accepted: number; rejected: number }> = {};
-    for (const r of typeRows) {
-      byType[r.kind] ??= { accepted: 0, rejected: 0 };
-      if (r.status === 'accepted') byType[r.kind]!.accepted = r.c;
-      else byType[r.kind]!.rejected = r.c;
-    }
-
-    return {
-      pending: by('pending'),
-      accepted,
-      rejected,
-      stale: by('stale'),
-      avgApproveMs: avgRow.a ?? null,
-      approvalRate: accepted + rejected > 0 ? accepted / (accepted + rejected) : null,
-      byType,
-    };
-  }
-
   private toRecord(row: Row): ProposalRecord {
     return {
       id: row.id,
       kind: row.kind,
       sessionId: row.session_id,
-      sessionType: row.session_type ?? null,
+      skill: row.skill ?? null,
       targetPath: row.target_path,
       baseHash: row.base_hash,
       payload: JSON.parse(row.payload_json),

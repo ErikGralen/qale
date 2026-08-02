@@ -77,7 +77,6 @@ function fakeContext(files: Record<string, Stored>) {
         statuses[id] = status;
       },
       pendingCount: () => 0,
-      stats: () => ({ total: 0, accepted: 0, rejected: 0, pending: 0, stale: 0, approvalRate: null, medianMsToResolve: null }),
     } as never,
   };
   return { ctx, store, statuses };
@@ -88,7 +87,7 @@ function messageCard(ctx: UseCaseContext, payload: Record<string, unknown>): Pro
     {
       kind: 'outbound',
       sessionId: 's1',
-      sessionType: 'outbound',
+      skill: 'outbound',
       targetPath: (payload['linkBackPath'] as string | undefined) ?? null,
       baseHash: null,
       payload: { provider: 'message', action: 'send_message', rationale: 'draft', ...payload },

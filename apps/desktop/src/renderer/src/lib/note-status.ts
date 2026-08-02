@@ -37,23 +37,30 @@ export function meetingStart(n: NoteRefDTO): number {
 }
 
 /**
- * Upcoming is derived, never a status: the meeting's start is later than now.
+ * Upcoming is derived, never part of the lifecycle: the meeting's start is later than now.
  * A today-dated meeting without a clock time parses to midnight — already past,
  * which is right: that's the shape of a just-dropped transcript, not a plan.
+ *
+ * `now` is injectable so a derivation can rank a whole list against one clock.
+ * Never hand this straight to `Array.filter` — it would read the index as the
+ * clock. Write `(n) => isUpcomingMeeting(n)`.
  */
-export function isUpcomingMeeting(n: NoteRefDTO): boolean {
+export function isUpcomingMeeting(n: NoteRefDTO, now: number = Date.now()): boolean {
   if (!n.date) return false;
-  return meetingStart(n) > Date.now();
+  return meetingStart(n) > now;
 }
 
-/** A meeting that happened and still awaits its After-Meeting review. */
-export function needsReview(n: NoteRefDTO): boolean {
-  return (n.status === 'new' || n.status === 'stale') && !isUpcomingMeeting(n);
+/** A meeting that happened and still awaits its After-Meeting review. A
+ *  cancelled meeting never happened, so it never asks to be reviewed.
+ *  Same `Array.filter` caveat as `isUpcomingMeeting`. */
+export function needsReview(n: NoteRefDTO, now: number = Date.now()): boolean {
+  if (n.eventStatus === 'cancelled') return false;
+  return (n.lifecycle === 'new' || n.lifecycle === 'stale') && !isUpcomingMeeting(n, now);
 }
 
 /** A dumped source nobody has processed yet. */
 export function isUnprocessedSource(n: NoteRefDTO): boolean {
-  return n.status === 'new' || n.status === 'stale';
+  return n.lifecycle === 'new' || n.lifecycle === 'stale';
 }
 
 const DAY_MS = 86_400_000;

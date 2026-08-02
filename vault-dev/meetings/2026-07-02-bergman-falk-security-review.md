@@ -1,6 +1,6 @@
 ---
 type: "meeting"
-summary: "Bergman & Falk security review kickoff — six-week process, SSO is an automatic requirement, we owe questionnaire + evidence"
+summary: "Bergman & Falk security review kickoff: six-week process, SSO required, we owe the questionnaire and evidence"
 tags: ["compliance"]
 date: "2026-07-02"
 time: "13:30"
@@ -11,11 +11,11 @@ transcript: "[[sources/2026-07-02-bergman-falk-security-review-transcript]]"
 ---
 
 ## Summary
-Kickoff of their vendor security review, which gates the whole ~250-seat deal. Process:
-questionnaire → evidence collection → review board; six weeks if nothing surprising. No SSO is
-an automatic no for firm-wide rollout — our 2026-07-28 date lands inside their window. Her
-first questions: data residency, subprocessors, last pen test. We owed the questionnaire, ISO
-27001 cert, subprocessor list and pen-test summary — sent 2026-07-06.
+Kickoff of the vendor security review that gates the whole ~250-seat deal. Elin walked us
+through the process first: questionnaire, evidence collection, review board, six weeks if
+nothing surprising turns up. Missing SSO would be an automatic no for a firm-wide rollout, and
+our 2026-07-28 date lands inside her window with very little margin. Her first questions were
+data residency, subprocessors and the last pen test. We owed her the questionnaire, the ISO
+27001 certificate, the subprocessor list and the pen-test summary, all sent 2026-07-06.
 
 Fed [[insights/security-reviews-run-six-weeks]] and [[insights/enterprise-buyers-gate-on-sso]].
-

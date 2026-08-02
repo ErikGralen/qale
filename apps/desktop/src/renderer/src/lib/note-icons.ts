@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  Bot,
   Building2,
   FileInput,
   GitBranch,
@@ -28,6 +29,7 @@ export const NOTE_TYPE_ICON: Record<NoteType, LucideIcon> = {
   person: User,
   session: History,
   skill: Wand2,
+  agent: Bot,
   todo: SquareCheck,
   note: StickyNote,
   ticket: Ticket,

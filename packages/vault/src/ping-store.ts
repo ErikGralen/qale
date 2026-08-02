@@ -13,7 +13,7 @@ interface Row {
   title: string;
   body: string;
   evidence_json: string;
-  session_type: string;
+  skill: string;
   seed_prompt: string;
   target_path: string | null;
   payload_json: string | null;
@@ -31,7 +31,7 @@ export class PingStore implements PingPort {
         title TEXT NOT NULL,
         body TEXT NOT NULL,
         evidence_json TEXT NOT NULL,
-        session_type TEXT NOT NULL,
+        skill TEXT NOT NULL,
         seed_prompt TEXT NOT NULL,
         target_path TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
@@ -46,6 +46,14 @@ export class PingStore implements PingPort {
     if (!cols.some((c) => c.name === 'payload_json')) {
       this.db.exec('ALTER TABLE pings ADD COLUMN payload_json TEXT');
     }
+    // `session_type` became `skill` when session types were removed. Carry the
+    // old column's values over rather than leaving a NOT NULL column unfilled.
+    if (!cols.some((c) => c.name === 'skill')) {
+      this.db.exec("ALTER TABLE pings ADD COLUMN skill TEXT NOT NULL DEFAULT 'librarian'");
+      if (cols.some((c) => c.name === 'session_type')) {
+        this.db.exec('UPDATE pings SET skill = session_type');
+      }
+    }
   }
 
   create(input: CreatePingInput, now: number): PingRecord {
@@ -55,7 +63,7 @@ export class PingStore implements PingPort {
       title: input.title,
       body: input.body,
       evidence_json: JSON.stringify(input.evidence),
-      session_type: input.sessionType,
+      skill: input.skill,
       seed_prompt: input.seedPrompt,
       target_path: input.targetPath,
       payload_json: input.payload ? JSON.stringify(input.payload) : null,
@@ -65,9 +73,9 @@ export class PingStore implements PingPort {
     };
     this.db
       .prepare(
-        `INSERT INTO pings (id, key, title, body, evidence_json, session_type, seed_prompt,
+        `INSERT INTO pings (id, key, title, body, evidence_json, skill, seed_prompt,
            target_path, payload_json, status, created, resolved)
-         VALUES (@id, @key, @title, @body, @evidence_json, @session_type, @seed_prompt,
+         VALUES (@id, @key, @title, @body, @evidence_json, @skill, @seed_prompt,
            @target_path, @payload_json, @status, @created, @resolved)`,
       )
       .run(row);
@@ -118,7 +126,7 @@ export class PingStore implements PingPort {
       title: row.title,
       body: row.body,
       evidence: JSON.parse(row.evidence_json),
-      sessionType: row.session_type,
+      skill: row.skill,
       seedPrompt: row.seed_prompt,
       targetPath: row.target_path,
       payload: row.payload_json ? (JSON.parse(row.payload_json) as PingPayload) : null,

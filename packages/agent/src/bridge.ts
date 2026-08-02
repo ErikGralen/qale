@@ -1,4 +1,5 @@
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent';
+import { stripExternalMarkers } from './external.js';
 
 /**
  * pi → AI SDK UIMessageChunk bridge (PLAN §3.4). pi emits its own event
@@ -16,8 +17,20 @@ export class PiUiBridge {
   private startedTexts = new Set<string>();
   private startedReasoning = new Set<string>();
   private finished = false;
+  private lastText = '';
 
   constructor(private readonly emit: (chunk: Chunk) => void) {}
+
+  /**
+   * The text of the LAST assistant message of this turn — what the PM would
+   * read as the reply, with the tool-calling messages before it dropped. The
+   * bridge is the only thing that already decodes pi's text deltas, so the
+   * quiet-run backstop (`quiet.ts`) reads it from here rather than re-walking
+   * the transcript.
+   */
+  get finalText(): string {
+    return this.lastText;
+  }
 
   /** Open the message stream. Call once before the first pi event. */
   start(): void {
@@ -28,6 +41,9 @@ export class PiUiBridge {
     switch (event.type) {
       case 'message_start':
         this.messageSeq += 1;
+        // Only the last message counts: a turn that called three tools has
+        // three assistant messages before the one that answers.
+        this.lastText = '';
         break;
 
       case 'message_update':
@@ -89,6 +105,7 @@ export class PiUiBridge {
           this.emit({ type: 'text-start', id });
         }
         this.emit({ type: 'text-delta', id, delta: ev.delta });
+        this.lastText += ev.delta ?? '';
         break;
       case 'text_end':
         if (this.startedTexts.has(id)) {
@@ -143,7 +160,17 @@ interface AssistantEvent {
   delta?: string;
 }
 
+/**
+ * Tool result → the text the expanded step shows in the session trail. The
+ * origin envelope around external material (`external.ts`) is model-facing
+ * plumbing, so it comes off here: this is a display path, and the PM asked for
+ * the markers to be invisible in the UI.
+ */
 function stringifyToolResult(result: unknown): string {
+  return stripExternalMarkers(rawToolResult(result));
+}
+
+function rawToolResult(result: unknown): string {
   if (result == null) return '';
   if (typeof result === 'string') return result;
   // Custom tools return { content: [{type:'text', text}], details }.

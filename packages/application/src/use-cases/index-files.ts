@@ -9,7 +9,7 @@ import {
 import type { UseCaseContext } from '../ports.js';
 
 /**
- * OKF `index.md` generation (Phase 1 of docs/okf-alignment.md) — the librarian's
+ * OKF `index.md` generation (alignment phase 1) — the librarian's
  * orientation pass. Reads the live index, groups notes by folder, and writes a
  * per-folder `index.md` map plus a root `index.md` stamped with `okf_version`.
  * Every note's `summary` is projected to an OKF `description` here (Phase 3,
@@ -31,7 +31,8 @@ const FOLDER_PURPOSE: Record<NoteType, string> = {
   theme: 'the durable things worth solving — problems, pains, opportunities',
   person: 'people the work touches and what they were last told',
   session: 'session receipts — the replayable audit trail',
-  skill: 'session types, voices, and filing rules that configure the workspace',
+  skill: 'playbooks, always-on rules, and reference the agent works with',
+  agent: 'self-starting agents — what fires on workspace events, and when',
   todo: 'tracked commitments — the PO’s own and what they are waiting on',
   note: 'authored notes that do not fit another folder',
   ticket: 'mirrored tracker items (Jira), never edited locally',
@@ -59,7 +60,7 @@ function collectFolders(ctx: UseCaseContext): IndexFolder[] {
       title: n.title,
       // Phase 3: the note's `summary` IS the OKF `description` at this boundary.
       description: n.summary,
-      status: n.status,
+      lifecycle: n.lifecycle,
     }));
     folders.push({ dir: meta.dir, label: labelFor(meta.dir), purpose: FOLDER_PURPOSE[type], entries });
   }

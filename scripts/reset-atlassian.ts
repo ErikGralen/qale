@@ -658,7 +658,7 @@ async function convergeJira(
     }
   }
 
-  // Typed issue links (docs/typed-links.md): the epic reads "Blocked by" the
+  // Typed issue links: the epic reads "Blocked by" the
   // staging validation task — the relationship behind its Blocked status, which
   // sync mirrors into ticket frontmatter and the app renders on both notes.
   for (const link of CAST_LINKS) {

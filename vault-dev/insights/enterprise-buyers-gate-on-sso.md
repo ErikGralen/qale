@@ -7,7 +7,9 @@ confidence: "med"
 theme: "[[themes/enterprise-onboarding]]"
 ---
 
-Every enterprise evaluation since autumn 2025 has had SSO as a pass/fail item, not a preference:
-two lost evaluations last year cited it, Nordkap's review requires it, and Elin at Bergman & Falk
-called it an automatic no. Login through the customer's IdP is the price of entry above ~200
-seats.
+Every enterprise evaluation since autumn 2025 has had SSO on the pass/fail list. Two of the
+deals we lost last year named it in the debrief. Nordkap's review requires it. Elin at
+Bergman & Falk said straight out that no SSO is an automatic no for a firm-wide rollout.
+
+Above roughly 200 seats we should assume login through the customer's own IdP is a
+precondition for anyone even looking at the product.

@@ -40,11 +40,11 @@ const WIKIPAGE = {
   url: 'https://tavla.atlassian.net/wiki/spaces/PROD/pages/98342',
 };
 
-test('ticket: round-trips through parseFrontmatter, defaults status new, preserves unknown keys', () => {
+test('ticket: round-trips through parseFrontmatter, defaults processing new, preserves unknown keys', () => {
   const r = parseFrontmatter({ ...TICKET, custom_x: 42 });
   assert.equal(r.ok, true, r.error);
   const fm = r.data as Record<string, unknown>;
-  assert.equal(fm['status'], 'new'); // fresh mirror → analyses know to run
+  assert.equal(fm['processing'], 'new'); // fresh mirror → analyses know to run
   assert.equal(fm['state_category'], 'blocked');
   assert.equal(fm['state'], 'Väntar på granskning'); // raw label survives verbatim
   assert.equal(fm['custom_x'], 42); // OKF-tolerant
@@ -71,7 +71,7 @@ test('wikipage: round-trips with version + remote_updated', () => {
   const r = parseFrontmatter(WIKIPAGE);
   assert.equal(r.ok, true, r.error);
   const fm = r.data as Record<string, unknown>;
-  assert.equal(fm['status'], 'new');
+  assert.equal(fm['processing'], 'new');
   assert.equal(fm['version'], 17);
 
   const again = parseFrontmatter(r.data);
@@ -88,13 +88,13 @@ test('mirrors are raw layer: body immutable, only re-sync fields may change', ()
   assert.equal(dirForType('wikipage'), 'wikipages');
 
   const prev = parseFrontmatter(TICKET).data as Frontmatter;
-  // A re-sync refresh (state moved, status reset) is allowed…
+  // A re-sync refresh (state moved, processing reset) is allowed…
   const resync = {
     ...prev,
     state: 'Klar',
     state_category: 'done',
     remote_updated: '2026-07-22T08:00:00Z',
-    status: 'new',
+    processing: 'new',
   } as Frontmatter;
   assert.equal(checkFrontmatterMutation('ticket', prev, resync).allowed, true);
   // …but identity never changes: a moved item is a new mirror.

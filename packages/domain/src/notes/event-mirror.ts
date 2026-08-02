@@ -6,8 +6,8 @@ import {
 import { slugify } from './slug.js';
 
 /**
- * Calendar-event → meeting-note mirror logic (docs/google-calendar-integration.md
- * §The model). Pure decision functions — the sync engine feeds it a pulled event
+ * Calendar-event → meeting-note mirror logic.
+ * Pure decision functions — the sync engine feeds it a pulled event
  * plus the note as it exists on disk and applies whatever comes back. This is the
  * first mirror writer that shares a file with the human, so the rules live here
  * where they are testable:
@@ -16,8 +16,8 @@ import { slugify } from './slug.js';
  *   (`summary`/`title` after creation, the body always);
  * - notes are created only for events that look like meetings (another human
  *   attendee, not declined);
- * - a created note is never demoted by the engine; cancellation deletes only
- *   when the PM never wrote a word.
+ * - a created note is never demoted and never deleted by the engine;
+ *   cancellation is a state the note carries (`event_status: cancelled`).
  */
 
 export interface EventAttendee {
@@ -115,9 +115,7 @@ export type MeetingMirrorPlan =
   /** Create the note (engine picks/uniquifies the path via meetingPathForEvent). */
   | { action: 'create'; frontmatter: Record<string, unknown> }
   /** Rewrite frontmatter (machine fields merged over the existing), keep body. */
-  | { action: 'patch'; frontmatter: Record<string, unknown> }
-  /** Cancelled upstream and the PM never wrote in it — remove the note. */
-  | { action: 'delete' };
+  | { action: 'patch'; frontmatter: Record<string, unknown> };
 
 /**
  * Decide what the mirror patcher does for one event. `existing` is the meeting
@@ -155,9 +153,11 @@ export function planMeetingMirror(input: {
 
   // Declined-after-creation leans cancellation (open question resolved in the
   // design doc): the meeting stopped being the PM's, same as it stopping.
-  const gone = event.event_status === 'cancelled' || selfDeclined(event);
-  if (gone) {
-    if (existing.body.trim() === '') return { action: 'delete' };
+  // The note stays either way — the engine never deletes what the PM can see,
+  // it just marks the meeting cancelled and lets the views recede it. It goes
+  // back to confirmed only when the event itself un-cancels (or the PM undoes
+  // the decline), because that's what `machine` carries.
+  if (event.event_status === 'cancelled' || selfDeclined(event)) {
     machine['event_status'] = 'cancelled';
   }
 

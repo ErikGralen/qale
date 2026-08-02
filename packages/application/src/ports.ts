@@ -22,7 +22,7 @@ export interface LinkRecord {
   target: string;
   anchor?: string;
   alias?: string;
-  /** Canonical link type (docs/typed-links.md); absent = untyped. */
+  /** Canonical link type; absent = untyped. */
   type?: string;
   /** True when the semantic edge runs target → source ("blocked by"). */
   reversed?: boolean;
@@ -39,7 +39,9 @@ export interface IndexedNote {
   layer: string;
   title: string;
   summary: string;
-  status: string | null;
+  /** The type's lifecycle value (a decision's `standing`, a todo's
+   *  `commitment`, …), or null when the type carries no lifecycle. */
+  lifecycle: string | null;
   mtime: number;
   frontmatter: Record<string, unknown>;
   links: LinkRecord[];
@@ -77,6 +79,13 @@ export interface VaultPort {
   exists(relPath: string): Promise<boolean>;
   /** Every `.md` file under the vault. */
   list(): Promise<FileListing[]>;
+  /**
+   * Vault-relative paths of the files directly inside `relPath`, sorted.
+   * Unlike {@link list} this is not limited to `.md` and does not recurse: it
+   * answers "what else is in this skill's folder", which is a question about
+   * files the index deliberately knows nothing about.
+   */
+  listDir(relPath: string): Promise<string[]>;
   /** Absolute path if `relPath` resolves inside the vault, else null. */
   contain(relPath: string): string | null;
 }
@@ -129,7 +138,7 @@ export interface ProposalRecord {
   id: string;
   kind: string;
   sessionId: string;
-  sessionType: string | null;
+  skill: string | null;
   targetPath: string | null;
   /** Content hash of the target at proposal time — for staleness detection. */
   baseHash: string | null;
@@ -145,27 +154,14 @@ export interface ProposalRecord {
 export interface CreateProposalInput {
   kind: string;
   sessionId: string;
-  /** The session TYPE (skill name) that produced this card — for auto-apply policy. */
-  sessionType?: string;
+  /** The skill in force when this card was produced — its provenance. */
+  skill?: string;
   targetPath: string | null;
   baseHash: string | null;
   payload: unknown;
   rationale: string;
   evidence: { ref: string; label?: string; resolved: boolean }[];
   inference: boolean;
-}
-
-/** Card telemetry — the kill-criteria metric + future eval signal (PLAN-V2 §4). */
-export interface ProposalStats {
-  pending: number;
-  accepted: number;
-  rejected: number;
-  stale: number;
-  /** Mean time-to-approve for accepted cards, milliseconds (null if none). */
-  avgApproveMs: number | null;
-  /** Approval rate = accepted / (accepted + rejected), null if none resolved. */
-  approvalRate: number | null;
-  byType: Record<string, { accepted: number; rejected: number }>;
 }
 
 /** Proposal store (app.db) — the durable proposal queue + accept/reject log. */
@@ -175,7 +171,53 @@ export interface ProposalPort {
   get(id: string): ProposalRecord | null;
   setStatus(id: string, status: string, resolved: number | null): void;
   pendingCount(): number;
-  stats(): ProposalStats;
+}
+
+/**
+ * A question a session parked on, waiting for the PM (QM ticket 9). Same rails
+ * as a proposal — app.db, primary state, created by a session and settled by the
+ * PM — with the one difference that a proposal keeps its accept/reject log and
+ * this does not: a row exists if and only if the question is still unanswered.
+ * Answering removes it, which is also what makes answering twice harmless.
+ *
+ * `questions` is opaque here for the same reason a proposal's payload is: the
+ * shape belongs to the agent package, which imports this one.
+ */
+export interface AskRecord {
+  /** Derived from the session and the questions, so re-asking is the same row. */
+  id: string;
+  sessionId: string;
+  questions: unknown;
+  /** The skill in force when it asked, so answering later resumes under it. */
+  skill: string | null;
+  /** Whether that skill was granted outbound by the trigger that fired it. */
+  outbound: boolean;
+  created: number;
+}
+
+export interface CreateAskInput {
+  id: string;
+  sessionId: string;
+  questions: unknown;
+  skill?: string | null;
+  outbound?: boolean;
+}
+
+/**
+ * Parked-question store (app.db) — what a question needs to survive a quit.
+ * Absent in contexts with no vault open, where a question lives only as long as
+ * the turn that asked it.
+ */
+export interface AskPort {
+  /** Upsert: the same session asking the same thing again is the same question. */
+  create(input: CreateAskInput, now: number): AskRecord;
+  /** Every unanswered question, oldest first. */
+  list(): AskRecord[];
+  get(id: string): AskRecord | null;
+  /** The one this session is parked on — a session asks one thing at a time. */
+  forSession(sessionId: string): AskRecord | null;
+  /** Settled: answered, skipped, or cancelled with the run. */
+  remove(id: string): void;
 }
 
 /**
@@ -198,15 +240,13 @@ export interface PingLinkChoiceItem {
 
 /**
  * Why a note has no links — the cause decides which answers are honest.
- * - `external` — a mirror of an upstream record (Jira issue, Confluence page).
- *   The workspace does not own it, so it is never locally deletable; the real
- *   finding is that nothing in the workspace mentions it at all.
  * - `capture` — a raw dump that names people, customers and themes in prose
  *   without linking any of them. The answer is a Process-Note session, not tidying.
  * - `stray` — workspace-owned, cites nothing, cited by nothing. The hygiene case,
  *   and the only one where offering to delete the note makes sense.
+ * Mirrors of upstream records are not a kind here: the sweep never reports them.
  */
-export type OrphanKind = 'external' | 'capture' | 'stray';
+export type OrphanKind = 'capture' | 'stray';
 
 export interface PingOrphanItem {
   id: string;
@@ -214,10 +254,8 @@ export interface PingOrphanItem {
   path: string;
   title: string;
   kind: OrphanKind;
-  /** Upstream state for a mirror ("In Progress") — display only. */
-  detail?: string | null;
   /** Notes that mention this orphan as plain text — link-it-there options.
-   *  `term` is the text that actually matched (a ticket's key, not its title). */
+   *  `term` rides along on pings written before the title was the only term. */
   mentions: { host: string; hostTitle: string; line: string; term?: string }[];
   /** Existing notes THIS note names in prose but never links — the evidence
    *  that a dump is full of signal the memory hasn't absorbed. */
@@ -246,7 +284,7 @@ export interface PingRecord {
   title: string;
   body: string;
   evidence: { ref: string; label?: string; resolved: boolean }[];
-  sessionType: string;
+  skill: string;
   seedPrompt: string;
   targetPath: string | null;
   /** One-tap suggestions; null when the finding genuinely needs a conversation. */
@@ -261,7 +299,7 @@ export interface CreatePingInput {
   title: string;
   body: string;
   evidence: { ref: string; label?: string; resolved: boolean }[];
-  sessionType: string;
+  skill: string;
   seedPrompt: string;
   targetPath: string | null;
   payload?: PingPayload | null;
@@ -327,6 +365,8 @@ export interface UseCaseContext {
   proposals: ProposalPort;
   /** Agent-ping queue; absent in contexts that don't surface an Inbox (tests, scripts). */
   pings?: PingPort;
+  /** Parked questions; absent in contexts where a question cannot outlive its turn. */
+  asks?: AskPort;
   /** Present only when an outbound integration (Atlassian) is configured. */
   outbound?: OutboundPort;
   /** One-shot LLM completions for background judgments; absent when no key is set. */

@@ -73,7 +73,7 @@ function quoteJql(id: string): string {
 }
 
 /**
- * Jira link-type name → canonical link vocabulary (docs/typed-links.md).
+ * Jira link-type name → canonical link vocabulary.
  * Unknown site-configured types pass through as free-text tokens — they index
  * and display but drive nothing. `outward` = this issue applies the outward
  * description ("blocks X"); inward entries are the same edge reversed.

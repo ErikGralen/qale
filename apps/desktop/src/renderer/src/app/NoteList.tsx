@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { noteTypeLabel } from '@pm/domain';
 import { CornerDownRight } from 'lucide-react';
 import type { NoteRefDTO } from '@pm/ipc';
 import { useApp } from '../state/app-state';
@@ -56,7 +57,7 @@ export function NoteList({
   return (
     <ul className="flex flex-col divide-y divide-border/70" onKeyDown={onListKeyDown}>
       {rows.map((n) => {
-        const superseded = n.status === 'superseded';
+        const superseded = n.lifecycle === 'superseded';
         // A cancelled synced meeting stays visible (its notes may matter) but
         // reads as struck history, not an upcoming commitment.
         const cancelled = n.eventStatus === 'cancelled';
@@ -74,7 +75,11 @@ export function NoteList({
             <div className="pointer-events-none relative flex flex-col gap-0.5 px-2 py-2">
               <div className="flex items-baseline gap-2">
                 <span className={`min-w-0 truncate text-sm font-medium ${cancelled ? 'line-through' : ''}`}>{n.title}</span>
-                {showType && <span className="shrink-0 text-xs text-muted-foreground">{n.type}</span>}
+                {showType && (
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {noteTypeLabel(n.type)}
+                  </span>
+                )}
                 {superseded && <span className="shrink-0 text-xs text-muted-foreground">superseded</span>}
                 {cancelled && <span className="shrink-0 text-xs text-muted-foreground">cancelled</span>}
                 <span className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -86,7 +91,7 @@ export function NoteList({
                   <span className="text-xs text-muted-foreground tabular-nums">{formatRefDate(n)}</span>
                 </span>
               </div>
-              <div className="truncate text-[13px] text-muted-foreground">{n.summary}</div>
+              <div className="truncate text-dense text-muted-foreground">{n.summary}</div>
               {chain && (
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <CornerDownRight className="size-3 shrink-0" aria-hidden />

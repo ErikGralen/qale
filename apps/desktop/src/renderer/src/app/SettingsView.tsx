@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, useTheme } from '@pm/ui';
-import { Check, Copy, Eye, EyeOff, FolderOpen, KeyRound, CalendarClock, Play, Server, Sun, Moon, Monitor, UserRound, X } from 'lucide-react';
+import { Check, Copy, Eye, EyeOff, FolderOpen, KeyRound, CalendarClock, Play, Server, Settings, Sun, Moon, Monitor, UserRound, X } from 'lucide-react';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** The install line for missing git is platform-specific; nothing else here is. */
+const isMac = navigator.userAgent.includes('Macintosh');
 import type { ModelInfoDTO, SettingsDTO } from '@pm/ipc';
 import { invoke } from '../lib/ipc';
 import { useApp } from '../state/app-state';
 import { useToast } from '../components/toast';
+import { PageHeader } from '../components/PageHeader';
 import { ConnectionsSettings } from './ConnectionsSettings';
 
 export function SettingsView() {
-  const { vault, openVaultDialog } = useApp();
+  const { vault, openVaultDialog, skills } = useApp();
   const { theme, setTheme } = useTheme();
   const toast = useToast();
   const [settings, setSettings] = useState<SettingsDTO | null>(null);
@@ -73,9 +76,7 @@ export function SettingsView() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-10 items-center border-b border-border px-5 text-sm font-medium text-muted-foreground">
-        Settings
-      </div>
+      <PageHeader icon={Settings} label="Settings" />
       <div className="mx-auto w-full max-w-xl flex-1 space-y-8 overflow-y-auto px-8 py-4">
         <section className="space-y-2">
           <h2 className="text-base font-semibold">Appearance</h2>
@@ -134,6 +135,29 @@ export function SettingsView() {
               Switch…
             </Button>
           </div>
+          {/* The standing version of Home's notices: dismissible there, always
+              here, so "what happened to version history?" has an answer. */}
+          {vault?.syncedBy && (
+            <p className="rounded-md bg-warning/10 px-2 py-1.5 text-sm text-warning">
+              {vault.syncedBy} is syncing this folder too. When two programs write the same files at
+              once, edits can go missing and search can stop working. A plain folder on this computer
+              is safer.
+            </p>
+          )}
+          {vault && !vault.gitAvailable && (
+            <p className="rounded-md bg-warning/10 px-2 py-1.5 text-sm text-warning">
+              Git isn't installed on this computer, so nothing keeps earlier versions of a note and
+              there is no way to undo what the agent wrote.{' '}
+              {isMac ? (
+                <>
+                  To turn it on, run <code className="whitespace-nowrap">xcode-select --install</code>{' '}
+                  in Terminal, then reopen the workspace.
+                </>
+              ) : (
+                'To turn it on, install git, then reopen the workspace.'
+              )}
+            </p>
+          )}
         </section>
 
         <section className="space-y-2">
@@ -213,14 +237,18 @@ export function SettingsView() {
             </p>
             {settings.schedules.map((sc) => {
               return (
-                <div key={sc.sessionType} className="rounded-lg border border-border bg-card p-3">
+                <div key={sc.skill} className="rounded-lg border border-border bg-card p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium capitalize">{sc.sessionType.replace('-', ' ')}</span>
+                    {/* The skill's own name, not its filename — one vocabulary
+                        wherever a skill is offered. */}
+                    <span className="font-medium">
+                      {skills.find((s) => s.name === sc.skill)?.title ?? sc.skill.replace(/-/g, ' ')}
+                    </span>
                     <label className="flex items-center gap-1.5 text-sm">
                       <input
                         type="checkbox"
                         checked={sc.enabled}
-                        onChange={(e) => setSchedule(sc.sessionType, { enabled: e.target.checked })}
+                        onChange={(e) => setSchedule(sc.skill, { enabled: e.target.checked })}
                       />
                       Enabled
                     </label>
@@ -231,7 +259,7 @@ export function SettingsView() {
                       className="rounded-md border border-input bg-card px-1.5 py-1 text-sm"
                       value={sc.dayOfWeek}
                       aria-label="Day of week"
-                      onChange={(e) => setSchedule(sc.sessionType, { dayOfWeek: Number(e.target.value) })}
+                      onChange={(e) => setSchedule(sc.skill, { dayOfWeek: Number(e.target.value) })}
                     >
                       {DAYS.map((d, i) => (
                         <option key={d} value={i}>
@@ -244,7 +272,7 @@ export function SettingsView() {
                       className="rounded-md border border-input bg-card px-1.5 py-1 text-sm tabular-nums"
                       value={sc.hour}
                       aria-label="Hour"
-                      onChange={(e) => setSchedule(sc.sessionType, { hour: Number(e.target.value) })}
+                      onChange={(e) => setSchedule(sc.skill, { hour: Number(e.target.value) })}
                     >
                       {Array.from({ length: 24 }, (_, h) => (
                         <option key={h} value={h}>
@@ -252,8 +280,8 @@ export function SettingsView() {
                         </option>
                       ))}
                     </select>
-                    <Button size="sm" variant="outline" className="ml-auto" onClick={() => runNow(sc.sessionType)}>
-                      <Play className="size-3.5" /> {ran === sc.sessionType ? 'Running…' : 'Dry-run'}
+                    <Button size="sm" variant="outline" className="ml-auto" onClick={() => runNow(sc.skill)}>
+                      <Play className="size-3.5" /> {ran === sc.skill ? 'Running…' : 'Dry-run'}
                     </Button>
                   </div>
                 </div>

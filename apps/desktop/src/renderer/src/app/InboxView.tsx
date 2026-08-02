@@ -1,29 +1,47 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@pm/ui';
-import { AlertTriangle, ArrowRight, Check, Inbox, Layers, Send } from 'lucide-react';
-import type { AgentPingDTO, OutboundPayloadDTO, ProposalDTO, ProposalStatsDTO } from '@pm/ipc';
+import { AlertTriangle, ArrowRight, ArrowUpRight, Check, Inbox, Layers } from 'lucide-react';
+import type { AgentPingDTO, MeetingReviewAskDTO, OutboundPayloadDTO, ProposalDTO } from '@pm/ipc';
 import { useApp, type SessionOverview } from '../state/app-state';
+import { countOf, ofKind, type AttentionItem } from '../lib/attention';
 import { navFromEvent } from '../lib/nav';
-import { invoke } from '../lib/ipc';
-import { sessionLabel, timeAgo } from '../lib/session-meta';
+import { timeAgo } from '../lib/session-meta';
 import { useToast } from '../components/toast';
+import { PageHeader } from '../components/PageHeader';
+import { QuestionItem } from '../components/inbox/QuestionItem';
 import { CardItem, HousekeepingItem } from '../components/inbox/CardItem';
 import { PingItem, SuggestionPing } from '../components/inbox/PingRows';
 import { ResultItem } from '../components/inbox/ResultItem';
-import { outboundTarget } from '../components/inbox/shared';
-import { cardRank, HOUSEKEEPING_RANK, titleForRef } from '../components/inbox/cardMeta';
+import { outboundAct, outboundReceipt } from '../components/inbox/shared';
+import { bareRef, cardRank, HOUSEKEEPING_RANK, orderCards, titleForRef } from '../components/inbox/cardMeta';
 
-/** Sessions whose card group reads as a meeting review, not a generic pile. */
-function isReviewGroup(sessionType: string | null): boolean {
-  // `arrival` replaced after-meeting/external-transcript (Sessions v2 Part 5);
-  // the old names stay so cards a workspace already filed still group right.
-  return sessionType === 'arrival' || sessionType === 'after-meeting' || sessionType === 'external-transcript';
+/**
+ * The document a group of cards is ABOUT — the meeting or source they target,
+ * else the one they cite. Read out of the cards themselves: what a group is
+ * about is a property of the work, not of whichever skill happened to do it.
+ */
+function groupAnchor(cards: ProposalDTO[]): string | null {
+  const target = cards.map((c) => c.targetPath).find((t) => t?.startsWith('meetings/'));
+  if (target) return target;
+  return (
+    cards
+      .flatMap((c) => c.evidence)
+      .map((e) => bareRef(e.ref))
+      .find((r) => r.startsWith('meetings/') || r.startsWith('sources/')) ?? null
+  );
 }
 
-/** Reaction sessions where the cards are consequences of one cause — a decision
- *  that changed leaves several notes pointing at the old plan. Read as one story. */
-function isCauseGroup(sessionType: string | null): boolean {
-  return sessionType === 'supersede-sweep';
+/**
+ * The one decision behind a group whose cards are all consequences of it — a
+ * decision changed, and several notes still point at the old plan. True only
+ * when every card is an update citing the SAME decision, which is what a sweep
+ * produces and what an ordinary pile of cards never does.
+ */
+function groupCause(cards: ProposalDTO[]): string | null {
+  if (cards.length === 0 || !cards.every((c) => c.kind === 'update')) return null;
+  const cause = cards[0]!.evidence.map((e) => bareRef(e.ref)).find((r) => r.startsWith('decisions/'));
+  if (!cause) return null;
+  return cards.every((c) => c.evidence.some((e) => bareRef(e.ref) === cause)) ? cause : null;
 }
 
 /** The librarian's prepared fixes — mechanical repairs, rendered glance-and-go. */
@@ -36,11 +54,10 @@ interface SentReceipt {
   target: string;
 }
 
-/** One session's pending cards, headed by the conversation that produced them. */
+/** One session's pending cards, headed by the session that produced them. */
 interface CardGroup {
   sessionId: string;
-  sessionType: string | null;
-  /** The stored conversation behind the cards — absent for librarian/seed cards. */
+  /** The stored session behind the cards — absent for librarian/seed cards. */
   session: SessionOverview | null;
   cards: ProposalDTO[];
   newest: number;
@@ -48,25 +65,35 @@ interface CardGroup {
 
 /** The flattened attention queue — what ↑↓ walks, in visual order. */
 type QueueItem =
+  | { kind: 'question'; item: AttentionItem }
   | { kind: 'card'; proposal: ProposalDTO; group: CardGroup }
   | { kind: 'ping'; ping: AgentPingDTO }
   | { kind: 'result'; session: SessionOverview };
 
 /**
  * The Inbox (PLAN-V2 §3.3) — home, not a dashboard: the single queue of
- * everything awaiting the PO. Approval cards arrive grouped by the session that
- * proposed them; agent pings ("noticed X — fix it together?") and sessions that
- * finished while the PO was away follow. Judged in seconds — by mouse or
- * entirely by keyboard — with a reachable zero. Running sessions never appear
- * here: they need nothing yet, and the sidebar rail carries them.
+ * everything awaiting the PO. A turn parked on a question leads; approval cards
+ * arrive grouped by the session that proposed them; agent pings ("noticed X —
+ * fix it together?") and sessions that finished while the PO was away follow.
+ * Judged in seconds — by mouse or entirely by keyboard — with a reachable zero.
+ * Running sessions never appear here: they need nothing yet, and the sidebar
+ * rail carries them.
+ *
+ * Everything the header counts is a named filter over the one attention list
+ * (lib/attention.ts): `waitingCount` is what needs the PO, `countOf(…, 'ping')`
+ * is what the librarian is merely offering. The Inbox owns no arithmetic.
  */
 export function InboxView() {
   const {
+    vault,
+    attention,
+    waitingCount,
     proposals,
     sessions,
     pings,
     acceptProposal,
     rejectProposal,
+    markMeetingReviewed,
     refreshProposals,
     openDoc,
     openChat,
@@ -82,7 +109,9 @@ export function InboxView() {
   // Outbound cards whose send was refused because the target moved — they get
   // the explicit "Approve anyway" affordance instead of a blind Retry.
   const [staleSends, setStaleSends] = useState<Record<string, boolean>>({});
-  const [stats, setStats] = useState<ProposalStatsDTO | null>(null);
+  // Meetings whose session emptied with nothing kept: one open question each,
+  // asked where the cards just were.
+  const [reviewAsks, setReviewAsks] = useState<MeetingReviewAskDTO[]>([]);
   const [streak, setStreak] = useState(0);
   const [audit, setAudit] = useState(false);
   const [focusIdx, setFocusIdx] = useState(0);
@@ -99,10 +128,8 @@ export function InboxView() {
 
   const SPOT_AUDIT_EVERY = 5;
 
-  const loadStats = () => void invoke['proposals:stats']().then(setStats).catch(() => setStats(null));
   useEffect(() => {
     void refreshProposals();
-    loadStats();
   }, [refreshProposals]);
 
   const queue = useMemo(() => proposals.filter((p) => p.status === 'pending'), [proposals]);
@@ -114,7 +141,6 @@ export function InboxView() {
       if (!g) {
         g = {
           sessionId: p.sessionId,
-          sessionType: p.sessionType,
           session: sessions.find((s) => s.id === p.sessionId) ?? null,
           cards: [],
           newest: 0,
@@ -124,14 +150,10 @@ export function InboxView() {
       g.cards.push(p);
       g.newest = Math.max(g.newest, p.created);
     }
-    // Meeting reviews get the narrative order (summary → decisions → insights →
+    // Every group reads in narrative order (summary → decisions → insights →
     // housekeeping → outbound); render order MUST match this — focus indices
     // walk g.cards positionally.
-    for (const g of bySession.values()) {
-      if (isReviewGroup(g.sessionType)) {
-        g.cards.sort((a, b) => cardRank(a) - cardRank(b) || a.created - b.created);
-      }
-    }
+    for (const g of bySession.values()) g.cards = orderCards(g.cards);
     return [...bySession.values()].sort((a, b) => b.newest - a.newest);
   }, [queue, sessions]);
 
@@ -140,24 +162,28 @@ export function InboxView() {
   const sessionGroups = useMemo(() => groups.filter((g) => !isLibrarianGroup(g)), [groups]);
   const librarianGroup = useMemo(() => groups.find(isLibrarianGroup) ?? null, [groups]);
 
-  // Sessions that finished with nothing to approve — an answer waiting to be read.
-  const results = useMemo(
-    () => sessions.filter((s) => s.lifecycle === 'active' && s.unread && !s.running && s.pendingCards === 0),
-    [sessions],
-  );
+  // Turns parked on a question, and sessions that finished with nothing to
+  // approve — both read straight off the one attention list, so the header's
+  // count and the rows below it can never drift apart.
+  const questions = useMemo(() => ofKind(attention, 'question'), [attention]);
+  const results = useMemo(() => {
+    const unread = new Set(ofKind(attention, 'result').map((i) => i.id));
+    return sessions.filter((s) => unread.has(`result:${s.id}`));
+  }, [attention, sessions]);
 
-  // Stakes descending: the PO's own sessions' output, finished sessions, then
-  // the librarian — its fixes are still approvals ("need you"), but the
-  // suggestion pings can always wait and never count.
+  // Stakes descending: parked questions, the PO's own sessions' output,
+  // finished sessions, then the librarian — its fixes are still approvals
+  // ("need you"), but the suggestion pings can always wait and never count.
   const items = useMemo<QueueItem[]>(
     () => [
+      ...questions.map((item): QueueItem => ({ kind: 'question', item })),
       ...sessionGroups.flatMap((g) => g.cards.map((proposal): QueueItem => ({ kind: 'card', proposal, group: g }))),
       ...results.map((session): QueueItem => ({ kind: 'result', session })),
       ...(librarianGroup?.cards.map((proposal): QueueItem => ({ kind: 'card', proposal, group: librarianGroup })) ??
         []),
       ...pings.map((ping): QueueItem => ({ kind: 'ping', ping })),
     ],
-    [sessionGroups, librarianGroup, pings, results],
+    [questions, sessionGroups, librarianGroup, pings, results],
   );
 
   useEffect(() => {
@@ -170,6 +196,36 @@ export function InboxView() {
       if (next % SPOT_AUDIT_EVERY === 0) setAudit(true);
       return next;
     });
+
+  const vaultPath = vault?.path ?? '';
+
+  // The resolve that empties a session hands back a question when nothing was
+  // kept. Asked once per meeting: a "not yet" is remembered for the workspace,
+  // so re-resolving another of its sessions never re-opens the same question.
+  const noteReviewAsk = useCallback(
+    (ask: MeetingReviewAskDTO | undefined) => {
+      if (!ask || dismissedReviewAsks(vaultPath).includes(ask.path)) return;
+      setReviewAsks((asks) => (asks.some((a) => a.path === ask.path) ? asks : [...asks, ask]));
+    },
+    [vaultPath],
+  );
+
+  const answerReviewAsk = useCallback(
+    async (ask: MeetingReviewAskDTO) => {
+      setReviewAsks((asks) => asks.filter((a) => a.path !== ask.path));
+      const r = await markMeetingReviewed(ask.path).catch(() => ({ ok: false }));
+      if (!r.ok) toast(`Could not mark ${ask.title} reviewed. Open it and set the status there.`);
+    },
+    [markMeetingReviewed, toast],
+  );
+
+  const dismissReviewAsk = useCallback(
+    (ask: MeetingReviewAskDTO) => {
+      setReviewAsks((asks) => asks.filter((a) => a.path !== ask.path));
+      persistDismissedReviewAsk(vaultPath, ask.path);
+    },
+    [vaultPath],
+  );
 
   const setError = (id: string, message: string | null) =>
     setErrors((e) => {
@@ -185,6 +241,7 @@ export function InboxView() {
       setError(p.id, null);
       try {
         const r = await acceptProposal(p.id, edited);
+        noteReviewAsk(r.review);
         if (r.ok) {
           setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
           bumpStreak();
@@ -195,14 +252,18 @@ export function InboxView() {
           });
           if (p.kind === 'outbound') {
             const ob = p.payload as OutboundPayloadDTO;
-            setSent((s) => [...s, { id: p.id, target: outboundTarget(ob) }]);
+            setSent((s) => [...s, { id: p.id, target: outboundReceipt(ob) }]);
           }
         } else if (r.stale && p.kind === 'outbound') {
           // The target moved after this was drafted; main refused the send and
           // the card stays pending. The card's error row grows an explicit
           // "Approve anyway" that re-accepts with a refreshed snapshot.
           setStaleSends((s) => ({ ...s, [p.id]: true }));
-          setError(p.id, r.error ?? 'The target changed since this was drafted — review it, then approve anyway to send.');
+          setError(
+            p.id,
+            r.error ??
+              `This changed upstream since the card was drafted — take one more look, then approve anyway to ${outboundAct(p.payload as OutboundPayloadDTO).verb}.`,
+          );
         } else if (r.stale) {
           // The keyboard path can accept without ever seeing the preview's
           // stale banner — a stale refusal must speak, never no-op.
@@ -215,9 +276,8 @@ export function InboxView() {
       } finally {
         setBusy(false);
       }
-      loadStats();
     },
-    [acceptProposal],
+    [acceptProposal, noteReviewAsk],
   );
 
   const onReject = useCallback(
@@ -225,7 +285,7 @@ export function InboxView() {
       setBusy(true);
       setError(p.id, null);
       try {
-        await rejectProposal(p.id);
+        noteReviewAsk((await rejectProposal(p.id)).review);
         setReceipt((x) => ({ ...x, rejected: x.rejected + 1 }));
         setStreak(0);
       } catch (err) {
@@ -233,9 +293,8 @@ export function InboxView() {
       } finally {
         setBusy(false);
       }
-      loadStats();
     },
-    [rejectProposal],
+    [rejectProposal, noteReviewAsk],
   );
 
   const acceptCards = useCallback(
@@ -258,6 +317,7 @@ export function InboxView() {
             setError(p.id, err instanceof Error ? err.message : 'Failed — retry from the card.');
             return { ok: false as const };
           });
+          noteReviewAsk('review' in r ? r.review : undefined);
           if (r.ok) {
             local++;
             setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
@@ -270,9 +330,8 @@ export function InboxView() {
       } finally {
         setBusy(false);
       }
-      loadStats();
     },
-    [acceptProposal, streak, toast],
+    [acceptProposal, noteReviewAsk, streak, toast],
   );
 
   // Discard a whole cause block at once — the PO judged the premise wrong, so
@@ -284,7 +343,7 @@ export function InboxView() {
         let failed = 0;
         for (const p of cards) {
           try {
-            await rejectProposal(p.id);
+            noteReviewAsk((await rejectProposal(p.id)).review);
             setReceipt((x) => ({ ...x, rejected: x.rejected + 1 }));
           } catch (err) {
             failed++;
@@ -296,24 +355,26 @@ export function InboxView() {
       } finally {
         setBusy(false);
       }
-      loadStats();
     },
-    [rejectProposal, toast],
+    [rejectProposal, noteReviewAsk, toast],
   );
 
   const openResult = useCallback(
     (s: SessionOverview) => {
       markSessionSeen(s.id);
-      openChat({ id: s.id, sessionType: s.sessionType, title: s.title });
+      openChat({ id: s.id, title: s.title });
     },
     [markSessionSeen, openChat],
   );
 
   const openItemSession = useCallback(
     (item: QueueItem) => {
-      if (item.kind === 'card' && item.group.session) {
+      if (item.kind === 'question') {
+        const t = item.item.target;
+        if (t.open === 'session') openChat({ id: t.sessionId, title: t.title });
+      } else if (item.kind === 'card' && item.group.session) {
         const s = item.group.session;
-        openChat({ id: s.id, sessionType: s.sessionType, title: s.title });
+        openChat({ id: s.id, title: s.title });
       } else if (item.kind === 'ping') {
         void openPing(item.ping);
       } else if (item.kind === 'result') {
@@ -354,26 +415,45 @@ export function InboxView() {
     return true;
   };
 
+  /** The focused outbound card's send button — the queue's ↵ moves to it
+   *  instead of pressing it for you. */
+  const focusSend = (id: string): void => {
+    const button = listRef.current?.querySelector<HTMLButtonElement>(`[data-send="${CSS.escape(id)}"]`);
+    button?.focus();
+  };
+
   // Full keyboard path: navigate, approve/open, dismiss without the mouse.
   const onKeyDown = (e: React.KeyboardEvent) => {
     const t = e.target as HTMLElement;
-    if (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT') return;
+    if (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable) return;
+    // A control the PO deliberately landed on owns its own keys — ↵ must reach
+    // the button, not be swallowed by the queue's shortcut for the same row.
+    // Arrows still steer, and moving the cursor takes focus back off the control.
+    const onControl = t.closest('button, a, [role="button"]') !== null;
     const current = items[focusIdx];
-    if (e.key === 'ArrowDown' || e.key === 'j') {
+    if (e.key === 'ArrowDown' || (e.key === 'j' && !onControl)) {
       e.preventDefault();
       setFocusIdx((i) => Math.min(i + 1, items.length - 1));
-    } else if (e.key === 'ArrowUp' || e.key === 'k') {
+    } else if (e.key === 'ArrowUp' || (e.key === 'k' && !onControl)) {
       e.preventDefault();
       setFocusIdx((i) => Math.max(i - 1, 0));
+    } else if (onControl) {
+      return;
     } else if ((e.key === 'Enter' || e.key === 'a') && current && !busy) {
       e.preventDefault();
-      if (current.kind === 'card') void onAccept(current.proposal);
-      else openItemSession(current);
+      // A send leaves the workspace, so the one-tap approve never fires one —
+      // the same rule the batch path keeps. ↵ carries you to the send button;
+      // pressing it there is the decision. Everything internal stays one tap.
+      if (current.kind !== 'card') openItemSession(current);
+      else if (current.proposal.kind === 'outbound') focusSend(current.proposal.id);
+      else void onAccept(current.proposal);
     } else if ((e.key === 'Backspace' || e.key === 'x') && current && !busy) {
       e.preventDefault();
+      // A question is answered, never dismissed — the key is a deliberate no-op
+      // on an ask row rather than a way to lose the turn that is waiting.
       if (current.kind === 'card') void onReject(current.proposal);
       else if (current.kind === 'ping') void dismissPing(current.ping.id);
-      else markSessionSeen(current.session.id);
+      else if (current.kind === 'result') markSessionSeen(current.session.id);
     } else if (e.key === 'o' && current) {
       e.preventDefault();
       openItemSession(current);
@@ -383,7 +463,7 @@ export function InboxView() {
   };
 
   // Where each visual block starts in the flattened queue (for focus mapping).
-  let cursor = 0;
+  let cursor = questions.length;
   const groupStarts = sessionGroups.map((g) => {
     const start = cursor;
     cursor += g.cards.length;
@@ -392,38 +472,57 @@ export function InboxView() {
   const resultStart = cursor;
   const librarianStart = resultStart + results.length;
   const pingStart = librarianStart + (librarianGroup?.cards.length ?? 0);
-  /** Approvals and unread results — what the header count means by "need you". */
-  const needCount = pingStart;
+  const suggestionCount = countOf(attention, 'ping');
   const focusedSuggestion = (() => {
     const cur = items[focusIdx];
     return cur?.kind === 'ping' && cur.ping.payload ? cur.ping : null;
   })();
+  // The hint states what ↵ does on the row you are actually on — on a send it
+  // moves you to the button rather than pressing it, and must say so.
+  const focusedOutbound = (() => {
+    const cur = items[focusIdx];
+    return cur?.kind === 'card' && cur.proposal.kind === 'outbound';
+  })();
 
   return (
     <div className="flex h-full flex-col" onKeyDown={onKeyDown}>
-      <div className="flex h-10 items-center gap-2 border-b border-border px-5 text-sm font-medium text-muted-foreground">
-        <Inbox className="size-4" /> Inbox
-        {needCount > 0 && (
-          <span className="text-xs">· {needCount} need{needCount === 1 ? 's' : ''} you</span>
-        )}
-        {pings.length > 0 && (
-          <span className="text-xs">· {pings.length} suggestion{pings.length === 1 ? '' : 's'}</span>
-        )}
+      <PageHeader
+        icon={Inbox}
+        label="Inbox"
+        meta={
+          waitingCount > 0 || suggestionCount > 0 ? (
+            <>
+              {waitingCount > 0 && `${waitingCount} need${waitingCount === 1 ? 's' : ''} you`}
+              {waitingCount > 0 && suggestionCount > 0 && ' · '}
+              {suggestionCount > 0 && `${suggestionCount} suggestion${suggestionCount === 1 ? '' : 's'}`}
+            </>
+          ) : undefined
+        }
+      >
         {items.length > 0 && (
-          <span className="ml-auto hidden text-xs text-muted-foreground lg:block">
+          <span className="hidden max-w-[40ch] truncate text-xs text-muted-foreground xl:block">
             {focusedSuggestion
-              ? '↑↓ navigate · 1–9 apply · s skip · ↵ chat · ⌫ dismiss'
-              : '↑↓ navigate · ↵ approve/open · ⌫ dismiss · o open session'}
+              ? '↑↓ navigate · 1–9 apply · s skip · ↵ ask · ⌫ dismiss'
+              : focusedOutbound
+                ? '↑↓ navigate · ↵ go to Send · ⌫ discard'
+                : '↑↓ navigate · ↵ approve/open · ⌫ dismiss · o open session'}
           </span>
         )}
         {internalCount > 1 && (
-          <Button size="sm" variant="ghost" className={items.length > 0 ? '' : 'ml-auto'} onClick={() => void acceptCards(queue)} disabled={busy}>
+          <Button size="sm" variant="ghost" className="shrink-0" onClick={() => void acceptCards(queue)} disabled={busy}>
             <Layers className="size-3.5" /> Accept all internal ({internalCount})
           </Button>
         )}
-      </div>
+      </PageHeader>
 
-      <div ref={listRef} className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-8 py-5 outline-none" tabIndex={0}>
+      {/* `data-queue` marks the region the roving cursor lives in: rows take real
+          focus while it holds focus, and never steal it from outside. */}
+      <div
+        ref={listRef}
+        data-queue
+        className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-8 py-5 outline-none"
+        tabIndex={0}
+      >
         {audit && queue.length > 0 && (
           <div className="mb-3 flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/8 px-3 py-2 text-sm">
             <AlertTriangle className="size-4 shrink-0 text-warning" />
@@ -445,9 +544,11 @@ export function InboxView() {
 
         {sent.length > 0 && (
           <div className="mb-3 flex items-start gap-2 rounded-lg border border-success/30 bg-success/8 px-3 py-2 text-sm">
-            <Send className="mt-0.5 size-4 shrink-0 text-success" />
+            <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-success" />
             <div className="min-w-0 flex-1">
-              <span className="font-medium text-foreground">Sent this session</span>
+              {/* The banner promised "leaves your workspace"; the receipt says
+                  it left, in the same words and in past tense. */}
+              <span className="font-medium text-foreground">Left your workspace</span>
               <ul className="mt-0.5 text-muted-foreground">
                 {sent.slice(-3).map((s) => (
                   <li key={s.id} className="truncate">{s.target}</li>
@@ -457,6 +558,29 @@ export function InboxView() {
           </div>
         )}
 
+        {/* The one question a discarded pile leaves behind, in the spot its
+            cards just vacated: nothing was kept, so nothing says the meeting
+            was read. "Not yet" leaves it in needs review and never asks again. */}
+        {reviewAsks.map((ask) => (
+          <div
+            key={ask.path}
+            className="mb-3 flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm"
+          >
+            <span className="min-w-0 flex-1 text-muted-foreground">
+              Nothing kept from <span className="text-foreground">{ask.title}</span>. Mark it reviewed?
+            </span>
+            <Button size="sm" variant="ghost" className="shrink-0" onClick={() => void answerReviewAsk(ask)}>
+              <Check className="size-3.5" /> Mark reviewed
+            </Button>
+            <button
+              className="shrink-0 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              onClick={() => dismissReviewAsk(ask)}
+            >
+              Not yet
+            </button>
+          </div>
+        ))}
+
         {items.length === 0 ? (
           <div className="mt-16 flex flex-col items-center gap-3 text-center">
             <div className="flex size-12 items-center justify-center rounded-full bg-brand/10">
@@ -465,7 +589,7 @@ export function InboxView() {
             <h2 className="text-lg font-semibold">Inbox zero</h2>
             {(receipt.accepted > 0 || receipt.rejected > 0) && (
               <p className="text-sm text-muted-foreground">
-                {receipt.accepted} accepted · {receipt.rejected} dismissed this session.
+                {receipt.accepted} accepted · {receipt.rejected} dismissed so far.
               </p>
             )}
             <p className="max-w-sm text-sm text-muted-foreground">
@@ -474,21 +598,38 @@ export function InboxView() {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-5">
+          /* Sections breathe at 24px while the cards inside one section sit at
+             12px — the old 20px left both gaps reading as the same beat. */
+          <div className="flex flex-col gap-6">
+            {questions.length > 0 && (
+              <section aria-label="Questions">
+                <h3 className="mb-1.5 px-0.5 text-sm font-semibold">Questions</h3>
+                <ul className="flex flex-col gap-2">
+                  {questions.map((item, i) => (
+                    <QuestionItem
+                      key={item.id}
+                      item={item}
+                      focused={i === focusIdx}
+                      onFocus={() => setFocusIdx(i)}
+                      onOpen={() => openItemSession({ kind: 'question', item })}
+                    />
+                  ))}
+                </ul>
+              </section>
+            )}
+
             {sessionGroups.map((g, gi) => {
-              const review = isReviewGroup(g.sessionType);
-              // The note the review is about — its meeting page (or source note).
-              const anchor = review
-                ? (g.cards.map((c) => c.targetPath).find((t) => t?.startsWith('meetings/')) ??
-                   g.cards
-                     .flatMap((c) => c.evidence)
-                     .map((e) => e.ref.replace(/^\[\[/, '').replace(/\]\]$/, ''))
-                     .find((r) => r.startsWith('meetings/') || r.startsWith('sources/')))
-                : null;
-              const hkStart = review ? g.cards.findIndex((c) => cardRank(c) === HOUSEKEEPING_RANK) : -1;
-              const hkEnd = review
-                ? (hkStart === -1 ? -1 : g.cards.findIndex((c, i) => i >= hkStart && cardRank(c) > HOUSEKEEPING_RANK))
-                : -1;
+              const cause = groupCause(g.cards);
+              // The note the group is about — its meeting page (or source note).
+              // A cause group is about its decision, and says so in the header.
+              const anchor = cause ? null : groupAnchor(g.cards);
+              // Housekeeping folds away as the boring tail of a bigger story. When
+              // it IS the whole group there is no story to spare the PO, and every
+              // card stays legible.
+              const hkOnly = g.cards.every((c) => cardRank(c) === HOUSEKEEPING_RANK);
+              const hkStart = hkOnly ? -1 : g.cards.findIndex((c) => cardRank(c) === HOUSEKEEPING_RANK);
+              const hkEnd =
+                hkStart === -1 ? -1 : g.cards.findIndex((c, i) => i >= hkStart && cardRank(c) > HOUSEKEEPING_RANK);
               const hk = hkStart === -1 ? [] : g.cards.slice(hkStart, hkEnd === -1 ? undefined : hkEnd);
               const renderCard = (p: ProposalDTO, ci: number, compact: boolean) => {
                 const idx = groupStarts[gi]! + ci;
@@ -505,10 +646,9 @@ export function InboxView() {
                 };
                 return compact ? <HousekeepingItem key={p.id} {...shared} /> : <CardItem key={p.id} {...shared} />;
               };
-              const cause = isCauseGroup(g.sessionType);
               const internalN = g.cards.filter((c) => c.kind !== 'outbound').length;
               // The header speaks the meeting, or the cause — never the prompt or a path.
-              const title = cause ? causeSentence(g.cards) : groupTitle(g, anchor ?? null);
+              const title = cause ? causeSentence(cause, g.cards.length) : groupTitle(g, anchor);
               const summary = cause
                 ? 'Approve to update them all — or discard, if the premise is wrong.'
                 : groupSummary(g.cards);
@@ -528,8 +668,11 @@ export function InboxView() {
                     </div>
                     <span className="flex shrink-0 items-center gap-1">
                       {internalN > 1 && (
+                        // The batch never sends, so it counts only what it will
+                        // actually apply — a group with a pending send says "3",
+                        // not "all", and the send stays its own decision below.
                         <Button size="sm" variant="ghost" onClick={() => void acceptCards(g.cards)} disabled={busy}>
-                          <Check className="size-3.5" /> {cause ? `Update all ${internalN}` : 'Approve all'}
+                          <Check className="size-3.5" /> {cause ? 'Update' : 'Approve'} all {internalN}
                         </Button>
                       )}
                       {cause ? (
@@ -556,7 +699,7 @@ export function InboxView() {
                             <button
                               className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                               onClick={(e) =>
-                                openChat({ id: g.session!.id, sessionType: g.session!.sessionType, title: g.session!.title }, navFromEvent(e))
+                                openChat({ id: g.session!.id, title: g.session!.title }, navFromEvent(e))
                               }
                             >
                               Open session <ArrowRight className="size-3" />
@@ -619,7 +762,7 @@ export function InboxView() {
 
             {(librarianGroup || pings.length > 0) && (
               <section aria-label="Librarian">
-                {needCount === 0 && (
+                {waitingCount === 0 && (
                   <p className="mb-3 flex items-center gap-2 px-0.5 text-sm text-muted-foreground">
                     <Check className="size-4 text-success" aria-hidden />
                     Nothing needs you — just the librarian's tidy-ups below, whenever suits.
@@ -643,7 +786,10 @@ export function InboxView() {
                   )}
                 </div>
                 {pingError && (
-                  <div className="mb-1.5 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-1.5 text-sm text-destructive">
+                  <div
+                    role="alert"
+                    className="mb-1.5 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-1.5 text-sm text-destructive"
+                  >
                     <span className="flex-1">{pingError}</span>
                     <Button size="sm" variant="ghost" onClick={() => setPingError(null)}>
                       Dismiss
@@ -698,28 +844,42 @@ export function InboxView() {
           </div>
         )}
       </div>
-
-      {stats && stats.accepted + stats.rejected > 0 && (
-        <div className="flex items-center gap-3 border-t border-border px-6 py-1.5 text-xs text-muted-foreground">
-          {stats.approvalRate !== null && stats.accepted > 0 && (
-            <span>approval {Math.round(stats.approvalRate * 100)}%</span>
-          )}
-          {stats.avgApproveMs !== null && <span>· ~{Math.round(stats.avgApproveMs / 1000)}s to approve</span>}
-          <span className="ml-auto">
-            {stats.accepted} accepted · {stats.rejected} dismissed all-time
-          </span>
-        </div>
-      )}
     </div>
   );
 }
 
-/** The group header in human terms: the meeting the review is about — never the
- *  agent's prompt, never a path. Falls back to the session kind's label. */
+/**
+ * Meetings the PO answered "not yet" to. Per workspace, like the pin set, and
+ * view-only: the answer is "don't ask me again", not a fact about the meeting,
+ * so it stays out of the vault. The meeting itself stays in needs review.
+ */
+const REVIEW_ASK_KEY = 'pm.reviewAskDismissed.v1';
+
+function dismissedReviewAsks(vaultPath: string): string[] {
+  try {
+    const raw = localStorage.getItem(`${REVIEW_ASK_KEY}:${vaultPath}`);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistDismissedReviewAsk(vaultPath: string, path: string): void {
+  try {
+    const next = [...new Set([...dismissedReviewAsks(vaultPath), path])];
+    localStorage.setItem(`${REVIEW_ASK_KEY}:${vaultPath}`, JSON.stringify(next));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+/** The group header in human terms: the document the cards are about — never the
+ *  agent's prompt, never a path. */
 function groupTitle(g: CardGroup, anchor: string | null): string {
   if (anchor) return titleForRef(anchor);
   if (g.sessionId === 'seed') return 'your demo meeting';
-  return g.sessionType ? sessionLabel(g.sessionType) : 'your session';
+  return 'your session';
 }
 
 /** A glanceable tally of what a meeting produced, in the PO's nouns. */
@@ -751,14 +911,7 @@ function groupSummary(cards: ProposalDTO[]): string {
 
 /** The cause behind a sweep: one decision changed and N notes still cite the old
  *  one. Stated as the PO thinks it — cause first, effect second. */
-function causeSentence(cards: ProposalDTO[]): string {
-  const n = cards.length;
-  const decisionRef = cards
-    .flatMap((c) => c.evidence.map((e) => e.ref))
-    .map((r) => r.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.trim())
-    .find((r) => r.startsWith('decisions/'));
+function causeSentence(cause: string, n: number): string {
   const notes = `${n} note${n === 1 ? '' : 's'}`;
-  return decisionRef
-    ? `Because you decided “${titleForRef(decisionRef)}”, ${notes} still point at the old plan`
-    : `A decision changed — ${notes} still point at the old plan`;
+  return `Because you decided “${titleForRef(cause)}”, ${notes} still point at the old plan`;
 }

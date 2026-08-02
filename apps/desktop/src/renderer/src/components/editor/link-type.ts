@@ -2,7 +2,7 @@ import { typeForDir, type NoteType } from '@pm/domain';
 import { externalSlugOf } from '../../lib/connections';
 
 /**
- * Shared plumbing for authoring a link's relationship type (docs/typed-links.md).
+ * Shared plumbing for authoring a link's relationship type.
  * Two surfaces open the same menu — the pill's chevron in the body, and
  * ⇧↵ in the `[[` picker — and both announce it the same way: select the
  * wikiLink node, then fire this event on the editor DOM. `SelectionToolbar`

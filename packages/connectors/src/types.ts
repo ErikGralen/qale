@@ -16,7 +16,7 @@ import type { StateCategory, SyncedCalendarEvent } from '@pm/domain';
 
 /** Which mirror note type a container's items become. `calendar` containers
  *  hold events, which materialize as `meeting` notes (the ownership-split
- *  mirror — see docs/google-calendar-integration.md). */
+ *  mirror: machine-owned fields only, the body stays the human's). */
 export type ContainerKind = 'ticket' | 'wikipage' | 'calendar';
 
 /** A followable container: a Jira project, Confluence space, Google calendar, … */
@@ -77,7 +77,7 @@ export interface PullResult {
 }
 
 /** A ticket's provider relationship, canonicalized to the link vocabulary
- *  (docs/typed-links.md): `reversed` = the semantic edge runs the other way
+ *: `reversed` = the semantic edge runs the other way
  *  ("is blocked by"). Matches the `links` entries in `zTicket` frontmatter. */
 export interface TicketLink {
   type: string;

@@ -17,6 +17,7 @@ import { byDue, todoLane, type TodoLane, isFolderIndex } from '@pm/domain';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
 import { useToast } from '../components/toast';
+import { PageHeader } from '../components/PageHeader';
 import { AtRiskMarker, riskFor, useAtRisk } from '../components/ExternalRef';
 import { localDateStr } from '../lib/dates';
 import { parseTodoInput } from '../lib/todo-parse';
@@ -175,7 +176,7 @@ function TodoRowItem({
   const { openDoc, openSession } = useApp();
   const n = row.note;
   const closed = row.lane === 'closed';
-  const dropped = n.status === 'dropped';
+  const dropped = n.lifecycle === 'dropped';
 
   const ownerSlug = n.owner ? refSlug(n.owner) : null;
   const ownerNote = ownerSlug ? peopleBySlug.get(ownerSlug) : undefined;
@@ -355,12 +356,12 @@ function LaneHead({
       {dot && <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-hidden />}
       <h3
         className={cn(
-          'flex items-center gap-1.5 text-[0.6875rem] font-semibold tracking-[0.07em] uppercase',
+          'flex items-center gap-1.5 text-micro font-semibold tracking-[0.07em] uppercase',
           focus ? 'text-foreground' : 'text-muted-foreground',
         )}
       >
         {label}
-        <span className="rounded bg-muted px-1.5 py-px text-[0.6875rem] font-semibold text-muted-foreground tabular-nums">
+        <span className="rounded bg-muted px-1.5 py-px text-micro font-semibold text-muted-foreground tabular-nums">
           {count}
         </span>
       </h3>
@@ -373,7 +374,7 @@ function LaneHead({
 /** Sub-tier divider inside a lane (this week / later). */
 function SubLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-2 pt-2 pb-0.5 text-[0.625rem] font-semibold tracking-wide text-muted-foreground/70 uppercase first:pt-0.5">
+    <div className="px-2 pt-2 pb-0.5 text-2xs font-semibold tracking-wide text-muted-foreground/70 uppercase first:pt-0.5">
       {children}
     </div>
   );
@@ -385,7 +386,7 @@ export function TodosView() {
   const today = localDateStr();
   const risks = useAtRisk();
   const [showDone, setShowDone] = useState(false);
-  /** Optimistic status while the write+reindex round-trips. */
+  /** Optimistic commitment while the write+reindex round-trips. */
   const [pending, setPending] = useState<Record<string, string>>({});
 
   // People resolve owner refs; todos come straight off the live tree.
@@ -405,10 +406,10 @@ export function TodosView() {
   const lanes = useMemo(() => {
     const map = new Map<TodoLane, TodoRow[]>();
     for (const n of todos) {
-      const status = pending[n.path] ?? n.status ?? 'open';
-      const shape = { status, due: n.due ?? null, owner: n.owner ?? null };
+      const commitment = pending[n.path] ?? n.lifecycle ?? 'open';
+      const shape = { commitment, due: n.due ?? null, owner: n.owner ?? null };
       const lane = todoLane(shape, today);
-      const overdue = status === 'open' && !!n.due && n.due < today;
+      const overdue = commitment === 'open' && !!n.due && n.due < today;
       const rows = map.get(lane) ?? [];
       rows.push({ note: n, lane, overdue });
       map.set(lane, rows);
@@ -427,7 +428,7 @@ export function TodosView() {
     return map;
   }, [todos, pending, today]);
 
-  const openCount = todos.filter((n) => (pending[n.path] ?? n.status ?? 'open') === 'open' && !n.owner).length;
+  const openCount = todos.filter((n) => (pending[n.path] ?? n.lifecycle ?? 'open') === 'open' && !n.owner).length;
   const waitingCount = lanes.get('waiting')?.length ?? 0;
   const closedRows = lanes.get('closed') ?? [];
 
@@ -450,10 +451,10 @@ export function TodosView() {
   const waitingOverdue = waitingRows.filter((r) => r.overdue).length;
   const todayHead = todayHeadFmt.format(new Date(`${today}T00:00`));
 
-  const flip = async (path: string, status: 'open' | 'done' | 'dropped') => {
-    setPending((p) => ({ ...p, [path]: status }));
+  const flip = async (path: string, commitment: 'open' | 'done' | 'dropped') => {
+    setPending((p) => ({ ...p, [path]: commitment }));
     try {
-      await setTodoStatus(path, status);
+      await setTodoStatus(path, commitment);
     } catch (err) {
       // The optimistic checkbox reverts (pending cleared below) — say why.
       toast(`Couldn't update the todo: ${err instanceof Error ? err.message : 'the write failed.'}`);
@@ -502,17 +503,21 @@ export function TodosView() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-10 items-center gap-2 border-b border-border px-5 text-sm font-medium text-muted-foreground">
-        <ListTodo className="size-4" aria-hidden /> Todos
-        {!empty && (
-          <span className="text-xs">
-            · {openCount} open
-            {ownOverdue > 0 && <span className="font-semibold text-warning"> · {ownOverdue} overdue</span>}
-            {waitingCount > 0 ? ` · ${waitingCount} waiting` : ''}
-          </span>
-        )}
-        <span className="ml-auto text-xs text-muted-foreground/80 tabular-nums">{todayHead}</span>
-      </div>
+      <PageHeader
+        icon={ListTodo}
+        label="Todos"
+        meta={
+          empty ? undefined : (
+            <>
+              {openCount} open
+              {ownOverdue > 0 && <span className="font-semibold text-warning"> · {ownOverdue} overdue</span>}
+              {waitingCount > 0 ? ` · ${waitingCount} waiting` : ''}
+            </>
+          )
+        }
+      >
+        <span className="text-xs text-muted-foreground tabular-nums">{todayHead}</span>
+      </PageHeader>
 
       <div
         className="mx-auto w-full max-w-4xl flex-1 overflow-y-auto px-8 py-5"
@@ -554,7 +559,7 @@ export function TodosView() {
                 dot
                 flag={
                   ownOverdue > 0 ? (
-                    <span className="flex items-center gap-1 text-[0.6875rem] font-semibold text-warning">
+                    <span className="flex items-center gap-1 text-micro font-semibold text-warning">
                       <TriangleAlert className="size-3" aria-hidden />
                       {ownOverdue} overdue
                     </span>
@@ -606,7 +611,7 @@ export function TodosView() {
                       count={waitingRows.length}
                       flag={
                         waitingOverdue > 0 ? (
-                          <span className="flex items-center gap-1 text-[0.6875rem] font-semibold text-warning">
+                          <span className="flex items-center gap-1 text-micro font-semibold text-warning">
                             <TriangleAlert className="size-3" aria-hidden />
                             {waitingOverdue} overdue
                           </span>

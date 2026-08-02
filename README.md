@@ -7,7 +7,7 @@ An Electron desktop app that turns a plain-markdown vault (notes, meetings, deci
 - **Markdown vault** — plain `.md` files with typed frontmatter (meeting, decision, insight, theme, person, …), wikilinks, backlinks, and a live SQLite index.
 - **Editor** — TipTap-based: selection toolbar, `/` block commands, `[[` wikilink autocomplete, drag block handles, structured properties block.
 - **Version history** — git-backed per-note history: a consent-gated `git init` per workspace, then a read-only history viewer on every note.
-- **Agent sessions** — skill-file driven (frontmatter + `## When / ## Produce / ## Then` sections) chat/ask/after-meeting/weekly sessions over the Anthropic API.
+- **Agent sessions** — driven by markdown files whose body IS the instructions, verbatim; frontmatter carries only `starts` (what puts it in force) and `can` (what it may do). Each one is a folder (`skills/<name>/SKILL.md`, `agents/<name>/AGENT.md`) and anything beside the entry file is read only when the instructions name it. `skills/` is what you reach for, `agents/` what reaches for itself.
 - **Inbox** — the approval queue for agent proposals (with diffs and staleness checks) plus librarian housekeeping pings.
 - **Todos & commitments** — own todos and waiting-on ledger, parsed from notes plus quick-add.
 - **Scheduler** — recurring sessions (e.g. weekly commitment check).
@@ -44,7 +44,8 @@ Dev vault: `pnpm refresh-demo` builds the runtime `.vault-dev/` from the canonic
 
 ## Status
 
-MVP. See [docs/NEXT-STEPS.md](docs/NEXT-STEPS.md) for the full review this work queue came from.
+MVP. See [docs/open-work.md](docs/open-work.md) for what's still open — the correctness debt,
+refactors, product gaps and verification still owed, distilled from the review docs.
 
 ### Recent work
 

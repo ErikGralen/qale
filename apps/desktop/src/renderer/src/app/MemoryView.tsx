@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
-import { dirForType, isFolderIndex, layerForType } from '@pm/domain';
+import { dirForType, isFolderIndex, layerForType, readOnlyReason } from '@pm/domain';
 import { Button } from '@pm/ui';
 import { ChevronRight, FileUp, Inbox, Library, Mic } from 'lucide-react';
 import type { NoteRefDTO, NoteType, VaultTreeGroupDTO } from '@pm/ipc';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
 import { requestCapture } from '../lib/capture-event';
+import { PageHeader } from '../components/PageHeader';
 import { noteTypeIcon } from '../lib/note-icons';
 import { isUnprocessedSource, needsReview } from '../lib/note-status';
 
@@ -15,33 +16,42 @@ import { isUnprocessedSource, needsReview } from '../lib/note-status';
  * Notes sits alone on top as the desk. A type only renders once *revealed*
  * (the memory has ever held one); a shelf with no revealed types doesn't
  * render at all, so week one shows two rows and week six shows the instrument.
+ *
+ * Sessions are deliberately absent: a session receipt is a record the user
+ * never authors, and it already has a home in the Sessions rail. It stays
+ * addressable ([[sessions/…]] links resolve, backlinks work) without costing
+ * a shelf here.
  */
 const SHELVES: readonly { label: string; types: readonly NoteType[] }[] = [
-  { label: 'Record', types: ['meeting', 'source', 'session'] },
+  { label: 'Record', types: ['meeting', 'source'] },
   { label: 'Judgment', types: ['decision', 'insight', 'theme'] },
   { label: 'People', types: ['customer', 'person'] },
   { label: 'Delivery', types: ['ticket', 'wikipage'] },
 ];
 
-/** What each shelf holds — the whole subtitle: note titles here read as bloat. */
+/**
+ * What each shelf holds — the whole subtitle: note titles here read as bloat,
+ * and the row truncates, so one clause is the budget. The two mirror shelves
+ * lead with the domain's own sentence (@pm/domain readOnlyReason) so the shelf
+ * and the note page name the source the same way.
+ */
 const TYPE_DESC: Partial<Record<NoteType, string>> = {
   meeting: 'Meetings and their After-Meeting reviews — transcripts live in sources.',
   decision: 'The decision spine — active calls, and the chain of what they superseded.',
   theme: 'The durable things worth solving, accreting evidence.',
-  source: 'Raw dumped material — analyzed, never edited.',
+  source: 'Dumped material, analyzed but never rewritten.',
   insight: 'Claims extracted from meetings, each citing its evidence.',
   customer: 'Accounts the memory knows, prospect to churned.',
   person: 'Stakeholders — what they care about, what they were last told.',
-  session: 'Filed conversation logs.',
   note: 'Untyped notes and quick captures.',
-  ticket: 'Jira mirrors — delivery truth the memory links against.',
-  wikipage: 'Confluence mirrors — the pages your updates land on.',
+  ticket: `${readOnlyReason('ticket')} The work your notes link against.`,
+  wikipage: `${readOnlyReason('wikipage')} The pages your updates land on.`,
 };
 
 /** The one number per shelf that means "waiting on you", in the flag voice. */
 function attentionFor(type: NoteType, notes: NoteRefDTO[]): string | null {
   if (type === 'meeting') {
-    const n = notes.filter(needsReview).length;
+    const n = notes.filter((note) => needsReview(note)).length;
     return n > 0 ? `${n} to review` : null;
   }
   if (type === 'source') {
@@ -180,16 +190,15 @@ export function MemoryView() {
   })).filter((s) => s.groups.length > 0);
   const unrevealed = SHELVES.flatMap((s) => s.types).filter((t) => !revealed.has(t));
 
+  // The header count has to match what the shelves add up to, so the types
+  // with homes of their own (Skills, Todos, Sessions) stay out of it.
   const total = [...byType.values()]
-    .filter((g) => g.type !== 'skill' && g.type !== 'todo')
+    .filter((g) => g.type !== 'skill' && g.type !== 'agent' && g.type !== 'todo' && g.type !== 'session')
     .reduce((sum, g) => sum + g.notes.filter((n) => !isFolderIndex(n.path)).length, 0);
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-5 text-sm font-medium text-muted-foreground">
-        <Library className="size-4" /> Memory
-        <span className="text-xs tabular-nums">· {total}</span>
-      </div>
+      <PageHeader icon={Library} label="Memory" meta={total} />
 
       <div className="flex-1 overflow-y-auto px-8 py-4">
         <div className="mx-auto w-full max-w-2xl">

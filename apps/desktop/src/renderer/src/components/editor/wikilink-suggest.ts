@@ -23,7 +23,7 @@ import { wikilinkAttrs } from './wikilink';
  * and pages from the followed containers' shallow index — key, title and raw
  * state pill — so `[[PAY-142]]` is one keystroke away from any note.
  *
- * Relationships (docs/typed-links.md) are opt-in and reachable two ways: type
+ * Relationships are opt-in and reachable two ways: type
  * the prefix yourself (`[[blocks::pay`, held out of the search and re-attached
  * on insert), or pick with ⇧↵ and choose from the menu afterwards — which is
  * the discoverable path, and the one that can filter the vocabulary by what
@@ -54,7 +54,7 @@ export function wikilinkSource(slug: string, title: string, typePrefix = ''): st
 }
 
 /**
- * Split an optional `type::` prefix off the picker query (docs/typed-links.md):
+ * Split an optional `type::` prefix off the picker query:
  * `blocks::pay` searches for "pay" and re-attaches `blocks::` on insert. A
  * prefix that isn't a usable type token stays part of the search text.
  */
@@ -166,7 +166,7 @@ export const WikilinkSuggest = Extension.create<WikilinkSuggestOptions>({
           },
           footer: createElement(
             'div',
-            { className: 'mt-1 border-t border-border px-2 pt-1.5 pb-0.5 text-[11px] text-muted-foreground' },
+            { className: 'mt-1 border-t border-border px-2 pt-1.5 pb-0.5 text-micro text-muted-foreground' },
             '↵ link · ⇧↵ link with a relationship',
           ),
           shiftSelect: (pick) => ({ ...pick, withType: true }),

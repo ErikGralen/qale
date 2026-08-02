@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { X, Plus, PanelLeft, Inbox, History, MessageSquare, FileCode, FileText, Folder, Hash, Settings, Wand2, ListTodo, Library, ArrowLeft, ArrowRight } from 'lucide-react';
+import { X, Plus, PanelLeft, PanelRight, House, Inbox, History, MessageSquare, FileCode, FileText, Folder, Hash, Settings, Wand2, Bot, ListTodo, Library, ArrowLeft, ArrowRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Spinner } from '@pm/ui';
 import { ToolbarButton } from '../components/ToolbarButton';
@@ -9,6 +9,8 @@ import { useApp, type Tab } from '../state/app-state';
 
 function iconFor(tab: Tab): LucideIcon {
   switch (tab.kind) {
+    case 'home':
+      return House;
     case 'doc':
       return tab.noteType ? (NOTE_TYPE_ICON[tab.noteType] ?? FileText) : FileText;
     case 'session':
@@ -32,6 +34,8 @@ function iconFor(tab: Tab): LucideIcon {
       return Settings;
     case 'skills':
       return Wand2;
+    case 'agents':
+      return Bot;
     default:
       return FileText;
   }
@@ -41,8 +45,11 @@ function iconFor(tab: Tab): LucideIcon {
 const isMac = navigator.userAgent.includes('Macintosh');
 
 const MENU_WIDTH = 208;
-/** gap-0.5 between tabs — used to compute how far neighbours shift during a drag. */
-const TAB_GAP = 2;
+/**
+ * Gap between tabs — twice the 6px bottom flare (see `.pm-tab`), so neighbouring
+ * curves meet without overlapping. Also how far neighbours shift during a drag.
+ */
+const TAB_GAP = 12;
 /** Pointer must travel this far before a press becomes a drag. */
 const DRAG_THRESHOLD = 4;
 /** Dragging within this distance of the strip edge auto-scrolls. */
@@ -101,7 +108,7 @@ function TabMenu({ tabId, x, y, onClose }: { tabId: string; x: number; y: number
           <button
             key={item.label}
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-dense hover:bg-accent focus-visible:bg-accent focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
             onClick={run(item.action)}
             disabled={item.disabled}
           >
@@ -112,6 +119,35 @@ function TabMenu({ tabId, x, y, onClose }: { tabId: string; x: number; y: number
         ))}
       </div>
     </>
+  );
+}
+
+/**
+ * A tab label that fades out when it doesn't fit, instead of ending in an
+ * ellipsis. The mask only belongs on labels that actually overflow — applied
+ * unconditionally it would dim the last letter of titles with room to spare —
+ * so the element measures itself and flags `data-clipped` for the stylesheet.
+ */
+function TabTitle({ title }: { title: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [clipped, setClipped] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Tabs share the strip width, so a label's box changes when any tab opens,
+    // closes, or the window resizes — watch the element rather than the list.
+    const measure = () => setClipped(el.scrollWidth > el.clientWidth + 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [title]);
+
+  return (
+    <span ref={ref} className="pm-tab-title min-w-0 flex-1 overflow-hidden whitespace-nowrap" data-clipped={clipped || undefined}>
+      {title}
+    </span>
   );
 }
 
@@ -138,6 +174,18 @@ interface DragState {
   width: number;
 }
 
+/** What the strip needs to draw the right rail's toggle, mirroring the sidebar's. */
+interface RightPanelToggle {
+  open: boolean;
+  /** False on tabs with no rail at all — the button stays, disabled. */
+  available: boolean;
+  /** What it opens, in the tooltip's words: "session files", "the session". */
+  name: string;
+  /** Session files waiting behind a hidden rail; 0 elsewhere. */
+  count: number;
+  onToggle: () => void;
+}
+
 /**
  * The tab strip — documents and sessions interchangeably (PLAN-V2 §3.3).
  * Navigation is browser-style: each tab carries its own history, and the
@@ -149,8 +197,16 @@ interface DragState {
  * open rather than scrolling; only past that floor does it scroll (vertical
  * wheel, edge fades) and keep the active tab in view.
  */
-export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolean; onToggleSidebar: () => void }) {
-  const { tabs, activeTabId, setActiveTab, closeTab, moveTab, openSession, sessions, goBack, goForward, canGoBack, canGoForward } = useApp();
+export function TabStrip({
+  sidebarOpen,
+  onToggleSidebar,
+  rightPanel,
+}: {
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
+  rightPanel: RightPanelToggle;
+}) {
+  const { tabs, activeTabId, setActiveTab, closeTab, moveTab, openHome, sessions, goBack, goForward, canGoBack, canGoForward } = useApp();
   const [menu, setMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [fades, setFades] = useState({ left: false, right: false });
@@ -318,7 +374,10 @@ export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolea
         <div
           ref={scrollerRef}
           onScroll={updateFades}
-          className="flex h-full items-stretch gap-0.5 overflow-x-auto overscroll-x-contain px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          // pt-1 gives the tabs a shoulder of strip above them (browser-style)
+          // instead of butting into the window edge; px-1.5 is exactly the flare
+          // width, so the first and last curves land inside the scroll box.
+          className="flex h-full items-stretch gap-3 overflow-x-auto overscroll-x-contain px-1.5 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           role="tablist"
           aria-label="Open tabs"
         >
@@ -340,17 +399,19 @@ export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolea
               <div
                 key={tab.id}
                 id={`tab-${tab.id}`}
-                className={`group relative flex h-full min-w-[40px] max-w-[208px] flex-1 basis-0 items-center gap-1.5 rounded-t-md pl-2.5 pr-2 text-[13px] outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset ${
-                  active
-                    ? 'z-10 border-x border-t border-border bg-background font-medium text-foreground'
-                    : 'text-foreground/75 hover:bg-card/60 hover:text-foreground'
+                // pr-6 is the close button's lane, held open whether or not the
+                // X is painted: the label always stops short of it, so nothing
+                // shifts on hover and the X never lands on top of the title.
+                className={`pm-tab group relative flex h-full min-w-[56px] max-w-[208px] flex-1 basis-0 items-center gap-1.5 pr-6 pl-2.5 text-dense outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset ${
+                  active ? 'z-10 font-medium text-foreground' : 'text-foreground/75 hover:text-foreground'
                 } ${
                   dragged
-                    ? 'cursor-grabbing shadow-md'
+                    ? 'cursor-grabbing shadow-sm'
                     : drag
                       ? 'cursor-default transition-transform duration-150 ease-out motion-reduce:transition-none'
                       : 'cursor-default'
                 }`}
+                data-active={active || undefined}
                 style={{ WebkitAppRegion: 'no-drag', ...style } as never}
                 onPointerDown={(e) => onTabPointerDown(e, tab, i)}
                 onPointerMove={onTabPointerMove}
@@ -393,7 +454,7 @@ export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolea
                   if (s?.running) return <Spinner className="size-3.5 shrink-0 text-muted-foreground" aria-label="running" />;
                   return <Icon className="size-3.5 shrink-0 opacity-70" aria-hidden />;
                 })()}
-                <span className="min-w-0 flex-1 truncate">{tab.title}</span>
+                <TabTitle title={tab.title} />
                 {tab.kind === 'session' &&
                   tab.sessionId &&
                   (() => {
@@ -402,17 +463,14 @@ export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolea
                       <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-label="needs you" />
                     ) : null;
                   })()}
-                {/* Close button overlays the right edge so it never forces the
-                    strip to scroll; a gradient keeps the truncated title legible
-                    beneath it (browser-style). Squeezed tabs still show the icon. */}
-                <span
-                  aria-hidden
-                  className={`pointer-events-none absolute inset-y-px right-0 w-9 rounded-tr-md bg-gradient-to-l to-transparent opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 ${
-                    active ? 'from-background' : 'from-card'
-                  }`}
-                />
+                {/* Close button sits in the reserved lane rather than in flow,
+                    so it never forces the strip to scroll. Shown on hover and
+                    on the active tab — the one you're most likely to close —
+                    and it fades in over dead space, never over the title. */}
                 <button
-                  className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-0.5 text-foreground/70 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  className={`absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-0.5 text-foreground/70 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
+                    active ? 'opacity-100' : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'
+                  }`}
                   onClick={(e) => {
                     e.stopPropagation();
                     closeTab(tab.id);
@@ -434,12 +492,40 @@ export function TabStrip({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolea
           <div aria-hidden className="pointer-events-none absolute top-0 right-0 bottom-px z-20 w-8 bg-gradient-to-l from-sidebar to-transparent" />
         )}
       </div>
-      <div className="flex shrink-0 items-center px-1.5" style={{ WebkitAppRegion: 'no-drag' } as never}>
+      <div className="flex shrink-0 items-center gap-0.5 px-1.5" style={{ WebkitAppRegion: 'no-drag' } as never}>
+        {/* Mirrors the sidebar toggle at the far end of the strip: same button
+            vocabulary, the same key with ⇧. Hidden with files behind it, the
+            button carries the workspace's "there's something here" dot, so a
+            fan-out writing into a shut rail is never silent. */}
+        <span className="relative inline-flex">
+          <ToolbarButton
+            icon={PanelRight}
+            label={
+              rightPanel.open
+                ? `Hide ${rightPanel.name}`
+                : rightPanel.count > 0
+                  ? `Show ${rightPanel.name} (${rightPanel.count})`
+                  : `Show ${rightPanel.name}`
+            }
+            keys={['⇧', '⌘', '\\']}
+            onClick={rightPanel.onToggle}
+            disabled={!rightPanel.available}
+            aria-expanded={rightPanel.available && rightPanel.open}
+          />
+          {!rightPanel.open && rightPanel.count > 0 && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute top-1 right-1 size-1.5 rounded-full bg-brand"
+            />
+          )}
+        </span>
+        {/* Browser geometry, browser behaviour: the new tab opens on Home —
+            this app's new-tab page, and the one screen that leads anywhere. */}
         <ToolbarButton
           icon={Plus}
-          label="New chat"
+          label="New tab"
           keys={['⌘', 'T']}
-          onClick={() => openSession('chat', { fresh: true })}
+          onClick={() => openHome({ newTab: true, foreground: true })}
         />
       </div>
       {/* Bottom hairline lives above the inactive tabs (browser-style) but below the

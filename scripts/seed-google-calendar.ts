@@ -12,7 +12,7 @@
  * offline vault ships one static synced meeting so the chrome renders, but the
  * live features need this.
  *
- * What it seeds (docs/google-calendar-integration.md §Demo):
+ * What it seeds:
  *  - a **weekly Nordkap check-in** (recurring) with Sara — the star: a past
  *    instance for series history, the upcoming one for before-meeting auto-prep,
  *    and the SCIM commitment that commitment-check offers to "raise there";
@@ -116,7 +116,7 @@ const CAST: CastMeeting[] = [
     recurrence: ['RRULE:FREQ=WEEKLY;COUNT=4'],
   },
   {
-    title: 'Kranelund exports pilot — kickoff',
+    title: 'Kranelund exports pilot kickoff',
     date: '2026-07-20',
     time: '10:00',
     durationMin: 45,
@@ -124,7 +124,7 @@ const CAST: CastMeeting[] = [
     description: 'Kick off the scheduled-delivery exports pilot with Kranelund ops.',
   },
   {
-    title: 'Bergman & Falk — security review',
+    title: 'Bergman & Falk security review',
     date: '2026-07-23',
     time: '13:30',
     durationMin: 60,
@@ -137,10 +137,10 @@ const CAST: CastMeeting[] = [
     time: '15:00',
     durationMin: 30,
     attendees: ['tom@tavla.example'],
-    description: 'Weekly 1:1 — auth migration, platform.',
+    description: 'Weekly 1:1. Auth migration, platform.',
   },
   {
-    title: 'Fenno Energi — architecture follow-up',
+    title: 'Fenno Energi architecture follow-up',
     date: '2026-07-29',
     time: '11:00',
     durationMin: 45,

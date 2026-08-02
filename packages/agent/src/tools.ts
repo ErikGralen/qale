@@ -2,9 +2,10 @@ import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import type { UseCaseContext } from '@pm/application';
 import { createProposal, searchNotes, contentHash } from '@pm/application';
-import { checkFrontmatterMutation, fileSlug, isBodyEditable, isFolderIndex, refToSlug, validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload, TYPE_RULES } from '@pm/domain';
-import { buildSkillBrief, isDynamicSkill, parseSkill, type SessionHarness, type SkillConfig } from '@pm/sessions';
+import { checkFrontmatterMutation, fileSlug, isBodyEditable, isFolderIndex, layerForType, refToSlug, typeForDir, validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload, TYPE_RULES } from '@pm/domain';
+import { buildSkillBrief, governs, parseRunnable, type Runnable, type SessionHarness } from '@pm/sessions';
 import type { AtlassianClient } from '@pm/atlassian';
+import { wrapExternal } from './external.js';
 
 /**
  * Vault-scoped custom tools — the core trust mechanic (PLAN §3.3). pi's built-in
@@ -16,6 +17,25 @@ import type { AtlassianClient } from '@pm/atlassian';
 
 function text(s: string) {
   return { content: [{ type: 'text' as const, text: s }], details: undefined };
+}
+
+export { wrapExternal };
+
+/**
+ * Which notes hold text the PM did not write. The raw layer is exactly that set:
+ * `sources` (transcripts, dropped articles, Slack threads), plus the `tickets` and
+ * `wikipages` mirrors, which say whatever the upstream item says today. Authored
+ * hubs and derived analyses are the PM's own words or ours over them; wrapping
+ * those too would make the marker mean "text" instead of "someone else's text".
+ *
+ * The index answers when it knows the note; the folder answers when it doesn't, so
+ * a raw note that is missing from the index cannot slip through unwrapped.
+ */
+function isExternalNote(ctx: UseCaseContext, path: string): boolean {
+  const rec = ctx.index.get(path);
+  if (rec) return rec.layer === 'raw';
+  const type = typeForDir(path.split('/')[0] ?? '');
+  return type ? layerForType(type) === 'raw' : false;
 }
 
 /**
@@ -47,8 +67,11 @@ export function createVaultTools(ctx: UseCaseContext, harness?: SessionHarness):
     async execute(_id, params: { path: string }) {
       if (!ctx.vault.contain(params.path)) return text(`Refused: "${params.path}" is outside the workspace.`);
       const raw = await ctx.vault.readRaw(params.path);
-      if (raw !== null) harness?.recordRead(params.path);
-      return text(raw ?? `Not found: ${params.path}`);
+      if (raw === null) return text(`Not found: ${params.path}`);
+      harness?.recordRead(params.path);
+      // A raw-layer note is a copy of someone else's words; the note path is its
+      // address, the same one the model cites it by.
+      return text(isExternalNote(ctx, params.path) ? wrapExternal(params.path, raw) : raw);
     },
   });
 
@@ -56,22 +79,24 @@ export function createVaultTools(ctx: UseCaseContext, harness?: SessionHarness):
     name: 'vault_list',
     label: 'List notes',
     description:
-      'List notes in the workspace, optionally filtered by type (meeting, decision, insight, customer, theme, person, …) and/or status. Returns path, type, status and one-line summary. For orienting on a whole folder, reading that folder\'s "index.md" (e.g. "insights/index.md") gives the same map grouped by status; use this when you need to filter by type/status across folders.',
+      'List notes in the workspace, optionally filtered by type (meeting, decision, insight, customer, theme, person, …) and/or lifecycle. Each type has its OWN lifecycle field with its own values: sources/meetings/insights/notes/mirrors have `processing` (new/processed/stale), decisions have `standing` (active/superseded), customers have `relationship` (prospect/active/churned), themes have `stance` (exploring/watching/committed/wont-do), todos have `commitment` (open/done/dropped). Returns path, type, lifecycle value and one-line summary. For orienting on a whole folder, reading that folder\'s "index.md" (e.g. "insights/index.md") gives the same map grouped by lifecycle; use this when you need to filter across folders.',
     parameters: Type.Object({
       type: Type.Optional(Type.String({ description: 'Filter by note type.' })),
-      status: Type.Optional(Type.String({ description: 'Filter by status (e.g. "new").' })),
+      lifecycle: Type.Optional(
+        Type.String({ description: 'Filter by the type\'s lifecycle value (e.g. "new", "superseded").' }),
+      ),
     }),
-    async execute(_id, params: { type?: string; status?: string }) {
+    async execute(_id, params: { type?: string; lifecycle?: string }) {
       const all = ctx.index.all();
       const rows = all.filter(
         (n) =>
           !isFolderIndex(n.path) &&
           (!params.type || n.type === params.type) &&
-          (!params.status || n.status === params.status),
+          (!params.lifecycle || n.lifecycle === params.lifecycle),
       );
       if (rows.length === 0) return text('No matching notes.');
       const body = rows
-        .map((n) => `- ${n.path} [${n.type}${n.status ? `/${n.status}` : ''}]${mirrorFields(n)} — ${n.summary}`)
+        .map((n) => `- ${n.path} [${n.type}${n.lifecycle ? `/${n.lifecycle}` : ''}]${mirrorFields(n)} — ${n.summary}`)
         .join('\n');
       return text(body);
     },
@@ -125,76 +150,41 @@ export function createVaultTools(ctx: UseCaseContext, harness?: SessionHarness):
 
 export const PROPOSE_TOOL_NAMES = ['propose_note', 'propose_update', 'propose_decision', 'propose_todo'];
 
-/**
- * Write-path tools — the agent PROPOSES, never writes (PLAN-V2 §3.3). Every card
- * is validated before persisting: cited evidence must resolve against the index or
- * a tool result, else the call fails (unless flagged inference). Cards persist as
- * rows and return an id; the Inbox applies accepted ones.
- */
-export const CHECKPOINT_TOOL_NAME = 'advance_checkpoint';
-
-/**
- * Records a session's checkpoint progress; gated skills unlock output after it.
- * Reads the plan LIVE off the harness rather than closing over one at creation:
- * a skill that arrives mid-session brings its own checkpoints (Sessions v2).
- */
-export function createCheckpointTool(harness: SessionHarness): ToolDefinition {
-  const initial = harness.checkpoints;
-  return defineTool({
-    name: CHECKPOINT_TOOL_NAME,
-    label: 'Advance checkpoint',
-    description:
-      `Advance to a named checkpoint of the skill you are running${initial.length ? ` (it opened with: ${initial.join(', ')})` : ''}. ` +
-      'Call it as you pass each stage — the digest, then the outline — before drafting. Proposing is unlocked once you have advanced. ' +
-      'A skill that arrives mid-conversation replaces the checkpoint plan; its own instructions name its stages.',
-    parameters: Type.Object({
-      checkpoint: Type.String({ description: 'The checkpoint you have just reached.' }),
-    }),
-    async execute(_id, params: { checkpoint: string }) {
-      const known = harness.checkpoints;
-      const r = harness.advanceCheckpoint(params.checkpoint);
-      if (!r.ok)
-        return text(
-          known.length
-            ? `Unknown checkpoint "${params.checkpoint}". Known: ${known.join(', ')}.`
-            : `No skill with checkpoints is active — nothing to advance.`,
-        );
-      return text(`Checkpoint "${params.checkpoint}" reached. Proposing is now ${harness.canPropose() ? 'unlocked' : 'still locked'}.`);
-    },
-  });
-}
-
 export const USE_SKILL_TOOL_NAME = 'use_skill';
 
 /** One on-demand skill: its parsed config plus where the file lives. */
-export interface DynamicSkill {
+export interface LoadableSkill {
   path: string;
   slug: string;
-  config: SkillConfig;
+  config: Runnable;
 }
 
 /**
- * Every skill a session may pull in mid-conversation (Sessions v2 Part 3.1):
- * `skill_kind: guide` reference AND any skill with a `dynamic` binding. Before
- * this, `dynamic` was declared, described in the Skills view, and inert for
- * session skills — the UI promised a behaviour the runtime never implemented.
+ * Every runnable a session may pull in mid-conversation (Sessions v2 Part 3.1).
+ * A file is loadable when it says the model may reach it — `model-picks-it-up`
+ * for a playbook, `read-when-relevant` for material. Always-on rules are
+ * excluded even if they also declare one: they are already in the system
+ * prompt, and loading one twice teaches the model that its instructions repeat.
  */
-export async function listDynamicSkills(ctx: UseCaseContext): Promise<DynamicSkill[]> {
-  const out: DynamicSkill[] = [];
+export async function listLoadableSkills(ctx: UseCaseContext): Promise<LoadableSkill[]> {
+  const out: LoadableSkill[] = [];
   for (const n of ctx.index.all()) {
     if (n.type !== 'skill') continue;
     const raw = await ctx.vault.readRaw(n.path);
     if (!raw) continue;
-    const config = parseSkill(raw, n.slug.split('/').pop() ?? n.slug);
-    if (isDynamicSkill(config)) out.push({ path: n.path, slug: n.slug, config });
+    const config = parseRunnable(raw, n.slug.split('/').pop() ?? n.slug);
+    if (config.starts.includes('always')) continue;
+    const reachable =
+      config.starts.includes('model-picks-it-up') || config.starts.includes('read-when-relevant');
+    if (reachable) out.push({ path: n.path, slug: n.slug, config });
   }
   return out;
 }
 
 /** Match a model-supplied name against a skill's invocation name or its filename. */
-export function matchSkill(skills: DynamicSkill[], name: string): DynamicSkill | undefined {
+export function matchSkill(skills: LoadableSkill[], name: string): LoadableSkill | undefined {
   const wanted = name.trim().replace(/\.md$/, '').toLowerCase();
-  const file = (s: DynamicSkill) => (s.slug.split('/').pop() ?? s.slug).toLowerCase();
+  const file = (s: LoadableSkill) => (s.slug.split('/').pop() ?? s.slug).toLowerCase();
   return (
     skills.find((s) => s.config.name.toLowerCase() === wanted) ??
     skills.find((s) => file(s) === wanted) ??
@@ -203,36 +193,36 @@ export function matchSkill(skills: DynamicSkill[], name: string): DynamicSkill |
 }
 
 /**
- * Dynamic-skill loader (Sessions v2): the skill index lists every on-demand skill
- * by name + summary in the system prompt; calling this pulls the chosen one into
- * context. A *guide* is reference material. A *session skill* is more than that —
- * it arrives with its tier, checkpoints and gate, so loading one tells the harness
- * (and, via `onInvoke`, the runtime that re-activates the tool set).
+ * On-demand skill loader (Sessions v2): the skill index lists every loadable
+ * runnable by name + summary in the system prompt; calling this pulls the
+ * chosen one into context. Material is something you read. A file that GOVERNS
+ * is more than that — it arrives with its capabilities, so loading one tells
+ * the harness (and, via `onInvoke`, the runtime that re-activates the tool set).
  */
 export function createUseSkillTool(
   ctx: UseCaseContext,
   harness?: SessionHarness,
-  onInvoke?: (skill: DynamicSkill) => void | Promise<void>,
+  onInvoke?: (skill: LoadableSkill) => void | Promise<void>,
 ): ToolDefinition {
   return defineTool({
     name: USE_SKILL_TOOL_NAME,
     label: 'Use skill',
     description:
       'Load a skill into this conversation by name (see "Skills available on demand" in your instructions). ' +
-      'A guide is reference you read; a session skill takes over how you work from here — its instructions, ' +
-      'its checkpoints and the cards it is allowed to produce. Call it the moment the conversation turns into ' +
-      'work that skill describes, rather than improvising the workflow yourself.',
+      'Some are material you read; a playbook takes over how you work from here — its instructions and the ' +
+      'cards it is allowed to produce. Call it the moment the conversation turns into work that skill ' +
+      'describes, rather than improvising the workflow yourself.',
     parameters: Type.Object({
       name: Type.String({ description: 'The skill name, e.g. "synthesis" or "spec-review-checklist".' }),
     }),
     async execute(_id, params: { name: string }) {
-      const skills = await listDynamicSkills(ctx);
+      const skills = await listLoadableSkills(ctx);
       const hit = matchSkill(skills, params.name);
       if (!hit) {
         const names = skills.map((s) => s.config.name).join(', ');
         return text(`No skill named "${params.name}" is available on demand. Available: ${names || 'none'}.`);
       }
-      if (hit.config.kind !== 'guide') {
+      if (governs(hit.config)) {
         harness?.invokeSkill(hit.config);
         await onInvoke?.(hit);
       }
@@ -243,7 +233,6 @@ export function createUseSkillTool(
 }
 
 export function createProposeTools(ctx: UseCaseContext, sessionId: string, harness?: SessionHarness): ToolDefinition[] {
-  const gate = (): string | null => (harness && !harness.canPropose() ? harness.gateMessage() : null);
   const proposeNote = defineTool({
     name: 'propose_note',
     label: 'Propose note',
@@ -258,8 +247,6 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       inference: Type.Optional(Type.Boolean()),
     }),
     async execute(_id, params: unknown) {
-      const g = gate();
-      if (g) return text(g);
       const parsed = zNotePayload.safeParse(params);
       if (!parsed.success) return text(`Rejected: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
       const p = params as { sources?: string[]; inference?: boolean };
@@ -269,7 +256,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const rec = createProposal(ctx, {
         kind: 'note',
         sessionId,
-        sessionType: harness?.activeSkillName,
+        skill: harness?.activeSkillName,
         targetPath: parsed.data.path,
         baseHash: null,
         payload: parsed.data,
@@ -297,8 +284,6 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       inference: Type.Optional(Type.Boolean()),
     }),
     async execute(_id, params: unknown) {
-      const g = gate();
-      if (g) return text(g);
       const parsed = zDecisionPayload.safeParse(params);
       if (!parsed.success) return text(`Rejected: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
       const p = params as { sources?: string[]; inference?: boolean; supersedes?: string };
@@ -311,7 +296,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const rec = createProposal(ctx, {
         kind: 'decision',
         sessionId,
-        sessionType: harness?.activeSkillName,
+        skill: harness?.activeSkillName,
         targetPath: parsed.data.path,
         baseHash: null,
         payload: { ...parsed.data, ...(p.supersedes ? { supersedes: stripLink(p.supersedes) } : {}) },
@@ -328,14 +313,14 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
     name: 'propose_update',
     label: 'Propose update',
     description:
-      'Propose an edit to an EXISTING authored/derived note. Two levers, use either or both: `patch` = body search/replace blocks (exact anchor text + replacement) for prose changes (answer an open question, add evidence to a hub, update a meeting page, flag a contradiction); `frontmatter` = a map of metadata keys to set on approval, the ONLY way to change a note\'s properties (a todo\'s `due` to reschedule or `status`+`resolved` to close it, a meeting\'s `status`, a person\'s `last_told`). Provide at least one; omit `patch` for a metadata-only change.',
+      'Propose an edit to an EXISTING authored/derived note. Two levers, use either or both: `patch` = body search/replace blocks (exact anchor text + replacement) for prose changes (answer an open question, add evidence to a hub, update a meeting page, flag a contradiction); `frontmatter` = a map of metadata keys to set on approval, the ONLY way to change a note\'s properties (a todo\'s `due` to reschedule or `commitment`+`resolved` to close it, a meeting\'s `processing`, a person\'s `last_told`). Provide at least one; omit `patch` for a metadata-only change.',
     parameters: Type.Object({
       path: Type.String(),
       patch: Type.Optional(Type.Array(Type.Object({ search: Type.String(), replace: Type.String() }))),
       frontmatter: Type.Optional(
         Type.Record(Type.String(), Type.Any(), {
           description:
-            "Frontmatter keys to set, shallow-merged over the note's current properties. Use for a todo's due/status, a meeting's status, or a person's last_told — the note's body stays untouched.",
+            "Frontmatter keys to set, shallow-merged over the note's current properties. Use for a todo's due/commitment, a meeting's processing, or a person's last_told — the note's body stays untouched.",
         }),
       ),
       rationale: Type.String(),
@@ -349,8 +334,6 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       inference: Type.Optional(Type.Boolean()),
     }),
     async execute(_id, params: unknown) {
-      const g = gate();
-      if (g) return text(g);
       const parsed = zUpdatePayload.safeParse(params);
       if (!parsed.success) return text(`Rejected: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
       const target = ctx.index.resolve(stripLink(parsed.data.path));
@@ -380,7 +363,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const rec = createProposal(ctx, {
         kind: 'update',
         sessionId,
-        sessionType: harness?.activeSkillName,
+        skill: harness?.activeSkillName,
         targetPath: target,
         baseHash: contentHash(note.body),
         payload: { ...parsed.data, path: target },
@@ -408,8 +391,6 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       inference: Type.Optional(Type.Boolean()),
     }),
     async execute(_id, params: { title: string; due?: string; owner?: string; quote?: string; sources: string[]; rationale: string; inference?: boolean }) {
-      const g = gate();
-      if (g) return text(g);
       const title = params.title.trim();
       if (!title) return text('Rejected: todo needs a title.');
       if (params.due && !/^\d{4}-\d{2}-\d{2}$/.test(params.due)) {
@@ -426,7 +407,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const rec = createProposal(ctx, {
         kind: 'note',
         sessionId,
-        sessionType: harness?.activeSkillName,
+        skill: harness?.activeSkillName,
         targetPath: path,
         baseHash: null,
         payload: {
@@ -435,7 +416,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
             type: 'todo',
             summary: title.slice(0, 200),
             title: title.slice(0, 200),
-            status: 'open',
+            commitment: 'open',
             sources,
             ...(params.due ? { due: params.due } : {}),
             ...(params.owner?.trim() ? { owner: params.owner.trim() } : {}),
@@ -477,7 +458,6 @@ export const DRAFT_TOOL_NAMES = [
  * readers from the pre-genericization era keep working.
  */
 export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness?: SessionHarness): ToolDefinition[] {
-  const gate = (): string | null => (harness && !harness.canPropose() ? harness.gateMessage() : null);
   /**
    * Drafted-against snapshot (the staleness baseline): when the target has a
    * mirror note, stamp the mirror's `remote_updated` (and `version` for pages)
@@ -502,7 +482,7 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
     const rec = createProposal(ctx, {
       kind: 'outbound',
       sessionId,
-      sessionType: harness?.activeSkillName,
+      skill: harness?.activeSkillName,
       targetPath: null,
       baseHash: null,
       payload,
@@ -529,8 +509,6 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
       rationale: Type.String(),
     }),
     async execute(_id, params: { projectKey: string; issueType?: string; summary: string; description: string; sources: string[]; linkBack?: string; rationale: string }) {
-      const g = gate();
-      if (g) return text(g);
       const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
       const rec = mkCard(
@@ -556,8 +534,6 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
       rationale: Type.String(),
     }),
     async execute(_id, params: { issueKey: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
-      const g = gate();
-      if (g) return text(g);
       const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
       const rec = mkCard(
@@ -583,8 +559,6 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
       rationale: Type.String(),
     }),
     async execute(_id, params: { pageId: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
-      const g = gate();
-      if (g) return text(g);
       const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
       const rec = mkCard(
@@ -611,8 +585,6 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
       rationale: Type.String(),
     }),
     async execute(_id, params: { audience: string; title?: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
-      const g = gate();
-      if (g) return text(g);
       const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
       const rec = mkCard(
@@ -642,8 +614,6 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
       rationale: Type.String(),
     }),
     async execute(_id, params: { title: string; start: string; end?: string; attendees?: string[]; calendarId?: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
-      const g = gate();
-      if (g) return text(g);
       const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
       const rec = mkCard(
@@ -673,8 +643,6 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
       rationale: Type.String(),
     }),
     async execute(_id, params: { eventId: string; calendarId?: string; title?: string; start?: string; end?: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
-      const g = gate();
-      if (g) return text(g);
       const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
       const rec = mkCard(
@@ -703,8 +671,6 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
       rationale: Type.String(),
     }),
     async execute(_id, params: { eventId: string; attendeeEmail: string; responseStatus: 'accepted' | 'declined' | 'tentative'; calendarId?: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
-      const g = gate();
-      if (g) return text(g);
       const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
       const rec = mkCard(
@@ -749,8 +715,13 @@ export function createAtlassianTools(
     async execute(_id, params: { jql: string }) {
       const issues = await client.searchIssues(params.jql);
       if (issues.length === 0) return text('No matching Jira issues.');
+      // Every summary in the list was typed by whoever filed the issue, so the
+      // whole result set is external; the origin is the query, not one key.
       return text(
-        issues.map((i) => `- ${i.key} [${i.status}] ${i.summary}${i.assignee ? ` (@${i.assignee})` : ''}\n    ${i.url}`).join('\n'),
+        wrapExternal(
+          'jira:search',
+          issues.map((i) => `- ${i.key} [${i.status}] ${i.summary}${i.assignee ? ` (@${i.assignee})` : ''}\n    ${i.url}`).join('\n'),
+        ),
       );
     },
   });
@@ -762,7 +733,12 @@ export function createAtlassianTools(
     parameters: Type.Object({ key: Type.String() }),
     async execute(_id, params: { key: string }) {
       const i = await client.getIssue(params.key);
-      return text(`# ${i.key}: ${i.summary}\nStatus: ${i.status}${i.assignee ? ` · @${i.assignee}` : ''}\n${i.url}\n\n${i.description}`);
+      return text(
+        wrapExternal(
+          `jira:${i.key}`,
+          `# ${i.key}: ${i.summary}\nStatus: ${i.status}${i.assignee ? ` · @${i.assignee}` : ''}\n${i.url}\n\n${i.description}`,
+        ),
+      );
     },
   });
 
@@ -774,7 +750,10 @@ export function createAtlassianTools(
     async execute(_id, params: { cql: string }) {
       const results = await client.searchConfluence(params.cql);
       if (results.length === 0) return text('No matching Confluence pages.');
-      return text(results.map((r) => `- [${r.id}] ${r.title}\n    ${r.url}\n    ${r.excerpt}`).join('\n'));
+      // Excerpts are page text: same treatment as the pages themselves.
+      return text(
+        wrapExternal('confluence:search', results.map((r) => `- [${r.id}] ${r.title}\n    ${r.url}\n    ${r.excerpt}`).join('\n')),
+      );
     },
   });
 
@@ -785,7 +764,7 @@ export function createAtlassianTools(
     parameters: Type.Object({ id: Type.String() }),
     async execute(_id, params: { id: string }) {
       const page = await client.getPage(params.id);
-      return text(`# ${page.title}\n${page.url}\n\n${page.body}`);
+      return text(wrapExternal(`confluence:${page.id}`, `# ${page.title}\n${page.url}\n\n${page.body}`));
     },
   });
 

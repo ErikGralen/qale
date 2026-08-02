@@ -15,7 +15,7 @@ import {
  * Area A contract tests for the calendar → meeting mirror (docs/
  * google-calendar-integration.md): the ownership split (machine owns scheduling
  * truth, PM owns meaning), the qualifying heuristic, and the cancellation rule
- * (human content is never machine-deleted).
+ * (a note is never machine-deleted; cancellation is a state it carries).
  */
 
 const EVENT: SyncedCalendarEvent = {
@@ -177,7 +177,7 @@ test('patch: unchanged event is a skip — no churny writes, no freshness resets
   assert.deepEqual(plan, { action: 'skip' });
 });
 
-test('cancellation: empty body deletes; human words keep the note as cancelled', () => {
+test('cancellation marks the note cancelled, empty body or not', () => {
   const created = planMeetingMirror({ ...PLAN_INPUT, event: EVENT, existing: null });
   if (created.action !== 'create') return assert.fail('expected create');
   const cancelled = { ...EVENT, event_status: 'cancelled' as const };
@@ -187,7 +187,9 @@ test('cancellation: empty body deletes; human words keep the note as cancelled',
     event: cancelled,
     existing: { frontmatter: created.frontmatter, body: '  \n' },
   });
-  assert.deepEqual(untouched, { action: 'delete' });
+  assert.equal(untouched.action, 'patch');
+  if (untouched.action !== 'patch') return;
+  assert.equal(untouched.frontmatter['event_status'], 'cancelled');
 
   const written = planMeetingMirror({
     ...PLAN_INPUT,
@@ -197,6 +199,30 @@ test('cancellation: empty body deletes; human words keep the note as cancelled',
   assert.equal(written.action, 'patch');
   if (written.action !== 'patch') return;
   assert.equal(written.frontmatter['event_status'], 'cancelled');
+});
+
+test('a cancelled note stays cancelled until the event itself comes back', () => {
+  const created = planMeetingMirror({ ...PLAN_INPUT, event: EVENT, existing: null });
+  if (created.action !== 'create') return assert.fail('expected create');
+  const cancelledFm = { ...created.frontmatter, event_status: 'cancelled' };
+
+  // The same cancelled stub arriving again changes nothing.
+  const again = planMeetingMirror({
+    ...PLAN_INPUT,
+    event: { ...EVENT, event_status: 'cancelled' },
+    existing: { frontmatter: cancelledFm, body: 'Notes from before.' },
+  });
+  assert.deepEqual(again, { action: 'skip' });
+
+  // Un-cancelled upstream: the machine field is authoritative again.
+  const back = planMeetingMirror({
+    ...PLAN_INPUT,
+    event: EVENT,
+    existing: { frontmatter: cancelledFm, body: 'Notes from before.' },
+  });
+  assert.equal(back.action, 'patch');
+  if (back.action !== 'patch') return;
+  assert.equal(back.frontmatter['event_status'], 'confirmed');
 });
 
 test('declined after creation is treated like cancellation', () => {
@@ -211,7 +237,9 @@ test('declined after creation is treated like cancellation', () => {
     event: declined,
     existing: { frontmatter: created.frontmatter, body: '' },
   });
-  assert.deepEqual(plan, { action: 'delete' });
+  assert.equal(plan.action, 'patch');
+  if (plan.action !== 'patch') return;
+  assert.equal(plan.frontmatter['event_status'], 'cancelled');
 });
 
 test('never-demote: an event that stops qualifying still patches, never deletes', () => {

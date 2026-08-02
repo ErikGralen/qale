@@ -1,4 +1,12 @@
 import { z } from 'zod';
+import {
+  CUSTOMER_RELATIONSHIPS,
+  DECISION_STANDINGS,
+  normalizeLifecycleKeys,
+  PROCESSING_STATES,
+  THEME_STANCES,
+  TODO_COMMITMENTS,
+} from './lifecycle.js';
 
 /**
  * Frontmatter schemas — THE single source of truth for note shape (PLAN-V2 §3.1).
@@ -20,6 +28,7 @@ export const NOTE_TYPES = [
   'person',
   'session',
   'skill',
+  'agent',
   'todo',
   'note',
   'ticket',
@@ -28,16 +37,11 @@ export const NOTE_TYPES = [
 export type NoteType = (typeof NOTE_TYPES)[number];
 
 /**
- * Generic note lifecycle — a small, enum-valued vocabulary for scripting and
- * filtering (never free text):
- * - `new` — just captured/synced, not yet analyzed;
- * - `processed` — analyses ran, derived notes exist;
- * - `active` — current and relied upon;
- * - `stale` — needs review (a source it cites was superseded upstream).
- * Types with their own lifecycle (decision/customer/theme) keep their enums.
+ * Every lifecycle a note type can carry lives in {@link ./lifecycle.ts}: one
+ * field name and one hard-coded enum per lifecycle, so `active` on a decision
+ * and `active` on a customer are never the same key. The schemas below just
+ * declare that key. Values are enums, never free text.
  */
-export const NOTE_STATUSES = ['new', 'processed', 'active', 'stale'] as const;
-export type NoteStatus = (typeof NOTE_STATUSES)[number];
 
 /**
  * Layer governs edit permissions (see invariant.ts):
@@ -48,32 +52,8 @@ export type NoteStatus = (typeof NOTE_STATUSES)[number];
 export const NOTE_LAYERS = ['raw', 'derived', 'authored'] as const;
 export type NoteLayer = (typeof NOTE_LAYERS)[number];
 
-/**
- * Theme stance — the durable-belief vocabulary. A theme is the thing worth
- * solving (a problem, a pain, an opportunity, an idea); the stance is what we
- * currently believe about it. `watching` is the someday shelf and `wont-do` is
- * a deliberate decline that KEEPS accreting evidence — neither has a ticket,
- * which is precisely why they need a home the workspace owns.
- */
-export const THEME_STANCES = ['exploring', 'watching', 'committed', 'wont-do'] as const;
-export type ThemeStance = (typeof THEME_STANCES)[number];
-
-/** A decision's lifecycle: it is superseded, never edited (append-only spine). */
-export const DECISION_STATUSES = ['active', 'superseded'] as const;
-export type DecisionStatus = (typeof DECISION_STATUSES)[number];
-
 export const CONFIDENCE_LEVELS = ['high', 'med', 'low'] as const;
 export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number];
-
-export const CUSTOMER_STATUSES = ['prospect', 'active', 'churned'] as const;
-export type CustomerStatus = (typeof CUSTOMER_STATUSES)[number];
-
-/**
- * A todo's lifecycle: `open` until it lands. `done` and `dropped` both close it
- * but stay in the workspace — the commitment ledger accretes, it never deletes.
- */
-export const TODO_STATUSES = ['open', 'done', 'dropped'] as const;
-export type TodoStatus = (typeof TODO_STATUSES)[number];
 
 /** A wikilink string like "[[decisions/adopt-workos]]" or an external URL. */
 export const zRef = z.string().min(1);
@@ -110,13 +90,13 @@ const base = {
 /**
  * Raw source material — transcripts, PDF articles, Slack threads, Confluence
  * pages. The body is never *edited* (by human or agent); it may be *updated*
- * wholesale when the upstream changes (re-sync), which resets `status` to `new`
- * so analyses know to re-run. Humans rarely read these; derived notes cite them.
+ * wholesale when the upstream changes (re-sync), which resets `processing` to
+ * `new` so analyses know to re-run. Humans rarely read these; derived notes cite them.
  */
 export const zSourceNote = z.object({
   type: z.literal('source'),
   ...base,
-  status: z.enum(NOTE_STATUSES).default('new'),
+  processing: z.enum(PROCESSING_STATES).default('new'),
   source: zSource.optional(),
   /** When the material was first captured. */
   captured: z.string().optional(),
@@ -146,7 +126,7 @@ export type EventStatus = (typeof EVENT_STATUSES)[number];
 export const zMeeting = z.object({
   type: z.literal('meeting'),
   ...base,
-  status: z.enum(NOTE_STATUSES).optional(),
+  processing: z.enum(PROCESSING_STATES).optional(),
   date: z.string().optional(),
   /** Clock time the meeting started, "HH:MM" (24h) — pairs with `date`. */
   time: z.string().optional(),
@@ -162,7 +142,7 @@ export const zMeeting = z.object({
   transcript: zRef.optional(),
   /** Recurring-meeting series slug (e.g. "nordkap-checkin") — before-meeting prep reads the previous instance. */
   series: z.string().optional(),
-  // Calendar-sync fields (docs/google-calendar-integration.md). All optional:
+  // Calendar-sync fields. All optional:
   // a hand-written meeting note is exactly as valid as a synced one. Ownership
   // splits BY FIELD, not by file — see MEETING_SYNC_FIELDS.
   provider: z.enum(CALENDAR_PROVIDERS).optional(),
@@ -200,7 +180,7 @@ export type MeetingSyncField = (typeof MEETING_SYNC_FIELDS)[number];
 export const zDecision = z.object({
   type: z.literal('decision'),
   ...base,
-  status: z.enum(DECISION_STATUSES).default('active'),
+  standing: z.enum(DECISION_STANDINGS).default('active'),
   date: z.string().optional(),
   deciders: z.array(z.string()).optional(),
   sources: z.array(zRef).default([]),
@@ -214,7 +194,7 @@ export const zDecision = z.object({
 export const zInsight = z.object({
   type: z.literal('insight'),
   ...base,
-  status: z.enum(NOTE_STATUSES).optional(),
+  processing: z.enum(PROCESSING_STATES).optional(),
   evidence: z.array(zRef).min(1, 'insights must cite evidence'),
   confidence: z.enum(CONFIDENCE_LEVELS).default('med'),
   customer: zRef.optional(),
@@ -226,7 +206,7 @@ export const zInsight = z.object({
 export const zCustomer = z.object({
   type: z.literal('customer'),
   ...base,
-  status: z.enum(CUSTOMER_STATUSES).default('active'),
+  relationship: z.enum(CUSTOMER_RELATIONSHIPS).default('active'),
   segment: z.string().optional(),
 });
 
@@ -249,7 +229,7 @@ export const zPerson = z.object({
   ...base,
   role: z.string().optional(),
   /** Work email — the join key that resolves calendar attendees to this note
-   *  (docs/google-calendar-integration.md, job 4). Optional: unmatched attendees
+   *. Optional: unmatched attendees
    *  stay plain emails until someone makes a person note. */
   email: z.string().optional(),
   cares_about: z.array(z.string()).optional(),
@@ -262,11 +242,12 @@ export const zPerson = z.object({
 export const zSession = z.object({
   type: z.literal('session'),
   ...base,
-  session_type: z.string(),
+  /** The skill this session was ABOUT — the first that arrived, else `chat`. */
+  skill: z.string(),
   /**
    * Every skill in force during the session, arrival order (Sessions v2): a
-   * session is no longer one mode, so the single `session_type` above only names
-   * what it opened with.
+   * session is not one mode, so the single `skill` above only names the one it
+   * turned out to be about.
    */
   skills: z.array(z.string()).optional(),
   /** Full pi session id — resolves this receipt back to the stored chat. */
@@ -279,17 +260,25 @@ export const zSession = z.object({
 });
 
 /**
- * Skill file — a session type / voice guide / filing rule. The rich harness
- * config (checkpoints, tiers, guardrails) is parsed by @pm/sessions from the raw
- * file; the note schema only needs enough to list and route it.
+ * Skill and agent files — the same kind of thing filed in two folders: free-text
+ * instructions plus `starts` (what puts it in force) and `can` (what it may
+ * do), both parsed by @pm/sessions from the raw file. The note schema only
+ * needs enough to list and route it, so it carries neither: an unknown value in
+ * either list is a validation error the file's own page pins, and a schema that
+ * rejected it here would drop the file out of its type and hide the error.
  */
-export const SKILL_KINDS = ['session', 'voice', 'filing', 'guide', 'reaction'] as const;
-export type SkillKind = (typeof SKILL_KINDS)[number];
-
 export const zSkill = z.object({
   type: z.literal('skill'),
   ...base,
-  skill_kind: z.enum(SKILL_KINDS).default('session'),
+  // `.catch(true)`: a junk value must surface on the Skills view, not silently
+  // drop the file from the skill type.
+  enabled: z.boolean().default(true).catch(true),
+});
+
+export const zAgentNote = z.object({
+  type: z.literal('agent'),
+  ...base,
+  enabled: z.boolean().default(true).catch(true),
 });
 
 /**
@@ -301,13 +290,13 @@ export const zSkill = z.object({
 export const zTodo = z.object({
   type: z.literal('todo'),
   ...base,
-  status: z.enum(TODO_STATUSES).default('open'),
+  commitment: z.enum(TODO_COMMITMENTS).default('open'),
   /** Due date "YYYY-MM-DD" — optional; undated todos land in "Someday". */
   due: z.string().optional(),
   /** Who committed: omitted = the PO; else "[[people/…]]" ref or a plain name. */
   owner: zRef.optional(),
   sources: z.array(zRef).default([]),
-  /** Stamped "YYYY-MM-DD" when status flips to done/dropped; cleared on reopen. */
+  /** Stamped "YYYY-MM-DD" when `commitment` flips to done/dropped; cleared on reopen. */
   resolved: z.string().optional(),
   customer: zRef.optional(),
 });
@@ -316,7 +305,7 @@ export const zTodo = z.object({
 export const zNote = z.object({
   type: z.literal('note'),
   ...base,
-  status: z.enum(NOTE_STATUSES).optional(),
+  processing: z.enum(PROCESSING_STATES).optional(),
   sources: z.array(zRef).default([]),
 });
 
@@ -342,13 +331,13 @@ export type StateCategory = (typeof STATE_CATEGORIES)[number];
 /**
  * Mirrored unit of tracked work (Jira issue, later Linear/GitHub issue) — a raw
  * source note, same immutability contract as `source`: never edited locally,
- * only ever updated wholesale by re-sync, which resets `status` to `new` so the
- * freshness spine marks dependents stale (the drift signal).
+ * only ever updated wholesale by re-sync, which resets `processing` to `new` so
+ * the freshness spine marks dependents stale (the drift signal).
  */
 export const zTicket = z.object({
   type: z.literal('ticket'),
   ...base,
-  status: z.enum(NOTE_STATUSES).default('new'),
+  processing: z.enum(PROCESSING_STATES).default('new'),
   provider: z.enum(TICKET_PROVIDERS),
   /** The provider's key for the item, e.g. "PAY-142". */
   external_id: z.string().min(1),
@@ -359,7 +348,7 @@ export const zTicket = z.object({
   state_category: z.enum(STATE_CATEGORIES),
   assignee: z.string().optional(),
   /** Epic/parent key (e.g. "PAY-142") — written by sync, a `part-of` edge in the
-   *  link index (docs/typed-links.md). Absent when the item has no parent. */
+   *  link index. Absent when the item has no parent. */
   parent: z.string().min(1).optional(),
   /** The provider's typed issue links, canonicalized to our link vocabulary.
    *  `reversed` = the semantic edge runs the other way ("is blocked by").
@@ -386,7 +375,7 @@ export const zTicket = z.object({
 export const zWikipage = z.object({
   type: z.literal('wikipage'),
   ...base,
-  status: z.enum(NOTE_STATUSES).default('new'),
+  processing: z.enum(PROCESSING_STATES).default('new'),
   provider: z.enum(WIKIPAGE_PROVIDERS),
   external_id: z.string().min(1),
   /** Space / workspace the page lives in. */
@@ -407,6 +396,7 @@ export const zFrontmatter = z.discriminatedUnion('type', [
   zPerson,
   zSession,
   zSkill,
+  zAgentNote,
   zTodo,
   zNote,
   zTicket,
@@ -423,6 +413,7 @@ export type ThemeFrontmatter = z.infer<typeof zTheme>;
 export type PersonFrontmatter = z.infer<typeof zPerson>;
 export type SessionFrontmatter = z.infer<typeof zSession>;
 export type SkillFrontmatter = z.infer<typeof zSkill>;
+export type AgentNoteFrontmatter = z.infer<typeof zAgentNote>;
 export type TodoFrontmatter = z.infer<typeof zTodo>;
 export type NoteFrontmatter = z.infer<typeof zNote>;
 export type TicketFrontmatter = z.infer<typeof zTicket>;
@@ -439,6 +430,7 @@ export const NOTE_TYPE_META: Record<NoteType, { dir: string; layer: NoteLayer }>
   person: { dir: 'people', layer: 'authored' },
   session: { dir: 'sessions', layer: 'derived' },
   skill: { dir: 'skills', layer: 'authored' },
+  agent: { dir: 'agents', layer: 'authored' },
   todo: { dir: 'todos', layer: 'authored' },
   note: { dir: 'notes', layer: 'authored' },
   ticket: { dir: 'tickets', layer: 'raw' },
@@ -471,13 +463,18 @@ export interface ParseResult {
  * Validate an unknown frontmatter object against the schema for its `type`.
  * Unknown keys are PRESERVED (merged back over the validated result) so the
  * workspace stays OKF-tolerant and round-trips fields we don't model yet.
+ *
+ * A legacy `status:` is folded onto the type's own lifecycle key first (see
+ * {@link normalizeLifecycleKeys}), and the merge below runs over the normalized
+ * object, so an old vault reads clean instead of carrying both keys forward.
  */
 export function parseFrontmatter(input: unknown): ParseResult {
-  const result = zFrontmatter.safeParse(input);
+  const normalized = normalizeLifecycleKeys(input);
+  const result = zFrontmatter.safeParse(normalized);
   if (result.success) {
     const merged =
-      input && typeof input === 'object'
-        ? { ...(input as Record<string, unknown>), ...result.data }
+      normalized && typeof normalized === 'object'
+        ? { ...(normalized as Record<string, unknown>), ...result.data }
         : result.data;
     return { ok: true, data: merged as Frontmatter };
   }

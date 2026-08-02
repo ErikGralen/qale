@@ -4,9 +4,13 @@ import { layerForType, type Frontmatter, type NoteType } from './frontmatter.js'
  * Edit invariants, precisely (PLAN-V2 §3.1). Different note types have different
  * mutability: raw provenance (meeting transcripts, session receipts) is immutable
  * except for a designated workflow field; decisions are append-only (body frozen,
- * only `status`/`superseded_by` may flip); authored/derived hubs are freely
+ * only `standing`/`superseded_by` may flip); authored/derived hubs are freely
  * editable. These are pure predicates the application layer calls before writing —
  * the domain states the rule, the app enforces the trigger (a human-accepted card).
+ *
+ * The user-facing half lives in {@link ./edit-layer.ts}: it derives these rules
+ * into one ownership layer per type and one sentence per layer, so every
+ * read-only surface says the same thing. Add a rule here, not a sentence there.
  */
 
 export interface TypeRule {
@@ -29,18 +33,18 @@ export interface TypeRule {
 export const TYPE_RULES: Record<NoteType, TypeRule> = {
   source: {
     bodyEditable: false,
-    mutableFields: ['status', 'summary', 'title', 'tags', 'updated', 'origin', 'customer'],
+    mutableFields: ['processing', 'summary', 'title', 'tags', 'updated', 'origin', 'customer'],
   },
   meeting: {
     bodyEditable: true,
     // `transcript` is mutable so a transcript can be matched to a pre-created
     // meeting note after the fact; the transcript source itself stays immutable.
-    mutableFields: ['status', 'summary', 'title', 'tags', 'customer', 'transcript', 'series'],
+    mutableFields: ['processing', 'summary', 'title', 'tags', 'customer', 'transcript', 'series'],
   },
   decision: {
     bodyEditable: false,
     appendOnly: true,
-    mutableFields: ['status', 'superseded_by', 'title', 'tags'],
+    mutableFields: ['standing', 'superseded_by', 'title', 'tags'],
   },
   insight: { bodyEditable: true, mutableFields: 'all' },
   customer: { bodyEditable: true, mutableFields: 'all' },
@@ -48,6 +52,7 @@ export const TYPE_RULES: Record<NoteType, TypeRule> = {
   person: { bodyEditable: true, mutableFields: 'all' },
   session: { bodyEditable: false, mutableFields: [] },
   skill: { bodyEditable: true, mutableFields: 'all' },
+  agent: { bodyEditable: true, mutableFields: 'all' },
   todo: { bodyEditable: true, mutableFields: 'all' },
   note: { bodyEditable: true, mutableFields: 'all' },
   // External mirrors: locally read-only like `source`; the mutable fields are
@@ -55,11 +60,11 @@ export const TYPE_RULES: Record<NoteType, TypeRule> = {
   // url) never changes — a moved item is a new mirror.
   ticket: {
     bodyEditable: false,
-    mutableFields: ['status', 'summary', 'title', 'tags', 'state', 'state_category', 'assignee', 'remote_updated'],
+    mutableFields: ['processing', 'summary', 'title', 'tags', 'state', 'state_category', 'assignee', 'remote_updated'],
   },
   wikipage: {
     bodyEditable: false,
-    mutableFields: ['status', 'summary', 'title', 'tags', 'version', 'remote_updated'],
+    mutableFields: ['processing', 'summary', 'title', 'tags', 'version', 'remote_updated'],
   },
 };
 
@@ -113,4 +118,4 @@ export function checkFrontmatterMutation(
  * generalized {@link checkFrontmatterMutation}.
  */
 export const checkRawFrontmatterMutation = checkFrontmatterMutation;
-export const RAW_MUTABLE_FIELDS = ['status'] as const;
+export const RAW_MUTABLE_FIELDS = ['processing'] as const;

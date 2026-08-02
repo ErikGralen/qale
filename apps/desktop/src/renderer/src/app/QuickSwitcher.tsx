@@ -8,8 +8,9 @@ import {
   CommandGroup,
   CommandItem,
 } from '@pm/ui';
-import { FileText, Hash, Inbox, Library, ListTodo, MessageSquare, Settings, Sparkles, SquarePen, StickyNote } from 'lucide-react';
+import { Bot, FileText, Hash, House, Inbox, Library, ListTodo, MessageSquare, Settings, Sparkles, SquarePen, StickyNote, Wand2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { noteTypeLabel } from '@pm/domain';
 import type { SearchHitDTO } from '@pm/ipc';
 import { useApp } from '../state/app-state';
 import { collectContexts } from '../lib/contexts';
@@ -38,7 +39,7 @@ export function QuickSwitcher({
   onOpenCapture: () => void;
   onNewNote: () => void;
 }) {
-  const { search, openDoc, openInbox, openTodos, openMemory, openSession, openSettings, openContext, tree, tabs, pendingCount } = useApp();
+  const { search, openDoc, openHome, openInbox, openTodos, openMemory, openSession, openSettings, openSkills, openAgents, openContext, tree, tabs, waitingCount } = useApp();
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<SearchHitDTO[]>([]);
 
@@ -63,9 +64,15 @@ export function QuickSwitcher({
 
   const commands = useMemo<CommandSpec[]>(
     () => [
+      { id: 'home', label: 'Go Home — what’s waiting, and what to start', hint: '⇧⌘H', icon: House, run: openHome },
       {
         id: 'inbox',
-        label: pendingCount > 0 ? `Open Inbox — ${pendingCount} pending` : 'Open Inbox',
+        // The same number the sidebar badge and the Inbox header print, in the
+        // same words: one attention list, one count (lib/attention.ts).
+        label:
+          waitingCount > 0
+            ? `Open Inbox — ${waitingCount} need${waitingCount === 1 ? 's' : ''} you`
+            : 'Open Inbox',
         icon: Inbox,
         run: openInbox,
       },
@@ -74,11 +81,15 @@ export function QuickSwitcher({
       { id: 'todos', label: 'Open Todos — commitments, yours and theirs', icon: ListTodo, run: openTodos },
       { id: 'memory', label: 'Browse memory — sources, insights, customers, people', icon: Library, run: openMemory },
       { id: 'ask', label: 'Ask the memory', hint: '⌘↵', icon: Sparkles, run: () => openSession('ask') },
-      { id: 'weekly', label: 'Run Weekly Update', icon: MessageSquare, run: () => openSession('weekly-update') },
-      { id: 'chat', label: 'New chat', icon: MessageSquare, run: () => openSession('chat', { fresh: true }) },
-      { id: 'settings', label: 'Open Settings', icon: Settings, run: openSettings },
+      // Named as the skill names itself — ⌘K and the composer's picker must not
+      // call the same playbook two different things.
+      { id: 'weekly', label: 'Write the weekly update', icon: MessageSquare, run: () => openSession('weekly-update') },
+      { id: 'session', label: 'New session', icon: MessageSquare, run: () => openSession(undefined, { fresh: true }) },
+      { id: 'skills', label: 'Open Skills — playbooks, always-on rules, reference', icon: Wand2, run: openSkills },
+      { id: 'agents', label: 'Open Agents — what runs on its own, and its off switches', icon: Bot, run: openAgents },
+      { id: 'settings', label: 'Open Settings', hint: '⌘,', icon: Settings, run: openSettings },
     ],
-    [pendingCount, openInbox, openTodos, openMemory, openSession, openSettings, onOpenCapture, onNewNote],
+    [waitingCount, openHome, openInbox, openTodos, openMemory, openSession, openSkills, openAgents, openSettings, onOpenCapture, onNewNote],
   );
 
   const q = query.trim().toLowerCase();
@@ -109,7 +120,8 @@ export function QuickSwitcher({
                   <div className="flex min-w-0 flex-col">
                     <span className="truncate text-sm font-medium">{h.title}</span>
                     <span className="truncate text-xs text-muted-foreground">
-                      {h.type} · {h.summary}
+                      {/* A mirror names its source system, not our folder. */}
+                      {noteTypeLabel(h.type)} · {h.summary}
                     </span>
                   </div>
                 </CommandItem>

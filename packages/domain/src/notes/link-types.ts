@@ -1,5 +1,5 @@
 /**
- * Typed links (docs/typed-links.md): every relationship in the system
+ * Typed links: every relationship in the system
  * normalizes to one directed edge `(source, target, type, reversed)`. The enum
  * below is the vocabulary the system UNDERSTANDS — a type earns a place here
  * only when some behavior consumes it (labels, grouping, Jira mapping, and

@@ -10,7 +10,15 @@ export {
 } from './runtime.js';
 export { entriesToUiMessages, type UiMessage } from './history.js';
 export { PiUiBridge, type Chunk } from './bridge.js';
-export { SHARED_PREAMBLE, CHILD_PREAMBLE } from './prompts.js';
+export { SHARED_PREAMBLE, CHILD_PREAMBLE, SCHEDULED_PREAMBLE } from './prompts.js';
+export {
+  createEndQuietlyTool,
+  ranSilent,
+  readsAsNothingToReport,
+  END_QUIETLY_TOOL_NAME,
+  type QuietDeps,
+  type RunOutcome,
+} from './quiet.js';
 export {
   createSessionFileTools,
   createChildFileTools,
@@ -35,19 +43,36 @@ export {
   type SpawnEntryInput,
 } from './spawn.js';
 export {
+  createAskTool,
+  planAsk,
+  formatAnswers,
+  askRequestId,
+  askReplayPrompt,
+  AskParking,
+  ASK_TOOL_NAME,
+  ASK_MAX_QUESTIONS,
+  ASK_MAX_OPTIONS,
+  ASK_HEADER_MAX,
+  type AskOption,
+  type AskQuestion,
+  type AskPlan,
+  type AskAnswer,
+  type AskDecision,
+  type AskRequestInfo,
+  type StoredAsk,
+} from './ask.js';
+export {
   createVaultTools,
   createProposeTools,
-  createCheckpointTool,
   createDraftTools,
   createAtlassianTools,
   createUseSkillTool,
-  listDynamicSkills,
+  listLoadableSkills,
   matchSkill,
-  type DynamicSkill,
+  type LoadableSkill,
   VAULT_TOOL_NAMES,
   PROPOSE_TOOL_NAMES,
   DRAFT_TOOL_NAMES,
-  CHECKPOINT_TOOL_NAME,
   USE_SKILL_TOOL_NAME,
   ATLASSIAN_TOOL_NAMES,
 } from './tools.js';

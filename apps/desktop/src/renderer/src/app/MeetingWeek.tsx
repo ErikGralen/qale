@@ -11,9 +11,9 @@ import { needsReview } from '../lib/note-status';
  * The meetings week — the default read of the meetings folder. A PO's recall
  * cue for meetings is temporal ("Thursday's check-in", "what's left this
  * week"), so the page opens as a Monday-start week grid: upcoming meetings on
- * card white, past ones receded to the wash, and past-but-unreviewed ones
- * flying the amber flag (icon + word, never color alone). Weekends only earn
- * a column when something actually happened on them.
+ * card white, past ones receded to the wash, past-but-unreviewed ones flying
+ * the amber flag (icon + word, never color alone), and cancelled ones struck
+ * through. Weekends only earn a column when something actually happened on them.
  */
 
 const HOUR_PX = 52;
@@ -149,12 +149,26 @@ function layoutColumns(evts: CalEvent[]): Map<CalEvent, { col: number; cols: num
   return placements;
 }
 
-/** Visual voice per lifecycle: upcoming on card white, past receded, unreviewed amber. */
-function eventTone(e: CalEvent, now: Date): { cls: string; timeCls: string; flag: boolean } {
+/** Visual voice per lifecycle: upcoming on card white, past receded, unreviewed
+ *  amber, cancelled struck through (never color alone) so it can't be misread
+ *  as a meeting that is still on. */
+function eventTone(
+  e: CalEvent,
+  now: Date,
+): { cls: string; timeCls: string; titleCls: string; flag: boolean } {
+  if (e.note.eventStatus === 'cancelled') {
+    return {
+      cls: 'bg-muted/50 ring-border/60 text-muted-foreground hover:bg-muted',
+      timeCls: 'text-muted-foreground',
+      titleCls: 'line-through',
+      flag: false,
+    };
+  }
   if (needsReview(e.note)) {
     return {
       cls: 'bg-warning/10 ring-warning/35 text-warning hover:bg-warning/15',
       timeCls: 'text-warning/80',
+      titleCls: '',
       flag: true,
     };
   }
@@ -162,20 +176,33 @@ function eventTone(e: CalEvent, now: Date): { cls: string; timeCls: string; flag
     return {
       cls: 'bg-muted/70 ring-border/70 text-foreground/70 hover:bg-muted',
       timeCls: 'text-muted-foreground',
+      titleCls: '',
       flag: false,
     };
   }
   return {
     cls: 'bg-card ring-foreground/15 text-foreground hover:bg-accent/60',
     timeCls: 'text-muted-foreground',
+    titleCls: '',
     flag: false,
   };
 }
 
+/** What a block's state adds to its accessible name, when it has one. */
+function eventStateLabel(e: CalEvent): string {
+  if (e.note.eventStatus === 'cancelled') return ', cancelled';
+  return needsReview(e.note) ? ', needs review' : '';
+}
+
 function eventTooltip(e: CalEvent): string {
   const head = e.timed ? `${fmtClock(e.start)}–${fmtClock(e.end)} · ${e.note.title}` : e.note.title;
-  const review = needsReview(e.note) ? '\nAwaiting After-Meeting review' : '';
-  return e.note.summary ? `${head}${review}\n${e.note.summary}` : `${head}${review}`;
+  const state =
+    e.note.eventStatus === 'cancelled'
+      ? '\nCancelled'
+      : needsReview(e.note)
+        ? '\nAwaiting After-Meeting review'
+        : '';
+  return e.note.summary ? `${head}${state}\n${e.note.summary}` : `${head}${state}`;
 }
 
 export function MeetingWeek({
@@ -288,13 +315,6 @@ export function MeetingWeek({
   const nowTop = (now.getHours() + now.getMinutes() / 60 - startHour) * HOUR_PX;
   const gridCols = { gridTemplateColumns: `3.25rem repeat(${days.length}, minmax(0, 1fr))` };
 
-  // For an empty week, orient instead of apologizing: offer the nearest jumps.
-  const prevEvent = useMemo(
-    () => [...events].reverse().find((e) => e.start < weekStart),
-    [events, weekStart],
-  );
-  const nextEvent = useMemo(() => events.find((e) => e.start >= weekEnd), [events, weekEnd]);
-
   const openEvent = (e: CalEvent, click?: React.MouseEvent) => void openDoc(e.note.path, click && navFromEvent(click));
 
   const eventBody = (e: CalEvent, heightPx: number) => {
@@ -309,7 +329,9 @@ export function MeetingWeek({
           {e.timed && fmtClock(e.start)}
           {tone.flag && <span className="font-medium">review</span>}
         </div>
-        <div className="truncate text-xs leading-tight font-medium">{e.note.title}</div>
+        <div className={`truncate text-xs leading-tight font-medium ${tone.titleCls}`}>
+          {e.note.title}
+        </div>
         {heightPx >= 76 && e.note.summary && (
           <div className={`mt-0.5 line-clamp-2 text-xs leading-snug ${tone.timeCls}`}>
             {e.note.summary}
@@ -327,7 +349,7 @@ export function MeetingWeek({
             <span className={`text-xs tabular-nums ${tone.timeCls}`}>{fmtClock(e.start)}</span>
           )
         )}
-        <span className="truncate text-xs font-medium">{e.note.title}</span>
+        <span className={`truncate text-xs font-medium ${tone.titleCls}`}>{e.note.title}</span>
       </div>
     );
   };
@@ -349,7 +371,7 @@ export function MeetingWeek({
         }
       }}
     >
-      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border/70 px-5 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border/70 px-4 py-2">
         {toolbarLead}
         <div className="flex items-center gap-1">
           <button
@@ -466,10 +488,10 @@ export function MeetingWeek({
                     style={{ gridColumn: `${startCol + 2} / ${endCol + 3}`, gridRow: row + 1 }}
                     onClick={(click) => openEvent(e, click)}
                     title={`${range} · ${e.note.title}${e.note.summary ? `\n${e.note.summary}` : ''}`}
-                    aria-label={`${e.note.title}, ${range}${needsReview(e.note) ? ', needs review' : ''}`}
+                    aria-label={`${e.note.title}, ${range}${eventStateLabel(e)}`}
                   >
                     {tone.flag && <AlertTriangle className="size-3 shrink-0" aria-hidden />}
-                    <span className="truncate">{e.note.title}</span>
+                    <span className={`truncate ${tone.titleCls}`}>{e.note.title}</span>
                   </button>
                 );
               })}
@@ -495,7 +517,7 @@ export function MeetingWeek({
                           className={`w-full rounded-md px-1.5 py-0.5 text-left ring-1 transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${tone.cls}`}
                           onClick={(click) => openEvent(e, click)}
                           title={eventTooltip(e)}
-                          aria-label={`${e.note.title}${needsReview(e.note) ? ', needs review' : ''}`}
+                          aria-label={`${e.note.title}${eventStateLabel(e)}`}
                         >
                           {eventBody(e, 0)}
                         </button>
@@ -558,9 +580,7 @@ export function MeetingWeek({
                       }}
                       onClick={(click) => openEvent(e, click)}
                       title={eventTooltip(e)}
-                      aria-label={`${e.timed ? `${fmtClock(e.start)}, ` : ''}${e.note.title}${
-                        needsReview(e.note) ? ', needs review' : ''
-                      }`}
+                      aria-label={`${e.timed ? `${fmtClock(e.start)}, ` : ''}${e.note.title}${eventStateLabel(e)}`}
                     >
                       {eventBody(e, height)}
                     </button>
@@ -581,37 +601,6 @@ export function MeetingWeek({
           })}
         </div>
 
-        {weekEvents.length === 0 && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="pointer-events-auto flex flex-col items-center gap-2 rounded-xl bg-background/90 px-6 py-4 text-center">
-              <p className="text-sm text-muted-foreground">
-                No meetings {contextFacet ? `in #${contextFacet} ` : ''}this week.
-              </p>
-              <div className="flex items-center gap-2">
-                {prevEvent && (
-                  <button
-                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-foreground/80 transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                    onClick={() => setWeekStart(mondayOf(prevEvent.start))}
-                  >
-                    <ChevronLeft className="size-3.5" aria-hidden />
-                    {MONTH_FMT.format(prevEvent.start)} {prevEvent.start.getDate()} ·{' '}
-                    {prevEvent.note.title}
-                  </button>
-                )}
-                {nextEvent && (
-                  <button
-                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-foreground/80 transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                    onClick={() => setWeekStart(mondayOf(nextEvent.start))}
-                  >
-                    {MONTH_FMT.format(nextEvent.start)} {nextEvent.start.getDate()} ·{' '}
-                    {nextEvent.note.title}
-                    <ChevronRight className="size-3.5" aria-hidden />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

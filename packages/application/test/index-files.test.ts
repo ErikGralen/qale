@@ -5,13 +5,13 @@ import { generateIndexFiles, searchNotes, reconcileIndex } from '../src/index.js
 import type { IndexedNote, IndexPort, UseCaseContext, VaultPort } from '../src/ports.js';
 
 /**
- * The librarian's index.md pass end to end (docs/okf-alignment.md Phase 1):
+ * The librarian's index.md pass end to end (OKF alignment, phase 1):
  * which folders get mapped, that generation is idempotent (no write, no commit
  * on an unchanged tick), that session receipts are skipped, and that reserved
  * files stay out of the index and out of search.
  */
 
-function inote(path: string, type: NoteType, summary: string, status: string | null = null): IndexedNote {
+function inote(path: string, type: NoteType, summary: string, lifecycle: string | null = null): IndexedNote {
   const slug = path.replace(/\.md$/, '');
   return {
     path,
@@ -20,7 +20,7 @@ function inote(path: string, type: NoteType, summary: string, status: string | n
     layer: 'authored',
     title: slug.split('/').pop()!,
     summary,
-    status,
+    lifecycle,
     mtime: 1,
     frontmatter: { type, summary },
     links: [],
@@ -62,7 +62,7 @@ test('generateIndexFiles maps content folders, skips sessions, stamps root, comm
   assert.ok(!res.written.includes('sessions/index.md'), 'session receipts are not mapped');
   assert.equal(commits.length, 1, 'one commit for the whole batch');
 
-  // Root map links folders with counts; decisions map groups by status.
+  // Root map links folders with counts; decisions map groups by standing.
   assert.match(files.get('index.md')!, /\* \[Decisions\]\(decisions\/index\.md\).*\(2\)/);
   assert.match(files.get('decisions/index.md')!, /## Active/);
   assert.match(files.get('decisions/index.md')!, /## Superseded/);

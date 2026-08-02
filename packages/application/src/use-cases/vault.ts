@@ -4,6 +4,7 @@ import {
   computeHeat,
   isFolderIndex,
   refToSlug,
+  runnableForms,
   SESSION_FILES_DIR,
   type NoteType,
 } from '@pm/domain';
@@ -17,7 +18,65 @@ export interface VaultInfo {
   git: boolean;
   /** git is installed, so history CAN be enabled even when `git` is false. */
   gitAvailable: boolean;
+  /** Name of the sync service whose folder this vault sits in, or null. */
+  syncedBy: string | null;
   noteCount: number;
+}
+
+/** macOS puts every files-provider sync root under this one folder. */
+const FILE_PROVIDER_DIR = 'cloudstorage';
+
+/**
+ * Folder-sync services, by the segment their root leaves in a path. Matched
+ * whole-segment and case-insensitively, with `suffixed` for the ones that append
+ * an account ("OneDrive - Acme", "Dropbox (Personal)"). `Sync` alone is far too
+ * common a folder name to claim, so Sync.com is matched on its own app-drive
+ * segment only.
+ */
+const SYNC_ROOTS: { match: string; suffixed?: boolean; name: string }[] = [
+  // The iCloud Drive container. Also how "Desktop & Documents in iCloud" shows
+  // up once the path is canonical: ~/Documents is a symlink into here.
+  { match: 'mobile documents', name: 'iCloud Drive' },
+  { match: 'com~apple~clouddocs', name: 'iCloud Drive' },
+  { match: 'icloud drive', name: 'iCloud Drive' },
+  { match: 'dropbox', suffixed: true, name: 'Dropbox' },
+  { match: 'google drive', suffixed: true, name: 'Google Drive' },
+  // macOS files-provider layout: ~/Library/CloudStorage/GoogleDrive-me@acme.com
+  { match: 'googledrive', suffixed: true, name: 'Google Drive' },
+  { match: 'onedrive', suffixed: true, name: 'OneDrive' },
+  { match: 'sync.com', name: 'Sync.com' },
+  { match: 'pcloud drive', name: 'pCloud' },
+  { match: 'pclouddrive', name: 'pCloud' },
+  { match: 'nextcloud', name: 'Nextcloud' },
+];
+
+/**
+ * Which sync service, if any, owns the folder a workspace lives in.
+ *
+ * Path-shaped on purpose: the failure we are warning about (their sync client
+ * and this app writing the same files at the same time) is decided by where the
+ * folder is, and a segment check costs nothing on open. The path arrives
+ * canonical — `FsVault` realpaths its root — so a symlink into a synced
+ * container is caught too.
+ */
+export function detectSyncedFolder(path: string): string | null {
+  let prev = '';
+  for (const seg of path.split(/[/\\]/)) {
+    const s = seg.trim().toLowerCase();
+    if (!s) continue;
+    for (const root of SYNC_ROOTS) {
+      if (s === root.match) return root.name;
+      if (!root.suffixed) continue;
+      // "OneDrive - Acme", "Dropbox (Personal)": an account, not a new folder.
+      if (s.startsWith(`${root.match} `)) return root.name;
+      // "GoogleDrive-me@acme.com". Only inside the files-provider folder, where
+      // the suffix can only be an account: elsewhere a hyphen is just a name,
+      // and "dropbox-notes" is somebody's own folder.
+      if (prev === FILE_PROVIDER_DIR && s.startsWith(`${root.match}-`)) return root.name;
+    }
+    prev = s;
+  }
+  return null;
 }
 
 async function vaultInfo(ctx: UseCaseContext): Promise<VaultInfo> {
@@ -29,6 +88,7 @@ async function vaultInfo(ctx: UseCaseContext): Promise<VaultInfo> {
     name: root.split('/').filter(Boolean).pop() ?? root,
     git: isRepo,
     gitAvailable: available,
+    syncedBy: detectSyncedFolder(root),
     noteCount: ctx.index.count(),
   };
 }
@@ -148,7 +208,8 @@ export function getThemesByHeat(ctx: UseCaseContext): ThemeHeatRow[] {
 
 export interface NoteQuery {
   types?: NoteType[];
-  status?: string;
+  /** Match the type's lifecycle value, e.g. `"superseded"` on decisions. */
+  lifecycle?: string;
   /** Notes touched (mtime) within the last N days. */
   recentDays?: number;
   /** Notes whose `customer` frontmatter ref resolves to this slug. */
@@ -164,7 +225,7 @@ export function queryNotes(ctx: UseCaseContext, q: NoteQuery): IndexedNote[] {
   const cutoff = q.recentDays ? Date.now() - q.recentDays * 24 * 60 * 60 * 1000 : null;
   let rows = ctx.index.all().filter((n) => !isFolderIndex(n.path));
   if (q.types) rows = rows.filter((n) => q.types!.includes(n.type));
-  if (q.status) rows = rows.filter((n) => n.status === q.status);
+  if (q.lifecycle) rows = rows.filter((n) => n.lifecycle === q.lifecycle);
   if (cutoff !== null) rows = rows.filter((n) => n.mtime >= cutoff);
   if (q.customer) {
     rows = rows.filter((n) => {
@@ -177,26 +238,14 @@ export function queryNotes(ctx: UseCaseContext, q: NoteQuery): IndexedNote[] {
 }
 
 /**
- * One note with no links, and enough context to answer it honestly. "Has no
- * links" is a symptom with several causes, and they do NOT share an answer: a
- * mirror of an upstream Jira issue is unconnected because nobody has said what
- * it serves yet, a scratch pad is unconnected because it hasn't been worked
- * yet, and only a workspace-owned page nothing cites is the hygiene case. The
- * sweep classifies before it offers, so "Delete" is never proposed for a note
- * whose truth lives somewhere else.
+ * One workspace-owned note with no links. "Has no links" is a symptom with
+ * several causes that do NOT share an answer — a scratch pad is unconnected
+ * because nobody has worked it yet, a page nothing cites is the hygiene case —
+ * so the sweep classifies before it offers anything.
  */
 export interface OrphanCandidate {
   path: string;
   title: string;
-  type: NoteType;
-  /** True when the note mirrors an upstream record — a local delete is a lie,
-   *  not a cleanup, and the next sync would undo it anyway. */
-  external: boolean;
-  /** Plain-text keys worth hunting for besides the title. A ticket's full title
-   *  ("PAY-5 · Webhook delivery retries…") never appears in prose; "PAY-5" does. */
-  aliases: string[];
-  /** Upstream state, verbatim, for a mirror ("In Progress"). Display only. */
-  detail: string | null;
 }
 
 export interface MaintenanceReport {
@@ -217,29 +266,16 @@ const MIRROR_TYPES = new Set<NoteType>(['ticket', 'wikipage']);
  */
 const NEVER_ORPHAN = new Set<NoteType>(['skill', 'meeting']);
 
-function str(fm: Record<string, unknown>, key: string): string | null {
-  const v = fm[key];
-  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
-}
-
 /**
- * Classify one unlinked note, or return null when it isn't a finding at all.
- * The only suppression is deliberate: a mirror the upstream system has already
- * closed, which nobody ever cited, is history — surfacing it as maintenance
- * work asks the PO to tidy something that is already over.
+ * A projection of an upstream record — a Jira issue, a Confluence page, a
+ * calendar event. Never a maintenance finding: the workspace doesn't own it,
+ * can't delete it, and an open ticket nobody has written about yet is the
+ * normal state of a tracker, not a defect. Link it when something here has a
+ * reason to; until then there is no action to offer.
  */
-function classifyOrphan(n: IndexedNote): OrphanCandidate | null {
-  const fm = n.frontmatter;
-  const external = MIRROR_TYPES.has(n.type) || str(fm, 'provider') !== null;
-  if (!external) {
-    return { path: n.path, title: n.title, type: n.type, external: false, aliases: [], detail: null };
-  }
-  if (fm['state_category'] === 'done') return null;
-  // The human half of "PAY-5 · Webhook delivery retries with backoff" — prose
-  // cites one or the other, never the composed title.
-  const tail = n.title.includes('·') ? n.title.split('·').slice(1).join('·').trim() : null;
-  const aliases = [str(fm, 'external_id'), tail].filter((a): a is string => a !== null && a !== n.title);
-  return { path: n.path, title: n.title, type: n.type, external: true, aliases, detail: str(fm, 'state') };
+function isMirror(n: IndexedNote): boolean {
+  const provider = n.frontmatter['provider'];
+  return MIRROR_TYPES.has(n.type) || (typeof provider === 'string' && provider.trim().length > 0);
 }
 
 /** Librarian maintenance scan (PLAN-V2 §3.5): orphans + dangling links. */
@@ -250,9 +286,8 @@ export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
   for (const n of all) {
     const hasOut = n.links.length > 0;
     const hasIn = ctx.index.backlinks(n.slug).length > 0;
-    if (!hasOut && !hasIn && !NEVER_ORPHAN.has(n.type)) {
-      const finding = classifyOrphan(n);
-      if (finding) orphans.push(finding);
+    if (!hasOut && !hasIn && !NEVER_ORPHAN.has(n.type) && !isMirror(n)) {
+      orphans.push({ path: n.path, title: n.title });
     }
     for (const link of n.links) {
       if (!ctx.index.resolve(link.target)) danglingLinks.push({ from: n.path, target: link.target });
@@ -277,10 +312,19 @@ export async function ensureDefaultSkills(
    */
   retired: string[] = [],
 ): Promise<{ written: number; removed: number }> {
+  /** Whichever layout a vault is on, the same runnable counts as present. */
+  const present = async (file: string): Promise<string | null> => {
+    for (const form of runnableForms(file)) if (await ctx.vault.exists(form)) return form;
+    return null;
+  };
+
   let written = 0;
   const committed: string[] = [];
   for (const skill of skills) {
-    if (await ctx.vault.exists(skill.file)) continue;
+    // Both forms, not just the folder one: a workspace whose migration has not
+    // run yet holds the PM's edits under the flat name, and seeding a pristine
+    // copy beside it would shadow their file with ours.
+    if (await present(skill.file)) continue;
     await ctx.vault.writeRaw(skill.file, skill.content);
     const note = await ctx.vault.readNote(skill.file);
     if (note) ctx.index.reindex(note);
@@ -289,11 +333,15 @@ export async function ensureDefaultSkills(
   }
   let removed = 0;
   for (const file of retired) {
-    if (!(await ctx.vault.exists(file))) continue;
-    await ctx.vault.remove(file);
-    ctx.index.removeByPath(file);
-    committed.push(file);
-    removed++;
+    // Same reason in reverse: a retired file that migrated into a folder is
+    // still retired, and must not keep firing because its path changed.
+    for (const form of runnableForms(file)) {
+      if (!(await ctx.vault.exists(form))) continue;
+      await ctx.vault.remove(form);
+      ctx.index.removeByPath(form);
+      committed.push(form);
+      removed++;
+    }
   }
   if (committed.length > 0) await ctx.git.commitPaths(committed, 'skills: seed defaults');
   return { written, removed };

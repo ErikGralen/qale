@@ -3,7 +3,7 @@ import { kebabLinkType, linkTypeLabel, linkTypeOptions, normalizeLinkType, type 
 import { Check, Minus } from 'lucide-react';
 
 /**
- * The relationship picker for one link (docs/typed-links.md): which types the
+ * The relationship picker for one link: which types the
  * enum offers is filtered by what the link POINTS AT — a person link never
  * offers "supersedes" — and both directions of an asymmetric type are listed,
  * because "blocks" and "blocked by" are different claims.

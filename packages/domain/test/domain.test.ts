@@ -7,6 +7,7 @@ import {
   checkSupersede,
   refToSlug,
   slugify,
+  titleFromSlug,
   isSessionFile,
   validateEvidence,
   todoLane,
@@ -30,18 +31,18 @@ test('insight requires evidence', () => {
   assert.equal(r.ok, false);
 });
 
-test('source: defaults to status new, rejects free-text status', () => {
+test('source: defaults to processing new, rejects free-text processing', () => {
   const r = parseFrontmatter({ type: 'source', summary: 'article dump' });
   assert.equal(r.ok, true);
-  assert.equal((r.data as Record<string, unknown>)['status'], 'new');
+  assert.equal((r.data as Record<string, unknown>)['processing'], 'new');
 
-  const bad = parseFrontmatter({ type: 'source', summary: 'x', status: 'kinda-fresh' });
-  assert.equal(bad.ok, false); // status is an enum, never free text
+  const bad = parseFrontmatter({ type: 'source', summary: 'x', processing: 'kinda-fresh' });
+  assert.equal(bad.ok, false); // the lifecycle is an enum, never free text
 });
 
 test('source: body immutable, only workflow fields may change', () => {
-  const prev = { type: 'source', summary: 's', status: 'new' } as Frontmatter;
-  const okChange = { ...prev, status: 'processed' } as Frontmatter;
+  const prev = { type: 'source', summary: 's', processing: 'new' } as Frontmatter;
+  const okChange = { ...prev, processing: 'processed' } as Frontmatter;
   assert.equal(checkFrontmatterMutation('source', prev, okChange).allowed, true);
   const badChange = { ...prev, source: { system: 'web' } } as Frontmatter;
   assert.equal(checkFrontmatterMutation('source', prev, badChange).allowed, false);
@@ -77,20 +78,20 @@ test('source: origin marks an external meeting transcript (signal, not meeting)'
   assert.equal((r.data as Record<string, unknown>)['origin'], 'Jonas Palm');
 
   // origin/customer are workflow fields — settable after filing.
-  const prev = { type: 'source', summary: 's', status: 'new' } as Frontmatter;
+  const prev = { type: 'source', summary: 's', processing: 'new' } as Frontmatter;
   const okChange = { ...prev, origin: 'Jonas Palm' } as Frontmatter;
   assert.equal(checkFrontmatterMutation('source', prev, okChange).allowed, true);
 });
 
-test('lifecycle status is enum-validated on meetings and notes too', () => {
-  assert.equal(parseFrontmatter({ type: 'meeting', summary: 'm', status: 'new' }).ok, true);
-  assert.equal(parseFrontmatter({ type: 'meeting', summary: 'm', status: 'whatever' }).ok, false);
-  assert.equal(parseFrontmatter({ type: 'note', summary: 'n', status: 'stale' }).ok, true);
+test('processing is enum-validated on meetings and notes too', () => {
+  assert.equal(parseFrontmatter({ type: 'meeting', summary: 'm', processing: 'new' }).ok, true);
+  assert.equal(parseFrontmatter({ type: 'meeting', summary: 'm', processing: 'whatever' }).ok, false);
+  assert.equal(parseFrontmatter({ type: 'note', summary: 'n', processing: 'stale' }).ok, true);
 });
 
-test('checkFrontmatterMutation: decision body-frozen fields immutable, status mutable', () => {
-  const prev = { type: 'decision', summary: 's', status: 'active', date: '2026-01-01', sources: ['[[m]]'] } as Frontmatter;
-  const okChange = { ...prev, status: 'superseded', superseded_by: '[[decisions/new]]' } as Frontmatter;
+test('checkFrontmatterMutation: decision body-frozen fields immutable, standing mutable', () => {
+  const prev = { type: 'decision', summary: 's', standing: 'active', date: '2026-01-01', sources: ['[[m]]'] } as Frontmatter;
+  const okChange = { ...prev, standing: 'superseded', superseded_by: '[[decisions/new]]' } as Frontmatter;
   assert.equal(checkFrontmatterMutation('decision', prev, okChange).allowed, true);
   const badChange = { ...prev, summary: 'edited!' } as Frontmatter;
   assert.equal(checkFrontmatterMutation('decision', prev, badChange).allowed, false);
@@ -98,8 +99,8 @@ test('checkFrontmatterMutation: decision body-frozen fields immutable, status mu
 
 test('decision supersedes-chain: build, cycle guard', () => {
   const nodes: Record<string, DecisionNode> = {
-    'decisions/d1': { slug: 'decisions/d1', frontmatter: { type: 'decision', summary: 'd1', status: 'superseded', superseded_by: '[[decisions/d2]]', sources: [] } as never },
-    'decisions/d2': { slug: 'decisions/d2', frontmatter: { type: 'decision', summary: 'd2', status: 'active', supersedes: '[[decisions/d1]]', sources: [] } as never },
+    'decisions/d1': { slug: 'decisions/d1', frontmatter: { type: 'decision', summary: 'd1', standing: 'superseded', superseded_by: '[[decisions/d2]]', sources: [] } as never },
+    'decisions/d2': { slug: 'decisions/d2', frontmatter: { type: 'decision', summary: 'd2', standing: 'active', supersedes: '[[decisions/d1]]', sources: [] } as never },
   };
   const resolve = (slug: string): DecisionNode | null => nodes[slug] ?? null;
 
@@ -128,19 +129,28 @@ test('slugify transliterates diacritics instead of stripping them', () => {
   assert.equal(slugify('Straße café søren'), 'strasse-cafe-soren');
 });
 
-test('todo: defaults to open, status is enum, owner marks external', () => {
+test('titleFromSlug speaks the note name back, not machine title case', () => {
+  assert.equal(titleFromSlug('decisions/2026-04-15-defer-scim-to-q3'), 'Defer SCIM to Q3');
+  assert.equal(titleFromSlug('adopt-workos'), 'Adopt Workos');
+  // Small words lead and close in full case; only the middle stays quiet.
+  assert.equal(titleFromSlug('the-case-for-sso'), 'The Case for SSO');
+  assert.equal(titleFromSlug('what-we-ship-in'), 'What We Ship In');
+  assert.equal(titleFromSlug('wikipages/enterprise-onboarding'), 'Enterprise Onboarding');
+});
+
+test('todo: defaults to open, commitment is enum, owner marks external', () => {
   const r = parseFrontmatter({ type: 'todo', summary: 'Email Åsa about rollout' });
   assert.equal(r.ok, true);
   const fm = r.data as Record<string, unknown>;
-  assert.equal(fm['status'], 'open');
+  assert.equal(fm['commitment'], 'open');
   assert.deepEqual(fm['sources'], []);
-  assert.equal(parseFrontmatter({ type: 'todo', summary: 'x', status: 'maybe-later' }).ok, false);
+  assert.equal(parseFrontmatter({ type: 'todo', summary: 'x', commitment: 'maybe-later' }).ok, false);
   assert.equal(isExternalTodo({ owner: '[[people/jonas-bergman]]' }), true);
   assert.equal(isExternalTodo({ owner: '  ' }), false);
   assert.equal(isExternalTodo({}), false);
 });
 
-test('todoLane: buckets by status, owner and due date', () => {
+test('todoLane: buckets by commitment, owner and due date', () => {
   const today = '2026-07-17';
   assert.equal(todoLane({ due: '2026-07-10' }, today), 'overdue');
   assert.equal(todoLane({ due: '2026-07-17' }, today), 'today');
@@ -148,11 +158,11 @@ test('todoLane: buckets by status, owner and due date', () => {
   assert.equal(todoLane({}, today), 'someday');
   // external commitments always land in waiting, even overdue ones
   assert.equal(todoLane({ owner: 'Jonas', due: '2026-07-01' }, today), 'waiting');
-  assert.equal(todoLane({ status: 'done', due: '2026-07-10' }, today), 'closed');
-  assert.equal(todoLane({ status: 'dropped' }, today), 'closed');
+  assert.equal(todoLane({ commitment: 'done', due: '2026-07-10' }, today), 'closed');
+  assert.equal(todoLane({ commitment: 'dropped' }, today), 'closed');
   // overdue predicate still fires for external items (drives the librarian ping)
   assert.equal(isOverdueTodo({ owner: 'Jonas', due: '2026-07-01' }, today), true);
-  assert.equal(isOverdueTodo({ status: 'done', due: '2026-07-01' }, today), false);
+  assert.equal(isOverdueTodo({ commitment: 'done', due: '2026-07-01' }, today), false);
 });
 
 test('byDue: dated before undated, earlier first', () => {

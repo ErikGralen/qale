@@ -58,6 +58,24 @@ const DATE_KEYS = ['date', 'due', 'captured', 'updated', 'last_told', 'resolved'
 const PROSE_KEYS = ['summary', 'title'];
 
 const DATE_RE = /\d{4}-\d{2}-\d{2}/g;
+
+// A skill and an agent are folders: `skills/<name>/SKILL.md` is the runnable and
+// its slug is the FOLDER, while anything else beside it is the skill's own
+// material — never indexed, never a note, so it has no frontmatter to validate.
+// Mirrors @pm/domain's slug.ts; this script stays dependency-free on purpose
+// (it runs under bare `node`), so the rule is restated rather than imported.
+const RUNNABLE_ENTRY_RE = /^(?:skills|agents)\/[^/]+\/(?:SKILL|AGENT)\.md$/i;
+const RUNNABLE_FOLDER_RE = /^(?:skills|agents)\/[^/]+\/.+$/;
+
+function isRunnableResource(rel: string): boolean {
+  return RUNNABLE_FOLDER_RE.test(rel) && !RUNNABLE_ENTRY_RE.test(rel);
+}
+
+/** The slug a file is linkable by: a runnable's entry file answers to its folder. */
+function slugOf(rel: string): string {
+  const slug = rel.replace(/\.md$/, '');
+  return RUNNABLE_ENTRY_RE.test(rel) ? slug.slice(0, slug.lastIndexOf('/')) : slug;
+}
 const FRONTMATTER_RE = /^﻿?---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
 
@@ -176,7 +194,7 @@ function buildSlugIndex(root: string, files: string[]): Set<string> {
   const slugs = new Set<string>();
   for (const f of files) {
     if (!f.endsWith('.md')) continue;
-    const rel = relative(root, f).replace(/\\/g, '/').replace(/\.md$/, '');
+    const rel = slugOf(relative(root, f).replace(/\\/g, '/'));
     slugs.add(rel);
     slugs.add(rel.split('/').pop() ?? rel);
   }
@@ -186,8 +204,8 @@ function buildSlugIndex(root: string, files: string[]): Set<string> {
 function extractLinks(text: string): string[] {
   const out: string[] = [];
   for (const m of text.matchAll(WIKILINK_RE)) {
-    // strip alias `|...`, anchor `#...`, and a `type::` prefix (typed links,
-    // docs/typed-links.md) — resolution only cares about the bare target.
+    // strip alias `|...`, anchor `#...`, and a `type::` prefix (typed links)
+    // — resolution only cares about the bare target.
     let target = (m[1] ?? '').split('|')[0].split('#')[0].trim();
     const sep = target.indexOf('::');
     if (sep > 0 && target.slice(sep + 2).trim()) target = target.slice(sep + 2).trim();
@@ -349,7 +367,10 @@ function main(): void {
     if (rel.startsWith('sessions/')) continue;
     const raw = readFileSync(f, 'utf8');
     const fmMatch = raw.match(FRONTMATTER_RE);
-    if (!fmMatch || !/^\s*type:/m.test(fmMatch[1] ?? '')) untyped.push(rel);
+    // A skill's own material (anything beside its SKILL.md) is not a note: it is
+    // never indexed and only ever read by the path its skill names, so it has no
+    // frontmatter to check.
+    if (!isRunnableResource(rel) && (!fmMatch || !/^\s*type:/m.test(fmMatch[1] ?? ''))) untyped.push(rel);
     for (const link of extractLinks(raw)) {
       if (/^https?:\/\//.test(link)) continue;
       if (!slugs.has(link)) unresolved.push(`${rel}  →  [[${link}]]`);
@@ -365,10 +386,12 @@ function main(): void {
     for (const f of readdirSync(join(validateRoot, 'todos'))) {
       if (!f.endsWith('.md')) continue;
       const fm = readFileSync(join(validateRoot, 'todos', f), 'utf8').match(FRONTMATTER_RE)?.[1] ?? '';
-      const status = fm.match(/^\s*status:\s*"?(\w+)"?/m)?.[1] ?? 'open';
+      // Accept the legacy `status:` key too, exactly as the frontmatter parser does.
+      const commitment =
+        fm.match(/^\s*(?:commitment|status):\s*"?([\w-]+)"?/m)?.[1] ?? 'open';
       const due = fm.match(/^\s*due:\s*"?(\d{4}-\d{2}-\d{2})"?/m)?.[1] ?? null;
       const owner = /^\s*owner:\s*\S/m.test(fm);
-      if (status !== 'open') lanes.closed++;
+      if (commitment !== 'open') lanes.closed++;
       else if (owner) lanes.waiting++;
       else if (!due) lanes.someday++;
       else if (due < laneToday) lanes.overdue++;

@@ -19,6 +19,7 @@ export type NoteType =
   | 'person'
   | 'session'
   | 'skill'
+  | 'agent'
   | 'todo'
   | 'note'
   | 'ticket'
@@ -26,14 +27,17 @@ export type NoteType =
 
 export type ThemeStance = 'exploring' | 'watching' | 'committed' | 'wont-do';
 
-/** Generic note lifecycle (sources/meetings/insights/notes) — always enum, never free text. */
-export type NoteStatus = 'new' | 'processed' | 'active' | 'stale';
+/** How far material has got through the workspace (sources/meetings/insights/
+ *  notes/mirrors) — always enum, never free text. Mirrors @pm/domain. */
+export type ProcessingState = 'new' | 'processed' | 'stale';
 
-export type DecisionStatus = 'active' | 'superseded';
+/** Whether a decision still stands. */
+export type DecisionStanding = 'active' | 'superseded';
 export type ConfidenceLevel = 'high' | 'med' | 'low';
 
-/** Todo lifecycle — open until it lands; done/dropped stay on the ledger. */
-export type TodoStatus = 'open' | 'done' | 'dropped';
+/** Whether a commitment is outstanding — open until it lands; done/dropped stay
+ *  on the ledger. */
+export type TodoCommitment = 'open' | 'done' | 'dropped';
 
 /** Normalized ticket state — the only state field UI logic may branch on;
  *  the raw provider `state` label is display-only. */
@@ -73,7 +77,10 @@ export interface NoteRefDTO {
   title: string;
   summary: string;
   mtime: number;
-  status?: string | null;
+  /** The type's own lifecycle value: a decision's `standing`, a customer's
+   *  `relationship`, a todo's `commitment`, a source's `processing`. Null when
+   *  the type carries no lifecycle at all (person, session, skill). */
+  lifecycle?: string | null;
   /** Curated context tags (projects/products/areas) — the cross-cutting nav axis. */
   tags?: string[];
   /** Frontmatter date (decisions/meetings), when present. */
@@ -149,6 +156,12 @@ export interface VaultInfoDTO {
   git: boolean;
   /** git is installed — history can be enabled even when `git` is false. */
   gitAvailable: boolean;
+  /**
+   * Name of the sync service whose folder the workspace sits in ("iCloud
+   * Drive", "Dropbox", …), or null. The renderer warns once: two programs
+   * writing the same files is how edits and the index get lost.
+   */
+  syncedBy: string | null;
   noteCount: number;
 }
 
@@ -204,15 +217,17 @@ export interface ThemeHeatDTO extends NoteRefDTO {
 }
 
 export interface MaintenanceReportDTO {
-  /** `external` notes mirror an upstream record — unconnected, never deletable here. */
-  orphans: { path: string; title: string; external: boolean; detail: string | null }[];
+  /** Workspace-owned notes with no links; mirrors of upstream records are never
+   *  reported — nothing here owns them, so there is no action to offer. */
+  orphans: { path: string; title: string }[];
   danglingLinks: { from: string; target: string }[];
 }
 
 /** Structured smart-view filter over the files table (no query syntax). */
 export interface NoteQueryDTO {
   types?: NoteType[];
-  status?: string;
+  /** Match the type's lifecycle value, e.g. `"superseded"` on decisions. */
+  lifecycle?: string;
   recentDays?: number;
   customer?: string;
   limit?: number;
@@ -285,7 +300,8 @@ export interface CaptureMeetingMatchDTO {
 }
 
 export interface IngestFollowUpDTO {
-  sessionType: string;
+  /** The skill to invoke on the session's first turn. */
+  skill: string;
   prompt: string;
   tabTitle: string;
   /** Tier the firing binding grants — the material's permissions, not the session's. */
@@ -301,7 +317,94 @@ export interface IngestCaptureResultDTO {
   /** A background session was fired for this capture (After-Meeting / External transcript).
    *  `sessionId` lets the renderer land the PO in that live session to watch it
    *  work and approve its cards inline. */
-  processing?: { sessionType: string; label: string; sessionId?: string };
+  processing?: { skill: string; label: string; sessionId?: string };
+}
+
+// ---------------------------------------------------------------------------
+// Arrival — the one pipeline every piece of material enters through, whatever
+// the door (docs/vision/arrival.md).
+// ---------------------------------------------------------------------------
+
+/** `capture` extracts what is still live; `catchup` files and runs nothing. */
+export type ArrivalAmbitionDTO = 'capture' | 'catchup';
+
+/**
+ * One piece of material. Either a `path` the OS picker returned — main reads
+ * it, so fifty files never cross IPC — or content the renderer already holds
+ * from a drop or a paste.
+ */
+export interface ArrivalItemInputDTO {
+  path?: string;
+  name?: string;
+  text?: string;
+  dataBase64?: string;
+  lastModified?: number;
+  kind?: CaptureKind;
+  external?: boolean;
+  attachTo?: string;
+}
+
+export interface ArrivalPlanItemDTO {
+  name: string;
+  kind: CaptureKind;
+  /** Where it will land — `meetings/`, `sources/`, `notes/`. */
+  dir: string;
+  title: string;
+  date?: string;
+  historical: boolean;
+  /** Set when the file could not be read at all — it is dropped from the batch. */
+  error?: string;
+}
+
+/** One session the batch would start, named the way a person names it. */
+export interface ArrivalRunDTO {
+  skill: string;
+  title: string;
+  count: number;
+  verb: string;
+}
+
+export interface ArrivalPlanDTO {
+  ambition: ArrivalAmbitionDTO;
+  ambitionAuto: boolean;
+  items: ArrivalPlanItemDTO[];
+  /** Why catch-up was chosen, in the tray's own words. */
+  reason: string;
+  /** The agent work this batch would start — empty under catch-up. */
+  runs: ArrivalRunDTO[];
+  /** The synced meeting a single fresh transcript would attach to. */
+  match?: CaptureMeetingMatchDTO;
+}
+
+export interface ArrivalOutcomeItemDTO {
+  name: string;
+  kind: CaptureKind;
+  path?: string;
+  dir?: string;
+  title?: string;
+  error?: string;
+  /** The review this item kicked off, so the receipt can link straight to it. */
+  session?: { id: string; label: string };
+}
+
+export interface ArrivalResultDTO {
+  /** Ledger key for `arrival:undo` — session-scoped, so a receipt can take
+   *  back exactly what it reported. */
+  id: string;
+  ambition: ArrivalAmbitionDTO;
+  ambitionAuto: boolean;
+  items: ArrivalOutcomeItemDTO[];
+  /** How many reviews the batch started. */
+  reviews: number;
+  /** Reviews that were due but could not start (usually: no API key yet). The
+   *  material still landed — saying "nothing to run" here would be a lie. */
+  reviewsFailed: number;
+}
+
+export interface ArrivalUndoResultDTO {
+  /** Paths deleted (created by the arrival) and paths rolled back. */
+  removed: string[];
+  restored: string[];
 }
 
 export interface SaveNoteInput {
@@ -386,16 +489,6 @@ export interface UpdatePayloadDTO {
   title?: string;
 }
 
-export interface ProposalStatsDTO {
-  pending: number;
-  accepted: number;
-  rejected: number;
-  stale: number;
-  avgApproveMs: number | null;
-  approvalRate: number | null;
-  byType: Record<string, { accepted: number; rejected: number }>;
-}
-
 export interface OutboundPayloadDTO {
   provider: OutboundProvider;
   /** @deprecated mirror of `provider` (main normalizes both onto every payload). */
@@ -431,8 +524,8 @@ export interface ProposalDTO {
   id: string;
   kind: ProposalKind;
   sessionId: string;
-  /** The skill that produced this card — lets the Inbox group cards by session. */
-  sessionType: string | null;
+  /** The skill in force when this card was produced — its provenance. */
+  skill: string | null;
   targetPath: string | null;
   payload: NotePayloadDTO | DecisionPayloadDTO | UpdatePayloadDTO | OutboundPayloadDTO;
   /**
@@ -442,6 +535,21 @@ export interface ProposalDTO {
    * human headline mechanically instead.
    */
   headline?: string;
+  /**
+   * Present only when the app started the run on its own clock, and then it is
+   * the sentence naming the real trigger: "Prepared itself, an hour before your
+   * 14:00." A card the PO asked for never carries one, so a brief that prepared
+   * itself can never read as one they requested.
+   */
+  selfStarted?: string;
+  /**
+   * Outbound cards only: one composed sentence pair saying what approving DOES
+   * and who it reaches ("Posts a comment on PAY-142. Anyone watching the ticket
+   * is notified."). Built from the payload and what the app already knows, never
+   * written by the agent — `rationale` is where its own words go. Absent on
+   * vault-only cards, where the diff is the effect.
+   */
+  effect?: string;
   rationale: string;
   evidence: EvidenceRefDTO[];
   inference: boolean;
@@ -450,25 +558,35 @@ export interface ProposalDTO {
   resolved: number | null;
 }
 
+/**
+ * Comes back on the resolve that empties a session whose cards were ALL
+ * discarded: nothing was kept, so nothing knows whether the meeting was read.
+ * The Inbox asks in one line; the meeting stays in "needs review" until then.
+ */
+export interface MeetingReviewAskDTO {
+  path: string;
+  title: string;
+}
+
 // ---------------------------------------------------------------------------
 // Agent / chat / sessions
 // ---------------------------------------------------------------------------
 
 export interface AgentRunInput {
-  sessionType: string;
   /** Existing pi session id to resume, or omit to start fresh. */
   sessionId?: string;
   /** The user's message (plain text for now). */
   prompt: string;
   /**
-   * Bring this skill into the session before the turn runs (Sessions v2). The
-   * PM picked it — from the composer's picker or an entry-point button. Carried
-   * beside the prompt rather than inside it so the chat still shows what they
-   * actually typed.
+   * Bring this skill into the session before the turn runs (Sessions v2). It is
+   * an instruction, not a mode: the session is the same session either way, and
+   * a second skill can arrive after this one. Absent means a plain chat.
+   * Carried beside the prompt rather than inside it so the chat still shows
+   * what the PM actually typed.
    */
-  invokeSkill?: string;
+  skill?: string;
   /** Tier the arrival gets, when a triggered binding named one for this material. */
-  invokeTier?: 'observe' | 'suggest' | 'outbound';
+  tier?: 'observe' | 'suggest' | 'outbound';
 }
 
 export interface AgentRunHandle {
@@ -486,7 +604,6 @@ export type SessionLifecycle = 'active' | 'done' | 'dismissed';
 /** A stored conversation (pi JSONL) — what the chat history list shows. */
 export interface ChatRefDTO {
   id: string;
-  sessionType: string;
   title: string;
   created: number;
   updated: number;
@@ -542,10 +659,48 @@ export interface SpawnRequestDTO {
   defaultModelId: string;
 }
 
+/** One choice on a question card. The description carries the trade-off. */
+export interface AskOptionDTO {
+  label: string;
+  description?: string;
+}
+
+/** One question on the card. */
+export interface AskQuestionDTO {
+  /** Short chip label ("Scope"), never a sentence. */
+  header: string;
+  question: string;
+  options: AskOptionDTO[];
+  /** Options aren't mutually exclusive — checkboxes rather than radios. */
+  multiSelect: boolean;
+}
+
+/**
+ * A session asking the PM something mid-turn (the ask_user tool). Rendered
+ * inline in the chat, like the other cards: the run is parked on it, so it is
+ * the only thing that can move the conversation forward.
+ */
+export interface AskRequestDTO {
+  id: string;
+  sessionId: string;
+  questions: AskQuestionDTO[];
+}
+
+/**
+ * What the PM chose for one question, in the order asked. Ticks and free text
+ * are independent: on a multi-select question "these two, plus this other
+ * thing" is one answer. Both empty means the question was skipped.
+ */
+export interface AskAnswerDTO {
+  /** Chosen option labels — several only when the question was multi-select. */
+  selected: string[];
+  /** Free text the PM wrote, if any. Stands alone, or joins the ticks. */
+  written?: string;
+}
+
 /** A session with a turn currently in flight (the sidebar rail's live rows). */
 export interface LiveSessionDTO {
   sessionId: string;
-  sessionType: string;
   title: string;
   /** The in-flight stream — lets any tab abort the run, not just the one that started it. */
   streamId: string;
@@ -572,11 +727,11 @@ export interface PingLinkChoiceItemDTO {
 
 /**
  * Why a note has no links — the cause decides which answers the row may offer.
- * `external` mirrors an upstream record (never locally deletable), `capture` is
- * a raw dump the memory hasn't absorbed (the answer is Process), `stray` is the
- * workspace-owned hygiene case (the only one where Delete belongs).
+ * `capture` is a raw dump the memory hasn't absorbed (the answer is Process),
+ * `stray` is the workspace-owned hygiene case (the only one where Delete
+ * belongs). Mirrors of upstream records are never reported as unlinked.
  */
-export type OrphanKindDTO = 'external' | 'capture' | 'stray';
+export type OrphanKindDTO = 'capture' | 'stray';
 
 /** One unlinked note, with plain-text mentions found elsewhere as link-here options. */
 export interface PingOrphanItemDTO {
@@ -584,9 +739,7 @@ export interface PingOrphanItemDTO {
   path: string;
   title: string;
   kind: OrphanKindDTO;
-  /** Upstream state for a mirror ("In Progress") — display only. */
-  detail?: string | null;
-  /** `term` is the text that matched — a ticket's key rather than its title. */
+  /** `term` rides along on older pings, which could match an alias. */
   mentions: { host: string; hostTitle: string; line: string; term?: string }[];
   /** Existing pages this note names in prose but never links. */
   names?: { slug: string; title: string }[];
@@ -613,8 +766,8 @@ export interface AgentPingDTO {
   /** One-paragraph pitch: what was noticed and why it matters. */
   body: string;
   evidence: EvidenceRefDTO[];
-  /** Session type to open when the PO takes the conversation. */
-  sessionType: string;
+  /** Skill to invoke when the PO takes the conversation. */
+  skill: string;
   /** First message of the seeded session — the ping's full context. */
   seedPrompt: string;
   targetPath: string | null;
@@ -625,7 +778,8 @@ export interface AgentPingDTO {
 }
 
 export interface ScheduleDTO {
-  sessionType: string;
+  /** The skill this schedule runs. */
+  skill: string;
   dayOfWeek: number;
   hour: number;
   enabled: boolean;
@@ -651,28 +805,139 @@ export interface SettingsDTO {
   identity: { name: string | null; emails: string[]; aliases: string[] };
 }
 
-/** One binding, plus the plain-language sentence the Skills view renders. */
-export interface SkillBindingDTO {
-  mode: 'forced' | 'triggered' | 'dynamic';
-  event?: string;
-  sentence: string;
-}
-
 /**
- * A skill file as the Skills view sees it (Skills v2): its kind, how it attaches
- * (bindings as readable sentences), and any frontmatter errors to pin. Clicking a
+ * A skill file as the Skills view sees it: one `use` axis, one plain-language
+ * sentence for how it applies, and any frontmatter errors to pin. Clicking a
  * row opens `path` — the file is the editor.
  */
 export interface SkillDTO {
   path: string;
   slug: string;
+  /** Invocation name — the bare filename the runtime resolves. Never displayed. */
   name: string;
-  kind: 'session' | 'voice' | 'filing' | 'guide' | 'reaction';
+  /** Display title ("Prep a meeting"), from frontmatter `title` or the filename. */
+  title: string;
   summary: string;
-  tier?: 'observe' | 'suggest' | 'outbound';
-  bindings: SkillBindingDTO[];
+  /** What puts it in force — the same shape an agent's row shows. */
+  starts: StartDTO[];
+  /** What it may do beyond reading and proposing cards. */
+  can: CapabilityDTO[];
+  /** The off switch's position, from the file's frontmatter. */
+  enabled: boolean;
+  /** Plain-language sentence: how this skill applies. */
+  sentence: string;
   errors: string[];
   mtime: number;
+  /**
+   * Vault paths of the material beside the skill's `SKILL.md`. Shown on its
+   * page as a list, never loaded with it: the agent reads one when the
+   * instructions name its path, which is what lets a skill carry a long
+   * checklist without every session paying for it.
+   */
+  files: string[];
+  /** Epoch ms it was last in force in a session; null if it never has been. */
+  lastUsedMs: number | null;
+}
+
+/** A workspace happening an agent watches for. The renderer holds the phrase. */
+export type StartEvent = 'decision-superseded';
+
+/**
+ * What puts a runnable in force, as data rather than a sentence. A hand-written
+ * "Every 5 minutes" drifts the moment the timer changes and can't be shown as
+ * anything but prose; a start carries the same number the clock runs on, so
+ * main states the mechanism and the renderer chooses the words.
+ *
+ * The first four a file declares for itself (`starts:` in its frontmatter); the
+ * last three are the app's clockwork, merged in by main because only code knows
+ * when a sweep fires.
+ */
+export type StartDTO =
+  /** The PM picks it from the composer. */
+  | { kind: 'you-run-it' }
+  /** The agent pulls it in mid-session; it governs from there on. */
+  | { kind: 'model-picks-it-up' }
+  /** In force in every session, optionally scoped to an audience. */
+  | { kind: 'always'; audience?: string }
+  /** Never in force: material the agent reads when it becomes relevant. */
+  | { kind: 'read-when-relevant' }
+  /** The maintenance tick. `everyMs` IS the interval the timer is set to. */
+  | { kind: 'interval'; everyMs: number }
+  /** Fires within `leadMs` of a calendar-synced meeting's start. */
+  | { kind: 'before-meeting'; leadMs: number }
+  /** Fires when something lands in the workspace. */
+  | { kind: 'event'; event: StartEvent };
+
+/** What a runnable may do beyond reading the memory and proposing cards. */
+export type CapabilityDTO = 'draft-outbound' | 'keep-working-files';
+
+/**
+ * An agent as the Agents view sees it. Every agent IS a file (`agents/<name>/AGENT.md`):
+ * the row's title opens `path`, which is the editor — identity, instructions
+ * and the off switch all live there. The row itself stays to one summary line
+ * plus its triggers and a short activity line (last run, pending cards);
+ * anything longer belongs in the file, not the list.
+ */
+export interface AgentDTO {
+  /** The invocation name — the filename, what sessions and toggles key on. */
+  id: string;
+  title: string;
+  /** The file's one-line `summary`, in the PM's words. */
+  summary: string;
+  /** The agent file the row opens — the editor for everything about it. */
+  path: string;
+  /** The off switch's position — what the PM set, not whether it can run. */
+  enabled: boolean;
+  /**
+   * `blocked` is switched on but unable to run (no API key, or frontmatter
+   * errors). It exists so an agent that has quietly stopped says so instead of
+   * reading as "on".
+   */
+  status: 'on' | 'off' | 'blocked';
+  /** Why it can't run, one plain sentence. Only set when `status` is 'blocked'. */
+  blockedReason?: string;
+  /**
+   * Epoch ms of the last run that actually DID something — fired a session.
+   * Null before the first. Kept apart from `lastCheckedMs` so a sweep that
+   * looked and found nothing can't be reported as work. Survives a restart: the
+   * app-run's own ledger answers first, and the durable last-used stamp behind
+   * it fills in what this run has not seen yet.
+   */
+  lastRunMs: number | null;
+  /**
+   * Epoch ms its clock last came round and found nothing to do. Null for agents
+   * whose every tick is work (the librarian sweeps whenever it runs).
+   */
+  lastCheckedMs: number | null;
+  /**
+   * Epoch ms of the last scheduled run that ran and had nothing to report (QM
+   * ticket 2). That run leaves no receipt, no Sessions row and no badge, so this
+   * page is where it is recorded. Only says something about the LAST run while
+   * it is newer than `lastRunMs`; older than that, a later run did have
+   * something to say.
+   */
+  lastQuietMs: number | null;
+  /**
+   * Epoch ms of the last scheduled run that stopped because it needed a decision
+   * and nobody was there to make it (QM ticket 9). Read like `lastQuietMs`: it
+   * describes the LAST run only while it is the newest of the three stamps.
+   */
+  lastStoppedMs: number | null;
+  /**
+   * What starts it: what the file declares, plus the app's clocks when one is
+   * wired to this name. An agent with only file-declared starts is one the app
+   * never begins on its own — the honest answer for any file the PM adds, since
+   * the clocks are still code.
+   */
+  starts: StartDTO[];
+  /** What it may do beyond reading and proposing cards. */
+  can: CapabilityDTO[];
+  /** Frontmatter problems, verbatim — the first one is the blocked reason. */
+  errors: string[];
+  /** Pending Inbox cards this agent produced — the row's sign of life. */
+  pendingCards: number;
+  /** Material beside its `AGENT.md`, same contract as a skill's. */
+  files: string[];
 }
 
 export interface ModelInfoDTO {

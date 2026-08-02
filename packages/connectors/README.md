@@ -1,7 +1,6 @@
 # @pm/connectors
 
-Provider adapters behind a generic `Connector` interface (integration plan
-§Work areas B, `docs/jira-confluence-integration.md`). The domain and UI speak
+Provider adapters behind a generic `Connector` interface. The domain and UI speak
 only the generic vocabulary — `ticket`, `wikipage`, `container`,
 `state_category` — and everything provider-shaped (auth, incremental pull,
 state mapping, markdown conversion, outbound execution) lives here. A future

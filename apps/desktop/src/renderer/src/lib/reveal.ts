@@ -17,8 +17,13 @@ import type { NoteType, VaultTreeDTO } from '@pm/ipc';
  *  between-meetings loop starts with a meeting and a scratch note. */
 export const CORE_TYPES: readonly NoteType[] = ['meeting', 'note'];
 
-/** Types with first-class homes (Skills footer, Todos view) — never shelved. */
-export const HOMED_TYPES: readonly NoteType[] = ['skill', 'todo'];
+/**
+ * Types with first-class homes (Skills footer, Todos view, the Sessions rail),
+ * never shelved. A session receipt in particular is a record the user never
+ * authors: it stays linkable and searchable, but it is not a kind of note the
+ * memory asks them to keep track of.
+ */
+export const HOMED_TYPES: readonly NoteType[] = ['skill', 'agent', 'todo', 'session'];
 
 const REVEALED_KEY = 'pm.revealed.v1';
 const REVEAL_SEEN_KEY = 'pm.revealSeen.v1';

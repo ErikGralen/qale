@@ -27,23 +27,26 @@ export function SessionFileView({ sessionId, path }: { sessionId: string; path: 
   return (
     <div className="flex h-full flex-col">
       {/* Same location bar as a note wears — the session it belongs to, then
-          the file. The crumb is the way back to the session that wrote it. */}
+          the file. The crumb is the way back to the session that wrote it, and
+          a nested file gets its folder as a second crumb rather than a path
+          glued onto the name. */}
       <PageHeader
         icon={Icon}
-        crumbs={
-          session
+        crumbs={[
+          ...(session
             ? [
                 {
                   label: session.title,
-                  onClick: (e) => openChat({ id: session.id, title: session.title }, navFromEvent(e)),
+                  onClick: (e: React.MouseEvent<HTMLButtonElement>) =>
+                    openChat({ id: session.id, title: session.title }, navFromEvent(e)),
                   title: `Open ${session.title}`,
                 },
               ]
-            : undefined
-        }
-        label={dir ? `${dir}/${name}` : name}
-        labelClassName="font-mono"
-        labelTitle={path}
+            : []),
+          ...(dir ? [{ label: dir }] : []),
+        ]}
+        label={name}
+        labelTitle={name}
       />
       <div className="flex shrink-0 items-center gap-3 border-b border-border bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground">
         <span className="truncate">Session file · not part of your memory · read-only, and safe to delete</span>

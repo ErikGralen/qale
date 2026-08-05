@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { kebabLinkType, linkTypeLabel, linkTypeOptions, normalizeLinkType, type LinkTypeOption, type NoteType } from '@pm/domain';
+import { kebabLinkType, linkTypeLabel, linkTypeOptions, normalizeLinkType, type LinkTypeOption, type NoteType } from '@qale/domain';
 import { Check, Minus } from 'lucide-react';
 
 /**

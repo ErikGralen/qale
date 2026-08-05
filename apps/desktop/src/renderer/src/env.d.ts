@@ -1,9 +1,9 @@
 /// <reference types="vite/client" />
-import type { PmBridge } from '@pm/ipc';
+import type { QaleBridge } from '@qale/ipc';
 
 declare global {
   interface Window {
-    pm: PmBridge;
+    qale: QaleBridge;
   }
 }
 

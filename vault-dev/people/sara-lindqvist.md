@@ -12,8 +12,9 @@ customer: "[[customers/nordkap-payments]]"
 Champion and economic buyer at [[customers/nordkap-payments]]. Owns the renewal internally and
 fronts their security review.
 
-She wants dates. "Realistically end of July" got pushed straight back at the QBR until it
-became a written date, and she'll do that every time. When she goes quiet, procurement usually
+She wants dates. At the QBR I said SSO would realistically be live before her review started.
+She pushed straight back with "I need a date", and kept pushing until she had one in writing.
+She'll do that every time. When she goes quiet, procurement usually
 turns up next. Her own team does the account provisioning by hand, so SCIM is personal for her
 ([[insights/nordkap-needs-scim]]).
 

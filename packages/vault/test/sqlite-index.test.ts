@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { makeNote, parseFrontmatter, type Note } from '@pm/domain';
+import { makeNote, parseFrontmatter, type Note } from '@qale/domain';
 import { SqliteIndex } from '../src/sqlite-index.js';
 
 async function openIndex(): Promise<SqliteIndex> {

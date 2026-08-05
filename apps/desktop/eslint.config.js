@@ -1,4 +1,4 @@
-import react from '@pm/eslint-config/react';
+import react from '@qale/eslint-config/react';
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [

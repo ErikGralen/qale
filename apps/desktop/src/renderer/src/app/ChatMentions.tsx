@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AtSign, Hash } from 'lucide-react';
-import type { VaultTreeDTO } from '@pm/ipc';
+import type { VaultTreeDTO } from '@qale/ipc';
 import { collectContexts, contentNotes } from '../lib/contexts';
 
 /**

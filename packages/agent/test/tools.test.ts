@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { AtlassianClient } from '@pm/atlassian';
-import type { UseCaseContext } from '@pm/application';
-import { createAtlassianTools, createVaultTools, wrapExternal } from '../src/tools.js';
+import type { AtlassianClient } from '@qale/atlassian';
+import type { UseCaseContext } from '@qale/application';
+import { createAtlassianTools, createDraftTools, createVaultTools, wrapExternal } from '../src/tools.js';
 
 /**
  * The origin envelope (QM ticket 1). Two things have to hold: external text is
@@ -134,4 +134,93 @@ test('vault_read wraps raw-layer notes and leaves the PM\'s own writing alone', 
   const authored = await out(vaultRead, { path: 'decisions/adopt-workos.md' });
   assert.equal(authored, '---\ntype: decision\n---\nwe adopted it');
   assert.equal(await out(vaultRead, { path: 'sources/missing.md' }), 'Not found: sources/missing.md');
+});
+
+/**
+ * The two halves of a redline. The card previews `body` and the push applies
+ * `patch`, so a patch card has to carry both the whole page as it will read and
+ * the localized edit. The passage also has to be real, checked while the agent
+ * is still around to go and look again.
+ */
+
+const PAGE = ['# Runbook', '', 'Access is granted by hand for every new customer.', '', 'Ask Åsa.'].join('\n');
+
+function draftCtx(filed: Record<string, unknown>[]): UseCaseContext {
+  const mirror = {
+    path: 'wikipages/runbook.md',
+    type: 'wikipage',
+    frontmatter: { external_id: '12345', remote_updated: '2026-08-01T10:00:00Z', version: 4 },
+  };
+  return {
+    vault: { readNote: async (p: string) => (p === mirror.path ? { body: PAGE, type: 'wikipage', frontmatter: {} } : null) },
+    index: {
+      resolve: (t: string) => (t === 'decisions/adopt-workos' ? 'decisions/adopt-workos.md' : null),
+      listByType: (t: string) => (t === 'wikipage' ? [mirror] : []),
+    },
+    proposals: {
+      create: (input: Record<string, unknown>) => {
+        filed.push(input);
+        return { id: `p${filed.length}` };
+      },
+      list: () => [],
+    },
+  } as unknown as UseCaseContext;
+}
+
+const confluenceTool = (ctx: UseCaseContext) =>
+  createDraftTools(ctx, 'session-1').find((t) => t.name === 'draft_confluence_update')!;
+
+test('a patch card carries the redlined page for the preview and the passage for the push', async () => {
+  const filed: Record<string, unknown>[] = [];
+  const said = await out(confluenceTool(draftCtx(filed)), {
+    pageId: '12345',
+    patch: { search: 'granted by hand', replace: 'granted through WorkOS' },
+    provenance: 'Source: Adopt WorkOS, 2026-08-01',
+    sources: ['decisions/adopt-workos'],
+    rationale: 'The page still describes the manual path.',
+  });
+  assert.match(said, /redline card/);
+  const payload = filed[0]!['payload'] as { body: string; patch: { search: string }; provenance?: string; version?: number };
+  assert.match(payload.body, /granted through WorkOS/);
+  assert.match(payload.body, /Ask Åsa/); // the whole page, not just the passage
+  assert.equal(payload.patch.search, 'granted by hand');
+  // A corrected sentence says nothing about where the correction came from, so
+  // the source line has to travel as its own field.
+  assert.equal(payload.provenance, 'Source: Adopt WorkOS, 2026-08-01');
+  assert.equal(payload.version, 4); // the drafted-against snapshot still rides along
+});
+
+test('a passage that is not on the page is refused where the agent can still fix it', async () => {
+  const filed: Record<string, unknown>[] = [];
+  const said = await out(confluenceTool(draftCtx(filed)), {
+    pageId: '12345',
+    patch: { search: 'access is granted by carrier pigeon', replace: 'granted through WorkOS' },
+    sources: ['decisions/adopt-workos'],
+    rationale: 'The page still describes the manual path.',
+  });
+  assert.match(said, /^Rejected:/);
+  assert.equal(filed.length, 0);
+});
+
+test('with no patch the body is appended, and with neither the card is refused', async () => {
+  const filed: Record<string, unknown>[] = [];
+  const tool = confluenceTool(draftCtx(filed));
+  const said = await out(tool, {
+    pageId: '12345',
+    body: '## SSO\n\nAccess comes from WorkOS.\n\nSource: the SSO decision, 2026-08-01',
+    sources: ['decisions/adopt-workos'],
+    rationale: 'The page never mentions SSO.',
+  });
+  assert.match(said, /update card/);
+  const payload = filed[0]!['payload'] as { body: string; patch?: unknown; provenance?: unknown };
+  assert.equal(payload.patch, undefined);
+  assert.match(payload.body, /Access comes from WorkOS/);
+  // The appended section carries its own source line, and the connector adds
+  // the field's line on top of whatever it pushes, so an unset field is what
+  // keeps the page from getting the same line twice.
+  assert.equal(payload.provenance, undefined);
+
+  const refused = await out(tool, { pageId: '12345', sources: ['decisions/adopt-workos'], rationale: 'x' });
+  assert.match(refused, /^Rejected:/);
+  assert.equal(filed.length, 1);
 });

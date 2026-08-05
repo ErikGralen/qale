@@ -10,30 +10,27 @@ import {
 } from 'react';
 import type {
   AgentDTO,
-  AgentPingDTO,
   BacklinkDTO,
   CaptureNoteInput,
+  CaptureNudgeStateDTO,
   CaptureTodoInputDTO,
   ChatRefDTO,
-  IngestCaptureInputDTO,
-  IngestCaptureResultDTO,
-  ArrivalAmbitionDTO,
+  ArrivalCheckDTO,
+  ArrivalHandoffDTO,
   ArrivalItemInputDTO,
-  ArrivalPlanDTO,
-  ArrivalResultDTO,
-  ArrivalUndoResultDTO,
   LiveSessionDTO,
   MeetingReviewAskDTO,
   NoteDTO,
   NoteQueryDTO,
   NoteRefDTO,
   NoteType,
+  OnboardingPatchDTO,
   PeopleDirectoryDTO,
   PersonCardDTO,
-  PingResolveActionDTO,
   ThemeHeatDTO,
   ProposalDTO,
   SearchHitDTO,
+  SettingsDTO,
   SessionFileDTO,
   SessionLifecycle,
   SpawnRequestDTO,
@@ -43,10 +40,10 @@ import type {
   TodoCommitment,
   VaultInfoDTO,
   VaultTreeDTO,
-} from '@pm/ipc';
-import { isFolderIndex } from '@pm/domain';
+  VIEW_KINDS,
+} from '@qale/ipc';
+import { isFolderIndex, titleFromSlug } from '@qale/domain';
 import { invoke, onEvent } from '../lib/ipc';
-import { outcomeOf } from '../lib/arrival-outcome';
 import { requestCapture } from '../lib/capture-event';
 import { meetingRailHorizon, qualifiesForRail } from '../lib/note-status';
 import { buildAttention, waitingOnYou, type AttentionItem } from '../lib/attention';
@@ -95,6 +92,14 @@ export type ViewBody = { title: string } & (
   /** The background watchers and their off switches — Skills' sibling. */
   | { kind: 'agents' }
 );
+
+/**
+ * The kinds telemetry is allowed to name (`VIEW_KINDS` in the allowlist).
+ * Writing it as the allowlist's own union rather than `ViewBody['kind']` is how
+ * a new view that nobody added to the allowlist fails to compile here, instead
+ * of being quietly dropped by the sender and never counted.
+ */
+type ViewKind = (typeof VIEW_KINDS)[number];
 
 /** A history entry. `key` is stable for the entry's lifetime — React remount
  *  keys and session binding hang off it. */
@@ -165,10 +170,22 @@ export interface SessionOverview {
   messageCount: number;
   /** User-set shelf state — done/dismissed sessions leave the active surfaces. */
   lifecycle: SessionLifecycle;
+  /** The model this session was moved to, or null when it follows Settings. */
+  modelId: string | null;
 }
 
 interface AppState {
   vault: VaultInfoDTO | null;
+  /**
+   * App settings, including first run (docs/onboarding.md). Null only for the
+   * first paint, before the read lands — the opening waits for it rather than
+   * flashing the shell at someone who has never seen the app.
+   */
+  settings: SettingsDTO | null;
+  /** Re-read settings after a mutation this window made. */
+  refreshSettings: () => Promise<void>;
+  /** Advance, skip, finish or dismiss the onboarding; consent lives here too. */
+  patchOnboarding: (patch: OnboardingPatchDTO) => Promise<void>;
   tree: VaultTreeDTO | null;
   /**
    * Everyone with a person page, plus who "me" is — the table participant chips
@@ -183,7 +200,10 @@ interface AppState {
   activeTabId: string | null;
   activeTab: Tab | null;
   docData: Record<string, DocData>;
-  openVaultDialog: () => Promise<void>;
+  /** The OS folder picker; resolves to the opened workspace, or null if cancelled. */
+  openVaultDialog: () => Promise<VaultInfoDTO | null>;
+  /** Create (or adopt) a folder at a known path and open it as the workspace. */
+  createVault: (path: string) => Promise<VaultInfoDTO>;
   /** Turn the open workspace into a git repo (consent-gated version history). */
   enableGit: () => Promise<void>;
   /**
@@ -226,7 +246,6 @@ interface AppState {
   themes: ThemeHeatDTO[];
   /** Merged session rows (stored + live + cards + seen) — rail, Inbox, history. */
   sessions: SessionOverview[];
-  pings: AgentPingDTO[];
   /** The parsed skill catalogue (Skills v2) — refreshed on skill-file changes. */
   skills: SkillDTO[];
   refreshSkills: () => Promise<void>;
@@ -244,12 +263,16 @@ interface AppState {
   /** `waitingOnYou(attention).length` — the single number every "N waiting"
    *  badge prints. Kept here so the filter is applied exactly once. */
   waitingCount: number;
+  /**
+   * Wave off the capture nudge for one meeting, for good. Returns the series it
+   * silenced, when this was the second dismissal from a recurring one — the
+   * caller offers the way back (docs/capture-nudge.md).
+   */
+  dismissCapture: (path: string) => Promise<string | undefined>;
+  /** Take that back: the meeting asks again, and its series is unmuted. */
+  undoCapture: (path: string, series?: string) => Promise<void>;
   markSessionSeen: (sessionId: string) => void;
   refreshSessions: () => Promise<void>;
-  openPing: (ping: AgentPingDTO) => Promise<void>;
-  dismissPing: (id: string) => Promise<void>;
-  /** One-tap apply/skip of a ping suggestion item — the tap is the approval. */
-  resolvePingItem: (pingId: string, itemId: string, action: PingResolveActionDTO) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   /** Mark a conversation done/dismissed, or reopen it (active). */
   setSessionLifecycle: (sessionId: string, lifecycle: SessionLifecycle) => Promise<void>;
@@ -313,22 +336,15 @@ interface AppState {
   /** Re-fetch a note (+ backlinks) into docData — e.g. to resync after a rejected save. */
   loadDoc: (path: string) => Promise<NoteDTO | null>;
   query: (q: NoteQueryDTO) => Promise<NoteRefDTO[]>;
-  /** Universal ingest: file the capture, then open the follow-up session or the note. */
-  ingestCapture: (input: IngestCaptureInputDTO) => Promise<IngestCaptureResultDTO>;
-  /** Native multi-select picker; returns items ready for `inspectArrival`. */
+  /** Native picker (files and folders); returns items ready for the tray. */
   pickMaterial: () => Promise<ArrivalItemInputDTO[]>;
-  /** What an arrival will do, computed by the code that will do it. */
-  inspectArrival: (
-    items: ArrivalItemInputDTO[],
-    ambition?: ArrivalAmbitionDTO,
-  ) => Promise<ArrivalPlanDTO>;
-  /** File a whole batch; the receipt it returns owns the undo. */
+  /** Which of these bytes we can read at all — the tray's only remaining guess. */
+  checkArrival: (items: ArrivalItemInputDTO[]) => Promise<ArrivalCheckDTO>;
+  /** Hand a batch to a session: the files land in its folder and it reads them. */
   ingestArrival: (
     items: ArrivalItemInputDTO[],
-    ambition?: ArrivalAmbitionDTO,
-  ) => Promise<ArrivalResultDTO>;
-  /** Take a whole arrival back — created files removed, modified ones restored. */
-  undoArrival: (id: string) => Promise<ArrivalUndoResultDTO>;
+    instruction?: string,
+  ) => Promise<ArrivalHandoffDTO>;
   previewProposal: (
     id: string,
   ) => Promise<{
@@ -359,6 +375,8 @@ interface AppState {
   /** Flip a todo open/done/dropped. */
   setTodoStatus: (path: string, commitment: TodoCommitment) => Promise<void>;
   saveNote: (path: string, body: string) => Promise<void>;
+  /** Put a note back to an earlier version, saved forward as the newest one. */
+  restoreVersion: (path: string, hash: string) => Promise<void>;
   saveFrontmatter: (path: string, frontmatter: Record<string, unknown>) => Promise<void>;
   /** Retitle a note; the file may move, so open tabs/favourites follow the new path. */
   renameNote: (path: string, title: string) => Promise<NoteDTO>;
@@ -372,26 +390,26 @@ const Ctx = createContext<AppState | null>(null);
 let tabSeq = 0;
 const nextId = (): string => `t${Date.now().toString(36)}_${tabSeq++}`;
 
-const TABS_KEY = 'pm.tabs.v3';
+const TABS_KEY = 'qale.tabs.v3';
 /** Pre-history format: one flat view per tab. Read once for migration. */
-const LEGACY_TABS_KEY = 'pm.tabs.v2';
-/** Favourites persist per workspace: `pm.favorites.v1:<vault path>` → string[]. */
-const FAVORITES_KEY = 'pm.favorites.v1';
-/** Unpinned-off-rail paths, per workspace: `pm.dismissed.v1:<vault path>` → string[]. */
-const DISMISSED_KEY = 'pm.dismissed.v1';
+const LEGACY_TABS_KEY = 'qale.tabs.v2';
+/** Favourites persist per workspace: `qale.favorites.v1:<vault path>` → string[]. */
+const FAVORITES_KEY = 'qale.favorites.v1';
+/** Unpinned-off-rail paths, per workspace: `qale.dismissed.v1:<vault path>` → string[]. */
+const DISMISSED_KEY = 'qale.dismissed.v1';
 /**
  * Auto-pinned paths the PO hasn't opened from the rail yet, per workspace:
- * `pm.autoPinNew.v1:<vault path>` → string[]. View-only state (never a vault
+ * `qale.autoPinNew.v1:<vault path>` → string[]. View-only state (never a vault
  * write), written the moment the auto-pinner adds a path and emptied one path
  * at a time as the PO clicks the rows.
  */
-const AUTO_PIN_NEW_KEY = 'pm.autoPinNew.v1';
+const AUTO_PIN_NEW_KEY = 'qale.autoPinNew.v1';
 /**
  * Per-workspace "last looked at this session" timestamps. `__init` grandfathers
  * pre-existing conversations so the feature's first launch doesn't mark the
  * whole history unread.
  */
-const SEEN_KEY = 'pm.sessionSeen.v1';
+const SEEN_KEY = 'qale.sessionSeen.v1';
 
 function loadSeen(vaultPath: string): Record<string, number> {
   const storageKey = `${SEEN_KEY}:${vaultPath}`;
@@ -540,6 +558,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [vault, setVault] = useState<VaultInfoDTO | null>(null);
   const [tree, setTree] = useState<VaultTreeDTO | null>(null);
   const [people, setPeople] = useState<PeopleDirectoryDTO | null>(null);
+  /**
+   * App settings, held here because three surfaces read them and one of them —
+   * the opening (docs/onboarding.md) — has to render before any workspace
+   * exists. Kept fresh by the `settings:changed` push, so a First step ticks
+   * itself off at the moment the thing happens.
+   */
+  const [settings, setSettings] = useState<SettingsDTO | null>(null);
   const initial = useRef(loadPersistedTabs());
   const [tabStates, setTabStates] = useState<TabState[]>(initial.current.tabs);
   const [activeTabId, setActiveTabId] = useState<string | null>(initial.current.activeTabId);
@@ -558,7 +583,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [autoPinNewPaths, setAutoPinNewPaths] = useState<string[]>([]);
   const [chats, setChats] = useState<ChatRefDTO[]>([]);
   const [live, setLive] = useState<Record<string, LiveSessionDTO>>({});
-  const [pings, setPings] = useState<AgentPingDTO[]>([]);
+  /** Capture nudges the PO has already waved off — null until it is read, so
+   *  the list never flashes a row that was dismissed weeks ago. */
+  const [captureNudge, setCaptureNudge] = useState<CaptureNudgeStateDTO | null>(null);
   const [skills, setSkills] = useState<SkillDTO[]>([]);
   const [agents, setAgents] = useState<AgentDTO[]>([]);
   const [seen, setSeen] = useState<Record<string, number>>({});
@@ -623,6 +650,28 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     },
     [refreshTree],
   );
+
+  const refreshCaptureNudge = useCallback(async () => {
+    try {
+      setCaptureNudge(await invoke['captureNudge:state']());
+    } catch {
+      // An unreadable ledger must not resurrect dismissed rows: no answer means
+      // no nudges, not "nothing was ever dismissed".
+      setCaptureNudge(null);
+    }
+  }, []);
+
+  /** Wave off one empty meeting. Two from the same series and the series goes
+   *  quiet — main says so, and Home offers the way back. */
+  const dismissCapture = useCallback(async (path: string) => {
+    const state = await invoke['captureNudge:dismiss'](path);
+    setCaptureNudge({ dismissed: state.dismissed, mutedSeries: state.mutedSeries });
+    return state.mutedNow;
+  }, []);
+
+  const undoCapture = useCallback(async (path: string, series?: string) => {
+    setCaptureNudge(await invoke['captureNudge:undo'](path, series));
+  }, []);
 
   const refreshSkills = useCallback(async () => {
     try {
@@ -764,7 +813,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const openDoc = useCallback(
     async (path: string, opts?: NavOpts) => {
-      const title = path.split('/').pop()?.replace(/\.md$/, '') ?? path;
+      // The tab is named before the note has loaded. A filename would read as
+      // storage for the split second it shows, so the placeholder is the name
+      // the file's own slug spells out; the real title lands right after.
+      const title = titleFromSlug(path);
       navigate({ kind: 'doc', path, title }, opts);
       const note = await loadDoc(path);
       // The real title/type arrive after the fetch — retitle every history
@@ -783,7 +835,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const openSession = useCallback(
     (skill?: string, opts?: { initialPrompt?: string; title?: string; fresh?: boolean } & NavOpts) => {
-      const title = opts?.title ?? (skill ? skill.replace(/-/g, ' ') : 'Session');
+      // No caller-supplied name means nobody has named this yet, and the skill's
+      // invocation name is an address, not a title. "Session" is what it is
+      // until the first turn renames it.
+      const title = opts?.title ?? 'Session';
       navigate(
         {
           kind: 'session',
@@ -1130,91 +1185,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const query = useCallback((q: NoteQueryDTO) => invoke['vault:query'](q), []);
 
   const pickMaterial = useCallback(() => invoke['arrival:pick'](), []);
-  const inspectArrival = useCallback(
-    (items: ArrivalItemInputDTO[], ambition?: ArrivalAmbitionDTO) =>
-      invoke['arrival:inspect'](items, ambition),
-    [],
-  );
+  const checkArrival = useCallback((items: ArrivalItemInputDTO[]) => invoke['arrival:check'](items), []);
 
   /**
-   * File a batch, then land the PO on its result where there is one to land on.
-   * `landsOnResult` owns that judgement, and the receipt reads the same rule to
-   * decide whether it has anything left to add (lib/arrival-outcome).
+   * Hand a batch over. Nothing is filed here and nothing opens: the files land
+   * in a session folder and an agent starts reading them, which it may finish
+   * without ever needing the PM (docs/arrival-agentic.md, rung 0). The handoff
+   * line says it is happening and offers the way in; the app only takes the
+   * screen when the session actually asks something.
    */
   const ingestArrival = useCallback(
-    async (items: ArrivalItemInputDTO[], ambition?: ArrivalAmbitionDTO) => {
-      const result = await invoke['arrival:ingest'](items, ambition);
-      await refreshTree();
-      const { sessions, filed } = outcomeOf(result);
-      if (sessions.length === 1) {
-        const only = sessions[0]!;
-        navigate(
-          { kind: 'session', sessionId: only.session!.id, title: only.session!.label },
-          { newTab: true, foreground: true },
-        );
-      } else if (sessions.length === 0 && filed.length === 1) {
-        const only = filed[0]!;
-        navigate({ kind: 'doc', path: only.path!, title: only.title ?? only.name });
-        await loadDoc(only.path!);
-      }
-      return result;
-    },
-    [refreshTree, navigate, loadDoc],
-  );
-
-  const undoArrival = useCallback(
-    async (id: string) => {
-      const result = await invoke['arrival:undo'](id);
-      // A tab still showing a note this just deleted would render an empty
-      // shell forever — undo has to take the views back too, exactly as
-      // deleting a note does.
-      if (result.removed.length > 0) {
-        const gone = new Set(result.removed);
-        setDocData((d) => Object.fromEntries(Object.entries(d).filter(([p]) => !gone.has(p))));
-        dropViews((v) => v.kind === 'doc' && gone.has(v.path));
-      }
+    async (items: ArrivalItemInputDTO[], instruction?: string) => {
+      const result = await invoke['arrival:ingest'](items, instruction);
       await refreshTree();
       return result;
     },
-    [refreshTree, dropViews],
-  );
-
-  const ingestCapture = useCallback(
-    async (input: IngestCaptureInputDTO) => {
-      const result = await invoke['capture:ingest'](input);
-      await refreshTree();
-      if (result.processing?.sessionId) {
-        // The capture fired a background session (After-Meeting / External
-        // transcript). Land the PO in it — watch it work and approve the cards
-        // it proposes inline; the same cards also collect in the Inbox.
-        navigate(
-          {
-            kind: 'session',
-            sessionId: result.processing.sessionId,
-            title: result.processing.label,
-          },
-          { newTab: true, foreground: true },
-        );
-      } else if (result.followUp) {
-        // The capture needs processing — After-Meeting or Intake picks it up
-        // in a fresh session tab; everything it produces is approval cards.
-        navigate(
-          {
-            kind: 'session',
-            skill: result.followUp.skill,
-            initialPrompt: result.followUp.prompt,
-            title: result.followUp.tabTitle,
-          },
-          { newTab: true, foreground: true },
-        );
-      } else {
-        // Nothing to process (plain note) — show what was filed.
-        navigate({ kind: 'doc', path: result.note.path, title: result.note.title });
-        await loadDoc(result.note.path);
-      }
-      return result;
-    },
-    [refreshTree, navigate, loadDoc],
+    [refreshTree],
   );
 
   const previewProposal = useCallback((id: string) => invoke['proposals:preview'](id), []);
@@ -1291,14 +1277,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     await invoke['sessions:resolveAsk'](request.id, answers).catch(() => undefined);
   }, []);
 
-  const refreshPings = useCallback(async () => {
-    try {
-      setPings(await invoke['pings:list']());
-    } catch {
-      setPings([]);
-    }
-  }, []);
-
   // Seen timestamps follow the open workspace (like favourites).
   useEffect(() => {
     setSeen(vault ? loadSeen(vault.path) : {});
@@ -1342,6 +1320,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         unread: !running && chat.updated > (seen[chat.id] ?? initAt),
         messageCount: chat.messageCount,
         lifecycle: chat.lifecycle,
+        modelId: chat.modelId,
       });
     }
     // A first turn in flight isn't in the chats list yet — surface it anyway.
@@ -1357,13 +1336,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         unread: false,
         messageCount: 0,
         lifecycle: 'active',
+        // The chats row hasn't landed yet; the composer's own pick covers the
+        // gap, and the next refresh brings the stored one.
+        modelId: null,
       });
     }
     return [...rows.values()].sort((a, b) => b.updated - a.updated);
   }, [chats, live, proposals, seen]);
 
-  // A session names its own tab: the placeholder the tab opened with ("Ask",
-  // "Session") gives way to the session's title — its first message — which arrives
+  // A session names its own tab: the placeholder the tab opened with
+  // ("Session") gives way to the session's title — its first message — which arrives
   // with the live row the moment that first turn starts.
   useEffect(() => {
     const titles = new Map(sessions.map((s) => [s.id, s.title]));
@@ -1381,8 +1363,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // now that every surface reads the same list.
   const now = useMinuteClock();
   const attention = useMemo(
-    () => buildAttention({ proposals, sessions, askRequests, pings, tree }, now),
-    [proposals, sessions, askRequests, pings, tree, now],
+    () => buildAttention({ proposals, sessions, askRequests, tree, captureNudge }, now),
+    [proposals, sessions, askRequests, tree, captureNudge, now],
   );
   const waitingCount = useMemo(() => waitingOnYou(attention).length, [attention]);
 
@@ -1412,43 +1394,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return result;
     },
     [refreshTree],
-  );
-
-  // Taking the conversation: mark the ping opened, seed a fresh session with it.
-  const openPing = useCallback(
-    async (ping: AgentPingDTO) => {
-      try {
-        await invoke['pings:open'](ping.id);
-      } finally {
-        await refreshPings();
-      }
-      openSession(ping.skill, {
-        initialPrompt: ping.seedPrompt,
-        title: ping.title,
-        fresh: true,
-      });
-    },
-    [refreshPings, openSession],
-  );
-
-  const dismissPing = useCallback(
-    async (id: string) => {
-      await invoke['pings:dismiss'](id);
-      await refreshPings();
-    },
-    [refreshPings],
-  );
-
-  // A fix writes the workspace; the watcher refreshes trees/docs, we refresh pings.
-  const resolvePingItem = useCallback(
-    async (pingId: string, itemId: string, action: PingResolveActionDTO) => {
-      try {
-        await invoke['pings:resolveItem'](pingId, itemId, action);
-      } finally {
-        await refreshPings();
-      }
-    },
-    [refreshPings],
   );
 
   const deleteSession = useCallback(
@@ -1488,7 +1433,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           refreshProposals(),
           refreshThemes(),
           refreshSessions(),
-          refreshPings(),
+          refreshCaptureNudge(),
           refreshSkills(),
           refreshAgents(),
         ]);
@@ -1498,7 +1443,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       refreshProposals,
       refreshThemes,
       refreshSessions,
-      refreshPings,
+      refreshCaptureNudge,
       refreshSkills,
       refreshAgents,
       dropViews,
@@ -1508,7 +1453,35 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const openVaultDialog = useCallback(async () => {
     const info = await invoke['vault:pick']();
     if (info) await bootVault(info);
+    return info;
   }, [bootVault]);
+
+  /**
+   * Make a folder into the workspace, without the OS picker. The opening's
+   * "Create" path (ONB-4) — an existing folder is adopted as it stands, which
+   * is also how an Obsidian vault arrives.
+   */
+  const createVault = useCallback(
+    async (path: string) => {
+      const info = await invoke['vault:create'](path);
+      await bootVault(info);
+      return info;
+    },
+    [bootVault],
+  );
+
+  const refreshSettings = useCallback(async () => {
+    try {
+      setSettings(await invoke['settings:get']());
+    } catch {
+      // Leave the last good copy standing: a failed read is not "no settings",
+      // and blanking it would drop the opening on top of a working app.
+    }
+  }, []);
+
+  const patchOnboarding = useCallback(async (patch: OnboardingPatchDTO) => {
+    setSettings(await invoke['settings:setOnboarding'](patch));
+  }, []);
 
   const enableGit = useCallback(async () => {
     setVault(await invoke['vault:initGit']());
@@ -1546,6 +1519,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // loadDoc — a reload would push a new body into the live editor and
       // clobber the cursor mid-autosave.
       const note = await invoke['note:save']({ path, body });
+      setDocData((d) => ({ ...d, [path]: { note, backlinks: d[path]?.backlinks ?? [] } }));
+      await refreshTree();
+    },
+    [refreshTree],
+  );
+
+  const restoreVersion = useCallback(
+    async (path: string, hash: string) => {
+      // Same shape as saveNote: push the returned note straight into docData so
+      // the open editor shows the restored text without a reload race.
+      const note = await invoke['note:restoreVersion']({ path, hash });
       setDocData((d) => ({ ...d, [path]: { note, backlinks: d[path]?.backlinks ?? [] } }));
       await refreshTree();
     },
@@ -1616,6 +1600,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (!q.trim()) return [];
     return invoke['search:query'](q, 20);
   }, []);
+
+  // Settings are read before anything else: the opening is gated on them, and
+  // a shell that paints first and gets taken over a beat later is a flash.
+  useEffect(() => {
+    void refreshSettings();
+  }, [refreshSettings]);
 
   // Initial load: any workspace opened on startup by main.
   useEffect(() => {
@@ -1702,11 +1692,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           else delete next[event.sessionId];
           return next;
         });
-      } else if (event.channel === 'pings:changed') {
-        void refreshPings();
       } else if (event.channel === 'session:focus') {
         // OS notification click — land the PO in that conversation.
         openChat({ id: event.sessionId, title: event.title });
+      } else if (event.channel === 'settings:changed') {
+        // Carries the whole record, so a First step checking itself off is one
+        // render, not a render plus a round trip through a stale copy.
+        setSettings(event.settings);
       }
     });
   }, [
@@ -1715,7 +1707,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     refreshProposals,
     refreshSessions,
     refreshSessionFiles,
-    refreshPings,
     refreshSkills,
     refreshAgents,
     openChat,
@@ -1747,9 +1738,45 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       .catch(() => undefined);
   }, [activeSessionId, refreshSessionFiles]);
 
+  /**
+   * Which part of the app is open, and only that (docs/telemetry-posthog.md
+   * TEL-5). This is the one event the renderer has to send, because it is the
+   * one thing main cannot see.
+   *
+   * Keyed on the active view's own key, which is what actually changes when the
+   * front view changes: navigating pushes a new entry, back and forward move to
+   * another one, switching tabs brings a different tab's entry forward, and
+   * closing or reopening a tab does the same. A re-render that leaves the same
+   * view in front changes nothing here, and the ref keeps StrictMode's
+   * double-mount from counting one open twice. With no tabs at all the
+   * workbench falls back to Home (App.tsx), which is a real open too, so it
+   * gets a key of its own rather than being skipped.
+   *
+   * The kind is the whole payload. Never the path, the title, the tag or the
+   * session id — the promise on the consent screen is that we learn which parts
+   * of the app get opened, never what is in them.
+   */
+  const activeViewKey = activeTab?.key ?? 'no-tabs';
+  const activeViewKind: ViewKind = activeTab?.kind ?? 'home';
+  const lastViewSent = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastViewSent.current === activeViewKey) return;
+    lastViewSent.current = activeViewKey;
+    // Fire and forget, both ways it could fail: telemetry must never be able to
+    // break navigation, which is the thing it is watching.
+    try {
+      void invoke['telemetry:view'](activeViewKind).catch(() => undefined);
+    } catch {
+      /* no sink, no problem */
+    }
+  }, [activeViewKey, activeViewKind]);
+
   const value = useMemo<AppState>(
     () => ({
       vault,
+      settings,
+      refreshSettings,
+      patchOnboarding,
       tree,
       people,
       createPerson,
@@ -1758,6 +1785,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activeTab,
       docData,
       openVaultDialog,
+      createVault,
       enableGit,
       favorites,
       toggleFavorite,
@@ -1770,7 +1798,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       proposals,
       themes,
       sessions,
-      pings,
       skills,
       refreshSkills,
       agents,
@@ -1780,9 +1807,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       waitingCount,
       markSessionSeen,
       refreshSessions,
-      openPing,
-      dismissPing,
-      resolvePingItem,
       deleteSession,
       setSessionLifecycle,
       openDoc,
@@ -1820,20 +1844,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setActiveTab,
       loadDoc,
       query,
-      ingestCapture,
       pickMaterial,
-      inspectArrival,
+      checkArrival,
       ingestArrival,
-      undoArrival,
       previewProposal,
       refreshProposals,
       acceptProposal,
       rejectProposal,
       markMeetingReviewed,
+      dismissCapture,
+      undoCapture,
       captureNote,
       captureTodo,
       setTodoStatus,
       saveNote,
+      restoreVersion,
       saveFrontmatter,
       renameNote,
       deleteNote,
@@ -1841,6 +1866,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }),
     [
       vault,
+      settings,
+      refreshSettings,
+      patchOnboarding,
       tree,
       people,
       createPerson,
@@ -1849,6 +1877,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activeTab,
       docData,
       openVaultDialog,
+      createVault,
       enableGit,
       favorites,
       toggleFavorite,
@@ -1861,7 +1890,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       proposals,
       themes,
       sessions,
-      pings,
       skills,
       refreshSkills,
       agents,
@@ -1871,9 +1899,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       waitingCount,
       markSessionSeen,
       refreshSessions,
-      openPing,
-      dismissPing,
-      resolvePingItem,
       deleteSession,
       setSessionLifecycle,
       openDoc,
@@ -1910,20 +1935,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       moveTab,
       setActiveTab,
       query,
-      ingestCapture,
       pickMaterial,
-      inspectArrival,
+      checkArrival,
       ingestArrival,
-      undoArrival,
       previewProposal,
       refreshProposals,
       acceptProposal,
       rejectProposal,
       markMeetingReviewed,
+      dismissCapture,
+      undoCapture,
       captureNote,
       captureTodo,
       setTodoStatus,
       saveNote,
+      restoreVersion,
       saveFrontmatter,
       renameNote,
       deleteNote,

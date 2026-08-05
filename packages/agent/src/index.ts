@@ -9,8 +9,10 @@ export {
   type SpawnEntryInfo,
 } from './runtime.js';
 export { entriesToUiMessages, type UiMessage } from './history.js';
+export { decodeUnicodeEscapes, decodeArgs, withDecodedArgs } from './tool-args.js';
 export { PiUiBridge, type Chunk } from './bridge.js';
-export { SHARED_PREAMBLE, CHILD_PREAMBLE, SCHEDULED_PREAMBLE } from './prompts.js';
+export { SHARED_PREAMBLE, CHILD_PREAMBLE, SCHEDULED_PREAMBLE, UNATTENDED_PREAMBLE } from './prompts.js';
+export { createFilingTools, FILING_TOOL_NAMES } from './filing.js';
 export {
   createEndQuietlyTool,
   ranSilent,
@@ -24,7 +26,9 @@ export {
   createChildFileTools,
   listSessionFiles,
   readSessionFile,
+  readSessionBinary,
   writeSessionFile,
+  writeSessionBinary,
   sessionFilesRoot,
   sessionFilesRelRoot,
   SESSION_FILE_TOOL_NAMES,
@@ -49,6 +53,7 @@ export {
   askRequestId,
   askReplayPrompt,
   AskParking,
+  isOffered,
   ASK_TOOL_NAME,
   ASK_MAX_QUESTIONS,
   ASK_MAX_OPTIONS,
@@ -58,6 +63,7 @@ export {
   type AskPlan,
   type AskAnswer,
   type AskDecision,
+  type AskRequestDraft,
   type AskRequestInfo,
   type StoredAsk,
 } from './ask.js';

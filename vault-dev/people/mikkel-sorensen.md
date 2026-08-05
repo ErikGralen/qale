@@ -10,7 +10,7 @@ customer: "[[customers/kranelund-logistics]]"
 ---
 
 Owns the Kranelund account day to day on their side. Practical and direct. He brought us the
-exports problem as "Lise spends an hour every Monday screenshotting dashboards"
+exports problem as "Lise spends an hour, sometimes more, screenshotting dashboards"
 ([[meetings/2026-06-12-kranelund-checkin]]), which is still the clearest statement of it
 anyone has given us.
 

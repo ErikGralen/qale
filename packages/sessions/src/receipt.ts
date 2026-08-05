@@ -1,4 +1,4 @@
-import { fileSlug, type SessionFrontmatter } from '@pm/domain';
+import { fileSlug, type SessionFrontmatter } from '@qale/domain';
 import type { SessionHarness } from './harness.js';
 
 /**
@@ -30,9 +30,13 @@ export function buildSessionReceipt(
   const reads = [...harness.reads];
   const writes = harness.writes.map((w) => `[[${w.path.replace(/\.md$/, '')}]]`);
 
+  const cards = harness.writes.length;
   const frontmatter: SessionFrontmatter = {
     type: 'session',
-    summary: `${name} session — ${harness.writes.length} card(s) proposed`,
+    // Titled, because a receipt without one is named after its file, and its
+    // file ends in a session id.
+    title: `${harness.primarySkillTitle} session`,
+    summary: `${cards === 0 ? 'No cards' : cards === 1 ? '1 card' : `${cards} cards`} proposed.`,
     skill: name,
     ...(harness.invoked.length > 0 ? { skills: harness.skillNames } : {}),
     session_id: harness.sessionId,
@@ -43,15 +47,17 @@ export function buildSessionReceipt(
     ...(sourceMeeting ? { source_meeting: sourceMeeting } : {}),
   };
 
-  const lines: string[] = [`# ${name} session`, ''];
-  lines.push(`Started ${harness.started} · ${harness.turns.length} turn(s)`);
+  const turns = harness.turns.length;
+  const lines: string[] = [`# ${harness.primarySkillTitle} session`, ''];
+  lines.push(`Started ${harness.started} · ${turns} ${turns === 1 ? 'turn' : 'turns'}`);
   // Which skills were in force, not just the one the session opened with — a
   // session that pulled in Synthesis halfway through says so (Sessions v2 Part 4).
-  if (harness.invoked.length > 0) lines.push(`Skills: ${harness.skillNames.join(' → ')}`);
+  if (harness.invoked.length > 0) lines.push(`Skills: ${harness.skillTitles.join(' → ')}`);
   if (files > 0) lines.push(`Session files: ${files} (working material, not kept in the memory)`);
   lines.push('', '## Turns');
   for (const [i, turn] of harness.turns.entries()) {
-    lines.push(`${i + 1}. ${truncate(turn.prompt, 200)}${turn.cardIds.length ? ` — ${turn.cardIds.length} card(s)` : ''}`);
+    const n = turn.cardIds.length;
+    lines.push(`${i + 1}. ${truncate(turn.prompt, 200)}${n ? ` (${n} ${n === 1 ? 'card' : 'cards'})` : ''}`);
   }
   lines.push('', '## Read', reads.length ? reads.map((r) => `- [[${r.replace(/\.md$/, '')}]]`).join('\n') : '_none_');
   lines.push('', '## Proposed (approval cards)');

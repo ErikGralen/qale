@@ -16,7 +16,7 @@ import { remarkWikiLink, collectWikiLinks, type WikiLinkData } from './wikilink.
 const FRONTMATTER_RE = /^﻿?---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
 export interface ParsedNote {
-  /** Raw, unvalidated frontmatter object (validate with @pm/domain). */
+  /** Raw, unvalidated frontmatter object (validate with @qale/domain). */
   frontmatter: Record<string, unknown>;
   /** Body markdown with frontmatter stripped. */
   body: string;

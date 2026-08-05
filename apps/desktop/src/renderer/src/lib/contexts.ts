@@ -1,10 +1,10 @@
-import type { NoteRefDTO, NoteType, VaultTreeDTO } from '@pm/ipc';
-import { isFolderIndex } from '@pm/domain';
+import type { NoteRefDTO, NoteType, VaultTreeDTO } from '@qale/ipc';
+import { isFolderIndex } from '@qale/domain';
 
 /**
  * Contexts — curated tags (projects, products, areas) that cut across note
  * types. The vocabulary is whatever tags exist in frontmatter; the librarian
- * keeps it small by suggesting from the existing set (see @pm/agent prompts).
+ * keeps it small by suggesting from the existing set (see @qale/agent prompts).
  */
 
 /** Chrome types never participate in context navigation. */

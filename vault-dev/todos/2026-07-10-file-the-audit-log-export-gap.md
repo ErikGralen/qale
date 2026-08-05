@@ -9,7 +9,7 @@ sources: ["[[meetings/2026-07-10-internal-auth-review]]"]
 tags: ["enterprise-auth"]
 ---
 
-> "I'll file it today, ENG-241, referencing the review notes."
+> "I'll file the export gap today and point it at these notes."
 > from [[meetings/2026-07-10-internal-auth-review]]
 
 Filed as ENG-241.

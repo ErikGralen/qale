@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Spinner } from '@pm/ui';
-import type { SessionLifecycle } from '@pm/ipc';
+import { Spinner } from '@qale/ui';
+import type { SessionLifecycle } from '@qale/ipc';
 import {
   Archive,
   Check,
@@ -19,7 +19,7 @@ import { HeaderAction, HeaderActions, PageHeader } from '../components/PageHeade
 /**
  * Every session, newest first — the browse surface behind the sidebar rail.
  * Status is part of the row: running sessions spin, sessions waiting on the PO
- * carry the terracotta dot and the reason, everything else rests with a check.
+ * carry the ink-blue dot and the reason, everything else rests with a check.
  */
 export function SessionsView() {
   const { sessions, openChat, openSession, openInbox, refreshSessions, deleteSession, setSessionLifecycle } = useApp();
@@ -77,8 +77,8 @@ export function SessionsView() {
           ) : rows.length === 0 ? (
             <p className="mt-16 text-center text-sm text-muted-foreground">
               {showArchived
-                ? 'Nothing archived — mark a session done (or dismiss it) to shelve it here.'
-                : 'No sessions yet — a session is saved here once it gets its first reply.'}
+                ? 'Nothing archived. Mark a session done (or dismiss it) to shelve it here.'
+                : 'No sessions yet. A session is saved here once it gets its first reply.'}
             </p>
           ) : (
             <ul className="flex flex-col gap-1">
@@ -207,7 +207,7 @@ function SessionRow({
                 <RowAction
                   Icon={Archive}
                   label={`Dismiss "${s.title}"`}
-                  title="Dismiss — won't be useful"
+                  title="Dismiss: won't be useful"
                   onClick={() => onSetLifecycle('dismissed')}
                 />
               </>

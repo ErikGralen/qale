@@ -9,7 +9,7 @@ import {
   MessageSquarePlus,
   SquareArrowOutUpRight,
 } from 'lucide-react';
-import type { ChatRefDTO, SessionFileDTO } from '@pm/ipc';
+import type { ChatRefDTO, SessionFileDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { relativeTime } from '../lib/dates';
@@ -45,7 +45,7 @@ export function RightPanel() {
     <div className="flex h-full flex-col bg-card/40">
       <PageHeader icon={MessageSquare} label="Session" />
       <div className="flex min-h-0 flex-1 flex-col">
-        <SideSession key={`side-${note.path}`} path={note.path} title={note.title} />
+        <SideSession key={`side-${note.path}`} path={note.path} />
       </div>
     </div>
   );
@@ -55,7 +55,7 @@ export function RightPanel() {
  * The note's session corner: resume any session that touched this note, or
  * start a fresh one scoped to it.
  */
-function SideSession({ path, title }: { path: string; title: string }) {
+function SideSession({ path }: { path: string }) {
   const [related, setRelated] = useState<ChatRefDTO[]>([]);
   // nonce forces a remount for "new session"; id undefined = fresh scoped session.
   const [selection, setSelection] = useState<{ id?: string; nonce: number }>({ nonce: 0 });
@@ -118,7 +118,9 @@ function SideSession({ path, title }: { path: string; title: string }) {
           scopeHint={
             selection.id
               ? undefined
-              : `I'm looking at ${path} — "${title}". Answer with citations from the workspace.`
+              : // The path is for the agent; the bubble the PM sees renders it as
+                // the note's name (Markdown links every note path it finds).
+                `I'm looking at ${path}. Answer with citations from the workspace.`
           }
         />
       </div>
@@ -235,7 +237,7 @@ function DirRowItem({ dir, ...props }: RowProps & { dir: Dir }) {
             e.preventDefault();
           }}
           aria-expanded={open}
-          title={dir.path}
+          title={dir.name}
         >
           <ChevronRight
             className={`size-3 shrink-0 text-muted-foreground/60 transition-transform duration-150 motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
@@ -288,7 +290,7 @@ function FileRowItem({ row, depth, onRead, onOpenTab, returnFocus }: RowProps & 
           if (e.button !== 1) return;
           onOpenTab(file.path, navFromEvent(e));
         }}
-        title={file.path}
+        title={name}
       >
         <Icon className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
         <span className="truncate">{name}</span>
@@ -378,8 +380,10 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
         <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-1.5">
           <ToolbarButton icon={ChevronLeft} label="Back to session files" keys={['esc']} onClick={closePreview} />
           <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-          {/* Same leaf as the page rail states — this bar only adds a way back. */}
-          <span className="truncate font-mono text-xs font-medium text-foreground/80" title={previewPath}>
+          {/* Same leaf as the page rail states; this bar only adds a way back.
+              The file's name, not its path: the tree behind this bar already
+              draws where it sits, so the path was chrome twice over. */}
+          <span className="truncate text-xs font-medium text-foreground/80" title={name}>
             {name}
           </span>
           <ToolbarButton
@@ -428,7 +432,7 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
       />
       {files.length === 0 ? (
         <p className="px-4 py-3.5 text-dense leading-relaxed text-muted-foreground">
-          Nothing yet. Working material this session writes — a brief, per-item notes, a draft —
+          Nothing yet. Working material this session writes (a brief, per-item notes, a draft)
           shows up here to read. It never enters your memory, and you can ignore it.
         </p>
       ) : (

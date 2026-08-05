@@ -1,13 +1,13 @@
-import { createProposal, type UseCaseContext } from '@pm/application';
+import { createProposal, type UseCaseContext } from '@qale/application';
 
 /**
  * Dev-only: seed a spread of approval cards so the whole Inbox / in-session
  * review is demoable without an API key. One arrival review (a new
  * insight, a decision that replaces an earlier one, a note on the meeting
  * summary, an exec update to send) plus a supersede sweep (one decision changed,
- * so a couple of notes still point at the old plan — the cause block) and an
- * agent ping. Every card carries an agent-style human `headline` so the redesign
- * renders exactly as it will in production. Gated behind PM_SEED_PROPOSAL.
+ * so a couple of notes still point at the old plan — the cause block). Every
+ * card carries an agent-style human `headline` so the redesign renders exactly
+ * as it will in production. Gated behind QALE_SEED_PROPOSAL.
  */
 export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
   try {
@@ -226,24 +226,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
         inference: false,
       });
     }
-
-    // A demo agent ping so the "Librarian noticed" inbox section is demoable too.
-    if (ctx.pings && ctx.pings.pendingCount() === 0) {
-      ctx.pings.create(
-        {
-          key: 'demo-ping',
-          title: 'Status page still says v2.2 — two meetings mention v2.3',
-          body: 'Two meetings mention v2.3 shipping, but the status page still describes v2.2. Want to reconcile them together?',
-          evidence: ev,
-          skill: 'librarian',
-          seedPrompt:
-            'The status page and recent meetings disagree: the meetings mention a newer ship (v2.3) than the status page describes (v2.2). Read the status page and the recent meetings, then propose updates for what changed.',
-          targetPath: null,
-        },
-        Date.now(),
-      );
-    }
   } catch (err) {
-    console.error('[pm] seedDemoProposal failed:', err instanceof Error ? err.message : err);
+    console.error('[qale] seedDemoProposal failed:', err instanceof Error ? err.message : err);
   }
 }

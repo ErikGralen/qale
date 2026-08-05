@@ -65,7 +65,7 @@ const DEFAULT_STARTS: Start[] = ['you-run-it', 'model-picks-it-up'];
  *   enforced at ONE place so nothing downstream has to remember it:
  *
  *   - {@link Runnable.enabled}, the switch in the Skills and Agents views. It is
- *     enforced by `runnableEnabled` (@pm/application), asked by the single
+ *     enforced by `runnableEnabled` (@qale/application), asked by the single
  *     function that fires a session by name (main's `fireSession`) and again by
  *     each sweep that does judgment work before firing anything. Off means the
  *     file does not run, whatever its `can` list says.
@@ -77,9 +77,17 @@ export type Capability =
   /** Draft things that leave the workspace: Jira comments, pages, events. */
   | 'draft-outbound'
   /** Keep working files under `sessions/.files/<id>/`, and fan out into them. */
-  | 'keep-working-files';
+  | 'keep-working-files'
+  /**
+   * Put material that has already arrived where it belongs, and correct that
+   * later. The one write that is not a card, because it is not a claim: the PM
+   * handed the file over, so filing it is carrying out an instruction rather
+   * than proposing one, and a wrong shelf is fixed by moving it. Everything
+   * DERIVED from the material is still a card.
+   */
+  | 'file-material';
 
-const CAPABILITIES: Capability[] = ['draft-outbound', 'keep-working-files'];
+const CAPABILITIES: Capability[] = ['draft-outbound', 'keep-working-files', 'file-material'];
 
 export interface Runnable {
   /** The invocation name — its filename slug. Not in frontmatter: nothing to drift. */
@@ -119,9 +127,9 @@ export interface Runnable {
  * someone does, it keeps working.
  */
 const MOVED_KEYS: Record<string, string> = {
-  use: '`use` moved — write `starts: [you-run-it, model-picks-it-up]`, `[always]`, or `[read-when-relevant]`. Read as before until you do.',
-  outbound: '`outbound: true` moved — write `can: [draft-outbound]`. Read as before until you do.',
-  session_files: '`session_files: true` moved — write `can: [keep-working-files]`. Read as before until you do.',
+  use: '`use` moved: write `starts: [you-run-it, model-picks-it-up]`, `[always]`, or `[read-when-relevant]`. Read as before until you do.',
+  outbound: '`outbound: true` moved: write `can: [draft-outbound]`. Read as before until you do.',
+  session_files: '`session_files: true` moved: write `can: [keep-working-files]`. Read as before until you do.',
 };
 
 /**
@@ -131,15 +139,15 @@ const MOVED_KEYS: Record<string, string> = {
  * instead.
  */
 const RETIRED_KEYS: Record<string, string> = {
-  checkpoints: '`checkpoints` is gone — ask for the order you want in the instructions',
-  gate_output: '`gate_output` is gone — ask for the order you want in the instructions',
-  completion_bar: '`completion_bar` is gone — say the bar in the instructions',
-  stopping_conditions: '`stopping_conditions` is gone — say when to stop in the instructions',
-  red_flags: '`red_flags` is gone — say what to push back on in the instructions',
-  on: '`on` is not read — what starts an agent is the app’s clockwork, shown on its page',
-  skill_kind: '`skill_kind` is gone — a file declares `starts` and `can`',
-  bindings: '`bindings` is gone — a file declares `starts` and `can`',
-  tier: '`tier` is gone — a file declares `starts` and `can`',
+  checkpoints: '`checkpoints` is gone. Ask for the order you want in the instructions',
+  gate_output: '`gate_output` is gone. Ask for the order you want in the instructions',
+  completion_bar: '`completion_bar` is gone. Say the bar in the instructions',
+  stopping_conditions: '`stopping_conditions` is gone. Say when to stop in the instructions',
+  red_flags: '`red_flags` is gone. Say what to push back on in the instructions',
+  on: '`on` is not read. What starts an agent is the app’s clockwork, shown on its page',
+  skill_kind: '`skill_kind` is gone. A file declares `starts` and `can`',
+  bindings: '`bindings` is gone. A file declares `starts` and `can`',
+  tier: '`tier` is gone. A file declares `starts` and `can`',
 };
 
 const FRONTMATTER_RE = /^﻿?---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
@@ -181,7 +189,7 @@ function readList<T extends string>(
     if (allowed.includes(v as T)) {
       if (!out.includes(v as T)) out.push(v as T);
     } else {
-      errors.push(`unknown ${key} "${v}" — one of: ${allowed.join(', ')}`);
+      errors.push(`unknown ${key} "${v}". Use one of: ${allowed.join(', ')}`);
     }
   }
   return out;
@@ -221,7 +229,7 @@ export function parseRunnable(raw: string, name: string): Runnable {
 
   const audience = typeof fm['audience'] === 'string' ? fm['audience'].trim() : '';
   if (audience && !starts.includes('always'))
-    errors.push('`audience` scopes an always-on rule — this file does not declare `starts: [always]`');
+    errors.push('`audience` scopes an always-on rule, and this file does not declare `starts: [always]`');
 
   return {
     name,
@@ -277,7 +285,7 @@ export function describeStarts(r: Runnable): string {
   const doors: string[] = [];
   if (r.starts.includes('you-run-it')) doors.push('You run it from the composer');
   if (r.starts.includes('model-picks-it-up'))
-    doors.push('the agent picks it up when the conversation becomes this work');
+    doors.push('the agent picks it up when a session becomes this work');
   return `${doors.join(', or ')}.`;
 }
 

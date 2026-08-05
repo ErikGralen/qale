@@ -2,18 +2,19 @@ import {
   BookOpen,
   CalendarClock,
   FolderClosed,
+  FolderInput,
   Lock,
   RefreshCw,
   Send,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
-import type { CapabilityDTO, StartDTO, StartEvent } from '@pm/ipc';
-import { cn } from '@pm/ui';
+import type { CapabilityDTO, StartDTO, StartEvent } from '@qale/ipc';
+import { cn } from '@qale/ui';
 
 /**
  * The two configured facts every skill and agent shows: what starts it, and
- * what it may do. Both are data (see `@pm/sessions/runnable`) — the file's
+ * what it may do. Both are data (see `@qale/sessions/runnable`) — the file's
  * instructions never describe them, and these chips are the only place the app
  * puts them into words, so the wiring and the wording cannot drift apart.
  */
@@ -28,13 +29,19 @@ const CAN_META: Record<CapabilityDTO, { icon: LucideIcon; text: string; title: s
     icon: Send,
     text: 'Drafts outgoing updates',
     title:
-      'May draft things that leave the workspace — Jira comments, pages, messages. Nothing is sent without your approval.',
+      'May draft things that leave the workspace: Jira comments, pages, messages. Nothing is sent without your approval.',
   },
   'keep-working-files': {
     icon: FolderClosed,
     text: 'Keeps working files',
     title:
       'May keep scratch files for the length of a session. Working material, never part of the memory.',
+  },
+  'file-material': {
+    icon: FolderInput,
+    text: 'Files what you hand over',
+    title:
+      'May put material you dropped in where it belongs, and move it when that turns out to be wrong. Filing needs no approval; everything it goes on to write about the material is still a card.',
   },
 };
 
@@ -77,7 +84,7 @@ function startWords(s: ShownStart): { icon: LucideIcon; text: string } {
     case 'always':
       return {
         icon: Lock,
-        text: s.audience ? `Always — drafting for ${s.audience}` : 'Always in effect',
+        text: s.audience ? `Always: drafting for ${s.audience}` : 'Always in effect',
       };
     case 'read-when-relevant':
       return { icon: BookOpen, text: 'Read when relevant' };

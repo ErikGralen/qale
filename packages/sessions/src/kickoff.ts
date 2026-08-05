@@ -16,29 +16,38 @@
 export interface Kickoff {
   /** Skill NAME — the filename the runtime resolves (`before-meeting`), not its title. */
   skill: string;
-  /** The vault path the run is about, when it has one. */
-  target?: string;
+  /**
+   * The vault paths the run is about, when it has any. More than one where a
+   * batch of material was handed over to be read as one thing, so the chat can
+   * link every page the run was started on rather than the first of them.
+   */
+  targets?: string[];
   /** Everything the run should do; may be empty for a bare "run this skill". */
   instruction: string;
 }
 
-export function buildKickoff({ skill, target, instruction }: Kickoff): string {
-  const head = `Run the ${skill} skill${target ? ` on ${target}` : ''}`;
+export function buildKickoff({ skill, targets, instruction }: Kickoff): string {
+  const on = targets?.length ? ` on ${targets.join(', ')}` : '';
+  const head = `Run the ${skill} skill${on}`;
   return instruction.trim() ? `${head}: ${instruction.trim()}` : `${head}.`;
 }
 
 /**
  * Tolerant on the way in: `session` was the older word for the same thing, and
- * transcripts written before this contract existed still say it.
+ * transcripts written before this contract existed still say it. A single
+ * target still parses exactly as it always did, so every stored receipt and
+ * pending card written before a run could span several pages replays unchanged.
  */
-const KICKOFF = /^Run the ([\w.-]+) (?:skill|session)(?: on ([^\s:]+\.md))?\s*[:.]\s*([\s\S]*)$/;
+const KICKOFF =
+  /^Run the ([\w.-]+) (?:skill|session)(?: on ([^\s:,]+\.md(?:,\s*[^\s:,]+\.md)*))?\s*[:.]\s*([\s\S]*)$/;
 
 export function parseKickoff(text: string): Kickoff | null {
   const m = KICKOFF.exec(text.trim());
   if (!m) return null;
+  const targets = m[2]?.split(',').map((t) => t.trim()).filter(Boolean);
   return {
     skill: m[1]!,
-    ...(m[2] ? { target: m[2] } : {}),
+    ...(targets?.length ? { targets } : {}),
     instruction: (m[3] ?? '').trim(),
   };
 }

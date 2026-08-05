@@ -19,9 +19,10 @@ workspace is a dev script pointed at a gitignored folder.
 
 Two halves, deliberately different in character:
 
-1. **The opening.** A full-screen flow on first launch. Five short screens, one question each,
-   under two minutes total. It collects the things the app genuinely needs (who you are, where your
-   files live, the key, consent) and ends not on a form but on the first thing worth looking at.
+1. **The opening.** A full-screen flow on first launch. Seven short screens, one question each, a
+   couple of minutes total (less if you skip the connections). It collects the things the app
+   genuinely needs (who you are, where your files live, the key, what it may read, consent) and
+   ends not on a form but on the first thing worth looking at.
 2. **First steps.** A short list of real tasks on Home that teach the product by having it do its
    job: drop a transcript, decide on a proposal, prep for a meeting. Each checks itself off when the
    real thing happens, not when you click "next". This is also where skipped setup steps wait, so
@@ -33,12 +34,13 @@ Two halves, deliberately different in character:
   opening in about a minute.
 - **Every ask says why, in one line.** "Your name, so the memory knows which promises are yours."
   Nothing is collected without the reason sitting next to the field.
-- **Skippable means silent.** Anything the app can live without (the key, consent, calendar) has a
-  visible skip. Skipping is recorded and the item reappears once in First steps. It never nags, no
-  badge, no red dot.
+- **Skippable means silent.** Anything the app can live without (the key, the connections,
+  consent) has a visible skip. Skipping is recorded and the item reappears once in First steps. It
+  never nags, no badge, no red dot.
 - **Build toward a payoff.** The screens get shorter as you go, and the last one is not a form: it
-  is your example week loading, or your own transcript being read. The suspense is real, because
-  the thing being revealed is the actual product working.
+  is your own transcript being read, or your own week arriving from the calendar you just
+  connected. Nothing in the workspace is ever fake, so the suspense is real: the thing being
+  revealed is the product working on your material.
 - **Respect over confetti.** No "Awesome!", no fireworks, no mascot. A completed First step gets a
   quiet check and one line about what just happened. The reward is the product doing something
   real with your material.
@@ -59,27 +61,55 @@ meetings and which promises are yours. Feeds `identity.name` and the alias list 
 same fields the Settings "You" section already edits.
 
 **3. Your files.** Create a fresh workspace (we suggest a sensible default location and name) or
-open an existing folder, Obsidian vaults included. The synced-folder check runs here: pointing at
-iCloud or Dropbox gets one clear warning before proceeding (beta-launch ticket 14). This is the
-one step that cannot be skipped.
+open an existing folder. The synced-folder check runs here: pointing at iCloud or Dropbox gets one
+clear warning before proceeding (beta-launch ticket 14). This is the one step that cannot be
+skipped.
+
+The Obsidian line says "put this folder inside your vault", not "open your vault". Opening a vault
+as the workspace root was the earlier copy and it promised something we do not do: structure is
+folder-shaped here (`typeForDir` types a note by its folder, `ensureScaffold` writes our fourteen
+folders into whatever root is chosen, the librarian owns the root `index.md`), so a real vault gets
+our tree dropped on top of it, keeps none of its own folders in navigation, and loses its root
+`index.md` on the first librarian pass. A subfolder gives the honest half of the promise: their
+notes untouched, ours plain markdown they can still edit in Obsidian.
 
 **4. The key.** One field for the API key from the invite, with a "add it later" skip. On paste we
 verify it with one cheap call so a typo fails here, not twenty minutes later inside a session.
 BYOK per beta-launch ticket 3; we hand keys to beta users, so the copy says "paste the key from
 your invite" rather than sending anyone to the Anthropic console.
 
-**5. What leaves your machine.** The telemetry ask, in plain words, as a short literal list of the
+**5. What it may read.** The connections: Jira + Confluence, and Google Calendar. Both optional,
+both skippable, and the screen says why in one line: the memory is only as good as the material it
+can see, and this is where most of a PM's material already lives. Each provider is one row.
+Google is a browser sign-in; Atlassian is site URL, email and API token, verified on save (this is
+the existing Settings → Connections machinery, in a first-run frame).
+
+Connecting is not the finish line. Nothing is followed by default, so a connection with no
+projects, spaces or calendars picked does nothing at all. The moment a connection verifies, the
+row expands into its container list and asks the second question: which of these should it watch?
+Keep that list short and honest, preselect nothing, and let one tick be enough to move on. The
+same list lives in Settings afterwards, so a hasty choice here is cheap to change.
+
+The reading is one-way at this point. Nothing is written back to Jira, Confluence or the calendar
+without an approval, and the screen says so plainly, because "connect your Jira" reads as scary
+until you know that.
+
+**6. What leaves your machine.** The telemetry ask, in plain words, as a short literal list of the
 events we send and a statement of what we never send (no titles, no paths, no note content, no
 prompts). One switch, defaulted to on but genuinely a choice, and the same switch exists in
 Settings afterwards. (Schema and transport are beta-launch ticket 5; this screen is just the
 consent surface.)
 
-**6. First light.** Three doors, one screen: **Load an example week** (a populated workspace,
-dates slid to today, so every view has something in it), **Bring your own** (drop a transcript or
-connect a calendar, straight into the real capture flow), or **Start empty**. Choosing the example
-week is the suspense payoff: the vault loads, the notes index, and the app lands on a Home with a
-real week on it. Choosing "bring your own" hands off to capture with the receipt strip doing its
-job.
+**7. First light.** No example week, no sample vault, no fake meetings: the workspace starts empty
+and everything in it will be the user's own (ONB-7). So this screen has one job, which is to get
+one piece of real material in. **Drop something in** is the main door, a transcript, a set of
+notes, whatever they have from a meeting this week, straight into the real capture flow with the
+receipt strip doing its job. **Start empty** is the quiet way out, and if they connected a
+calendar on screen 5 it is not really empty, because their week is already there.
+
+That makes the payoff the user's own first meeting rather than a demo, which is slower but the
+only version that is actually convincing. It also means the moment after the drop has to be
+excellent, so ONB-9 stops being a nicety and becomes the thing this screen leans on.
 
 Then the shell appears, with the First steps card on Home.
 
@@ -96,13 +126,26 @@ detection wired to the real event, each row a button that takes you to the right
 | Prep for a meeting | sessions working for you | a meeting-prep session completes |
 | Ask your memory a question | chat over your own notes | a chat session with a user prompt completes |
 | Tell it about your product | skills are files you edit | the about-us skill is edited (beta-launch ticket 29) |
-| Connect your calendar | optional, marked as such | a Google account is connected |
+| Connect your calendar | (only if skipped in the opening) | a Google account is connected and one calendar is followed |
+| Connect Jira or Confluence | (only if skipped in the opening) | an Atlassian site is connected and one project or space is followed |
+
+The two connection rows are the main reason First steps exists as a second chance rather than a
+nag. Most people will skip them in the opening, because on day one they have no reason to trust
+the app with their work systems yet, and the honest answer to that is to ask again after the
+product has proven itself on a transcript, not before. So the rows sit there quietly, each one
+line, each opening Settings → Connections at the right provider. A row that was never skipped
+because it was done in the opening simply does not appear.
+
+Half-done counts as not done: a connection that verified but has nothing followed leaves the row
+unchecked, with the line reading "Connected, but nothing picked to watch yet". Otherwise someone
+ends up with a green tick and an app that reads nothing.
 
 Rules: checks are quiet, a completed row shows one line of what happened ("Read your transcript,
 two proposals in the Inbox"). The card is dismissible as a whole at any time and never comes back.
-When everything is done it retires itself after showing once in its finished state. If the user
-loaded the example week, "drop a transcript" offers a sample file to drag, so the step is doable
-without hunting for real material.
+When everything is done it retires itself after showing once in its finished state. Since the
+workspace starts empty, "drop a meeting transcript" is the row that unblocks most of the others,
+so it sits first and says what counts as a transcript. There is no sample file to fall back on by
+design: the first thing in the workspace should be the user's own.
 
 ---
 
@@ -123,26 +166,40 @@ install that already has a `vaultPath`, are grandfathered: flag set on migration
 the opening, but they do get the First steps card.
 
 **Decision:**
-
+yes
 **Notes:**
+Built. `onboarding` record in `settings.json` (`OnboardingRecord` in settings-service):
+`finishedAt`, `step`, `done`, `skipped`, `checklist`, `dismissed`, `telemetry`. One mutation
+channel, `settings:setOnboarding`. Grandfathering keys off whether the FILE carried a record, read
+before the defaults are merged in — merging first makes "absent" and "present" indistinguishable,
+which silently broke it the first time. New push event `settings:changed` carries the whole DTO,
+so a First step ticks the moment the thing happens.
 
 ---
 
 ## ONB-2. The opening frame
 
-**Today:** nothing to build on beyond the `@pm/ui` Dialog pattern, which is wrong for this; the
+**Today:** nothing to build on beyond the `@qale/ui` Dialog pattern, which is wrong for this; the
 opening is a takeover, not a dialog.
 
-**Proposal:** one component owning the six screens: full-viewport layer inside the Shell root,
+**Proposal:** one component owning the seven screens: full-viewport layer inside the Shell root,
 step transitions (slide or crossfade, fast, no bounce), Enter advances, Escape never exits (only
-explicit skips do), progress shown as a quiet "2 of 6". Serif display type for screen titles, the
+explicit skips do), progress shown as a quiet "2 of 7". Serif display type for screen titles, the
 existing warm-clay palette, light and dark both. This is the ticket where the "top notch" bar
 lives: it should be run through the Impeccable pass once functional. Build the frame with
-placeholder screens first so ONB-3 through ONB-6 slot in independently.
+placeholder screens first so ONB-3 through ONB-6 and ONB-11 slot in independently. One wrinkle for
+the frame: the connections screen (ONB-11) is the one step that can hand off to the browser and
+come back, so the frame has to survive losing and regaining focus mid-step.
 
 **Decision:**
-
+yes
 **Notes:**
+Built. `onboarding/Opening.tsx`: full-viewport layer inside the Shell root, gated on
+`settings && !finishedAt` so no shell flashes first. Enter is one listener that clicks the
+screen's `[data-opening-primary]`, which means each screen's disabled rules are obeyed for free;
+Escape is swallowed. Shared `Screen` shell (serif title, one-line why, footer) and `SkipLink`.
+Resume lands on the stored step, falling back to the first unanswered one. Impeccable pass not
+run yet.
 
 ---
 
@@ -157,8 +214,11 @@ under the fields. Both optional to fill but the screen itself is not skippable, 
 is a deliberate "rather not say", not an accident.
 
 **Decision:**
-
+yes
 **Notes:**
+Built. Two fields into the existing identity setter (email goes in as an alias). Not
+skippable, both fields optional. A failed settings write still advances: nobody gets stranded on
+screen two of seven.
 
 ---
 
@@ -176,8 +236,17 @@ anyway; the check lives in the main process so Settings can reuse it later. This
 beta-launch ticket 14.
 
 **Decision:**
-
+yes
 **Notes:**
+Built. `vault:suggestPath` / `vault:checkPath` / `vault:create`. The sync check runs
+BEFORE the folder is created, and resolves the deepest existing ancestor with realpath first —
+with "Desktop & Documents in iCloud" on, `~/Documents` IS a symlink into the iCloud container and
+the literal path says nothing. Warning is overrulable ("Use it anyway"). Closes beta-launch 14.
+
+2026-08-04: the "welcomes existing Obsidian vaults" copy is withdrawn. It invited a root we handle
+badly (see the screen-3 note above). The line now points Obsidian users at a folder inside their
+vault instead. The Open button is unchanged: anyone who knows what they are doing can still pick
+any folder.
 
 ---
 
@@ -193,8 +262,11 @@ success or "that key did not work" inline. Skip is a text link, not a button, an
 can be reused by Settings.
 
 **Decision:**
-
+yes
 **Notes:**
+Built. `settings:verifyAnthropicKey` in main (`services/verify-key.ts`): one
+`/v1/models?limit=1` call, no tokens spent. A network failure is kept separate from a bad key, and
+a 429 passes — the key is fine, the account is busy. Settings still saves without verifying.
 
 ---
 
@@ -211,30 +283,48 @@ Consent defaults to on for invited beta users (we ask at invite time too, per ti
 switch is real and off means nothing is sent.
 
 **Decision:**
-
+yes, but we dont currently have a way to track files so this will just be mocked in the beginning. 
 **Notes:**
+Built as the consent surface over a no-op sink, per the decision. The event list lives
+in `@qale/ipc` (`telemetry.ts`) and both the opening screen and Settings render FROM it, so the
+screen can never promise less than a future sender sends. `telemetryAllows()` is the guard that
+sender will call. Nothing is sent today.
+Built against a no-op sink, as decided. The sink is now specified: PostHog Cloud EU, in
+`docs/telemetry-posthog.md`. One thing that ticket hands back here (TEL-6): `telemetry` defaults to
+true from first launch, so with a real sender attached we would send from someone who has not
+reached this screen yet. The sender buffers until this screen is answered rather than the screen
+changing.
 
 ---
 
-## ONB-7. Screen: First light, and the example week
+## ONB-7. Screen: First light
 
 **Today:** the demo machinery is dev-only: `scripts/refresh-demo.ts` copies `vault-dev/` to a
 gitignored folder with dates slid to today. Nothing in the shipped app can produce a populated
 workspace. (This was beta-launch ticket 17.)
 
-**Proposal:** ship the example week as an app feature. Bundle the demo vault in resources, built
-at package time through a strip list (drops `broken-demo` and anything else that only exercises a
-code path) with the skill pack generated from `DEFAULT_SKILLS` rather than hand-copied; those two
-prerequisites are beta-launch tickets 25 and 26 and stay there. On choosing the door, copy the
-bundle into a real folder, slide dates relative to install day (port the shift logic from the
-script into the main process), open it, and land on Home. The other two doors: "Bring your own"
-opens the capture tray (or the calendar connect), "Start empty" just proceeds. Example-week
-workspaces are marked in settings so we can offer "replace the example with a real workspace"
-later without guessing.
+**Original proposal (rejected):** ship the example week as an app feature, bundling the demo vault
+in resources and copying it into a real folder with dates slid to install day.
+
+**Proposal:** the workspace starts empty and stays the user's own. Two doors, no bundle, no demo
+vault in the app at all. **Drop something in** opens the capture tray in the flow, so the last
+thing that happens in the opening is their own material being read; the handoff line from ONB-9
+carries it from there. **Start empty** just proceeds to the shell, which is a legitimate choice
+and not a lesser one, especially for someone who connected a calendar on screen 5 and will find
+their week already waiting.
+
+Consequences worth noting: nothing here depends on beta-launch tickets 25 and 26 any more, so
+this ticket is unblocked and much smaller. `vault-dev` stays what it is, a dev and demo fixture,
+and never ships. And an empty Home is now a first-run surface a real user sees, so its empty
+state has to be written for that moment rather than treated as an edge case.
 
 **Decision:**
-
+No let's keep their workspace empty in the beginnig. 
 **Notes:**
+Built as decided: no example week, no bundle, nothing in `resources`. Two doors, "Add
+something now" (into the real capture tray) and "Start empty", and the screen says outright that
+the workspace starts empty. `vault-dev` stays a dev fixture. Home's day-one invitation now stands
+down while First steps is on the page, since both taught the same move.
 
 ---
 
@@ -245,15 +335,25 @@ renderer-side; detection for these steps lives in the main process (sessions fin
 decided, settings changing).
 
 **Proposal:** the card described above. Detection hooks in the main process where each event
-already flows (session completion, proposal accept/reject, key set, identity edits, Google
-connect), writing into the `onboarding.checklist` record from ONB-1; renderer subscribes through
+already flows (session completion, proposal accept/reject, key set, identity edits, connection
+verified, container followed), writing into the `onboarding.checklist` record from ONB-1;
+the two connection rows read the same connection and follow state ONB-11 writes, so a connection
+made straight from Settings months later still ticks the row; renderer subscribes through
 the existing settings-changed push. Each row deep-links to the right surface using the existing
-tab-opening actions. Includes the "sample transcript to drag" affordance when the example week is
-loaded, sourced from the bundled `demo-samples`. Dismiss and retire rules as written above.
+tab-opening actions. No sample-material affordance, per ONB-7: every row is waiting on something
+the user actually does, so the transcript row has to explain what counts as one. Dismiss and
+retire rules as written above.
 
 **Decision:**
-
+yes
 **Notes:**
+Built. `onboarding/FirstSteps.tsx` on Home. Detection is main-side, off the events
+that already fire: `arrival:ingest` / `capture:ingest` for the transcript, accept/reject for the
+card, `agent.onStatus` (which now carries `skill`) for the prep and the question, `note:save`
+under `skills/_about-us/` for the last. Three rows are DERIVED from live state rather than
+stamped — the key and the two connections — which is what makes "only if skipped in the opening"
+need no bookkeeping and lets a connection made from Settings months later still tick. Half-done
+connections stay unticked and say why.
 
 ---
 
@@ -272,7 +372,10 @@ material ("Bring your own", the transcript First step) depend on this moment not
 Yes implement this. (Carried over from beta-launch ticket 18.)
 
 **Notes:**
-
+Built. `components/CaptureHandoff.tsx` in the rail slot, raised the instant the tray
+is submitted (not when it resolves — the wait is the silent moment) and handed over to the
+receipt. Verified: it appears during the ingest and the receipt replaces it.
+yes
 ---
 
 ## ONB-10. The words
@@ -286,16 +389,64 @@ asks. Do this last, against the working flow, because copy written before the sc
 reads wrong inside them.
 
 **Decision:**
-
+yes
 **Notes:**
+Done as a pass over the whole set. No em dashes anywhere in product copy, no
+exclamation marks, a reason line next to every ask. The opening names the product once, on the
+cover. Placeholder names were pulled (a stranger's name in an empty field is the first thing they
+read).
+
+---
+
+## ONB-11. Screen: What it may read (connections)
+
+**Today:** connections are complete and working, but they are the most buried thing in the app.
+Settings → Connections (`ConnectionsSettings.tsx`) already does all of it: providers rendered from
+their auth schema, Google through a browser OAuth round trip, Atlassian through site URL plus
+email plus API token, verified on save, then a container list per connection (Jira projects,
+Confluence spaces, calendars) with a follow checkbox each. Nothing is followed by default, and
+`syncNow` runs the moment something is followed. A first-run user is never told any of this
+exists, so the most common shape of a disappointing first week is a memory with nothing to read.
+
+**Proposal:** a first-run screen over the existing machinery, not a second implementation. Reuse
+`ConnectForm` and the container list, with the settings chrome stripped and a first-run frame
+around them: one row per provider, connect inline, and on success the container list unfolds in
+place so the follow choice happens in the same breath as the connect. Requirements:
+
+- **The screen is skippable as a whole, and each provider is skippable on its own.** Skip records
+  per provider, so First steps can ask about Jira without asking about Google again.
+- **Preselect nothing to follow.** Show the list, let one tick be enough. Do not "helpfully" follow
+  everything; a PM with forty Jira projects will not thank us.
+- **Say the read-only part out loud.** One line: it reads, and anything written back goes through
+  an approval first. This is the sentence that decides whether people connect at all.
+- **The OAuth round trip has to survive the app losing focus** and the user cancelling in the
+  browser; `cancelOAuth` already exists, wire it to the skip.
+- **A failed verify never blocks the flow.** Inline error, skip stays available, move on.
+- **Google connect also yields an email address**: fold it into the identity aliases from ONB-3
+  rather than asking again.
+
+Nothing new in the backend. If this ticket needs main-process work at all, it is only whatever the
+onboarding state from ONB-1 needs to record per-provider skips.
+
+**Decision:**
+yes
+**Notes:**
+Built. `onboarding/screens/Connections.tsx`, over the existing `connections` client
+and provider descriptors. Per-provider skips recorded as `connections:<providerId>`; the container
+list unfolds in place with nothing preselected and says "Pick at least one" while nothing is; the
+read-only line is on the screen; `cancelOAuth` is wired to "Stop waiting". A failed verify is
+inline and never blocks. The follow list after a live connect is unverified — it needs real
+credentials.
 
 ---
 
 # Order
 
-ONB-1 and ONB-2 first (state, then frame), then ONB-3 through ONB-6 in any order since they slot
-into the frame independently. ONB-7 needs beta-launch tickets 25 and 26 first. ONB-9 is small and
-independent, worth doing immediately. ONB-8 after the steps it points at exist. ONB-10 last.
+ONB-1 and ONB-2 first (state, then frame), then ONB-3 through ONB-6 and ONB-11 in any order since
+they slot into the frame independently; ONB-11 is the cheapest of them, since it is a reframe of
+working code. ONB-7 is now small and blocked on nothing, but it wants ONB-9 done first, since with
+no example week the drop is the whole payoff. ONB-9 is small and independent, worth doing
+immediately. ONB-8 after the steps it points at exist. ONB-10 last.
 
 Open dependencies from beta-launch: the rename (ticket 1) before any copy is final, the telemetry
 platform (ticket 5) before ONB-6's switch sends anything, and the invite-code question (ticket 4):

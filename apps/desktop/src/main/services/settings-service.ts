@@ -23,8 +23,43 @@ export interface ScheduleEntry {
   lastRun: string | null;
 }
 
+/**
+ * First run, as a settings record (docs/onboarding.md ONB-1).
+ *
+ * It lives HERE rather than in the renderer because a packaged `file://` build
+ * does not persist localStorage — the progressive-reveal machinery gets away
+ * with that, an onboarding flag would not: it would run the opening at every
+ * launch forever.
+ */
+export interface OnboardingRecord {
+  finishedAt: string | null;
+  step: string;
+  done: string[];
+  skipped: string[];
+  checklist: Record<string, { at: string; line: string }>;
+  dismissed: boolean;
+  telemetry: boolean;
+}
+
+const ONBOARDING_DEFAULT: OnboardingRecord = {
+  finishedAt: null,
+  step: 'hello',
+  done: [],
+  skipped: [],
+  checklist: {},
+  dismissed: false,
+  // On by default for invited beta users (we ask at invite time too), and a
+  // real switch: off means nothing is sent.
+  telemetry: true,
+};
+
 export interface PersistedSettings {
   vaultPath: string | null;
+  /**
+   * Which model new sessions open on. A session can be moved off it one at a
+   * time (the composer's model picker), and that choice is remembered against
+   * the session, not here.
+   */
   modelId: string;
   anthropicKeyEnc: string | null;
   atlassian: { baseUrl: string; email: string; tokenEnc: string } | null;
@@ -40,6 +75,18 @@ export interface PersistedSettings {
    * doesn't know about still has to resolve to "You".
    */
   identity: { name: string | null; aliases: string[] };
+  /** First run and what is left of it. Absent in files written before it existed. */
+  onboarding?: OnboardingRecord;
+  /**
+   * Who this install is, for telemetry and nothing else (docs/telemetry-posthog.md
+   * TEL-4). Minted once and never changed, including when consent is turned off
+   * and back on. It is the `distinctId`; the name and work email ride alongside
+   * as person properties, read from {@link PersistedSettings.identity}. A uuid
+   * rather than the email because the email arrives on screen 2, after the app
+   * has already launched, and can be edited or left blank — any of which would
+   * fork one person into two.
+   */
+  installId?: string;
   /** Local MCP server: token-gated so the customer's Claude can query the memory. */
   mcpEnabled: boolean;
   mcpPort: number;
@@ -54,12 +101,16 @@ export interface PersistedSettings {
 
 const DEFAULTS: PersistedSettings = {
   vaultPath: null,
-  modelId: 'claude-opus-4-8',
+  // The current Opus, same price as 4.8, and better at the long agentic work
+  // this product is. A settings file naming a model pi no longer carries still
+  // opens: `resolveModel` steps down to this default, then to anything.
+  modelId: 'claude-opus-5',
   anthropicKeyEnc: null,
   atlassian: null,
   google: null,
   schedules: [{ skill: 'weekly-update', dayOfWeek: 5, hour: 15, enabled: false, lastRun: null }],
   identity: { name: null, aliases: [] },
+  onboarding: ONBOARDING_DEFAULT,
   mcpEnabled: false,
   mcpPort: 7717,
   mcpToken: null,
@@ -76,9 +127,15 @@ export class SettingsService {
   }
 
   async load(): Promise<void> {
+    // Whether the FILE carried an onboarding record, read before the defaults
+    // are merged in. After the merge there is always one, so the grandfathering
+    // check below would have nothing to go on.
+    let hadOnboarding = false;
     try {
       const raw = await fs.readFile(this.file, 'utf8');
-      this.data = { ...DEFAULTS, ...(JSON.parse(raw) as Partial<PersistedSettings>) };
+      const parsed = JSON.parse(raw) as Partial<PersistedSettings>;
+      hadOnboarding = !!parsed.onboarding;
+      this.data = { ...DEFAULTS, ...parsed };
     } catch {
       this.data = { ...DEFAULTS };
     }
@@ -88,11 +145,96 @@ export class SettingsService {
       ...s,
       skill: s.skill ?? (s as { session_type?: string; sessionType?: string }).sessionType ?? 'weekly-update',
     }));
+    // Everyone's settings file says `claude-opus-4-8`, because that was the
+    // shipped default and nobody ever had a reason to change it. Carry that one
+    // value forward to the new default: same family, same price, better at long
+    // work. Any other model in there was a deliberate pick and is left alone.
+    const carriedModel = this.data.modelId === 'claude-opus-4-8';
+    if (carriedModel) this.data.modelId = DEFAULTS.modelId;
     // Mint the MCP token on first run (bearer secret for the local server).
-    if (!this.data.mcpToken) {
-      this.data.mcpToken = randomUUID().replace(/-/g, '');
-      await this.persist();
+    const mintedToken = !this.data.mcpToken;
+    if (mintedToken) this.data.mcpToken = randomUUID().replace(/-/g, '');
+    // And the telemetry install id, in the same breath and for the same reason:
+    // it has to exist before the first thing that would report happens.
+    const mintedInstall = !this.data.installId;
+    if (mintedInstall) this.data.installId = randomUUID();
+    const grandfathered = this.migrateOnboarding(hadOnboarding);
+    if (carriedModel || mintedToken || mintedInstall || grandfathered) await this.persist();
+  }
+
+  /**
+   * Fill in the onboarding record, and grandfather anyone who was already
+   * using the app: an install with a workspace has already answered every
+   * question the opening asks, so showing it would be an insult, not a
+   * welcome. They still get the First steps card — that one is about the
+   * product, not the setup. Returns whether anything was written.
+   */
+  private migrateOnboarding(hadOnboarding: boolean): boolean {
+    if (hadOnboarding) {
+      // Half-written records (a crash between two fields) fill in from the
+      // defaults for whatever is missing rather than throwing at first read.
+      this.data.onboarding = { ...ONBOARDING_DEFAULT, ...this.data.onboarding };
+      return false;
     }
+    this.data.onboarding = {
+      ...ONBOARDING_DEFAULT,
+      ...(this.data.vaultPath
+        ? { finishedAt: new Date().toISOString(), step: 'first-light' as const }
+        : {}),
+    };
+    return true;
+  }
+
+  getOnboarding(): OnboardingRecord {
+    return (this.data.onboarding ??= { ...ONBOARDING_DEFAULT });
+  }
+
+  /**
+   * Merge-patch the opening's progress. `done` also clears a prior skip: the
+   * PM who waved past the key screen and came back to it has not skipped it.
+   */
+  async patchOnboarding(patch: {
+    step?: string;
+    done?: string;
+    skipped?: string;
+    finished?: boolean;
+    dismissed?: boolean;
+    telemetry?: boolean;
+  }): Promise<void> {
+    const current = this.getOnboarding();
+    const done = patch.done ? [...new Set([...current.done, patch.done])] : current.done;
+    const skipped = patch.done
+      ? current.skipped.filter((s) => s !== patch.done)
+      : patch.skipped
+        ? [...new Set([...current.skipped, patch.skipped])]
+        : current.skipped;
+    this.data.onboarding = {
+      ...current,
+      done,
+      skipped,
+      ...(patch.step ? { step: patch.step } : {}),
+      ...(patch.finished ? { finishedAt: current.finishedAt ?? new Date().toISOString() } : {}),
+      ...(patch.dismissed !== undefined ? { dismissed: patch.dismissed } : {}),
+      ...(patch.telemetry !== undefined ? { telemetry: patch.telemetry } : {}),
+    };
+    await this.persist();
+  }
+
+  /**
+   * Stamp a First step, the first time it happens. Later repeats are ignored
+   * on purpose: the row's line reports the moment it was earned, and a second
+   * transcript must not rewrite what the first one said. Returns whether this
+   * was the one that landed, so the caller only pushes when something changed.
+   */
+  async markFirstStep(id: string, line: string): Promise<boolean> {
+    const current = this.getOnboarding();
+    if (current.checklist[id]) return false;
+    this.data.onboarding = {
+      ...current,
+      checklist: { ...current.checklist, [id]: { at: new Date().toISOString(), line } },
+    };
+    await this.persist();
+    return true;
   }
 
   /**
@@ -124,6 +266,11 @@ export class SettingsService {
 
   get(): PersistedSettings {
     return this.data;
+  }
+
+  /** The telemetry distinct id (TEL-4). Always set after {@link load}. */
+  getInstallId(): string {
+    return (this.data.installId ??= randomUUID());
   }
 
   async setVaultPath(path: string | null): Promise<void> {
@@ -260,7 +407,7 @@ export class SettingsService {
 
   private encrypt(value: string): string {
     if (!safeStorage.isEncryptionAvailable()) {
-      console.error('[pm] OS keychain unavailable — storing secret base64-obfuscated, NOT encrypted');
+      console.error('[qale] OS keychain unavailable — storing secret base64-obfuscated, NOT encrypted');
       return `b64:${Buffer.from(value, 'utf8').toString('base64')}`;
     }
     return `enc:${safeStorage.encryptString(value).toString('base64')}`;

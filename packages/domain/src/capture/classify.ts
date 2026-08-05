@@ -69,6 +69,38 @@ function cleanTitle(line: string): string {
   return cut.slice(0, at).replace(/[\s.,;:—-]+$/, '');
 }
 
+/**
+ * A date anywhere in a file name, as its own delimited token.
+ *
+ * Full `YYYY-MM-DD` only. A bare year is part of plenty of real names ("2026
+ * planning"), and eight undelimited digits is as likely to be an id.
+ */
+const FILE_NAME_DATE = /(?:^|[\s._-])\d{4}[-_.]\d{2}[-_.]\d{2}(?=$|[\s._-])/g;
+
+/**
+ * The name in a file name, with the recording date taken out.
+ *
+ * Notetakers stamp the date into the file, and it was riding all the way into
+ * the note: `nordkap-qbr-2026-08-04.txt` became a meeting titled "Nordkap QBR
+ * 2026 08 04", filed at `meetings/2026-08-04-nordkap-qbr-2026-08-04.md`, with
+ * the date a third time in its frontmatter. Nobody names a meeting that. The
+ * date is not lost by dropping it here — it is read separately, and it is what
+ * dates the note.
+ */
+export function titleFromFileName(baseName: string): string {
+  const stripped = baseName.replace(FILE_NAME_DATE, ' ');
+  const tidied = stripped.replace(/[\s._-]{2,}/g, ' ').replace(/^[\s._-]+|[\s._-]+$/g, '');
+  // A file called nothing but its date still has to be called something, so the
+  // original name is better than an empty title.
+  return tidied || baseName;
+}
+
+/** The date a file name carries, if it carries one. */
+export function dateFromFileName(fileName: string): string | undefined {
+  const m = /(\d{4})[-_.](\d{2})[-_.](\d{2})/.exec(fileName);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : undefined;
+}
+
 function hostOf(url: string): string {
   const host = /^https?:\/\/([^/:?#]+)/i.exec(url)?.[1];
   return host ? host.replace(/^www\./, '') : url.slice(0, 60);
@@ -81,7 +113,7 @@ function hostOf(url: string): string {
  * naming falls to the model (capture) or a clean date-based default.
  */
 function transcriptTitle(baseName: string, nonEmpty: string[]): string {
-  if (baseName) return baseName;
+  if (baseName) return titleFromFileName(baseName);
   // Only the head of the file can plausibly be a title — a mid-file line that
   // happens to look heading-ish is just a continuation of someone's turn.
   const heading = nonEmpty.slice(0, 5).find(
@@ -142,6 +174,6 @@ export function classifyCapture(text: string, fileName?: string): CaptureClassif
     kind: 'note',
     // Long pasted prose could still be a transcript the heuristics missed.
     confidence: body.length < 2000 ? 'high' : 'low',
-    title: baseName || cleanTitle(firstLine),
+    title: baseName ? titleFromFileName(baseName) : cleanTitle(firstLine),
   };
 }

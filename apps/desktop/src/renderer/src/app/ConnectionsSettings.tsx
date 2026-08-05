@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Input } from '@pm/ui';
+import { Button, Input } from '@qale/ui';
 import { BookOpen, Cable, CalendarDays, Check, KeyRound, Plus, Ticket } from 'lucide-react';
 import { relativeTime } from '../lib/dates';
 import {
@@ -53,7 +53,7 @@ export function ConnectionsSettings() {
         <h2 className="text-base font-semibold">Connections</h2>
       </div>
       <p className="text-sm text-muted-foreground">
-        Where your delivery truth lives — tickets and pages from followed projects stay readable
+        Where your delivery truth lives: tickets and pages from followed projects stay readable
         here, and anything you link from a note keeps itself up to date. Reading never asks;
         writing always goes through an approval card.
       </p>
@@ -137,7 +137,7 @@ function ConnectionCard({
     setSyncError(null);
     try {
       const res = await connections.syncNow();
-      if (!res.ok) setSyncError(res.error ?? 'Couldn’t sync just now — local data stays available.');
+      if (!res.ok) setSyncError(res.error ?? 'Couldn’t sync just now. Local data stays available.');
       await onChanged();
     } finally {
       setSyncing(false);
@@ -152,7 +152,7 @@ function ConnectionCard({
         {conn.identity && <span className="text-xs text-muted-foreground">as {conn.identity}</span>}
         <span className="ml-auto flex items-baseline gap-2 text-xs text-muted-foreground tabular-nums">
           {conn.health === 'ok' && conn.lastSync !== null && `synced ${relativeTime(conn.lastSync)}`}
-          {conn.health === 'unreachable' && 'offline — showing local data'}
+          {conn.health === 'unreachable' && 'offline, showing local data'}
           {conn.health !== 'auth-expired' && (
             <button
               className="rounded font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
@@ -199,7 +199,7 @@ function ConnectionCard({
       </ul>
       {conn.providerId === 'google-calendar' ? (
         <p className="mt-1.5 text-xs text-muted-foreground">
-          Meetings on followed calendars appear as meeting notes by themselves — dates, people and
+          Meetings on followed calendars appear as meeting notes by themselves: dates, people and
           series stay true to the calendar; your notes on them stay yours.
         </p>
       ) : (
@@ -281,7 +281,7 @@ function TokenRenewal({
         setValues({});
         await onChanged();
       } else {
-        setError(res.error ?? 'That token didn’t verify — check it and try again.');
+        setError(res.error ?? 'That token didn’t verify. Check it and try again.');
       }
     } finally {
       setBusy(false);
@@ -293,8 +293,8 @@ function TokenRenewal({
       <p className="flex items-center gap-1.5 text-sm text-warning">
         <KeyRound className="size-3.5 shrink-0" aria-hidden />
         {oauth
-          ? `The ${provider.label} connection expired — reconnect to resume syncing. Everything keeps working from local data meanwhile.`
-          : `The token for ${conn.siteLabel} expired — paste a new one to resume syncing. Everything keeps working from local data meanwhile.`}
+          ? `The ${provider.label} connection expired. Reconnect to resume syncing. Everything keeps working from local data meanwhile.`
+          : `The token for ${conn.siteLabel} expired. Paste a new one to resume syncing. Everything keeps working from local data meanwhile.`}
       </p>
       <div className="mt-1.5 flex gap-2">
         {fields.map((f) => (
@@ -362,14 +362,14 @@ function ConnectForm({
       if (res.ok) {
         setConnected(
           res.identity && res.identity !== res.siteLabel
-            ? `Connected as ${res.identity} — ${res.siteLabel}`
+            ? `Connected as ${res.identity} (${res.siteLabel})`
             : `Connected as ${res.identity ?? res.siteLabel}`,
         );
         setValues({});
         // Let the confirmation land before the card takes over.
         window.setTimeout(onDone, 1200);
       } else {
-        setError(res.error ?? 'Couldn’t verify those details — check them and try again.');
+        setError(res.error ?? 'Couldn’t verify those details. Check them and try again.');
       }
     } finally {
       setBusy(false);
@@ -403,7 +403,7 @@ function ConnectForm({
           {providers.length === 1 && <div className="text-sm font-medium">{provider.label}</div>}
           {oauth ? (
             <p className="text-sm text-muted-foreground">
-              Sign in with Google in your browser — the app only ever reads your calendar, and
+              Sign in with Google in your browser. The app only ever reads your calendar, and
               meetings show up here as notes by themselves.
             </p>
           ) : (

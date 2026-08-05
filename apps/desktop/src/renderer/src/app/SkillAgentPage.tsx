@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { NoteDTO } from '@pm/ipc';
-import { Badge, Button } from '@pm/ui';
+import type { NoteDTO } from '@qale/ipc';
+import { Badge, Button } from '@qale/ui';
 import { Bot, Pin, Play, Trash2, TriangleAlert, Wand2 } from 'lucide-react';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
@@ -87,10 +87,10 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
   // The material beside it. Listed, never loaded — the whole point of the folder.
   const files = (isAgent ? agent?.files : skill?.files) ?? [];
 
-  // The top folder is the crumb (`skills`), and what is left is the address
-  // inside it (`spec-review/SKILL.md`) — the file you are actually editing.
+  // The top folder is the crumb (Skills, Agents), and the leaf is this one's
+  // name. The file it is stored in used to sit there, which told the reader
+  // where it lives in a vocabulary they never asked for.
   const folder = note.path.includes('/') ? (note.path.split('/')[0] ?? null) : null;
-  const filename = folder ? note.path.slice(folder.length + 1) : note.path;
 
   // Full-map save (unknown keys survive parseFrontmatter); a rejected write
   // resyncs to file truth so the inputs never lie about what was saved.
@@ -108,7 +108,7 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
           folder
             ? [
                 {
-                  label: folder,
+                  label: folder.charAt(0).toUpperCase() + folder.slice(1),
                   // skills/ and agents/ have purpose-built list pages — the
                   // crumb goes there, not to the raw memory folder view.
                   onClick: (e) =>
@@ -121,9 +121,8 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
               ]
             : undefined
         }
-        label={filename}
-        labelClassName="font-mono"
-        labelTitle={note.path}
+        label={note.title}
+        labelTitle={note.title}
       >
         <>
           {runnable && (
@@ -146,7 +145,7 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
               <HeaderAction
                 icon={Pin}
                 label={favorites.includes(note.path) ? 'Unpin' : 'Pin'}
-                title={favorites.includes(note.path) ? 'Unpin' : 'Pin — keep on the sidebar'}
+                title={favorites.includes(note.path) ? 'Unpin' : 'Pin: keep on the sidebar'}
                 onClick={() => toggleFavorite(note.path)}
                 pressed={favorites.includes(note.path)}
                 iconClassName={favorites.includes(note.path) ? 'fill-brand text-brand' : undefined}
@@ -239,7 +238,7 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
             onAsk={(text) =>
               openSession('ask', {
                 initialPrompt: askSelectionSeed(note.path, text),
-                title: `Ask — ${note.title}`,
+                title: `Ask: ${note.title}`,
                 fresh: true,
               })
             }

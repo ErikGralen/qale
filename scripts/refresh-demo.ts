@@ -20,13 +20,13 @@
  *   pnpm tsx scripts/refresh-demo.ts --dry           # print the plan, write nothing
  *   pnpm tsx scripts/refresh-demo.ts --keep-app-state    # rebuild the vault, leave the inbox alone
  *
- * It also resets the app-side state keyed to the runtime vault. The inbox cards,
- * proposals and pings do NOT live in the vault — they sit in a per-vault SQLite
+ * It also resets the app-side state keyed to the runtime vault. The inbox cards
+ * and proposals do NOT live in the vault — they sit in a per-vault SQLite
  * DB under Electron's userData dir (see apps/desktop/src/main/services/
  * vault-service.ts). A vault-only rebuild would therefore open behind a stale
  * inbox from the previous run, so by default we also clear that per-vault DB, the
  * shared search index (it reindexes on open), and the agent-run session receipts.
- * Pass --keep-app-state to skip that, or set PM_USERDATA to point at a non-default
+ * Pass --keep-app-state to skip that, or set QALE_USERDATA to point at a non-default
  * userData dir (the same override the app itself honours).
  *
  * What shifts: the date-valued frontmatter fields (date, due, captured, updated,
@@ -62,7 +62,7 @@ const DATE_RE = /\d{4}-\d{2}-\d{2}/g;
 // A skill and an agent are folders: `skills/<name>/SKILL.md` is the runnable and
 // its slug is the FOLDER, while anything else beside it is the skill's own
 // material — never indexed, never a note, so it has no frontmatter to validate.
-// Mirrors @pm/domain's slug.ts; this script stays dependency-free on purpose
+// Mirrors @qale/domain's slug.ts; this script stays dependency-free on purpose
 // (it runs under bare `node`), so the rule is restated rather than imported.
 const RUNNABLE_ENTRY_RE = /^(?:skills|agents)\/[^/]+\/(?:SKILL|AGENT)\.md$/i;
 const RUNNABLE_FOLDER_RE = /^(?:skills|agents)\/[^/]+\/.+$/;
@@ -216,15 +216,15 @@ function extractLinks(text: string): string[] {
 
 /**
  * Electron's userData dir for the desktop app, resolved the same way the main
- * process does (apps/desktop/src/main/index.ts): honour PM_USERDATA, else the OS
+ * process does (apps/desktop/src/main/index.ts): honour QALE_USERDATA, else the OS
  * default under the app's name. Returns null only if the platform default can't
  * be determined. The app's per-vault DB, search index and session receipts all
  * live directly under here.
  */
 function electronUserDataDir(): string | null {
-  const override = process.env['PM_USERDATA'];
+  const override = process.env['QALE_USERDATA'];
   if (override) return resolve(override);
-  let appName = '@pm/desktop'; // app.getName() = productName ?? name
+  let appName = 'Qale'; // app.getName() = productName ?? name
   try {
     const pkg = JSON.parse(
       readFileSync(join(import.meta.dirname, '..', 'apps', 'desktop', 'package.json'), 'utf8'),
@@ -233,6 +233,13 @@ function electronUserDataDir(): string | null {
   } catch {
     /* fall back to the known name */
   }
+  // The demo vault is only ever opened by a dev run, and a dev run names itself
+  // separately (`app.setName('Qale Dev')` in apps/desktop/src/main/index.ts) so
+  // that it cannot share settings, receipts or keychain with the installed app.
+  // Keep this in lockstep: pointed at the installed profile, the cleanup below
+  // would delete the search index and session receipts of the app you actually
+  // use, to refresh a demo it has never opened.
+  appName = `${appName} Dev`;
   const appData =
     platform() === 'darwin'
       ? join(homedir(), 'Library', 'Application Support')
@@ -253,7 +260,7 @@ function appDbBasename(vaultRoot: string): string {
 
 /**
  * Clear the app-side state a vault-only refresh can't reach: the target vault's
- * per-vault app DB (inbox cards / proposals / pings, + its -shm/-wal sidecars),
+ * per-vault app DB (inbox cards / proposals, + its -shm/-wal sidecars),
  * the shared search index (harmless to drop — it reindexes on next open), and the
  * agent-run session receipts. Without this the freshly-dated vault opens behind a
  * stale inbox from the previous run. In dry mode it only reports what it'd remove.
@@ -329,8 +336,8 @@ function main(): void {
     mkdirSync(join(target, 'sessions'), { recursive: true });
   }
 
-  // 1b. Reset the app-side state keyed to this runtime vault (inbox / proposals /
-  // pings live in a per-vault DB under userData, not in the vault) so the demo
+  // 1b. Reset the app-side state keyed to this runtime vault (inbox and proposals
+  // live in a per-vault DB under userData, not in the vault) so the demo
   // opens with a clean inbox rather than last run's cards. --keep-app-state opts
   // out. Uses the resolved absolute `target` so the DB key matches the app's.
   if (!args.keepAppState) clearAppState(target, args.dry);

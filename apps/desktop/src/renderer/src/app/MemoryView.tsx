@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { dirForType, isFolderIndex, layerForType, readOnlyReason } from '@pm/domain';
-import { Button } from '@pm/ui';
+import { dirForType, isFolderIndex, layerForType, readOnlyReason } from '@qale/domain';
+import { Button } from '@qale/ui';
 import { ChevronRight, FileUp, Inbox, Library, Mic } from 'lucide-react';
-import type { NoteRefDTO, NoteType, VaultTreeGroupDTO } from '@pm/ipc';
+import type { NoteRefDTO, NoteType, VaultTreeGroupDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
 import { requestCapture } from '../lib/capture-event';
@@ -32,17 +32,17 @@ const SHELVES: readonly { label: string; types: readonly NoteType[] }[] = [
 /**
  * What each shelf holds — the whole subtitle: note titles here read as bloat,
  * and the row truncates, so one clause is the budget. The two mirror shelves
- * lead with the domain's own sentence (@pm/domain readOnlyReason) so the shelf
+ * lead with the domain's own sentence (@qale/domain readOnlyReason) so the shelf
  * and the note page name the source the same way.
  */
 const TYPE_DESC: Partial<Record<NoteType, string>> = {
-  meeting: 'Meetings and their After-Meeting reviews — transcripts live in sources.',
-  decision: 'The decision spine — active calls, and the chain of what they superseded.',
+  meeting: 'Meetings, with what each one changed. The recordings live in sources.',
+  decision: 'The decision spine: active calls, and the chain of what they superseded.',
   theme: 'The durable things worth solving, accreting evidence.',
   source: 'Dumped material, analyzed but never rewritten.',
   insight: 'Claims extracted from meetings, each citing its evidence.',
   customer: 'Accounts the memory knows, prospect to churned.',
-  person: 'Stakeholders — what they care about, what they were last told.',
+  person: 'Stakeholders: what they care about, what they were last told.',
   note: 'Untyped notes and quick captures.',
   ticket: `${readOnlyReason('ticket')} The work your notes link against.`,
   wikipage: `${readOnlyReason('wikipage')} The pages your updates land on.`,
@@ -125,7 +125,7 @@ function FirstRun() {
     {
       icon: Mic,
       title: 'A transcript goes in',
-      desc: 'Any meeting you already have — drop the file anywhere, or paste it with ⇧⌘N.',
+      desc: 'Any meeting you already have. Drop the file anywhere, or paste it with ⇧⌘N.',
     },
     {
       icon: Inbox,
@@ -160,7 +160,7 @@ function FirstRun() {
         </Button>
       </div>
       <p className="text-xs text-muted-foreground/80">
-        Shelves appear here as it grows — decisions, insights, customers, themes, and the rest.
+        Shelves appear here as it grows: decisions, insights, customers, themes, and the rest.
       </p>
     </div>
   );

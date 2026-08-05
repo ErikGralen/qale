@@ -2,7 +2,7 @@
 
 Read through https://github.com/yc-software/qm on 2026-08-01, at commit `7f2c916`. MIT licensed, about 139,000 lines of TypeScript, 40 commits (the history was squashed at some point). I had seven agents read different parts of it in parallel and went through the deployment and process material myself.
 
-These are notes for us, so each section says what they did, why I think they did it, and what I'd do about it in pm.
+These are notes for us, so each section says what they did, why I think they did it, and what I'd do about it in Qale.
 
 ---
 
@@ -129,7 +129,7 @@ A later commit adds an admin toggle that changes the default, but only for turns
 
 The orchestrator is a single 2,400-line function with around 40 locals threaded through closures. The modules they've pulled out are helpers called from inside it, not stages it composes. The turn has obvious phases — screen, lock, assemble, run, settle, deliver — and none of them are named. Their own guidance says to solve at the layer all paths flow through, and this is that layer, and it didn't get the treatment.
 
-### What I'd do in pm
+### What I'd do in Qale
 
 Keep the canonical ledger separate from whatever the SDK wants as its transcript. That's the seam that survives an SDK change.
 
@@ -244,7 +244,7 @@ Reading all eighteen, the pattern is consistent. The description in the frontmat
 
 CI only checks that each shipped skill parses and has a name, description and non-empty body.
 
-### What I'd do in pm
+### What I'd do in Qale
 
 Take the "memory is an index" paragraph more or less as written, adapted to a vault: a growing list is a note, and memory holds one line naming it. Take the provenance paragraph too — never infer a preference from the assistant's own output. That one matters most for our librarian, which by construction reads its own previous work.
 
@@ -359,7 +359,7 @@ The honest reading of "the agent acts as the person it's working for, with their
 
 One thing the docs understate: generic tool-result screening is only wired into the Pi harness. Under the other three, command output isn't screened.
 
-### What I'd do in pm
+### What I'd do in Qale
 
 Label everything we ingest with where it came from — `jira:PROJ-123/description`, `transcript:2026-07-17-nordkap` — and teach the model that labelled content is data. Our note addresses make decent source strings. Wrap host-generated metadata in a distinct block so it can't be confused with content.
 
@@ -439,7 +439,7 @@ Their own security doc says audience filtering has known gaps, because model-con
 
 The test names are the archaeology, with defect numbers baked in: a redeploy from a different channel must never shift reach to the wrong members; only the owner may widen, and even a write-grant manager can't re-share; owning a resource in a scope doesn't grant access to that scope's context. And there are 46 places branching on whether the conversation is a DM, across 14 files. That split leaks everywhere no matter how clean the resolver is.
 
-### What I'd do in pm
+### What I'd do in Qale
 
 Give our implicit scopes — vault, folder or theme, project, note, meeting, session — one addressable string type and one resolve function. Their thousand-line store exists to serve a hundred-line resolver; the resolver is the asset.
 
@@ -527,7 +527,7 @@ For deploys, instances heartbeat their build SHA, and when a newer build appears
 
 Their guidance has a whole section about not keeping state in memory, and you can see why: the delivery store, rate limiter and budget tracker are all in-memory maps with Postgres twins that production wires in. The rule is scar tissue. The one sanctioned exception caches in front of Postgres, keyed by a version counter bumped inside every write.
 
-### What I'd do in pm
+### What I'd do in Qale
 
 Take the three-layer silence contract. Our inbox is exactly what it protects. Make silence a real success status, so a scheduled agent that finds nothing leaves no inbox row and no receipt — just an entry in a run log on its own page.
 
@@ -631,7 +631,7 @@ The commit messages tell the story. One replaced a sign-in form that appeared on
 
 The defensive rendering matches: they suppress a page-level error banner when the last message already shows the same error, and they restore focus *and* selection position by key after a full pane redraw. Tests assert that a background wake ending in silence reads as a clean stop rather than "The agent run failed", and that corrupt local storage is treated as empty rather than throwing.
 
-### What I'd do in pm
+### What I'd do in Qale
 
 For rendering: the verb table, extended with our own — reading note, wrote meeting note, searched vault, created todo, drafted Jira comment. Three registers, with the third living in the right panel. Elapsed time everywhere, ticking only while something is running. The shimmer and blur-in, which are about forty lines and make a real difference. Splitting streaming markdown at safe boundaries, because our markdown component will thrash on long replies without it. Collapsing repeated calls into an attempt count.
 
@@ -669,7 +669,7 @@ Digest resolution failing with the very token their own docs told operators to u
 
 And one that's genuinely instructive: auditing their images as filesystems rather than reading the Dockerfiles found npm's cache shipped in four images. npm stores fetch URLs verbatim as cache keys, so a signed release token and an Azure signature were baked into published images. Removing it also cut the core image from 4.44 GB to 3.12 GB. The same audit found a fixed machine ID, so every container presented the same host identity, and an environment variable that was silently suppressing prompts at runtime for anything the agent ran.
 
-### What I'd do in pm
+### What I'd do in Qale
 
 Make the machine legible. Our agent runs on a real Mac with an unknown toolchain, so a short cached block describing it — OS, architecture, which of node/python/ripgrep exist, the vault path, and a short list of what isn't installed — is cheap. The behaviour to induce is in their cloud CLI skill: don't assume a binary is on the path, and when it's missing, choose between installing it, using an API instead, or asking. Don't fail halfway.
 
@@ -759,7 +759,7 @@ Unusually good, and consistently structured: what was broken, what the user expe
 
 and it ends with an explicit "Left as known limits" paragraph naming three things still unfixed. Several commits have a follow-up titled something like "Close the gaps an adversarial pass found" — the review process is visible in the history.
 
-### What I'd do in pm
+### What I'd do in Qale
 
 Adopt the fresh-context review rule. We build nearly everything with Claude Code, and "the context that produced a diff already believes it is correct" is exactly our failure mode. Keep the two details that make it work: judge blast radius by callers rather than file count, and let the reviewer decide how deep to go.
 

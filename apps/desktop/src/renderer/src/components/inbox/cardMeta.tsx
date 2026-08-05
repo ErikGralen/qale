@@ -9,8 +9,8 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { titleFromSlug, typeForDir } from '@pm/domain';
-import type { OutboundPayloadDTO, ProposalDTO } from '@pm/ipc';
+import { titleFromSlug, typeForDir } from '@qale/domain';
+import type { OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
 import { isExternalRef } from '../../lib/connections';
 import { noteTypeIcon } from '../../lib/note-icons';
 import { outboundAct, outboundTarget, providerLabel } from './shared';
@@ -90,6 +90,15 @@ function payloadTitle(p: ProposalDTO): string {
   return typeof title === 'string' && title.trim() ? title.trim() : '';
 }
 
+/** An explicit `title` from the payload — the name as written, diacritics intact. */
+function payloadName(p: ProposalDTO): string {
+  const title = frontmatter(p)['title'];
+  return typeof title === 'string' && title.trim() ? title.trim() : '';
+}
+
+/** Note types whose subject is a proper name rather than a claim. */
+const NAMED_TYPES = new Set(['person', 'customer']);
+
 function iconFor(p: ProposalDTO): LucideIcon {
   // An outbound card wears its action's glyph, not a blanket paper plane —
   // the same one the approve button carries, so the card reads as one act.
@@ -120,9 +129,9 @@ function fallbackHeadline(p: ProposalDTO): string {
 
   if (p.kind === 'outbound') {
     const ob = p.payload as OutboundPayloadDTO;
-    if ((ob.provider ?? ob.system) === 'message') return `Send update — ${ob.title || ob.audience || 'stakeholders'}`;
+    if ((ob.provider ?? ob.system) === 'message') return `Send update: ${ob.title || ob.audience || 'stakeholders'}`;
     // "Comment on PAY-142 — Nordkap confirms go-live" / "File a ticket in PAY — SCIM group-mapping"
-    return ob.title ? `${outboundTarget(ob)} — ${ob.title}` : outboundTarget(ob);
+    return ob.title ? `${outboundTarget(ob)}: ${ob.title}` : outboundTarget(ob);
   }
 
   if (p.kind === 'decision') {
@@ -134,6 +143,11 @@ function fallbackHeadline(p: ProposalDTO): string {
     const subject = payloadTitle(p) || titleForRef(target);
     if (type === 'insight') return `Learned: ${subject}`;
     if (type === 'todo') return `To do: ${subject}`;
+    // A person or a customer is a name, not a claim. Their summary describes
+    // them ("Product owner, first real user"), so leading with it leaves the
+    // card never saying who it is about. Their file IS their name; an explicit
+    // `title` wins where it exists, since the slug folds away diacritics.
+    if (NAMED_TYPES.has(type)) return `New ${type}: ${payloadName(p) || titleForRef(target) || subject}`;
     return `New ${type}: ${subject}`;
   }
 

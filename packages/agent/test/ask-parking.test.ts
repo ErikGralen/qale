@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { AskPort, AskRecord, CreateAskInput } from '@pm/application';
+import type { AskPort, AskRecord, CreateAskInput } from '@qale/application';
 import {
   AskParking,
   askRequestId,
@@ -10,6 +10,7 @@ import {
   type AskAnswer,
   type AskDecision,
   type AskPlan,
+  type AskRequestDraft,
   type AskRequestInfo,
   type StoredAsk,
 } from '../src/ask.js';
@@ -37,6 +38,7 @@ function fakeStore(): AskPort & { rows: Map<string, AskRecord> } {
         questions: JSON.parse(JSON.stringify(input.questions)),
         skill: input.skill ?? null,
         outbound: !!input.outbound,
+        unattended: !!input.unattended,
         created: now,
       };
       rows.set(record.id, record);
@@ -67,7 +69,7 @@ const plan = (): AskPlan => {
   return r.plan;
 };
 
-const requestFor = (sessionId: string, p = plan()): AskRequestInfo => ({
+const requestFor = (sessionId: string, p = plan()): AskRequestDraft => ({
   id: askRequestId(sessionId, p),
   sessionId,
   questions: p.questions,
@@ -244,6 +246,36 @@ test('a scheduled run refuses to ask: no card, no row, no push', async () => {
   assert.equal(store.rows.size, 0, 'nothing to recover later — nobody ever asked');
   assert.deepEqual(pushes, []);
   assert.equal(live.pendingFor(store, 's1'), null);
+});
+
+test('only a tidy pass nobody started asks quietly, and it still asks quietly tomorrow', async () => {
+  const store = fakeStore();
+  const pushes: Pushed[] = [];
+  const live = parking(pushes);
+
+  // The 5-minute tick's own run: offered, so no badge and no chasing.
+  const swept = requestFor('s1');
+  void live.park(store, swept, { unattended: true, skill: 'librarian' });
+  assert.equal(pushes.at(-1)?.request?.offered, true);
+  // And still offered after a relaunch, read back off the row rather than
+  // guessed from the agent's name alone.
+  assert.equal(parking([]).pendingFor(store, 's1')?.offered, true);
+
+  // The same agent, opened by the PM from the Skills page: they are sitting
+  // there waiting for the answer, so it is owed like any other question.
+  const byHand = requestFor('s2');
+  void live.park(store, byHand, { skill: 'librarian' });
+  assert.equal(pushes.at(-1)?.request?.offered, false);
+
+  // Arrival runs with nobody watching, but somebody handed it the material and
+  // is coming back for it.
+  const arriving = requestFor('s3');
+  void live.park(store, arriving, { unattended: true, skill: 'arrival' });
+  assert.equal(pushes.at(-1)?.request?.offered, false);
+  assert.deepEqual(
+    live.all(store).map((r) => r.offered),
+    [true, false, false],
+  );
 });
 
 test('a refused question tells the model to stop, not to decide for itself', async () => {

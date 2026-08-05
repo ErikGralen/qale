@@ -9,8 +9,8 @@ import {
   TicketPlus,
   type LucideIcon,
 } from 'lucide-react';
-import type { OutboundPayloadDTO } from '@pm/ipc';
-import { normalizeLinkTarget } from '@pm/domain';
+import type { OutboundPayloadDTO } from '@qale/ipc';
+import { normalizeLinkTarget } from '@qale/domain';
 import { invoke } from '../../lib/ipc';
 import { isExternalRef } from '../../lib/connections';
 import { ExternalRefChip } from '../ExternalRef';

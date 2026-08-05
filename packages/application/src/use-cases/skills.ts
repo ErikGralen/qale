@@ -4,13 +4,13 @@ import {
   type Capability,
   type Runnable,
   type Start,
-} from '@pm/sessions';
-import { isRunnableEntry, runnableEntryPath, runnableNameFromPath } from '@pm/domain';
+} from '@qale/sessions';
+import { isRunnableEntry, runnableEntryPath, runnableNameFromPath } from '@qale/domain';
 import type { UseCaseContext } from '../ports.js';
 
 /**
  * Skills + Agents — the read layer behind both views. They are the same kind of
- * file (see `@pm/sessions/runnable`): free-text instructions, a `starts` list
+ * file (see `@qale/sessions/runnable`): free-text instructions, a `starts` list
  * saying what puts them in force, and a `can` list saying what they may do. The
  * folder is filing — `skills/` is what you reach for, `agents/` is what reaches
  * for itself — so one parser serves both and neither view branches on a type.
@@ -216,7 +216,7 @@ export async function migrateRunnableFolders(
 /**
  * The `enabled` switch on the file(s) a name resolves to, read as a FLOOR: off
  * means the runnable does not run, on any path, whatever else would grant it
- * (the layering rule is written out on `Capability` in @pm/sessions). Main's
+ * (the layering rule is written out on `Capability` in @qale/sessions). Main's
  * `fireSession` asks this once for every session a trigger starts, so a new
  * trigger cannot forget; the sweeps ask again before they begin, because they
  * do judgment work before firing anything and off has to mean that work never

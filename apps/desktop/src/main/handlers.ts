@@ -1,24 +1,43 @@
 import { app, BrowserWindow, dialog, Notification } from 'electron';
 import { is } from '@electron-toolkit/utils';
-import { readFile, stat } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { mkdir, readdir, readFile, realpath, stat } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type {
   AgentDTO,
   ArrivalItemInputDTO,
-  ArrivalOutcomeItemDTO,
+  ConnectionProgress,
+  FirstStepId,
   MeetingReviewAskDTO,
   ModelInfoDTO,
+  OpeningStepId,
+  PathCheckDTO,
   SettingsDTO,
-} from '@pm/ipc';
-import { AgentRuntime } from '@pm/agent';
+  SkillPackReviewDTO,
+} from '@qale/ipc';
+import { ageBand, countBand, durationBand, skillWord } from '@qale/ipc';
+import {
+  AgentRuntime,
+  isOffered,
+  sessionFilesRoot,
+  writeSessionBinary,
+  writeSessionFile,
+} from '@qale/agent';
 import {
   acceptProposal,
   completeMeetingReview,
   captureNote,
+  captureNudgeState,
   captureTodo,
   createPerson,
+  dismissCaptureNudge,
+  undoCaptureNudge,
   deleteNote,
   ensureDefaultSkills,
+  reviewSkillPack,
+  applyShippedSkill,
+  dismissSkillNotice,
+  createSkill,
   getBacklinks,
   getNote,
   getThemesByHeat,
@@ -36,49 +55,48 @@ import {
   runnableEnabled,
   markMeetingReviewed,
   queryNotes,
-  runLibrarianSweep,
-  listPings,
-  openPing,
-  dismissPing,
-  resolvePingItem,
+  planLibrarianSweep,
+  markLibrarianHandled,
+  markLibrarianRun,
   listProposals,
   previewProposal,
   rebuild,
   rejectProposal,
-  ingestArrival,
-  ingestCapture,
-  type ArrivalItem,
-  planArrival,
-  resolveRuns,
-  undoArrival,
   renameNote,
   resolveLink,
+  restoreNoteVersion,
   saveAuthoredNote,
   saveFrontmatter,
   searchNotes,
   setTodoStatus,
   type UseCaseContext,
-} from '@pm/application';
+} from '@qale/application';
+import { detectSyncedFolder } from '@qale/application';
+import { parseFrontmatter, readableAs, refToSlug, unreadableReason, type Frontmatter } from '@qale/domain';
+import { atlassianAuthSchema } from '@qale/connectors';
 import {
-  classifyCapture,
-  parseFrontmatter,
-  readableAs,
-  unreadableReason,
-  type Frontmatter,
-} from '@pm/domain';
-import { atlassianAuthSchema } from '@pm/connectors';
-import {
+  ARRIVAL_AGENT_NAME,
   buildKickoff,
   DEFAULT_SKILLS,
   DEFAULT_AGENTS,
   RETIRED_SKILL_FILES,
+  MAINTENANCE_AGENTS,
   MEETING_PREP_INSTRUCTION,
-} from '@pm/sessions';
+} from '@qale/sessions';
 import { handle, pushEvent } from './ipc.js';
-import { CODE_RUN_FACTS, MEETING_PREP_LEAD_MS, MEETING_PREP_LEAD_PHRASE } from './agents.js';
+import { appVersion, buildDiagnostics } from './diagnostics.js';
+import {
+  CODE_RUN_FACTS,
+  LIBRARIAN_SESSION_INTERVAL_MS,
+  LIBRARIAN_SETTLE_MS,
+  MEETING_PREP_LEAD_MS,
+  MEETING_PREP_LEAD_PHRASE,
+} from './agents.js';
 import { setDockBadge } from './dock-badge.js';
 import { seedDemoProposal } from './dev-seed.js';
+import { Telemetry } from './telemetry.js';
 import { SettingsService } from './services/settings-service.js';
+import { verifyAnthropicKey } from './services/verify-key.js';
 import { GoogleOAuthService } from './services/google-oauth-service.js';
 import { VaultService } from './services/vault-service.js';
 import { makeOutbound } from './services/outbound-service.js';
@@ -92,7 +110,6 @@ import {
   agentFileToDTO,
   noteToDTO,
   outboundEffectFacts,
-  pingToDTO,
   themeHeatToDTO,
   proposalToDTO,
   skillToDTO,
@@ -100,11 +117,11 @@ import {
   vaultInfoToDTO,
 } from './dto.js';
 
-// Placeholder model list until the pi ModelRegistry has a live key.
+// Placeholder model list until pi's model runtime has a live key.
 const MODELS: ModelInfoDTO[] = [
-  { id: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
-  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-  { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+  { id: 'claude-opus-5', label: 'Claude Opus 5' },
+  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
 ];
 
 /**
@@ -129,8 +146,24 @@ function hasDueTodos(ctx: UseCaseContext): boolean {
 export function registerHandlers(getWindow: () => BrowserWindow | null): {
   onReady: () => Promise<void>;
   dispose: () => Promise<void>;
+  telemetry: Telemetry;
 } {
   const settings = new SettingsService();
+  /**
+   * The one sender (docs/telemetry-posthog.md). It is built here because every
+   * moment worth reporting already flows through these handlers; index.ts takes
+   * it back off the return value for the crash hooks and the quit flush.
+   *
+   * Nothing it is handed may ever change, delay or fail what it observes. That
+   * is the sender's own rule too — `send` swallows everything — so no call
+   * below is awaited and none of them is wrapped in a try.
+   */
+  const telemetry = new Telemetry({
+    appVersion: appVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    packaged: app.isPackaged,
+  });
   const vaultService = new VaultService((paths) => {
     pushEvent(getWindow(), { channel: 'vault:changed', paths });
     // Todos are files: an edit in Obsidian (or by a session) can close the last
@@ -152,8 +185,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
    * due today or already slipped (`owner` set means it's waiting on someone
    * else — the same rule the sidebar's todo count uses).
    *
-   * Pings are deliberately left out. They are quiet workspace-maintenance rows
-   * by design, and a dock badge is not a quiet surface.
+   * A question from a tidy pass nobody asked for is left out: it is offered
+   * rather than owed, and a dock badge is not a surface anything gets offered
+   * on. A librarian session the PM started themselves is owed like any other,
+   * which is why the rule reads who started the run and not only which agent
+   * asked.
    *
    * Declared as a function so it hoists over the VaultService callback above.
    */
@@ -163,7 +199,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // The stored questions are asked as well as the in-memory ones: a question
     // parked before a quit is still waiting at the next launch (QM ticket 9),
     // and `parked` only knows about the runs THIS app run started.
-    const asking = parked.size > 0 || (ctx.asks?.list().length ?? 0) > 0;
+    const asking =
+      parked.size > 0 || !!ctx.asks?.list().some((a) => !isOffered(a.skill, a.unattended));
     setDockBadge(ctx.proposals.pendingCount() > 0 || asking || hasDueTodos(ctx));
   }
 
@@ -192,39 +229,71 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   /**
    * The librarian maintenance pass, ONE entry point for every trigger
    * (app-open catch-up AND the 5-minute tick). The in-flight guard is the
-   * reentrancy fix: sweeps span minutes of LLM latency, and two overlapping
-   * sweeps each snapshot pending cards once — both would file the same
-   * redline. Sync runs first so the sweep sees fresh mirrors.
+   * reentrancy fix: sync and the scan both take real time, and two overlapping
+   * passes would each read the ledger before either had written it, then hand
+   * the same findings to two sessions. Sync runs first so the scan sees fresh
+   * mirrors.
    */
   let maintenanceInFlight: Promise<void> | null = null;
   const runMaintenance = (): Promise<void> => {
     if (maintenanceInFlight) return maintenanceInFlight;
     maintenanceInFlight = (async () => {
       await syncService.tick().catch((err) => {
-        console.error('[pm] sync tick failed:', err instanceof Error ? err.message : err);
+        console.error('[qale] sync tick failed:', err instanceof Error ? err.message : err);
       });
       const ctx = vaultService.context();
       if (!ctx) return;
       // The librarian's off switch (its file's `enabled` frontmatter) is
-      // enforced HERE, before the sweep is entered: off has to mean no
-      // judgments and no cards, not a hidden pass whose output is filtered
-      // later. Connector sync and the index maps below aren't the agent's
-      // work, so they keep running.
-      if (await runnableEnabled(ctx, 'librarian')) {
-        const { pings, fixes } = await runLibrarianSweep(ctx);
-        agentLastRun.set('librarian', Date.now());
-        if (pings > 0) notifyPings();
-        if (fixes > 0) notifyProposalsFor();
+      // enforced HERE, before the scan is entered: off has to mean nothing is
+      // even looked at, not a hidden pass whose output is filtered later. The
+      // key is read in the same breath and for the same reason the meeting
+      // sweep reads it: without one the session cannot start, and a keyless
+      // workspace would drip a failure notification every five minutes.
+      // Connector sync and the index maps below aren't the agent's work, so
+      // they keep running.
+      if (settings.getAnthropicKey() && (await runnableEnabled(ctx, 'librarian'))) {
+        const now = Date.now();
+        // The scan and the ledger, and nothing else: what a finding MEANS is
+        // read out of the notes, which is the session's job below.
+        const work = await planLibrarianSweep(ctx, now, {
+          settleMs: LIBRARIAN_SETTLE_MS,
+          intervalMs: LIBRARIAN_SESSION_INTERVAL_MS,
+        });
+        if (work) {
+          // `unattended: true`, and NOT `scheduled: true`. The two are not
+          // interchangeable here: a scheduled run refuses to park a question at
+          // all (AskParking.park returns straight away), and asking when it
+          // cannot tell is half of what this agent is for. Unattended still
+          // buys the quiet ending a pass that found nothing needs
+          // (settleQuietly reads scheduled OR unattended) and leaves ask_user
+          // working. `trigger` is only the word the finished run reports.
+          const started = await fireSession(
+            'librarian',
+            buildKickoff({ skill: 'librarian', instruction: work.worklist }),
+            { trigger: 'scheduled', unattended: true, modelId: BACKGROUND_MODEL_ID },
+          );
+          // Stamped only once a session really started. A run blocked by a
+          // missing key must leave every finding for the next pass rather than
+          // marking them handled by something that never read them.
+          if (started) {
+            markLibrarianHandled(ctx, work.findings, now);
+            markLibrarianRun(ctx, now);
+          }
+        } else {
+          // A look, not a run — the same distinction meeting-prep makes, and
+          // most ticks are looks.
+          agentLastChecked.set('librarian', Date.now());
+        }
       }
-      // Refresh the OKF index.md orientation maps from the (now reconciled and
-      // swept) index. Idempotent — no write, no commit when nothing changed.
+      // Refresh the OKF index.md orientation maps from the (now reconciled)
+      // index. Idempotent — no write, no commit when nothing changed.
       const idx = await generateIndexFiles(ctx);
       if (idx.written.length > 0) pushEvent(getWindow(), { channel: 'vault:changed', paths: idx.written });
     })()
       .catch((err) => {
         // The tick must never surface as an unhandledRejection (it fires every
         // 5 minutes — offline would mean a steady drip of them).
-        console.error('[pm] librarian sweep failed:', err instanceof Error ? err.message : err);
+        console.error('[qale] maintenance pass failed:', err instanceof Error ? err.message : err);
       })
       .finally(() => {
         maintenanceInFlight = null;
@@ -250,10 +319,15 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       // shadows theirs. The move is bytes-only and idempotent.
       const migrated = await migrateRunnableFolders(ctx);
       if (migrated.moved.length > 0)
-        console.log(`[pm] moved ${migrated.moved.length / 2} skill/agent file(s) into folders`);
+        console.log(`[qale] moved ${migrated.moved.length / 2} skill/agent file(s) into folders`);
       for (const path of migrated.left)
-        console.warn(`[pm] ${path} differs from its folder copy — left both in place, nothing lost`);
-      await ensureDefaultSkills(ctx, [...DEFAULT_SKILLS, ...DEFAULT_AGENTS], RETIRED_SKILL_FILES);
+        console.warn(`[qale] ${path} differs from its folder copy — left both in place, nothing lost`);
+      // Seed what is missing, quietly update what nobody has touched, and take
+      // retired files out of force. Anything the PM edited is left exactly as it
+      // is; the Skills page offers those as a review (`skills:review`).
+      const pack = await ensureDefaultSkills(ctx, [...DEFAULT_SKILLS, ...DEFAULT_AGENTS], RETIRED_SKILL_FILES);
+      const touched = [...pack.seeded, ...pack.updated, ...pack.removed];
+      if (touched.length > 0) pushEvent(getWindow(), { channel: 'vault:changed', paths: touched });
       // One-time migration: agent off switches used to live in settings; the
       // frontmatter is the switch now. Carry the recorded intent over, once.
       const overrides = await settings.takeAgentOverrides();
@@ -261,10 +335,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         if (on === false) await setAgentFileEnabled(ctx, id, false);
       }
       await runMaintenance();
-      notifyPings();
       notifyProposalsFor();
     } catch (err) {
-      console.error('[pm] post-open sweep failed:', err instanceof Error ? err.message : err);
+      console.error('[qale] post-open sweep failed:', err instanceof Error ? err.message : err);
     }
   };
 
@@ -284,17 +357,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
           }
         : null,
     );
-    // Background judgments (librarian stewardship) get a one-shot completion
-    // seam only when a key exists — absent, the sweep skips silently.
-    ctx.completions = settings.getAnthropicKey()
-      ? {
-          complete: async (input) => {
-            const out = await agent.completeText(input);
-            if (out === null) throw new Error('no model available for background judgment');
-            return out;
-          },
-        }
-      : undefined;
     agent.configure({
       vaultDir: ctx.vault.root(),
       userDataDir: app.getPath('userData'),
@@ -306,10 +368,24 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     syncService.reconfigure();
   };
 
+  /**
+   * How far one provider got, read live off the sync engine rather than stored
+   * (docs/onboarding.md ONB-8). "Connected" is not the finish line: a
+   * connection with nothing followed reads nothing at all, so its First step
+   * row stays unticked and says so.
+   */
+  const connectionProgress = (providerId: string): ConnectionProgress => {
+    const conns = syncService.list().filter((c) => c.providerId === providerId);
+    if (conns.length === 0) return 'none';
+    return conns.some((c) => c.containers.some((k) => k.followed)) ? 'following' : 'connected';
+  };
+
   const settingsDTO = (): SettingsDTO => {
     const s = settings.get();
+    const onboarding = settings.getOnboarding();
     return {
       vaultPath: vaultService.currentVaultPath() ?? s.vaultPath,
+      appVersion: appVersion(),
       modelId: s.modelId,
       hasAnthropicKey: !!settings.getAnthropicKey(),
       hasAtlassianCreds: !!settings.getAtlassian(),
@@ -323,7 +399,81 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         emails: settings.selfEmails(),
         aliases: settings.getIdentity().aliases,
       },
+      onboarding: {
+        ...onboarding,
+        step: onboarding.step as OpeningStepId,
+        done: onboarding.done as OpeningStepId[],
+        connections: {
+          google: connectionProgress('google-calendar'),
+          atlassian: connectionProgress('atlassian'),
+        },
+      },
     };
+  };
+
+  /**
+   * Settings moved without anyone asking for them — a First step ticking
+   * itself off, a connection verifying, a key saved in another window. Every
+   * mutation that the renderer did not itself invoke goes out this way, which
+   * is what lets the First steps card check a row the moment the thing happens
+   * rather than at the next reload.
+   */
+  const pushSettings = (): void => {
+    pushEvent(getWindow(), { channel: 'settings:changed', settings: settingsDTO() });
+  };
+
+  /**
+   * What this install looks like as counts and flags — the same four facts the
+   * person record and `app.launched` both want, read live rather than stored.
+   */
+  const telemetryFacts = (): { hasKey: boolean; google: boolean; atlassian: boolean; notes: string } => ({
+    hasKey: !!settings.getAnthropicKey(),
+    google: connectionProgress('google-calendar') !== 'none',
+    atlassian: connectionProgress('atlassian') !== 'none',
+    notes: countBand(vaultService.context()?.index.count() ?? 0),
+  });
+
+  /**
+   * Hand the sender the consent switch and who this is (TEL-4, TEL-6).
+   *
+   * `answered` is the half that is easy to get wrong: the switch defaults to
+   * true, so on a first run it would read as "on" for five screens before
+   * anyone had been asked. Only reaching the telemetry screen counts, and
+   * events raised before that wait in memory for the answer. An install
+   * grandfathered past the opening carries `finishedAt`, so it is answered from
+   * launch — it kept the default it was given.
+   */
+  const syncTelemetryConsent = (): void => {
+    const onboarding = settings.getOnboarding();
+    const answered =
+      !!onboarding.finishedAt ||
+      onboarding.done.includes('telemetry') ||
+      onboarding.skipped.includes('telemetry');
+    telemetry.setConsent(onboarding.telemetry, answered);
+    const identity = settings.getIdentity();
+    // The first alias is the work address screen 2 asked for. The connected
+    // accounts' addresses are not offered here: they arrived as a side effect
+    // of a grant, and TEL-4's promise is about the one they typed in.
+    const email = identity.aliases[0];
+    telemetry.describe({
+      ...(identity.name ? { name: identity.name } : {}),
+      ...(email ? { email } : {}),
+      ...telemetryFacts(),
+    });
+  };
+
+  /**
+   * Stamp a First step, once, with the line that says what happened. Fire and
+   * forget from wherever the real event already flows — none of these may ever
+   * block or fail the thing they are observing.
+   */
+  const markFirstStep = (id: FirstStepId, line: string): void => {
+    void settings
+      .markFirstStep(id, line)
+      .then((landed) => {
+        if (landed) pushSettings();
+      })
+      .catch(() => {});
   };
 
   /** Write an agent's off switch into its file's frontmatter and reindex. */
@@ -376,10 +526,23 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     refreshDockBadge();
   };
 
-  const notifyPings = (): void => {
-    const ctx = vaultService.context();
-    if (ctx?.pings) pushEvent(getWindow(), { channel: 'pings:changed', pendingCount: ctx.pings.pendingCount() });
-  };
+  /**
+   * When a session started, and what started it. Neither rides on the status
+   * signal, and both are wanted at the far end of a run that can take minutes.
+   * In memory only: a run that spans a quit reports no duration rather than a
+   * made-up one.
+   */
+  const sessionStarted = new Map<string, number>();
+  const sessionTrigger = new Map<string, string>();
+
+  /**
+   * What a run the app started for ITSELF opens on. A background tidy pass is
+   * quick, repetitive reading over a worklist, which is exactly the work the
+   * fast model is good at and exactly the work nobody wants to pay top rate for
+   * every half hour. Sessions a person started keep the model they chose in
+   * Settings.
+   */
+  const BACKGROUND_MODEL_ID = 'claude-sonnet-5';
 
   const fireSession = async (
     skill: string,
@@ -388,12 +551,38 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       /** Whether the firing trigger lets this arrival draft outbound (invariant 3). */
       outbound?: boolean;
       /**
+       * What to report this run as when it settles. Only the caller knows; the
+       * status signal carries no trigger. `scheduled` below already names the
+       * two clock-started paths, so this only has to be set where material
+       * arriving is what started the run.
+       */
+      trigger?: 'manual' | 'scheduled' | 'arrival';
+      /**
        * A clock started this, not a person (QM ticket 2). Only the two triggers
        * that genuinely tick set it: a schedule's slot and the before-meeting
        * sweep. "Run now", a capture, an arrival and a reaction to an approved
        * card all have someone waiting, so none of them may go silent.
        */
       scheduled?: boolean;
+      /**
+       * Nobody is at the screen right now, but somebody will come back (an
+       * arrival). It buys silence for a run that turned out to be pure filing
+       * and keeps `ask_user` working, which `scheduled` does not.
+       */
+      unattended?: boolean;
+      /**
+       * Which model to open on. The pin outlives the run: `run()` writes it to
+       * the session's model sidecar, so a librarian session the PM opens
+       * tomorrow is still on the quick model until they pick another one in
+       * that session's own picker.
+       */
+      modelId?: string;
+      /**
+       * Run in THIS session rather than a fresh one. Arrival mints the id first
+       * so it can write the material into the session's folder before any model
+       * call; the session it starts has to be that one.
+       */
+      sessionId?: string;
     },
   ): Promise<{ sessionId: string } | null> => {
     const ctx = vaultService.context();
@@ -406,7 +595,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // (The sweeps check first as well: they do judgment work before firing
     // anything, and off has to mean that work never happens either.)
     if (!(await runnableEnabled(ctx, skill))) {
-      console.log(`[pm] ${skill} is switched off, not firing it`);
+      console.log(`[qale] ${skill} is switched off, not firing it`);
       return null;
     }
     try {
@@ -416,8 +605,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         {
           skill,
           prompt,
+          ...(opts?.sessionId ? { sessionId: opts.sessionId } : {}),
+          ...(opts?.modelId ? { modelId: opts.modelId } : {}),
           ...(opts?.outbound ? { outbound: true } : {}),
           ...(opts?.scheduled ? { scheduled: true } : {}),
+          ...(opts?.unattended ? { unattended: true } : {}),
         },
         ctx,
         () => {},
@@ -425,13 +617,20 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       // A file agent's "last ran" stamp — same ledger the code watchers use, so
       // the Agents view answers "when did this last fire" for both kinds.
       agentLastRun.set(skill, Date.now());
+      // Recorded against the id rather than threaded through the runtime: a
+      // session that settles minutes later has to be able to say what started
+      // it, and the runtime has no reason to carry that.
+      sessionTrigger.set(
+        handle.sessionId,
+        opts?.trigger ?? (opts?.scheduled ? 'scheduled' : 'manual'),
+      );
       return { sessionId: handle.sessionId };
     } catch (err) {
       // Every caller is fire-and-forget (`void fireSession(...)`): a run that
       // dies here — most often "no API key yet" — must surface, not become an
       // unhandled rejection while the PO waits for cards that never come.
       const message = err instanceof Error ? err.message : String(err);
-      console.error(`[pm] background ${skill} session failed:`, message);
+      console.error(`[qale] background ${skill} session failed:`, message);
       if (Notification.isSupported()) {
         new Notification({ title: 'Session failed', body: message, silent: true }).show();
       }
@@ -441,9 +640,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
 
   // Before-meeting auto-prep (the `meeting-prep` agent): synced meetings starting
   // within the lead window get their brief prepared on the meeting page — the
-  // owning-view stance, never an Inbox ping. It never fires while a card is
-  // already pending or a `## Prep` section has been accepted, and it is gated on
-  // an API key so a keyless workspace never drips failure notifications.
+  // owning-view stance: a nudge belongs where the work it is about lives. It
+  // never fires while a card is already pending or a `## Prep` section has been
+  // accepted, and it is gated on an API key so a keyless workspace never drips
+  // failure notifications.
   //
   // The once-per-meeting guard is a check-ledger row (app.db, beside the
   // librarian's), keyed by note path and holding the start time it prepped FOR:
@@ -497,7 +697,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       // that DOES brief has proposed a card and can never count as silent.
       void fireSession(
         'meeting-prep',
-        buildKickoff({ skill: 'meeting-prep', target: m.notePath, instruction: MEETING_PREP_INSTRUCTION }),
+        buildKickoff({ skill: 'meeting-prep', targets: [m.notePath], instruction: MEETING_PREP_INSTRUCTION }),
         { scheduled: true },
       ).then((handle) => {
         if (handle) checks.set(selfPrepKey(handle.sessionId), provenance, Date.now());
@@ -520,16 +720,21 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     refreshDockBadge();
   };
 
-  // The fan-out approval card, inline in the chat. Nothing runs until it settles.
+  // The fan-out approval card, inline in the chat. Nothing runs until it
+  // settles. A tidy pass nobody asked for may not badge the dock over its own
+  // spending, though, any more than it may over its own questions.
   agent.onSpawnRequest = (sessionId, request) => {
     pushEvent(getWindow(), { channel: 'session:spawn', sessionId, request });
-    setParked(`spawn:${sessionId}`, !!request);
+    setParked(`spawn:${sessionId}`, !!request && !request.offered);
   };
 
   // The agent is asking the PM something mid-turn — the run is parked on it.
+  // An offered question is drawn like any other but never counted: nobody asked
+  // for that run, so nothing it asks is owed. Clearing goes through either way,
+  // and a key that was never added deletes to nothing.
   agent.onAskRequest = (sessionId, request) => {
     pushEvent(getWindow(), { channel: 'session:ask', sessionId, request });
-    setParked(`ask:${sessionId}`, !!request);
+    setParked(`ask:${sessionId}`, !!request && !request.offered);
   };
 
   // Session lifecycle → renderer rail/badges, plus an OS notification when a
@@ -540,12 +745,52 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       ? ctx.proposals.list('pending').filter((p) => p.sessionId === s.sessionId).length
       : 0;
     pushEvent(getWindow(), { channel: 'session:status', ...s, pendingCards });
+    // The clock for `session.finished`. First `running` only: a run parked on a
+    // mid-turn question comes back through here when it resumes, and the second
+    // start would report a fraction of the time it actually took.
+    if (s.status === 'running' && !sessionStarted.has(s.sessionId))
+      sessionStarted.set(s.sessionId, Date.now());
     if (s.status !== 'settled') return;
     notifyProposalsFor();
+    const startedAt = sessionStarted.get(s.sessionId);
+    sessionStarted.delete(s.sessionId);
+    const trigger = sessionTrigger.get(s.sessionId) ?? 'manual';
+    sessionTrigger.delete(s.sessionId);
+    telemetry.send('session.finished', {
+      // Folded to something we wrote: a PM's own skill is named in their own
+      // words, so the name itself is their material.
+      skill: skillWord(s.skill),
+      trigger,
+      // Omitted rather than guessed when the start is gone.
+      ...(startedAt ? { duration: durationBand(Date.now() - startedAt) } : {}),
+      // `SessionStatus` reports "settled, any outcome" and nothing here can
+      // tell a run that failed from one that finished. False is the honest
+      // answer until the runtime carries the distinction.
+      failed: false,
+      cards: countBand(pendingCards),
+    });
+    // Two First steps are "a session of this kind finished" (ONB-8): a meeting
+    // prepped, and a question asked of the memory. Read off the signal that
+    // already fires rather than a second ledger that could disagree with it.
+    if (s.skill === 'meeting-prep') {
+      markFirstStep(
+        'prep',
+        pendingCards > 0
+          ? `Prepped a meeting, and the brief is waiting as a card`
+          : `Prepped a meeting and found nothing worth briefing`,
+      );
+    } else if (s.skill === 'chat' && !s.quiet) {
+      markFirstStep('ask', 'Answered a question from your own notes');
+    }
     // A scheduled run that had nothing to report leaves no receipt, no row and
     // no badge (QM ticket 2). A notification saying "Finished" would undo all
     // three at once, so it is the last thing to go.
-    if (s.quiet) return;
+    //
+    // A tidy pass that DID find something is not quiet, and still says nothing
+    // here: a notification is the loudest thing the app can do, and what the
+    // librarian leaves behind is the one kind of work that is never owed. It
+    // waits in the Inbox, where it costs nothing to find later.
+    if (s.quiet || MAINTENANCE_AGENTS.has(s.skill ?? '')) return;
     const win = getWindow();
     if ((win && win.isFocused()) || !Notification.isSupported()) return;
     const notification = new Notification({
@@ -585,6 +830,35 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
 
   handle('app:ping', (message) => `pong: ${message}`);
 
+  // Everything a bug report needs and nothing that says who sent it: counts and
+  // booleans off the open workspace, provider labels off the connections (never
+  // their site or account), and the scrubbed log tail.
+  handle('diagnostics:report', async () => {
+    const ctx = vaultService.context();
+    const info = ctx ? await getVaultInfo(ctx).catch(() => null) : null;
+    const s = settings.get();
+    return buildDiagnostics({
+      workspace: info
+        ? {
+            noteCount: info.noteCount,
+            git: info.git,
+            gitAvailable: info.gitAvailable,
+            synced: info.syncedBy !== null,
+          }
+        : null,
+      keychainAvailable: settings.secretsEncrypted(),
+      hasApiKey: !!settings.getAnthropicKey(),
+      // Read after the key getter above: that read is what trips the flag.
+      secretsUnreadable: settings.secretsUnreadable(),
+      modelId: s.modelId,
+      connectors: syncService.list().map((c) => ({ label: c.providerLabel, health: c.health })),
+      mcp: { enabled: s.mcpEnabled, port: s.mcpPort, running: mcp.isRunning() },
+      // The one id in the block, and the reason a pasted report can be lined up
+      // against its own event stream (TEL-4).
+      installId: settings.getInstallId(),
+    });
+  });
+
   handle('settings:get', () => settingsDTO());
   handle('settings:setModel', async (modelId) => {
     await settings.setModel(modelId);
@@ -596,6 +870,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     reconfigureAgent();
     return settingsDTO();
   });
+  handle('settings:verifyAnthropicKey', (key) => verifyAnthropicKey(key));
   handle('settings:setAtlassian', async (creds) => {
     // An empty token is a disconnect, not a credential — a truthy-but-empty
     // record here would make every downstream `hasAtlassianCreds` check lie.
@@ -609,7 +884,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       : `https://${creds.baseUrl.trim().replace(/\/+$/, '')}`;
     const parsed = atlassianAuthSchema.safeParse({ siteUrl: site, email: creds.email.trim(), apiToken: creds.token.trim() });
     if (!parsed.success) {
-      throw new Error('Check the site URL, email and API token — one of them looks malformed.');
+      throw new Error('Check the site URL, email and API token. One of them looks malformed.');
     }
     await settings.setAtlassian(parsed.data.siteUrl, parsed.data.email, parsed.data.apiToken);
     reconfigureAgent();
@@ -621,7 +896,30 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('connections:list', () => syncService.list());
   handle('connections:connect', async (providerId, values) => {
     const result = await syncService.connect(providerId, values);
-    if (result.ok) reconfigureAgent();
+    if (result.ok) {
+      reconfigureAgent();
+      // The two First steps rows read connection state live — a connect made
+      // from Settings months later still ticks its row (ONB-8).
+      pushSettings();
+      // Which connectors exist is part of who this install is, so the person
+      // record follows the connect rather than waiting for the next launch.
+      syncTelemetryConsent();
+      // The provider ids are ours; anything the allowlist has no word for is
+      // not reported at all rather than reported as something else.
+      const provider =
+        providerId === 'google-calendar' ? 'google' : providerId === 'atlassian' ? 'atlassian' : null;
+      if (provider)
+        telemetry.send('connection.added', {
+          provider,
+          // Connected is not the finish line — how much they follow is the
+          // thing worth knowing, and it is a band like every other count.
+          following: countBand(
+            syncService
+              .list()
+              .reduce((n, c) => n + c.containers.filter((k) => k.followed).length, 0),
+          ),
+        });
+    }
     return result;
   });
   handle('connections:renewAuth', async (connectionId, values) => {
@@ -633,10 +931,14 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('connections:disconnect', async (connectionId) => {
     await syncService.disconnect(connectionId);
     reconfigureAgent();
+    pushSettings();
   });
-  handle('connections:setFollow', (connectionId, containerId, followed) =>
-    syncService.setFollow(connectionId, containerId, followed),
-  );
+  handle('connections:setFollow', async (connectionId, containerId, followed) => {
+    await syncService.setFollow(connectionId, containerId, followed);
+    // Following the first container is what turns "connected" into a row that
+    // can honestly tick — half-done counts as not done.
+    pushSettings();
+  });
   handle('connections:syncNow', async () => {
     try {
       await syncService.tick();
@@ -670,6 +972,29 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const summaries = await listSkills(vaultService.requireContext());
     return summaries.map(skillToDTO);
   });
+  // The pack review. Agents are in the same list on purpose: they are the same
+  // kind of file, shipped the same way, and the PM meets both on the Skills page
+  // rather than being sent to two places for one set of changes.
+  const packFiles = [...DEFAULT_SKILLS, ...DEFAULT_AGENTS];
+  const packReview = (): Promise<SkillPackReviewDTO> =>
+    reviewSkillPack(vaultService.requireContext(), packFiles, RETIRED_SKILL_FILES);
+  handle('skills:review', packReview);
+  handle('skills:applyUpdate', async (file) => {
+    const ctx = vaultService.requireContext();
+    if (await applyShippedSkill(ctx, packFiles, file))
+      pushEvent(getWindow(), { channel: 'vault:changed', paths: [file] });
+    return packReview();
+  });
+  handle('skills:dismissUpdate', async (file) => {
+    dismissSkillNotice(vaultService.requireContext(), packFiles, file);
+    return packReview();
+  });
+  handle('skills:create', async (title) => {
+    const ctx = vaultService.requireContext();
+    const { path } = await createSkill(ctx, title);
+    pushEvent(getWindow(), { channel: 'vault:changed', paths: [path] });
+    return { path };
+  });
   handle('agents:list', () => agentsDTO());
   handle('agents:setEnabled', async (id, enabled) => {
     // An agent IS its file, so the switch is a frontmatter edit — visible in
@@ -691,10 +1016,43 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   });
   handle('settings:setIdentity', async (patch) => {
     await settings.setIdentity(patch);
+    // The name and work email ARE the person record (TEL-4), so editing them
+    // has to reach the sender in the same tick.
+    syncTelemetryConsent();
     return settingsDTO();
   });
-  handle('models:list', () => {
-    const live = agent.listModels();
+  handle('settings:setOnboarding', async (patch) => {
+    await settings.patchOnboarding(patch);
+    // The consent switch lives in this record, and so does whether it has been
+    // answered yet. Both go first: the step events below are themselves subject
+    // to the answer this patch may have just given.
+    syncTelemetryConsent();
+    if (patch.done) telemetry.send('onboarding.step', { step: patch.done, action: 'done' });
+    else if (patch.skipped)
+      telemetry.send('onboarding.step', {
+        // The connections screen records its skips per provider
+        // (`connections:<id>`), and the screen is what we asked about.
+        step: patch.skipped.startsWith('connections:') ? 'connections' : patch.skipped,
+        action: 'skipped',
+      });
+    // The screen they finished on, which is the last one. A patch that only
+    // flips the switch or puts the First steps card away says nothing about
+    // progress, so it sends nothing at all.
+    if (patch.finished)
+      telemetry.send('onboarding.step', { step: settings.getOnboarding().step, action: 'finished' });
+    // Other windows and the Settings mirror of the telemetry switch follow the
+    // same record; the caller gets the DTO back directly either way.
+    pushSettings();
+    return settingsDTO();
+  });
+  // Which parts of the app get opened — the one thing only the renderer knows
+  // (TEL-5). A view kind and nothing else; the allowlist refuses anything that
+  // is not one of ours, so a wrong string is dropped rather than sent.
+  handle('telemetry:view', (view) => {
+    telemetry.send('view.opened', { view });
+  });
+  handle('models:list', async () => {
+    const live = await agent.listModels();
     return live.length > 0 ? live : MODELS;
   });
 
@@ -714,6 +1072,56 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   });
 
   handle('vault:open', async (path) => {
+    const info = await vaultService.open(path);
+    await settings.setVaultPath(info.path);
+    void afterOpen();
+    reconfigureAgent();
+    return vaultInfoToDTO(info);
+  });
+
+  /**
+   * What a folder would be as a workspace, asked BEFORE anything is written to
+   * it. The sync warning has to land before the scaffold, not after: telling
+   * someone their workspace is in iCloud once we have already put files there
+   * is a report, not a choice (ONB-4).
+   */
+  const checkPath = async (path: string): Promise<PathCheckDTO> => {
+    let exists = false;
+    let hasNotes = false;
+    try {
+      const info = await stat(path);
+      exists = info.isDirectory();
+      if (exists) {
+        const entries = await readdir(path).catch(() => []);
+        hasNotes = entries.some((e) => e.toLowerCase().endsWith('.md'));
+      }
+    } catch {
+      // Not there yet is the ordinary case for the suggested path.
+    }
+    // The sync check is path-shaped, and the give-away segment is often behind
+    // a symlink: with "Desktop & Documents in iCloud" on, ~/Documents IS a link
+    // into the iCloud container, and the literal path says nothing. Resolve the
+    // deepest ancestor that exists, then check the whole thing.
+    let canonical = path;
+    try {
+      const anchor = exists ? path : join(path, '..');
+      canonical = join(await realpath(anchor), exists ? '.' : basename(path));
+    } catch {
+      // An unresolvable parent just means we check the literal path.
+    }
+    return { path, exists, hasNotes, syncedBy: detectSyncedFolder(canonical) };
+  };
+
+  // ~/Documents is the folder people already keep documents in, and on a Mac
+  // with Desktop & Documents syncing it is inside iCloud — which the check
+  // above catches and says so, rather than us quietly picking somewhere the
+  // PM would never think to look for their own files.
+  handle('vault:suggestPath', () => checkPath(join(app.getPath('documents'), 'Qale')));
+  handle('vault:checkPath', (path) => checkPath(path));
+  handle('vault:create', async (path) => {
+    // Recursive and forgiving: an existing folder is opened as it stands (an
+    // Obsidian vault arrives this way too), a missing one is made.
+    await mkdir(path, { recursive: true });
     const info = await vaultService.open(path);
     await settings.setVaultPath(info.path);
     void afterOpen();
@@ -743,6 +1151,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   });
   handle('note:save', async (input) => {
     const note = await saveAuthoredNote(vaultService.requireContext(), input.path, input.body);
+    // Editing the about-us skill is the step that teaches the biggest idea in
+    // the product: the instructions are files, and they are yours to change.
+    if (input.path.startsWith('skills/_about-us/')) {
+      markFirstStep('about-us', 'Told it about your product, and every session reads this now');
+    }
     return noteToDTO(note);
   });
   handle('note:saveFrontmatter', async (input) => {
@@ -765,6 +1178,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('note:resolveLink', (target) => resolveLink(vaultService.requireContext(), target));
   handle('note:history', (path) => getNoteHistory(vaultService.requireContext(), path));
   handle('note:versionAt', (path, hash) => getNoteVersion(vaultService.requireContext(), path, hash));
+  handle('note:restoreVersion', async (input) => {
+    const note = await restoreNoteVersion(vaultService.requireContext(), input);
+    return noteToDTO(note);
+  });
 
   // People: the directory participant chips resolve against, and the one-click
   // "make a page for them" that turns a raw invite address into a person the
@@ -797,73 +1214,18 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const note = await captureNote(vaultService.requireContext(), input);
     return noteToDTO(note);
   });
-  handle('capture:classify', (text, fileName) => classifyCapture(text, fileName));
-  // Capture matching (job 3): the synced meeting a fresh transcript most likely
-  // belongs to, so the dialog can offer "Attach to …" instead of a blank title.
-  handle('capture:matchMeeting', () => {
-    const m = syncService.matchMeetingForCapture(Date.now());
-    return m ? { notePath: m.notePath, title: m.title, startMs: m.startMs, endMs: m.endMs } : null;
-  });
-  handle('capture:ingest', async (input) => {
-    // A titleless transcript would otherwise be slugified from its first spoken
-    // line ("me-thanks-for-making-time…"). Name it from the content instead —
-    // a quick model call, best-effort: if the key's unset or it errors, the
-    // classifier's cleaned title carries it (never the raw first line).
-    let named = input;
-    // Attaching to a synced meeting reuses that note's title — don't spend a
-    // model call naming a transcript whose title we'll ignore.
-    if (!input.attachment && !input.attachTo && !input.title?.trim()) {
-      const kindGuess = input.kind ?? classifyCapture(input.text).kind;
-      if (kindGuess === 'transcript') {
-        // Bounded so a slow model never holds the capture open — the heuristic
-        // title carries it if the call times out or errors.
-        const title = await Promise.race([
-          agent.generateTitle(input.text),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
-        ]).catch(() => null);
-        if (title) named = { ...input, title };
-      }
-    }
-    const { note, kind, followUp } = await ingestCapture(vaultService.requireContext(), {
-      ...named,
-      attachment: named.attachment
-        ? { name: named.attachment.name, data: Buffer.from(named.attachment.dataBase64, 'base64') }
-        : undefined,
-    });
-    // After-Meeting / External-Transcript run the moment the capture lands — the
-    // gate is the review, not the run. We hand the session id back so the PO
-    // lands in the live session, watches it work, and approves its cards inline;
-    // the same cards also collect in the Inbox.
-    if (followUp?.background) {
-      const handle = await fireSession(followUp.skill, followUp.prompt, { outbound: followUp.outbound });
-      return {
-        note: noteToDTO(note),
-        kind,
-        processing: {
-          skill: followUp.skill,
-          label: followUp.tabTitle,
-          ...(handle ? { sessionId: handle.sessionId } : {}),
-        },
-      };
-    }
-    return { note: noteToDTO(note), kind, followUp };
-  });
-
   // -------------------------------------------------------------------------
-  // Arrival (docs/vision/arrival.md)
+  // Arrival (docs/arrival-agentic.md)
+  //
+  // Landing is mechanical and judgment is the skill's. Everything below is
+  // bytes: read the files, refuse the ones that are not text, write what is
+  // left into a fresh session folder, and start the agent that reads them. What
+  // each thing IS, where it belongs, and whether it earns a full read are all
+  // decided inside that session, out loud, where a correction is just typing.
   // -------------------------------------------------------------------------
 
-  /**
-   * Session-scoped undo ledger. An arrival's receipt can take back exactly what
-   * it reported, for as long as that receipt is on screen; it is deliberately
-   * not durable, because an undo affordance that outlives the thing offering it
-   * would be a second, invisible history competing with git.
-   */
-  const arrivals = new Map<string, Awaited<ReturnType<typeof ingestArrival>>['ledger']>();
-  let arrivalSeq = 0;
-
-  /** One input item, either resolved to material or refused with a reason. */
-  type ResolvedEntry = { name: string; item?: ArrivalItem; error?: string };
+  /** One piece of material, resolved to bytes or refused with a reason. */
+  type Landing = { name: string; text?: string; data?: Uint8Array; error?: string };
 
   /** A last line of defence for extensionless files: real text has no NULs. */
   const looksBinary = (buf: Buffer): boolean => {
@@ -871,60 +1233,92 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     if (head.includes(0)) return true;
     const text = head.toString('utf8');
     let bad = 0;
-    for (const ch of text) if (ch === '\uFFFD') bad++;
+    for (const ch of text) if (ch === '�') bad++;
     return bad > text.length * 0.02;
   };
 
   /**
-   * Turn wire items into material. A `path` (from the OS picker) is read here
-   * so fifty files never cross IPC as base64; anything the renderer already
-   * holds — a drop, a paste — rides in as it is. A file that cannot be read
-   * reports itself and is dropped from the batch rather than failing it.
+   * How many files one drop may pull in. A dropped folder is the front door of
+   * the backlog story, and it is also how somebody accidentally hands over their
+   * whole Downloads directory. Everything past the cap is reported rather than
+   * silently dropped.
    */
-  const resolveItems = async (items: ArrivalItemInputDTO[]): Promise<ResolvedEntry[]> => {
-    const entries: ResolvedEntry[] = [];
+  const FOLDER_FILE_CAP = 200;
+
+  /** Every file under a dropped folder, breadth-first, skipping dotfiles. */
+  const walkFolder = async (dir: string): Promise<string[]> => {
+    const found: string[] = [];
+    const queue = [dir];
+    while (queue.length > 0 && found.length < FOLDER_FILE_CAP) {
+      const current = queue.shift()!;
+      const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+        if (entry.name.startsWith('.')) continue;
+        const abs = join(current, entry.name);
+        if (entry.isDirectory()) queue.push(abs);
+        else if (entry.isFile() && found.length < FOLDER_FILE_CAP) found.push(abs);
+      }
+    }
+    return found;
+  };
+
+  /** Read one file off disk into material, or refuse it by name. */
+  const readOne = async (path: string, name: string): Promise<Landing> => {
+    try {
+      const buf = await readFile(path);
+      const kind = readableAs(name);
+      if (kind === 'image') return { name, data: new Uint8Array(buf) };
+      if (kind === null || looksBinary(buf)) return { name, error: unreadableReason(name) };
+      const text = buf.toString('utf8');
+      // An honest empty-file message: "0 bytes" is a fact the PM can act on,
+      // where "not readable text" sends them looking for a converter (AR-14).
+      if (!text.trim()) return { name, error: 'the file is empty' };
+      return { name, text };
+    } catch (err) {
+      return { name, error: err instanceof Error ? err.message : 'could not be read' };
+    }
+  };
+
+  /**
+   * Turn wire items into material. A `path` (from the picker, or from a drop —
+   * the preload hands back the real path) is read here, so fifty files never
+   * cross IPC as base64 and a dropped FOLDER can be walked at all. Anything the
+   * renderer already holds rides in as it is.
+   */
+  const resolveItems = async (items: ArrivalItemInputDTO[]): Promise<Landing[]> => {
+    const out: Landing[] = [];
     for (const item of items) {
-      const common = {
-        ...(item.kind ? { kind: item.kind } : {}),
-        ...(item.external ? { external: item.external } : {}),
-        ...(item.attachTo ? { attachTo: item.attachTo } : {}),
-      };
       if (item.path) {
-        const name = item.name ?? basename(item.path);
-        try {
-          const [buf, info] = await Promise.all([readFile(item.path), stat(item.path)]);
-          const kind = readableAs(name);
-          if (kind === 'image') {
-            entries.push({ name, item: { name, lastModified: info.mtimeMs, data: new Uint8Array(buf), ...common } });
-          } else if (kind === null || looksBinary(buf)) {
-            entries.push({ name, error: unreadableReason(name) });
-          } else {
-            entries.push({
-              name,
-              item: { name, lastModified: info.mtimeMs, text: buf.toString('utf8'), ...common },
+        const info = await stat(item.path).catch(() => null);
+        if (info?.isDirectory()) {
+          const files = await walkFolder(item.path);
+          if (files.length === 0) {
+            out.push({ name: basename(item.path), error: 'the folder has nothing readable in it' });
+            continue;
+          }
+          for (const file of files) out.push(await readOne(file, basename(file)));
+          if (files.length >= FOLDER_FILE_CAP) {
+            out.push({
+              name: basename(item.path),
+              error: `only the first ${FOLDER_FILE_CAP} files were taken — drop the rest separately`,
             });
           }
-        } catch (err) {
-          entries.push({ name, error: err instanceof Error ? err.message : 'could not be read' });
+          continue;
         }
+        out.push(await readOne(item.path, item.name ?? basename(item.path)));
         continue;
       }
-      if (item.name && !item.text && !item.dataBase64) {
-        entries.push({ name: item.name, error: unreadableReason(item.name) });
+      if (item.dataBase64) {
+        out.push({ name: item.name ?? 'image.png', data: new Uint8Array(Buffer.from(item.dataBase64, 'base64')) });
         continue;
       }
-      entries.push({
-        name: item.name ?? 'Pasted text',
-        item: {
-        ...(item.name ? { name: item.name } : {}),
-        ...(item.text ? { text: item.text } : {}),
-        ...(item.dataBase64 ? { data: new Uint8Array(Buffer.from(item.dataBase64, 'base64')) } : {}),
-        ...(item.lastModified ? { lastModified: item.lastModified } : {}),
-        ...common,
-      },
-      });
+      if (item.text?.trim()) {
+        out.push({ name: item.name ?? 'pasted.md', text: item.text });
+        continue;
+      }
+      out.push({ name: item.name ?? 'unnamed', error: unreadableReason(item.name ?? '') });
     }
-    return entries;
+    return out;
   };
 
   handle('arrival:pick', async () => {
@@ -932,128 +1326,147 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const result = await dialog.showOpenDialog(win ?? undefined!, {
       title: 'Add material',
       buttonLabel: 'Add',
-      properties: ['openFile', 'multiSelections'],
+      // Folders too: a quarter of old interviews is a folder, not forty
+      // shift-clicks, and it is the front door of the backlog story.
+      properties: ['openFile', 'openDirectory', 'multiSelections'],
     });
     if (result.canceled) return [];
     // Only the path and a name travel back; the bytes stay on this side.
     return result.filePaths.map((path) => ({ path, name: basename(path) }));
   });
 
-  handle('arrival:inspect', async (items, ambition) => {
-    const ctx = vaultService.requireContext();
-    const entries = await resolveItems(items);
-    const resolved = entries.flatMap((e) => (e.item ? [e.item] : []));
-    const plan = planArrival(ctx, resolved, ambition);
-    // The meeting a lone fresh transcript belongs to — offered here so the tray
-    // can say "attaches to X" before anything is written, rather than minting a
-    // duplicate of a slot the calendar already mirrored.
-    const lone =
-      plan.ambition === 'capture' &&
-      resolved.length === 1 &&
-      plan.items[0]?.kind === 'transcript' &&
-      !resolved[0]?.external &&
-      !resolved[0]?.attachTo;
-    const m = lone ? syncService.matchMeetingForCapture(Date.now()) : null;
-    // Input order, not resolved order: the tray renders row N against plan N,
-    // so an unreadable file in the middle would otherwise shift every row under
-    // it onto the wrong destination.
-    let next = 0;
-    const rows = entries.map((e) =>
-      e.item
-        ? plan.items[next++]!
-        : { name: e.name, kind: 'note' as const, dir: '', title: e.name, historical: false, error: e.error },
-    );
+  handle('arrival:check', async (items) => {
+    const landed = await resolveItems(items);
     return {
-      ambition: plan.ambition,
-      ambitionAuto: plan.ambitionAuto,
-      reason: plan.reason,
-      runs: await resolveRuns(ctx, { ...plan, items: rows }),
-      items: rows,
-      ...(m ? { match: { notePath: m.notePath, title: m.title, startMs: m.startMs, endMs: m.endMs } } : {}),
+      items: landed.map((l) => ({ name: l.name, ...(l.error ? { error: l.error } : {}) })),
+      empty: landed.length > 0 && landed.every((l) => l.error),
     };
   });
 
-  handle('arrival:ingest', async (items, ambition) => {
+  /**
+   * A file name safe to write inside the session folder, and unique within it.
+   * The original name is worth keeping — it is often the only date and title the
+   * material carries — so this only takes out what a path cannot hold.
+   */
+  const materialName = (raw: string, taken: Set<string>): string => {
+    const base = (raw.split(/[\\/]/).pop() ?? 'material').replace(/[^\p{L}\p{N}._ -]+/gu, '-').slice(0, 120);
+    let name = base || 'material';
+    let n = 2;
+    while (taken.has(name.toLowerCase())) {
+      name = base.replace(/(\.[a-z0-9]+)$|$/i, `-${n}$1`);
+      n++;
+    }
+    taken.add(name.toLowerCase());
+    return name;
+  };
+
+  handle('arrival:ingest', async (items, instruction) => {
     const ctx = vaultService.requireContext();
-    const entries = await resolveItems(items);
-    const resolved = entries.flatMap((e) => (e.item ? [e.item] : []));
-    const failed = entries.flatMap((e) => (e.error ? [{ name: e.name, error: e.error }] : []));
-    const plan = planArrival(ctx, resolved, ambition);
+    const landed = await resolveItems(items);
+    const good = landed.filter((l) => !l.error);
+    const refused = landed.flatMap((l) => (l.error ? [{ name: l.name, error: l.error }] : []));
 
-    // A pasted transcript has no file name, so its title would be slugified
-    // from the first spoken line ("me-thanks-for-making-time…"). Name it from
-    // the content instead — best-effort and bounded, and only where there is no
-    // name to inherit, so a fifty-file batch never waits on fifty model calls.
-    const named = await Promise.all(
-      resolved.map(async (item, i) => {
-        if (item.name || plan.items[i]?.kind !== 'transcript' || !item.text) return item;
-        const title = await Promise.race([
-          agent.generateTitle(item.text),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
-        ]).catch(() => null);
-        return title ? { ...item, name: title } : item;
-      }),
+    // The session id is minted here, before anything runs, because the folder is
+    // named after it: the material has to be on disk before a model is asked for
+    // anything, so a missing API key costs nothing but a delay.
+    const sessionId = randomUUID();
+    const root = sessionFilesRoot(ctx.vault.root(), sessionId);
+    const taken = new Set<string>();
+    const written: { file: string; original: string; bytes: number }[] = [];
+    for (const piece of good) {
+      const name = materialName(piece.name, taken);
+      const file = `material/${name}`;
+      if (piece.data) await writeSessionBinary(root, file, piece.data);
+      else await writeSessionFile(root, file, piece.text ?? '');
+      written.push({ file, original: piece.name, bytes: piece.data?.byteLength ?? (piece.text ?? '').length });
+    }
+
+    /**
+     * Meetings the calendar holds around now, offered as CANDIDATES and said to
+     * be a hint (AR-1). The old pipeline picked one of these by clock and
+     * attached the transcript to it before anything had read a line, which put
+     * a call that ran long onto the meeting after it. Handing over the list
+     * costs nothing and leaves the decision where it can actually be made.
+     */
+    const candidates = syncService
+      .meetingCandidates(Date.now(), 7 * 24 * 60 * 60 * 1000, 24 * 60 * 60 * 1000)
+      .map((m) => `- ${m.notePath} — “${m.title}”, ${new Date(m.startMs).toISOString().slice(0, 16).replace('T', ' ')}`);
+
+    // A manifest, so the agent starts from a list rather than a directory walk,
+    // and so the PM opening the session folder tomorrow can see what arrived.
+    const manifest = [
+      `# What arrived`,
+      ``,
+      `${written.length} piece${written.length === 1 ? '' : 's'} of material, handed over ${ctx.clock.now()}.`,
+      ``,
+      ...written.map((w) => `- \`${w.file}\` — dropped as "${w.original}", ${w.bytes} bytes`),
+      ...(refused.length
+        ? ['', 'Could not be read, so they are not here:', ...refused.map((r) => `- ${r.name}: ${r.error}`)]
+        : []),
+      ...(instruction?.trim() ? ['', '## What the PM asked for', '', instruction.trim()] : []),
+      ...(candidates.length
+        ? [
+            '',
+            '## Meetings on the calendar near now',
+            '',
+            'A hint and nothing more. Match a transcript on its own date, title and who speaks in it;',
+            'if the clock and the transcript disagree, the transcript is right.',
+            '',
+            ...candidates,
+          ]
+        : []),
+    ].join('\n');
+    await writeSessionFile(root, 'arrival.md', `${manifest}\n`);
+    pushEvent(getWindow(), { channel: 'session:files', sessionId });
+
+    // One event per drop, saying how it arrived and nothing about what is in it.
+    const kind = good.some((g) => g.data) ? 'image' : items.some((i) => i.text && !i.path) ? 'text' : 'file';
+    telemetry.send('material.added', {
+      kind,
+      count: countBand(written.length),
+      startedSession: written.length > 0,
+    });
+
+    if (written.length === 0) {
+      return { sessionId, landed: 0, refused, started: false, reason: 'Nothing in that batch could be read.' };
+    }
+
+    const prompt = buildKickoff({
+      skill: ARRIVAL_AGENT_NAME,
+      instruction: [
+        `${written.length} piece${written.length === 1 ? '' : 's'} of material just landed in your session folder, unfiled.`,
+        `Read \`arrival.md\` for the list, work out what each thing is, file it, and read what is worth reading.`,
+        instruction?.trim() ? `What I asked for when I handed them over, which takes precedence: ${instruction.trim()}` : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
+    });
+    const started = await fireSession(ARRIVAL_AGENT_NAME, prompt, {
+      trigger: 'arrival',
+      unattended: true,
+      sessionId,
+    });
+    if (!started) {
+      return {
+        sessionId,
+        landed: written.length,
+        refused,
+        started: false,
+        reason: settings.getAnthropicKey()
+          ? 'Handle new material is switched off, so nothing is reading these yet.'
+          : 'Set an Anthropic API key in Settings and these will be read.',
+      };
+    }
+
+    // The First step the whole product hangs off: real material went in, and
+    // something started reading it.
+    markFirstStep(
+      'transcript',
+      written.length === 1
+        ? `Handed over “${written[0]!.original}”. It is being filed and read now`
+        : `Handed over ${written.length} pieces of material. They are being filed and read now`,
     );
-
-    // Attach a lone fresh transcript to the meeting the calendar already has.
-    const lone =
-      plan.ambition === 'capture' && named.length === 1 && plan.items[0]?.kind === 'transcript';
-    if (lone && named[0] && !named[0].external && !named[0].attachTo) {
-      const m = syncService.matchMeetingForCapture(Date.now());
-      if (m) named[0] = { ...named[0], attachTo: m.notePath };
-    }
-
-    const result = await ingestArrival(ctx, { items: named, ambition });
-
-    // Reviews start the moment the material lands — the gate is the review, not
-    // the run. Fired per item so each one carries its own material's permissions
-    // (Sessions v2 invariant 3): a colleague's sales call in the same batch as
-    // your own standup cannot borrow your standup's permissions.
-    const out: ArrivalOutcomeItemDTO[] = [];
-    let reviewsFailed = 0;
-    for (const item of result.items) {
-      let session: { id: string; label: string } | undefined;
-      if (item.followUp) {
-        const handle = await fireSession(item.followUp.skill, item.followUp.prompt, { outbound: item.followUp.outbound });
-        if (handle) session = { id: handle.sessionId, label: item.followUp.tabTitle };
-        else reviewsFailed++;
-      }
-      out.push({
-        name: item.name,
-        kind: item.kind,
-        ...(item.path ? { path: item.path } : {}),
-        ...(item.dir ? { dir: item.dir } : {}),
-        ...(item.title ? { title: item.title } : {}),
-        ...(item.error ? { error: item.error } : {}),
-        ...(session ? { session } : {}),
-      });
-    }
-    for (const f of failed) out.push({ name: f.name, kind: 'note', error: f.error });
-
-    const id = `arrival-${++arrivalSeq}`;
-    arrivals.set(id, result.ledger);
-    // Bounded so a long session's ledgers cannot grow without limit; the oldest
-    // receipt is long gone from the screen by then.
-    if (arrivals.size > 20) arrivals.delete(arrivals.keys().next().value!);
-
-    return {
-      id,
-      ambition: result.ambition,
-      ambitionAuto: result.ambitionAuto,
-      items: out,
-      reviews: out.filter((i) => i.session).length,
-      reviewsFailed,
-    };
-  });
-
-  handle('arrival:undo', async (id) => {
-    const ledger = arrivals.get(id);
-    if (!ledger) return { removed: [], restored: [] };
-    const { removed, restored } = await undoArrival(vaultService.requireContext(), ledger);
-    arrivals.delete(id);
-    // Paths, not counts: the renderer has to close tabs that were showing a
-    // note this just deleted, or the PO is left reading a file that is gone.
-    return { removed, restored };
+    return { sessionId, landed: written.length, refused, started: true };
   });
 
   handle('search:query', (query, limit) =>
@@ -1098,27 +1511,98 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const ctx = vaultService.context();
     const rec = ctx?.proposals.get(id);
     if (!ctx || !rec || rec.kind !== 'decision') return;
-    const supersedes = (rec.payload as { supersedes?: string })?.supersedes;
-    if (!supersedes) return;
+    // The accept that just ran parsed this payload, so both slugs are here as
+    // the spine wrote them: the replaced decision, and the one that landed.
+    const payload = rec.payload as { supersedes?: string; path?: string };
+    const replaced = refToSlug(payload.supersedes);
+    const landed = refToSlug(payload.path);
+    if (!replaced || !landed) return;
+    // The kickoff is the event and nothing more. What a repoint is, that the
+    // spine is append-only, and that a note contradicting the new decision gets
+    // flagged rather than rewritten all live in the librarian's own file now,
+    // where the PM can read them and change them.
     void fireSession(
       'librarian',
-      `Repoint references after a decision changed (${supersedes}). Search the memory for notes, insights, and hubs that still point at the old decision and propose updates pointing them at the new one, as approval cards. Write each card's reason in plain language — say "points at the newer decision", not "supersede".`,
-    );
+      buildKickoff({
+        skill: 'librarian',
+        instruction: `[[${replaced}]] was replaced by [[${landed}]]. Repoint what still cites the old one.`,
+      }),
+      // A reaction to material the PO just kept, not a run they asked for.
+      { trigger: 'arrival' },
+    )
+      .then((started) => {
+        // The scheduled sweep paces itself off this stamp, so a session started
+        // here has to count as the librarian having just run. Without it the
+        // next tick would happily stack a second session on top of this one.
+        if (started) markLibrarianRun(ctx, Date.now());
+      })
+      // This runs long after the accept returned, so the caller's own catch is
+      // no longer around to hold it. Closing the workspace between the two is
+      // enough to throw here, and a stamp that missed is worth one line in the
+      // log, never a crash.
+      .catch((err) => {
+        console.error(
+          '[qale] recording the supersede reaction failed:',
+          err instanceof Error ? err.message : err,
+        );
+      });
+  };
+  /**
+   * What a card was before the decision landed. Read first because accept and
+   * reject both rewrite the row, and its age stops being answerable the moment
+   * they do. Nothing it does may reach the decision: a lookup added for
+   * reporting that could throw the handler would be the exact failure the
+   * sender's own rules are written to prevent.
+   */
+  const cardFacts = (id: string): { kind: string; age: string } | null => {
+    try {
+      const rec = vaultService.context()?.proposals.get(id);
+      return rec ? { kind: rec.kind, age: ageBand(Date.now() - rec.created) } : null;
+    } catch {
+      return null;
+    }
   };
   handle('proposals:accept', async (id, edited) => {
+    const card = cardFacts(id);
     const result = await acceptProposal(vaultService.requireContext(), id, edited);
-    if (result.ok) await fireSupersedeReactions(id).catch(() => {});
+    if (result.ok) {
+      // A card handed back with `edited` is one they changed before keeping.
+      telemetry.send('card.decided', {
+        decision: 'accepted',
+        edited: edited !== undefined,
+        ...(card ?? {}),
+      });
+      await fireSupersedeReactions(id).catch(() => {});
+    }
     const review = await afterCardResolved(id);
     notifyProposalsFor();
+    if (result.ok) markFirstStep('proposal', 'Approved your first card, and it went into the memory');
     return review ? { ...result, review } : result;
   });
   handle('proposals:reject', async (id) => {
+    const card = cardFacts(id);
     const result = rejectProposal(vaultService.requireContext(), id);
+    // Nothing was edited on the way to passing on a card.
+    if (result.ok)
+      telemetry.send('card.decided', { decision: 'rejected', edited: false, ...(card ?? {}) });
     const review = await afterCardResolved(id);
     notifyProposalsFor();
+    // Passing on a card teaches the loop exactly as well as keeping one: the
+    // step is "you decided", not "you agreed".
+    markFirstStep('proposal', 'Passed on your first card, so nothing was written');
     return review ? { ...result, review } : result;
   });
   handle('meeting:markReviewed', (path) => markMeetingReviewed(vaultService.requireContext(), path));
+
+  // The capture nudge's memory. Reads are cheap and local; the renderer holds
+  // the derivation and only asks here what the PO already answered.
+  handle('captureNudge:state', () => captureNudgeState(vaultService.requireContext()));
+  handle('captureNudge:dismiss', (path) =>
+    dismissCaptureNudge(vaultService.requireContext(), path, Date.now()),
+  );
+  handle('captureNudge:undo', (path, series) =>
+    undoCaptureNudge(vaultService.requireContext(), path, series),
+  );
   handle('librarian:report', () => getMaintenanceReport(vaultService.requireContext()));
   handle('agent:run', async (input) => {
     const ctx = vaultService.requireContext();
@@ -1160,23 +1644,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     return { ok: true };
   });
 
-  handle('pings:list', () => listPings(vaultService.requireContext()).map(pingToDTO));
-  handle('pings:open', (id) => {
-    const rec = openPing(vaultService.requireContext(), id);
-    notifyPings();
-    return rec ? pingToDTO(rec) : null;
-  });
-  handle('pings:dismiss', (id) => {
-    dismissPing(vaultService.requireContext(), id);
-    notifyPings();
-    return { ok: true };
-  });
-  handle('pings:resolveItem', async (pingId, itemId, action) => {
-    const rec = await resolvePingItem(vaultService.requireContext(), pingId, itemId, action);
-    notifyPings();
-    return rec ? pingToDTO(rec) : null;
-  });
-
   // Chats that touched this note: session receipts link reads/writes as
   // wikilinks, so the note's backlinks from sessions/ name the conversations.
   handle('chats:forNote', async (path) => {
@@ -1201,9 +1668,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   });
 
   /**
-   * The same rule as main/index.ts: the PM_* variables are our verification
+   * The same rule as main/index.ts: the QALE_* variables are our verification
    * harness and a packaged build never reads them. Here that matters twice over
-   * — PM_VAULT opens a folder with no picker, and PM_MCP starts the server and
+   * — QALE_VAULT opens a folder with no picker, and QALE_MCP starts the server and
    * prints its bearer token to the console.
    */
   const devEnv = (name: string): string | undefined => (is.dev ? process.env[name] : undefined);
@@ -1211,25 +1678,47 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   return {
     async onReady() {
       await settings.load();
-      // Dev affordance: PM_VAULT opens a workspace without the picker.
-      const saved = devEnv('PM_VAULT') ?? settings.get().vaultPath;
+      // Who the events are from. Nothing can go out before this, so it happens
+      // the moment settings exist and before anything else here can report.
+      telemetry.bind(settings.getInstallId());
+      // Straight away, and again at the end: until the switch has been read,
+      // the sender drops rather than holds, and opening a large workspace is
+      // long enough for something to happen in that gap.
+      syncTelemetryConsent();
+      // Read before the workspace opens: an install that has never been set up
+      // has neither a finished opening nor a folder to point at.
+      const firstRun = !settings.getOnboarding().finishedAt && !settings.get().vaultPath;
+      // Dev affordance: QALE_VAULT opens a workspace without the picker.
+      const saved = devEnv('QALE_VAULT') ?? settings.get().vaultPath;
       if (saved) {
         try {
           const info = await vaultService.open(saved);
           void afterOpen();
           reconfigureAgent();
-          console.log(`[pm] opened workspace "${info.name}" — ${info.noteCount} notes, git=${info.git}`);
-          if (devEnv('PM_SEED_PROPOSAL')) void seedDemoProposal(vaultService.requireContext());
+          // Not the workspace name: this line is captured for diagnostics, and
+          // the folder someone names their product memory after is theirs.
+          console.log(`[qale] opened workspace: ${info.noteCount} notes, git=${info.git}`);
+          if (devEnv('QALE_SEED_PROPOSAL')) void seedDemoProposal(vaultService.requireContext());
         } catch (err) {
-          console.error('[pm] failed to open workspace:', err);
+          console.error('[qale] failed to open workspace:', err);
         }
       }
       // Start the app-open scheduler (idempotent; ticks no-op until a vault opens).
       scheduler.start();
-      if (settings.get().mcpEnabled || devEnv('PM_MCP')) {
+      if (settings.get().mcpEnabled || devEnv('QALE_MCP')) {
         await mcp.start(settings.get().mcpPort);
-        if (devEnv('PM_MCP')) console.log(`[pm] MCP token: ${settings.get().mcpToken}`);
+        if (devEnv('QALE_MCP')) console.log(`[qale] MCP token: ${settings.get().mcpToken}`);
       }
+      // Again here so the person's note count is the one the opened workspace
+      // actually has, and the launch event carries the same number. On a first
+      // run the consent screen is still several steps away, so this event waits
+      // in memory for the answer rather than going out ahead of it.
+      syncTelemetryConsent();
+      telemetry.send('app.launched', {
+        firstRun,
+        onboardingFinished: !!settings.getOnboarding().finishedAt,
+        ...telemetryFacts(),
+      });
     },
     // Quit-time teardown: stop timers and the server, dispose live sessions,
     // then close the watcher/index/DB so nothing writes against a closing app.
@@ -1237,7 +1726,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       scheduler.stop();
       await mcp.stop().catch(() => {});
       agent.dispose();
+      // Flush what is batched, bounded inside itself so a dead network cannot
+      // slow the quit past the watchdog.
+      await telemetry.shutdown().catch(() => {});
       await vaultService.dispose().catch(() => {});
     },
+    telemetry,
   };
 }

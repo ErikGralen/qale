@@ -11,9 +11,9 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { Spinner, cn } from '@pm/ui';
-import type { NoteRefDTO } from '@pm/ipc';
-import { byDue, todoLane, type TodoLane, isFolderIndex } from '@pm/domain';
+import { Spinner, cn } from '@qale/ui';
+import type { NoteRefDTO } from '@qale/ipc';
+import { byDue, todoLane, type TodoLane, isFolderIndex } from '@qale/domain';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
 import { useToast } from '../components/toast';
@@ -114,7 +114,7 @@ function QuickAdd() {
         <input
           ref={inputRef}
           className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/80"
-          placeholder="Add a todo — try “email Åsa tomorrow” or “@Jonas update the docs”"
+          placeholder="Add a todo, try “email Åsa tomorrow” or “@Jonas update the docs”"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
@@ -206,7 +206,7 @@ function TodoRowItem({
         aria-label={`${n.title}${n.due ? `, due ${dueLabel(n.due, today)}` : ''}${
           row.overdue ? ', overdue' : ''
         }${ownerName ? `, waiting on ${ownerName}` : ''}${
-          risk && !closed ? `, at risk — ${risk.externalId} ${risk.reason === 'blocked' ? 'blocked' : 'changed'}` : ''
+          risk && !closed ? `, at risk: ${risk.externalId} ${risk.reason === 'blocked' ? 'blocked' : 'changed'}` : ''
         }${closed ? (dropped ? ', dropped' : ', done') : ''}`}
         aria-keyshortcuts="Space Enter"
         title={n.title}
@@ -308,12 +308,12 @@ function TodoRowItem({
                   { path: n.path, title: n.title, due: n.due, owner: n.owner },
                   today,
                 ),
-                title: `Handle — ${n.title}`,
+                title: `Handle: ${n.title}`,
                 fresh: true,
               })
             }
             aria-label={`Help me handle "${n.title}"`}
-            title="Help me handle this — the memory plans it out as approval cards"
+            title="Help me handle this: the memory plans it out as approval cards"
           >
             <Sparkles className="size-3.5" aria-hidden />
           </button>
@@ -325,7 +325,7 @@ function TodoRowItem({
             onClick={onDrop}
             disabled={busy}
             aria-label={`Drop "${n.title}"`}
-            title="Drop — keeps the record, closes the todo"
+            title="Drop: keeps the record, closes the todo"
           >
             <X className="size-3" aria-hidden />
           </button>
@@ -532,8 +532,8 @@ export function TodosView() {
             </div>
             <h2 className="text-lg font-semibold">Nothing tracked yet</h2>
             <p className="max-w-sm text-sm text-muted-foreground">
-              Type a commitment above — yours or one you're waiting on. After-Meeting sessions extract
-              them from transcripts as approval cards, each citing where it was said.
+              Type a commitment above, yours or one you're waiting on. Material you hand over gets
+              read, and every promise in it comes back as a card citing where it was said.
             </p>
           </div>
         ) : allClear ? (
@@ -542,7 +542,7 @@ export function TodosView() {
               <Check className="size-5 text-success" aria-hidden />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold">All clear — nothing open, nothing owed.</p>
+              <p className="text-sm font-semibold">All clear: nothing open, nothing owed.</p>
               <p className="text-sm text-muted-foreground">
                 New commitments land here as you capture them or approve them from a session.
               </p>
@@ -571,7 +571,7 @@ export function TodosView() {
               ) : (
                 <div className="flex items-center gap-2 px-2 py-2.5 text-sm text-muted-foreground">
                   <Check className="size-4 text-success" aria-hidden />
-                  Nothing due today — you're ahead.
+                  Nothing due today, you're ahead.
                 </div>
               )}
             </section>
@@ -658,7 +658,7 @@ export function TodosView() {
                     className="mt-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                     onClick={() => openFolder('todos')}
                   >
-                    {closedRows.length - 30} more in todos/ →
+                    {closedRows.length - 30} more in Todos →
                   </button>
                 )}
               </>
@@ -669,7 +669,7 @@ export function TodosView() {
         {closedRows.length > 0 && (
           <p className="mt-3 flex items-center gap-1 px-2 pb-4 text-xs text-muted-foreground/70">
             <RotateCcw className="size-3" aria-hidden />
-            Done and dropped todos stay on the ledger — the memory accretes.
+            Done and dropped todos stay on the ledger: the memory accretes.
           </p>
         )}
       </div>

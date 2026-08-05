@@ -5,6 +5,15 @@ import { isSessionFile } from '../notes/slug.js';
 /** The "what will happen" line an outbound card carries above its rationale. */
 export { outboundEffect, type OutboundEffectFacts } from './effect.js';
 
+/** Whether a card repeats one already waiting on the PM. */
+export {
+  contentTokens,
+  findDuplicate,
+  titleOverlap,
+  DUPLICATE_THRESHOLD,
+  type ProposalIdentity,
+} from './duplicate.js';
+
 /**
  * Proposals (approval cards) are the ONLY write path for the agent (PLAN-V2 §3.3).
  * The trust mechanic — evidence must resolve, or the card is flagged inference — is

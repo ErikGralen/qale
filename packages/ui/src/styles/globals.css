@@ -1,6 +1,6 @@
 /*
- * @pm/ui design tokens — the single place the whole app is themed (PLAN §4).
- * Ported from qale's index.css: warm-clay oklch identity, Inter + Fraunces.
+ * @qale/ui design tokens — the single place the whole app is themed (PLAN §4).
+ * Terracotta-on-steel oklch identity ("rust and steel"), Inter + Fraunces.
  *
  * This file is imported by the renderer AFTER `@import "tailwindcss"`, so it does
  * not import tailwind itself. Fonts + tw-animate-css come first (must precede
@@ -70,103 +70,107 @@
 }
 
 /*
- * Warm-gray palette — hue ~70 (clay/sand), low chroma. Brand accent is a warm
- * clay/terracotta.
+ * Steel-neutral palette — hue ~255-260 (cool blue-grey), whisper chroma — under
+ * a deep ink-blue accent. The accent is fountain-pen ink on cool paper: muted,
+ * grave, nothing electric about it. The neutrals must never drift warm — a warm
+ * near-white would recreate the cream AI-default ground this palette replaced —
+ * and the accent must never brighten toward SaaS blue: its depth (L 0.45) and
+ * restraint (C 0.08) are what make it ink rather than interface chrome.
  *
  * The accent is one value, not two. It is read as text far more often than it
  * is filled (chips, wikilinks, counts — the visible fiber of the memory), so it
- * sits at the lightness where terracotta *type* is legible: L 0.52 in light,
- * where it clears AA on paper (5.8:1), on its own 8% wash (5.2:1), and on the
- * 15% hover wash (4.7:1) — and carries near-white type on a fill at 5.6:1.
- * The earlier 0.62 was chosen as a fill and failed every one of those as text.
+ * sits at the lightness where ink-blue *type* is legible: L 0.45 in light,
+ * where it clears AA on paper (7.2:1), on its own 8% wash (6.7:1), and on the
+ * 15% hover wash (6.3:1) — and carries near-white type on a fill at 7.3:1.
  *
  * Dark mode is not the inverse. The accent lifts to 0.72 so it reads on a dark
  * card, which makes a fill too light for near-white type — so a filled control
  * flips to near-black ink instead. Same hue, same job, opposite ink.
  */
 :root {
-  --background: oklch(0.987 0.003 70);
-  --foreground: oklch(0.24 0.008 60);
-  --card: oklch(1 0.002 70);
-  --card-foreground: oklch(0.24 0.008 60);
-  --popover: oklch(1 0.002 70);
-  --popover-foreground: oklch(0.24 0.008 60);
-  --primary: oklch(0.52 0.13 42);
-  --primary-foreground: oklch(0.99 0.01 70);
-  --secondary: oklch(0.955 0.006 70);
-  --secondary-foreground: oklch(0.3 0.01 60);
-  --muted: oklch(0.955 0.006 70);
-  --muted-foreground: oklch(0.53 0.012 62);
-  --accent: oklch(0.94 0.012 68);
-  --accent-foreground: oklch(0.3 0.01 60);
+  --background: oklch(0.985 0.0025 255);
+  --foreground: oklch(0.235 0.008 260);
+  --card: oklch(1 0.0015 255);
+  --card-foreground: oklch(0.235 0.008 260);
+  --popover: oklch(1 0.0015 255);
+  --popover-foreground: oklch(0.235 0.008 260);
+  --primary: oklch(0.45 0.08 270);
+  --primary-foreground: oklch(0.99 0.003 260);
+  --secondary: oklch(0.955 0.005 255);
+  --secondary-foreground: oklch(0.3 0.01 258);
+  --muted: oklch(0.955 0.005 255);
+  --muted-foreground: oklch(0.525 0.012 255);
+  --accent: oklch(0.94 0.008 255);
+  --accent-foreground: oklch(0.3 0.01 258);
   /* Deep enough to stay legible ON its own soft fill: the destructive control
      is a 10% wash that deepens to 20% on hover, and at 0.577 the label sank
      into its own hover state (3.5:1). */
   --destructive: oklch(0.5 0.2 27.325);
-  /* Freshness/caution voice — stays in the warm family but reads as a flag (AA on paper). */
+  /* Freshness/caution voice — deliberately warm: on the cool field the flag
+     cannot be missed (AA on paper). */
   --warning: oklch(0.5 0.11 72);
-  --warning-foreground: oklch(0.99 0.01 70);
+  --warning-foreground: oklch(0.99 0.003 260);
   /* Diff-added / sent-receipt voice. Used only where change itself is the subject. */
   --success: oklch(0.52 0.1 150);
-  --border: oklch(0.9 0.008 68);
-  --input: oklch(0.9 0.008 68);
-  --ring: oklch(0.52 0.13 42);
-  --brand: oklch(0.52 0.13 42);
-  --brand-foreground: oklch(0.99 0.01 70);
-  --chart-1: oklch(0.52 0.13 42);
-  --chart-2: oklch(0.7 0.09 55);
-  --chart-3: oklch(0.55 0.03 65);
-  --chart-4: oklch(0.68 0.02 68);
-  --chart-5: oklch(0.45 0.02 60);
+  --border: oklch(0.9 0.006 255);
+  --input: oklch(0.9 0.006 255);
+  --ring: oklch(0.45 0.08 270);
+  --brand: oklch(0.45 0.08 270);
+  --brand-foreground: oklch(0.99 0.003 260);
+  --chart-1: oklch(0.45 0.08 270);
+  --chart-2: oklch(0.62 0.06 280);
+  --chart-3: oklch(0.55 0.03 260);
+  --chart-4: oklch(0.68 0.02 255);
+  --chart-5: oklch(0.45 0.02 260);
   --radius: 0.7rem;
-  --sidebar: oklch(0.965 0.005 70);
-  --sidebar-foreground: oklch(0.24 0.008 60);
-  --sidebar-primary: oklch(0.52 0.13 42);
-  --sidebar-primary-foreground: oklch(0.99 0.01 70);
-  --sidebar-accent: oklch(0.93 0.012 68);
-  --sidebar-accent-foreground: oklch(0.3 0.01 60);
-  --sidebar-border: oklch(0.9 0.008 68);
-  --sidebar-ring: oklch(0.52 0.13 42);
+  --sidebar: oklch(0.963 0.0045 255);
+  --sidebar-foreground: oklch(0.235 0.008 260);
+  --sidebar-primary: oklch(0.45 0.08 270);
+  --sidebar-primary-foreground: oklch(0.99 0.003 260);
+  --sidebar-accent: oklch(0.93 0.008 255);
+  --sidebar-accent-foreground: oklch(0.3 0.01 258);
+  --sidebar-border: oklch(0.9 0.006 255);
+  --sidebar-ring: oklch(0.45 0.08 270);
 }
 
 .dark {
-  --background: oklch(0.205 0.005 68);
-  --foreground: oklch(0.9 0.006 75);
-  --card: oklch(0.235 0.006 68);
-  --card-foreground: oklch(0.9 0.006 75);
-  --popover: oklch(0.235 0.006 68);
-  --popover-foreground: oklch(0.9 0.006 75);
+  --background: oklch(0.205 0.006 260);
+  --foreground: oklch(0.9 0.006 255);
+  --card: oklch(0.235 0.007 260);
+  --card-foreground: oklch(0.9 0.006 255);
+  --popover: oklch(0.235 0.007 260);
+  --popover-foreground: oklch(0.9 0.006 255);
   /* Lifted to read as type on a dark card; a fill this light takes dark ink. */
-  --primary: oklch(0.72 0.13 45);
-  --primary-foreground: oklch(0.22 0.015 60);
-  --secondary: oklch(0.28 0.007 68);
-  --secondary-foreground: oklch(0.9 0.006 75);
-  --muted: oklch(0.28 0.007 68);
-  --muted-foreground: oklch(0.66 0.01 72);
-  --accent: oklch(0.305 0.008 68);
-  --accent-foreground: oklch(0.92 0.006 75);
+  --primary: oklch(0.72 0.08 275);
+  --primary-foreground: oklch(0.2 0.015 260);
+  --secondary: oklch(0.28 0.007 260);
+  --secondary-foreground: oklch(0.9 0.006 255);
+  --muted: oklch(0.28 0.007 260);
+  --muted-foreground: oklch(0.66 0.012 255);
+  --accent: oklch(0.305 0.008 260);
+  --accent-foreground: oklch(0.92 0.006 255);
   --destructive: oklch(0.75 0.16 22.216);
   --warning: oklch(0.78 0.11 78);
-  --warning-foreground: oklch(0.2 0.02 70);
+  --warning-foreground: oklch(0.2 0.015 260);
   --success: oklch(0.72 0.12 150);
-  --border: oklch(0.31 0.007 68);
-  --input: oklch(0.33 0.008 68);
-  --ring: oklch(0.72 0.13 45);
-  --brand: oklch(0.72 0.13 45);
-  --brand-foreground: oklch(0.22 0.015 60);
-  --chart-1: oklch(0.72 0.13 45);
-  --chart-2: oklch(0.72 0.09 58);
-  --chart-3: oklch(0.6 0.03 68);
-  --chart-4: oklch(0.5 0.02 65);
-  --chart-5: oklch(0.72 0.015 70);
-  --sidebar: oklch(0.18 0.005 68);
-  --sidebar-foreground: oklch(0.9 0.006 75);
-  --sidebar-primary: oklch(0.72 0.13 45);
-  --sidebar-primary-foreground: oklch(0.22 0.015 60);
-  --sidebar-accent: oklch(0.28 0.007 68);
-  --sidebar-accent-foreground: oklch(0.92 0.006 75);
-  --sidebar-border: oklch(0.3 0.007 68);
-  --sidebar-ring: oklch(0.72 0.13 45);
+  --border: oklch(0.31 0.007 260);
+  --input: oklch(0.33 0.008 260);
+  --ring: oklch(0.72 0.08 275);
+  --brand: oklch(0.72 0.08 275);
+  --brand-foreground: oklch(0.2 0.015 260);
+  --chart-1: oklch(0.72 0.08 275);
+  --chart-2: oklch(0.72 0.06 290);
+  --chart-3: oklch(0.6 0.03 260);
+  --chart-4: oklch(0.5 0.02 260);
+  --chart-5: oklch(0.72 0.012 255);
+  --sidebar: oklch(0.18 0.006 260);
+  --sidebar-foreground: oklch(0.9 0.006 255);
+  --sidebar-primary: oklch(0.72 0.08 275);
+  --sidebar-primary-foreground: oklch(0.2 0.015 260);
+  --sidebar-accent: oklch(0.28 0.007 260);
+  --sidebar-accent-foreground: oklch(0.92 0.006 255);
+  --sidebar-border: oklch(0.3 0.007 260);
+  --sidebar-ring: oklch(0.72 0.08 275);
 }
 
 @layer base {
@@ -180,7 +184,7 @@
    *
    * Two deliberate survivors. A loading spinner is damped, not frozen: a
    * motionless spinner reads as a hung app, which is worse than the motion it
-   * was meant to spare. And scroll-driven animations (`.pm-scroll-fade`) are
+   * was meant to spare. And scroll-driven animations (`.qale-scroll-fade`) are
    * the user's own scroll made visible — there is no motion here the reader
    * didn't ask for, and `animation-duration` doesn't drive them anyway.
    */
@@ -199,7 +203,7 @@
     }
     /* Progress-based, not time-based: a clamped duration would collapse the
        fade at the first scrolled pixel instead of at the end of the region. */
-    .pm-scroll-fade {
+    .qale-scroll-fade {
       animation-duration: auto !important;
     }
   }
@@ -290,20 +294,20 @@
 
   /* Left-gutter block handle (+ / drag grip) — DOM built by the editor
      extension, positioned by floating-ui outside React. */
-  .pm-block-handle {
+  .qale-block-handle {
     @apply flex items-center rounded-md;
   }
-  .pm-block-handle-btn {
+  .qale-block-handle-btn {
     @apply flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 transition-colors duration-150 hover:bg-accent hover:text-foreground;
   }
-  .pm-block-handle-grip {
+  .qale-block-handle-grip {
     cursor: grab;
   }
-  .pm-block-handle-grip:active {
+  .qale-block-handle-grip:active {
     cursor: grabbing;
   }
   @media (prefers-reduced-motion: reduce) {
-    .pm-block-handle-btn {
+    .qale-block-handle-btn {
       transition: none;
     }
   }
@@ -314,17 +318,17 @@
    * the fade lifts exactly as the last line arrives, instead of permanently
    * dimming the end of a change the PO has already scrolled to.
    */
-  .pm-scroll-fade {
+  .qale-scroll-fade {
     mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
   }
   @supports (animation-timeline: scroll()) {
-    .pm-scroll-fade {
-      animation: pm-scroll-fade-out linear both;
+    .qale-scroll-fade {
+      animation: qale-scroll-fade-out linear both;
       animation-timeline: scroll(self block);
       animation-range: 80% 100%;
     }
   }
-  @keyframes pm-scroll-fade-out {
+  @keyframes qale-scroll-fade-out {
     to {
       mask-image: linear-gradient(to bottom, #000 100%, transparent 100%);
     }
@@ -393,7 +397,7 @@
  * transparent, so activating one never nudges its label by a pixel.
  */
 @layer components {
-  .pm-tab {
+  .qale-tab {
     --tab-radius: 10px;
     /* Half the strip's tab gap: two neighbouring flares meet, never overlap. */
     --tab-flare: 6px;
@@ -417,11 +421,11 @@
      hover previews where the tab is going. Fills stay opaque: the flares are
      painted from this colour, and a translucent one would let the strip read
      straight through them. */
-  .pm-tab:hover,
-  .pm-tab:focus-within {
+  .qale-tab:hover,
+  .qale-tab:focus-within {
     --tab-fill: color-mix(in oklab, var(--background) 52%, var(--sidebar));
   }
-  .pm-tab[data-active='true'] {
+  .qale-tab[data-active='true'] {
     --tab-fill: var(--background);
     --tab-line: var(--border);
   }
@@ -432,8 +436,8 @@
    * side border tangent-vertical and lands on the strip hairline
    * tangent-horizontal, so both joins are seamless.
    */
-  .pm-tab::before,
-  .pm-tab::after {
+  .qale-tab::before,
+  .qale-tab::after {
     content: '';
     position: absolute;
     bottom: 0;
@@ -441,7 +445,7 @@
     height: calc(var(--tab-flare) + 1px);
     pointer-events: none;
   }
-  .pm-tab::before {
+  .qale-tab::before {
     left: var(--tab-flare-offset);
     background: radial-gradient(
       circle calc(var(--tab-flare) + 1px) at 0 0,
@@ -450,7 +454,7 @@
       var(--tab-fill) calc(var(--tab-flare) + 1px)
     );
   }
-  .pm-tab::after {
+  .qale-tab::after {
     right: var(--tab-flare-offset);
     background: radial-gradient(
       circle calc(var(--tab-flare) + 1px) at 100% 0,
@@ -467,11 +471,11 @@
    * reserves the close button's width in padding, so the X lands beyond this
    * fade and never sits on top of the text.
    */
-  .pm-tab-title[data-clipped] {
+  .qale-tab-title[data-clipped] {
     mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
   }
   @media (prefers-reduced-motion: reduce) {
-    .pm-tab {
+    .qale-tab {
       transition: none;
     }
   }

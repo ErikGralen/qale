@@ -7,14 +7,14 @@ import type {
   ProviderDescriptorDTO,
   ShallowIndexItemDTO,
   StateCategory,
-} from '@pm/ipc';
+} from '@qale/ipc';
 import { invoke, onEvent } from './ipc';
 
 /**
  * Connections client — the renderer's one door to external-system state
  * (connections, followed containers, the shallow mirror index, per-reference
  * live metadata). Thin typed wrappers over the `connections:*` channels; the
- * main-process sync engine owns all state. The DTO shapes live in @pm/ipc and
+ * main-process sync engine owns all state. The DTO shapes live in @qale/ipc and
  * are re-exported here so every UI surface keeps one import site.
  */
 
@@ -29,7 +29,7 @@ export type {
   ExternalRefMetaDTO,
   ProviderDescriptorDTO,
   ShallowIndexItemDTO,
-} from '@pm/ipc';
+} from '@qale/ipc';
 
 // ---------------------------------------------------------------------------
 // External-reference detection (shared by chips, autocomplete, previews)

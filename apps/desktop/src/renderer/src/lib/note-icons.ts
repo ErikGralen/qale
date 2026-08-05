@@ -15,7 +15,7 @@ import {
   Wand2,
   type LucideIcon,
 } from 'lucide-react';
-import type { NoteType } from '@pm/ipc';
+import type { NoteType } from '@qale/ipc';
 
 /** The one icon per note type — the shared visual vocabulary across the
  *  sidebar, tab strip, and Memory page. */

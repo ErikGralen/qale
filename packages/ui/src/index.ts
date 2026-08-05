@@ -1,7 +1,7 @@
 /**
- * @pm/ui barrel — the renderer-only presentation kit. Re-exports the common
+ * @qale/ui barrel — the renderer-only presentation kit. Re-exports the common
  * primitives plus shared helpers. Individual components are also reachable via
- * granular subpaths (`@pm/ui/ui/button`) for tree-shaking.
+ * granular subpaths (`@qale/ui/ui/button`) for tree-shaking.
  */
 export { cn } from './lib/utils';
 export { ThemeProvider, useTheme } from './components/theme-provider';

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeNote, type Frontmatter } from '@pm/domain';
+import { makeNote, type Frontmatter } from '@qale/domain';
 import { acceptProposal, contentHash, previewProposal } from '../src/index.js';
 import type { ProposalRecord, UseCaseContext } from '../src/ports.js';
 

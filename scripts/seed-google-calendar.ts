@@ -2,7 +2,7 @@
  * Seed (and reset) a live Google Calendar with the Tavla demo scenario — the
  * calendar-side counterpart of scripts/reset-atlassian.ts. One command both
  * populates a fresh demo account and resets it after a run: it deletes every
- * event this script has ever seeded (tagged with a private `pmDemo=tavla`
+ * event this script has ever seeded (tagged with a private `qaleDemo=tavla`
  * property) inside the window, then recreates the cast — so run it as often as
  * you like and the calendar always converges to the same story.
  *
@@ -31,13 +31,13 @@
  * flow the app uses (a browser opens once for consent, write scope included).
  * The resulting refresh token is cached in .google-demo.json (gitignored, mode
  * 600); later runs reuse it silently. The OAuth client comes from
- * PM_GOOGLE_CLIENT_ID / PM_GOOGLE_CLIENT_SECRET (the same env the app needs —
+ * QALE_GOOGLE_CLIENT_ID / QALE_GOOGLE_CLIENT_SECRET (the same env the app needs —
  * docs/google-cloud-setup.md).
  *
  * By default it targets the PRIMARY calendar; pass --calendar to point it at a
  * specific one (by name or id) so your other calendars are never touched. It
  * only ever reads/writes the one calendar you name, and only deletes events it
- * seeded itself (the pmDemo marker) — never your real events.
+ * seeded itself (the qaleDemo marker) — never your real events.
  *
  *   pnpm seed-google-calendar --calendar="PM/PO Test"   # seed/reset that calendar
  *   pnpm seed-google-calendar --calendar="PM/PO Test" --dry   # print the plan, write nothing
@@ -46,7 +46,7 @@
  *   pnpm seed-google-calendar --calendar="PM/PO Test" --no-reconcile  # leave the runtime vault alone
  *   pnpm seed-google-calendar                            # (no --calendar) targets primary
  *
- * The calendar can also come from PM_GOOGLE_CALENDAR (and tz from PM_GOOGLE_TZ),
+ * The calendar can also come from QALE_GOOGLE_CALENDAR (and tz from QALE_GOOGLE_TZ),
  * so the chained `pnpm reset` (refresh-demo → reset-atlassian → this) can target
  * it without threading a flag through.
  *
@@ -65,7 +65,7 @@ import { platform } from 'node:os';
 
 const ANCHOR = '2026-07-17';
 const CREDS_FILE = '.google-demo.json';
-const DEMO_TAG = 'tavla'; // extendedProperties.private.pmDemo — our own events only
+const DEMO_TAG = 'tavla'; // extendedProperties.private.qaleDemo — our own events only
 const API = 'https://www.googleapis.com/calendar/v3';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -75,8 +75,8 @@ const SCOPE =
   'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
 const FLOW_TIMEOUT_MS = 3 * 60 * 1000;
 
-const CLIENT_ID = process.env['PM_GOOGLE_CLIENT_ID'] ?? '';
-const CLIENT_SECRET = process.env['PM_GOOGLE_CLIENT_SECRET'] ?? '';
+const CLIENT_ID = process.env['QALE_GOOGLE_CLIENT_ID'] ?? '';
+const CLIENT_SECRET = process.env['QALE_GOOGLE_CLIENT_SECRET'] ?? '';
 
 // ---------------------------------------------------------------------------
 // The desired calendar state. Each meeting is anchored on ANCHOR; `date` slides
@@ -169,10 +169,10 @@ function parseArgs(argv: string[]): Args {
   const args: Args = {
     anchor: ANCHOR,
     today: new Date().toISOString().slice(0, 10),
-    tz: process.env['PM_GOOGLE_TZ'] ?? 'Europe/Stockholm',
-    // --calendar wins; else PM_GOOGLE_CALENDAR (so the chained `pnpm reset` can
+    tz: process.env['QALE_GOOGLE_TZ'] ?? 'Europe/Stockholm',
+    // --calendar wins; else QALE_GOOGLE_CALENDAR (so the chained `pnpm reset` can
     // target it without threading a flag); else the primary calendar.
-    calendar: process.env['PM_GOOGLE_CALENDAR'] ?? 'primary',
+    calendar: process.env['QALE_GOOGLE_CALENDAR'] ?? 'primary',
     dry: false,
     save: false,
     reconcile: true,
@@ -425,7 +425,7 @@ class Cal {
     return out;
   }
 
-  /** Every event we've previously seeded (the `pmDemo` marker), masters and
+  /** Every event we've previously seeded (the `qaleDemo` marker), masters and
    *  one-offs — deleting a recurring master removes all its instances. */
   async listSeeded(): Promise<GEvent[]> {
     const out: GEvent[] = [];
@@ -438,7 +438,7 @@ class Cal {
           singleEvents: 'false',
           showDeleted: 'false',
           maxResults: '250',
-          privateExtendedProperty: `pmDemo=${DEMO_TAG}`,
+          privateExtendedProperty: `qaleDemo=${DEMO_TAG}`,
           ...(pageToken ? { pageToken } : {}),
         },
       );
@@ -507,7 +507,7 @@ function eventBody(m: CastMeeting, date: string, tz: string, selfEmail: string):
     start: { dateTime: `${date}T${m.time}:00`, timeZone: tz },
     end: { dateTime: `${date}T${endTime}:00`, timeZone: tz },
     attendees,
-    extendedProperties: { private: { pmDemo: DEMO_TAG } },
+    extendedProperties: { private: { qaleDemo: DEMO_TAG } },
     ...(m.recurrence ? { recurrence: m.recurrence } : {}),
   };
 }
@@ -552,7 +552,7 @@ async function main(): Promise<void> {
   }
   if (!CLIENT_ID || !CLIENT_SECRET) {
     throw new Error(
-      'Set PM_GOOGLE_CLIENT_ID and PM_GOOGLE_CLIENT_SECRET (the same OAuth client the app uses — docs/google-cloud-setup.md).',
+      'Set QALE_GOOGLE_CLIENT_ID and QALE_GOOGLE_CLIENT_SECRET (the same OAuth client the app uses — docs/google-cloud-setup.md).',
     );
   }
 
@@ -587,7 +587,7 @@ async function main(): Promise<void> {
   console.log(`Account ${accountEmail} · target calendar "${targetName}" (${target.id})\n`);
 
   // 1. Remove everything we seeded before (idempotent reset) — scoped to the
-  //    target calendar, and only events carrying our own pmDemo marker.
+  //    target calendar, and only events carrying our own qaleDemo marker.
   const seeded = await cal.listSeeded();
   const masters = seeded.filter((e) => !e.recurringEventId); // deleting a master clears its instances
   console.log(`Calendar · "${targetName}"`);

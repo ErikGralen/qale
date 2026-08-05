@@ -6,7 +6,7 @@ import {
   type Note,
   type TodoCommitment,
   type TodoFrontmatter,
-} from '@pm/domain';
+} from '@qale/domain';
 import type { UseCaseContext } from '../ports.js';
 
 /**

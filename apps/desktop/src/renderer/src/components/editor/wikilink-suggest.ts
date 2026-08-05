@@ -2,8 +2,8 @@ import { createElement } from 'react';
 import { Extension } from '@tiptap/core';
 import { PluginKey } from '@tiptap/pm/state';
 import Suggestion from '@tiptap/suggestion';
-import { linkTypeLabel, normalizeLinkType } from '@pm/domain';
-import type { SearchHitDTO } from '@pm/ipc';
+import { linkTypeLabel, normalizeLinkType } from '@qale/domain';
+import type { SearchHitDTO } from '@qale/ipc';
 import { BookOpen, FileText, Link2, Ticket } from 'lucide-react';
 import { connections, type ShallowIndexItemDTO } from '../../lib/connections';
 import { StatePill } from '../ExternalRef';
@@ -178,7 +178,7 @@ export const WikilinkSuggest = Extension.create<WikilinkSuggestOptions>({
                     id: pick.item.slug,
                     label:
                       pick.item.kind === 'ticket'
-                        ? `${pick.item.externalId} — ${pick.item.title}`
+                        ? `${pick.item.externalId}: ${pick.item.title}`
                         : pick.item.title,
                     icon: pick.item.kind === 'ticket' ? Ticket : BookOpen,
                     group: 'Tickets & pages',

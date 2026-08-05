@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { StateCategory, SyncedCalendarEvent } from '@pm/domain';
+import type { StateCategory, SyncedCalendarEvent } from '@qale/domain';
 
 /**
  * The provider seam (integration plan §Work areas B): everything provider-shaped

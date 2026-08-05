@@ -1,5 +1,5 @@
 {
-  "name": "@pm/sessions",
+  "name": "@qale/sessions",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -11,11 +11,11 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@pm/domain": "workspace:*",
+    "@qale/domain": "workspace:*",
     "yaml": "^2.6.1"
   },
   "devDependencies": {
-    "@pm/typescript-config": "workspace:*",
+    "@qale/typescript-config": "workspace:*",
     "tsx": "^4.23.1",
     "typescript": "~5.9.2"
   }

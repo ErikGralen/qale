@@ -2,11 +2,9 @@ import type {
   AgentDTO,
   AgentRunInput,
   AgentRunHandle,
-  ArrivalAmbitionDTO,
+  ArrivalCheckDTO,
+  ArrivalHandoffDTO,
   ArrivalItemInputDTO,
-  ArrivalPlanDTO,
-  ArrivalResultDTO,
-  ArrivalUndoResultDTO,
   AtRiskLinkDTO,
   BacklinkDTO,
   ConnectionDTO,
@@ -15,18 +13,18 @@ import type {
   ExternalRefMetaDTO,
   ProviderDescriptorDTO,
   ShallowIndexItemDTO,
-  CaptureClassificationDTO,
-  CaptureMeetingMatchDTO,
   CaptureNoteInput,
+  CaptureNudgeDismissDTO,
+  CaptureNudgeStateDTO,
   CaptureTodoInputDTO,
-  IngestCaptureInputDTO,
-  IngestCaptureResultDTO,
   MaintenanceReportDTO,
   MeetingReviewAskDTO,
   NoteCommitDTO,
   NoteQueryDTO,
   NoteRefDTO,
   ModelInfoDTO,
+  OnboardingPatchDTO,
+  PathCheckDTO,
   ProposalPreviewDTO,
   NoteDTO,
   ProposalDTO,
@@ -34,11 +32,10 @@ import type {
   PeopleDirectoryDTO,
   PersonCardDTO,
   RenameNoteInput,
+  RestoreVersionInput,
   SaveNoteInput,
   SaveFrontmatterInput,
   SearchHitDTO,
-  AgentPingDTO,
-  PingResolveActionDTO,
   ChatRefDTO,
   ChatHistoryDTO,
   SessionLifecycle,
@@ -49,6 +46,7 @@ import type {
   LiveSessionDTO,
   SettingsDTO,
   SkillDTO,
+  SkillPackReviewDTO,
   TodoCommitment,
   VaultInfoDTO,
   VaultTreeDTO,
@@ -57,6 +55,7 @@ import type { PushEvent } from './events.js';
 
 export * from './dtos.js';
 export * from './events.js';
+export * from './telemetry.js';
 
 /**
  * The single source of truth for request/response IPC. Each entry maps a channel
@@ -67,10 +66,22 @@ export * from './events.js';
  */
 export interface InvokeMap {
   'app:ping': { args: [message: string]; result: string };
+  /**
+   * The plain-text block behind Settings → "Copy diagnostics": versions, flags,
+   * counts and the scrubbed log tail. Built in main because main is the only
+   * side that knows any of it. Carries nothing of the PM's own material.
+   */
+  'diagnostics:report': { args: []; result: string };
 
   // Settings / lifecycle
   'settings:get': { args: []; result: SettingsDTO };
   'settings:setAnthropicKey': { args: [key: string]; result: SettingsDTO };
+  /**
+   * Does this key work? One minimal call from main, so a typo fails at the
+   * field instead of twenty minutes later inside a session (ONB-5). Never
+   * stores anything — saving is still `settings:setAnthropicKey`.
+   */
+  'settings:verifyAnthropicKey': { args: [key: string]; result: { ok: boolean; error?: string } };
   'settings:setAtlassian': {
     args: [creds: { baseUrl: string; email: string; token: string }];
     result: SettingsDTO;
@@ -86,11 +97,25 @@ export interface InvokeMap {
     args: [patch: { name?: string | null; aliases?: string[] }];
     result: SettingsDTO;
   };
+  /** First run: advance, skip, finish, dismiss, consent (docs/onboarding.md). */
+  'settings:setOnboarding': { args: [patch: OnboardingPatchDTO]; result: SettingsDTO };
   'schedule:runNow': { args: [skill: string]; result: { ok: boolean } };
   'models:list': { args: []; result: ModelInfoDTO[] };
 
   // Skills (v2) — the parsed skill catalogue behind the Skills view
   'skills:list': { args: []; result: SkillDTO[] };
+  /** Write a starter skill and hand back where it landed, so the view opens it. */
+  'skills:create': { args: [title: string]; result: { path: string } };
+  /**
+   * What the pack has to say for itself: built-ins the PM edited that we have
+   * since changed, and retired ones we moved out of force. The three below all
+   * answer with the refreshed review, so the page never has to ask twice.
+   */
+  'skills:review': { args: []; result: SkillPackReviewDTO };
+  /** Take our new version of one file, replacing theirs. */
+  'skills:applyUpdate': { args: [file: string]; result: SkillPackReviewDTO };
+  /** Keep theirs (or acknowledge a retirement): do not raise this one again. */
+  'skills:dismissUpdate': { args: [file: string]; result: SkillPackReviewDTO };
 
   // Agents — the background watchers behind the Agents view, and their off switches
   'agents:list': { args: []; result: AgentDTO[] };
@@ -99,6 +124,15 @@ export interface InvokeMap {
   // Vault
   'vault:pick': { args: []; result: VaultInfoDTO | null };
   'vault:open': { args: [path: string]; result: VaultInfoDTO };
+  /**
+   * Where a new workspace would go by default (`~/Documents/<AppName>`), and
+   * what is already true of that folder. Read-only — nothing is created.
+   */
+  'vault:suggestPath': { args: []; result: PathCheckDTO };
+  /** The same question about any path the PM typed or picked. */
+  'vault:checkPath': { args: [path: string]; result: PathCheckDTO };
+  /** Make the folder if it isn't there, then open it as the workspace. */
+  'vault:create': { args: [path: string]; result: VaultInfoDTO };
   'vault:current': { args: []; result: VaultInfoDTO | null };
   'vault:initGit': { args: []; result: VaultInfoDTO };
   'vault:tree': { args: []; result: VaultTreeDTO };
@@ -116,6 +150,7 @@ export interface InvokeMap {
   'note:resolveLink': { args: [target: string]; result: string | null };
   'note:history': { args: [path: string]; result: NoteCommitDTO[] };
   'note:versionAt': { args: [path: string, hash: string]; result: string | null };
+  'note:restoreVersion': { args: [input: RestoreVersionInput]; result: NoteDTO };
   'themes:byHeat': { args: []; result: ThemeHeatDTO[] };
 
   // People (participant chips + their preview cards)
@@ -128,23 +163,18 @@ export interface InvokeMap {
 
   // Capture / search
   'note:capture': { args: [input: CaptureNoteInput]; result: NoteDTO };
-  'capture:classify': { args: [text: string, fileName?: string]; result: CaptureClassificationDTO };
-  'capture:ingest': { args: [input: IngestCaptureInputDTO]; result: IngestCaptureResultDTO };
-  'capture:matchMeeting': { args: []; result: CaptureMeetingMatchDTO | null };
 
-  // Arrival (docs/vision/arrival.md) — pick, preview the plan, file the batch,
-  // take it back. `inspect` runs the same planner `ingest` does, so the tray's
-  // outcome line is the plan itself rather than a description of it.
+  // Arrival (docs/arrival-agentic.md) — pick files, check we can read them, hand
+  // the batch to a session. Nothing here decides what the material IS: `check`
+  // answers "can these bytes be read at all", which is the only question left in
+  // the tray, and `ingest` writes the files into a session folder and starts the
+  // agent that files them.
   'arrival:pick': { args: []; result: ArrivalItemInputDTO[] };
-  'arrival:inspect': {
-    args: [items: ArrivalItemInputDTO[], ambition?: ArrivalAmbitionDTO];
-    result: ArrivalPlanDTO;
-  };
+  'arrival:check': { args: [items: ArrivalItemInputDTO[]]; result: ArrivalCheckDTO };
   'arrival:ingest': {
-    args: [items: ArrivalItemInputDTO[], ambition?: ArrivalAmbitionDTO];
-    result: ArrivalResultDTO;
+    args: [items: ArrivalItemInputDTO[], instruction?: string];
+    result: ArrivalHandoffDTO;
   };
-  'arrival:undo': { args: [id: string]; result: ArrivalUndoResultDTO };
   'search:query': { args: [query: string, limit?: number]; result: SearchHitDTO[] };
 
   // Proposals
@@ -156,6 +186,13 @@ export interface InvokeMap {
   'proposals:reject': { args: [id: string]; result: { ok: boolean; review?: MeetingReviewAskDTO } };
   /** The PO's answer to that question: take the meeting out of "needs review". */
   'meeting:markReviewed': { args: [path: string]; result: { ok: boolean } };
+
+  // The capture nudge's memory (docs/capture-nudge.md) — which empty meetings
+  // the PO has waved off, and which recurring series went quiet after two.
+  'captureNudge:state': { args: []; result: CaptureNudgeStateDTO };
+  'captureNudge:dismiss': { args: [path: string]; result: CaptureNudgeDismissDTO };
+  /** Take one dismissal back, series mute included. */
+  'captureNudge:undo': { args: [path: string, series?: string]; result: CaptureNudgeStateDTO };
 
   // Agent / sessions
   'agent:run': { args: [input: AgentRunInput]; result: AgentRunHandle };
@@ -169,7 +206,7 @@ export interface InvokeMap {
     result: { ok: boolean };
   };
   'chats:forNote': { args: [path: string]; result: ChatRefDTO[] };
-  // Live session state (the sidebar rail) + agent-initiated pings
+  // Live session state (the sidebar rail) + the cards a session parks on
   'sessions:live': { args: []; result: LiveSessionDTO[] };
   /** A session's working files — the right-panel tree (Sessions v2 Part 1). */
   'sessions:files': { args: [sessionId: string]; result: SessionFileDTO[] };
@@ -199,14 +236,6 @@ export interface InvokeMap {
     args: [requestId: string, answers: AskAnswerDTO[] | null];
     result: { ok: boolean };
   };
-  'pings:list': { args: []; result: AgentPingDTO[] };
-  'pings:open': { args: [id: string]; result: AgentPingDTO | null };
-  'pings:dismiss': { args: [id: string]; result: { ok: boolean } };
-  /** Apply/skip one suggestion item on a ping — the click IS the approval. */
-  'pings:resolveItem': {
-    args: [pingId: string, itemId: string, action: PingResolveActionDTO];
-    result: AgentPingDTO | null;
-  };
 
   // Connections (external integrations, Area C). Reads are silent and cheap —
   // the renderer polls nothing; a `connections:changed` push invalidates.
@@ -229,6 +258,13 @@ export interface InvokeMap {
     result: void;
   };
   'connections:syncNow': { args: []; result: { ok: boolean; error?: string } };
+  /**
+   * The one thing only the renderer knows: which part of the app is open
+   * (docs/telemetry-posthog.md TEL-5). Deliberately not a free string — the
+   * main side folds anything it does not recognise away, so a view name can
+   * never carry a note title. Fire and forget, like the other void channels.
+   */
+  'telemetry:view': { args: [view: string]; result: void };
   'connections:searchIndex': { args: [query: string, limit?: number]; result: ShallowIndexItemDTO[] };
   'connections:refMeta': { args: [slug: string]; result: ExternalRefMetaDTO | null };
   'connections:atRisk': { args: []; result: AtRiskLinkDTO[] };
@@ -246,20 +282,30 @@ export type InvokeChannel = keyof InvokeMap;
  */
 export const INVOKE_CHANNELS = [
   'app:ping',
+  'diagnostics:report',
   'settings:get',
   'settings:setAnthropicKey',
+  'settings:verifyAnthropicKey',
   'settings:setAtlassian',
   'settings:setModel',
   'settings:setSchedule',
   'settings:setMcp',
   'settings:setIdentity',
+  'settings:setOnboarding',
   'schedule:runNow',
   'models:list',
   'skills:list',
+  'skills:create',
+  'skills:review',
+  'skills:applyUpdate',
+  'skills:dismissUpdate',
   'agents:list',
   'agents:setEnabled',
   'vault:pick',
   'vault:open',
+  'vault:suggestPath',
+  'vault:checkPath',
+  'vault:create',
   'vault:current',
   'vault:initGit',
   'vault:tree',
@@ -275,25 +321,25 @@ export const INVOKE_CHANNELS = [
   'note:resolveLink',
   'note:history',
   'note:versionAt',
+  'note:restoreVersion',
   'themes:byHeat',
   'people:directory',
   'people:create',
   'todos:capture',
   'todos:setStatus',
   'note:capture',
-  'capture:classify',
-  'capture:ingest',
-  'capture:matchMeeting',
   'arrival:pick',
-  'arrival:inspect',
+  'arrival:check',
   'arrival:ingest',
-  'arrival:undo',
   'search:query',
   'proposals:list',
   'proposals:preview',
   'proposals:accept',
   'proposals:reject',
   'meeting:markReviewed',
+  'captureNudge:state',
+  'captureNudge:dismiss',
+  'captureNudge:undo',
   'agent:run',
   'agent:abort',
   'chats:list',
@@ -309,10 +355,6 @@ export const INVOKE_CHANNELS = [
   'sessions:pendingAsk',
   'sessions:pendingAsks',
   'sessions:resolveAsk',
-  'pings:list',
-  'pings:open',
-  'pings:dismiss',
-  'pings:resolveItem',
   'connections:providers',
   'connections:list',
   'connections:connect',
@@ -321,6 +363,7 @@ export const INVOKE_CHANNELS = [
   'connections:cancelOAuth',
   'connections:setFollow',
   'connections:syncNow',
+  'telemetry:view',
   'connections:searchIndex',
   'connections:refMeta',
   'connections:atRisk',
@@ -334,7 +377,7 @@ const _exhaustive: _AllChannelsListed extends never ? true : ['missing channels'
   true as never;
 void _exhaustive;
 
-/** The typed client surface exposed on `window.pm.invoke`. */
+/** The typed client surface exposed on `window.qale.invoke`. */
 export type IpcApi = {
   [K in InvokeChannel]: (...args: InvokeMap[K]['args']) => Promise<InvokeMap[K]['result']>;
 };
@@ -348,9 +391,28 @@ export type IpcHandlers = {
   [K in InvokeChannel]: IpcHandler<K>;
 };
 
-/** The full bridge surface the preload puts on `window.pm`. */
-export interface PmBridge {
+/** The full bridge surface the preload puts on `window.qale`. */
+export interface QaleBridge {
   invoke: IpcApi;
   /** Subscribe to a push channel; returns an unsubscribe fn. */
   onEvent: (cb: (event: PushEvent) => void) => () => void;
+  /**
+   * Where a dropped file actually lives on disk, or "" for something dragged
+   * out of a web page. This is what makes a dropped FOLDER work: the renderer
+   * can only read a folder as an unreadable zero-byte file, while main can walk
+   * it. Every drop takes the path route when there is one, so dropping and
+   * choosing from the picker are one code path.
+   */
+  pathForFile: (file: DroppedFile) => string;
+}
+
+/**
+ * The DOM's `File`, structurally. Spelled out because this package is shared
+ * with main and has no DOM lib; a real `File` satisfies it, which is all the
+ * renderer ever passes.
+ */
+export interface DroppedFile {
+  name: string;
+  size: number;
+  type: string;
 }

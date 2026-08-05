@@ -1,5 +1,5 @@
-import type { UseCaseContext } from '@pm/application';
-import { buildKickoff } from '@pm/sessions';
+import type { UseCaseContext } from '@qale/application';
+import { buildKickoff } from '@qale/sessions';
 import { MAINTENANCE_TICK_MS } from '../agents.js';
 import type { SettingsService } from './settings-service.js';
 
@@ -67,7 +67,7 @@ export class SchedulerService {
         // ticket 2): a weekly pass with no new material leaves no receipt, no
         // Sessions row and no badge, only a line on the agent's own page.
         await this.fireSession(s.skill, defaultPrompt(s.skill), { scheduled: true }).catch((err) =>
-          console.error('[pm] scheduled session failed:', err),
+          console.error('[qale] scheduled session failed:', err),
         );
       }
     }
@@ -79,7 +79,7 @@ export class SchedulerService {
     try {
       this.maintenance?.();
     } catch (err) {
-      console.error('[pm] maintenance pass failed:', err);
+      console.error('[qale] maintenance pass failed:', err);
     }
 
     // Time-aware auto-prep: reads the (previous tick's) shallow event index and
@@ -88,7 +88,7 @@ export class SchedulerService {
     try {
       await this.beforeMeetingSweep?.();
     } catch (err) {
-      console.error('[pm] before-meeting sweep failed:', err);
+      console.error('[qale] before-meeting sweep failed:', err);
     }
   }
 }

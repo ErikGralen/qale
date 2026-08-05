@@ -14,7 +14,7 @@ One product owner / product manager at a Nordic product company (30–300 people
 
 ## Product Purpose
 
-A desktop workbench (Produktminnet) where meeting transcripts go in and approved Jira/Confluence updates, decisions, and stakeholder answers come out. The workspace is a git-versioned directory of typed markdown files (meetings, decisions, insights, customers, themes) that the agent maintains as a librarian; every session is a packaged PO workflow (After-Meeting, Synthesis, Weekly Update, Ask). Nothing writes anywhere — not the workspace, not Jira, not Slack — without an approval card the PO clicks. Success looks like week 6 being visibly better than week 1 because the memory has accreted: a source-linked log of every decision, claim, and answer that no incumbent can reconstruct retroactively.
+A desktop workbench (Qale) where meeting transcripts go in and approved Jira/Confluence updates, decisions, and stakeholder answers come out. The workspace is a git-versioned directory of typed markdown files (meetings, decisions, insights, customers, themes) that the agent maintains as a librarian; every session is a packaged PO workflow (After-Meeting, Synthesis, Weekly Update, Ask). Nothing writes anywhere — not the workspace, not Jira, not Slack — without an approval card the PO clicks. Success looks like week 6 being visibly better than week 1 because the memory has accreted: a source-linked log of every decision, claim, and answer that no incumbent can reconstruct retroactively.
 
 ## Positioning
 

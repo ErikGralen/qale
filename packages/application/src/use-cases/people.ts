@@ -1,4 +1,4 @@
-import { dirForType, isFolderIndex, refToSlug, slugify, type PersonFrontmatter } from '@pm/domain';
+import { dirForType, isFolderIndex, refToSlug, slugify, type PersonFrontmatter } from '@qale/domain';
 import type { IndexedNote, UseCaseContext } from '../ports.js';
 
 /**
@@ -154,7 +154,7 @@ export async function createPerson(ctx: UseCaseContext, input: CreatePersonInput
   const name = input.name?.trim() || nameFromEmail(email) || '';
   if (!name) throw new Error('a person needs a name or an email');
   const slug = slugify(name);
-  if (!slug) throw new Error(`cannot make a filename from “${name}”`);
+  if (!slug) throw new Error(`there is nothing to name a page after in “${name}”`);
 
   const desired = `${dirForType('person')}/${slug}.md`;
   let path = desired;

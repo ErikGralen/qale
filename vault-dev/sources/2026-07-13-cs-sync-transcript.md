@@ -36,3 +36,14 @@ raise it with Mikkel. If we ship the pilot well it's moot, and if we ask about i
 nervous.
 
 me: Agreed. It goes in the file as a rumour and nothing more.
+
+Johanna: While we're on Kranelund, the thing Mikkel keeps coming back to is per-seat. He
+raised it with me again after the check-in. Forty seasonal drivers over the summer at a full
+seat each, and he says he can't take that to his CFO.
+
+me: Which is Rondo's second reason wearing a different coat.
+
+Johanna: That's how it sounds to me. I get asked about the model in almost every renewal call
+now and I improvise an answer, which is not what you want me doing.
+
+me: I'll get you talking points before Friday.

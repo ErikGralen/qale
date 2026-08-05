@@ -9,8 +9,8 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from '@pm/ui';
-import type { SkillDTO } from '@pm/ipc';
+} from '@qale/ui';
+import type { SkillDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 
 /**
@@ -93,7 +93,7 @@ export function SkillPicker({
           <PopoverTrigger asChild>
             <button
               className="flex h-7 min-w-0 items-center gap-1.5 rounded-l-md pr-1 pl-2 text-xs font-medium hover:bg-brand/10 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-              title={`${pickedSkill?.summary ?? picked} — click to swap it`}
+              title={`${pickedSkill?.summary ?? picked} (click to swap it)`}
               aria-label={`Skill: ${pickedSkill?.title ?? picked}. Change it`}
             >
               <Wand2 className="size-3.5 shrink-0" aria-hidden />
@@ -197,7 +197,7 @@ function SkillItem({
       value={skill.name}
       onSelect={onChoose}
       data-checked={checked || undefined}
-      // The keyboard cursor is what ↵ runs, so it steps to clay-hover rather
+      // The keyboard cursor is what ↵ runs, so it steps to the hover wash rather
       // than the palette's faintest wash.
       className="h-8 cursor-pointer gap-2 rounded-md px-2.5 py-0 data-[checked=true]:text-brand data-[selected=true]:bg-accent"
     >

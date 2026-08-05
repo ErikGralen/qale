@@ -12,15 +12,30 @@
  * when it fires (handlers.ts), and declare its clock here.
  */
 
-import type { StartDTO } from '@pm/ipc';
+import type { StartDTO } from '@qale/ipc';
 
 /**
  * The maintenance clock: how often the tick fires (scheduler-service) and
- * therefore how often the librarian sweeps. One constant because the timer and
- * the trigger the PM reads must be the same number — when they were a interval
- * here and prose there, changing one silently made the other lie.
+ * therefore how often the librarian's scan runs. The scan reads the graph and
+ * tells nobody anything; what the PM ever sees is a session, and those are
+ * paced by the interval below.
  */
 export const MAINTENANCE_TICK_MS = 5 * 60 * 1000;
+
+/**
+ * How long a finding has to hold still before the agent is told about it. One
+ * full tick, so a link somebody is halfway through typing is never repaired out
+ * from under them.
+ */
+export const LIBRARIAN_SETTLE_MS = MAINTENANCE_TICK_MS;
+
+/**
+ * The librarian gets a session at most this often, however busy the workspace.
+ * This is also the interval the Agents view shows for it: a session is the only
+ * thing about the librarian anyone can see, so it is the only honest number to
+ * put in front of them.
+ */
+export const LIBRARIAN_SESSION_INTERVAL_MS = 30 * 60 * 1000;
 
 /**
  * How far ahead of a meeting the prep agent fires, and the words for that span.
@@ -50,7 +65,7 @@ export interface CodeRunFacts {
 export const CODE_RUN_FACTS: Record<string, CodeRunFacts> = {
   librarian: {
     starts: [
-      { kind: 'interval', everyMs: MAINTENANCE_TICK_MS },
+      { kind: 'interval', everyMs: LIBRARIAN_SESSION_INTERVAL_MS },
       // Precisely: accepting a decision card that carries `supersedes`
       // (fireSupersedeReactions). Editing a decision's frontmatter by hand
       // doesn't reach it — the trigger watches the card, not the note.

@@ -1,12 +1,12 @@
 import { Node } from '@tiptap/core';
-import { linkTypeLabel, linkTypeToken, normalizeLinkTarget } from '@pm/domain';
+import { linkTypeLabel, linkTypeToken, normalizeLinkTarget } from '@qale/domain';
 import { isExternalRef, refMetaCached } from '../../lib/connections';
 import { pillClass } from '../ExternalRef';
 import { requestLinkTypeMenu } from './link-type';
 
 /**
  * TipTap inline atom for Obsidian `[[wikilinks]]`, the editor-side twin of the
- * remark plugin in @pm/markdown. Parsing goes through a marked tokenizer (so
+ * remark plugin in @qale/markdown. Parsing goes through a marked tokenizer (so
  * `[[...]]` inside code spans keeps code precedence), targets are normalized
  * with the same `normalizeLinkTarget` the indexer uses, and serialization
  * returns the original `[[...]]` source verbatim so round-trips are byte-exact.

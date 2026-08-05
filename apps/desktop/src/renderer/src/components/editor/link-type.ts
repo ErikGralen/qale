@@ -1,4 +1,4 @@
-import { typeForDir, type NoteType } from '@pm/domain';
+import { typeForDir, type NoteType } from '@qale/domain';
 import { externalSlugOf } from '../../lib/connections';
 
 /**
@@ -8,7 +8,7 @@ import { externalSlugOf } from '../../lib/connections';
  * wikiLink node, then fire this event on the editor DOM. `SelectionToolbar`
  * listens, because it already owns the floating bar over a selection.
  */
-export const EDIT_LINK_TYPE_EVENT = 'pm:edit-link-type';
+export const EDIT_LINK_TYPE_EVENT = 'qale:edit-link-type';
 
 /**
  * Which KIND of thing a link points at, from the target alone — the folder is

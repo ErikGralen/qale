@@ -1,5 +1,5 @@
 {
-  "myself": { "displayName": "Erik Gralén", "emailAddress": "erik@leveret.io" },
+  "myself": { "displayName": "Erik Gralén", "emailAddress": "erik@tavla.example" },
   "tenantInfo": { "cloudId": "11223344-5566-7788-99aa-bbccddeeff00" },
   "projects": {
     "values": [

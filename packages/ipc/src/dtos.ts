@@ -28,7 +28,7 @@ export type NoteType =
 export type ThemeStance = 'exploring' | 'watching' | 'committed' | 'wont-do';
 
 /** How far material has got through the workspace (sources/meetings/insights/
- *  notes/mirrors) — always enum, never free text. Mirrors @pm/domain. */
+ *  notes/mirrors) — always enum, never free text. Mirrors @qale/domain. */
 export type ProcessingState = 'new' | 'processed' | 'stale';
 
 /** Whether a decision still stands. */
@@ -91,6 +91,14 @@ export interface NoteRefDTO {
   durationMin?: number;
   /** Synced-meeting upstream state — cancelled rows strike through in lists. */
   eventStatus?: 'confirmed' | 'tentative' | 'cancelled';
+  /** Meetings: the note mirrors a calendar event, so the app knows it happened
+   *  whether or not anyone wrote anything down. */
+  synced?: boolean;
+  /** Meetings: anything was captured — a transcript ref, or a body somebody
+   *  typed. False on a synced meeting nobody filled in. */
+  captured?: boolean;
+  /** Meetings: recurring-series slug, shared by every instance. */
+  series?: string;
   /** Wikilink ref this decision replaced — renders the spine inline in lists. */
   supersedes?: string;
   supersededBy?: string;
@@ -163,6 +171,21 @@ export interface VaultInfoDTO {
    */
   syncedBy: string | null;
   noteCount: number;
+}
+
+/**
+ * What a folder would be as a workspace, BEFORE anything is written to it
+ * (docs/onboarding.md ONB-4). The opening asks this about the path it is about
+ * to create so the sync warning lands before the scaffold, not after.
+ */
+export interface PathCheckDTO {
+  /** Absolute, expanded — what the screen shows and what `vault:create` takes. */
+  path: string;
+  exists: boolean;
+  /** Sync service whose folder this sits in ("iCloud Drive", …), or null. */
+  syncedBy: string | null;
+  /** It exists and already holds markdown — opening it adopts that material. */
+  hasNotes: boolean;
 }
 
 /** One commit in a note's version history. */
@@ -251,82 +274,13 @@ export interface CaptureTodoInputDTO {
 }
 
 // ---------------------------------------------------------------------------
-// Universal capture — dump anything; the system classifies, files, processes.
+// Arrival — the one door material comes in through (docs/arrival-agentic.md).
+//
+// The tray used to carry a plan: what each file was, where it would land, how
+// many reads would start. All of that was guesswork done before anything had
+// read the material, and it is gone. What crosses the wire now is bytes going
+// in and one session id coming back.
 // ---------------------------------------------------------------------------
-
-export type CaptureKind = 'transcript' | 'link' | 'screenshot' | 'note';
-
-/** The classifier's live guess, shown as an overridable chip in the capture UI. */
-export interface CaptureClassificationDTO {
-  kind: CaptureKind;
-  confidence: 'high' | 'low';
-  title: string;
-  url?: string;
-}
-
-export interface IngestCaptureInputDTO {
-  /** Omit to let the classifier decide (attachment present ⇒ screenshot). */
-  kind?: CaptureKind;
-  /** Transcript body, note text, link + comment, or a screenshot caption. */
-  text: string;
-  title?: string;
-  url?: string;
-  /** Transcript only — someone else's meeting: filed as a source (signal), not a meeting. */
-  external?: boolean;
-  /**
-   * Anything in here to act on? False files the document and runs nothing over
-   * it. The default keys off recency, not preference: extraction is
-   * time-sensitive (this morning's call has commitments due this week), analysis
-   * is not (an analysis session reads unprocessed sources perfectly well).
-   */
-  process?: boolean;
-  /** External transcript only — whose meeting it was (e.g. "Jonas Palm"). */
-  origin?: string;
-  /** Transcript only — attach to this existing calendar-synced meeting note
-   *  instead of creating a new one (capture matching). */
-  attachTo?: string;
-  attachment?: { name: string; dataBase64: string };
-}
-
-/** The synced meeting a fresh transcript most likely belongs to (capture
- *  matching): the meeting in progress, just ended, or starting shortly. The
- *  renderer turns the times into a human label ("ended 4 min ago"). */
-export interface CaptureMeetingMatchDTO {
-  notePath: string;
-  title: string;
-  /** ms epoch of the event's start and end. */
-  startMs: number;
-  endMs: number;
-}
-
-export interface IngestFollowUpDTO {
-  /** The skill to invoke on the session's first turn. */
-  skill: string;
-  prompt: string;
-  tabTitle: string;
-  /** Tier the firing binding grants — the material's permissions, not the session's. */
-  tier?: 'observe' | 'suggest' | 'outbound';
-  /** Runs headlessly on ingest — the review lands in the Inbox; no tab opens. */
-  background?: boolean;
-}
-
-export interface IngestCaptureResultDTO {
-  note: NoteDTO;
-  kind: CaptureKind;
-  followUp?: IngestFollowUpDTO;
-  /** A background session was fired for this capture (After-Meeting / External transcript).
-   *  `sessionId` lets the renderer land the PO in that live session to watch it
-   *  work and approve its cards inline. */
-  processing?: { skill: string; label: string; sessionId?: string };
-}
-
-// ---------------------------------------------------------------------------
-// Arrival — the one pipeline every piece of material enters through, whatever
-// the door (docs/vision/arrival.md).
-// ---------------------------------------------------------------------------
-
-/** `capture` extracts what is still live; `catchup` files and runs nothing. */
-export type ArrivalAmbitionDTO = 'capture' | 'catchup';
 
 /**
  * One piece of material. Either a `path` the OS picker returned — main reads
@@ -339,72 +293,35 @@ export interface ArrivalItemInputDTO {
   text?: string;
   dataBase64?: string;
   lastModified?: number;
-  kind?: CaptureKind;
-  external?: boolean;
-  attachTo?: string;
 }
 
-export interface ArrivalPlanItemDTO {
-  name: string;
-  kind: CaptureKind;
-  /** Where it will land — `meetings/`, `sources/`, `notes/`. */
-  dir: string;
-  title: string;
-  date?: string;
-  historical: boolean;
-  /** Set when the file could not be read at all — it is dropped from the batch. */
-  error?: string;
+/**
+ * The only thing the tray still decides by itself: whether we can read these
+ * bytes at all. A `.zip` is a `.zip` whoever looks at it, so no model is needed
+ * to say so, and the refusal has to be visible before the button is pressed.
+ */
+export interface ArrivalCheckDTO {
+  /** One row per input item, in input order. */
+  items: { name: string; error?: string }[];
+  /** Nothing in the batch can be read — the button has nothing to do. */
+  empty: boolean;
 }
 
-/** One session the batch would start, named the way a person names it. */
-export interface ArrivalRunDTO {
-  skill: string;
-  title: string;
-  count: number;
-  verb: string;
-}
-
-export interface ArrivalPlanDTO {
-  ambition: ArrivalAmbitionDTO;
-  ambitionAuto: boolean;
-  items: ArrivalPlanItemDTO[];
-  /** Why catch-up was chosen, in the tray's own words. */
-  reason: string;
-  /** The agent work this batch would start — empty under catch-up. */
-  runs: ArrivalRunDTO[];
-  /** The synced meeting a single fresh transcript would attach to. */
-  match?: CaptureMeetingMatchDTO;
-}
-
-export interface ArrivalOutcomeItemDTO {
-  name: string;
-  kind: CaptureKind;
-  path?: string;
-  dir?: string;
-  title?: string;
-  error?: string;
-  /** The review this item kicked off, so the receipt can link straight to it. */
-  session?: { id: string; label: string };
-}
-
-export interface ArrivalResultDTO {
-  /** Ledger key for `arrival:undo` — session-scoped, so a receipt can take
-   *  back exactly what it reported. */
-  id: string;
-  ambition: ArrivalAmbitionDTO;
-  ambitionAuto: boolean;
-  items: ArrivalOutcomeItemDTO[];
-  /** How many reviews the batch started. */
-  reviews: number;
-  /** Reviews that were due but could not start (usually: no API key yet). The
-   *  material still landed — saying "nothing to run" here would be a lie. */
-  reviewsFailed: number;
-}
-
-export interface ArrivalUndoResultDTO {
-  /** Paths deleted (created by the arrival) and paths rolled back. */
-  removed: string[];
-  restored: string[];
+/** What the tray gets back: the session now holding the material. */
+export interface ArrivalHandoffDTO {
+  /** The session the files were written into, and that is reading them. */
+  sessionId: string;
+  /** How many pieces of material landed in it. */
+  landed: number;
+  /** Files that could not be read, so never made it in. */
+  refused: { name: string; error: string }[];
+  /**
+   * The session is running. False means the material landed but nothing is
+   * reading it (no API key, or the skill is switched off) — the files are safe
+   * in the session folder and `reason` says what to fix.
+   */
+  started: boolean;
+  reason?: string;
 }
 
 export interface SaveNoteInput {
@@ -415,6 +332,12 @@ export interface SaveNoteInput {
 export interface SaveFrontmatterInput {
   path: string;
   frontmatter: Record<string, unknown>;
+}
+
+export interface RestoreVersionInput {
+  path: string;
+  /** The version to bring back, by its hash from `note:history`. */
+  hash: string;
 }
 
 export interface RenameNoteInput {
@@ -568,6 +491,24 @@ export interface MeetingReviewAskDTO {
   title: string;
 }
 
+/**
+ * What the PO has already waved off, so the capture nudge never asks twice
+ * (docs/capture-nudge.md). Durable, per workspace: the answer is about these
+ * meetings, not about this window.
+ */
+export interface CaptureNudgeStateDTO {
+  /** Meeting paths dismissed one by one. */
+  dismissed: string[];
+  /** Series slugs gone quiet for good — two dismissals from one series. */
+  mutedSeries: string[];
+}
+
+/** A dismissal's outcome: the new state, plus the series it just silenced. */
+export interface CaptureNudgeDismissDTO extends CaptureNudgeStateDTO {
+  /** Set when this dismissal was the second in its series, so the row can say so. */
+  mutedNow?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Agent / chat / sessions
 // ---------------------------------------------------------------------------
@@ -585,6 +526,13 @@ export interface AgentRunInput {
    * what the PM actually typed.
    */
   skill?: string;
+  /**
+   * Run this session on this model from here on. Remembered against the
+   * session, so reopening it tomorrow does not switch models underneath the PM.
+   * Absent means keep what the session already had, which for a new session is
+   * the one Settings names.
+   */
+  modelId?: string;
   /** Tier the arrival gets, when a triggered binding named one for this material. */
   tier?: 'observe' | 'suggest' | 'outbound';
 }
@@ -610,6 +558,8 @@ export interface ChatRefDTO {
   messageCount: number;
   preview: string;
   lifecycle: SessionLifecycle;
+  /** The model this session was moved to, or null when it follows Settings. */
+  modelId: string | null;
 }
 
 /**
@@ -657,6 +607,12 @@ export interface SpawnRequestDTO {
   brief: string | null;
   models: ModelInfoDTO[];
   defaultModelId: string;
+  /**
+   * Offered, not owed: a tidy pass nobody asked for wants to fan out. The spend
+   * still needs approving before anything runs, but the app never interrupts
+   * the PM about it.
+   */
+  offered: boolean;
 }
 
 /** One choice on a question card. The description carries the trade-off. */
@@ -684,6 +640,13 @@ export interface AskRequestDTO {
   id: string;
   sessionId: string;
   questions: AskQuestionDTO[];
+  /**
+   * Offered, not owed: an agent that tidies the workspace asked it on a run
+   * nobody was there for. Such a question renders in the quiet section and
+   * never counts toward a badge, the way the librarian's findings always have.
+   * Main works this out; the renderer only reads it.
+   */
+  offered: boolean;
 }
 
 /**
@@ -707,76 +670,6 @@ export interface LiveSessionDTO {
   startedAt: number;
 }
 
-// ---------------------------------------------------------------------------
-// Agent pings — findings the librarian surfaces with a prepared answer
-// ("noticed X — here's the fix, or chat about it").
-// ---------------------------------------------------------------------------
-
-export type AgentPingStatus = 'pending' | 'opened' | 'dismissed' | 'resolved';
-
-/** One dangling link with ranked "did you mean…?" candidates. */
-export interface PingLinkChoiceItemDTO {
-  id: string;
-  /** Note whose body carries the dangling link. */
-  from: string;
-  /** The dangling wikilink target text. */
-  target: string;
-  options: { slug: string; title: string }[];
-  resolution?: { action: 'fixed'; slug: string } | { action: 'skipped' };
-}
-
-/**
- * Why a note has no links — the cause decides which answers the row may offer.
- * `capture` is a raw dump the memory hasn't absorbed (the answer is Process),
- * `stray` is the workspace-owned hygiene case (the only one where Delete
- * belongs). Mirrors of upstream records are never reported as unlinked.
- */
-export type OrphanKindDTO = 'capture' | 'stray';
-
-/** One unlinked note, with plain-text mentions found elsewhere as link-here options. */
-export interface PingOrphanItemDTO {
-  id: string;
-  path: string;
-  title: string;
-  kind: OrphanKindDTO;
-  /** `term` rides along on older pings, which could match an alias. */
-  mentions: { host: string; hostTitle: string; line: string; term?: string }[];
-  /** Existing pages this note names in prose but never links. */
-  names?: { slug: string; title: string }[];
-  resolution?:
-    | { action: 'fixed'; host: string }
-    | { action: 'skipped' }
-    | { action: 'processing' };
-}
-
-export type PingPayloadDTO =
-  | { kind: 'link-choices'; items: PingLinkChoiceItemDTO[] }
-  | { kind: 'orphans'; items: PingOrphanItemDTO[] };
-
-/** The PO's one-tap answer to a suggestion item: apply a choice, hand it to a
- *  Process-Note session, or skip it. */
-export type PingResolveActionDTO =
-  | { action: 'fix'; choice: string }
-  | { action: 'skip' }
-  | { action: 'process' };
-
-export interface AgentPingDTO {
-  id: string;
-  title: string;
-  /** One-paragraph pitch: what was noticed and why it matters. */
-  body: string;
-  evidence: EvidenceRefDTO[];
-  /** Skill to invoke when the PO takes the conversation. */
-  skill: string;
-  /** First message of the seeded session — the ping's full context. */
-  seedPrompt: string;
-  targetPath: string | null;
-  /** One-tap suggestions; null when the finding genuinely needs a conversation. */
-  payload: PingPayloadDTO | null;
-  status: AgentPingStatus;
-  created: number;
-}
-
 export interface ScheduleDTO {
   /** The skill this schedule runs. */
   skill: string;
@@ -786,8 +679,83 @@ export interface ScheduleDTO {
   lastRun: string | null;
 }
 
+/**
+ * The opening's screens, in the order they are shown (docs/onboarding.md).
+ * `first-light` is the last one; finishing it sets `finishedAt`.
+ */
+export type OpeningStepId =
+  | 'hello'
+  | 'you'
+  | 'files'
+  | 'key'
+  | 'connections'
+  | 'telemetry'
+  | 'first-light';
+
+export const OPENING_STEPS: readonly OpeningStepId[] = [
+  'hello',
+  'you',
+  'files',
+  'key',
+  'connections',
+  'telemetry',
+  'first-light',
+] as const;
+
+/**
+ * The First steps rows whose completion is a MOMENT rather than a standing
+ * fact: each is stamped once, with the one line saying what happened. The other
+ * three rows (the key, the two connections) are derived from live state instead
+ * — see {@link ConnectionProgress} — so a key added from Settings months later
+ * still ticks its row.
+ */
+export type FirstStepId = 'transcript' | 'proposal' | 'prep' | 'ask' | 'about-us';
+
+/** How far one provider got. Connected but following nothing reads nothing. */
+export type ConnectionProgress = 'none' | 'connected' | 'following';
+
+export interface OnboardingDTO {
+  /**
+   * When the opening finished. Null means it is still owed, and the Shell
+   * renders it over everything. Set on migration for any install that already
+   * had a workspace: they never see the opening, but they do get First steps.
+   */
+  finishedAt: string | null;
+  /** Where a quit mid-flow resumes. */
+  step: OpeningStepId;
+  /** Screens the PM answered. */
+  done: OpeningStepId[];
+  /** Screens waved past — step ids, plus `connections:<providerId>` for the
+   *  per-provider skips the connections screen records. */
+  skipped: string[];
+  /** Stamped First steps, id → when it happened and what to say about it. */
+  checklist: Partial<Record<FirstStepId, { at: string; line: string }>>;
+  /** The First steps card was put away for good. */
+  dismissed: boolean;
+  /** Telemetry consent (ONB-6). Nothing is sent while this is false. */
+  telemetry: boolean;
+  /** Live connection state, for the two rows that ask about it. */
+  connections: { google: ConnectionProgress; atlassian: ConnectionProgress };
+}
+
+/** A merge-patch on the onboarding record — everything optional, one channel. */
+export interface OnboardingPatchDTO {
+  /** Move the opening to this screen. */
+  step?: OpeningStepId;
+  /** Mark a screen answered (and un-skip it, if it was skipped before). */
+  done?: OpeningStepId;
+  /** Record a skip: a step id, or `connections:<providerId>`. */
+  skipped?: string;
+  /** The opening is over — stamps `finishedAt`. */
+  finished?: boolean;
+  dismissed?: boolean;
+  telemetry?: boolean;
+}
+
 export interface SettingsDTO {
   vaultPath: string | null;
+  /** Which build this is, so a bug report can say. Never Electron's version. */
+  appVersion: string;
   modelId: string;
   hasAnthropicKey: boolean;
   hasAtlassianCreds: boolean;
@@ -803,6 +771,8 @@ export interface SettingsDTO {
    * any aliases they added by hand (an invite may reach them at either).
    */
   identity: { name: string | null; emails: string[]; aliases: string[] };
+  /** First run and what is left of it (docs/onboarding.md). */
+  onboarding: OnboardingDTO;
 }
 
 /**
@@ -839,6 +809,36 @@ export interface SkillDTO {
   lastUsedMs: number | null;
 }
 
+/**
+ * One built-in skill the PM edited, where the version we ship has since moved
+ * on. Their file is untouched and still in force; this is the offer to look.
+ * Both texts ride along so the page can show what changed without a second call.
+ */
+export interface SkillUpdateDTO {
+  /** The shipped file's path — the key every action on this row is taken with. */
+  file: string;
+  /** What their copy calls itself, so the row names what they see in the list. */
+  title: string;
+  /** Their file as it stands. */
+  yours: string;
+  /** What we ship now. */
+  ours: string;
+}
+
+/** A skill that stopped shipping, whose edited copy was kept rather than deleted. */
+export interface RetiredSkillDTO {
+  file: string;
+  title: string;
+  /** Where their copy is now. */
+  keptAt: string;
+}
+
+/** Everything the Skills page has to tell the PM about the pack itself. */
+export interface SkillPackReviewDTO {
+  updates: SkillUpdateDTO[];
+  retired: RetiredSkillDTO[];
+}
+
 /** A workspace happening an agent watches for. The renderer holds the phrase. */
 export type StartEvent = 'decision-superseded';
 
@@ -869,7 +869,7 @@ export type StartDTO =
   | { kind: 'event'; event: StartEvent };
 
 /** What a runnable may do beyond reading the memory and proposing cards. */
-export type CapabilityDTO = 'draft-outbound' | 'keep-working-files';
+export type CapabilityDTO = 'draft-outbound' | 'keep-working-files' | 'file-material';
 
 /**
  * An agent as the Agents view sees it. Every agent IS a file (`agents/<name>/AGENT.md`):

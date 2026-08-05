@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3';
-import { basename as slugBasename, lifecycleValue, refToSlug, type Note, type NoteType, type SearchHit } from '@pm/domain';
-import { noteTitle } from '@pm/domain';
-import { extractLinks } from '@pm/markdown';
-import type { BacklinkRow, IndexedNote, IndexPort, LinkRecord } from '@pm/application';
+import { basename as slugBasename, lifecycleValue, refToSlug, type Note, type NoteType, type SearchHit } from '@qale/domain';
+import { noteTitle } from '@qale/domain';
+import { extractLinks } from '@qale/markdown';
+import type { BacklinkRow, IndexedNote, IndexPort, LinkRecord } from '@qale/application';
 
 /**
  * The derived index (PLAN §3.5): a fully-rebuildable SQLite store with files +
@@ -12,7 +12,7 @@ import type { BacklinkRow, IndexedNote, IndexPort, LinkRecord } from '@pm/applic
  */
 
 /** Bump when the table shapes change — migrate() drops and lets reconcile rebuild. */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 /** Frontmatter ref key → canonical edge type (+ reversed for inverse keys). */
 const FRONTMATTER_EDGE_KEYS: [key: string, type: string, reversed: boolean][] = [
@@ -38,6 +38,8 @@ interface FileRow {
   summary: string;
   /** The note type's lifecycle value, whatever that lifecycle is named. */
   lifecycle: string | null;
+  /** 1 when the file has any text below the frontmatter. */
+  has_body: number;
   mtime: number;
   frontmatter_json: string;
 }
@@ -73,6 +75,7 @@ export class SqliteIndex implements IndexPort {
         title TEXT NOT NULL,
         summary TEXT NOT NULL,
         lifecycle TEXT,
+        has_body INTEGER NOT NULL DEFAULT 0,
         mtime INTEGER NOT NULL,
         frontmatter_json TEXT NOT NULL
       );
@@ -125,16 +128,21 @@ export class SqliteIndex implements IndexPort {
         title: noteTitle(n),
         summary: n.frontmatter.summary,
         lifecycle: lifecycleValue(n.type, n.frontmatter as Record<string, unknown>),
+        // "Is there anything in this note?" — asked by the lists, which never
+        // carry a body. Stored, not recomputed: the alternative is reading every
+        // file again to answer it.
+        has_body: n.body.trim().length > 0 ? 1 : 0,
         mtime: n.mtime,
         frontmatter_json: JSON.stringify(n.frontmatter),
       };
       this.db
         .prepare(
-          `INSERT INTO files (path, slug, name, type, layer, title, summary, lifecycle, mtime, frontmatter_json)
-           VALUES (@path, @slug, @name, @type, @layer, @title, @summary, @lifecycle, @mtime, @frontmatter_json)
+          `INSERT INTO files (path, slug, name, type, layer, title, summary, lifecycle, has_body, mtime, frontmatter_json)
+           VALUES (@path, @slug, @name, @type, @layer, @title, @summary, @lifecycle, @has_body, @mtime, @frontmatter_json)
            ON CONFLICT(path) DO UPDATE SET
              slug=@slug, name=@name, type=@type, layer=@layer, title=@title,
-             summary=@summary, lifecycle=@lifecycle, mtime=@mtime, frontmatter_json=@frontmatter_json`,
+             summary=@summary, lifecycle=@lifecycle, has_body=@has_body, mtime=@mtime,
+             frontmatter_json=@frontmatter_json`,
         )
         .run(row);
 
@@ -341,6 +349,7 @@ export class SqliteIndex implements IndexPort {
       title: row.title,
       summary: row.summary,
       lifecycle: row.lifecycle,
+      hasBody: row.has_body === 1,
       mtime: row.mtime,
       frontmatter: JSON.parse(row.frontmatter_json) as Record<string, unknown>,
       links: links.map((l) => ({

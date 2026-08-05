@@ -1,8 +1,9 @@
-appId: io.leveret.pm
-productName: pm
+appId: ai.qale.app
+productName: Qale
 directories:
   output: dist
   buildResources: build
+afterPack: ./build/after-pack.cjs
 files:
   - out/**/*
   - package.json
@@ -13,8 +14,35 @@ asarUnpack:
   - '**/node_modules/better-sqlite3/**'
   - '**/node_modules/sqlite-vec*/**'
 mac:
+  # arm64 only for the beta. Add x64 (or `universal`) the day a beta user turns
+  # up on an Intel Mac — it doubles build time and dmg size until then.
   target:
-    - dir
+    - target: dmg
+      arch:
+        - arm64
+  icon: build/icon.png
+  category: public.app-category.productivity
+  darkModeSupport: true
+  # No Developer ID yet (beta-launch ticket 2). `null` means electron-builder
+  # skips signing, which leaves Electron's own signature on our bundle and fails
+  # `codesign --verify` — so build/after-pack.cjs ad-hoc signs it instead, which
+  # is the minimum an arm64 build needs to launch. Gatekeeper still quarantines
+  # the download, so the first open is right-click → Open. The day the Apple
+  # account lands: drop these two lines, delete the hook, add notarize
+  # credentials, and auto-update (ticket 8) becomes possible in the same move.
+  identity: null
+  notarize: false
+dmg:
+  title: ${productName} ${version}
+  # Drag-to-Applications, the layout every Mac user already knows.
+  contents:
+    - x: 140
+      y: 200
+      type: file
+    - x: 400
+      y: 200
+      type: link
+      path: /Applications
 win:
   target:
     - dir

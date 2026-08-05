@@ -134,7 +134,7 @@ export function outboundEffect(p: OutboundPayload, facts: OutboundEffectFacts = 
 
     case 'create_event': {
       // Guests land on the event but are NOT mailed: the connector writes with
-      // sendUpdates=none so pm's approval stays the only outbound channel.
+      // sendUpdates=none so Qale's approval stays the only outbound channel.
       const guests = guestList(p.attendees, facts);
       return guests
         ? `Creates the event for ${guests}. No invite email goes out.`

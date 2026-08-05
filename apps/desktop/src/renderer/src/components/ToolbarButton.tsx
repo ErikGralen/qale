@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@pm/ui';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@qale/ui';
 
 /**
  * Keycap chips for a tooltip's shortcut hint. Rendered inside the dark tooltip

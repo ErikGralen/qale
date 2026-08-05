@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AtlassianClient, type FetchLike } from '@pm/atlassian';
+import { AtlassianClient, type FetchLike } from '@qale/atlassian';
 import { makeFetch } from './fetch-fixture.js';
 
 /**
- * Client-level tests (the @pm/atlassian package has no test harness of its own,
+ * Client-level tests (the @qale/atlassian package has no test harness of its own,
  * so its wire behavior is covered here with the same injected fetch): the
  * pagination loops, plain-language error mapping, and the tolerant storage-
  * XHTML patcher — behaviors the connector tests only exercise on one page.
@@ -12,7 +12,7 @@ import { makeFetch } from './fetch-fixture.js';
 
 const SITE = 'https://tavla.atlassian.net';
 const client = (fetchImpl: FetchLike): AtlassianClient =>
-  new AtlassianClient({ baseUrl: SITE, email: 'erik@leveret.io', token: 'tok-123' }, fetchImpl);
+  new AtlassianClient({ baseUrl: SITE, email: 'erik@tavla.example', token: 'tok-123' }, fetchImpl);
 
 const rawIssue = (key: string): unknown => ({
   key,

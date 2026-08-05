@@ -1,5 +1,5 @@
 {
-  "extends": "@pm/typescript-config/node.json",
+  "extends": "@qale/typescript-config/node.json",
   "compilerOptions": {
     "noEmit": true,
     "rootDir": "src"

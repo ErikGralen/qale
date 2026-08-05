@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Button } from '@pm/ui';
+import { Button } from '@qale/ui';
 import { AlertTriangle, ArrowUpRight, Check, ChevronDown, Clock, MessageSquare, Pencil, RefreshCw, X } from 'lucide-react';
-import type { OutboundPayloadDTO, ProposalDTO, UpdatePayloadDTO } from '@pm/ipc';
-import { normalizeLinkTarget } from '@pm/domain';
+import type { OutboundPayloadDTO, ProposalDTO, UpdatePayloadDTO } from '@qale/ipc';
+import { normalizeLinkTarget } from '@qale/domain';
 import { useApp } from '../../state/app-state';
 import { invoke } from '../../lib/ipc';
 import {
@@ -13,6 +13,7 @@ import {
   type ExternalRefMetaDTO,
 } from '../../lib/connections';
 import { relativeTime } from '../../lib/dates';
+import { diffLines, withContext, type DiffRow } from '../../lib/diff';
 import { navFromEvent, type NavOpts } from '../../lib/nav';
 import { Markdown } from '../Markdown';
 import { ExternalRefChip } from '../ExternalRef';
@@ -92,7 +93,7 @@ function InferenceFlag() {
   return (
     <span
       className="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
-      title="The agent inferred this without citing a source — double-check it."
+      title="The agent inferred this without citing a source. Double-check it."
     >
       <AlertTriangle className="size-3" aria-hidden /> Unverified
     </span>
@@ -253,7 +254,7 @@ export function CardItem({
   // pending — the session can end in approval here or a revised card.
   const discuss = () => {
     const prompt = [
-      "I'm looking at a pending approval card and want to talk it through before deciding. Don't apply anything — the card stays pending until I act on it.",
+      "I'm looking at a pending approval card and want to talk it through before deciding. Don't apply anything. The card stays pending until I act on it.",
       '',
       `Change: ${headline}`,
       `Why: ${proposal.rationale}`,
@@ -264,7 +265,7 @@ export function CardItem({
       JSON.stringify(proposal.payload, null, 2).slice(0, 4000),
       '```',
       '',
-      "Briefly explain why this was proposed and what approving would change, citing sources. Then ask what I'd like to adjust — if I want changes, propose a revised card.",
+      "Briefly explain why this was proposed and what approving would change, citing sources. Then ask what I'd like to adjust. If I want changes, propose a revised card.",
     ]
       .filter((line) => line !== null)
       .join('\n');
@@ -719,7 +720,7 @@ function OutboundTargetLine({ payload, onOpen }: { payload: OutboundPayloadDTO; 
           Create a{system ? ` ${system}` : ''} {payload.issueType?.toLowerCase() ?? 'ticket'}
           {payload.projectKey && <span className={quiet}> in {payload.projectKey}</span>}
         </span>
-        {payload.title && <span className={quiet}>— {payload.title}</span>}
+        {payload.title && <span className={quiet}>: {payload.title}</span>}
       </div>
     );
   }
@@ -754,7 +755,7 @@ function OutboundTargetLine({ payload, onOpen }: { payload: OutboundPayloadDTO; 
         onOpen={onOpen}
         kind={payload.action === 'update_page' ? `${system ?? 'Wiki'} page` : null}
       />
-      {meta?.kind === 'ticket' && meta.title && <span className={quiet}>— {meta.title}</span>}
+      {meta?.kind === 'ticket' && meta.title && <span className={quiet}>: {meta.title}</span>}
     </div>
   );
 }
@@ -830,7 +831,7 @@ function OutboundDetail({ payload, onOpen }: { payload: OutboundPayloadDTO; onOp
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <span>
             <span className="font-medium">{refName} changed since this was drafted</span>
-            {meta.state && <> — now {meta.state}</>}
+            {meta.state && <>, now {meta.state}</>}
             {meta.lastChange?.by && <>, by {meta.lastChange.by}</>}
             {', '}
             {relativeTime(meta.lastChange?.at ?? meta.remoteUpdated)}. Worth one more glance before
@@ -911,7 +912,7 @@ function PreviewSurface({ children }: { children: ReactNode }) {
     <div
       ref={ref}
       className={`max-h-[26rem] overflow-y-auto rounded-lg bg-muted/30 px-4 py-3 ${
-        clipped ? 'pm-scroll-fade' : ''
+        clipped ? 'qale-scroll-fade' : ''
       }`}
     >
       {children}
@@ -920,10 +921,10 @@ function PreviewSurface({ children }: { children: ReactNode }) {
 }
 
 /** Render a frontmatter value for the property-change line — dates and scalars
- *  as-is, arrays joined, empty/absent as an em dash so a set-from-nothing reads. */
+ *  as-is, arrays joined, empty/absent as the word "empty" so a set-from-nothing reads. */
 function fmValue(v: unknown): string {
-  if (v === undefined || v === null || v === '') return '—';
-  if (Array.isArray(v)) return v.length ? v.map((x) => String(x)).join(', ') : '—';
+  if (v === undefined || v === null || v === '') return 'empty';
+  if (Array.isArray(v)) return v.length ? v.map((x) => String(x)).join(', ') : 'empty';
   return String(v);
 }
 
@@ -995,75 +996,6 @@ function ChangePreview({
       </PreviewSurface>
     </div>
   );
-}
-
-type DiffRow =
-  | { kind: 'same' | 'add' | 'del'; text: string }
-  | { kind: 'replace'; text: string; before: string; after: string };
-type DiffView = DiffRow | { kind: 'gap'; text: string };
-
-/** Longest-common-subsequence line diff — insertions no longer cascade. */
-function diffLines(before: string, after: string): DiffRow[] {
-  const b = before.split('\n');
-  const a = after.split('\n');
-  // Guard pathological sizes; the preview is judged in seconds, not scrolled for minutes.
-  if (b.length * a.length > 250_000) {
-    return a.map((text) => ({ kind: 'same' as const, text }));
-  }
-  const m = b.length;
-  const n = a.length;
-  const lcs: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
-  for (let i = m - 1; i >= 0; i--) {
-    for (let j = n - 1; j >= 0; j--) {
-      lcs[i]![j] = b[i] === a[j] ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
-    }
-  }
-  const rows: DiffRow[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < m && j < n) {
-    if (b[i] === a[j]) {
-      rows.push({ kind: 'same', text: a[j]! });
-      i++;
-      j++;
-    } else if (lcs[i + 1]![j]! >= lcs[i]![j + 1]!) {
-      rows.push({ kind: 'del', text: b[i]! });
-      i++;
-    } else {
-      rows.push({ kind: 'add', text: a[j]! });
-      j++;
-    }
-  }
-  while (i < m) rows.push({ kind: 'del', text: b[i++]! });
-  while (j < n) rows.push({ kind: 'add', text: a[j++]! });
-  return rows;
-}
-
-/** Keep `ctx` unchanged lines around every change; collapse the rest to a marker. */
-function withContext(rows: DiffRow[], ctx: number): DiffView[] {
-  const keep = new Array(rows.length).fill(false);
-  rows.forEach((r, i) => {
-    if (r.kind === 'same') return;
-    for (let j = Math.max(0, i - ctx); j <= Math.min(rows.length - 1, i + ctx); j++) keep[j] = true;
-  });
-  const out: DiffView[] = [];
-  let hidden = 0;
-  // The marker carries its own count: "⋯" alone left the PO unable to tell a
-  // one-line skip from half the page, in the view they use to judge a write.
-  const flush = () => {
-    if (hidden > 0) out.push({ kind: 'gap', text: `${hidden} unchanged line${hidden === 1 ? '' : 's'}` });
-    hidden = 0;
-  };
-  rows.forEach((r, i) => {
-    if (keep[i]) {
-      flush();
-      out.push(r);
-    } else {
-      hidden++;
-    }
-  });
-  flush();
-  return out;
 }
 
 /**

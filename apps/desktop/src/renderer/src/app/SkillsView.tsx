@@ -1,18 +1,22 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Wand2,
   Lock,
+  Plus,
   Sparkles,
   BookOpen,
   TriangleAlert,
   ChevronRight,
   type LucideIcon,
 } from 'lucide-react';
-import type { SkillDTO } from '@pm/ipc';
+import type { SkillDTO } from '@qale/ipc';
+import { Button, Input } from '@qale/ui';
 import { useApp } from '../state/app-state';
+import { invoke } from '../lib/ipc';
 import { navFromEvent } from '../lib/nav';
 import { relativeTime } from '../lib/dates';
 import { PageHeader } from '../components/PageHeader';
+import { SkillPackReview } from '../components/SkillPackReview';
 import { StartChips, CanChips } from '../components/RunnableConfig';
 
 /**
@@ -107,8 +111,65 @@ function SkillRow({ skill }: { skill: SkillDTO }) {
   );
 }
 
+/**
+ * Naming happens here, once, and not on the page afterwards. A skill's folder is
+ * the address the runtime resolves and every stored session receipt cites, so it
+ * cannot be renamed later without breaking the callers — which is why the skill
+ * page edits the title and leaves the address alone. A plain note gets to be
+ * "Untitled" and renamed at leisure precisely because its filename is
+ * disposable; this one is not.
+ */
+function NewSkill({ onCreated }: { onCreated: (path: string) => void }) {
+  const [naming, setNaming] = useState(false);
+  const [title, setTitle] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const create = useCallback(async () => {
+    if (busy || !title.trim()) return;
+    setBusy(true);
+    try {
+      const { path } = await invoke['skills:create'](title);
+      setNaming(false);
+      setTitle('');
+      onCreated(path);
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, onCreated, title]);
+
+  if (!naming) {
+    return (
+      <Button size="sm" onClick={() => setNaming(true)}>
+        <Plus className="size-3.5" /> New skill
+      </Button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <Input
+        autoFocus
+        className="h-7 w-56 text-sm"
+        placeholder="What should it be called?"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void create();
+          else if (e.key === 'Escape') setNaming(false);
+        }}
+        aria-label="Name for the new skill"
+      />
+      <Button size="sm" disabled={busy || !title.trim()} onClick={() => void create()}>
+        Create
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => setNaming(false)}>
+        Cancel
+      </Button>
+    </div>
+  );
+}
+
 export function SkillsView() {
-  const { skills, openSession, openAgents } = useApp();
+  const { skills, openSession, openAgents, openDoc, refreshSkills } = useApp();
 
   const groups = useMemo(() => {
     const byShelf = new Map<Shelf, SkillDTO[]>();
@@ -135,13 +196,22 @@ export function SkillsView() {
             {errorCount} to fix
           </span>
         )}
+        {/* Skills only. Agents start themselves, on clocks that live in code, so
+            a file the PM wrote there would be one nothing ever fires. */}
+        <NewSkill
+          onCreated={(path) => {
+            void refreshSkills();
+            void openDoc(path);
+          }}
+        />
       </PageHeader>
 
       <div className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-8 py-5">
+        <SkillPackReview onChanged={() => void refreshSkills()} />
         {/* The one sentence that defines the noun — the sibling of the Agents
             page's opening line, with the door to that page in it. */}
         <p className="mb-3 px-1 text-dense text-muted-foreground">
-          Skills are how work you hand over gets done — playbooks you run, rules that are always
+          Skills are how work you hand over gets done: playbooks you run, rules that are always
           in force, and reference the agent reads when relevant. What starts by itself lives on
           the{' '}
           <button
@@ -160,9 +230,7 @@ export function SkillsView() {
             </div>
             <h2 className="text-lg font-semibold">No skills yet</h2>
             <p className="max-w-sm text-sm text-muted-foreground">
-              Ask the librarian to draft one, or add a folder under{' '}
-              <code className="rounded bg-muted px-1 py-0.5 text-dense">skills/</code> with a{' '}
-              <code className="rounded bg-muted px-1 py-0.5 text-dense">SKILL.md</code> in it.
+              Write one yourself with New skill, or ask the librarian to draft one for you.
             </p>
           </div>
         ) : (

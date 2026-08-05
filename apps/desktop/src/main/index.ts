@@ -3,12 +3,19 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { is } from '@electron-toolkit/utils';
 import { registerHandlers } from './handlers.js';
+import { installLogCapture } from './log.js';
+import type { Telemetry } from './telemetry.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
+// First thing: a packaged app's console goes to a stderr nobody reads, so tee
+// it into the ring buffer that "Copy diagnostics" hands over. Anything logged
+// before this call is only ever on stderr.
+installLogCapture();
+
 /**
- * The PM_* variables are our verification harness: they redirect where app state
- * lives, drive the renderer, and (PM_SCREENSHOT_CLICK's `js:` form) run arbitrary
+ * The QALE_* variables are our verification harness: they redirect where app state
+ * lives, drive the renderer, and (QALE_SCREENSHOT_CLICK's `js:` form) run arbitrary
  * JavaScript inside it. Fine on our own machines, not something to compile into a
  * binary we hand to other people — so a packaged build never reads them at all.
  */
@@ -16,9 +23,26 @@ function devEnv(name: string): string | undefined {
   return is.dev ? process.env[name] : undefined;
 }
 
+/**
+ * A dev run and the installed app share a codebase, but they are not the same
+ * product: dev opens the demo workspace and gets torn down constantly, the
+ * installed app holds the notes you actually keep. Electron would give them one
+ * identity — the same `~/Library/Application Support/Qale`, so the same
+ * settings.json, the same "which workspace is open", the same session receipts,
+ * and the same keychain item — and they would keep overwriting each other.
+ *
+ * Naming the dev build separately splits all of that in one move, because both
+ * the userData directory and the safeStorage keychain item are derived from the
+ * app name. It also puts "Qale Dev" in the menu bar, so it is obvious which one
+ * you are looking at. The packaged app never takes this branch.
+ */
+if (is.dev) app.setName('Qale Dev');
+
 // Dev-only: sandbox all app state (settings, app.db, pi sessions, localStorage)
-// into a scratch dir so verification runs never touch the real profile.
-const userDataOverride = devEnv('PM_USERDATA');
+// into a scratch dir so verification runs never touch the real profile. Layered
+// on top of the name above: this is the per-run scratch, that is the standing
+// dev profile.
+const userDataOverride = devEnv('QALE_USERDATA');
 if (userDataOverride) app.setPath('userData', userDataOverride);
 
 const rendererFile = join(__dirname, '../renderer/index.html');
@@ -78,11 +102,11 @@ function openExternal(url: string): void {
   try {
     scheme = new URL(url).protocol;
   } catch {
-    console.warn('[pm] refused to open a malformed link');
+    console.warn('[qale] refused to open a malformed link');
     return;
   }
   if (!OPENABLE_SCHEMES.has(scheme)) {
-    console.warn(`[pm] refused to open a "${scheme}" link`);
+    console.warn(`[qale] refused to open a "${scheme}" link`);
     return;
   }
   void shell.openExternal(url);
@@ -112,7 +136,8 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    backgroundColor: '#faf9f7',
+    // Matches --background (light steel paper) so the first paint doesn't flash white.
+    backgroundColor: '#f9fafc',
     webPreferences: {
       // The preload is CommonJS so it can run sandboxed (PLAN §3.2).
       preload: join(__dirname, '../preload/index.cjs'),
@@ -125,12 +150,12 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show();
     // Dev-only self-screenshot for verification (no desktop capture involved).
-    const shot = devEnv('PM_SCREENSHOT');
+    const shot = devEnv('QALE_SCREENSHOT');
     if (shot) {
-      const delay = Number(devEnv('PM_SCREENSHOT_DELAY') ?? 2500);
+      const delay = Number(devEnv('QALE_SCREENSHOT_DELAY') ?? 2500);
       setTimeout(async () => {
         try {
-          const click = devEnv('PM_SCREENSHOT_CLICK');
+          const click = devEnv('QALE_SCREENSHOT_CLICK');
           for (const sel of (click ?? '').split('|').filter(Boolean)) {
             // `js:` runs an arbitrary expression in the renderer — the only way
             // to verify a surface whose state comes from typing (the capture
@@ -146,9 +171,9 @@ function createWindow(): void {
           const image = await mainWindow!.webContents.capturePage();
           const { writeFile } = await import('node:fs/promises');
           await writeFile(shot, image.toPNG());
-          console.log(`[pm] screenshot → ${shot}`);
+          console.log(`[qale] screenshot → ${shot}`);
         } catch (err) {
-          console.error('[pm] screenshot failed', err);
+          console.error('[qale] screenshot failed', err);
         }
         app.quit();
       }, delay);
@@ -169,7 +194,7 @@ function createWindow(): void {
     openExternal(url);
   });
 
-  const open = devEnv('PM_OPEN');
+  const open = devEnv('QALE_OPEN');
   const search = open ? `open=${encodeURIComponent(open)}` : undefined;
   const dev = devServer();
   if (dev) {
@@ -209,6 +234,42 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/**
+ * The four ways this app dies, reported as one event (docs/telemetry-posthog.md
+ * TEL-5). None of them existed before: an unhandled throw in main took the app
+ * with it silently, and a renderer that died left a white window and no trace.
+ *
+ * Installed before `onReady`, because the riskiest minute is the one where the
+ * workspace is being opened. The sender holds anything raised before the
+ * consent switch has been read, so an early crash is not lost to the ordering
+ * and is still dropped for good if the answer turns out to be no.
+ *
+ * Nothing here changes what the app does when it dies. `uncaughtException`
+ * deliberately does NOT swallow the error: Electron's default is to log and
+ * carry on, and a telemetry hook is not the place to change that policy.
+ */
+function installCrashReporting(telemetry: Telemetry): void {
+  process.on('uncaughtException', (err) => {
+    telemetry.crash('main', err);
+    console.error('[qale] uncaught exception:', err);
+  });
+  process.on('unhandledRejection', (reason) => {
+    telemetry.crash('promise', reason);
+    console.error('[qale] unhandled rejection:', reason);
+  });
+  app.on('render-process-gone', (_event, _contents, details) => {
+    // `details.reason` is one of Chromium's words ('crashed', 'oom', ...), not
+    // anything the PM wrote, so it is safe as the message. There is no stack to
+    // be had on this path.
+    telemetry.crash('renderer', new Error(`renderer ${details.reason} (exit ${details.exitCode})`));
+    console.error('[qale] renderer gone:', details.reason);
+  });
+  app.on('child-process-gone', (_event, details) => {
+    telemetry.crash('child', new Error(`${details.type} ${details.reason}`));
+    console.error('[qale] child process gone:', details.type, details.reason);
+  });
+}
+
 app.whenReady().then(async () => {
   buildMenu();
 
@@ -222,7 +283,8 @@ app.whenReady().then(async () => {
     });
   });
 
-  const { onReady, dispose } = registerHandlers(() => mainWindow);
+  const { onReady, dispose, telemetry } = registerHandlers(() => mainWindow);
+  installCrashReporting(telemetry);
   await onReady();
   createWindow();
 
@@ -244,11 +306,11 @@ app.whenReady().then(async () => {
     event.preventDefault();
     disposed = true;
     const watchdog = setTimeout(() => {
-      console.error('[pm] quit teardown timed out — exiting anyway');
+      console.error('[qale] quit teardown timed out — exiting anyway');
       app.exit(0);
     }, 5000);
     void dispose()
-      .catch((err) => console.error('[pm] quit teardown failed:', err))
+      .catch((err) => console.error('[qale] quit teardown failed:', err))
       .finally(() => {
         clearTimeout(watchdog);
         app.exit(0);
@@ -257,7 +319,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  // Staying alive windowless is macOS app behaviour, but a PM_USERDATA run is a
+  // Staying alive windowless is macOS app behaviour, but a QALE_USERDATA run is a
   // throwaway sandboxed launch — outliving its window only litters the dock.
   if (process.platform !== 'darwin' || userDataOverride) app.quit();
 });

@@ -1,5 +1,5 @@
 import { Children, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isFolderIndex, dirForType, layerForType } from '@pm/domain';
+import { isFolderIndex, dirForType, layerForType } from '@qale/domain';
 import {
   Button,
   DropdownMenu,
@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   Spinner,
-} from '@pm/ui';
+} from '@qale/ui';
 import {
   FolderOpen,
   Sparkles,
@@ -39,7 +39,7 @@ import {
   meetingStart,
   needsReview,
 } from '../lib/note-status';
-import type { NoteRefDTO, NoteType, VaultTreeGroupDTO } from '@pm/ipc';
+import type { NoteRefDTO, NoteType, VaultTreeGroupDTO } from '@qale/ipc';
 
 // Clear the macOS traffic lights in the frameless window (hiddenInset).
 const isMac = navigator.userAgent.includes('Macintosh');
@@ -70,7 +70,7 @@ function sessionRows(sessions: SessionOverview[], asking: ReadonlySet<string>): 
 
 /** Sidebar disclosure state, remembered across launches (per section, app-wide). */
 function useSection(id: string, defaultOpen: boolean): [boolean, () => void] {
-  const key = `pm.sidebar.${id}`;
+  const key = `qale.sidebar.${id}`;
   const [open, setOpen] = useState(() => {
     try {
       const v = localStorage.getItem(key);
@@ -190,7 +190,7 @@ function Section({
 /**
  * The live session monitor — a kicked-off agent stays visible here until the PO
  * has dealt with it. Running rows spin quietly; rows needing a decision carry the
- * terracotta dot (the one accent = "action lives here"); finished-and-seen rows
+ * ink-blue dot (the one accent = "action lives here"); finished-and-seen rows
  * keep a check for an hour, then decay off the rail.
  */
 function SessionsSection() {
@@ -212,7 +212,7 @@ function SessionsSection() {
       action={
         <SectionAction
           label="All"
-          title="All sessions — running, waiting on you, and finished"
+          title="All sessions: running, waiting on you, and finished"
           onClick={(e) => openChats(navFromEvent(e))}
         />
       }
@@ -240,7 +240,7 @@ function SessionsSection() {
                 <button
                   className="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 pl-2 text-left text-dense transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                   onClick={(e) => openChat({ id: s.id, title: s.title }, navFromEvent(e))}
-                  title={`${s.title} — ${
+                  title={`${s.title}: ${
                     waitingOnAnswer ? 'waiting on your answer' : s.running ? 'running' : wants ? 'needs you' : 'done'
                   }`}
                 >
@@ -383,7 +383,7 @@ function TypeSection({
           }}
           title={
             isNew
-              ? `Browse all ${group.dir} — the memory just filed its first`
+              ? `Browse all ${group.dir}: the memory just filed its first`
               : `Browse all ${group.dir}`
           }
         >
@@ -431,7 +431,7 @@ function TypeSection({
                   <button
                     className="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 pl-[30px] text-left text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                     onClick={onIngest}
-                    title="Drop a transcript (⇧⌘N) — any meeting you already have"
+                    title="Drop a transcript (⇧⌘N): any meeting you already have"
                   >
                     <FileUp className="size-3 shrink-0 text-muted-foreground/80" aria-hidden />
                     <span className="truncate">Drop a transcript</span>
@@ -477,7 +477,7 @@ function TypeSection({
                       {group.type === 'meeting' && needsReview(n) && (
                         <span
                           className="size-1.5 shrink-0 rounded-full bg-warning transition-opacity group-hover/note:opacity-0 group-focus-within/note:opacity-0"
-                          title="Happened — awaiting its After-Meeting review"
+                          title="Happened, not read yet"
                           aria-label="Awaiting review"
                         />
                       )}
@@ -499,7 +499,7 @@ function TypeSection({
                           onUnpin(n);
                         }}
                         aria-label={`Unpin ${n.title}`}
-                        title="Unpin — remove from the sidebar"
+                        title="Unpin: remove from the sidebar"
                       >
                         <X className="size-3" />
                       </button>
@@ -575,7 +575,7 @@ function MemoryTree({
       action={
         <SectionAction
           label="All"
-          title="The whole memory — sources, insights, customers, people, notes"
+          title="The whole memory: sources, insights, customers, people, notes"
           onClick={(e) => openMemory(navFromEvent(e))}
         />
       }
@@ -658,8 +658,8 @@ function SetupMenu() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={attention ? `Settings — ${attention}` : 'Settings'}
-          title={attention ? `Skills, agents, settings — ${attention}` : 'Skills, agents, settings'}
+          aria-label={attention ? `Settings: ${attention}` : 'Settings'}
+          title={attention ? `Skills, agents, settings: ${attention}` : 'Skills, agents, settings'}
           className="relative ml-auto inline-grid size-7 place-items-center rounded-md text-muted-foreground transition-[color,background-color,transform] duration-150 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none active:translate-y-px aria-expanded:bg-accent aria-expanded:text-foreground"
           style={{ WebkitAppRegion: 'no-drag' } as never}
         >
@@ -685,7 +685,7 @@ function SetupMenu() {
         <SetupItem
           icon={Wand2}
           label="Skills"
-          title="Skills — how work you hand over gets done: playbooks, always-on rules, reference"
+          title="Skills: how work you hand over gets done, from playbooks to always-on rules to reference"
           meta={skillsToFix > 0 ? `${skillsToFix} to fix` : skills.length > 0 ? `${skills.length}` : undefined}
           metaTone={skillsToFix > 0 ? 'destructive' : 'muted'}
           onClick={(e) => openSkills(navFromEvent(e))}
@@ -693,7 +693,7 @@ function SetupMenu() {
         <SetupItem
           icon={Bot}
           label="Agents"
-          title="Agents — what runs on its own while the app is open, and how to switch it off"
+          title="Agents: what runs on its own while the app is open, and how to switch it off"
           meta={
             agentsBlocked > 0 ? `${agentsBlocked} blocked` : agents.length > 0 ? `${agents.length}` : undefined
           }
@@ -704,7 +704,7 @@ function SetupMenu() {
         <SetupItem
           icon={Settings}
           label="Settings"
-          title="Settings — workspace, connections, and who you are"
+          title="Settings: workspace, connections, and who you are"
           meta="⌘,"
           onClick={(e) => openSettings(navFromEvent(e))}
         />
@@ -714,7 +714,7 @@ function SetupMenu() {
 }
 
 /**
- * The fixed places above the memory tree — Home, Inbox, Todos, Ask. One row
+ * The fixed places above the memory tree — Home, Inbox, Todos, New session. One row
  * vocabulary so the cluster reads as a single group, and the row for the place
  * you are standing in carries the same accent tint a pinned note does.
  */
@@ -811,7 +811,7 @@ export function Sidebar({
             // row is lit then too — never a screen you're on with nothing marked.
             data-active={activeTab?.kind === 'home' || !activeTab || undefined}
             onClick={(e) => openHome(navFromEvent(e))}
-            title="Home — what's waiting on you, and everything you can start"
+            title="Home: what's waiting on you, and everything you can start"
           >
             <House className="size-4 text-muted-foreground" aria-hidden />
             Home
@@ -848,9 +848,15 @@ export function Sidebar({
               </span>
             )}
           </button>
-          <button className={PLACE_ROW} onClick={(e) => openSession('ask', navFromEvent(e))}>
+          {/* "Ask" named a place after a verb, next to a Sessions rail full of
+              the same thing. The row starts a session; it says so. */}
+          <button
+            className={PLACE_ROW}
+            onClick={(e) => openSession('ask', navFromEvent(e))}
+            title="Start a session: ask the memory a question, or hand it a piece of work"
+          >
             <Sparkles className="size-4 text-muted-foreground" aria-hidden />
-            Ask
+            New session
             <span className="ml-auto text-xs text-muted-foreground">⌘↵</span>
           </button>
         </div>

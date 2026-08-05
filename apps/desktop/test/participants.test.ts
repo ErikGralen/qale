@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { PeopleDirectoryDTO, PersonCardDTO } from '@pm/ipc';
+import type { PeopleDirectoryDTO, PersonCardDTO } from '@qale/ipc';
 import { initials, nameFromEmail, resolveParticipant } from '../src/renderer/src/lib/people.js';
 
 const sara: PersonCardDTO = {

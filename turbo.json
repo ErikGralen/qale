@@ -1,7 +1,14 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "ui": "tui",
-  "globalEnv": ["ANTHROPIC_API_KEY", "PM_GOOGLE_CLIENT_ID", "PM_GOOGLE_CLIENT_SECRET"],
+  "globalEnv": [
+    "ANTHROPIC_API_KEY",
+    "QALE_GOOGLE_CLIENT_ID",
+    "QALE_GOOGLE_CLIENT_SECRET",
+    "QALE_POSTHOG_KEY",
+    "QALE_POSTHOG_HOST",
+    "QALE_POSTHOG_DEV"
+  ],
   "tasks": {
     "dev": {
       "cache": false,

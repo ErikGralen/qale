@@ -1,7 +1,7 @@
 ---
 name: update-demo
 description: >-
-  Refresh the pm demo workspace before showing it off. Cleans harness-written test
+  Refresh the Qale demo workspace before showing it off. Cleans harness-written test
   cruft out of the canonical vault-dev/, rebuilds the runtime .vault-dev/ with every
   date slid to today (upcoming meeting stays upcoming, overdue todos stay overdue),
   and confirms the drag-in demo-samples are ready. Use when the user runs /update-demo
@@ -74,9 +74,9 @@ by (today − 2026-07-17), empties `sessions/`, and self-validates. Read its out
 baseline AND reconciles `.vault-dev` to the live keys/ids. Always in that order: refresh first,
 then reset-atlassian.
 
-**Why the app-state reset matters.** The inbox (pings, proposal/approval-queue cards) and session
+**Why the app-state reset matters.** The inbox (proposal/approval-queue cards) and session
 receipts do NOT live in the vault — they sit in a per-vault SQLite DB under Electron's userData dir
-(`~/Library/Application Support/@pm/desktop/app-<hash>.db`, keyed by the `.vault-dev` absolute path).
+(`~/Library/Application Support/@qale/desktop/app-<hash>.db`, keyed by the `.vault-dev` absolute path).
 A vault-only rebuild leaves them, so the freshly-dated demo opens behind last run's stale inbox. The
 script now clears that per-vault DB, the shared search index (reindexes on open), and the agent-run
 session receipts — keying off the same `sha256(vault root)` the app uses. `settings.json` (which

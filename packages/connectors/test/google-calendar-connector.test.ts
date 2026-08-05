@@ -229,7 +229,7 @@ test('execute create_event: POSTs summary/start, defaults end to +30 min, return
   assert.equal(body.start.dateTime, '2026-08-04T15:00:00+02:00');
   assert.equal(body.end.dateTime, '2026-08-04T13:30:00.000Z'); // +30 min, normalized to Z
   assert.deepEqual(body.attendees, [{ email: 'sara.lindqvist@nordkap.example' }]);
-  // Guests are on the event but Google mails nobody — pm owns the outbound side.
+  // Guests are on the event but Google mails nobody. Qale owns the outbound side.
   assert.ok(calls[0]!.url.includes('sendUpdates=none'), calls[0]!.url);
 });
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { NoteType } from '@pm/domain';
+import type { NoteType } from '@qale/domain';
 import { generateIndexFiles, searchNotes, reconcileIndex } from '../src/index.js';
 import type { IndexedNote, IndexPort, UseCaseContext, VaultPort } from '../src/ports.js';
 
@@ -21,6 +21,7 @@ function inote(path: string, type: NoteType, summary: string, lifecycle: string 
     title: slug.split('/').pop()!,
     summary,
     lifecycle,
+    hasBody: true,
     mtime: 1,
     frontmatter: { type, summary },
     links: [],

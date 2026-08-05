@@ -7,11 +7,11 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
-} from '@pm/ui';
+} from '@qale/ui';
 import { Bot, FileText, Hash, House, Inbox, Library, ListTodo, MessageSquare, Settings, Sparkles, SquarePen, StickyNote, Wand2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { noteTypeLabel } from '@pm/domain';
-import type { SearchHitDTO } from '@pm/ipc';
+import { noteTypeLabel } from '@qale/domain';
+import type { SearchHitDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { collectContexts } from '../lib/contexts';
 
@@ -64,29 +64,31 @@ export function QuickSwitcher({
 
   const commands = useMemo<CommandSpec[]>(
     () => [
-      { id: 'home', label: 'Go Home — what’s waiting, and what to start', hint: '⇧⌘H', icon: House, run: openHome },
+      { id: 'home', label: 'Go Home: what’s waiting, and what to start', hint: '⇧⌘H', icon: House, run: openHome },
       {
         id: 'inbox',
         // The same number the sidebar badge and the Inbox header print, in the
         // same words: one attention list, one count (lib/attention.ts).
         label:
           waitingCount > 0
-            ? `Open Inbox — ${waitingCount} need${waitingCount === 1 ? 's' : ''} you`
+            ? `Open Inbox: ${waitingCount} need${waitingCount === 1 ? 's' : ''} you`
             : 'Open Inbox',
         icon: Inbox,
         run: openInbox,
       },
       { id: 'new-note', label: 'New note', hint: '⌘N', icon: SquarePen, run: onNewNote },
-      { id: 'capture', label: 'Capture anything — transcript, link, screenshot', hint: '⇧⌘N', icon: StickyNote, run: onOpenCapture },
-      { id: 'todos', label: 'Open Todos — commitments, yours and theirs', icon: ListTodo, run: openTodos },
-      { id: 'memory', label: 'Browse memory — sources, insights, customers, people', icon: Library, run: openMemory },
-      { id: 'ask', label: 'Ask the memory', hint: '⌘↵', icon: Sparkles, run: () => openSession('ask') },
+      { id: 'capture', label: 'Capture anything: transcript, link, screenshot', hint: '⇧⌘N', icon: StickyNote, run: onOpenCapture },
+      { id: 'todos', label: 'Open Todos: commitments, yours and theirs', icon: ListTodo, run: openTodos },
+      { id: 'memory', label: 'Browse memory: sources, insights, customers, people', icon: Library, run: openMemory },
+      // One entry, not two. "Ask the memory" and "New session" opened the same
+      // blank composer by two names, which is the confusion this list is
+      // supposed to end.
+      { id: 'ask', label: 'New session', hint: '⌘↵', icon: Sparkles, run: () => openSession('ask') },
       // Named as the skill names itself — ⌘K and the composer's picker must not
       // call the same playbook two different things.
       { id: 'weekly', label: 'Write the weekly update', icon: MessageSquare, run: () => openSession('weekly-update') },
-      { id: 'session', label: 'New session', icon: MessageSquare, run: () => openSession(undefined, { fresh: true }) },
-      { id: 'skills', label: 'Open Skills — playbooks, always-on rules, reference', icon: Wand2, run: openSkills },
-      { id: 'agents', label: 'Open Agents — what runs on its own, and its off switches', icon: Bot, run: openAgents },
+      { id: 'skills', label: 'Open Skills: playbooks, always-on rules, reference', icon: Wand2, run: openSkills },
+      { id: 'agents', label: 'Open Agents: what runs on its own, and its off switches', icon: Bot, run: openAgents },
       { id: 'settings', label: 'Open Settings', hint: '⌘,', icon: Settings, run: openSettings },
     ],
     [waitingCount, openHome, openInbox, openTodos, openMemory, openSession, openSkills, openAgents, openSettings, onOpenCapture, onNewNote],

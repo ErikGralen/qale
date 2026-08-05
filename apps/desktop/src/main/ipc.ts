@@ -1,5 +1,5 @@
 import { ipcMain, type BrowserWindow } from 'electron';
-import type { InvokeChannel, InvokeMap, PushEvent } from '@pm/ipc';
+import type { InvokeChannel, InvokeMap, PushEvent } from '@qale/ipc';
 
 /**
  * Typed wrapper over `ipcMain.handle`. Each handler is checked against the

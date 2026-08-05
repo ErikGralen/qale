@@ -1,5 +1,5 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import { INVOKE_CHANNELS, PUSH_CHANNELS, type IpcApi, type PmBridge, type PushEvent } from '@pm/ipc';
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
+import { INVOKE_CHANNELS, PUSH_CHANNELS, type IpcApi, type QaleBridge, type PushEvent } from '@qale/ipc';
 
 /**
  * Build concrete per-channel invoke functions from the contract's channel list.
@@ -14,7 +14,7 @@ const invoke = Object.fromEntries(
   ]),
 ) as unknown as IpcApi;
 
-const bridge: PmBridge = {
+const bridge: QaleBridge = {
   invoke,
   onEvent(cb: (event: PushEvent) => void) {
     const listener = (_event: IpcRendererEvent, payload: PushEvent) => cb(payload);
@@ -23,6 +23,16 @@ const bridge: PmBridge = {
       for (const channel of PUSH_CHANNELS) ipcRenderer.removeListener(channel, listener);
     };
   },
+  // Reads nothing and grants nothing: it turns a File the renderer was already
+  // handed into the path main can open. Anything dragged out of a browser has
+  // no path and comes back empty, which the caller reads as "send the bytes".
+  pathForFile(file) {
+    try {
+      return webUtils.getPathForFile(file as unknown as File);
+    } catch {
+      return '';
+    }
+  },
 };
 
-contextBridge.exposeInMainWorld('pm', bridge);
+contextBridge.exposeInMainWorld('qale', bridge);

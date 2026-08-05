@@ -1,0 +1,319 @@
+/**
+ * What leaves the machine, as data (docs/onboarding.md ONB-6,
+ * docs/telemetry-posthog.md).
+ *
+ * This list is the ONE source of truth: the consent screen renders it, and the
+ * sender may only send events named here, with properties named here. That is
+ * the whole point of putting it in the leaf package both sides import. A screen
+ * that promises less than the sender sends is the kind of lie nobody sets out
+ * to tell; it happens when the promise and the code live in two files.
+ *
+ * The sink is PostHog Cloud EU (TEL-1). The sender lives in the main process
+ * only, in `apps/desktop/src/main/telemetry.ts`.
+ */
+
+import { OPENING_STEPS } from './dtos.js';
+
+/**
+ * What a property may hold. The point of the closed set is that none of these
+ * shapes can carry the PM's material: a count, a flag, or one of a handful of
+ * words we wrote ourselves.
+ *
+ * `scrubbedText` is the one exception, and it exists for exactly one event: a
+ * crash's name, message and stack. The caller must have run it through the log
+ * scrubber first (`redactLogLine` in the main process, which is where the
+ * scrubber lives); this end only truncates.
+ */
+export type TelemetryPropSpec =
+  | { kind: 'count' }
+  | { kind: 'flag' }
+  | { kind: 'word'; values: readonly string[] }
+  | { kind: 'scrubbedText'; max: number };
+
+/** One event we would send, in the words the consent screen shows. */
+export interface TelemetryEventSpec {
+  /** Wire name. */
+  id: string;
+  /** What it says, in plain language — this text IS the screen's line. */
+  says: string;
+  /** Every property it may carry. Anything else is dropped before sending. */
+  props: Readonly<Record<string, TelemetryPropSpec>>;
+}
+
+/** Which build sent it. Every event carries one, so a missing stamp cannot read as real. */
+export const TELEMETRY_ENVS = ['beta', 'dev'] as const;
+export type TelemetryEnv = (typeof TELEMETRY_ENVS)[number];
+
+/**
+ * How many, in bands. A raw count of anything the PM owns is a fingerprint;
+ * a band answers "a few or hundreds", which is the only question we have.
+ */
+export const COUNT_BANDS = ['0', '1', '2-5', '6-20', '21-100', '100+'] as const;
+
+/** How long something took. Same reasoning as the count bands. */
+export const DURATION_BANDS = ['<5s', '5-30s', '30s-2m', '2-10m', '10m+'] as const;
+
+/** How old something was when it was decided on. */
+export const AGE_BANDS = ['<1m', '<1h', '<1d', '<1w', '1w+'] as const;
+
+/** Put a count in its band. */
+export function countBand(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  if (n === 1) return '1';
+  if (n <= 5) return '2-5';
+  if (n <= 20) return '6-20';
+  if (n <= 100) return '21-100';
+  return '100+';
+}
+
+/** Put a duration in milliseconds in its band. */
+export function durationBand(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 5_000) return '<5s';
+  if (ms < 30_000) return '5-30s';
+  if (ms < 120_000) return '30s-2m';
+  if (ms < 600_000) return '2-10m';
+  return '10m+';
+}
+
+/** Put an age in milliseconds in its band. */
+export function ageBand(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 60_000) return '<1m';
+  if (ms < 3_600_000) return '<1h';
+  if (ms < 86_400_000) return '<1d';
+  if (ms < 604_800_000) return '<1w';
+  return '1w+';
+}
+
+/**
+ * Skills we shipped, plus `custom` for everything else.
+ *
+ * A PM's own skill is named in their own words — "nordkap-weekly", "acme-qbr" —
+ * so the name is their material and must not leave. {@link skillWord} folds
+ * anything unrecognised into `custom`, which still answers the question worth
+ * asking: are people writing their own, and do those sessions work.
+ */
+export const KNOWN_SKILLS = [
+  'chat',
+  'ask',
+  'arrival',
+  'process-note',
+  'weekly-update',
+  'synthesis',
+  'commitment-check',
+  'librarian',
+  'meeting-prep',
+  'custom',
+] as const;
+
+/** A skill name, folded to something we wrote. */
+export function skillWord(name: string | null | undefined): string {
+  if (!name) return 'custom';
+  return (KNOWN_SKILLS as readonly string[]).includes(name) ? name : 'custom';
+}
+
+/** What started a session. */
+export const SESSION_TRIGGERS = ['manual', 'scheduled', 'arrival'] as const;
+
+/** The parts of the app a tab can be showing (the renderer's `ViewBody.kind`). */
+export const VIEW_KINDS = [
+  'home',
+  'doc',
+  'session',
+  'sessionFile',
+  'chats',
+  'inbox',
+  'todos',
+  'memory',
+  'folder',
+  'context',
+  'settings',
+  'skills',
+  'agents',
+] as const;
+
+/** Where a crash came from. */
+export const CRASH_ORIGINS = ['main', 'promise', 'renderer', 'child'] as const;
+
+/** How a proposal was decided. */
+export const CARD_DECISIONS = ['accepted', 'rejected'] as const;
+
+/** The kinds a card can be (`ProposalKind` in dtos, repeated as words we send). */
+export const CARD_KINDS = ['note', 'update', 'decision', 'outbound'] as const;
+
+/**
+ * How material reached the tray, which is all we know at that point. What it
+ * turns out to BE (a transcript, a spec, a colleague's call) is the agent's
+ * judgment now and is never reported: it would be a fact about the PM's work.
+ */
+export const MATERIAL_KINDS = ['file', 'text', 'image'] as const;
+
+/** Which service was connected. */
+export const CONNECTION_PROVIDERS = ['google', 'atlassian'] as const;
+
+/** What happened to an opening screen. */
+export const ONBOARDING_ACTIONS = ['done', 'skipped', 'finished'] as const;
+
+/**
+ * Every event, spelled out, with every property it may carry.
+ *
+ * Nothing here is a title, a path, a note's text, a prompt, an address, a
+ * workspace name or anyone's name, and nothing may be added that is. The one
+ * free-text property in the whole scheme is the crash text, which arrives
+ * already scrubbed.
+ */
+export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
+  {
+    id: 'app.launched',
+    says: 'The app started, and which version it is',
+    props: {
+      firstRun: { kind: 'flag' },
+      onboardingFinished: { kind: 'flag' },
+      hasKey: { kind: 'flag' },
+      google: { kind: 'flag' },
+      atlassian: { kind: 'flag' },
+      notes: { kind: 'word', values: COUNT_BANDS },
+    },
+  },
+  {
+    id: 'app.crashed',
+    says: 'It crashed, and where in the code',
+    props: {
+      origin: { kind: 'word', values: CRASH_ORIGINS },
+      name: { kind: 'scrubbedText', max: 100 },
+      message: { kind: 'scrubbedText', max: 300 },
+      stack: { kind: 'scrubbedText', max: 2000 },
+    },
+  },
+  {
+    id: 'session.finished',
+    says: 'A session finished, how long it took, and whether it failed',
+    props: {
+      skill: { kind: 'word', values: KNOWN_SKILLS },
+      trigger: { kind: 'word', values: SESSION_TRIGGERS },
+      duration: { kind: 'word', values: DURATION_BANDS },
+      failed: { kind: 'flag' },
+      cards: { kind: 'word', values: COUNT_BANDS },
+    },
+  },
+  {
+    id: 'card.decided',
+    says: 'A card was approved or passed on, never what was in it',
+    props: {
+      decision: { kind: 'word', values: CARD_DECISIONS },
+      kind: { kind: 'word', values: CARD_KINDS },
+      edited: { kind: 'flag' },
+      age: { kind: 'word', values: AGE_BANDS },
+    },
+  },
+  {
+    id: 'material.added',
+    says: 'Material was added, and how many pieces',
+    props: {
+      kind: { kind: 'word', values: MATERIAL_KINDS },
+      count: { kind: 'word', values: COUNT_BANDS },
+      startedSession: { kind: 'flag' },
+    },
+  },
+  {
+    id: 'connection.added',
+    says: 'A calendar or Jira site was connected, never which one',
+    props: {
+      provider: { kind: 'word', values: CONNECTION_PROVIDERS },
+      following: { kind: 'word', values: COUNT_BANDS },
+    },
+  },
+  {
+    id: 'onboarding.step',
+    says: 'How far through this setup you got',
+    props: {
+      step: { kind: 'word', values: OPENING_STEPS },
+      action: { kind: 'word', values: ONBOARDING_ACTIONS },
+    },
+  },
+  {
+    id: 'view.opened',
+    says: 'Which parts of the app you open, never what is in them',
+    props: {
+      view: { kind: 'word', values: VIEW_KINDS },
+    },
+  },
+] as const;
+
+/**
+ * Who we know you are, said plainly (TEL-4). This is a hand-picked beta: when
+ * something breaks we want to be able to write to the person it broke for.
+ * That is a real cost to them, so it is stated rather than buried.
+ */
+export const TELEMETRY_IDENTITY =
+  'Your name and work email, so we know which beta user hit which bug';
+
+/** Where it goes. "Anonymous, to somebody" is a weaker promise than it looks. */
+export const TELEMETRY_PROCESSOR =
+  'It goes to PostHog, on servers in Europe, and nowhere else.';
+
+/** The other half of the promise, said as plainly as the list above. */
+export const TELEMETRY_NEVER: readonly string[] = [
+  'Anything you or the agent wrote',
+  'Note titles, file names or folder paths',
+  'What you type into the app, and what the model types back',
+  'Anyone else’s name or address, including everyone in your notes and meetings',
+  'Your keys',
+] as const;
+
+/** Names in the allowlist, for the sender to check itself against. */
+export const TELEMETRY_EVENT_IDS: readonly string[] = TELEMETRY_EVENTS.map((e) => e.id);
+
+/** The spec for one event, or undefined if it is not one of ours. */
+export function telemetryEvent(event: string): TelemetryEventSpec | undefined {
+  return TELEMETRY_EVENTS.find((e) => e.id === event);
+}
+
+/**
+ * Would this event be sent? The consent switch and the allowlist, in one call.
+ *
+ * An event not on the list above is refused here, so the screen's promise holds
+ * no matter who writes a caller later.
+ */
+export function telemetryAllows(consented: boolean, event: string): boolean {
+  return consented && TELEMETRY_EVENT_IDS.includes(event);
+}
+
+/** What survives the filter: the shapes PostHog gets, and nothing else. */
+export type TelemetryValue = string | number | boolean;
+
+/**
+ * Keep only the properties this event declares, in the shape it declares them.
+ *
+ * This is the rule that makes "a future caller cannot leak a note title" true
+ * in code rather than in a comment: a property nobody named is dropped, a word
+ * outside its list is dropped, and the one free-text shape is truncated. It
+ * never throws — a bad property loses itself, it does not lose the event.
+ */
+export function filterTelemetryProps(
+  event: string,
+  props: Readonly<Record<string, unknown>> | undefined,
+): Record<string, TelemetryValue> {
+  const spec = telemetryEvent(event);
+  const out: Record<string, TelemetryValue> = {};
+  if (!spec || !props) return out;
+
+  for (const [key, value] of Object.entries(props)) {
+    const shape = spec.props[key];
+    if (!shape || value === undefined || value === null) continue;
+    switch (shape.kind) {
+      case 'count':
+        if (typeof value === 'number' && Number.isFinite(value)) out[key] = Math.round(value);
+        break;
+      case 'flag':
+        if (typeof value === 'boolean') out[key] = value;
+        break;
+      case 'word':
+        if (typeof value === 'string' && shape.values.includes(value)) out[key] = value;
+        break;
+      case 'scrubbedText':
+        if (typeof value === 'string') out[key] = value.slice(0, shape.max);
+        break;
+    }
+  }
+  return out;
+}

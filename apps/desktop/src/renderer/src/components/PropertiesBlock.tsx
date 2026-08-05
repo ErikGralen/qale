@@ -7,9 +7,9 @@ import {
   trustTierLabel,
   TYPE_RULES,
   type Verification,
-} from '@pm/domain';
-import type { NoteDTO } from '@pm/ipc';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@pm/ui';
+} from '@qale/domain';
+import type { NoteDTO } from '@qale/ipc';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@qale/ui';
 import {
   AlignLeft,
   BadgeCheck,
@@ -31,11 +31,19 @@ import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
 import { invoke } from '../lib/ipc';
 import { webUrl } from '../lib/urls';
+import { isExternalRef } from '../lib/connections';
 import { collectContexts } from '../lib/contexts';
 import { FIELDS, REF_FIELDS, SYSTEM_KEYS, type FieldSpec, type Widget } from '../state/properties-schema';
 import { TagInput } from './TagInput';
 import { PeopleInput } from './PeopleInput';
 import { PersonChip } from './PersonChip';
+import { titleForRef } from './inbox/cardMeta';
+
+/** A linked page as its name. An external key (PAY-142) IS the name upstream,
+ *  so it stays; anything else would be our folder showing through. */
+function refLabel(target: string): string {
+  return isExternalRef(target) ? target : titleForRef(target) || target;
+}
 
 /**
  * Frontmatter as a collapsible property list under the title. Every row is a
@@ -150,8 +158,8 @@ function TrustRow({ verifications }: { verifications: Verification[] }) {
   );
 }
 
-const COLLAPSE_KEY = 'pm.properties.collapsed';
-const SHOW_ALL_KEY = 'pm.properties.showAll';
+const COLLAPSE_KEY = 'qale.properties.collapsed';
+const SHOW_ALL_KEY = 'qale.properties.showAll';
 
 export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: () => void }) {
   const { saveFrontmatter, loadDoc, tree, openContext, openDoc } = useApp();
@@ -184,7 +192,7 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
   };
 
   const specs = (FIELDS[note.type] ?? FIELDS.note).filter((s) => s.key !== 'summary');
-  // What this note type actually lets a human change (@pm/domain TYPE_RULES —
+  // What this note type actually lets a human change (@qale/domain TYPE_RULES —
   // a meeting's provenance is immutable, a decision is append-only). Main
   // rejects the rest, so offering an editable widget for them was a lie the UI
   // told and the file quietly refused: those rows read as values, not inputs.
@@ -286,9 +294,9 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
                       key={target}
                       className="note-link text-xs focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                       onClick={(e) => openRef(target, e)}
-                      title={`Open ${target}`}
+                      title={`Open ${refLabel(target)}`}
                     >
-                      {target}
+                      {refLabel(target)}
                     </button>
                   ))}
                 </div>
@@ -303,9 +311,9 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
                       key={target}
                       className="note-link text-xs focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                       onClick={(e) => openRef(target, e)}
-                      title={`Open ${target}`}
+                      title={`Open ${refLabel(target)}`}
                     >
-                      {target}
+                      {refLabel(target)}
                     </button>
                   ))}
                 </div>
@@ -563,7 +571,7 @@ function PropertyValue({
     // row reads as its label ("In progress"), never its token.
     const text =
       value === undefined || value === null || value === ''
-        ? '—'
+        ? 'Empty'
         : Array.isArray(value)
           ? value.join(', ')
           : (spec.options?.find((o) => o.value === value)?.label ?? String(value));
@@ -772,7 +780,7 @@ function AddPropertyRow({
       return;
     }
     if (!draft.value.trim()) {
-      setError('Give it a value — empty properties aren’t saved.');
+      setError('Give it a value: empty properties aren’t saved.');
       return;
     }
     onAdd(normKey, draft.value.trim());

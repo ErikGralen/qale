@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { computePosition, flip, offset, shift } from '@floating-ui/dom';
 import { AlertTriangle, ArrowUpRight, BookOpen, Clock } from 'lucide-react';
-import type { StateCategory } from '@pm/ipc';
+import type { StateCategory } from '@qale/ipc';
 import {
   connections,
   openExternalRef,
@@ -65,7 +65,7 @@ function StaleDot() {
   return (
     <span className="inline-flex shrink-0 self-center">
       <Clock className="size-3 text-warning/80" aria-hidden />
-      <span className="sr-only">may be behind — showing the local copy</span>
+      <span className="sr-only">may be behind, showing the local copy</span>
     </span>
   );
 }
@@ -190,7 +190,7 @@ export function AtRiskMarker({ risk, onOpen }: { risk: AtRiskLinkDTO; onOpen?: (
         e.stopPropagation();
         void refMetaCached(risk.slug).then((m) => openExternalRef(risk.slug, m, onOpen));
       }}
-      title={`${risk.externalId} — ${risk.delta}${risk.changedBy ? `, by ${risk.changedBy}` : ''}`}
+      title={`${risk.externalId}: ${risk.delta}${risk.changedBy ? `, by ${risk.changedBy}` : ''}`}
     >
       <AlertTriangle className="size-3" aria-hidden />
       {risk.externalId} {risk.reason === 'blocked' ? 'blocked' : 'changed'}
@@ -333,8 +333,8 @@ export function ExternalRefHoverLayer({ onOpen }: { onOpen: (path: string) => vo
           {m.lastChange?.by ? `Changed by ${m.lastChange.by}` : 'Updated'}
           {m.lastChange?.from && m.lastChange?.to && (
             <span className="text-foreground/70">
-              {' '}
-              — {m.lastChange.from} → {m.lastChange.to}
+              {': '}
+              {m.lastChange.from} → {m.lastChange.to}
             </span>
           )}
           , {relativeTime(m.lastChange?.at ?? m.remoteUpdated)}
@@ -343,8 +343,8 @@ export function ExternalRefHoverLayer({ onOpen }: { onOpen: (path: string) => vo
           <span className="inline-flex items-center gap-1 font-medium text-warning">
             <Clock className="size-3" aria-hidden />
             {m.health === 'auth-expired'
-              ? 'Showing the local copy — the connection needs a new token'
-              : `Showing the local copy — synced ${relativeTime(m.syncedAt)}`}
+              ? 'Showing the local copy: the connection needs a new token'
+              : `Showing the local copy, synced ${relativeTime(m.syncedAt)}`}
           </span>
         )}
       </div>

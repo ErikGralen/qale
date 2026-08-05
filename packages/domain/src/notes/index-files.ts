@@ -10,7 +10,7 @@ import { OKF_VERSION } from './slug.js';
  *
  * Links are written vault-root-relative (the vault root IS the OKF bundle root),
  * which is both what an OKF consumer resolves as bundle-relative and exactly the
- * path pm's own agent passes back to `vault_read` after reading the map.
+ * path Qale's own agent passes back to `vault_read` after reading the map.
  */
 
 /** One note's line in a folder index. `description` is the projected `summary`. */

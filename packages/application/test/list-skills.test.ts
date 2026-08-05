@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isRunnableResource, slugFromPath } from '@pm/domain';
+import { isRunnableResource, slugFromPath } from '@qale/domain';
 import { listSkills, listAgentFiles, runnableEnabled } from '../src/index.js';
 import type { IndexedNote, IndexPort, UseCaseContext, VaultPort } from '../src/ports.js';
 
@@ -41,6 +41,7 @@ function ctxWith(files: Record<string, string>): UseCaseContext {
         title: path,
         summary: '',
         status: null,
+        hasBody: true,
         mtime: 1,
         frontmatter: { type },
         links: [],

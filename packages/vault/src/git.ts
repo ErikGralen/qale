@@ -4,8 +4,8 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { SESSION_FILES_DIR } from '@pm/domain';
-import type { GitCommit, GitPort } from '@pm/application';
+import { SESSION_FILES_DIR } from '@qale/domain';
+import type { GitCommit, GitPort } from '@qale/application';
 
 /**
  * Seeded into every vault's `.gitignore`: OS junk, plus session working files —
@@ -109,6 +109,10 @@ export class GitAdapter implements GitPort {
    */
   async isRepo(): Promise<boolean> {
     if (existsSync(join(this.root, '.git'))) return true;
+    // Past the free check this needs to ask git itself, and `openVault` asks on
+    // every open: without the guard, that is the one call that would spawn the
+    // macOS stub and pop Apple's installer on a machine with no developer tools.
+    if (!(await this.available())) return false;
     try {
       const toplevel = (await this.git.raw(['rev-parse', '--show-toplevel'])).trim();
       return realpathSync(toplevel) === realpathSync(this.root);
@@ -124,8 +128,8 @@ export class GitAdapter implements GitPort {
     // machines that never configured git globally.
     const email = await this.git.raw(['config', 'user.email']).catch(() => '');
     if (!String(email).trim()) {
-      await this.git.raw(['config', 'user.name', 'pm']).catch(() => undefined);
-      await this.git.raw(['config', 'user.email', 'pm@localhost']).catch(() => undefined);
+      await this.git.raw(['config', 'user.name', 'Qale']).catch(() => undefined);
+      await this.git.raw(['config', 'user.email', 'qale@localhost']).catch(() => undefined);
     }
   }
 

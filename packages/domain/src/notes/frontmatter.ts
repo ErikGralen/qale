@@ -136,10 +136,17 @@ export const zMeeting = z.object({
   source: zSource.optional(),
   customer: zRef.optional(),
   /**
-   * The immutable transcript, stored as a source note and linked — the meeting
+   * The immutable transcripts, stored as source notes and linked — the meeting
    * page itself stays the human-scale anchor (prep, notes, processed summary).
+   *
+   * One recording is routinely delivered as several files: a call that dropped
+   * and resumed, a notetaker that splits on the hour, a part 1 and part 2. Those
+   * are one meeting, so the meeting holds a LIST. Read it through
+   * {@link transcriptRefs}, which takes either shape; a meeting with a single
+   * transcript keeps writing the bare string, so no existing note is rewritten
+   * to gain a feature it does not use.
    */
-  transcript: zRef.optional(),
+  transcript: z.union([zRef, z.array(zRef)]).optional(),
   /** Recurring-meeting series slug (e.g. "nordkap-checkin") — before-meeting prep reads the previous instance. */
   series: z.string().optional(),
   // Calendar-sync fields. All optional:
@@ -176,6 +183,41 @@ export const MEETING_SYNC_FIELDS = [
   'url',
 ] as const;
 export type MeetingSyncField = (typeof MEETING_SYNC_FIELDS)[number];
+
+/**
+ * Every transcript a meeting holds, in the order they were linked.
+ *
+ * The one way to read the field. It carries a bare string on the meetings that
+ * have a single recording (which is most of them, and which is how they were
+ * written before a meeting could hold several), and a list on the ones split
+ * across files. A reader that checks `typeof === 'string'` silently reports
+ * "no transcript" for a two-part meeting, so nothing checks the shape by hand.
+ */
+export function transcriptRefs(frontmatter: Record<string, unknown>): string[] {
+  const value = frontmatter['transcript'];
+  if (typeof value === 'string') return value.trim() ? [value] : [];
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string' && !!v.trim());
+  return [];
+}
+
+/**
+ * The value to write after linking one more transcript onto a meeting.
+ *
+ * Append, never replace: attaching part 2 to a meeting that already holds part 1
+ * must not orphan part 1, and a transcript that is already linked must not
+ * double up when the same file is dropped twice. Stays a bare string while there
+ * is only one, so a meeting that never splits keeps the frontmatter it has had
+ * all along.
+ */
+export function addTranscriptRef(
+  frontmatter: Record<string, unknown>,
+  ref: string,
+): string | string[] {
+  const refs = transcriptRefs(frontmatter);
+  if (refs.includes(ref)) return refs.length === 1 ? refs[0]! : refs;
+  const next = [...refs, ref];
+  return next.length === 1 ? next[0]! : next;
+}
 
 export const zDecision = z.object({
   type: z.literal('decision'),
@@ -262,7 +304,7 @@ export const zSession = z.object({
 /**
  * Skill and agent files — the same kind of thing filed in two folders: free-text
  * instructions plus `starts` (what puts it in force) and `can` (what it may
- * do), both parsed by @pm/sessions from the raw file. The note schema only
+ * do), both parsed by @qale/sessions from the raw file. The note schema only
  * needs enough to list and route it, so it carries neither: an unknown value in
  * either list is a validation error the file's own page pins, and a schema that
  * rejected it here would drop the file out of its type and hide the error.

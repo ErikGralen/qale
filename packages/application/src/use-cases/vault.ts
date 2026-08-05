@@ -4,10 +4,9 @@ import {
   computeHeat,
   isFolderIndex,
   refToSlug,
-  runnableForms,
   SESSION_FILES_DIR,
   type NoteType,
-} from '@pm/domain';
+} from '@qale/domain';
 import type { GitCommit, IndexedNote, UseCaseContext } from '../ports.js';
 import { reconcileIndex, rebuildIndex } from './reconcile.js';
 
@@ -122,7 +121,7 @@ export async function initVaultGit(ctx: UseCaseContext): Promise<VaultInfo> {
     await ctx.git.init();
     const files = await ctx.vault.list();
     const paths = ['.gitignore', ...files.map((f) => f.path)];
-    await ctx.git.commitPaths(paths, 'pm: initialize workspace history');
+    await ctx.git.commitPaths(paths, 'qale: initialize workspace history');
   }
   return vaultInfo(ctx);
 }
@@ -239,9 +238,10 @@ export function queryNotes(ctx: UseCaseContext, q: NoteQuery): IndexedNote[] {
 
 /**
  * One workspace-owned note with no links. "Has no links" is a symptom with
- * several causes that do NOT share an answer — a scratch pad is unconnected
- * because nobody has worked it yet, a page nothing cites is the hygiene case —
- * so the sweep classifies before it offers anything.
+ * several causes that do NOT share an answer: a scratch pad is unconnected
+ * because nobody has worked it yet, a page nothing cites is the hygiene case.
+ * Which one this is only shows in the note itself, so the librarian reads it
+ * before offering anything.
  */
 export interface OrphanCandidate {
   path: string;
@@ -259,12 +259,34 @@ export interface MaintenanceReport {
 const MIRROR_TYPES = new Set<NoteType>(['ticket', 'wikipage']);
 
 /**
- * Types the sweep never reports as unlinked. A calendar-mirrored meeting is
- * unlinked for as long as nobody has written about it, which for an upcoming
- * one is simply the normal state of the world — and its lifecycle belongs to
- * the before/after-meeting flow, on the meeting page, not to link hygiene.
+ * Workspace machinery: files that make the workspace run rather than pages that
+ * hold what the team knows. A skill file, an agent file, a session receipt and a
+ * todo are all written and read through their own surface, and nobody has ever
+ * had a reason to link one. So "nothing links it" says nothing about them, and
+ * neither does "it links nothing": that is simply what these files look like.
+ * A fresh workspace ships with two agent files, and reporting those as the
+ * hygiene problem of the day is the whole finding set on day one.
  */
-const NEVER_ORPHAN = new Set<NoteType>(['skill', 'meeting']);
+const MACHINERY_TYPES = new Set<NoteType>(['skill', 'agent', 'session', 'todo']);
+
+/**
+ * Types the sweep never reports as unlinked: the machinery above, plus meetings.
+ * A calendar-mirrored meeting is unlinked for as long as nobody has written
+ * about it, which for an upcoming one is simply the normal state of the world,
+ * and its lifecycle belongs to the meeting's own flow, on the meeting page, not
+ * to link hygiene.
+ */
+const NEVER_ORPHAN = new Set<NoteType>([...MACHINERY_TYPES, 'meeting']);
+
+/**
+ * True for the machinery types. Also what keeps them out of the librarian's
+ * "similar existing pages" hints: a broken link never meant a skill file.
+ * Meetings are deliberately NOT machinery here. They are real pages people link
+ * on purpose, and a mistyped meeting link is exactly the case those hints help.
+ */
+export function isWorkspaceMachinery(type: NoteType): boolean {
+  return MACHINERY_TYPES.has(type);
+}
 
 /**
  * A projection of an upstream record — a Jira issue, a Confluence page, a
@@ -296,54 +318,4 @@ export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
   return { orphans, danglingLinks };
 }
 
-/**
- * Seed the built-in skill pack into `skills/` if absent (PLAN-V2 §3.2). Content is
- * passed in so the application layer stays free of the sessions package. Existing
- * files are never overwritten — editing a skill is how you customise it.
- */
-export async function ensureDefaultSkills(
-  ctx: UseCaseContext,
-  skills: { file: string; content: string }[],
-  /**
-   * Skill files the pack no longer ships. Deleted outright: a retired file keeps
-   * its triggered binding, so leaving one behind means a dropped transcript
-   * fires both it and the skill that replaced it. Pre-alpha, local edits to a
-   * retired skill are not preserved.
-   */
-  retired: string[] = [],
-): Promise<{ written: number; removed: number }> {
-  /** Whichever layout a vault is on, the same runnable counts as present. */
-  const present = async (file: string): Promise<string | null> => {
-    for (const form of runnableForms(file)) if (await ctx.vault.exists(form)) return form;
-    return null;
-  };
-
-  let written = 0;
-  const committed: string[] = [];
-  for (const skill of skills) {
-    // Both forms, not just the folder one: a workspace whose migration has not
-    // run yet holds the PM's edits under the flat name, and seeding a pristine
-    // copy beside it would shadow their file with ours.
-    if (await present(skill.file)) continue;
-    await ctx.vault.writeRaw(skill.file, skill.content);
-    const note = await ctx.vault.readNote(skill.file);
-    if (note) ctx.index.reindex(note);
-    committed.push(skill.file);
-    written++;
-  }
-  let removed = 0;
-  for (const file of retired) {
-    // Same reason in reverse: a retired file that migrated into a folder is
-    // still retired, and must not keep firing because its path changed.
-    for (const form of runnableForms(file)) {
-      if (!(await ctx.vault.exists(form))) continue;
-      await ctx.vault.remove(form);
-      ctx.index.removeByPath(form);
-      committed.push(form);
-      removed++;
-    }
-  }
-  if (committed.length > 0) await ctx.git.commitPaths(committed, 'skills: seed defaults');
-  return { written, removed };
-}
 

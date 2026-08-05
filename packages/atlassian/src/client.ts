@@ -398,7 +398,7 @@ export class AtlassianClient {
         status: 'current',
         title: page.title,
         body: { representation: 'storage', value: nextBody },
-        version: { number: nextVersion, message: 'Produktminnet update' },
+        version: { number: nextVersion, message: 'Qale update' },
       }),
     });
     return { id: data.id, url: `${this.base()}/wiki${data._links?.webui ?? ''}` };

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { X, Plus, PanelLeft, PanelRight, House, Inbox, History, MessageSquare, FileCode, FileText, Folder, Hash, Settings, Wand2, Bot, ListTodo, Library, ArrowLeft, ArrowRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Spinner } from '@pm/ui';
+import { Spinner } from '@qale/ui';
 import { ToolbarButton } from '../components/ToolbarButton';
 import { NOTE_TYPE_ICON } from '../lib/note-icons';
 import { useApp, type Tab } from '../state/app-state';
@@ -46,7 +46,7 @@ const isMac = navigator.userAgent.includes('Macintosh');
 
 const MENU_WIDTH = 208;
 /**
- * Gap between tabs — twice the 6px bottom flare (see `.pm-tab`), so neighbouring
+ * Gap between tabs — twice the 6px bottom flare (see `.qale-tab`), so neighbouring
  * curves meet without overlapping. Also how far neighbours shift during a drag.
  */
 const TAB_GAP = 12;
@@ -145,7 +145,7 @@ function TabTitle({ title }: { title: string }) {
   }, [title]);
 
   return (
-    <span ref={ref} className="pm-tab-title min-w-0 flex-1 overflow-hidden whitespace-nowrap" data-clipped={clipped || undefined}>
+    <span ref={ref} className="qale-tab-title min-w-0 flex-1 overflow-hidden whitespace-nowrap" data-clipped={clipped || undefined}>
       {title}
     </span>
   );
@@ -402,7 +402,7 @@ export function TabStrip({
                 // pr-6 is the close button's lane, held open whether or not the
                 // X is painted: the label always stops short of it, so nothing
                 // shifts on hover and the X never lands on top of the title.
-                className={`pm-tab group relative flex h-full min-w-[56px] max-w-[208px] flex-1 basis-0 items-center gap-1.5 pr-6 pl-2.5 text-dense outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset ${
+                className={`qale-tab group relative flex h-full min-w-[56px] max-w-[208px] flex-1 basis-0 items-center gap-1.5 pr-6 pl-2.5 text-dense outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset ${
                   active ? 'z-10 font-medium text-foreground' : 'text-foreground/75 hover:text-foreground'
                 } ${
                   dragged
@@ -449,7 +449,7 @@ export function TabStrip({
               >
                 {(() => {
                   // Session tabs carry their live status: spinning while the
-                  // agent works, a terracotta dot once it needs the PO.
+                  // agent works, an ink-blue dot once it needs the PO.
                   const s = tab.kind === 'session' && tab.sessionId ? sessions.find((x) => x.id === tab.sessionId) : undefined;
                   if (s?.running) return <Spinner className="size-3.5 shrink-0 text-muted-foreground" aria-label="running" />;
                   return <Icon className="size-3.5 shrink-0 opacity-70" aria-hidden />;

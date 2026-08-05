@@ -1,5 +1,5 @@
 {
-  "name": "@pm/typescript-config",
+  "name": "@qale/typescript-config",
   "version": "0.0.1",
   "private": true,
   "files": ["base.json", "react.json", "node.json"]

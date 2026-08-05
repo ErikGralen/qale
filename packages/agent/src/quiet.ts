@@ -83,7 +83,11 @@ export function readsAsNothingToReport(reply: string): boolean {
 
 /** Everything deciding "did this run leave nothing" is allowed to look at. */
 export interface RunOutcome {
-  /** A clock started this turn, not a person. Nothing else can be silent. */
+  /**
+   * Nobody is waiting on this turn: a clock started it, or the person who did
+   * walked away from it (an arrival). A turn somebody is sitting in front of can
+   * never be silent, whatever it found.
+   */
   scheduled: boolean;
   /** The turn threw. */
   failed: boolean;
@@ -147,12 +151,13 @@ export function createEndQuietlyTool(deps: QuietDeps): ToolDefinition {
     name: END_QUIETLY_TOOL_NAME,
     label: 'End quietly',
     description:
-      'End this run without producing anything, because there is nothing worth telling the PM. Use it only on a ' +
-      'run a schedule started: you checked what you were asked to check, nothing has changed since the last pass, ' +
-      'and any message you wrote now would be a "nothing to report" the PM has to open to read. Call it instead ' +
-      'of writing that message, and stop there. Do NOT use it to get out of work you have not done, and do NOT ' +
-      'use it when you found something and decided it was small: propose the card. On a session a person started ' +
-      'this does nothing, because they are waiting for an answer and silence is not one.',
+      'End this run without producing anything, because there is nothing worth telling the PM. Use it only where ' +
+      'nobody is waiting on the answer: a run a schedule started, or one they started and walked away from. You ' +
+      'did what you were asked, nothing needs their judgment, and any message you wrote now would be a "nothing ' +
+      'to report" they have to open to read. Call it instead of writing that message, and stop there. Do NOT use ' +
+      'it to get out of work you have not done, and do NOT use it when you found something and decided it was ' +
+      'small: propose the card. On a session somebody is sitting in front of this does nothing, because they are ' +
+      'waiting for an answer and silence is not one.',
     parameters: Type.Object({}),
     async execute() {
       if (!deps.scheduled()) {

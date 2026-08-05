@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { ChevronRight, MoreHorizontal } from 'lucide-react';
-import { cn } from '@pm/ui';
+import { cn } from '@qale/ui';
 
 /**
  * The one header every view wears (docs, sessions, Inbox, Todos, folders,

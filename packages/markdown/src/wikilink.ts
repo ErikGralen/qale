@@ -1,6 +1,6 @@
 import type { Root, Text, PhrasingContent } from 'mdast';
 import { visit } from 'unist-util-visit';
-import { linkTypeLabel, normalizeLinkTarget } from '@pm/domain';
+import { linkTypeLabel, normalizeLinkTarget } from '@qale/domain';
 
 /**
  * In-house remark plugin for Obsidian `[[wikilinks]]` (the published

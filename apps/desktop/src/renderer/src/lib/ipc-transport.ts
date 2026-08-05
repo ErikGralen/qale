@@ -29,6 +29,12 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
      * sticking to the transport.
      */
     private readonly takePickedSkill?: () => string | undefined,
+    /**
+     * Model the PM moved this session to, read fresh on each send. Unlike the
+     * skill it is NOT spent: the choice belongs to the session, so it rides
+     * along with every message until they pick another one.
+     */
+    private readonly pickedModel?: () => string | undefined,
   ) {
     this.sessionId = initialSessionId;
   }
@@ -68,10 +74,12 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
         try {
           const skill = this.takePickedSkill?.() ?? this.openingSkill;
           this.openingSkill = undefined;
+          const modelId = this.pickedModel?.();
           const handle = await invoke['agent:run']({
             sessionId: this.sessionId,
             prompt,
             ...(skill ? { skill } : {}),
+            ...(modelId ? { modelId } : {}),
           });
           this.sessionId = handle.sessionId;
           // Reported on every run, not just id changes — the shell also uses

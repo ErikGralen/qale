@@ -1,20 +1,17 @@
-import { makeNote, type Frontmatter, type NoteType } from '@pm/domain';
+import { makeNote, type Frontmatter, type NoteType } from '@qale/domain';
 import type {
   CheckLedgerPort,
-  CreatePingInput,
   CreateProposalInput,
   IndexedNote,
-  PingPayload,
-  PingRecord,
   ProposalRecord,
   UseCaseContext,
 } from '../src/ports.js';
 
 /**
- * Shared fakes for the wikipage-drift (Area F) tests: an IndexedNote builder,
- * a slug resolver, and a full in-memory UseCaseContext with scripted
- * completions — so candidate selection, the judgment gate, and the sweep's
- * dedupe/caps/ledger behavior are all testable without SQLite or a model.
+ * Shared fakes for the librarian's deterministic half: an IndexedNote builder, a
+ * slug resolver, and an in-memory UseCaseContext. Drift pairing and the sweep
+ * planner are both pure index work, so everything they need is here and neither
+ * SQLite nor a model is involved.
  */
 
 export function inote(args: {
@@ -35,6 +32,7 @@ export function inote(args: {
     title: args.title ?? slug.split('/').pop()!,
     summary: args.summary ?? `summary of ${slug}`,
     lifecycle: null,
+    hasBody: true,
     mtime: args.mtime ?? 100,
     frontmatter: { type: args.type, summary: args.summary ?? `summary of ${slug}`, ...args.frontmatter },
     links: (args.links ?? []).map((target) => ({ target })),
@@ -56,35 +54,22 @@ export function resolverFor(notes: IndexedNote[]): (target: string) => string | 
 export interface FakeDriftWorld {
   ctx: UseCaseContext;
   proposals: ProposalRecord[];
-  pings: PingRecord[];
   checks: Map<string, string>;
-  /** Prompts the scripted model received, in order. */
-  llmCalls: { system: string; prompt: string }[];
-  setNow(iso: string): void;
   reindex(note: IndexedNote): void;
 }
 
-/**
- * A full fake context. `bodies` maps note path → markdown body; `completions`
- * is a scripted reply queue (a function per call, or one reply reused). Pass
- * `completions: null` to model "no key configured".
- */
+/** A full fake context. `bodies` maps note path → markdown body. */
 export function fakeDriftWorld(args: {
   notes: IndexedNote[];
-  bodies: Record<string, string>;
-  completions: ((input: { system: string; prompt: string }) => string) | string | null;
+  bodies?: Record<string, string>;
   now?: string;
-  /** Stand in for FTS: notes whose title or body contains the query, case-insensitively. */
-  search?: boolean;
 }): FakeDriftWorld {
   let notes = [...args.notes];
-  let nowIso = args.now ?? '2026-07-22T09:00:00.000Z';
+  const bodies = args.bodies ?? {};
+  const nowIso = args.now ?? '2026-07-22T09:00:00.000Z';
   const proposals: ProposalRecord[] = [];
-  const pings: PingRecord[] = [];
   const checks = new Map<string, string>();
-  const llmCalls: { system: string; prompt: string }[] = [];
   let pid = 0;
-  let gid = 0;
 
   const resolve = (t: string): string | null => resolverFor(notes)(t);
 
@@ -94,7 +79,7 @@ export function fakeDriftWorld(args: {
       ensureScaffold: async () => {},
       readNote: async (p: string) => {
         const n = notes.find((x) => x.path === p);
-        const body = args.bodies[p];
+        const body = bodies[p];
         if (!n || body === undefined) return null;
         return makeNote({ path: p, frontmatter: n.frontmatter as unknown as Frontmatter, body, mtime: n.mtime });
       },
@@ -108,6 +93,7 @@ export function fakeDriftWorld(args: {
       remove: async () => {},
       exists: async () => false,
       list: async () => [],
+      listDir: async () => [],
       contain: () => null,
     },
     index: {
@@ -116,22 +102,7 @@ export function fakeDriftWorld(args: {
       get: (p: string) => notes.find((n) => n.path === p) ?? null,
       all: () => notes,
       listByType: (t) => notes.filter((n) => n.type === t),
-      search: (query: string, limit: number) => {
-        if (!args.search) return [];
-        const q = query.toLowerCase();
-        return notes
-          .filter((n) => `${n.title}\n${args.bodies[n.path] ?? ''}`.toLowerCase().includes(q))
-          .slice(0, limit)
-          .map((n) => ({
-            path: n.path,
-            slug: n.slug,
-            title: n.title,
-            type: n.type,
-            summary: n.summary,
-            snippet: '',
-            score: 1,
-          }));
-      },
+      search: () => [],
       backlinks: (slug: string) => {
         const target = notes.find((n) => n.slug === slug);
         if (!target) return [];
@@ -147,6 +118,7 @@ export function fakeDriftWorld(args: {
       available: async () => false,
       isRepo: async () => false,
       init: async () => {},
+      ensureIgnored: async () => {},
       commitPaths: async () => {},
       history: async () => [],
       fileAt: async () => null,
@@ -173,60 +145,21 @@ export function fakeDriftWorld(args: {
       },
       pendingCount: () => proposals.filter((p) => p.status === 'pending').length,
     },
-    pings: {
-      create: (input: CreatePingInput, now: number) => {
-        const rec: PingRecord = {
-          ...input,
-          payload: input.payload ?? null,
-          id: `g${++gid}`,
-          status: 'pending',
-          created: now,
-          resolved: null,
-        };
-        pings.push(rec);
-        return rec;
-      },
-      list: (status?: string) => pings.filter((p) => !status || p.status === status),
-      get: (id: string) => pings.find((p) => p.id === id) ?? null,
-      setStatus: (id: string, status: string, resolved: number | null) => {
-        const rec = pings.find((p) => p.id === id);
-        if (rec) Object.assign(rec, { status, resolved });
-      },
-      updatePayload: (id: string, payload: PingPayload) => {
-        const rec = pings.find((p) => p.id === id);
-        if (rec) rec.payload = payload;
-      },
-      pendingCount: () => pings.filter((p) => p.status === 'pending').length,
-      hasRecent: (key: string, since: number) =>
-        pings.some(
-          (p) => p.key === key && (p.status === 'pending' || p.resolved === null || p.resolved >= since),
-        ),
-    },
     checks: {
       get: (key: string) => checks.get(key) ?? null,
       set: (key: string, value: string) => void checks.set(key, value),
+      list: (prefix: string) =>
+        [...checks.entries()]
+          .filter(([key]) => key.startsWith(prefix))
+          .map(([key, value]) => ({ key, value })),
+      remove: (key: string) => void checks.delete(key),
     } satisfies CheckLedgerPort,
-    ...(args.completions === null
-      ? {}
-      : {
-          completions: {
-            complete: async (input: { system: string; prompt: string }) => {
-              llmCalls.push(input);
-              return typeof args.completions === 'string' ? args.completions : args.completions!(input);
-            },
-          },
-        }),
   };
 
   return {
     ctx,
     proposals,
-    pings,
     checks,
-    llmCalls,
-    setNow: (iso: string) => {
-      nowIso = iso;
-    },
     // Every ctx closure reads the `notes` binding, so swapping the array is
     // enough for index/vault/resolve to see the change.
     reindex: (note: IndexedNote) => {

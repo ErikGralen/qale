@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
-import { Button, Spinner } from '@pm/ui';
+import { Button, Spinner } from '@qale/ui';
 import {
   AlertTriangle,
   Check,
@@ -15,8 +15,9 @@ import {
   RotateCcw,
   Wand2,
 } from 'lucide-react';
-import type { NoteRefDTO } from '@pm/ipc';
-import { parseKickoff, type Kickoff } from '@pm/sessions';
+import type { NoteRefDTO } from '@qale/ipc';
+import { titleFromSlug } from '@qale/domain';
+import { parseKickoff, type Kickoff } from '@qale/sessions';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { navFromEvent, type NavOpts } from '../lib/nav';
 import { noteTypeIcon } from '../lib/note-icons';
@@ -28,6 +29,7 @@ import { QuestionCard } from '../components/inbox/QuestionCard';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { useChatMentions } from './ChatMentions';
+import { ModelPicker } from './ModelPicker';
 import { SkillPicker } from './SkillPicker';
 import {
   COMPOSER_INPUT,
@@ -126,7 +128,7 @@ function triedVerb(verb: string): string {
   return ['Tried', gerund, ...rest].join(' ');
 }
 
-/** Past-tense verb + monospace detail for one tool step in the expanded trail. */
+/** Past-tense verb + the thing it acted on, for one step in the expanded trail. */
 function stepLabel(part: AnyPart): { verb: string; detail?: string } {
   const label = doneLabel(part);
   return isFailedStep(part) ? { ...label, verb: triedVerb(label.verb) } : label;
@@ -139,7 +141,9 @@ function doneLabel(part: AnyPart): { verb: string; detail?: string } {
   const str = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : undefined);
   switch (name) {
     case 'vault_read':
-      return { verb: 'Read', detail: str('path') };
+      // The note it read, by name. The trail is provenance the PM reads, so a
+      // path here would be the one place in the app that still spells storage.
+      return { verb: 'Read', detail: str('path') && titleFromSlug(str('path')!) };
     case 'search_vault':
       return { verb: 'Searched', detail: str('query') && `“${str('query')}”` };
     case 'vault_grep':
@@ -182,7 +186,10 @@ function doneLabel(part: AnyPart): { verb: string; detail?: string } {
       return { verb: 'Advanced checkpoint' };
     default:
       if (name.startsWith('propose_'))
-        return { verb: `Proposed a ${name.slice(8).replace(/_/g, ' ')}`, detail: str('path') ?? str('title') };
+        return {
+          verb: `Proposed a ${name.slice(8).replace(/_/g, ' ')}`,
+          detail: str('title') ?? (str('path') && titleFromSlug(str('path')!)),
+        };
       if (name.startsWith('draft_'))
         return { verb: `Drafted a ${name.slice(6).replace(/_/g, ' ')}`, detail: str('title') ?? str('summary') };
       // A tool shipped without an entry above. Vague beats wrong: the PM should
@@ -200,7 +207,7 @@ function liveLabel(part: AnyPart | undefined): string {
   const str = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : undefined);
   switch (name) {
     case 'vault_read':
-      return str('path') ? `Reading ${str('path')}` : 'Reading the memory…';
+      return str('path') ? `Reading ${titleFromSlug(str('path')!)}` : 'Reading the memory…';
     case 'search_vault':
       return str('query') ? `Searching “${str('query')}”` : 'Searching the memory…';
     case 'vault_grep':
@@ -290,7 +297,7 @@ function ToolStep({ part }: { part: AnyPart }) {
           <Wrench className="size-3 shrink-0" />
         )}
         <span className="shrink-0 font-medium">{verb}</span>
-        {detail && <span className="truncate font-mono">{detail}</span>}
+        {detail && <span className="truncate">{detail}</span>}
         {hasOutput && (
           <ChevronDown
             className={`ml-auto size-3 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
@@ -391,48 +398,59 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
  */
 function RunRow({
   kickoff,
-  note,
+  notes,
   skillTitle,
   onOpen,
 }: {
   kickoff: Kickoff;
-  /** The target's tree entry, when the path is one the workspace knows. */
-  note?: NoteRefDTO;
+  /** Each target's tree entry, keyed by path, for the ones the workspace knows. */
+  notes: Map<string, NoteRefDTO>;
   skillTitle: string;
   onOpen: (path: string, opts?: NavOpts) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const TargetIcon = note ? noteTypeIcon(note.type) : FileText;
   const instruction = kickoff.instruction
     ? kickoff.instruction.charAt(0).toUpperCase() + kickoff.instruction.slice(1)
     : '';
+  const targets = kickoff.targets ?? [];
   return (
     <div className="rounded-xl border border-border bg-secondary/40 px-3 py-2 text-sm">
       <div className="flex items-center gap-1.5">
         <Wand2 className="size-3.5 shrink-0 text-brand" aria-hidden />
         <span className="shrink-0 font-medium">{skillTitle}</span>
-        {kickoff.target && (
-          <>
-            <span className="shrink-0 text-muted-foreground">on</span>
-            <a
-              href="#"
-              className="flex min-w-0 items-center gap-1 text-brand underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-              title={note?.title ? `${note.title} — ${kickoff.target}` : kickoff.target}
-              onClick={(e) => {
-                e.preventDefault();
-                onOpen(kickoff.target!, navFromEvent(e));
-              }}
-              onAuxClick={(e) => {
-                if (e.button !== 1) return;
-                e.preventDefault();
-                onOpen(kickoff.target!, navFromEvent(e));
-              }}
-            >
-              <TargetIcon className="size-3.5 shrink-0" aria-hidden />
-              <span className="truncate">{note?.title ?? kickoff.target}</span>
-            </a>
-          </>
-        )}
+        {targets.length > 0 && <span className="shrink-0 text-muted-foreground">on</span>}
+        {/* Every page, each its own link. A run over three documents that named
+            only the first would read as a run over only the first, which is the
+            confusion this whole row exists to prevent. */}
+        {targets.map((target, i) => {
+          const note = notes.get(target);
+          const TargetIcon = note ? noteTypeIcon(note.type) : FileText;
+          return (
+            <span key={target} className="flex min-w-0 items-center gap-1.5">
+              {i > 0 && <span className="shrink-0 text-muted-foreground">·</span>}
+              <a
+                href="#"
+                className="flex min-w-0 items-center gap-1 text-brand underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                title={`Open ${note?.title ?? titleFromSlug(target)}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onOpen(target, navFromEvent(e));
+                }}
+                onAuxClick={(e) => {
+                  if (e.button !== 1) return;
+                  e.preventDefault();
+                  onOpen(target, navFromEvent(e));
+                }}
+              >
+                <TargetIcon className="size-3.5 shrink-0" aria-hidden />
+                {/* The page by its name. A target the tree hasn't caught up with
+                    (just written, or since deleted) reads as its name too, never
+                    as the path it was filed at. */}
+                <span className="truncate">{note?.title ?? titleFromSlug(target)}</span>
+              </a>
+            </span>
+          );
+        })}
         {instruction && (
           <button
             className="ml-auto flex shrink-0 items-center gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
@@ -457,7 +475,7 @@ function RunRow({
 
 /** What a blank session says before the first message. */
 const EMPTY_HINT =
-  'A session with your memory. Pick a skill (or let the agent load one) when it turns into work — nothing is written without an approval card.';
+  'A session with your memory. Pick a skill (or let the agent load one) when it turns into work. Nothing is written without an approval card.';
 
 interface SessionViewProps {
   /**
@@ -606,6 +624,15 @@ function SessionThread({
     pickedSkillRef.current = name;
     setPickedSkill(name);
   };
+  // The model this session runs on, once the PM has moved it off the workspace
+  // default. Unlike the skill it is not spent on one turn: it belongs to the
+  // session, so it rides along with every message from here on.
+  const [pickedModel, setPickedModel] = useState<string | null>(null);
+  const pickedModelRef = useRef<string | null>(null);
+  const pickModel = (modelId: string) => {
+    pickedModelRef.current = modelId;
+    setPickedModel(modelId);
+  };
   const transport = useMemo(
     () =>
       new IpcChatTransport(
@@ -622,6 +649,7 @@ function SessionThread({
           pickedSkillRef.current = null;
           return name;
         },
+        () => pickedModelRef.current ?? undefined,
       ),
     [skill, initialSessionId],
   );
@@ -678,7 +706,7 @@ function SessionThread({
     void sendMessage({ text });
   };
 
-  // Auto-send the initial prompt once (e.g. After-Meeting kickoff).
+  // Auto-send the initial prompt once (e.g. a kickoff from a page's button).
   useEffect(() => {
     if (initialPrompt && !sentInitial.current) {
       sentInitial.current = true;
@@ -734,7 +762,7 @@ function SessionThread({
                 <HeaderAction
                   icon={Check}
                   label="Mark done"
-                  title="Mark this session done — it leaves the active list (a new message reopens it)"
+                  title="Mark this session done: it leaves the active list (a new message reopens it)"
                   onClick={() => void setSessionLifecycle(overview.id, 'done')}
                 />
               ) : (
@@ -778,9 +806,7 @@ function SessionThread({
                   <RunRow
                     key={message.id}
                     kickoff={kickoff}
-                    {...(kickoff.target && noteByPath.get(kickoff.target)
-                      ? { note: noteByPath.get(kickoff.target)! }
-                      : {})}
+                    notes={noteByPath}
                     skillTitle={skills.find((s) => s.name === kickoff.skill)?.title ?? kickoff.skill}
                     onOpen={openDoc}
                   />
@@ -833,7 +859,7 @@ function SessionThread({
             <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
               <Spinner className="size-3.5 shrink-0" />
               <span className="flex-1">
-                The agent is still working on this — the session updates when it finishes.
+                The agent is still working on this. The session updates when it finishes.
               </span>
               <Button
                 size="sm"
@@ -846,7 +872,7 @@ function SessionThread({
           )}
           {error && (
             <div className="rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-              The session hit an error: {error.message}. Your messages are still here — send again to retry.
+              The session hit an error: {error.message}. Your messages are still here, send again to retry.
             </div>
           )}
 
@@ -873,7 +899,7 @@ function SessionThread({
         <div className="mx-6 mb-2">
           <div className="mx-auto flex max-w-2xl items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
             <AlertTriangle className="size-4 shrink-0" aria-hidden />
-            <span>No Anthropic API key yet — sessions can’t answer until one is set.</span>
+            <span>No Anthropic API key yet, so sessions can’t answer until one is set.</span>
             <button
               className="ml-auto shrink-0 font-medium underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
               onClick={() => openSettings()}
@@ -930,6 +956,14 @@ function SessionThread({
               onClosed={() => inputRef.current?.focus()}
               open={skillMenuOpen}
               onOpenChange={setSkillMenuOpen}
+              disabled={backgroundBusy || askPending}
+            />
+            {/* The stored pin wins on reopen; a pick made in this mount wins
+                over that, because it hasn't been sent yet. */}
+            <ModelPicker
+              pinned={pickedModel ?? overview?.modelId ?? null}
+              onPick={pickModel}
+              onClosed={() => inputRef.current?.focus()}
               disabled={backgroundBusy || askPending}
             />
             <MentionHint show={!input.trim() && !backgroundBusy && !askPending} />

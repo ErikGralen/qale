@@ -1,4 +1,4 @@
-import type { StateCategory } from '@pm/domain';
+import type { StateCategory } from '@qale/domain';
 
 /**
  * Jira workflow label → generic state_category. Uses the API's own

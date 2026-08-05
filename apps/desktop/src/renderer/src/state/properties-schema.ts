@@ -1,8 +1,8 @@
-import type { NoteType } from '@pm/ipc';
+import type { NoteType } from '@qale/ipc';
 
 /**
  * Frontmatter is never hand-written (PLAN-V2 §3.1): the properties panel renders
- * it as a form. These descriptors mirror the per-folder zod schema in @pm/domain
+ * it as a form. These descriptors mirror the per-folder zod schema in @qale/domain
  * (the authority — writes are re-validated main-side via note:saveFrontmatter).
  * Ref arrays (evidence/sources/supersedes) are shown read-only; they are edited
  * through links and cards, not typed by hand.
@@ -32,7 +32,7 @@ const TAGS: FieldSpec = { key: 'tags', label: 'Tags', widget: 'tags' };
 
 /**
  * Lifecycle rows. Each type carries its OWN lifecycle under its own name, so no
- * two of them ever appear as "Status" (see NOTE_LIFECYCLES in @pm/domain, the
+ * two of them ever appear as "Status" (see NOTE_LIFECYCLES in @qale/domain, the
  * authority these mirror). Values are enums, never free text.
  */
 const PROCESSING: FieldSpec = {
@@ -193,7 +193,7 @@ export const REF_FIELDS = ['evidence', 'sources', 'supersedes', 'superseded_by',
 
 /**
  * Frontmatter the harness/domain writes, not the human: session receipt fields
- * (@pm/domain zSession), the decision spine back-pointers, sync provenance.
+ * (@qale/domain zSession), the decision spine back-pointers, sync provenance.
  * Shown like any other row but never one-click deletable — losing a receipt's
  * `reads`/`writes` or a spine pointer to a stray hover-X breaks the audit
  * trail. (The spine/transcript keys usually render as ref chips already; they

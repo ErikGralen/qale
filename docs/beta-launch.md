@@ -55,6 +55,45 @@ Lead time: the EUIPO check.
 Let's rename to "Qale" for now - remove all traces of "pm" , leveret produktbminnet, product brain etc. 
 
 **Notes:**
+Done. The app is **Qale**, the app id is **`ai.qale.app`** (reverse DNS of qale.ai, which we own), and the
+bundle is `Qale.app`. Verified in the packaged Info.plist: `CFBundleIdentifier ai.qale.app`,
+`CFBundleName`/`CFBundleDisplayName`/`CFBundleExecutable` all `Qale`.
+
+What moved, in four groups.
+
+*Identity and copy.* `electron-builder.yml` (app id and product name), the window title (now just
+"Qale", no dash), `APP_NAME` and `SUPPORT_EMAIL` in Settings, the MCP server name and its
+unauthorized message, both agent preambles in `packages/agent/src/prompts.ts`, the design system's
+own name in `DESIGN.md`, `PRODUCT.md` and `.impeccable/design.json`, and the logo comment (the glyph
+itself is untouched, waiting on ticket 6).
+
+*Things that leave the machine.* The Confluence page version message is now "Qale update", which is
+what a customer sees in their page history forever. It is the only attributed string any connector
+writes: Jira comments and calendar invites carry a "Source: ..." provenance line with no product
+name in it. The repo-local git identity for a workspace with no global git config is now
+`Qale <qale@localhost>`, and the `git init` commit reads "qale: initialize workspace history".
+
+*Namespaces.* The preload bridge is `window.qale` and `QaleBridge`; log lines are prefixed `[qale]`;
+localStorage keys are `qale.*`; CSS classes are `qale-*`; the two custom DOM events are `qale:*`. All
+eleven workspace packages plus the root are `@qale/*` (root package is `qale`), which touched about
+180 files and the lockfile.
+
+*The dev harness.* Every `PM_*` variable is now `QALE_*`: `QALE_VAULT`, `QALE_USERDATA`,
+`QALE_SCREENSHOT`, `QALE_SCREENSHOT_DELAY`, `QALE_SCREENSHOT_CLICK`, `QALE_OPEN`, `QALE_MCP`,
+`QALE_SEED_PROPOSAL`, `QALE_GOOGLE_*`. No fallback to the old names, deliberately.
+
+**"PM" meaning product manager was left alone everywhere**, roughly 300 sites across 50 files
+(`defaults.ts`, the prompts, the tool descriptions, most JSDoc). Only the product name changed.
+
+Verified: `check-types`, `test` and `lint` green from the root; the packaged app boots against a
+scratch profile and reports `[qale] opened workspace: 89 notes`, which is the only check that would
+catch a missed entry in the bundler's `WORKSPACE_PACKAGES` list; the dev harness runs end to end
+under the new variable names.
+
+Two things to know. The dev app's state now lives at `~/Library/Application Support/@qale/desktop`,
+so the old `@pm/desktop` folder (API key, Atlassian token, Google grant) is still there and is no
+longer read. And `packages/vault/src/sqlite-index.ts` contains a literal NUL byte, so `grep -r`
+skips it as binary unless you pass `-a`. It hid a stale import through a whole pass of this rename.
 
 ---
 
@@ -72,6 +111,10 @@ everything else can be built while it processes.
 **Decision:**
 Will enroll at a later stage, but we can implement changes to harden the app (tickets 11-14)
 **Notes:**
+2026-08-04: deferring this costs more than the right-click-Open dance. Ad-hoc signatures are derived
+from build contents, so every build is a different app as far as macOS is concerned, which means each
+update also re-prompts for the login keychain password before the app can read its own secrets (see
+ticket 6's notes). Both symptoms have one cure, and it is this ticket.
 
 ---
 
@@ -185,6 +228,9 @@ one service to run and secure.
 **Decision:**
 Need to evaluate what platform we can use for this. Also yes it should be toggelable by the user. And we need to be able track per user somehow. Will do this in a seperate session so skip.
 **Notes:**
+Platform picked 2026-08-02: **PostHog Cloud EU**. This ticket now lives in `docs/telemetry-posthog.md`
+(TEL-1 to TEL-8): account setup, the main-process sender, the install id, event wiring, and the
+consent gap before screen 6 is answered.
 
 ---
 
@@ -203,7 +249,62 @@ the palette. Set the real name and app id from ticket 1 at the same time.
 
 **Decision:**
 Will create a logo manually and add it. so skip this for now .
+
+Reopened and done 2026-08-04: logo supplied (the brush Q), dmg built.
+
 **Notes:**
+DONE 2026-08-04. `pnpm --filter @qale/desktop dmg` produces `dist/Qale-0.1.0-arm64.dmg` (154 MB),
+arm64 only. Verified: mounts, the app copies out, launches, and writes its profile.
+
+- **Icon.** The white brush Q on ink, 1024px, matching the retheme. Source art is
+  `apps/desktop/build/icon-source.png`; `pnpm --filter @qale/desktop icon` regenerates
+  `build/icon.png` from it via `scripts/make-icon.mjs`, and electron-builder makes the icns at
+  package time. The script exists because macOS expects the rounded-rect body and its margin to be
+  *in* the artwork (Apple's grid: an 824px body on a 1024px canvas): a full-bleed square reads as
+  unfinished next to every other Mac icon. No new dependency, just `zlib`.
+- **Optional third argument, `zoom`.** The source carries its own margin and Apple's inset stacks on
+  top of it, so the mark sits smallish in the dock. `pnpm icon` uses 1; passing 1.2 scales the
+  artwork and centre-crops, which costs nothing on a flat ground. Judgment call, not yet made.
+- **Signing, and why there is a hook.** `mac.identity: null` makes electron-builder skip signing,
+  which leaves *Electron's* signature on our bundle: `Identifier=Electron`, Info.plist not bound, and
+  `codesign --verify` fails. On Apple Silicon that is worse than unsigned, because a signature that
+  does not match the bundle gets the app killed as "damaged" once the download has set the quarantine
+  bit. `build/after-pack.cjs` ad-hoc signs the packed app instead, so the identity is `ai.qale.app`
+  and verify passes. This is not a substitute for ticket 2: `spctl --assess` still says **rejected**,
+  so the first open is right-click → Open, and it repeats on every manual update. Say so in the
+  invite. When the Apple account lands, delete the hook and the two `identity`/`notarize` lines.
+- **Windows and Linux stay `dir`.** Separate certificate, separate cost, no beta user asking yet.
+- **The app had no `productName`,** so Electron fell back to the workspace package name and called
+  itself `@qale/desktop`. That name is user-visible in the worst possible place: the macOS keychain
+  dialog read "Qale wants to use your confidential information stored in **@qale/desktop Safe
+  Storage**", and userData was the nested `~/Library/Application Support/@qale/desktop`. Fixed by one
+  line in `apps/desktop/package.json`. Verified after the rebuild: the app now creates `Qale Safe
+  Storage` / `Qale Key`, silently, with no prompt. `scripts/refresh-demo.ts` already read
+  `productName` from package.json, so it followed on its own.
+- **Dev and the installed app are now separate installs.** They shared one identity, so one
+  `settings.json`, one "which workspace is open", one set of session receipts and one keychain item:
+  the demo vault and the real one would have kept overwriting each other's choices. A dev run now
+  calls itself **Qale Dev** (`app.setName` in `src/main/index.ts`, `is.dev` only), which splits the
+  userData directory and the keychain item in one move and labels the menu bar so you can tell them
+  apart. Verified: a dev run creates `~/Library/Application Support/Qale Dev` and `Qale Dev Safe
+  Storage`, the packaged app creates `Qale` and `Qale Safe Storage`. `QALE_USERDATA` still layers a
+  per-run scratch on top.
+  **`scripts/refresh-demo.ts` had to follow, and it was the dangerous half:** it resolves a userData
+  dir and deletes the search index and session receipts in it. Left pointed at the installed profile
+  it would have wiped state from the app you actually use in order to refresh a demo that profile has
+  never opened. It now appends ` Dev`, and the two must stay in lockstep.
+- **Why the prompt appeared at all, and who else gets one.** macOS binds a keychain item to the code
+  identity that created it. A fresh install creates its item silently, so a beta user's first launch
+  is clean. But our ad-hoc signature is derived from the build's contents, so **every rebuild is a
+  different identity to macOS**, and an updated app asking for the old item prompts for the login
+  password. That is a per-update prompt for every beta user, on top of the right-click-Open dance,
+  and a Developer ID (ticket 2) is what makes both go away. Worth testing for real the first time we
+  ship a second build to someone.
+- **Secrets come from the repo-root `.env`,** loaded by `electron.vite.config.ts` and substituted at
+  build time (see TEL-2's notes for why runtime `process.env` cannot work in a packaged Mac app).
+  Nothing to export, nothing to remember; `.env.example` documents the vars. The consequence to keep
+  in mind: **a dmg carries whatever was in `.env` when it was built**, so a build made on a machine
+  without one has telemetry off and no Google client.
 
 ---
 
@@ -220,6 +321,21 @@ die on this, and it is cheap.
 **Decision:**
 yes implment this. 
 **Notes:**
+Done. `apps/desktop/package.json` is `0.1.0` and nothing else moved: it is the only version that
+leaves the machine (electron-builder takes the bundle version from it, verified `0.1.0` in the
+packaged Info.plist and in the asar's package.json). Every other workspace package is private and
+resolved as `workspace:*`, so a number there would mean nothing and drift.
+
+Settings has a "Version and help" section: the version standing, "Copy diagnostics", "Report a
+problem". Diagnostics is built in main (`src/main/diagnostics.ts`) and is versions, booleans and
+counts only, never a path, a name, an address or a key. The log tail comes from a 400-line in-memory
+ring (`src/main/log.ts`) that tees `console` and scrubs each line on the way in: absolute paths, note
+slugs, URL hosts other than loopback, addresses, and anything key-shaped. "Report a problem" puts the
+full block on the clipboard and opens a short `mailto:` skeleton, because a mailto long enough to
+carry a log gets cut by some clients and a truncated report is worse than none. The support address
+is one constant (`SUPPORT_EMAIL` in `SettingsView.tsx`) and moves with the rename.
+
+Open: the address is a placeholder, and none of this reaches the user unless they open Settings.
 
 ---
 
@@ -423,6 +539,17 @@ leave edited files alone and say so, archive retired skills instead of deleting 
 **Decision:**
 Yes we should build this somehow. We should have a way for the users to review our changes to the skills and apply them if they want as well. Or perhaps just override theirs if they also want that. If they have made no changes, no need to distrub the user. 
 **Notes:**
+Built. `packages/sessions/src/shipped-versions.ts` holds a fingerprint of every version of every
+pack file we have ever shipped, recovered from git history, so the check is stateless and travels
+with the folder. On open (`ensureDefaultSkills`, now in
+`packages/application/src/use-cases/skill-pack.ts`): absent → seed, fingerprint known → update
+silently, fingerprint unknown → leave alone and offer a review on the Skills page. Retired files
+follow the same test: an untouched one is removed, an edited one is renamed to
+`RETIRED-SKILL.md` inside its own folder, which takes it out of force (not an entry basename, so
+nothing indexes or resolves it) while keeping every word. "Keep mine" is stored per shipped
+version in the per-workspace ledger. **Changing any shipped file now means appending its new
+fingerprint**; a test fails with the exact line to add if you forget. Two skills that were shipped
+and then cut without being retired (`spec-review`, `sprint-review`) are now on the retired list.
 
 ---
 
@@ -457,6 +584,42 @@ reversibility, and if undo is approximate the trade is a lie. (`docs/open-work.m
 **Decision:**
 Sure lets implement this. 
 **Notes:**
+
+**Built (per-note restore).** `NoteHistory` now restores the version you are previewing.
+`restoreNoteVersion` (`packages/application/src/use-cases/restore.ts`) reads the old file, strips
+the frontmatter block, and hands the body to `saveAuthoredNote` — the same use-case `note:save`
+runs, so the index, the watcher and the open tab all follow, and the restore lands as a new version
+("restored an earlier version") on top of everything that came before it. Nothing is rewound;
+the undo is itself undoable. Body only, deliberately: the preview shows prose, while the properties
+underneath carry live state (a closed commitment, the calendar event or ticket a note mirrors,
+whether material has been read) that an old version knows nothing about. `writeBody` keeps the
+current block byte for byte. The control never renders without history, so the no-git notice and
+this feature agree.
+
+**NOT built (undo a whole run), and why.** We cannot today identify the exact set of file states a
+session changed, so a "take back this run" button would be a promise we could not keep. Three
+independent gaps:
+
+1. *The only durable session→file link is proposal-shaped, not write-shaped.* `proposals.session_id`
+   + `target_path` describes cards, not applied writes: `target_path` is NULL for every outbound
+   card, and the cascade writes an accept performs (`markCitedSourcesProcessed`,
+   `markMeetingReviewed`, the superseded decision in `acceptDecision`, the post-accept `renameNote`)
+   touch paths that appear on no row for that session.
+2. *No before-state, no commit identity.* `commitPaths` returns void, so the hash is discarded and
+   never stored, and no commit message carries a session id. `base_hash` exists only on update cards
+   and is a fingerprint, not content.
+3. *The ledger that would be right does not survive.* `SessionHarness.writes` is in memory and comes
+   back empty on resume; its persisted form (the receipt's `writes[]`) is a deduped list of
+   extension-stripped links describing proposals, including rejected ones.
+
+What it would take: persist the `recordingVault` snapshot idiom that `undoArrival` already uses
+(`use-cases/arrival.ts`) as a real table keyed by session and proposal, wrapped around the **accept**
+path rather than the arrival batch; have `commitPaths` return its hash and store it; bring the
+cascade writes inside that recording scope. Items 1 to 3 are mechanical. The product decision left
+over: an outbound card already posted to Jira cannot be recalled, a file the user edited afterwards
+(possibly in Obsidian, which never commits) should not be silently overwritten, and a `sync:` commit
+batches a session's file with unrelated mirrors. That decides whether run-undo can be one button or
+has to be a reviewable list.
 
 ---
 
@@ -623,6 +786,13 @@ It is also how we learn what to ship next: the skills beta users write by hand a
 **Decision:**
 yes add this. but the users cshouldnt be avle to create agents. 
 **Notes:**
+Built. "New skill" sits in the Skills page header only; the Agents page gets nothing. The PM types
+the name once, up front, because a skill's folder is the address the runtime resolves and the skill
+page deliberately cannot rename it (an "Untitled skill" would be stuck at that address forever,
+unlike a plain note whose filename is disposable). A name already in use takes a number rather
+than landing on top of anything. The starter file is a visible draft: an italic prompt in each of
+the four sections, plus one section explaining the `starts` vocabulary in words the PM can act on,
+and it parses with no flags the moment it lands (`newSkillFile` in `defaults.ts`).
 
 ---
 

@@ -12,8 +12,10 @@ against got a much narrower answer than the policy itself: where the data sits, 
 it, and whether any of that can be proved afterwards.
 
 The EU region, the audit log and ISO 27001 covered most of it in the room. Antti opened the
-Fenno call with "our policy is that operational systems run on our own iron" and ended it
-agreeing to take our package to his security board.
+Fenno call with the policy that "operational systems run on our own iron" and ended it
+agreeing to take our package to his security board. At Bergman & Falk the same ask arrived as
+paperwork rather than a hardware requirement: Elin wanted the deployment model answered on
+file, "even if the answer is no plus a compensating control".
 
 So the rule for sales is to ask what's behind the ask before writing the deal off. Two data
 points is not a pattern yet, but it's the same two.

@@ -1,420 +1,359 @@
 import {
-  classifyCapture,
-  dirForType,
+  addTranscriptRef,
+  refToSlug,
   titleFromSlug,
-  type CaptureKind,
+  transcriptRefs,
   type Frontmatter,
   type Note,
-} from '@pm/domain';
-import { ARRIVAL_AGENT_NAME } from '@pm/sessions';
-import type { UseCaseContext, VaultPort } from '../ports.js';
-import { ingestCapture, type IngestFollowUp } from './notes.js';
-import { listSkills } from './skills.js';
+} from '@qale/domain';
+import type { UseCaseContext } from '../ports.js';
+import {
+  attachTranscriptToMeeting,
+  captureDocument,
+  captureExternalTranscript,
+  captureMeeting,
+  captureScreenshot,
+  deleteNote,
+  renameNote,
+  resolveLink,
+  type MeetingTranscriptPart,
+} from './notes.js';
 
 /**
- * Arrival (docs/vision/arrival.md) — the one pipeline every piece of material
- * enters through, whatever the door: the Add material tray, a drop on the
- * window, a paste, and later a notetaker bot delivering recordings unattended.
+ * Arrival (docs/arrival-agentic.md) — filing, done by the agent.
  *
- * Three things make this different from calling `ingestCapture` in a loop:
+ * The old pipeline decided what a dropped file was and where it went before
+ * anything had read it: a clock window guessing which meeting a transcript
+ * belonged to, a 21-day rule switching reviews off, a regex deciding two files
+ * were one recording. Every one of those rules answered "what is this?" without
+ * looking, and every edge of every rule was a bug.
  *
- * 1. **Ambition.** A batch of this morning's calls and a batch of last year's
- *    are the same files and completely different jobs. `capture` extracts;
- *    `catchup` files and runs nothing, because history has no live commitments
- *    and forty old transcripts firing After-Meeting is an unusable Inbox.
- * 2. **One ledger, one undo.** Everything an arrival wrote is recorded so the
- *    whole batch can be taken back in one action. The design trades a
- *    per-file approval gate for reversibility, so undo is load-bearing rather
- *    than a convenience.
- * 3. **One receipt.** The caller gets an aggregate of what landed and what
- *    runs, so fifty files produce one legible outcome instead of fifty.
+ * So the rules are gone and the judgment moved. Material lands in the session
+ * folder as bytes, and the agent reads it, decides, and calls the two functions
+ * here: {@link fileMaterial} to put it where it belongs, {@link refileMaterial}
+ * to move it when that turns out to be wrong. Both are ordinary vault writes,
+ * not approval cards, and the reason is the same one that makes them safe: the
+ * PM handed the file over, so filing it carries out an instruction rather than
+ * proposing one, and a wrong shelf is fixed by moving it. Everything DERIVED
+ * from the material is still a card.
  */
 
-export type ArrivalAmbition = 'capture' | 'catchup';
-
-/** A piece of material, already resolved to content by the entry point. */
-export interface ArrivalItem {
-  /** File name where there was one — it carries the classifier's best title hint. */
-  name?: string;
-  /** Text content: a transcript, a note, a link. Absent for images. */
+/** One file of material, already read out of the session folder. */
+export interface ArrivalPart {
+  /** The file name it arrived as — provenance, and the label on a split recording. */
+  name: string;
+  /** Text content. Absent for an image. */
   text?: string;
   /** Image bytes; presence makes this a screenshot. */
-  data?: Uint8Array;
-  /** ms epoch — the file's own date, used to tell history from today. */
-  lastModified?: number;
-  /** Per-item override from the tray; omit to let the classifier decide. */
-  kind?: CaptureKind;
-  /** Transcript only — a meeting the PO was not in. */
-  external?: boolean;
-  /** Transcript only — attach to this already-synced meeting note. */
-  attachTo?: string;
+  image?: Uint8Array;
+  /** "part 2" — set only where this is one piece of a recording that split. */
+  label?: string;
 }
 
-export interface ArrivalPlanItem {
-  name: string;
-  kind: CaptureKind;
-  /** Where it will land — `meetings/`, `sources/`, `notes/`. */
-  dir: string;
-  /** The classifier's title, shown so a bad guess is visible before it lands. */
-  title: string;
-  /** Its own date if we could establish one (YYYY-MM-DD), for the history read. */
-  date?: string;
-  /** Older than `HISTORICAL_DAYS` — what tips a batch into `catchup`. */
-  historical: boolean;
-  /** Set by the entry point when the file could not be read at all. */
-  error?: string;
-}
-
-/** One piece of agent work the batch would start, named as a person names it. */
-export interface ArrivalRun {
-  /** Invocation name — the address the session is opened with. */
-  skill: string;
-  /** What a human calls it ("After-Meeting"). */
-  title: string;
-  /** How many items in this batch would hand off to it. */
-  count: number;
-  /** What it does to them, in the tray's voice ("reviews", "reads"). */
-  verb: string;
-}
-
-export interface ArrivalPlan {
-  ambition: ArrivalAmbition;
-  /** True when nothing overrode the ambition, so the tray can say "auto". */
-  ambitionAuto: boolean;
-  items: ArrivalPlanItem[];
-  /** Why `catchup` was chosen, in the tray's own words. Empty for `capture`. */
-  reason: string;
+export interface FileMaterialInput {
   /**
-   * The agent work this batch would start — resolved through the SAME binding
-   * lookup that will dispatch it, so the tray names the actual skill rather
-   * than a guess about it. Empty under `catchup`, which runs nothing.
+   * The files that make up ONE thing. More than one means a recording delivered
+   * in pieces: one meeting, one source note per piece, never several meetings.
    */
-  runs: ArrivalRun[];
+  parts: ArrivalPart[];
+  /**
+   * `meeting` is a meeting the PM was in and gets a page of its own in
+   * `meetings/`. Everything else is `source`: a colleague's call, an article, a
+   * spec, a screenshot. Nothing arriving ever reaches `notes/`, which means "the
+   * PM wrote this".
+   */
+  as: 'meeting' | 'source';
+  title: string;
+  /** The day the material is about (YYYY-MM-DD), where the material says so. */
+  date?: string;
+  /** Attach to this already-synced meeting rather than minting a second one. */
+  attachTo?: string;
+  /** Whose meeting it was, on a transcript the PM was not in. */
+  origin?: string;
+  /** Screenshot only: what the picture shows, which is the note's whole body. */
+  caption?: string;
 }
 
-export interface ArrivalOutcomeItem {
-  name: string;
-  kind: CaptureKind;
-  /** The note this became; absent when the item failed. */
-  path?: string;
-  dir?: string;
+export interface FileMaterialResult {
+  /** The page this became: the meeting, or the first source. */
+  path: string;
+  /** Every note this call created, so the agent can cite them straight away. */
+  wrote: string[];
+}
+
+/**
+ * File one thing. Everything about WHAT it is has already been decided by the
+ * agent that read it; this only carries that decision out.
+ */
+export async function fileMaterial(
+  ctx: UseCaseContext,
+  input: FileMaterialInput,
+): Promise<FileMaterialResult> {
+  const parts = input.parts;
+  if (parts.length === 0) throw new Error('nothing to file: no files were named');
+  const title = input.title.trim();
+  if (!title) throw new Error('file_material needs a title — it is what the page is called');
+
+  if (input.as === 'meeting') {
+    const image = parts.find((p) => p.image);
+    if (image) {
+      throw new Error(
+        `“${image.name}” is an image, and an image is never a meeting. File it as a source with a caption.`,
+      );
+    }
+    const body: MeetingTranscriptPart[] = parts.map((p) => ({
+      body: p.text ?? '',
+      ...(parts.length > 1 ? { label: p.label ?? `part ${parts.indexOf(p) + 1}` } : {}),
+    }));
+    // What the meeting held BEFORE, so the report names the transcripts this
+    // call wrote rather than every one the page has ever collected.
+    const before = input.attachTo
+      ? transcriptRefs((await ctx.vault.readNote(input.attachTo))?.frontmatter ?? {})
+      : [];
+    const note = input.attachTo
+      ? await attachTranscriptToMeeting(ctx, { meetingPath: input.attachTo, body })
+      : await captureMeeting(ctx, { title, body, ...(input.date ? { date: input.date } : {}) });
+    const added = transcriptRefs(note.frontmatter)
+      .filter((r) => !before.includes(r))
+      .flatMap((r) => refPath(ctx, r) ?? []);
+    return { path: note.path, wrote: [note.path, ...added] };
+  }
+
+  // A source that arrived in several files is several sources: nothing in
+  // `sources/` owns anything else, so there is no page to gather them under and
+  // splicing them into one body would be a claim about how they fit together.
+  const wrote: string[] = [];
+  for (const [i, part] of parts.entries()) {
+    const name = parts.length > 1 ? `${title} (${part.label ?? `part ${i + 1}`})` : title;
+    if (part.image) {
+      const note = await captureScreenshot(ctx, {
+        title: name,
+        caption: input.caption?.trim() || name,
+        image: { name: part.name, data: part.image },
+      });
+      wrote.push(note.path);
+      continue;
+    }
+    const note = input.origin
+      ? await captureExternalTranscript(ctx, { title: name, body: part.text ?? '', origin: input.origin })
+      : await captureDocument(ctx, { title: name, body: part.text ?? '', fileName: part.name });
+    wrote.push(note.path);
+  }
+  return { path: wrote[0]!, wrote };
+}
+
+export interface RefileMaterialInput {
+  /** The page that was filed wrong: a meeting, or a source. */
+  path: string;
+  /**
+   * The meeting this material actually belongs to, as a note path. The literal
+   * string `none` means it belongs to no meeting of the PM's at all, which is
+   * how "that was Kranelund's call" is said.
+   */
+  meeting?: string;
+  /** Whose meeting it was — only with `meeting: none`, on a transcript. */
+  origin?: string;
+  /** A better name for the page, when the first one missed. */
   title?: string;
-  followUp?: IngestFollowUp;
-  /** Present when this one item failed — the rest of the batch still landed. */
-  error?: string;
 }
 
-export interface ArrivalResult {
-  ambition: ArrivalAmbition;
-  ambitionAuto: boolean;
-  items: ArrivalOutcomeItem[];
-  /** Every path the batch wrote, with the content that was there before it
-   *  (null = the file did not exist). Reverse this to undo. */
-  ledger: { path: string; before: string | null; binary: boolean }[];
+export interface RefileMaterialResult {
+  /** Where the material lives now. */
+  path: string;
+  /** Transcripts that changed hands. */
+  moved: string[];
+  /** A meeting page this emptied and removed, if any. */
+  removed?: string;
 }
 
 /**
- * A batch of material older than this reads as history rather than as work in
- * flight. Three weeks is past the point where a commitment made on a call is
- * still actionable news — by then it has either happened or been forgotten,
- * and either way extracting it as a fresh todo is noise.
+ * The scaffold `captureMeeting` writes, and nothing else. A meeting page that
+ * still says only this is a container, so moving its transcripts elsewhere
+ * leaves nothing behind worth keeping. One that carries a prep section, notes
+ * or a summary is somebody's work and is never deleted from under them.
  */
-export const HISTORICAL_DAYS = 21;
-
-/** How many items make a drop feel like an archive rather than a hand-off. */
-export const BATCH_THRESHOLD = 5;
-
-const FILENAME_DATE = /(\d{4})-(\d{2})-(\d{2})/;
+function meetingIsEmpty(body: string): boolean {
+  const stripped = body
+    .replace(/^##\s+(Notes|Summary)\s*$/gim, '')
+    // The italic placeholder under `## Summary`. Matched by its shape rather
+    // than its words: the sentence is product copy and has been rewritten once
+    // already, and a stale match here would refuse every honest refile.
+    .replace(/^_[^_\n]*_$/gim, '')
+    .trim();
+  return stripped.length === 0;
+}
 
 /**
- * The material's own date. A file name that carries one beats the filesystem's
- * mtime, which for a downloaded transcript is the day it was downloaded — a
- * fact about the user's browser, not about when the meeting happened.
+ * The note a `transcript` ref points at. The field holds whole wikilinks
+ * (`[[sources/…]]`), so the brackets come off before anything tries to resolve
+ * one — a ref that silently fails to resolve reads as "this meeting has no
+ * transcript", which is the one wrong answer that loses evidence.
  */
-function itemDate(item: ArrivalItem): string | undefined {
-  const fromName = item.name ? FILENAME_DATE.exec(item.name) : null;
-  if (fromName) return `${fromName[1]}-${fromName[2]}-${fromName[3]}`;
-  if (item.lastModified) return new Date(item.lastModified).toISOString().slice(0, 10);
-  return undefined;
+function refPath(ctx: UseCaseContext, ref: string): string | null {
+  const slug = refToSlug(ref);
+  return slug ? resolveLink(ctx, slug) : null;
 }
 
-function daysBetween(fromIso: string, toIso: string): number {
-  const a = Date.parse(`${fromIso}T00:00:00Z`);
-  const b = Date.parse(`${toIso}T00:00:00Z`);
-  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
-  return Math.round((b - a) / 86_400_000);
+/** The source notes a meeting's `transcript` refs point at, in order. */
+function transcriptPaths(ctx: UseCaseContext, note: Note): string[] {
+  return transcriptRefs(note.frontmatter).flatMap((ref) => refPath(ctx, ref) ?? []);
 }
 
-/** What to call a filed note in the receipt — the same fallback chain the DTO uses. */
-function noteTitle(note: Note): string {
-  const fm = note.frontmatter as Record<string, unknown>;
-  const title = typeof fm['title'] === 'string' ? fm['title'].trim() : '';
-  const summary = typeof fm['summary'] === 'string' ? fm['summary'].trim() : '';
-  return title || summary || titleFromSlug(note.slug);
+/** Take one transcript ref off a meeting, leaving the rest of it alone. */
+async function unlinkTranscript(ctx: UseCaseContext, meetingPath: string, ref: string): Promise<void> {
+  const meeting = await ctx.vault.readNote(meetingPath);
+  if (!meeting) return;
+  const rest = transcriptRefs(meeting.frontmatter).filter((r) => r !== ref);
+  const next = { ...meeting.frontmatter } as Record<string, unknown>;
+  if (rest.length === 0) delete next['transcript'];
+  else next['transcript'] = rest.length === 1 ? rest[0]! : rest;
+  const written = await ctx.vault.writeNote(meetingPath, next as Frontmatter, meeting.body);
+  ctx.index.reindex(written);
 }
 
-/**
- * A file name is a title in disguise. The classifier hands back the base name
- * verbatim, which was fine when a dialog showed it as an editable placeholder —
- * the tray has no title field, so `nordkap-qbr-2026-07-28` would become the
- * note's own name. Slugs go back to words; anything already written like a
- * sentence is left exactly as the PO wrote it.
- */
-function prettyTitle(raw: string): string {
-  const t = raw.trim();
-  if (!t || /\s/.test(t)) return t;
-  return /[-_]/.test(t) ? titleFromSlug(t) : t;
-}
-
-function kindOf(item: ArrivalItem): CaptureKind {
-  if (item.data) return 'screenshot';
-  if (item.kind) return item.kind;
-  return classifyCapture(item.text ?? '', item.name).kind;
+/** Write one frontmatter field onto a note, leaving body and everything else. */
+async function setField(ctx: UseCaseContext, path: string, key: string, value: string): Promise<string> {
+  const note = await ctx.vault.readNote(path);
+  if (!note) throw new Error(`there is no note called “${titleFromSlug(path)}”`);
+  const next = { ...note.frontmatter, [key]: value } as Frontmatter;
+  const written = await ctx.vault.writeNote(path, next, note.body);
+  ctx.index.reindex(written);
+  return written.path;
 }
 
 /**
- * Which folder a kind lands in. Only a meeting the PO was in gets a derived
- * note of its own; everything else is raw. Nothing an arrival touches ever
- * reaches `notes/` — that layer means "the PO wrote this", and adding material
- * is not writing.
- */
-function dirFor(kind: CaptureKind, external: boolean | undefined): string {
-  if (kind === 'transcript' && !external) return `${dirForType('meeting')}/`;
-  return `${dirForType('source')}/`;
-}
-
-/**
- * What will happen, computed by the same rules that will run — so the tray's
- * outcome line is the plan rather than a description of it.
+ * Correct a filing. Three moves, which are the three ways the agent can get it
+ * wrong: this belongs to a different meeting, this was never the PM's meeting
+ * at all, and this is called the wrong thing.
  *
- * `catchup` is chosen when the batch is big enough to be an archive or old
- * enough to be history. Both are stated back to the PO with a one-click flip:
- * the guess has to be legible and correctable, never silent.
+ * Deliberately not an undo. Nothing is restored to a previous state; the
+ * material is moved to where it should have gone, and git holds the trail.
  */
-export function planArrival(
+export async function refileMaterial(
   ctx: UseCaseContext,
-  items: ArrivalItem[],
-  override?: ArrivalAmbition,
-): ArrivalPlan {
-  const today = ctx.clock.now().slice(0, 10);
-  const planned: ArrivalPlanItem[] = items.map((item) => {
-    const kind = kindOf(item);
-    const date = itemDate(item);
-    const guess = classifyCapture(item.text ?? '', item.name);
-    return {
-      name: item.name ?? guess.title ?? 'untitled',
-      kind,
-      dir: dirFor(kind, item.external),
-      title: prettyTitle(guess.title),
-      ...(date ? { date } : {}),
-      historical: !!date && daysBetween(date, today) > HISTORICAL_DAYS,
-    };
-  });
+  input: RefileMaterialInput,
+): Promise<RefileMaterialResult> {
+  const note = await ctx.vault.readNote(input.path);
+  if (!note) throw new Error(`there is no note called “${titleFromSlug(input.path)}”`);
+  const target = input.meeting?.trim();
+  const toNothing = target === 'none';
+  const moved: string[] = [];
+  let path = note.path;
+  let removed: string | undefined;
 
-  const dated = planned.filter((p) => p.date);
-  const allHistorical = dated.length > 0 && dated.every((p) => p.historical);
-  const bulk = items.length >= BATCH_THRESHOLD;
-  const auto: ArrivalAmbition = allHistorical || bulk ? 'catchup' : 'capture';
-  const ambition = override ?? auto;
-  const reason =
-    ambition !== 'catchup'
-      ? ''
-      : allHistorical && bulk
-        ? `${items.length} files, all older than ${HISTORICAL_DAYS} days`
-        : allHistorical
-          ? `older than ${HISTORICAL_DAYS} days`
-          : `${items.length} files at once`;
-
-  return { ambition, ambitionAuto: !override, items: planned, reason, runs: [] };
-}
-
-/**
- * Which sessions this plan would start, and over how many items.
- *
- * Mirrors `ingestCapture` exactly: every item fires the pipeline skill
- * (arrival), so the runs differ only in the VERB — what the pass does depends
- * on what the material is. The tray shows this as a control the PO can switch
- * off, so a guess here would be a lie about what the button is going to do.
- */
-export async function resolveRuns(ctx: UseCaseContext, plan: ArrivalPlan): Promise<ArrivalRun[]> {
-  if (plan.ambition === 'catchup') return [];
-
-  // Every item reduces to one of three passes, so group by verb.
-  const groups = new Map<string, { verb: string; count: number }>();
-  for (const item of plan.items) {
-    if (item.error) continue;
-    const own = item.kind === 'transcript' && item.dir.startsWith('meetings');
-    const verb = item.kind === 'transcript' ? (own ? 'reviews' : 'mines for signals') : 'connects';
-    const existing = groups.get(verb);
-    if (existing) existing.count++;
-    else groups.set(verb, { verb, count: 1 });
-  }
-  if (groups.size === 0) return [];
-
-  const title =
-    (await listSkills(ctx)).find((s) => s.name === ARRIVAL_AGENT_NAME)?.title ?? ARRIVAL_AGENT_NAME;
-  return [...groups.values()].map((g) => ({
-    skill: ARRIVAL_AGENT_NAME,
-    title,
-    count: g.count,
-    verb: g.verb,
-  }));
-}
-
-/**
- * A VaultPort that records every write, snapshotting what was there first.
- *
- * This is how one arrival gets one undo without every capture use case having
- * to report the paths it touched. It sits between the arrival and the real
- * vault, so it cannot miss a write — including ones added later by code that
- * knows nothing about arrivals.
- */
-function recordingVault(
-  real: VaultPort,
-  ledger: { path: string; before: string | null; binary: boolean }[],
-): VaultPort {
-  const seen = new Set<string>();
-  const snapshot = async (path: string, binary: boolean): Promise<void> => {
-    if (seen.has(path)) return;
-    seen.add(path);
-    // A binary's prior content is not text; it is only ever created here, so
-    // "did not exist" is the only prior state undo has to restore.
-    const before = binary ? null : await real.readRaw(path);
-    ledger.push({ path, before, binary });
-  };
-  return {
-    ...real,
-    root: () => real.root(),
-    ensureScaffold: () => real.ensureScaffold(),
-    readNote: (p) => real.readNote(p),
-    readRaw: (p) => real.readRaw(p),
-    exists: (p) => real.exists(p),
-    list: () => real.list(),
-    listDir: (p) => real.listDir(p),
-    contain: (p) => real.contain(p),
-    remove: (p) => real.remove(p),
-    async writeNote(path: string, frontmatter: Frontmatter, body: string): Promise<Note> {
-      await snapshot(path, false);
-      return real.writeNote(path, frontmatter, body);
-    },
-    async writeBody(path: string, body: string): Promise<Note> {
-      await snapshot(path, false);
-      return real.writeBody(path, body);
-    },
-    async writeRaw(path: string, content: string): Promise<void> {
-      await snapshot(path, false);
-      return real.writeRaw(path, content);
-    },
-    async writeBinary(path: string, data: Uint8Array): Promise<void> {
-      await snapshot(path, true);
-      return real.writeBinary(path, data);
-    },
-  };
-}
-
-export interface IngestArrivalInput {
-  items: ArrivalItem[];
-  /** Omit to take the planner's choice. */
-  ambition?: ArrivalAmbition;
-}
-
-/**
- * File a whole batch. Every item lands even if its neighbours fail — a bad file
- * in a drop of fifty reports itself and costs nothing else.
- *
- * Items are filed one at a time rather than in parallel: `freePath` resolves
- * collisions by looking at the disk, so two same-titled transcripts racing each
- * other would both take the same path and one would win silently.
- */
-export async function ingestArrival(
-  ctx: UseCaseContext,
-  input: IngestArrivalInput,
-): Promise<ArrivalResult> {
-  const plan = planArrival(ctx, input.items, input.ambition);
-  const ledger: ArrivalResult['ledger'] = [];
-  const recording: UseCaseContext = { ...ctx, vault: recordingVault(ctx.vault, ledger) };
-  const items: ArrivalOutcomeItem[] = [];
-
-  for (let i = 0; i < input.items.length; i++) {
-    const item = input.items[i]!;
-    const planned = plan.items[i]!;
-    try {
-      const result = await ingestCapture(recording, {
-        ...(item.kind ? { kind: item.kind } : {}),
-        text: item.text ?? '',
-        ...(item.name ? { fileName: item.name } : {}),
-        // The plan's title is what the tray showed; filing under a different
-        // one would make the preview a lie.
-        ...(planned.title ? { title: planned.title } : {}),
-        ...(item.external ? { external: true } : {}),
-        ...(item.attachTo ? { attachTo: item.attachTo } : {}),
-        ...(item.data ? { attachment: { name: item.name ?? 'image.png', data: item.data } } : {}),
-        // The whole ambition, expressed in one flag: catch-up files exactly as
-        // capture does and runs nothing over it.
-        process: plan.ambition === 'capture',
-      });
-      items.push({
-        name: planned.name,
-        kind: result.kind,
-        path: result.note.path,
-        dir: `${result.note.path.slice(0, result.note.path.indexOf('/') + 1)}`,
-        title: noteTitle(result.note),
-        ...(result.followUp ? { followUp: result.followUp } : {}),
-      });
-    } catch (err) {
-      items.push({
-        name: planned.name,
-        kind: planned.kind,
-        error: err instanceof Error ? err.message : 'could not be filed',
-      });
+  if (target && !toNothing) {
+    const meeting = await ctx.vault.readNote(target);
+    if (!meeting || meeting.type !== 'meeting') {
+      throw new Error(`“${titleFromSlug(target)}” is not a meeting page, so nothing can be attached to it`);
     }
   }
 
-  const wrote = ledger.map((l) => l.path);
-  if (wrote.length > 0) {
-    await ctx.git.commitPaths(
-      wrote,
-      `arrival: ${items.length} item${items.length === 1 ? '' : 's'}${plan.ambition === 'catchup' ? ' (catch-up)' : ''}`,
-    );
-  }
-
-  return { ambition: plan.ambition, ambitionAuto: plan.ambitionAuto, items, ledger };
-}
-
-/**
- * Take a whole arrival back: created files are removed, modified ones are
- * restored byte-for-byte from the snapshot, newest write first so a file
- * written twice ends up at its true prior state.
- *
- * Returns the paths it restored, which is what the receipt reports. Errors on
- * individual paths are swallowed deliberately — a file the PO already deleted
- * by hand must not block the rest of the undo.
- */
-export async function undoArrival(
-  ctx: UseCaseContext,
-  ledger: ArrivalResult['ledger'],
-): Promise<{ removed: string[]; restored: string[] }> {
-  const removed: string[] = [];
-  const restored: string[] = [];
-  for (const entry of [...ledger].reverse()) {
-    try {
-      if (entry.before === null) {
-        if (await ctx.vault.exists(entry.path)) await ctx.vault.remove(entry.path);
-        ctx.index.removeByPath(entry.path);
-        removed.push(entry.path);
-      } else {
-        await ctx.vault.writeRaw(entry.path, entry.before);
-        const note = await ctx.vault.readNote(entry.path);
-        if (note) ctx.index.reindex(note);
-        restored.push(entry.path);
+  if (note.type === 'meeting') {
+    if (!target) {
+      if (!input.title) {
+        throw new Error(
+          'refile_material on a meeting needs a `meeting` (the one it really belongs to, or "none") or a `title`.',
+        );
       }
-    } catch {
-      /* a path the PO already moved or deleted; the rest of the undo still runs */
+    } else {
+      const sources = transcriptPaths(ctx, note);
+      if (sources.length === 0) {
+        throw new Error(`“${titleFromSlug(note.slug)}” holds no transcript, so there is nothing to move off it`);
+      }
+      if (!meetingIsEmpty(note.body)) {
+        throw new Error(
+          `“${titleFromSlug(note.slug)}” has notes or a summary written on it. Move the transcripts one at a time (refile the source pages) so nothing written here is lost.`,
+        );
+      }
+      for (const source of sources) {
+        if (toNothing) {
+          if (input.origin) await setField(ctx, source, 'origin', input.origin);
+        } else {
+          await attachExistingTranscript(ctx, target!, source);
+        }
+        moved.push(source);
+      }
+      await deleteNote(ctx, note.path);
+      removed = note.path;
+      path = toNothing ? sources[0]! : target!;
+    }
+  } else {
+    // A source page: a transcript that ended up under the wrong meeting, or one
+    // that was never the PM's meeting.
+    const holder = meetingHolding(ctx, note);
+    if (target && !toNothing) {
+      if (holder) await unlinkTranscript(ctx, holder.path, `[[${note.slug}]]`);
+      await attachExistingTranscript(ctx, target, note.path);
+      moved.push(note.path);
+      // The page that OWNS the material now, which is what the agent should
+      // cite from here on. The transcript itself never moves: it is evidence,
+      // and evidence keeps its address.
+      path = target;
+      if (holder) {
+        const after = await ctx.vault.readNote(holder.path);
+        if (after && transcriptRefs(after.frontmatter).length === 0 && meetingIsEmpty(after.body)) {
+          await deleteNote(ctx, holder.path);
+          removed = holder.path;
+        }
+      }
+    } else if (toNothing) {
+      if (holder) {
+        await unlinkTranscript(ctx, holder.path, `[[${note.slug}]]`);
+        moved.push(note.path);
+        const after = await ctx.vault.readNote(holder.path);
+        if (after && transcriptRefs(after.frontmatter).length === 0 && meetingIsEmpty(after.body)) {
+          await deleteNote(ctx, holder.path);
+          removed = holder.path;
+        }
+      }
+      if (input.origin) await setField(ctx, note.path, 'origin', input.origin);
     }
   }
-  const touched = [...removed, ...restored];
-  if (touched.length > 0) {
-    await ctx.git.commitPaths(touched, `undo arrival: ${touched.length} path(s)`);
+
+  // A title renames the page the PM NAMED, not whatever the move ended up
+  // pointing at: asking for a better name on a transcript must not retitle the
+  // meeting it was just attached to. Falls through to `path` only when the page
+  // they named is the one this call deleted.
+  if (input.title?.trim()) {
+    const subject = (await ctx.vault.readNote(input.path)) ? input.path : path;
+    const renamed = await renameNote(ctx, { path: subject, title: input.title.trim() });
+    if (subject === path) path = renamed.path;
   }
-  return { removed, restored };
+
+  const touched = [path, ...moved, ...(removed ? [removed] : [])];
+  await ctx.git.commitPaths(touched, `refile: ${titleFromSlug(path)}`);
+  return { path, moved, ...(removed ? { removed } : {}) };
+}
+
+/** The meeting whose `transcript` list currently holds this source, if any. */
+function meetingHolding(ctx: UseCaseContext, source: Note): { path: string } | null {
+  for (const row of ctx.index.backlinks(source.slug)) {
+    const from = ctx.index.get(row.fromPath);
+    if (from?.type === 'meeting' && transcriptRefs(from.frontmatter).includes(`[[${source.slug}]]`)) {
+      return { path: from.path };
+    }
+  }
+  return null;
+}
+
+/**
+ * Link a source note that ALREADY exists onto a meeting. Unlike
+ * `attachTranscriptToMeeting`, which writes the transcript as it attaches, this
+ * only moves the pointer — the evidence is on disk and must not be copied.
+ */
+async function attachExistingTranscript(
+  ctx: UseCaseContext,
+  meetingPath: string,
+  sourcePath: string,
+): Promise<void> {
+  const meeting = await ctx.vault.readNote(meetingPath);
+  const source = await ctx.vault.readNote(sourcePath);
+  if (!meeting || !source) throw new Error('the meeting or the transcript is gone');
+  const next = {
+    ...meeting.frontmatter,
+    transcript: addTranscriptRef(meeting.frontmatter, `[[${source.slug}]]`),
+    processing: 'new',
+  } as Frontmatter;
+  const written = await ctx.vault.writeNote(meetingPath, next, meeting.body);
+  ctx.index.reindex(written);
 }

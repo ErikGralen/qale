@@ -4,7 +4,7 @@ import { isTextSelection } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
-import { linkTypeLabel } from '@pm/domain';
+import { linkTypeLabel } from '@qale/domain';
 import {
   Bold,
   Brackets,

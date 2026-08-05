@@ -1,9 +1,9 @@
 import { app } from 'electron';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { FsVault, SqliteIndex, VaultWatcher, GitAdapter, AppDb, type VaultChange } from '@pm/vault';
-import { openVault, type UseCaseContext, type VaultInfo } from '@pm/application';
-import { isReservedFile, isRunnableResource } from '@pm/domain';
+import { FsVault, SqliteIndex, VaultWatcher, GitAdapter, AppDb, type VaultChange } from '@qale/vault';
+import { openVault, type UseCaseContext, type VaultInfo } from '@qale/application';
+import { isReservedFile, isRunnableResource } from '@qale/domain';
 
 /**
  * Owns the live vault: fs + index + git + watcher for the currently-open vault.
@@ -20,9 +20,9 @@ export class VaultService {
   private readonly indexPath = join(app.getPath('userData'), 'index.db');
 
   /**
-   * Proposals/pings are scoped per vault via one app DB file per vault root —
-   * a shared queue would carry vault A's pending cards into vault B, and
-   * accepting one would write A's paths into B.
+   * Proposals, questions and the check ledger are scoped per vault via one app
+   * DB file per vault root — a shared queue would carry vault A's pending cards
+   * into vault B, and accepting one would write A's paths into B.
    */
   private appDbPathFor(root: string): string {
     const key = createHash('sha256').update(root).digest('hex').slice(0, 12);
@@ -41,7 +41,7 @@ export class VaultService {
   }
 
   requireContext(): UseCaseContext {
-    if (!this.ctx) throw new Error('no vault open');
+    if (!this.ctx) throw new Error('no workspace open');
     return this.ctx;
   }
 
@@ -55,7 +55,7 @@ export class VaultService {
     const vault = new FsVault(path);
     if (!this.index) this.index = new SqliteIndex(this.indexPath);
     // Switching to a different vault: the shared index must be rebuilt for it,
-    // and the proposal/ping stores swap to that vault's own DB file.
+    // and the app DB's stores swap to that vault's own file.
     const switching = this.currentPath !== vault.root() || !this.appDb;
     const appDb = switching ? new AppDb(this.appDbPathFor(vault.root())) : this.appDb!;
 
@@ -67,7 +67,6 @@ export class VaultService {
       git,
       clock,
       proposals: appDb.proposals,
-      pings: appDb.pings,
       asks: appDb.asks,
       checks: appDb.checks,
     };

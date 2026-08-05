@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Button } from '@pm/ui';
+import { Button } from '@qale/ui';
 import { Check } from 'lucide-react';
-import type { ProposalDTO } from '@pm/ipc';
+import type { ProposalDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 import { CardItem } from './CardItem';
 import { orderCards } from './cardMeta';
@@ -43,7 +43,7 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
             p.id,
             r.stale
               ? "This card no longer fits the note's current text. Open it to review, or re-run the session to regenerate it."
-              : r.error ?? 'Could not apply this card — the workspace rejected the write.',
+              : r.error ?? 'Could not apply this card: the workspace rejected the write.',
           );
         }
       } catch (err) {
@@ -77,7 +77,7 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
       for (const p of internal) {
         // Outbound never rides along — each send is its own decision.
         await acceptProposal(p.id).catch((err: unknown) =>
-          setError(p.id, err instanceof Error ? err.message : 'Failed — retry from the card.'),
+          setError(p.id, err instanceof Error ? err.message : 'Failed. Retry from the card.'),
         );
       }
     } finally {

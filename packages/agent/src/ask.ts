@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
-import type { AskPort, AskRecord } from '@pm/application';
+import type { AskPort, AskRecord } from '@qale/application';
+import { MAINTENANCE_AGENTS } from '@qale/sessions';
 
 /**
  * Asking the PM a question mid-turn — the same primitive Claude Code exposes as
@@ -102,6 +103,30 @@ export interface AskRequestInfo {
   id: string;
   sessionId: string;
   questions: AskQuestion[];
+  /**
+   * Offered rather than owed (see {@link isOffered}). The card carries the
+   * answer rather than the facts behind it, so no surface downstream has to
+   * work the rule out again and get a different result.
+   */
+  offered: boolean;
+}
+
+/**
+ * What the tool knows at the moment it asks. Who asked, and whether the answer
+ * is owed, are facts about the RUN, so {@link AskParking.park} stamps them.
+ */
+export type AskRequestDraft = Omit<AskRequestInfo, 'offered'>;
+
+/**
+ * Is what this run asks for offered rather than owed? Both halves have to hold.
+ * A maintenance agent tidies the workspace on its own account, so a pass nobody
+ * asked for can wait as long as the PM likes. The same agent started by hand is
+ * a person sitting there waiting for an answer, and arrival runs with nobody
+ * watching but was handed material somebody is coming back for, so neither of
+ * those goes quiet.
+ */
+export function isOffered(skill: string | null | undefined, unattended: boolean): boolean {
+  return unattended && MAINTENANCE_AGENTS.has(skill ?? '');
 }
 
 /**
@@ -339,6 +364,8 @@ export interface StoredAsk {
   /** The skill in force when it asked — the footing a replayed turn resumes on. */
   skill: string | null;
   outbound: boolean;
+  /** Whether anybody was at the screen when it asked. */
+  unattended: boolean;
 }
 
 function decode(record: AskRecord): StoredAsk {
@@ -348,6 +375,17 @@ function decode(record: AskRecord): StoredAsk {
     questions: (record.questions ?? []) as AskQuestion[],
     skill: record.skill,
     outbound: record.outbound,
+    unattended: record.unattended,
+  };
+}
+
+/** The card, redrawn from the row a question was written to. */
+function toRequest(asked: StoredAsk): AskRequestInfo {
+  return {
+    id: asked.id,
+    sessionId: asked.sessionId,
+    questions: asked.questions,
+    offered: isOffered(asked.skill, asked.unattended),
   };
 }
 
@@ -392,39 +430,45 @@ export class AskParking {
    */
   park(
     store: AskPort | undefined,
-    request: AskRequestInfo,
-    context: { scheduled?: boolean; skill?: string | null; outbound?: boolean },
+    request: AskRequestDraft,
+    context: { scheduled?: boolean; unattended?: boolean; skill?: string | null; outbound?: boolean },
     signal?: AbortSignal,
   ): Promise<AskDecision> {
     if (context.scheduled) return Promise.resolve({ answers: null, unattended: true });
+    // The run's own facts, spent twice: the row is the footing a replayed turn
+    // resumes on, and the card carries the one thing every surface downstream
+    // wants out of them, which is whether this answer is owed.
+    const unattended = !!context.unattended;
+    const asked: AskRequestInfo = { ...request, offered: isOffered(context.skill, unattended) };
     store?.create(
       {
-        id: request.id,
-        sessionId: request.sessionId,
-        questions: request.questions,
+        id: asked.id,
+        sessionId: asked.sessionId,
+        questions: asked.questions,
         skill: context.skill ?? null,
         outbound: !!context.outbound,
+        unattended,
       },
       Date.now(),
     );
     return new Promise<AskDecision>((resolve) => {
       // An abort that reaches the tool directly (pi cancelling the call) must
       // settle the card too, or it would sit there asking about a dead turn.
-      const onAbort = () => void this.resolve(store, request.id, { answers: null });
+      const onAbort = () => void this.resolve(store, asked.id, { answers: null });
       if (signal?.aborted) {
-        store?.remove(request.id);
+        store?.remove(asked.id);
         resolve({ answers: null });
         return;
       }
       signal?.addEventListener('abort', onAbort, { once: true });
-      this.live.set(request.id, {
-        request,
+      this.live.set(asked.id, {
+        request: asked,
         resolve: (decision) => {
           signal?.removeEventListener('abort', onAbort);
           resolve(decision);
         },
       });
-      this.deps.onChange(request.sessionId, request);
+      this.deps.onChange(asked.sessionId, asked);
     });
   }
 
@@ -432,7 +476,8 @@ export class AskParking {
   pendingFor(store: AskPort | undefined, sessionId: string): AskRequestInfo | null {
     for (const p of this.live.values()) if (p.request.sessionId === sessionId) return p.request;
     const stored = store?.forSession(sessionId);
-    return stored ? { id: stored.id, sessionId: stored.sessionId, questions: decode(stored).questions } : null;
+    if (!stored) return null;
+    return toRequest(decode(stored));
   }
 
   /**
@@ -442,10 +487,7 @@ export class AskParking {
    */
   all(store: AskPort | undefined): AskRequestInfo[] {
     if (!store) return [...this.live.values()].map((p) => p.request);
-    return store.list().map((r) => {
-      const asked = decode(r);
-      return { id: asked.id, sessionId: asked.sessionId, questions: asked.questions };
-    });
+    return store.list().map((r) => toRequest(decode(r)));
   }
 
   /**
@@ -481,7 +523,7 @@ export class AskParking {
       // The turn could not be resumed (no key, a session already responding).
       // Put the question back rather than swallowing it: an answer that lands
       // nowhere is the failure this whole mechanism exists to prevent.
-      console.error('[pm] replaying an answered question failed:', err);
+      console.error('[qale] replaying an answered question failed:', err);
       if (store) {
         store.create(
           {
@@ -490,14 +532,11 @@ export class AskParking {
             questions: asked.questions,
             skill: asked.skill,
             outbound: asked.outbound,
+            unattended: asked.unattended,
           },
           stored.created,
         );
-        this.deps.onChange(asked.sessionId, {
-          id: asked.id,
-          sessionId: asked.sessionId,
-          questions: asked.questions,
-        });
+        this.deps.onChange(asked.sessionId, toRequest(asked));
       }
     }
   }

@@ -6,7 +6,7 @@ import { Markdown } from '@tiptap/markdown';
 import { Placeholder } from '@tiptap/extensions';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
-import type { SearchHitDTO } from '@pm/ipc';
+import type { SearchHitDTO } from '@qale/ipc';
 import { invoke } from '../lib/ipc';
 import { isExternalRef, refMetaCached } from '../lib/connections';
 import { navFromEvent, type NavOpts } from '../lib/nav';
@@ -66,12 +66,26 @@ export function NoteEditor({
   onDirty,
   onAsk,
   searchNotes,
+  registerFlush,
+  registerFocus,
 }: {
   body: string;
   onSave: (body: string) => Promise<void>;
   /** Receives the click's nav intent so ⌘click opens the note in a new tab. */
   onOpenNote: (path: string, opts?: NavOpts) => void;
   onDirty?: () => void;
+  /**
+   * Hand the parent a way to land any pending keystrokes before it replaces the
+   * body underneath the editor (restoring a version). Without it the in-flight
+   * edit wins the effect below and then autosaves back over the restore.
+   */
+  registerFlush?: (flush: () => Promise<void>) => void;
+  /**
+   * Hand the parent the cursor. An empty note can carry a prompt above it
+   * ("write what happened"), and the button that says so has to be able to put
+   * the caret in the body rather than just pointing at it.
+   */
+  registerFocus?: (focus: () => void) => void;
   /** Hand the selected text to an Ask session (bubble toolbar's Ask). */
   onAsk?: (text: string) => void;
   /** Workspace search backing the `[[` wikilink autocomplete. */
@@ -86,19 +100,23 @@ export function NoteEditor({
   const pendingMd = useRef<string | null>(null); // captured in onUpdate; survives editor destroy
   const dirty = useRef(false);
   const timer = useRef<number | null>(null);
+  /** The save still in the air, if any — never rejects (the catch below owns it). */
+  const inFlight = useRef<Promise<void>>(Promise.resolve());
 
-  const flush = useCallback(() => {
+  // Returns the save it started, or the one already running, so a caller about
+  // to overwrite the body can wait for the user's own edit to land first.
+  const flush = useCallback((): Promise<void> => {
     if (timer.current !== null) {
       window.clearTimeout(timer.current);
       timer.current = null;
     }
-    if (!dirty.current) return;
+    if (!dirty.current) return inFlight.current;
     dirty.current = false;
     const md = pendingMd.current;
-    if (md === null || sameBody(md, lastSaved.current)) return;
+    if (md === null || sameBody(md, lastSaved.current)) return inFlight.current;
     const previous = lastSaved.current;
     lastSaved.current = md;
-    void callbacks.current.onSave(md).catch((err: unknown) => {
+    inFlight.current = callbacks.current.onSave(md).catch((err: unknown) => {
       console.error('note autosave failed', err);
       lastSaved.current = previous;
       dirty.current = true;
@@ -106,9 +124,14 @@ export function NoteEditor({
         `Autosave failed: ${err instanceof Error ? err.message : 'the write was rejected.'} Your edit is kept and will retry.`,
       );
     });
+    return inFlight.current;
   }, []);
   const flushRef = useRef(flush);
   flushRef.current = flush;
+
+  useEffect(() => {
+    registerFlush?.(flush);
+  }, [registerFlush, flush]);
 
   const openLink = useCallback((target: string, opts?: NavOpts) => {
     void invoke['note:resolveLink'](target).then((path) => {
@@ -186,6 +209,10 @@ export function NoteEditor({
     },
   });
 
+  useEffect(() => {
+    if (editor) registerFocus?.(() => editor.commands.focus('end'));
+  }, [registerFocus, editor]);
+
   // External change to the note body (agent edit, Obsidian, git checkout…).
   // Our own save echoes back through the vault watcher — ignore that; only
   // replace content for genuine external edits, and never mid-typing.
@@ -201,9 +228,9 @@ export function NoteEditor({
   // quit (beforeunload — the fire-and-forget IPC still reaches main), unmount
   // (covers tab switch and note switch; NoteView keys this component by path).
   useEffect(() => {
-    const onFlush = () => flush();
+    const onFlush = () => void flush();
     const onVisibility = () => {
-      if (document.visibilityState === 'hidden') flush();
+      if (document.visibilityState === 'hidden') void flush();
     };
     window.addEventListener('blur', onFlush);
     window.addEventListener('beforeunload', onFlush);

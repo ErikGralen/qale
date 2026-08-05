@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { AskPort, AskRecord, CreateAskInput } from '@pm/application';
+import type { AskPort, AskRecord, CreateAskInput } from '@qale/application';
 
 /**
  * The parked-question queue (QM ticket 9). Lives in the per-vault AppDb beside
@@ -19,6 +19,7 @@ interface Row {
   questions_json: string;
   skill: string | null;
   outbound: number;
+  unattended: number;
   created: number;
 }
 
@@ -31,10 +32,19 @@ export class AskStore implements AskPort {
         questions_json TEXT NOT NULL,
         skill TEXT,
         outbound INTEGER NOT NULL DEFAULT 0,
+        unattended INTEGER NOT NULL DEFAULT 0,
         created INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_asks_session ON asks(session_id);
     `);
+    // Who started the run arrived after the first version of this table. A
+    // workspace that already has questions waiting keeps them: they default to
+    // 0, which reads as "a person was there", and a question that is owed an
+    // answer is the safe way to be wrong.
+    const cols = this.db.prepare('PRAGMA table_info(asks)').all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'unattended')) {
+      this.db.exec('ALTER TABLE asks ADD COLUMN unattended INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
   create(input: CreateAskInput, now: number): AskRecord {
@@ -44,6 +54,7 @@ export class AskStore implements AskPort {
       questions_json: JSON.stringify(input.questions),
       skill: input.skill ?? null,
       outbound: input.outbound ? 1 : 0,
+      unattended: input.unattended ? 1 : 0,
       created: now,
     };
     // Upsert on the id, which is derived from the session and the questions: a
@@ -51,12 +62,13 @@ export class AskStore implements AskPort {
     // a second row for it would be a second card on one session.
     this.db
       .prepare(
-        `INSERT INTO asks (id, session_id, questions_json, skill, outbound, created)
-         VALUES (@id, @session_id, @questions_json, @skill, @outbound, @created)
+        `INSERT INTO asks (id, session_id, questions_json, skill, outbound, unattended, created)
+         VALUES (@id, @session_id, @questions_json, @skill, @outbound, @unattended, @created)
          ON CONFLICT(id) DO UPDATE SET
            questions_json = excluded.questions_json,
            skill = excluded.skill,
            outbound = excluded.outbound,
+           unattended = excluded.unattended,
            created = excluded.created`,
       )
       .run(row);
@@ -93,6 +105,7 @@ export class AskStore implements AskPort {
       questions: JSON.parse(row.questions_json),
       skill: row.skill,
       outbound: row.outbound === 1,
+      unattended: row.unattended === 1,
       created: row.created,
     };
   }

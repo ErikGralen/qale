@@ -1,5 +1,5 @@
-import { isFolderIndex } from '@pm/domain';
-import type { NoteType, VaultTreeDTO } from '@pm/ipc';
+import { isFolderIndex } from '@qale/domain';
+import type { NoteType, VaultTreeDTO } from '@qale/ipc';
 
 /**
  * Progressive reveal — the UI is exactly as big as the memory. The librarian
@@ -25,8 +25,8 @@ export const CORE_TYPES: readonly NoteType[] = ['meeting', 'note'];
  */
 export const HOMED_TYPES: readonly NoteType[] = ['skill', 'agent', 'todo', 'session'];
 
-const REVEALED_KEY = 'pm.revealed.v1';
-const REVEAL_SEEN_KEY = 'pm.revealSeen.v1';
+const REVEALED_KEY = 'qale.revealed.v1';
+const REVEAL_SEEN_KEY = 'qale.revealSeen.v1';
 
 /** Every type the workspace currently holds at least one real note of. */
 export function contentTypes(tree: VaultTreeDTO): NoteType[] {

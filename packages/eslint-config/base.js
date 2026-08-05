@@ -4,7 +4,7 @@ import importPlugin from 'eslint-plugin-import';
 
 /**
  * Shared base flat config. Encodes the clean-architecture dependency rule from
- * PLAN §3.1 as import restrictions: the enterprise core (`@pm/domain`) may not
+ * PLAN §3.1 as import restrictions: the enterprise core (`@qale/domain`) may not
  * import infra, and the renderer may not import domain/infra directly.
  *
  * @type {import('eslint').Linter.Config[]}
@@ -32,7 +32,7 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['@pm/vault', '@pm/agent', '@pm/atlassian', '@pm/markdown', '@pm/ipc', '@pm/ui'],
+              group: ['@qale/vault', '@qale/agent', '@qale/atlassian', '@qale/markdown', '@qale/ipc', '@qale/ui'],
               message: 'domain is the enterprise core — it may only depend on zod.',
             },
           ],
@@ -49,8 +49,8 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['@pm/domain', '@pm/vault', '@pm/agent', '@pm/atlassian', '@pm/application'],
-              message: 'renderer is presentation-only — import @pm/ipc DTOs, not domain/infra.',
+              group: ['@qale/domain', '@qale/vault', '@qale/agent', '@qale/atlassian', '@qale/application'],
+              message: 'renderer is presentation-only — import @qale/ipc DTOs, not domain/infra.',
             },
           ],
         },

@@ -67,6 +67,24 @@ export class SessionHarness {
     return this.primary;
   }
 
+  /** The same list by the names a person reads — what the receipt body prints. */
+  get skillTitles(): string[] {
+    const seen = new Set<string>();
+    return [this.config, ...this.invoked]
+      .filter((r) => !seen.has(r.name) && seen.add(r.name))
+      .map((r) => r.title);
+  }
+
+  /**
+   * The same skill, by the name a person reads. The receipt is titled from this:
+   * without a title it would fall back to its filename, and the filename ends in
+   * a session id.
+   */
+  get primarySkillTitle(): string {
+    const name = this.primarySkillName;
+    return [this.config, ...this.invoked].find((r) => r.name === name)?.title ?? name;
+  }
+
   /** The skill that produced whatever is being proposed right now (cards are tagged with it). */
   get activeSkillName(): string {
     return this.invoked[this.invoked.length - 1]?.name ?? this.config.name;
@@ -97,5 +115,10 @@ export class SessionHarness {
   /** Whether the session may draft outbound right now. */
   get outbound(): boolean {
     return this.grants('draft-outbound');
+  }
+
+  /** Whether the session may file arrived material into the vault, and refile it. */
+  get fileMaterial(): boolean {
+    return this.grants('file-material');
   }
 }

@@ -3,22 +3,20 @@ import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import {
   createAgentSession,
-  AuthStorage,
-  ModelRegistry,
+  ModelRuntime,
   DefaultResourceLoader,
   SessionManager,
   SettingsManager,
   type AgentSession,
 } from '@earendil-works/pi-coding-agent';
-import { completeSimple } from '@earendil-works/pi-ai/compat';
 import {
   markRunnableQuiet,
   markRunnableStopped,
   markRunnableUsed,
   type UseCaseContext,
-} from '@pm/application';
-import { runnableCandidates, runnableNameFromPath } from '@pm/domain';
-import { AtlassianClient } from '@pm/atlassian';
+} from '@qale/application';
+import { runnableCandidates, runnableNameFromPath } from '@qale/domain';
+import { AtlassianClient } from '@qale/atlassian';
 import {
   createVaultTools,
   createProposeTools,
@@ -33,6 +31,7 @@ import {
   USE_SKILL_TOOL_NAME,
   type TrackExternal,
 } from './tools.js';
+import { withDecodedArgs } from './tool-args.js';
 import {
   createChildFileTools,
   createSessionFileTools,
@@ -59,14 +58,17 @@ import {
   askRequestId,
   askReplayPrompt,
   AskParking,
+  isOffered,
   ASK_TOOL_NAME,
   type AskDecision,
   type AskPlan,
+  type AskRequestDraft,
   type AskRequestInfo,
   type StoredAsk,
 } from './ask.js';
+import { createFilingTools, FILING_TOOL_NAMES } from './filing.js';
 import { createEndQuietlyTool, ranSilent, END_QUIETLY_TOOL_NAME } from './quiet.js';
-import { CHILD_PREAMBLE, SCHEDULED_PREAMBLE, SHARED_PREAMBLE } from './prompts.js';
+import { CHILD_PREAMBLE, SCHEDULED_PREAMBLE, UNATTENDED_PREAMBLE, SHARED_PREAMBLE } from './prompts.js';
 import {
   parseRunnable,
   buildSystemPrompt,
@@ -78,7 +80,7 @@ import {
   DEFAULT_SKILL_BY_NAME,
   BASE_SKILL_NAME,
   type Runnable,
-} from '@pm/sessions';
+} from '@qale/sessions';
 
 import { PiUiBridge, type Chunk } from './bridge.js';
 import { entriesToUiMessages, type UiMessage } from './history.js';
@@ -144,6 +146,15 @@ export interface RunInput {
    */
   skill?: string;
   /**
+   * The model the PM chose for this session. Remembered against the session
+   * from here on, so reopening it tomorrow does not silently switch models.
+   * Absent means "keep what this session already had", which for a fresh
+   * session is the workspace default. Deliberately NOT part of
+   * {@link AgentRuntimeConfig}: the model is resolved per run, so changing it
+   * cannot tear down a live session the way a credential change does.
+   */
+  modelId?: string;
+  /**
    * Whether the arrival may draft outbound, from the trigger that fired it
    * (Sessions v2 Part 5). The material's permission, not the session's: one
    * arrival agent serves both the PM's own meeting and a colleague's sales
@@ -159,6 +170,16 @@ export interface RunInput {
    * and from that message on it is an ordinary conversation.
    */
   scheduled?: boolean;
+  /**
+   * Nobody is at the screen for this turn, but somebody will come back to it
+   * (docs/arrival-agentic.md, rung 0). A person started it — they dropped
+   * material and walked away — so it is not `scheduled`, and the two differ in
+   * exactly one place that matters: a question here PARKS and waits for them,
+   * where a scheduled run must stop instead because nothing will ever answer it.
+   * What the two share is the licence to say nothing: a drop that turned out to
+   * be pure filing must not cost a notification, a row and a receipt.
+   */
+  unattended?: boolean;
 }
 
 export interface RunHandle {
@@ -201,6 +222,11 @@ export interface ChatRef {
   messageCount: number;
   preview: string;
   lifecycle: SessionLifecycle;
+  /**
+   * The model this session was pinned to, if the PM ever picked one. Null means
+   * it follows the workspace default, including when that default later changes.
+   */
+  modelId: string | null;
 }
 
 /** Lifecycle signal — fired when a run starts and when it settles (any outcome). */
@@ -209,6 +235,12 @@ export interface SessionStatus {
   title: string;
   status: 'running' | 'settled';
   updated: number;
+  /**
+   * The skill this session is ABOUT (the harness's primary), so a listener can
+   * tell a meeting brief from a chat without reopening the session. `chat` is
+   * the base skill — a plain question with nothing invoked over it.
+   */
+  skill: string;
   /**
    * The run ended with nothing to report (QM ticket 2), so it leaves no row and
    * no receipt. Main reads it to hold back the "finished" notification: a
@@ -247,6 +279,12 @@ export interface SpawnRequestInfo {
   brief: string | null;
   models: ModelInfo[];
   defaultModelId: string;
+  /**
+   * Offered rather than owed (see `isOffered` in ask.ts). A tidy pass nobody
+   * asked for can want to fan out, and the spend still needs approving, but it
+   * is not something the app may go and interrupt the PM about.
+   */
+  offered: boolean;
 }
 
 interface PendingSpawn {
@@ -263,6 +301,8 @@ interface PendingSpawn {
 interface TurnFlags {
   /** A clock started this turn, not a person. */
   scheduled: boolean;
+  /** A person started it and walked away (see {@link RunInput.unattended}). */
+  unattended: boolean;
   /** The model called `end_quietly` on a turn where that meant something. */
   ended: boolean;
   /**
@@ -305,6 +345,16 @@ interface SessionState {
 }
 
 /**
+ * Was there nobody at the screen when this turn put a card up? True for both
+ * ways a run starts without a person: a clock's slot, and material arriving
+ * while the PM was away. Without a live session to read, the answer is "somebody
+ * was there", because a card that waits for the PM is the safe way to be wrong.
+ */
+function nobodyStarted(state: SessionState | undefined): boolean {
+  return !!state && (state.turn.scheduled || state.turn.unattended);
+}
+
+/**
  * Embeds pi in the main process in full-control mode (PLAN §3.3): its own
  * AuthStorage/SessionManager/SettingsManager paths (off the user's ~/.pi), a
  * DefaultResourceLoader that suppresses skills/prompts/AGENTS.md, and NO built-in
@@ -312,8 +362,11 @@ interface SessionState {
  */
 export class AgentRuntime {
   private config: AgentRuntimeConfig | null = null;
-  private authStorage: AuthStorage | null = null;
-  private modelRegistry: ModelRegistry | null = null;
+  /**
+   * pi's model + credential runtime, still building. Everything that needs a
+   * model goes through {@link models} and awaits it (see `configure`).
+   */
+  private modelRuntimeReady: Promise<ModelRuntime> | null = null;
   private atlassian: AtlassianClient | null = null;
   private readonly sessions = new Map<string, SessionState>();
   /** sessionId → in-flight createSession — two rapid runs must share one session. */
@@ -321,6 +374,8 @@ export class AgentRuntime {
   private readonly streamToSession = new Map<string, string>();
   /** sessionId → shelf state; only non-active entries are stored. */
   private lifecycles: Record<string, StoredLifecycle> = {};
+  /** sessionId → the model the PM pinned to it; only pinned sessions are stored. */
+  private sessionModels: Record<string, string> = {};
   /**
    * listChats() re-reads every transcript in full — cache the result keyed by a
    * cheap stat signature of the sessions dir so the frequent sidebar refresh
@@ -359,12 +414,22 @@ export class AgentRuntime {
     this.config = config;
     this.chatListCache = null;
     this.lifecycles = this.loadLifecycles();
-    this.authStorage = AuthStorage.create(join(config.userDataDir, 'pi', 'auth.json'));
-    if (config.apiKey) {
-      // In-memory only — never written to disk (PLAN §2).
-      this.authStorage.setRuntimeApiKey('anthropic', config.apiKey);
-    }
-    this.modelRegistry = ModelRegistry.create(this.authStorage, join(config.userDataDir, 'pi', 'models.json'));
+    this.sessionModels = this.loadSessionModels();
+    // pi folded AuthStorage and ModelRegistry into one ModelRuntime whose
+    // construction is async, and configure() has a dozen synchronous callers.
+    // So the build is kicked off here and awaited by whatever needs a model.
+    this.modelRuntimeReady = ModelRuntime.create({
+      authPath: join(config.userDataDir, 'pi', 'auth.json'),
+      modelsPath: join(config.userDataDir, 'pi', 'models.json'),
+    }).then(async (runtime) => {
+      // In-memory only — never written to disk (PLAN §2). `allowNetwork: false`
+      // because the catalogue we ship with is the one we mean: a refresh over
+      // the wire here would stall the first turn behind an HTTP round trip.
+      if (config.apiKey) {
+        await runtime.setRuntimeApiKey('anthropic', config.apiKey, { allowNetwork: false });
+      }
+      return runtime;
+    });
     this.atlassian = config.atlassian
       ? new AtlassianClient(config.atlassian)
       : null;
@@ -372,24 +437,45 @@ export class AgentRuntime {
     this.disposeSessions();
   }
 
-  isReady(): boolean {
-    return !!this.config?.apiKey && this.listModels().length > 0;
+  /** The model runtime, once it has finished building. */
+  private models(): Promise<ModelRuntime> {
+    const ready = this.modelRuntimeReady;
+    if (!ready) return Promise.reject(new Error('agent runtime not configured'));
+    return ready;
   }
 
-  listModels(): ModelInfo[] {
-    if (!this.modelRegistry) return [];
+  async isReady(): Promise<boolean> {
+    return !!this.config?.apiKey && (await this.listModels()).length > 0;
+  }
+
+  async listModels(): Promise<ModelInfo[]> {
     try {
-      return this.modelRegistry.getAvailable().map((m) => ({ id: m.id, label: m.name }));
+      const runtime = await this.models();
+      return runtime.getAvailableSnapshot().map((m) => ({ id: m.id, label: m.name }));
     } catch {
       return [];
     }
   }
 
-  private resolveModel() {
-    if (!this.modelRegistry || !this.config) throw new Error('agent runtime not configured');
-    const available = this.modelRegistry.getAvailable();
+  /**
+   * Which model this run uses. Three steps down, in order: the model the PM
+   * pinned to this session, the workspace default, then whatever is available
+   * at all. That last step is what makes a settings file (or a session sidecar)
+   * naming a model pi has since dropped degrade into a working session instead
+   * of a broken one, and it says so on the console rather than silently.
+   */
+  private async resolveModel(pinned?: string | null) {
+    const runtime = await this.models();
+    if (!this.config) throw new Error('agent runtime not configured');
+    const available = runtime.getAvailableSnapshot();
     if (available.length === 0) throw new Error('No model available — set an Anthropic API key in Settings.');
-    return available.find((m) => m.id === this.config!.modelId) ?? available[0]!;
+    for (const wanted of [pinned, this.config.modelId]) {
+      if (!wanted) continue;
+      const found = available.find((m) => m.id === wanted);
+      if (found) return found;
+      console.error(`[qale] model "${wanted}" is not available — falling back`);
+    }
+    return available[0]!;
   }
 
   /**
@@ -400,9 +486,11 @@ export class AgentRuntime {
    * heuristic title. Never throws into the capture path.
    */
   async generateTitle(text: string): Promise<string | null> {
+    let runtime: ModelRuntime;
     let model;
     try {
-      model = this.resolveModel();
+      runtime = await this.models();
+      model = await this.resolveModel();
     } catch {
       return null;
     }
@@ -416,12 +504,10 @@ export class AgentRuntime {
       messages: [{ role: 'user' as const, content: `Transcript excerpt:\n\n${excerpt}`, timestamp: 0 }],
     };
     try {
-      // pi-ai falls back to env vars without an explicit apiKey — pass the
-      // configured key so a Settings-pasted key works in packaged builds (no
-      // ANTHROPIC_API_KEY in the environment).
-      const msg = await completeSimple(model as Parameters<typeof completeSimple>[0], context, {
-        apiKey: this.config?.apiKey ?? undefined,
-      });
+      // Through the runtime rather than the bare pi-ai helper: the helper falls
+      // back to env vars, and a packaged build has no ANTHROPIC_API_KEY. The
+      // runtime holds the key the PM pasted into Settings.
+      const msg = await runtime.completeSimple(model, context);
       const out = (msg.content ?? [])
         .filter((c): c is { type: 'text'; text: string } => (c as { type?: string }).type === 'text')
         .map((c) => c.text)
@@ -435,39 +521,6 @@ export class AgentRuntime {
     } catch {
       return null;
     }
-  }
-
-  /**
-   * One-shot, non-streaming completion for background judgments (the
-   * librarian's page-contradiction checks). Returns null when no model/key is
-   * configured — the caller treats that as "cannot judge, skip quietly".
-   * Unlike generateTitle, API errors THROW: the sweep must know the judgment
-   * didn't happen so it can retry next tick instead of recording a verdict.
-   */
-  async completeText(input: { system: string; prompt: string }): Promise<string | null> {
-    let model;
-    try {
-      model = this.resolveModel();
-    } catch {
-      return null;
-    }
-    const context = {
-      systemPrompt: input.system,
-      messages: [{ role: 'user' as const, content: input.prompt, timestamp: 0 }],
-    };
-    const msg = await completeSimple(model as Parameters<typeof completeSimple>[0], context, {
-      apiKey: this.config?.apiKey ?? undefined,
-    });
-    // completeSimple resolves (never rejects) on API failure, with an error
-    // stop reason. Surface that as a throw — returning the empty text here
-    // would be ledgered as a verdict and permanently suppress the check.
-    if (msg.stopReason === 'error' || msg.stopReason === 'aborted') {
-      throw new Error(msg.errorMessage ?? 'completion failed');
-    }
-    return (msg.content ?? [])
-      .filter((c): c is { type: 'text'; text: string } => (c as { type?: string }).type === 'text')
-      .map((c) => c.text)
-      .join('\n');
   }
 
   /**
@@ -552,6 +605,9 @@ export class AgentRuntime {
     // consent at push time, so it is not knowable here.
     if (harness.outbound)
       names.push(...(connected ? DRAFT_TOOL_NAMES : DRAFT_TOOL_NAMES.filter(needsNoConnector)));
+    // Filing is the one write that is not a card, so it is the one write a skill
+    // has to claim by name (`can: [file-material]`). See ./filing.ts.
+    if (harness.fileMaterial) names.push(...FILING_TOOL_NAMES);
     if (canInvokeSkills) names.push(USE_SKILL_TOOL_NAME);
     // Fan-out rides with session files: children write into the folder, and
     // reading their output back is the whole point of having one.
@@ -565,8 +621,15 @@ export class AgentRuntime {
    * prompt: voice registers, filing rules — the house rules. Driven by what the
    * file declares rather than a filename regex; the Skills view says "Always in
    * effect", and this is the line that makes that sentence true.
+   *
+   * `forDrafting: false` drops the audience-scoped ones. A fan-out child reads
+   * and writes a working file and can never draft for anyone, so a voice
+   * register aimed at executives is dead weight in its prompt, while a rule with
+   * no audience (how we file, what we call things, which language we write in)
+   * applies to it exactly as much as to the parent.
    */
-  private async alwaysOnGuides(ctx: UseCaseContext): Promise<string> {
+  private async alwaysOnGuides(ctx: UseCaseContext, opts: { forDrafting?: boolean } = {}): Promise<string> {
+    const forDrafting = opts.forDrafting !== false;
     const skills = ctx.index.all().filter((n) => n.type === 'skill');
     const bodies: string[] = [];
     for (const g of skills) {
@@ -577,6 +640,7 @@ export class AgentRuntime {
       // A house rule someone switched off is off — the same edit that silences
       // an agent silences a rule.
       if (!cfg.enabled) continue;
+      if (!forDrafting && cfg.audience) continue;
       const note = await ctx.vault.readNote(g.path);
       if (!note) continue;
       // The audience scope, stated where the model reads the rule — the Skills
@@ -666,7 +730,47 @@ export class AgentRuntime {
     try {
       writeFileSync(this.lifecycleFile(), JSON.stringify(this.lifecycles));
     } catch (err) {
-      console.error('[pm] session lifecycle save failed:', err);
+      console.error('[qale] session lifecycle save failed:', err);
+    }
+  }
+
+  /**
+   * Which model a session runs on, kept beside the shelf state and for the same
+   * reason: it is a fact the PM set about a conversation, and pi's own files are
+   * pi's. Absent means the session follows the workspace default, so a PM who
+   * never touches the picker keeps getting whatever Settings says today.
+   */
+  private sessionModelFile(): string {
+    if (!this.config) throw new Error('agent runtime not configured');
+    return join(this.config.userDataDir, 'session-models.json');
+  }
+
+  private loadSessionModels(): Record<string, string> {
+    try {
+      const parsed = JSON.parse(readFileSync(this.sessionModelFile(), 'utf8')) as Record<string, unknown>;
+      const out: Record<string, string> = {};
+      for (const [id, v] of Object.entries(parsed)) if (typeof v === 'string' && v) out[id] = v;
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
+  getSessionModel(sessionId: string): string | null {
+    return this.sessionModels[sessionId] ?? null;
+  }
+
+  setSessionModel(sessionId: string, modelId: string | null): void {
+    if (this.sessionModels[sessionId] === (modelId ?? undefined)) return;
+    if (modelId) this.sessionModels[sessionId] = modelId;
+    else delete this.sessionModels[sessionId];
+    // Same reason as the lifecycle sidecar: the sessions-dir signature can't
+    // see this file, so the list cache has to be dropped by hand.
+    this.chatListCache = null;
+    try {
+      writeFileSync(this.sessionModelFile(), JSON.stringify(this.sessionModels));
+    } catch (err) {
+      console.error('[qale] session model save failed:', err);
     }
   }
 
@@ -688,11 +792,12 @@ export class AgentRuntime {
     ctx: UseCaseContext,
     /** Whether a clock opened this session — it earns the scheduled preamble. */
     scheduled: boolean,
+    /** Whether the person who opened it walked away — the quieter preamble. */
+    unattended: boolean,
   ): Promise<SessionState> {
-    if (!this.config || !this.authStorage || !this.modelRegistry) {
-      throw new Error('agent runtime not configured');
-    }
-    const model = this.resolveModel();
+    if (!this.config) throw new Error('agent runtime not configured');
+    const modelRuntime = await this.models();
+    const model = await this.resolveModel(this.getSessionModel(id));
 
     /**
      * Every session opens on the SAME skill (Sessions v2 Part 4). A session type
@@ -715,7 +820,9 @@ export class AgentRuntime {
     // in at creation because that is where the system prompt is composed; the
     // TOOL asks per turn, so a PM writing into a scheduled run still gets an
     // answer rather than silence.
-    const scheduledNote = scheduled ? SCHEDULED_PREAMBLE : '';
+    // Only one of the two ever applies, and `scheduled` is the stricter: it also
+    // takes `ask_user` away, which the unattended note deliberately keeps.
+    const scheduledNote = scheduled ? SCHEDULED_PREAMBLE : unattended ? UNATTENDED_PREAMBLE : '';
     const baseSystemPrompt =
       buildSystemPrompt(SHARED_PREAMBLE, skillConfig) +
       voice +
@@ -739,7 +846,14 @@ export class AgentRuntime {
      * the current skill grants are ACTIVE. `applyActivation` moves that line.
      */
     // Reset at the top of every run(); read at the bottom of it.
-    const turn: TurnFlags = { scheduled, ended: false, asked: false, blocked: false, failed: false };
+    const turn: TurnFlags = {
+      scheduled,
+      unattended,
+      ended: false,
+      asked: false,
+      blocked: false,
+      failed: false,
+    };
 
     const registry = [
       ...VAULT_TOOL_NAMES,
@@ -747,22 +861,26 @@ export class AgentRuntime {
       END_QUIETLY_TOOL_NAME,
       ...PROPOSE_TOOL_NAMES,
       ...DRAFT_TOOL_NAMES,
+      ...FILING_TOOL_NAMES,
       ...(canInvokeSkills ? [USE_SKILL_TOOL_NAME] : []),
       ...SESSION_FILE_TOOL_NAMES,
       SPAWN_TOOL_NAME,
       ...(atlassianActive ? ATLASSIAN_TOOL_NAMES : []),
     ];
-    const customTools = [
+    const customTools = withDecodedArgs([
       ...createVaultTools(ctx, harness),
       createAskTool({ requestAnswer: (plan, signal) => this.askThePm(id, ctx, plan, signal) }),
       createEndQuietlyTool({
-        scheduled: () => turn.scheduled,
+        // Both kinds of nobody-is-watching turn may end in silence; only the
+        // scheduled one also loses `ask_user`.
+        scheduled: () => turn.scheduled || turn.unattended,
         endQuietly: () => {
           turn.ended = true;
         },
       }),
       ...createProposeTools(ctx, id, harness),
       ...createDraftTools(ctx, id, harness),
+      ...createFilingTools(ctx, harness, filesRoot),
       ...(canInvokeSkills ? [createUseSkillTool(ctx, harness, () => applyActivation())] : []),
       ...createSessionFileTools(filesRoot, () => this.onFilesChanged?.(id)),
       createSpawnTool({
@@ -771,7 +889,7 @@ export class AgentRuntime {
         runChild: (child, opts) => this.runChild(id, child, opts, ctx, harness),
       }),
       ...(atlassianActive ? createAtlassianTools(this.atlassian!, this.config.trackExternal) : []),
-    ];
+    ]);
 
     // Mutable so an arriving skill's instructions can join the system prompt and
     // stay there — a tool result is one message that compaction may drop, but
@@ -805,8 +923,7 @@ export class AgentRuntime {
       noTools: 'all',
       tools: registry,
       customTools,
-      authStorage: this.authStorage,
-      modelRegistry: this.modelRegistry,
+      modelRuntime,
       resourceLoader: loader,
       sessionManager: manager,
       settingsManager: SettingsManager.inMemory(),
@@ -877,7 +994,7 @@ export class AgentRuntime {
       ctx.index.reindex(note);
       await ctx.git.commitPaths([receipt.path], `session: ${state.harness.primarySkillName}`);
     } catch (err) {
-      console.error('[pm] session receipt filing failed:', err);
+      console.error('[qale] session receipt filing failed:', err);
     }
   }
 
@@ -908,7 +1025,16 @@ export class AgentRuntime {
     if (!kickoff) return truncate(prompt, 60) ?? 'Session';
     const skill =
       state.harness.invoked.find((c) => c.name === kickoff.skill)?.title ?? kickoff.skill;
-    const target = kickoff.target ? ctx.index.get(kickoff.target)?.title : undefined;
+    // One page earns its name in the title; several are a count, because three
+    // titles joined by commas is unreadable at tab width and truncates to the
+    // first one, which reads as a run over only that page.
+    const targets = kickoff.targets ?? [];
+    const target =
+      targets.length === 1
+        ? ctx.index.get(targets[0]!)?.title
+        : targets.length > 1
+          ? `${targets.length} documents`
+          : undefined;
     return truncate(target ? `${skill} — ${target}` : skill, 60) ?? skill;
   }
 
@@ -924,11 +1050,15 @@ export class AgentRuntime {
   ): Promise<RunHandle> {
     if (!this.config?.apiKey) throw new Error('Set an Anthropic API key in Settings to start a session.');
     const sessionId = input.sessionId ?? randomUUID();
+    // Written down before the session is built, so a first turn that names a
+    // model opens on it rather than switching a beat later. A run that names
+    // none (every background and scheduled one) leaves the pin as it was.
+    if (input.modelId) this.setSessionModel(sessionId, input.modelId);
     let state = this.sessions.get(sessionId);
     if (!state) {
       let pending = this.creating.get(sessionId);
       if (!pending) {
-        pending = this.createSession(sessionId, ctx, !!input.scheduled).finally(() => {
+        pending = this.createSession(sessionId, ctx, !!input.scheduled, !!input.unattended).finally(() => {
           this.creating.delete(sessionId);
         });
         this.creating.set(sessionId, pending);
@@ -945,10 +1075,18 @@ export class AgentRuntime {
     // `end_quietly` tool, and the settle below. Mutated in place, never
     // replaced — the tool closed over this exact object at session creation.
     state.turn.scheduled = !!input.scheduled;
+    // Per turn, like `scheduled`: the moment the PM writes into an arrival
+    // session, somebody is waiting and silence stops being an outcome.
+    state.turn.unattended = !!input.unattended;
     state.turn.ended = false;
     state.turn.asked = false;
     state.turn.blocked = false;
     state.turn.failed = false;
+    // The model is settled per RUN, never through `configure` — a live session
+    // swapping models must not go through the teardown that a credential change
+    // does. What already happened stays as it was: pi writes the switch into the
+    // transcript, and the turns before it keep the model they ran on.
+    await this.applyModel(state);
     // Invoking the same skill twice is a no-op, so a caller that keeps passing
     // one across turns stacks nothing.
     if (input.skill) await this.invokeSkillInto(state, input.skill, ctx, input.outbound);
@@ -991,12 +1129,28 @@ export class AgentRuntime {
     return { streamId, sessionId };
   }
 
+  /**
+   * Point a live session at the model it should be running on now. A no-op in
+   * the ordinary case; never fatal, because a session that cannot switch is
+   * still a session that can answer on the model it already has.
+   */
+  private async applyModel(state: SessionState): Promise<void> {
+    try {
+      const model = await this.resolveModel(this.getSessionModel(state.id));
+      if (state.session.model?.id === model.id) return;
+      await state.session.setModel(model);
+    } catch (err) {
+      console.error('[qale] could not switch this session to the chosen model:', err);
+    }
+  }
+
   private emitStatus(state: SessionState, status: SessionStatus['status'], quiet = false): void {
     this.onStatus?.({
       sessionId: state.id,
       title: state.title,
       status,
       updated: Date.now(),
+      skill: state.harness.primarySkillName,
       ...(quiet ? { quiet } : {}),
     });
   }
@@ -1010,7 +1164,8 @@ export class AgentRuntime {
   private settleQuietly(state: SessionState, finalText: string): boolean {
     const t = state.turn;
     const quiet = ranSilent({
-      scheduled: t.scheduled,
+      // "May end in silence", which both kinds of unwatched turn may.
+      scheduled: t.scheduled || t.unattended,
       failed: t.failed,
       produced: t.asked || state.harness.writes.length > 0,
       ended: t.ended,
@@ -1042,7 +1197,7 @@ export class AgentRuntime {
     if (name === BASE_SKILL_NAME) return;
     const config = await this.resolveSkill(name, ctx);
     if (!config.name || !config.body.trim()) {
-      console.error(`[pm] skill "${name}" could not be resolved — invoking it was skipped`);
+      console.error(`[qale] skill "${name}" could not be resolved — invoking it was skipped`);
       return;
     }
     // The firing trigger can GRANT outbound the file didn't claim (invariant 3):
@@ -1060,20 +1215,26 @@ export class AgentRuntime {
    * run, and every one of those settles the promise. `cancelSpawns` covers abort,
    * delete and reconfigure.
    */
-  private askToSpawn(sessionId: string, plan: SpawnPlan, brief: string | null): Promise<SpawnDecision> {
+  private async askToSpawn(sessionId: string, plan: SpawnPlan, brief: string | null): Promise<SpawnDecision> {
+    const state = this.sessions.get(sessionId);
     const request: SpawnRequestInfo = {
       id: spawnRequestId(),
       sessionId,
       entries: plan.entries.map((e) => ({ label: e.label, count: e.count })),
       total: plan.total,
       brief,
-      models: this.listModels(),
-      defaultModelId: this.config?.modelId ?? '',
+      models: await this.listModels(),
+      // Children start on whatever the parent is running on, so a session the
+      // PM moved to a cheaper model fans out on that one too.
+      defaultModelId: this.getSessionModel(sessionId) ?? this.config?.modelId ?? '',
+      // Worked out here, where the run's facts are, and by the same rule the
+      // question card uses: one answer, so the two cards can never disagree
+      // about whose time this run is spending.
+      offered: isOffered(state?.harness.primarySkillName, nobodyStarted(state)),
     };
     // Same rule as `askThePm`: a card the PM had to answer, and a spend they had
     // to approve, is attention already spent. The turn cannot end as if it left
     // nothing (QM ticket 2).
-    const state = this.sessions.get(sessionId);
     if (state) state.turn.asked = true;
     return new Promise<SpawnDecision>((resolve) => {
       this.pendingSpawns.set(request.id, { request, resolve });
@@ -1108,17 +1269,21 @@ export class AgentRuntime {
       if (scheduled) state.turn.blocked = true;
       else state.turn.asked = true;
     }
-    const request: AskRequestInfo = {
+    const skill = state?.harness.primarySkillName ?? null;
+    const request: AskRequestDraft = {
       id: askRequestId(sessionId, plan),
       sessionId,
       questions: plan.questions,
     };
     // The skill rides along so an answer that arrives tomorrow resumes under the
-    // instructions the question was asked under, not as a plain chat.
+    // instructions the question was asked under, not as a plain chat. Who
+    // started the run rides along with it, because the two together are what
+    // says whether an answer is owed: the same agent asks the same question
+    // very differently when a person is sitting there waiting for the reply.
     return this.parking.park(
       ctx.asks,
       request,
-      { scheduled, skill: state?.harness.primarySkillName ?? null, outbound: state?.harness.outbound },
+      { scheduled, unattended: nobodyStarted(state), skill, outbound: state?.harness.outbound },
       signal,
     );
   }
@@ -1206,12 +1371,18 @@ export class AgentRuntime {
     ctx: UseCaseContext,
     harness: SessionHarness,
   ): Promise<string> {
-    if (!this.config || !this.authStorage || !this.modelRegistry) throw new Error('agent runtime not configured');
-    const available = this.modelRegistry.getAvailable();
-    const model = available.find((m) => m.id === opts.modelId) ?? this.resolveModel();
+    if (!this.config) throw new Error('agent runtime not configured');
+    const modelRuntime = await this.models();
+    // The child's own model, then whatever the parent is running on.
+    const model = await this.resolveModel(opts.modelId ?? this.getSessionModel(parentId));
     const filesRoot = sessionFilesRoot(this.config.vaultDir, parentId);
 
     const parts = [CHILD_PREAMBLE, ''];
+    // House rules reach the children too. A rule that is "always in effect"
+    // cannot stop at the parent: a fan-out over Swedish transcripts would hand
+    // back Swedish working files, and the parent files what it was handed.
+    const houseRules = (await this.alwaysOnGuides(ctx, { forDrafting: false })).trim();
+    if (houseRules) parts.push(houseRules);
     if (opts.brief) parts.push(`## The brief (what everyone working on this was told)\n${opts.brief.trim()}`);
     parts.push(`## Your output\nWrite exactly one file with write_result: \`${child.writeTo}\`.`);
     if (child.read.length > 0) {
@@ -1239,7 +1410,7 @@ export class AgentRuntime {
       model,
       noTools: 'all',
       tools: [...VAULT_TOOL_NAMES, ...CHILD_FILE_TOOL_NAMES],
-      customTools: [
+      customTools: withDecodedArgs([
         // Reads land in the parent's receipt: the ledger must be honest about
         // what the session as a whole read, children included.
         ...createVaultTools(ctx, harness),
@@ -1247,9 +1418,8 @@ export class AgentRuntime {
           wrote = true;
           this.onFilesChanged?.(parentId);
         }),
-      ],
-      authStorage: this.authStorage,
-      modelRegistry: this.modelRegistry,
+      ]),
+      modelRuntime,
       resourceLoader: loader,
       // Throwaway: a child leaves its FILE behind, never a transcript. Its
       // reasoning is scratch by definition, and thirty of them in the chat list
@@ -1371,6 +1541,7 @@ export class AgentRuntime {
         messageCount: info.messageCount,
         preview: truncate(info.allMessagesText, 140) ?? '',
         lifecycle: this.getLifecycle(info.id),
+        modelId: this.getSessionModel(info.id),
       }))
       // The one door to the Sessions list, the rail, the unread-result count and
       // every badge derived from them (renderer `lib/attention.ts`). A scheduled
@@ -1405,6 +1576,7 @@ export class AgentRuntime {
     const file = this.findSessionFile(sessionId);
     if (file) rmSync(file, { force: true });
     if (this.lifecycles[sessionId]) this.setLifecycle(sessionId, 'active');
+    this.setSessionModel(sessionId, null);
   }
 
   async abort(streamId: string, ctx?: UseCaseContext): Promise<void> {

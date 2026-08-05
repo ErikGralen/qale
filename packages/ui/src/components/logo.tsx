@@ -1,8 +1,9 @@
 import { cn } from '../lib/utils';
 
 /**
- * pm mark — a small brain/knot glyph suggesting the "product brain" that
- * compounds. Uses currentColor so callers set the tone with `text-brand` etc.
+ * The Qale mark. A placeholder glyph (a small brain/knot) standing in until the
+ * real mark is drawn; only the artwork below changes when it is.
+ * Uses currentColor so callers set the tone with `text-brand` etc.
  */
 export function Logo({ className }: { className?: string }) {
   return (

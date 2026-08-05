@@ -1,4 +1,4 @@
-import { Button } from '@pm/ui';
+import { Button } from '@qale/ui';
 import { CircleHelp } from 'lucide-react';
 import type { AttentionItem } from '../../lib/attention';
 import { timeAgo } from '../../lib/session-meta';
@@ -8,6 +8,10 @@ import { rowFocusClass, useQueueFocus } from './shared';
  * A turn parked on a question. It is the one thing in the queue that can never
  * finish on its own, so it leads the Inbox — and it carries no dismiss: a
  * question is answered, not cleared, and the answering happens in the session.
+ *
+ * A quiet question came from the librarian tidying up in the background. Same
+ * row, same way to answer, but it says so: nobody is blocked on the answer and
+ * it can sit there for a week without costing anything.
  */
 export function QuestionItem({
   item,
@@ -29,11 +33,15 @@ export function QuestionItem({
       onFocus={onFocus}
       className={`flex items-center gap-2 rounded-lg bg-card py-2 pr-2 pl-3 ${rowFocusClass(focused)}`}
     >
-      <CircleHelp className="size-4 shrink-0 text-brand" aria-hidden />
+      <CircleHelp
+        className={`size-4 shrink-0 ${item.quiet ? 'text-muted-foreground' : 'text-brand'}`}
+        aria-hidden
+      />
       <button className="min-w-0 flex-1 text-left focus-visible:outline-none" onClick={onOpen}>
         <span className="block truncate text-sm font-medium">{item.label}</span>
         <span className="block text-xs text-muted-foreground">
-          Waiting for your answer{item.when ? ` · ${timeAgo(item.when)}` : ''}
+          {item.quiet ? 'Your call, whenever suits' : 'Waiting for your answer'}
+          {item.when ? ` · ${timeAgo(item.when)}` : ''}
         </span>
       </button>
       <Button size="sm" variant="outline" onClick={onOpen}>

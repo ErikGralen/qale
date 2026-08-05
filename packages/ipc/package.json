@@ -1,5 +1,5 @@
 {
-  "name": "@pm/ipc",
+  "name": "@qale/ipc",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
     "check-types": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "@pm/typescript-config": "workspace:*",
+    "@qale/typescript-config": "workspace:*",
     "typescript": "~5.9.2"
   }
 }

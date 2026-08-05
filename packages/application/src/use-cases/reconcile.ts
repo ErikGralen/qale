@@ -1,4 +1,4 @@
-import { isReservedFile, isRunnableResource } from '@pm/domain';
+import { isReservedFile, isRunnableResource } from '@qale/domain';
 import type { IndexPort, VaultPort } from '../ports.js';
 
 /**

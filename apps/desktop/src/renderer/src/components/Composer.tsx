@@ -1,6 +1,6 @@
 import { useLayoutEffect, type ReactNode } from 'react';
 import { ArrowUp } from 'lucide-react';
-import { Button } from '@pm/ui';
+import { Button } from '@qale/ui';
 
 /**
  * One composer vocabulary for the whole app: the session composer and the docked
@@ -83,8 +83,8 @@ export function Key({ children }: { children: ReactNode }) {
 }
 
 /**
- * Send. Terracotta arrives only once there is something to send — an inactive
- * control never wears the accent (DESIGN §6), so the resting state is a clay
+ * Send. Ink-blue arrives only once there is something to send — an inactive
+ * control never wears the accent (DESIGN §6), so the resting state is a muted
  * fill rather than a washed-out primary.
  */
 export function SendButton({

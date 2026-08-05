@@ -13,7 +13,7 @@ import {
   type ToolDefinition,
   type WriteOperations,
 } from '@earendil-works/pi-coding-agent';
-import { SESSION_FILES_DIR } from '@pm/domain';
+import { SESSION_FILES_DIR } from '@qale/domain';
 
 /**
  * Session files (Sessions v2 Part 1) — a scratch folder a session writes to
@@ -88,12 +88,27 @@ export async function readSessionFile(root: string, relPath: string): Promise<st
   return fs.readFile(abs, 'utf8').catch(() => null);
 }
 
+/** The bytes of one session file — an image, which has no text to read. */
+export async function readSessionBinary(root: string, relPath: string): Promise<Uint8Array | null> {
+  const abs = contain(root, join(root, relPath));
+  if (!abs) return null;
+  return fs.readFile(abs).then((b) => new Uint8Array(b)).catch(() => null);
+}
+
 /** Write one session file by its folder-relative path (host side, not a tool). */
 export async function writeSessionFile(root: string, relPath: string, content: string): Promise<void> {
   const abs = contain(root, join(root, relPath));
   if (!abs) throw new Error(REFUSED);
   await fs.mkdir(dirname(abs), { recursive: true });
   await fs.writeFile(abs, content, 'utf8');
+}
+
+/** Write bytes into the session folder — how a dropped image lands (host side). */
+export async function writeSessionBinary(root: string, relPath: string, data: Uint8Array): Promise<void> {
+  const abs = contain(root, join(root, relPath));
+  if (!abs) throw new Error(REFUSED);
+  await fs.mkdir(dirname(abs), { recursive: true });
+  await fs.writeFile(abs, data);
 }
 
 /** Resolve inside the root, or null when the path escapes it. */

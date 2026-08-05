@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { NoteRefDTO } from '@pm/ipc';
+import type { NoteRefDTO } from '@qale/ipc';
 import { meetingRailHorizon } from '../src/renderer/src/lib/note-status.js';
 
 /** Local-clock instants — the horizon buckets by the PO's day, not by UTC. */

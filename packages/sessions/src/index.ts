@@ -18,8 +18,12 @@ export {
   DEFAULT_SKILL_BY_NAME,
   BASE_SKILL_NAME,
   ARRIVAL_AGENT_NAME,
+  LIBRARIAN_AGENT_NAME,
+  MAINTENANCE_AGENTS,
   RETIRED_SKILL_FILES,
+  newSkillFile,
   type DefaultSkill,
+  type RetiredSkill,
   ARRIVAL_SKILL,
   LIBRARIAN_AGENT,
   MEETING_PREP_AGENT,
@@ -31,6 +35,8 @@ export {
   PROCESS_NOTE_SKILL,
   COMMITMENT_CHECK_SKILL,
   FILING_RULES,
+  LANGUAGE,
   VOICE_EXEC,
   VOICE_CS,
 } from './defaults.js';
+export { shippedHash, shippedVersionsOf } from './shipped-versions.js';

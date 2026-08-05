@@ -1,10 +1,10 @@
 import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
-import type { UseCaseContext } from '@pm/application';
-import { createProposal, searchNotes, contentHash } from '@pm/application';
-import { checkFrontmatterMutation, fileSlug, isBodyEditable, isFolderIndex, layerForType, refToSlug, typeForDir, validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload, TYPE_RULES } from '@pm/domain';
-import { buildSkillBrief, governs, parseRunnable, type Runnable, type SessionHarness } from '@pm/sessions';
-import type { AtlassianClient } from '@pm/atlassian';
+import type { UseCaseContext } from '@qale/application';
+import { applyPatch, createProposal, duplicatePending, searchNotes, contentHash } from '@qale/application';
+import { checkFrontmatterMutation, fileSlug, isBodyEditable, isFolderIndex, layerForType, refToSlug, typeForDir, validateEvidence, zNotePayload, zUpdatePayload, zDecisionPayload, TYPE_RULES } from '@qale/domain';
+import { buildSkillBrief, governs, parseRunnable, type Runnable, type SessionHarness } from '@qale/sessions';
+import type { AtlassianClient } from '@qale/atlassian';
 import { wrapExternal } from './external.js';
 
 /**
@@ -233,6 +233,30 @@ export function createUseSkillTool(
 }
 
 export function createProposeTools(ctx: UseCaseContext, sessionId: string, harness?: SessionHarness): ToolDefinition[] {
+  /**
+   * Stop a card that repeats one already in the queue, and say so in words the
+   * model can act on.
+   *
+   * Not silent, and not a hard refusal: it reports the card that already covers
+   * this and leaves the judgement where it belongs. Two runs over one meeting
+   * used to fill the Inbox with pairs, and neither could see the other because
+   * a pending card is not a note on disk for `vault_list` to find.
+   */
+  const alreadyProposed = (candidate: {
+    kind: string;
+    targetPath?: string | null;
+    noteType?: string | undefined;
+    title: string;
+  }): ReturnType<typeof text> | null => {
+    const hit = duplicatePending(ctx, candidate);
+    if (!hit) return null;
+    return text(
+      `Not proposed: a card already waiting on the PM says the same thing — "${candidate.title}" (${hit.id}). ` +
+        'Nothing was created, and you do not need to do anything about it. ' +
+        'If what you found is genuinely different, propose it again with a title that says how it differs.',
+    );
+  };
+
   const proposeNote = defineTool({
     name: 'propose_note',
     label: 'Propose note',
@@ -253,6 +277,17 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const sources = p.sources ?? [];
       const check = validateEvidence(sources, !!p.inference, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const fm = parsed.data.frontmatter;
+      const dup = alreadyProposed({
+        kind: 'note',
+        targetPath: parsed.data.path,
+        noteType: typeof fm['type'] === 'string' ? fm['type'] : undefined,
+        title:
+          (typeof fm['title'] === 'string' && fm['title']) ||
+          (typeof fm['summary'] === 'string' && fm['summary']) ||
+          parsed.data.path,
+      });
+      if (dup) return dup;
       const rec = createProposal(ctx, {
         kind: 'note',
         sessionId,
@@ -293,6 +328,16 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       if (p.supersedes && !ctx.index.resolve(stripLink(p.supersedes))) {
         return text(`Rejected: supersedes target not found: ${p.supersedes}`);
       }
+      const fm = parsed.data.frontmatter;
+      const dup = alreadyProposed({
+        kind: 'decision',
+        targetPath: parsed.data.path,
+        title:
+          (typeof fm['title'] === 'string' && fm['title']) ||
+          (typeof fm['summary'] === 'string' && fm['summary']) ||
+          parsed.data.path,
+      });
+      if (dup) return dup;
       const rec = createProposal(ctx, {
         kind: 'decision',
         sessionId,
@@ -360,6 +405,15 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       const sources = p.sources ?? [];
       const check = validateEvidence(sources, !!p.inference, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
+      // An update has no title of its own, so what it is FOR is its rationale —
+      // and two updates to one page are only duplicates if they say the same
+      // thing, because a hub can legitimately collect several distinct edits.
+      const dup = alreadyProposed({
+        kind: 'update',
+        targetPath: target,
+        title: parsed.data.title ?? parsed.data.rationale,
+      });
+      if (dup) return dup;
       const rec = createProposal(ctx, {
         kind: 'update',
         sessionId,
@@ -380,7 +434,7 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
     name: 'propose_todo',
     label: 'Propose todo',
     description:
-      'Propose a tracked commitment (todo) heard in a meeting or found in a note. Use it when the PO committed to something ("I\'ll get back to you on that") OR when someone else did ("I\'ll update the docs" — then set owner to that person). Give a concrete imperative title, a due date only if one was named or clearly implied, and cite sources[] (the meeting/note where it was said). Include the verbatim quote when you have it. Check existing todos first (vault_list type "todo") and skip anything already tracked.',
+      'Propose a tracked commitment (todo) heard in a meeting or found in a note. Use it when the PO committed to something ("I\'ll get back to you on that") OR when someone else did ("I\'ll update the docs" — then set owner to that person). Give a concrete imperative title, a due date only if one was named or clearly implied, and cite sources[] (the meeting/note where it was said). Include the verbatim quote when you have it. Check existing todos first (vault_list type "todo") and skip anything already tracked; cards still awaiting review are caught here for you, so a commitment another run already proposed comes back as "not proposed" rather than landing twice.',
     parameters: Type.Object({
       title: Type.String({ description: 'The commitment, concrete and imperative, e.g. "Send Nordkap the SSO rollout dates".' }),
       due: Type.Optional(Type.String({ description: 'Due date "YYYY-MM-DD", only if named or clearly implied.' })),
@@ -401,6 +455,11 @@ export function createProposeTools(ctx: UseCaseContext, sessionId: string, harne
       if (!check.ok) return text(`Rejected: ${check.reason}`);
       const today = ctx.clock.now().slice(0, 10);
       const path = `todos/${fileSlug(title.slice(0, 200), today)}.md`;
+      // The check the tool description has always asked for, now actually
+      // possible: a pending card is not a note on disk, so `vault_list` could
+      // never see the commitment a concurrent run proposed a minute ago.
+      const dup = alreadyProposed({ kind: 'note', targetPath: path, noteType: 'todo', title });
+      if (dup) return dup;
       const body = params.quote
         ? `> ${params.quote.trim()}\n> — ${sources[0] ?? 'source'}\n`
         : '';
@@ -465,11 +524,16 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
    * mirror and refuses when the upstream item moved since drafting. No mirror
    * ⇒ no snapshot fields.
    */
-  const draftSnapshot = (type: 'ticket' | 'wikipage' | 'meeting', externalId: string): { remote_updated?: string; version?: number } => {
+  const mirrorFor = (type: 'ticket' | 'wikipage' | 'meeting', externalId: string) => {
     const wanted = externalId.trim().toLowerCase();
-    const mirror = ctx.index
-      .listByType(type)
-      .find((n) => String(n.frontmatter['external_id'] ?? '').trim().toLowerCase() === wanted);
+    return (
+      ctx.index
+        .listByType(type)
+        .find((n) => String(n.frontmatter['external_id'] ?? '').trim().toLowerCase() === wanted) ?? null
+    );
+  };
+  const draftSnapshot = (type: 'ticket' | 'wikipage' | 'meeting', externalId: string): { remote_updated?: string; version?: number } => {
+    const mirror = mirrorFor(type, externalId);
     if (!mirror) return {};
     const out: { remote_updated?: string; version?: number } = {};
     const ru = mirror.frontmatter['remote_updated'];
@@ -550,24 +614,65 @@ export function createDraftTools(ctx: UseCaseContext, sessionId: string, harness
     name: 'draft_confluence_update',
     label: 'Draft Confluence update',
     description:
-      'Draft an append to a wikipage (Confluence) as an approval card. pageId is the page\'s id — take it from the wikipage\'s mirror note (wikipages/, frontmatter external_id) when one exists, and cite that mirror in sources[]. End the body with a provenance line ("Source: <session>, <date>").',
+      'Draft a change to a wikipage (Confluence) as an approval card. There are two ways to change a page; pick the one that fits. With `patch` (search + replace) that ONE passage is rewritten in place on the live page and the rest of it is left untouched, which is what you want when the page now says something wrong. The search text must be copied word for word from the page as it stands, with enough of it around the change that it appears only once. Anchor it on a plain run of prose, never on a line carrying markup (a **bold** span, a `- ` bullet, a `## ` heading, a [text](url) link): here it is checked against the page\'s mirror note, which is markdown, but on approval it is matched against the live page, where that markup is not written the same way, and the edit fails then with "the page\'s text changed". Give `provenance` with a patch: the redline is only the corrected sentence, so that one line ("Source: <origin>, <date>") is how the page says where the change came from. Without a patch, `body` is appended to the page as a new section, which is what you want when you are adding something the page does not say yet; end it with a provenance line of its own and leave the `provenance` field out, because the page gets that line as written and a second one would be added underneath. pageId is the page\'s id: take it from the wikipage\'s mirror note (wikipages/, frontmatter external_id) when one exists, and cite that mirror in sources[].',
     parameters: Type.Object({
       pageId: Type.String(),
-      body: Type.String(),
+      body: Type.Optional(Type.String({ description: 'The new section to append. Leave it out when you are patching a passage.' })),
+      patch: Type.Optional(
+        Type.Object(
+          {
+            search: Type.String({ description: "The passage to replace, word for word from the page's own text. Pick a run of plain prose, not a line carrying markup." }),
+            replace: Type.String({ description: 'What it should say instead.' }),
+          },
+          { description: 'Replace one passage in place, instead of appending a section.' },
+        ),
+      ),
+      provenance: Type.Optional(
+        Type.String({
+          description:
+            'One line naming where the change came from ("Source: <origin>, <date>"), added at the very end of the page rather than beside the edit. Give it with a patch; leave it out when you are appending a body that already ends with its own.',
+        }),
+      ),
       sources: Type.Array(Type.String()),
       linkBack: Type.Optional(Type.String()),
       rationale: Type.String(),
     }),
-    async execute(_id, params: { pageId: string; body: string; sources: string[]; linkBack?: string; rationale: string }) {
+    async execute(_id, params: { pageId: string; body?: string; patch?: { search: string; replace: string }; provenance?: string; sources: string[]; linkBack?: string; rationale: string }) {
       const check = validateEvidence(params.sources ?? [], false, (ref) => !!ctx.index.resolve(stripLink(ref)));
       if (!check.ok) return text(`Rejected: ${check.reason}`);
+      // A redline has to produce both halves: the whole page as it will read,
+      // which is what the card previews, and the localized edit, which is what
+      // the push applies. Building the preview here instead of asking for it
+      // also proves the passage really is on the page, while the agent is still
+      // around to go and look again.
+      let body = params.body?.trim() ? params.body : null;
+      if (params.patch) {
+        const mirror = mirrorFor('wikipage', params.pageId);
+        const note = mirror ? await ctx.vault.readNote(mirror.path) : null;
+        if (!mirror || !note) {
+          return text(
+            `Rejected: there is no wikipage mirror for page ${params.pageId}, so the passage cannot be checked against what the page says. Append a section with \`body\` instead.`,
+          );
+        }
+        const redlined = applyPatch(note.body, [params.patch]);
+        if (redlined === null || redlined === note.body) {
+          return text(
+            `Rejected: that passage is not in ${mirror.path} as it stands, or it appears there more than once. Read the page again and copy the search text word for word, with enough around it to be unique.`,
+          );
+        }
+        body = redlined;
+      }
+      if (!body) {
+        return text('Rejected: give a `patch` to rewrite a passage in place, or a `body` to append as a new section.');
+      }
       const rec = mkCard(
-        { provider: 'confluence', system: 'confluence', action: 'update_page', pageId: params.pageId, body: params.body, linkBackPath: params.linkBack, rationale: params.rationale, ...draftSnapshot('wikipage', params.pageId) },
+        { provider: 'confluence', system: 'confluence', action: 'update_page', pageId: params.pageId, body, ...(params.patch ? { patch: params.patch } : {}), ...(params.provenance?.trim() ? { provenance: params.provenance.trim() } : {}), linkBackPath: params.linkBack, rationale: params.rationale, ...draftSnapshot('wikipage', params.pageId) },
         params.rationale,
         params.sources,
         'confluence-update',
       );
-      return text(`Drafted Confluence update card (${rec.id}) on page ${params.pageId}. Awaiting approval.`);
+      const what = params.patch ? 'Confluence redline card' : 'Confluence update card';
+      return text(`Drafted ${what} (${rec.id}) on page ${params.pageId}. Awaiting approval.`);
     },
   });
 

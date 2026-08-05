@@ -1,5 +1,5 @@
-import { atlassianConnector, googleCalendarConnector } from '@pm/connectors';
-import type { OutboundPort } from '@pm/application';
+import { atlassianConnector, googleCalendarConnector } from '@qale/connectors';
+import type { OutboundPort } from '@qale/application';
 
 /** What the Google branch needs: a token supplier plus the incremental-consent
  *  step run just before the first write (the "Google asks now" moment). */
@@ -40,7 +40,7 @@ export function makeOutbound(
       const provider = (payload as { provider?: string } | null)?.provider;
       if (provider === 'google-calendar') {
         if (!google || !googleAuth) {
-          throw new Error('Google Calendar isn’t connected — connect it in Settings to push events.');
+          throw new Error('Google Calendar isn’t connected. Connect it in Settings to push events.');
         }
         // Incremental consent, right before the write Google is about to receive.
         await googleAuth.ensureWriteScope();

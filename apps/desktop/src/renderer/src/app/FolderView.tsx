@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
-import { isFolderIndex, lifecycleValueLabel } from '@pm/domain';
-import { Button } from '@pm/ui';
+import { isFolderIndex, lifecycleValueLabel } from '@qale/domain';
+import { Button } from '@qale/ui';
 import { AlertTriangle, Folder, Search, X } from 'lucide-react';
-import type { NoteRefDTO, NoteType } from '@pm/ipc';
+import type { NoteRefDTO, NoteType } from '@qale/ipc';
 import { useApp } from '../state/app-state';
+import { useAimedDrop } from '../lib/aimed-drop';
 import { navFromEvent } from '../lib/nav';
 import { PageHeader } from '../components/PageHeader';
 import { NoteList } from './NoteList';
@@ -26,7 +27,7 @@ function altLayoutFor(dir: string): AltLayout | null {
   return null;
 }
 
-const VIEW_KEY = (dir: string) => `pm.folder-view.${dir}`;
+const VIEW_KEY = (dir: string) => `qale.folder-view.${dir}`;
 
 function storedView(dir: string, alt: AltLayout | null): FolderView {
   if (!alt) return 'list';
@@ -36,18 +37,18 @@ function storedView(dir: string, alt: AltLayout | null): FolderView {
 /** What an empty folder means — teach the mechanism, don't just say "nothing". */
 const EMPTY_TEACH: Partial<Record<NoteType, string>> = {
   source:
-    'No sources yet. Dumped raw material — article links, screenshots, pasted threads — lands here, never edited, only analyzed.',
+    'No sources yet. Dumped raw material (article links, screenshots, pasted threads) lands here, never edited, only analyzed.',
   meeting:
-    'No meetings yet. Drop a transcript (or paste one with ⇧⌘N) and After-Meeting files it here.',
+    'No meetings yet. Drop a transcript (or paste one with ⇧⌘N) and it gets filed here.',
   decision:
-    'No decisions yet. Approve a decision card from a meeting and the spine starts here — superseded ones keep their place in the chain.',
+    'No decisions yet. Approve a decision card from a meeting and the spine starts here, and superseded ones keep their place in the chain.',
   insight:
     'No insights yet. Claims the agent extracts from meetings land here, each citing its evidence.',
   customer: 'No customers yet. They appear as meetings and insights start naming them.',
   theme: 'No themes yet. Run Synthesis over a few interviews and the patterns worth solving land here.',
   person:
     'No people yet. Stakeholders appear here with what they care about and what they were last told.',
-  skill: 'No skills yet. Session playbooks — markdown files the agent follows — live here.',
+  skill: 'No skills yet. Session playbooks, the written instructions the agent follows, live here.',
   // Mirrors, in the mirror voice: the folder holds copies, the real items live
   // in Jira and Confluence. The edit rule waits for the note page, where it
   // answers a question the reader is actually asking.
@@ -211,8 +212,8 @@ export function FolderView({ dir }: { dir: string }) {
 
   const filtersActive = filter.trim() !== '' || contextFacet !== null || lifecycleFacet !== null;
   const emptyTeach = group
-    ? (EMPTY_TEACH[group.type] ?? `No notes in ${dir}/ yet.`)
-    : `No notes in ${dir}/ yet.`;
+    ? (EMPTY_TEACH[group.type] ?? 'Nothing here yet.')
+    : 'Nothing here yet.';
 
   const clearFilters = () => {
     setFilter('');
@@ -222,6 +223,9 @@ export function FolderView({ dir }: { dir: string }) {
   };
 
   const altMode = altLayout !== null && view === altLayout && notes.length > 0;
+
+  // Dropping on a shelf says where it goes, so the agent never has to ask.
+  const aimed = useAimedDrop({ kind: 'folder', dir });
 
   const viewToggle = altLayout && notes.length > 0 && (
     <div
@@ -248,7 +252,8 @@ export function FolderView({ dir }: { dir: string }) {
 
   return (
     <div
-      className="flex h-full flex-col"
+      className={`flex h-full flex-col ${aimed.over ? 'bg-brand/5 ring-1 ring-brand/40 ring-inset' : ''}`}
+      {...aimed.handlers}
       onKeyDown={(e) => {
         // `/` focuses the filter from anywhere on the page (not while typing).
         const t = e.target as HTMLElement;
@@ -375,7 +380,7 @@ export function FolderView({ dir }: { dir: string }) {
             ) : filtered.length === 0 ? (
               <div className="px-1 py-4 text-sm text-muted-foreground">
                 <p>
-                  No {dir} match{filter.trim() ? ` “${filter.trim()}”` : ' these filters'} — ⌘K
+                  No {dir} match{filter.trim() ? ` “${filter.trim()}”` : ' these filters'}. ⌘K
                   searches the whole workspace.
                 </p>
                 <Button variant="outline" size="sm" className="mt-2" onClick={clearFilters}>
@@ -416,7 +421,7 @@ export function FolderView({ dir }: { dir: string }) {
       <ScopedAskComposer
         scope={{ kind: 'folder', label: dir }}
         sessionTitle={`Ask · ${dir}`}
-        scopePrefix={`Scoped to the ${dir}/ folder.`}
+        scopePrefix={`Scoped to the ${dir} folder.`}
       />
     </div>
   );

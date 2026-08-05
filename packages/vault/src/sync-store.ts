@@ -1,8 +1,8 @@
 import type Database from 'better-sqlite3';
-import type { EventAttendee, EventStatus } from '@pm/domain';
+import type { EventAttendee, EventStatus } from '@qale/domain';
 
 /**
- * Sync engine state (Area C) — beside proposals/pings in the per-vault AppDb.
+ * Sync engine state (Area C) — beside the proposals in the per-vault AppDb.
  * Four tables:
  *
  * - `sync_containers`: every container the connector has ever listed, plus the

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { noteTypeLabel } from '@pm/domain';
+import { noteTypeLabel } from '@qale/domain';
 import { CornerDownRight } from 'lucide-react';
-import type { NoteRefDTO } from '@pm/ipc';
+import type { NoteRefDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
 import { TagChip } from '../components/TagChip';

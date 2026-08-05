@@ -1,7 +1,7 @@
 import type { Verification } from './frontmatter.js';
 
 /**
- * OKF trust tiers (§5.3) derived from the `verified` family. pm's freshness
+ * OKF trust tiers (§5.3) derived from the `verified` family. Qale's freshness
  * spine already answers "is this still true?"; this adds the portable, explicit
  * "how much should I trust it, and who said so" the format standardizes. Purely
  * additive: no `verified` entries means `unverified`, never a rejection (§11).

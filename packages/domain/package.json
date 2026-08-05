@@ -1,5 +1,5 @@
 {
-  "name": "@pm/domain",
+  "name": "@qale/domain",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -18,7 +18,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@pm/typescript-config": "workspace:*",
+    "@qale/typescript-config": "workspace:*",
     "tsx": "^4.23.1",
     "typescript": "~5.9.2"
   }

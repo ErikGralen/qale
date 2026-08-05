@@ -3,8 +3,8 @@ import {
   AtlassianClient,
   type ConfluencePageMeta,
   type JiraIssueMeta,
-} from '@pm/atlassian';
-import { kebabLinkType, zOutboundPayload, type StateCategory } from '@pm/domain';
+} from '@qale/atlassian';
+import { kebabLinkType, zOutboundPayload, type StateCategory } from '@qale/domain';
 import type {
   Connector,
   ConnectorProvider,

@@ -81,7 +81,7 @@ including a defanged `<<` the content carried. Worth noting the underlying expos
 ticket: Jira and Confluence text was already rendered verbatim there and already persisted to
 `<userData>/sessions/*.jsonl`. The envelope added two lines to something already raw.
 
-*Verified:* `pnpm check-types` 11/11 clean, `pnpm test` green with 37 `@pm/agent` tests (30 pre-existing
+*Verified:* `pnpm check-types` 11/11 clean, `pnpm test` green with 37 `@qale/agent` tests (30 pre-existing
 plus 7 new across `test/tools.test.ts` and `test/history.test.ts`), lint no new warnings.
 
 *Open, flagged rather than decided:* `vault_grep` and `search_vault` return short snippets (100 chars,
@@ -178,7 +178,7 @@ the receipt, the row and the notification all survive. `fireSession`'s own catch
 untouched. And a run that broke early has no marker on its last line anyway. `quiet` is documented as a
 success, never a shelving and never a failure.
 
-*Verified:* `pnpm check-types` 11/11, `pnpm test` 8/8 with 52 `@pm/agent` tests (10 new), lint 0 errors
+*Verified:* `pnpm check-types` 11/11, `pnpm test` 8/8 with 52 `@qale/agent` tests (10 new), lint 0 errors
 and no new warnings.
 
 *Not done, flagged rather than decided:* `track_external` is not counted as "produced". It starts a
@@ -422,7 +422,7 @@ string concatenation, `buildSkillBrief` and `buildKickoff` are template literals
 literal `{{meetingTitle}}` in a card. Building a templating engine so it could throw would be inventing
 the problem, so this half of the ticket is closed as not applicable.
 
-*Verified:* `pnpm check-types` clean, `@pm/sessions` 26/26, `@pm/application` 66/66, lint 0 errors and
+*Verified:* `pnpm check-types` clean, `@qale/sessions` 26/26, `@qale/application` 66/66, lint 0 errors and
 no new warnings.
 
 *Open, flagged:* `listLoadableSkills` in `packages/agent/src/tools.ts` does not filter on `enabled`, so
@@ -681,7 +681,7 @@ first in `buildAttention`, so storing one and never surfacing it would have been
 their title from the transcript's first user message, otherwise a replayed answer would rename an old
 conversation "You asked this in an earlier run…".
 
-*Verified:* `pnpm check-types` 11/11, `pnpm test` 8/8 with 59 `@pm/agent` tests (12 new), lint 0 errors
+*Verified:* `pnpm check-types` 11/11, `pnpm test` 8/8 with 59 `@qale/agent` tests (12 new), lint 0 errors
 and no new warnings. Two self-exiting one-shots on a scratch userData and scratch vault.
 
 *Open, flagged rather than decided:* **`spawn` has the same hole.** `askToSpawn` still parks a fan-out
@@ -724,7 +724,7 @@ writing the code is the cheap part, the expensive input is knowing what to build
 Screenshot every front-end change, with "render it against realistic data and say so" as the fallback
 when the surface is hard to reach live. We have the screenshot affordances already.
 
-Write a `pm doctor`. Theirs exists because the same things broke over and over, and ours would check
+Write a `qale doctor`. Theirs exists because the same things broke over and over, and ours would check
 the same kind of list: the better-sqlite3 ABI against Electron, the vault path, connector tokens,
 when the scheduler last fired, index freshness, the demo vault's date anchor. Ranked findings, a
 remedy for each, a flag to apply the safe ones. This is the one on this list with the clearest payoff,

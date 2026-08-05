@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { slugFromPath } from '@pm/domain';
+import { slugFromPath } from '@qale/domain';
 import { migrateRunnableFolders, reconcileIndex } from '../src/index.js';
 import type { IndexedNote, IndexPort, UseCaseContext, VaultPort } from '../src/ports.js';
 

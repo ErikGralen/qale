@@ -68,7 +68,10 @@ export function ScopedAskComposer({
 
   // The icon carries the `#` for contexts, the way the page header does.
   const ScopeIcon = scope.kind === 'context' ? Hash : Folder;
-  const scopeName = scope.kind === 'context' ? `#${scope.label}` : `${scope.label}/`;
+  // A context wears its `#`; a folder is named plainly. The trailing slash it
+  // used to carry said "this is a directory", which is exactly the thing the
+  // reader never has to think about.
+  const scopeName = scope.kind === 'context' ? `#${scope.label}` : scope.label;
 
   const skill = pickedSkill ? skills.find((s) => s.name === pickedSkill) : undefined;
 

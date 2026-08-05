@@ -1,4 +1,4 @@
-import { isReservedFile, type SearchHit } from '@pm/domain';
+import { isReservedFile, type SearchHit } from '@qale/domain';
 import type { UseCaseContext } from '../ports.js';
 
 /** Full-text search over the vault index (FTS5). Powers ⌘K and search_vault. */

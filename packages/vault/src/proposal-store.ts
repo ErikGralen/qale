@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { CreateProposalInput, ProposalPort, ProposalRecord } from '@pm/application';
+import type { CreateProposalInput, ProposalPort, ProposalRecord } from '@qale/application';
 import { idHash } from './hash.js';
 
 /**

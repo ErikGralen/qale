@@ -2,8 +2,8 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { createProposal, searchNotes, type UseCaseContext } from '@pm/application';
-import { zOutboundPayload, OUTBOUND_PROVIDERS } from '@pm/domain';
+import { createProposal, searchNotes, type UseCaseContext } from '@qale/application';
+import { zOutboundPayload, OUTBOUND_PROVIDERS } from '@qale/domain';
 
 /**
  * The workspace as an MCP server (PLAN-V2 §3.5) — not just a client. A Claude-
@@ -35,13 +35,13 @@ export class McpService {
         this.handle(req, res).catch((err) => {
           // A transport hiccup must not become an unhandled rejection with the
           // HTTP response left hanging open.
-          console.error('[pm] MCP request failed:', err instanceof Error ? err.message : err);
+          console.error('[qale] MCP request failed:', err instanceof Error ? err.message : err);
           if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'internal error' }));
         });
       });
       server.on('error', (err) => {
-        console.error('[pm] MCP server error:', err);
+        console.error('[qale] MCP server error:', err);
         // A failed bind (EADDRINUSE) must not leave isRunning() reporting true.
         if (!server.listening) {
           this.http = null;
@@ -55,7 +55,7 @@ export class McpService {
         if (this.http === server) this.http = null;
       });
       server.listen(port, '127.0.0.1', () => {
-        console.log(`[pm] MCP server on http://127.0.0.1:${port}/mcp`);
+        console.log(`[qale] MCP server on http://127.0.0.1:${port}/mcp`);
         resolve();
       });
       this.http = server;
@@ -82,7 +82,7 @@ export class McpService {
     const auth = req.headers['authorization'];
     if (!token || auth !== `Bearer ${token}`) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'unauthorized — set the Produktminnet MCP token' }));
+      res.end(JSON.stringify({ error: 'unauthorized. Set the Qale MCP token.' }));
       return;
     }
     if (!req.url?.startsWith('/mcp')) {
@@ -102,7 +102,7 @@ export class McpService {
   }
 
   private buildServer(): McpServer {
-    const mcp = new McpServer({ name: 'produktminnet', version: '0.1.0' });
+    const mcp = new McpServer({ name: 'qale', version: '0.1.0' });
 
     mcp.tool(
       'ask_product',

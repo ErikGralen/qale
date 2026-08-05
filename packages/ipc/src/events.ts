@@ -1,4 +1,4 @@
-import type { AskRequestDTO, SpawnRequestDTO } from './dtos.js';
+import type { AskRequestDTO, SettingsDTO, SpawnRequestDTO } from './dtos.js';
 
 /**
  * Push events from main → renderer (webContents.send). These are the flattened,
@@ -43,6 +43,8 @@ export interface SessionStatusEvent {
   sessionId: string;
   title: string;
   status: 'running' | 'settled';
+  /** The skill the session is about; `chat` is a plain question. */
+  skill: string;
   /** Pending approval cards this session has open at emit time. */
   pendingCards: number;
   updated: number;
@@ -90,12 +92,6 @@ export interface AskRequestEvent {
   request: AskRequestDTO | null;
 }
 
-/** Fired when the agent-ping queue changes (created by a sweep, opened, dismissed). */
-export interface PingsChangedEvent {
-  channel: 'pings:changed';
-  pendingCount: number;
-}
-
 /** Fired when an OS notification is clicked — the renderer opens that session. */
 export interface SessionFocusEvent {
   channel: 'session:focus';
@@ -110,6 +106,17 @@ export interface ConnectionsChangedEvent {
   channel: 'connections:changed';
 }
 
+/**
+ * Settings changed somewhere other than the call that changed them — a First
+ * step ticking itself off, a key saved in one window, a connection verifying.
+ * Carries the whole DTO because it is small and because a renderer that has to
+ * ask again after every push would flicker through a stale render first.
+ */
+export interface SettingsChangedEvent {
+  channel: 'settings:changed';
+  settings: SettingsDTO;
+}
+
 export type PushEvent =
   | AgentStreamEvent
   | VaultChangedEvent
@@ -118,9 +125,9 @@ export type PushEvent =
   | SessionFilesChangedEvent
   | SpawnRequestEvent
   | AskRequestEvent
-  | PingsChangedEvent
   | SessionFocusEvent
-  | ConnectionsChangedEvent;
+  | ConnectionsChangedEvent
+  | SettingsChangedEvent;
 
 export type PushChannel = PushEvent['channel'];
 
@@ -137,9 +144,9 @@ export const PUSH_CHANNELS = [
   'session:files',
   'session:spawn',
   'session:ask',
-  'pings:changed',
   'session:focus',
   'connections:changed',
+  'settings:changed',
 ] as const satisfies readonly PushChannel[];
 
 // Compile-time completeness guard: every PushEvent channel must appear above.

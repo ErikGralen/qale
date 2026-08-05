@@ -30,7 +30,7 @@ export const BlockHandle = Extension.create({
     let hovered: { node: PMNode; pos: number } | null = null;
 
     const container = document.createElement('div');
-    container.className = 'pm-block-handle';
+    container.className = 'qale-block-handle';
     // DragHandlePlugin only hides the handle after a mouseleave — it never
     // hides it on mount. Without this, a freshly created editor (note switch
     // remounts us) paints the handle at the wrapper's origin, floating over the
@@ -42,7 +42,7 @@ export const BlockHandle = Extension.create({
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.tabIndex = -1;
-    addBtn.className = 'pm-block-handle-btn pm-block-handle-add';
+    addBtn.className = 'qale-block-handle-btn qale-block-handle-add';
     addBtn.innerHTML = PLUS;
     addBtn.setAttribute('aria-label', 'Add block below');
     addBtn.title = 'Add block below';
@@ -68,7 +68,7 @@ export const BlockHandle = Extension.create({
     const grip = document.createElement('button');
     grip.type = 'button';
     grip.tabIndex = -1;
-    grip.className = 'pm-block-handle-btn pm-block-handle-grip';
+    grip.className = 'qale-block-handle-btn qale-block-handle-grip';
     grip.innerHTML = GRIP;
     grip.setAttribute('aria-label', 'Drag to move block');
     grip.title = 'Drag to move · click to select';

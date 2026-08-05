@@ -7,44 +7,55 @@ conclusion that the modal is the wrong shape for the problem.
 
 ## Status
 
-**The spine is built (2026-07-30).** What ships:
+**Built, and rebuilt (2026-08-05).** The spine landed 2026-07-30 as a tray plus a planner; the
+planner is gone. What the planner decided by rule — what a file was, which meeting it belonged to,
+whether it was old enough to skip reading — is now decided by an agent that reads the material, in a
+session, out loud. `docs/arrival-agentic.md` is the direction doc that carried that change, and the
+code comments cite it. What ships:
 
-- **Add material** (`app/AddMaterial.tsx`) — a tray, not a classification form. Holds 1..N pieces of
-  material, leads with a drop zone next to the native multi-select picker, and states one outcome
-  for the whole batch. Replaces `CaptureDialog`, which is deleted.
-- **Capture vs catch-up** (`application/use-cases/arrival.ts`) — the ambition is chosen from the
-  material (≥5 items, or everything older than 21 days), stated on the tray with a one-click flip,
-  and catch-up is simply `process: false` for every item: same filing, nothing run. That is what
-  makes a forty-file backfill impossible to turn into two hundred todos.
-- **A receipt only where the screen can't speak for itself** (`components/ArrivalReceipt.tsx`,
-  `lib/arrival-outcome.ts`). Landing on the result IS the confirmation: for a single item the app
-  opens the note or the review it just started, so no card appears at all. The receipt is for a
-  batch (nothing opened, the outcome is a count), a failure, or a catch-up where the news is that
-  nothing ran. Persistent when it does appear, never a toast, in a shared rail so an error can't
-  cover it. **Undo is a batch affordance** — one document is deletable where it stands, and a
-  second, weaker path to the same thing in a floating card is how you get two ways to delete a note
-  and no clear one. It restores every path the batch touched, recorded by a `VaultPort` decorator so
-  no capture use case had to learn about arrivals.
-- **Drop anywhere** opens the same tray with the files already in it — the accelerator and the
-  button are one behaviour.
-- **Arrival never authors.** Everything added through this door is raw material in `sources/` —
-  dropped files (`system: file`), pasted text (`system: paste`), links, screenshots. The only
-  derived note an arrival creates is the meeting note for a transcript of a meeting the PO was in.
-  `notes/` is the authored layer and is reachable only by writing one (⌘N): the workspace must
+- **Add material** (`app/AddMaterial.tsx`) — file rows with an X each, one text field, one button.
+  It leads with a drop zone next to the native picker (files *and* folders) and decides exactly one
+  thing by itself: whether these bytes can be read at all. Pasted text is a row like any file, so
+  the text field always means the same thing.
+- **Landing is mechanical** (`main/handlers.ts`, `arrival:ingest`). The moment Add is pressed the
+  files are written into a fresh session's folder, before any model call. No key, or the skill
+  switched off, and the material still sits safe in the session with a line saying what to fix.
+- **Judgment is the skill's** (`skills/arrival`, `agent/filing.ts`, `application/use-cases/arrival.ts`).
+  The session runs "Handle new material": it skims, matches a transcript to a meeting by what the
+  transcript says rather than by the clock, notices when the PM was not in the room, checks for
+  duplicates, files with `file_material`, corrects with `refile_material`, and starts full reads
+  only where they are earned. When it cannot tell, it asks with an option card.
+- **Filing is the one write that is not a card.** It is gated on `can: [file-material]`, because the
+  PM already handed the file over: putting it on a shelf carries out their instruction rather than
+  proposing one, and the two ways it can go wrong are both fixed by moving it. Everything DERIVED
+  from the material is still an approval card.
+- **The speed ladder.** Say nothing and the agent files and narrates, ending quietly when the job
+  was pure filing (`unattended` runs, `end_quietly`). One line of steering in the text field
+  overrides its judgment. Or drop with aim: on a meeting page, on a folder, and the aim reaches the
+  agent as a preset sentence rather than a second code path.
+- **Large batches fan out.** Up to five pieces the agent reads itself; past that it writes
+  `brief.md` and `spawn`s one quick skim per piece, with the approval card the PM already knows. The
+  five is skill copy, tunable without code.
+- **A meeting owns its transcripts, plural.** One recording routinely arrives as several files: a
+  call that dropped and resumed, a notetaker that splits on the hour. Those are one meeting, named
+  in one `file_material` call, kept verbatim as one `sources/` note per part with `transcript`
+  holding the list. The part marker regex that used to guess this is gone; the agent can see it.
+- **Every past meeting has two doors.** "Add transcript" takes a recording that arrived late;
+  "Read this meeting" starts the review that failed to start, and "Mark as filed" settles one nobody
+  is going to read.
+- **Arrival never authors.** Everything added through this door is raw material in `sources/`. The
+  only derived note an arrival creates is the meeting page for a transcript of a meeting the PM was
+  in. `notes/` is the authored layer and is reachable only by writing one (⌘N): the workspace must
   never claim to have written something that was handed to it, because once the memory cites that
   claim it cannot be corrected. This is the §6 rule made structural.
-- **The agent's work is a control, not a footnote.** The tray carries one switch naming the skill
-  that will actually run and how many items it takes — *"Handle new material reviews all 2"* — and
-  it flips both ways. It resolves through the same binding lookup that will dispatch it, so it
-  cannot describe work that won't happen. Off reads *"Just file them"*, with the amber inference
-  flag only where the system chose it rather than the PO.
 - **Formats we can't read are refused, not guessed at.** `readableAs()` in the domain is the single
   predicate both the renderer and main use; a `.docx` decoded as UTF-8 was filing notes whose body
-  began `PK` and ran for pages of mojibake.
+  began `PK` and ran for pages of mojibake. An empty file says it is empty rather than blaming its
+  format.
 
 **Not built, and deliberately so:** the Import room (folder picker, Obsidian overlay, Evernote
-triage, the report), rules-by-promotion, and retrieval ranking for imported material. Catch-up is
-the engine those sit on; §6 and §10 are still the brief for them.
+triage, the report), rules-by-promotion, and retrieval ranking for imported material. §6 and §10 are
+still the brief for them.
 
 ---
 
@@ -160,7 +171,12 @@ adopting them is one deliberate act — but it can't quietly mint two hundred to
 It also means fifty transcripts from this week is capture at scale, while fifty from last year is
 catch-up. Same machinery, different ambition.
 
-In the interface these are **"capture"** and **"catch the memory up."** Nobody says "ingest."
+**Superseded as a mode, kept as judgment (2026-08-05).** This distinction was real and the control
+that expressed it was not: a 5-item and a 21-day rule chose between them, and both edges were bugs.
+The line survives inside the skill instead — fresh material about live work earns a full read, a
+backlog earns filing plus skims — where an agent that has read the material can draw it, and where
+the PM's own sentence overrides it in either direction. Nobody says "ingest", and nobody says
+"catch-up" at them either.
 
 ---
 
@@ -210,10 +226,10 @@ of a leap.
 - **An optional sentence.** Empty means "you decide," and that's the common case. A sentence turns
   the drop into an errand or a question. A named skill of the user's own does the same thing more
   precisely.
-- **A persistent, editable receipt instead of a dialog.** Not a modal to dismiss — a strip that says
-  what is happening and lets you change it while it happens: *undo*, *not my meeting*, *just file
-  it*, *add an instruction*. Ignore it and the right thing happens. Touch it and you've done
-  everything the old modal did, in one click, without ever having been blocked.
+- **A conversation instead of a dialog.** What used to be a receipt strip with *undo* and *not my
+  meeting* on it is a session that narrates what it is doing and can be argued with: the correction
+  is typing, and the agent has a tool to act on it. One line on screen says it is happening and
+  offers the way in; ignore it and the right thing happens.
 - **The drop target carries intent, at no UI cost.** On the window: you decide. On a composer: I have
   something to say about this. On a customer or theme page: it belongs to this.
 - **Everything runs in the background; watching is optional.** Then "is the user waiting?" never has
@@ -249,13 +265,16 @@ when the answer actually mattered.
 
 5. **Reversibility inside, permission outside.** Pre-approval is absolute for anything that leaves
    the machine — Jira, Confluence, Slack, email. Anything that stays in the user's own versioned
-   directory gets legibility and one-click undo instead. Filing a file and posting to a stakeholder
-   are not the same risk, and treating them the same is what made fifty files unusable. *(product-wide
+   directory gets legibility and correction instead. Filing a file and posting to a stakeholder are
+   not the same risk, and treating them the same is what made fifty files unusable. *(product-wide
    — this is a deliberate narrowing of "nothing writes without an approval card")*
-6. **Undo has to be real.** One click, restores everything a run touched, no partial states. The
-   whole design trades pre-approval for reversibility; if undo is approximate, the trade is a lie.
-7. **The receipt is the interface.** For anything the system did on its own, the artifact that says
-   what happened *is* the UI — not a log to go find. *(product-wide: sessions, scheduled runs, sync)*
+6. **Correction beats undo.** Filing is reversible by moving, not by rewinding: the material is the
+   user's own and they will not regret handing it over. So the affordance is "that was Kranelund's
+   call", answered in a sentence, rather than a batch rewind nobody reaches for. *(revised
+   2026-08-05; the earlier form asked for a real one-click undo of everything a run touched)*
+7. **The narration is the interface.** For anything the system did on its own, the account it gives
+   of itself *is* the UI — not a log to go find, and not a separate artifact that can go stale
+   beside it. *(product-wide: sessions, scheduled runs, sync)*
 8. **Never rewrite what the user authored.** Add alongside. This is what makes handing us a personal
    vault a reasonable act. *(product-wide)*
 9. **Propose at the altitude of the finding, not the file.** Forty files should not produce forty
@@ -301,11 +320,14 @@ Signals to watch for, in rough order of how badly each one means we've failed:
 Deliberately out of scope here, to be designed separately:
 
 - **Automatic transcript delivery.** When a notetaker bot starts delivering recordings, the drop
-  disappears as an input method entirely and the receipt and the report become the only surfaces.
+  disappears as an input method entirely and the session and the report become the only surfaces.
   That's an argument for putting the intelligence in the pipeline rather than the drop UI, which this
   document assumes but does not specify.
-- **The instruction ambiguity.** "Summarise these" over five interviews could mean five summaries or
-  one synthesis. Genuinely ambiguous, genuinely different outcomes, and the phrasing usually tells
-  you. Needs a real answer before errands ship.
+- ~~**The instruction ambiguity.**~~ *Answered 2026-08-05.* "Summarise these" over five interviews
+  could mean five summaries or one synthesis. It was briefly a control the PM set (*each* or
+  *together*); it is now simply what the agent is reading, since one session handles the whole drop
+  and can hold five interviews at once. What is left open is unchanged: whether a run over genuinely
+  unrelated material should look for patterns across it. The arrival skill says no and points at
+  synthesis, which needs a question to work from.
 - **Format adapters.** ENEX, Notion exports, Bear, Apple Notes. The principles above apply unchanged;
   the parsing does not.

@@ -5,11 +5,11 @@ import type {
   NoteType,
   SearchHit,
   ThemeStance,
-} from '@pm/domain';
+} from '@qale/domain';
 
 /**
  * Ports — the boundaries the application layer depends on. Infra packages
- * (@pm/vault) implement them; the composition root (main) injects concrete
+ * (@qale/vault) implement them; the composition root (main) injects concrete
  * instances. Nothing here imports infra (PLAN §3.1).
  */
 
@@ -42,6 +42,10 @@ export interface IndexedNote {
   /** The type's lifecycle value (a decision's `standing`, a todo's
    *  `commitment`, …), or null when the type carries no lifecycle. */
   lifecycle: string | null;
+  /** Whether the file holds any text below its frontmatter. The lists never
+   *  carry a body, and "is there anything in this note yet?" is a question they
+   *  have to be able to answer without reading the file again. */
+  hasBody: boolean;
   mtime: number;
   frontmatter: Record<string, unknown>;
   links: LinkRecord[];
@@ -192,6 +196,12 @@ export interface AskRecord {
   skill: string | null;
   /** Whether that skill was granted outbound by the trigger that fired it. */
   outbound: boolean;
+  /**
+   * Nobody was at the screen when it asked: a clock started the run, or the PM
+   * handed material over and walked away. Half of what decides whether the
+   * question is owed an answer; the other half is which agent asked.
+   */
+  unattended: boolean;
   created: number;
 }
 
@@ -201,6 +211,7 @@ export interface CreateAskInput {
   questions: unknown;
   skill?: string | null;
   outbound?: boolean;
+  unattended?: boolean;
 }
 
 /**
@@ -221,123 +232,19 @@ export interface AskPort {
 }
 
 /**
- * A structured suggestion attached to a ping — the librarian's prepared answer
- * to its own finding, so the Inbox offers one-tap resolutions instead of
- * opening a conversation. Items resolve independently; the ping retires when
- * every item is fixed or skipped.
- */
-export interface PingLinkChoiceItem {
-  /** Stable per-item id within the ping. */
-  id: string;
-  /** Note whose body carries the dangling link. */
-  from: string;
-  /** The dangling wikilink target text. */
-  target: string;
-  /** Ranked "did you mean…?" candidates. */
-  options: { slug: string; title: string }[];
-  resolution?: { action: 'fixed'; slug: string } | { action: 'skipped' };
-}
-
-/**
- * Why a note has no links — the cause decides which answers are honest.
- * - `capture` — a raw dump that names people, customers and themes in prose
- *   without linking any of them. The answer is a Process-Note session, not tidying.
- * - `stray` — workspace-owned, cites nothing, cited by nothing. The hygiene case,
- *   and the only one where offering to delete the note makes sense.
- * Mirrors of upstream records are not a kind here: the sweep never reports them.
- */
-export type OrphanKind = 'capture' | 'stray';
-
-export interface PingOrphanItem {
-  id: string;
-  /** The unlinked note. */
-  path: string;
-  title: string;
-  kind: OrphanKind;
-  /** Notes that mention this orphan as plain text — link-it-there options.
-   *  `term` rides along on pings written before the title was the only term. */
-  mentions: { host: string; hostTitle: string; line: string; term?: string }[];
-  /** Existing notes THIS note names in prose but never links — the evidence
-   *  that a dump is full of signal the memory hasn't absorbed. */
-  names?: { slug: string; title: string }[];
-  resolution?:
-    | { action: 'fixed'; host: string }
-    | { action: 'skipped' }
-    /** Handed to a Process-Note session — the work moved to a conversation. */
-    | { action: 'processing' };
-}
-
-export type PingPayload =
-  | { kind: 'link-choices'; items: PingLinkChoiceItem[] }
-  | { kind: 'orphans'; items: PingOrphanItem[] };
-
-/**
- * An agent-initiated finding ("noticed X — here's a prepared answer"). Pings
- * live in app.db beside proposals; the payload carries one-tap suggestions,
- * `seedPrompt` seeds the chat-about-this escape hatch, dismissing is cheap
- * and logged.
- */
-export interface PingRecord {
-  id: string;
-  /** Stable dedupe key (e.g. `broken-links`, `orphans`) — one live ping per finding. */
-  key: string;
-  title: string;
-  body: string;
-  evidence: { ref: string; label?: string; resolved: boolean }[];
-  skill: string;
-  seedPrompt: string;
-  targetPath: string | null;
-  /** One-tap suggestions; null when the finding genuinely needs a conversation. */
-  payload: PingPayload | null;
-  status: string;
-  created: number;
-  resolved: number | null;
-}
-
-export interface CreatePingInput {
-  key: string;
-  title: string;
-  body: string;
-  evidence: { ref: string; label?: string; resolved: boolean }[];
-  skill: string;
-  seedPrompt: string;
-  targetPath: string | null;
-  payload?: PingPayload | null;
-}
-
-/** Agent-ping store (app.db) — the durable queue of agent-opened conversations. */
-export interface PingPort {
-  create(input: CreatePingInput, now: number): PingRecord;
-  list(status?: string): PingRecord[];
-  get(id: string): PingRecord | null;
-  setStatus(id: string, status: string, resolved: number | null): void;
-  /** Persist per-item resolution state as the PO works through a suggestion. */
-  updatePayload(id: string, payload: PingPayload): void;
-  pendingCount(): number;
-  /** True if a ping with this key is pending or was resolved after `since` (dedupe). */
-  hasRecent(key: string, since: number): boolean;
-}
-
-/**
- * One-shot, non-streaming text completion for background judgments (the
- * librarian's contradiction checks). Deliberately narrow — no tools, no
- * session, no history — so the application layer can ask a single question
- * without importing an agent. Absent when no model is configured; callers
- * must skip silently, never queue retries loudly.
- */
-export interface CompletionPort {
-  complete(input: { system: string; prompt: string }): Promise<string>;
-}
-
-/**
- * Durable check ledger (app.db) — remembers what background sweeps already
- * judged, keyed by finding + revision, so an unchanged decision/page pair is
- * never re-judged (no LLM spend per tick) and a dismissed finding stays quiet
- * until its inputs actually change.
+ * Durable check ledger (app.db) — remembers what background sweeps already saw,
+ * keyed by finding + revision, so an unchanged finding is never handed to the
+ * librarian twice and a card the PM declined stays quiet until the note or page
+ * behind it really changes.
  */
 export interface CheckLedgerPort {
   get(key: string): string | null;
   set(key: string, value: string, now: number): void;
+  /** Every row whose key starts with `prefix` — how a set of remembered
+   *  answers ("which nudges did the PO wave off") is read back whole. */
+  list(prefix: string): { key: string; value: string }[];
+  /** Forget one row. The undo behind a dismissal that was a misclick. */
+  remove(key: string): void;
 }
 
 /** The deterministic result of an outbound write — the link is from the API. */
@@ -363,14 +270,10 @@ export interface UseCaseContext {
   git: GitPort;
   clock: Clock;
   proposals: ProposalPort;
-  /** Agent-ping queue; absent in contexts that don't surface an Inbox (tests, scripts). */
-  pings?: PingPort;
   /** Parked questions; absent in contexts where a question cannot outlive its turn. */
   asks?: AskPort;
   /** Present only when an outbound integration (Atlassian) is configured. */
   outbound?: OutboundPort;
-  /** One-shot LLM completions for background judgments; absent when no key is set. */
-  completions?: CompletionPort;
   /** Sweep check ledger; absent in contexts that never run background sweeps. */
   checks?: CheckLedgerPort;
 }

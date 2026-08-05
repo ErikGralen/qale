@@ -3,25 +3,24 @@ import {
   isBodyEditable,
   outboundEffect,
   titleFromSlug,
+  transcriptRefs,
   zOutboundPayload,
   type Note,
   type OutboundEffectFacts,
-} from '@pm/domain';
+} from '@qale/domain';
 import type {
   Backlink,
   IndexedNote,
-  PingRecord,
   ThemeHeatRow,
   ProposalRecord,
   RunnableSummary,
   UseCaseContext,
   VaultInfo,
   VaultTreeGroup,
-} from '@pm/application';
-import type { Start } from '@pm/sessions';
+} from '@qale/application';
+import type { Start } from '@qale/sessions';
 import type {
   AgentDTO,
-  AgentPingDTO,
   BacklinkDTO,
   NoteDTO,
   NoteRefDTO,
@@ -33,8 +32,8 @@ import type {
   StartDTO,
   VaultInfoDTO,
   VaultTreeDTO,
-} from '@pm/ipc';
-import type { SearchHit } from '@pm/domain';
+} from '@qale/ipc';
+import type { SearchHit } from '@qale/domain';
 import type { CodeRunFacts } from './agents.js';
 
 /** Map domain/application entities to structured-clone-safe IPC DTOs. */
@@ -75,6 +74,16 @@ export function indexedToRefDTO(n: IndexedNote): NoteRefDTO {
       fm['event_status'] === 'confirmed' || fm['event_status'] === 'tentative' || fm['event_status'] === 'cancelled'
         ? fm['event_status']
         : undefined,
+    // Meetings only. A calendar mirror is the one note the app knows happened
+    // without anybody telling it, so it is the one note that can be empty in a
+    // way worth mentioning (docs/capture-nudge.md).
+    ...(n.type === 'meeting'
+      ? {
+          synced: typeof fm['external_id'] === 'string' && fm['external_id'].length > 0,
+          captured: n.hasBody || transcriptRefs(fm).length > 0,
+          ...(typeof fm['series'] === 'string' ? { series: fm['series'] } : {}),
+        }
+      : {}),
     supersedes: typeof fm['supersedes'] === 'string' ? fm['supersedes'] : undefined,
     supersededBy: typeof fm['superseded_by'] === 'string' ? fm['superseded_by'] : undefined,
     due: typeof fm['due'] === 'string' ? fm['due'] : undefined,
@@ -293,43 +302,28 @@ export function proposalToDTO(
   };
 }
 
-export function pingToDTO(rec: PingRecord): AgentPingDTO {
-  return {
-    id: rec.id,
-    title: rec.title,
-    body: rec.body,
-    evidence: rec.evidence,
-    skill: rec.skill,
-    seedPrompt: rec.seedPrompt,
-    targetPath: rec.targetPath,
-    payload: rec.payload as AgentPingDTO['payload'],
-    status: rec.status as AgentPingDTO['status'],
-    created: rec.created,
-  };
-}
-
 // Title-cased so legacy files without an explicit `title` don't read as raw slugs.
 const deriveTitle = titleFromSlug;
 
 // ---------------------------------------------------------------------------
-// Contract drift guards (R3): @pm/ipc deliberately re-declares domain unions
+// Contract drift guards (R3): @qale/ipc deliberately re-declares domain unions
 // (it must stay dependency-free), so this module — which imports both — pins
 // them together. A value added on one side only fails to compile HERE, not at
 // a customer's runtime (`update_ticket` shipped exactly that way).
 // ---------------------------------------------------------------------------
 type _MutualLock<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
 const _outboundActionLock: _MutualLock<
-  import('@pm/ipc').OutboundAction,
-  import('@pm/domain').OutboundAction
+  import('@qale/ipc').OutboundAction,
+  import('@qale/domain').OutboundAction
 > = true;
 const _outboundProviderLock: _MutualLock<
-  import('@pm/ipc').OutboundProvider,
-  import('@pm/domain').OutboundProvider
+  import('@qale/ipc').OutboundProvider,
+  import('@qale/domain').OutboundProvider
 > = true;
-const _noteTypeLock: _MutualLock<import('@pm/ipc').NoteType, import('@pm/domain').NoteType> = true;
+const _noteTypeLock: _MutualLock<import('@qale/ipc').NoteType, import('@qale/domain').NoteType> = true;
 const _stateCategoryLock: _MutualLock<
-  import('@pm/ipc').StateCategory,
-  import('@pm/domain').StateCategory
+  import('@qale/ipc').StateCategory,
+  import('@qale/domain').StateCategory
 > = true;
 void _outboundActionLock;
 void _outboundProviderLock;

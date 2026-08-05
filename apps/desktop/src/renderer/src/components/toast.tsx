@@ -72,4 +72,4 @@ export function ToastProvider({ children }: { children: ReactNode }) {
  * second fixed container, so the two never overlap and neither has to know the
  * other's height.
  */
-export const RAIL_SLOT_ID = 'pm-notification-rail-slot';
+export const RAIL_SLOT_ID = 'qale-notification-rail-slot';

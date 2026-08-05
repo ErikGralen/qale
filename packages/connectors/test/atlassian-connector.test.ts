@@ -18,7 +18,7 @@ const misc = fx('misc') as Record<string, unknown>;
 
 const SITE = 'https://tavla.atlassian.net';
 const CLOUD_ID = '11223344-5566-7788-99aa-bbccddeeff00';
-const AUTH = { siteUrl: SITE, email: 'erik@leveret.io', apiToken: 'tok-123' };
+const AUTH = { siteUrl: SITE, email: 'erik@tavla.example', apiToken: 'tok-123' };
 
 /** Routes for a healthy unscoped-token site — the probe checks BOTH products. */
 const unscopedProbe: Route[] = [

@@ -1,14 +1,12 @@
-import { linkTypeToken } from './link-types.js';
-import { asciiFold, basename, normalizeLinkTarget, slugify } from './slug.js';
+import { asciiFold, basename, slugify } from './slug.js';
 
 /**
- * Deterministic link repair (the librarian's work-ahead pass): given a wikilink
- * target that resolves to nothing, find the note it almost certainly meant —
- * renames, case/kebab drift, date-prefixed files, typos — and build the
- * search/replace patch that repoints every body occurrence. Pure functions; the
- * sweep turns the result into an approval card, so a wrong guess costs one
- * Discard click, never a silent write. Ambiguity returns null: two plausible
- * targets is a conversation, not a suggestion.
+ * Fuzzy name matching for a wikilink that resolves to nothing: which existing
+ * notes look like the one the author meant, across renames, case and kebab
+ * drift, date-prefixed files and typos. This is retrieval a text search cannot
+ * do, and that is all it is. The librarian's worklist carries the top few as a
+ * "similar existing pages" hint per broken link; the agent reads the notes and
+ * decides. Nothing here ever picks a target.
  */
 
 export interface LinkRepairCandidate {
@@ -79,19 +77,9 @@ function tierHits(target: string, candidates: LinkRepairCandidate[]): LinkRepair
 }
 
 /**
- * The likely intended slug for a dangling target, or null when no candidate is
- * confident AND unique: the strongest tier must have exactly one hit, otherwise
- * the finding needs the PO's judgment.
- */
-export function suggestLinkTarget(target: string, candidates: LinkRepairCandidate[]): string | null {
-  const hits = tierHits(target, candidates);
-  return hits.length === 1 ? hits[0]!.slug : null;
-}
-
-/**
- * Ranked plausible targets for a dangling link when no single candidate is
- * confident — the librarian's "did you mean…?" options. Empty when nothing is
- * plausible: that finding really is a conversation.
+ * Ranked plausible targets for a dangling link, strongest tier first. Empty
+ * when nothing is plausible, which is honest: a target nothing resembles is a
+ * page that was never written, and saying so beats offering a near miss.
  */
 export function suggestLinkCandidates(
   target: string,
@@ -99,89 +87,4 @@ export function suggestLinkCandidates(
   max = 3,
 ): LinkRepairCandidate[] {
   return tierHits(target, candidates).slice(0, max);
-}
-
-/** Regex-escape a literal string. */
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * A title mentioned as plain text, not letter/digit-embedded and not on a line
- * that already carries a wikilink (conservative: never patch near existing
- * links). Titles under 4 chars are too ambiguous to count as mentions.
- */
-function mentionRe(title: string): RegExp | null {
-  const clean = title.trim();
-  if (clean.length < 4) return null;
-  return new RegExp(`(^|[^\\p{L}\\p{N}])(${escapeRe(clean)})(?![\\p{L}\\p{N}])`, 'iu');
-}
-
-/**
- * Body lines where `title` appears as an unlinked plain-text mention — the
- * evidence that an orphan note is already part of the story, just not wired in.
- */
-export function findUnlinkedMentions(body: string, title: string): string[] {
-  const re = mentionRe(title);
-  if (!re) return [];
-  const seen = new Set<string>();
-  const lines: string[] = [];
-  for (const line of body.split('\n')) {
-    if (line.includes('[[') || line.startsWith('---')) continue;
-    if (!re.test(line)) continue;
-    if (seen.has(line)) continue;
-    seen.add(line);
-    lines.push(line);
-  }
-  return lines;
-}
-
-/**
- * Search/replace blocks wrapping the first plain-text mention of `title` per
- * line in a wikilink to `slug`, original casing preserved via alias. Empty when
- * nothing qualifies — the caller falls back to a conversation.
- */
-export function buildMentionLinkPatch(
-  body: string,
-  title: string,
-  slug: string,
-): { search: string; replace: string }[] {
-  const re = mentionRe(title);
-  if (!re) return [];
-  return findUnlinkedMentions(body, title).map((line) => {
-    const replace = line.replace(re, (_m, pre: string, text: string) =>
-      `${pre}[[${slug}${text === basename(slug) ? '' : `|${text}`}]]`,
-    );
-    return { search: line, replace };
-  });
-}
-
-const WIKILINK = /\[\[([^\]]+)\]\]/g;
-
-/**
- * Search/replace blocks repointing every body occurrence of `oldTarget` at
- * `newSlug`, aliases and anchors preserved. Empty when the link only lives in
- * frontmatter (a body patch can't reach it — leave that to a session).
- * Duplicate occurrences are safe with sequential indexOf application: each
- * block's replacement differs from its search, so the cursor advances.
- */
-export function buildLinkRepairPatch(
-  body: string,
-  oldTarget: string,
-  newSlug: string,
-): { search: string; replace: string }[] {
-  const blocks: { search: string; replace: string }[] = [];
-  WIKILINK.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = WIKILINK.exec(body)) !== null) {
-    const { target, anchor, alias, linkType, reversed } = normalizeLinkTarget(match[1] ?? '');
-    if (target !== oldTarget) continue;
-    // Re-emit the type in the author's direction — a repair must repoint the
-    // link, never silently strip its relationship.
-    const type = linkType ? `${linkTypeToken(linkType, reversed)}::` : '';
-    const replace = `[[${type}${newSlug}${anchor ? `#${anchor}` : ''}${alias ? `|${alias}` : ''}]]`;
-    if (match[0] === replace) continue;
-    blocks.push({ search: match[0], replace });
-  }
-  return blocks;
 }

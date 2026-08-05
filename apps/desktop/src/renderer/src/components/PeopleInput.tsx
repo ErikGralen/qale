@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import type { PersonCardDTO } from '@pm/ipc';
+import type { PersonCardDTO } from '@qale/ipc';
 import { UserPlus } from 'lucide-react';
 import { useApp } from '../state/app-state';
 import { participantValue, resolveParticipant } from '../lib/people';

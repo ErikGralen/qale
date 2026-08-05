@@ -1,4 +1,4 @@
-import type { PeopleDirectoryDTO, PersonCardDTO } from '@pm/ipc';
+import type { PeopleDirectoryDTO, PersonCardDTO } from '@qale/ipc';
 
 /**
  * Participants are stored three ways — `[[people/sara-lindqvist]]` (calendar

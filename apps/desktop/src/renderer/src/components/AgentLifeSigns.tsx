@@ -1,6 +1,6 @@
 import { TriangleAlert } from 'lucide-react';
-import type { AgentDTO } from '@pm/ipc';
-import { cn } from '@pm/ui';
+import type { AgentDTO } from '@qale/ipc';
+import { cn } from '@qale/ui';
 import { relativeTime } from '../lib/dates';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
@@ -42,7 +42,7 @@ export function AgentLifeSigns({ agent, className }: { agent: AgentDTO; classNam
       ) : (
         <div className="flex flex-wrap items-center gap-1.5">
           <p className="text-xs text-muted-foreground/80">
-            Nothing starts this — the app never begins it on its own
+            Nothing starts this, the app never begins it on its own
           </p>
           <CanChips can={agent.can} />
         </div>

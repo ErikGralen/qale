@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '@pm/ui';
+import { Button } from '@qale/ui';
 import { Check, MessageCircleQuestion, Minus } from 'lucide-react';
-import type { AskAnswerDTO, AskQuestionDTO, AskRequestDTO } from '@pm/ipc';
+import type { AskAnswerDTO, AskQuestionDTO, AskRequestDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 import { Key } from '../Composer';
 
@@ -176,7 +176,7 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
             disabled={busy}
             title={
               last
-                ? 'Leave this one to the agent — it carries on and says what it assumed'
+                ? 'Leave this one to the agent: it carries on and says what it assumed'
                 : 'Leave this one to the agent and move to the next question'
             }
             onClick={() => {
@@ -194,7 +194,7 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
           >
             Skip
           </Button>
-          {/* An inactive control never wears terracotta (DESIGN §6): the accent
+          {/* An inactive control never wears the accent (DESIGN §6): the accent
               arrives the moment the step is answered, and that arrival is the
               only colour event in the component. */}
           <Button
@@ -237,7 +237,7 @@ function TrailRow({
         className="flex w-full items-baseline gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:hover:bg-transparent"
         onClick={onRevisit}
         disabled={disabled}
-        title={`${question.question} — click to change your answer`}
+        title={`${question.question}: click to change your answer`}
       >
         <Glyph
           className={`size-3 shrink-0 self-center ${parts.length ? 'text-brand' : 'text-muted-foreground/50'}`}
@@ -373,7 +373,7 @@ function QuestionStep({
 
 /**
  * One choice. The leading badge carries the keyboard number at rest and becomes
- * a terracotta check when picked, so selection reads by shape as well as by
+ * an ink-blue check when picked, so selection reads by shape as well as by
  * colour — the whole row is the hit target and the label is the accessible name.
  */
 function OptionRow({

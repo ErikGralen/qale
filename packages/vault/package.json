@@ -1,5 +1,5 @@
 {
-  "name": "@pm/vault",
+  "name": "@qale/vault",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -11,15 +11,15 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@pm/application": "workspace:*",
-    "@pm/domain": "workspace:*",
-    "@pm/markdown": "workspace:*",
+    "@qale/application": "workspace:*",
+    "@qale/domain": "workspace:*",
+    "@qale/markdown": "workspace:*",
     "better-sqlite3": "^12.11.1",
     "chokidar": "^5.0.0",
     "simple-git": "^3.36.0"
   },
   "devDependencies": {
-    "@pm/typescript-config": "workspace:*",
+    "@qale/typescript-config": "workspace:*",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^24.0.0",
     "tsx": "^4.23.1",

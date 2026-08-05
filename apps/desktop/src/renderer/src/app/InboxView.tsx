@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from '@pm/ui';
+import { Button } from '@qale/ui';
 import { AlertTriangle, ArrowRight, ArrowUpRight, Check, Inbox, Layers } from 'lucide-react';
-import type { AgentPingDTO, MeetingReviewAskDTO, OutboundPayloadDTO, ProposalDTO } from '@pm/ipc';
+import type { MeetingReviewAskDTO, OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
+import { MAINTENANCE_AGENTS } from '@qale/sessions';
 import { useApp, type SessionOverview } from '../state/app-state';
-import { countOf, ofKind, type AttentionItem } from '../lib/attention';
+import { ofKind, type AttentionItem } from '../lib/attention';
 import { navFromEvent } from '../lib/nav';
 import { timeAgo } from '../lib/session-meta';
 import { useToast } from '../components/toast';
 import { PageHeader } from '../components/PageHeader';
 import { QuestionItem } from '../components/inbox/QuestionItem';
 import { CardItem, HousekeepingItem } from '../components/inbox/CardItem';
-import { PingItem, SuggestionPing } from '../components/inbox/PingRows';
 import { ResultItem } from '../components/inbox/ResultItem';
 import { outboundAct, outboundReceipt } from '../components/inbox/shared';
 import { bareRef, cardRank, HOUSEKEEPING_RANK, orderCards, titleForRef } from '../components/inbox/cardMeta';
@@ -44,10 +44,21 @@ function groupCause(cards: ProposalDTO[]): string | null {
   return cards.every((c) => c.evidence.some((e) => bareRef(e.ref) === cause)) ? cause : null;
 }
 
-/** The librarian's prepared fixes — mechanical repairs, rendered glance-and-go. */
-function isLibrarianGroup(g: CardGroup): boolean {
-  return g.sessionId === 'librarian';
-}
+/**
+ * Work a background tidy pass left behind. Keyed by the agent that produced it,
+ * never by the session id: the librarian runs as an ordinary session now, so
+ * there is no fixed id to special-case, and a second maintenance agent would
+ * land in the same place without a line of new code.
+ *
+ * Any card in the group is enough, and the first one is not a safe proxy: a
+ * card is stamped with the LAST skill the run invoked, not with the agent whose
+ * run it was. The librarian pulls in the process-note skill mid-pass for a raw
+ * capture, so whichever of the two happened to sort first would otherwise
+ * decide where the whole run renders, and a pass would move sections depending
+ * on what it found.
+ */
+const fromMaintenance = (cards: readonly ProposalDTO[]): boolean =>
+  cards.some((c) => MAINTENANCE_AGENTS.has(c.skill ?? ''));
 
 interface SentReceipt {
   id: string;
@@ -57,31 +68,43 @@ interface SentReceipt {
 /** One session's pending cards, headed by the session that produced them. */
 interface CardGroup {
   sessionId: string;
-  /** The stored session behind the cards — absent for librarian/seed cards. */
+  /** The stored session behind the cards — absent for seed cards. */
   session: SessionOverview | null;
   cards: ProposalDTO[];
+  newest: number;
+}
+
+/**
+ * One librarian pass and everything it left behind: the repairs it drafted, and
+ * the calls it could not make on its own. Both belong to the same run, so they
+ * read together and share one door into the session that did the reading.
+ */
+interface LibrarianRun {
+  sessionId: string;
+  session: SessionOverview | null;
+  cards: ProposalDTO[];
+  questions: AttentionItem[];
   newest: number;
 }
 
 /** The flattened attention queue — what ↑↓ walks, in visual order. */
 type QueueItem =
   | { kind: 'question'; item: AttentionItem }
-  | { kind: 'card'; proposal: ProposalDTO; group: CardGroup }
-  | { kind: 'ping'; ping: AgentPingDTO }
+  | { kind: 'card'; proposal: ProposalDTO; session: SessionOverview | null }
   | { kind: 'result'; session: SessionOverview };
 
 /**
  * The Inbox (PLAN-V2 §3.3) — home, not a dashboard: the single queue of
  * everything awaiting the PO. A turn parked on a question leads; approval cards
- * arrive grouped by the session that proposed them; agent pings ("noticed X —
- * fix it together?") and sessions that finished while the PO was away follow.
+ * arrive grouped by the session that proposed them; sessions that finished
+ * while the PO was away follow, and the librarian's tidying comes last.
  * Judged in seconds — by mouse or entirely by keyboard — with a reachable zero.
  * Running sessions never appear here: they need nothing yet, and the sidebar
  * rail carries them.
  *
  * Everything the header counts is a named filter over the one attention list
- * (lib/attention.ts): `waitingCount` is what needs the PO, `countOf(…, 'ping')`
- * is what the librarian is merely offering. The Inbox owns no arithmetic.
+ * (lib/attention.ts): `waitingCount` is what needs the PO, and the librarian's
+ * questions are quiet, so they sit outside it. The Inbox owns no arithmetic.
  */
 export function InboxView() {
   const {
@@ -90,16 +113,12 @@ export function InboxView() {
     waitingCount,
     proposals,
     sessions,
-    pings,
     acceptProposal,
     rejectProposal,
     markMeetingReviewed,
     refreshProposals,
     openDoc,
     openChat,
-    openPing,
-    dismissPing,
-    resolvePingItem,
     markSessionSeen,
   } = useApp();
   const [busy, setBusy] = useState(false);
@@ -115,9 +134,6 @@ export function InboxView() {
   const [streak, setStreak] = useState(0);
   const [audit, setAudit] = useState(false);
   const [focusIdx, setFocusIdx] = useState(0);
-  /** Failures from the keyboard one-tap path — surfaced above the Librarian
-   * section, since the row-level error display belongs to the mouse path. */
-  const [pingError, setPingError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
 
@@ -157,33 +173,71 @@ export function InboxView() {
     return [...bySession.values()].sort((a, b) => b.newest - a.newest);
   }, [queue, sessions]);
 
-  // The librarian is one presence, not two: its prepared fixes leave the
-  // session pile and join its suggestions in the Librarian section below.
-  const sessionGroups = useMemo(() => groups.filter((g) => !isLibrarianGroup(g)), [groups]);
-  const librarianGroup = useMemo(() => groups.find(isLibrarianGroup) ?? null, [groups]);
+  const sessionGroups = useMemo(() => groups.filter((g) => !fromMaintenance(g.cards)), [groups]);
 
   // Turns parked on a question, and sessions that finished with nothing to
   // approve — both read straight off the one attention list, so the header's
-  // count and the rows below it can never drift apart.
-  const questions = useMemo(() => ofKind(attention, 'question'), [attention]);
+  // count and the rows below it can never drift apart. A quiet question is one
+  // the librarian asked: it belongs beside its own pass, not among the turns
+  // the PO started and is now blocking.
+  const allQuestions = useMemo(() => ofKind(attention, 'question'), [attention]);
+  const questions = useMemo(() => allQuestions.filter((q) => !q.quiet), [allQuestions]);
+  const quietQuestions = useMemo(() => allQuestions.filter((q) => q.quiet), [allQuestions]);
   const results = useMemo(() => {
     const unread = new Set(ofKind(attention, 'result').map((i) => i.id));
     return sessions.filter((s) => unread.has(`result:${s.id}`));
   }, [attention, sessions]);
 
+  // The librarian is one presence however often it runs: every pass gathers
+  // into the one section below, newest first, carrying both what it drafted
+  // and what it wants a call on.
+  const librarianRuns = useMemo<LibrarianRun[]>(() => {
+    const byRun = new Map<string, LibrarianRun>();
+    const run = (sessionId: string, when: number): LibrarianRun => {
+      let r = byRun.get(sessionId);
+      if (!r) {
+        r = {
+          sessionId,
+          session: sessions.find((s) => s.id === sessionId) ?? null,
+          cards: [],
+          questions: [],
+          newest: 0,
+        };
+        byRun.set(sessionId, r);
+      }
+      r.newest = Math.max(r.newest, when);
+      return r;
+    };
+    for (const g of groups) if (fromMaintenance(g.cards)) run(g.sessionId, g.newest).cards = g.cards;
+    // A pass that only asked something has no cards and so no group above.
+    for (const q of quietQuestions)
+      if (q.target.open === 'session') run(q.target.sessionId, q.when ?? 0).questions.push(q);
+    return [...byRun.values()].sort((a, b) => b.newest - a.newest);
+  }, [groups, quietQuestions, sessions]);
+
+  /** Every librarian repair a batch could actually apply — a drafted page
+   *  update leaves the workspace, so it stays its own decision. */
+  const librarianFixable = useMemo(
+    () => librarianRuns.flatMap((r) => r.cards).filter((c) => c.kind !== 'outbound'),
+    [librarianRuns],
+  );
+
   // Stakes descending: parked questions, the PO's own sessions' output,
-  // finished sessions, then the librarian — its fixes are still approvals
-  // ("need you"), but the suggestion pings can always wait and never count.
+  // finished sessions, then the librarian — its repairs are still approvals
+  // ("need you"), but its questions can always wait and never count.
   const items = useMemo<QueueItem[]>(
     () => [
       ...questions.map((item): QueueItem => ({ kind: 'question', item })),
-      ...sessionGroups.flatMap((g) => g.cards.map((proposal): QueueItem => ({ kind: 'card', proposal, group: g }))),
+      ...sessionGroups.flatMap((g) =>
+        g.cards.map((proposal): QueueItem => ({ kind: 'card', proposal, session: g.session })),
+      ),
       ...results.map((session): QueueItem => ({ kind: 'result', session })),
-      ...(librarianGroup?.cards.map((proposal): QueueItem => ({ kind: 'card', proposal, group: librarianGroup })) ??
-        []),
-      ...pings.map((ping): QueueItem => ({ kind: 'ping', ping })),
+      ...librarianRuns.flatMap((r): QueueItem[] => [
+        ...r.cards.map((proposal): QueueItem => ({ kind: 'card', proposal, session: r.session })),
+        ...r.questions.map((item): QueueItem => ({ kind: 'question', item })),
+      ]),
     ],
-    [questions, sessionGroups, librarianGroup, pings, results],
+    [questions, sessionGroups, librarianRuns, results],
   );
 
   useEffect(() => {
@@ -262,14 +316,14 @@ export function InboxView() {
           setError(
             p.id,
             r.error ??
-              `This changed upstream since the card was drafted — take one more look, then approve anyway to ${outboundAct(p.payload as OutboundPayloadDTO).verb}.`,
+              `This changed upstream since the card was drafted. Take one more look, then approve anyway to ${outboundAct(p.payload as OutboundPayloadDTO).verb}.`,
           );
         } else if (r.stale) {
           // The keyboard path can accept without ever seeing the preview's
           // stale banner — a stale refusal must speak, never no-op.
           setError(p.id, "This card no longer fits the note's current text. Open it to review, or re-run the session to regenerate it.");
         } else {
-          setError(p.id, r.error ?? 'Could not apply this card — the workspace rejected the write.');
+          setError(p.id, r.error ?? 'Could not apply this card: the workspace rejected the write.');
         }
       } catch (err) {
         setError(p.id, err instanceof Error ? err.message : 'Something went wrong applying this card.');
@@ -314,7 +368,7 @@ export function InboxView() {
           if (p.kind === 'outbound') continue;
           attempted++;
           const r = await acceptProposal(p.id).catch((err: unknown) => {
-            setError(p.id, err instanceof Error ? err.message : 'Failed — retry from the card.');
+            setError(p.id, err instanceof Error ? err.message : 'Failed. Retry from the card.');
             return { ok: false as const };
           });
           noteReviewAsk('review' in r ? r.review : undefined);
@@ -326,7 +380,7 @@ export function InboxView() {
           }
         }
         setStreak(local);
-        if (failed > 0) toast(`${failed} of ${attempted} cards failed to apply — see the cards for details.`);
+        if (failed > 0) toast(`${failed} of ${attempted} cards failed to apply. See the cards for details.`);
       } finally {
         setBusy(false);
       }
@@ -347,11 +401,11 @@ export function InboxView() {
             setReceipt((x) => ({ ...x, rejected: x.rejected + 1 }));
           } catch (err) {
             failed++;
-            setError(p.id, err instanceof Error ? err.message : 'Failed — retry from the card.');
+            setError(p.id, err instanceof Error ? err.message : 'Failed. Retry from the card.');
           }
         }
         setStreak(0);
-        if (failed > 0) toast(`${failed} of ${cards.length} cards failed to discard — see the cards for details.`);
+        if (failed > 0) toast(`${failed} of ${cards.length} cards failed to discard. See the cards for details.`);
       } finally {
         setBusy(false);
       }
@@ -372,48 +426,17 @@ export function InboxView() {
       if (item.kind === 'question') {
         const t = item.item.target;
         if (t.open === 'session') openChat({ id: t.sessionId, title: t.title });
-      } else if (item.kind === 'card' && item.group.session) {
-        const s = item.group.session;
+      } else if (item.kind === 'card' && item.session) {
+        const s = item.session;
         openChat({ id: s.id, title: s.title });
-      } else if (item.kind === 'ping') {
-        void openPing(item.ping);
       } else if (item.kind === 'result') {
         openResult(item.session);
       }
     },
-    [openChat, openPing, openResult],
+    [openChat, openResult],
   );
 
   const internalCount = queue.filter((p) => p.kind !== 'outbound').length;
-
-  // Keyboard one-taps on the focused suggestion card: 1-9 applies that option
-  // of its first open row, s skips the row. True to "nothing silent", a
-  // failure surfaces as a banner instead of vanishing.
-  const keySuggestion = (ping: AgentPingDTO, key: string): boolean => {
-    const payload = ping.payload;
-    if (!payload) return false;
-    let itemId: string | null = null;
-    let choice: string | undefined;
-    if (payload.kind === 'link-choices') {
-      const row = payload.items.find((i) => !i.resolution && i.options.length > 0);
-      if (!row) return false;
-      itemId = row.id;
-      if (key !== 's') choice = row.options[Number(key) - 1]?.slug;
-    } else {
-      const row = payload.items.find((i) => !i.resolution && i.mentions.length > 0);
-      if (!row) return false;
-      itemId = row.id;
-      if (key !== 's') choice = row.mentions[Number(key) - 1]?.host;
-    }
-    if (key !== 's' && !choice) return false;
-    const action = key === 's' ? ({ action: 'skip' } as const) : ({ action: 'fix', choice: choice! } as const);
-    void resolvePingItem(ping.id, itemId, action)
-      .then(() => setPingError(null))
-      .catch((err: unknown) =>
-        setPingError(err instanceof Error ? err.message : 'Could not apply that suggestion — try the row itself.'),
-      );
-    return true;
-  };
 
   /** The focused outbound card's send button — the queue's ↵ moves to it
    *  instead of pressing it for you. */
@@ -452,13 +475,10 @@ export function InboxView() {
       // A question is answered, never dismissed — the key is a deliberate no-op
       // on an ask row rather than a way to lose the turn that is waiting.
       if (current.kind === 'card') void onReject(current.proposal);
-      else if (current.kind === 'ping') void dismissPing(current.ping.id);
       else if (current.kind === 'result') markSessionSeen(current.session.id);
     } else if (e.key === 'o' && current) {
       e.preventDefault();
       openItemSession(current);
-    } else if (current?.kind === 'ping' && /^[1-9s]$/.test(e.key) && !busy) {
-      if (keySuggestion(current.ping, e.key)) e.preventDefault();
     }
   };
 
@@ -470,13 +490,12 @@ export function InboxView() {
     return start;
   });
   const resultStart = cursor;
-  const librarianStart = resultStart + results.length;
-  const pingStart = librarianStart + (librarianGroup?.cards.length ?? 0);
-  const suggestionCount = countOf(attention, 'ping');
-  const focusedSuggestion = (() => {
-    const cur = items[focusIdx];
-    return cur?.kind === 'ping' && cur.ping.payload ? cur.ping : null;
-  })();
+  cursor += results.length;
+  const runStarts = librarianRuns.map((r) => {
+    const start = cursor;
+    cursor += r.cards.length + r.questions.length;
+    return start;
+  });
   // The hint states what ↵ does on the row you are actually on — on a send it
   // moves you to the button rather than pressing it, and must say so.
   const focusedOutbound = (() => {
@@ -490,22 +509,24 @@ export function InboxView() {
         icon={Inbox}
         label="Inbox"
         meta={
-          waitingCount > 0 || suggestionCount > 0 ? (
+          // Two different things, said as two different things: what the PO
+          // owes an answer to, and what the librarian would like a call on
+          // whenever they get round to it.
+          waitingCount > 0 || quietQuestions.length > 0 ? (
             <>
               {waitingCount > 0 && `${waitingCount} need${waitingCount === 1 ? 's' : ''} you`}
-              {waitingCount > 0 && suggestionCount > 0 && ' · '}
-              {suggestionCount > 0 && `${suggestionCount} suggestion${suggestionCount === 1 ? '' : 's'}`}
+              {waitingCount > 0 && quietQuestions.length > 0 && ' · '}
+              {quietQuestions.length > 0 &&
+                `${quietQuestions.length} question${quietQuestions.length === 1 ? '' : 's'} from the librarian`}
             </>
           ) : undefined
         }
       >
         {items.length > 0 && (
           <span className="hidden max-w-[40ch] truncate text-xs text-muted-foreground xl:block">
-            {focusedSuggestion
-              ? '↑↓ navigate · 1–9 apply · s skip · ↵ ask · ⌫ dismiss'
-              : focusedOutbound
-                ? '↑↓ navigate · ↵ go to Send · ⌫ discard'
-                : '↑↓ navigate · ↵ approve/open · ⌫ dismiss · o open session'}
+            {focusedOutbound
+              ? '↑↓ navigate · ↵ go to Send · ⌫ discard'
+              : '↑↓ navigate · ↵ approve/open · ⌫ dismiss · o open session'}
           </span>
         )}
         {internalCount > 1 && (
@@ -527,7 +548,7 @@ export function InboxView() {
           <div className="mb-3 flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/8 px-3 py-2 text-sm">
             <AlertTriangle className="size-4 shrink-0 text-warning" />
             <span className="flex-1 text-foreground">
-              You've approved {streak} in a row — take a closer look at this one before continuing.
+              You've approved {streak} in a row. Take a closer look at this one before continuing.
             </span>
             <Button
               size="sm"
@@ -593,8 +614,8 @@ export function InboxView() {
               </p>
             )}
             <p className="max-w-sm text-sm text-muted-foreground">
-              Nothing needs you. Approval cards, finished sessions, and the librarian's prepared
-              fixes land here — judged in seconds, nothing written silently.
+              Nothing needs you. Approval cards, finished sessions, and the librarian's tidy-ups
+              land here, judged in seconds, nothing written silently.
             </p>
           </div>
         ) : (
@@ -650,7 +671,7 @@ export function InboxView() {
               // The header speaks the meeting, or the cause — never the prompt or a path.
               const title = cause ? causeSentence(cause, g.cards.length) : groupTitle(g, anchor);
               const summary = cause
-                ? 'Approve to update them all — or discard, if the premise is wrong.'
+                ? 'Approve to update them all, or discard if the premise is wrong.'
                 : groupSummary(g.cards);
               return (
                 <section key={g.sessionId} aria-label={title}>
@@ -717,7 +738,7 @@ export function InboxView() {
                           <li key="hk" className="flex flex-col gap-1.5">
                             <div className="mt-1 flex items-center gap-2 px-0.5">
                               <span className="text-xs font-medium text-muted-foreground">
-                                Housekeeping · {hk.length} — ledgers & links, glance and go
+                                Housekeeping · {hk.length}: ledgers & links, glance and go
                               </span>
                               <Button
                                 size="sm"
@@ -760,85 +781,86 @@ export function InboxView() {
               </section>
             )}
 
-            {(librarianGroup || pings.length > 0) && (
+            {librarianRuns.length > 0 && (
               <section aria-label="Librarian">
                 {waitingCount === 0 && (
                   <p className="mb-3 flex items-center gap-2 px-0.5 text-sm text-muted-foreground">
                     <Check className="size-4 text-success" aria-hidden />
-                    Nothing needs you — just the librarian's tidy-ups below, whenever suits.
+                    Nothing needs you, just the librarian's tidy-ups below, whenever suits.
                   </p>
                 )}
                 <div className="mb-1.5 flex items-baseline gap-2 px-0.5">
                   <h3 className="shrink-0 text-sm font-semibold">Librarian</h3>
                   <span className="min-w-0 truncate text-xs text-muted-foreground">
-                    keeps the memory connected — a tap approves, nothing happens silently
+                    keeps the memory connected: a tap approves, nothing happens silently
                   </span>
-                  {librarianGroup && librarianGroup.cards.length > 1 && (
+                  {librarianFixable.length > 1 && (
                     <Button
                       size="sm"
                       variant="ghost"
                       className="ml-auto shrink-0"
-                      onClick={() => void acceptCards(librarianGroup.cards)}
+                      onClick={() => void acceptCards(librarianFixable)}
                       disabled={busy}
                     >
-                      <Check className="size-3.5" /> Fix all {librarianGroup.cards.length}
+                      <Check className="size-3.5" /> Fix all {librarianFixable.length}
                     </Button>
                   )}
                 </div>
-                {pingError && (
-                  <div
-                    role="alert"
-                    className="mb-1.5 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-1.5 text-sm text-destructive"
-                  >
-                    <span className="flex-1">{pingError}</span>
-                    <Button size="sm" variant="ghost" onClick={() => setPingError(null)}>
-                      Dismiss
-                    </Button>
-                  </div>
-                )}
-                <ul className="flex flex-col gap-1.5">
-                  {librarianGroup?.cards.map((p, ci) => {
-                    const idx = librarianStart + ci;
-                    const shared = {
-                      proposal: p,
-                      busy,
-                      focused: idx === focusIdx,
-                      error: errors[p.id] ?? null,
-                      onFocus: () => setFocusIdx(idx),
-                      onAccept: (edited?: unknown) => onAccept(p, edited),
-                      onReject: () => onReject(p),
-                      onOpen: openDoc,
-                    };
-                    // Prepared fixes stay glance-and-go rows; anything richer
-                    // (a note proposal, say) gets the full card.
-                    return p.kind === 'update' ? (
-                      <HousekeepingItem key={p.id} {...shared} />
-                    ) : (
-                      <CardItem key={p.id} {...shared} />
-                    );
-                  })}
-                  {pings.map((ping, i) =>
-                    ping.payload ? (
-                      <SuggestionPing
-                        key={ping.id}
-                        ping={ping}
-                        focused={pingStart + i === focusIdx}
-                        onFocus={() => setFocusIdx(pingStart + i)}
-                        onOpen={() => void openPing(ping)}
-                        onDismiss={() => void dismissPing(ping.id)}
-                      />
-                    ) : (
-                      <PingItem
-                        key={ping.id}
-                        ping={ping}
-                        focused={pingStart + i === focusIdx}
-                        onFocus={() => setFocusIdx(pingStart + i)}
-                        onOpen={() => void openPing(ping)}
-                        onDismiss={() => void dismissPing(ping.id)}
-                      />
-                    ),
-                  )}
-                </ul>
+                {/* One block per pass, each with the door into the session that
+                    read the notes — the tidy-ups are somebody's reasoning now,
+                    not a list a sweep printed, so the reasoning stays reachable. */}
+                <div className="flex flex-col gap-3">
+                  {librarianRuns.map((run, ri) => (
+                    <div key={run.sessionId}>
+                      <div className="mb-1 flex items-baseline gap-2 px-0.5">
+                        <span className="text-xs text-muted-foreground">Ran {timeAgo(run.newest)}</span>
+                        {run.session && (
+                          <button
+                            className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                            onClick={(e) => openChat({ id: run.session!.id, title: run.session!.title }, navFromEvent(e))}
+                          >
+                            Open session <ArrowRight className="size-3" />
+                          </button>
+                        )}
+                      </div>
+                      <ul className="flex flex-col gap-1.5">
+                        {run.cards.map((p, ci) => {
+                          const idx = runStarts[ri]! + ci;
+                          const shared = {
+                            proposal: p,
+                            busy,
+                            focused: idx === focusIdx,
+                            error: errors[p.id] ?? null,
+                            staleSend: staleSends[p.id] ?? false,
+                            onFocus: () => setFocusIdx(idx),
+                            onAccept: (edited?: unknown) => onAccept(p, edited),
+                            onReject: () => onReject(p),
+                            onOpen: openDoc,
+                          };
+                          // A repointed link is glance-and-go; anything richer
+                          // (a drafted page update, say) gets the full card.
+                          return p.kind === 'update' ? (
+                            <HousekeepingItem key={p.id} {...shared} />
+                          ) : (
+                            <CardItem key={p.id} {...shared} />
+                          );
+                        })}
+                        {run.questions.map((item, qi) => {
+                          const idx = runStarts[ri]! + run.cards.length + qi;
+                          return (
+                            <QuestionItem
+                              key={item.id}
+                              item={item}
+                              focused={idx === focusIdx}
+                              onFocus={() => setFocusIdx(idx)}
+                              onOpen={() => openItemSession({ kind: 'question', item })}
+                            />
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
               </section>
             )}
           </div>
@@ -853,7 +875,7 @@ export function InboxView() {
  * view-only: the answer is "don't ask me again", not a fact about the meeting,
  * so it stays out of the vault. The meeting itself stays in needs review.
  */
-const REVIEW_ASK_KEY = 'pm.reviewAskDismissed.v1';
+const REVIEW_ASK_KEY = 'qale.reviewAskDismissed.v1';
 
 function dismissedReviewAsks(vaultPath: string): string[] {
   try {

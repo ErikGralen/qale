@@ -7,7 +7,7 @@ import {
   type Frontmatter,
   type StateCategory,
   type SyncedCalendarEvent,
-} from '@pm/domain';
+} from '@qale/domain';
 import {
   atlassianConnector,
   atlassianAuthSchema,
@@ -16,9 +16,9 @@ import {
   type EventChange,
   type ExternalContainer,
   type ShallowChange,
-} from '@pm/connectors';
-import type { IndexedNote, UseCaseContext } from '@pm/application';
-import type { SyncItemRow, SyncStore } from '@pm/vault';
+} from '@qale/connectors';
+import type { IndexedNote, UseCaseContext } from '@qale/application';
+import type { SyncItemRow, SyncStore } from '@qale/vault';
 import type {
   AtRiskLinkDTO,
   ConnectionContainerDTO,
@@ -29,7 +29,7 @@ import type {
   ExternalRefMetaDTO,
   ProviderDescriptorDTO,
   ShallowIndexItemDTO,
-} from '@pm/ipc';
+} from '@qale/ipc';
 import type { SettingsService } from './settings-service.js';
 import type { GoogleOAuthService } from './google-oauth-service.js';
 
@@ -436,7 +436,7 @@ export class SyncService {
         } catch (err) {
           failed = true;
           console.error(
-            `[pm] sync: pull failed for ${container.containerId}:`,
+            `[qale] sync: pull failed for ${container.containerId}:`,
             err instanceof Error ? err.message : err,
           );
         }
@@ -457,7 +457,7 @@ export class SyncService {
             }
           }
         } catch (err) {
-          console.error('[pm] sync: promotion sweep failed:', err instanceof Error ? err.message : err);
+          console.error('[qale] sync: promotion sweep failed:', err instanceof Error ? err.message : err);
         }
 
         // Tracked pass: everything we hold by id rather than by container.
@@ -468,7 +468,7 @@ export class SyncService {
             anyChange = true;
           }
         } catch (err) {
-          console.error('[pm] sync: tracked pull failed:', err instanceof Error ? err.message : err);
+          console.error('[qale] sync: tracked pull failed:', err instanceof Error ? err.message : err);
         }
       }
 
@@ -495,7 +495,7 @@ export class SyncService {
 
   // -------------------------------------------------------------------------
   // The meeting mirror patcher (google-calendar): the ONLY writer of the
-  // machine-owned fields on meeting notes. Decisions live in @pm/domain
+  // machine-owned fields on meeting notes. Decisions live in @qale/domain
   // (planMeetingMirror); this method resolves the note, applies the plan, and
   // keeps the shallow row + note_path binding true.
   // -------------------------------------------------------------------------
@@ -557,7 +557,7 @@ export class SyncService {
       return path;
     } catch (err) {
       console.error(
-        `[pm] sync: meeting mirror failed for ${change.external_id}:`,
+        `[qale] sync: meeting mirror failed for ${change.external_id}:`,
         err instanceof Error ? err.message : err,
       );
       return null;
@@ -706,7 +706,7 @@ export class SyncService {
       if (store.trackedSource('atlassian', key)) continue;
       if (store.countTrackedBySource('atlassian', 'blocker') >= BLOCKER_TRACK_CAP) {
         console.warn(
-          `[pm] sync: blocker tracking cap (${BLOCKER_TRACK_CAP}) reached — ${key} not tracked`,
+          `[qale] sync: blocker tracking cap (${BLOCKER_TRACK_CAP}) reached — ${key} not tracked`,
         );
         return;
       }
@@ -817,7 +817,7 @@ export class SyncService {
       return path;
     } catch (err) {
       console.error(
-        `[pm] sync: mirror write failed for ${change.external_id}:`,
+        `[qale] sync: mirror write failed for ${change.external_id}:`,
         err instanceof Error ? err.message : err,
       );
       return null;
@@ -1017,15 +1017,15 @@ export class SyncService {
   }
 
   /**
-   * The synced meeting a just-captured transcript most likely belongs to
-   * (capture matching, job 3): prefer the one in progress, else the most
-   * recently ended, else the soonest starting — within a window around now.
-   * Cancelled meetings never match.
+   * Meetings on the calendar around now, as CANDIDATES rather than an answer
+   * (docs/arrival-agentic.md, AR-1). This used to be `matchMeetingForCapture`,
+   * which picked one from a 90-minute window and attached a transcript to it
+   * sight unseen; a call that ran long, or a recording exported the next
+   * morning, silently landed on the wrong meeting. The clock is a hint now: the
+   * arrival session gets the list and the transcript itself decides.
    */
-  matchMeetingForCapture(nowMs: number): AgendaMeeting | null {
-    const CAPTURE_BACK_MS = 90 * 60 * 1000;
-    const CAPTURE_FWD_MS = 30 * 60 * 1000;
-    return rankCaptureMatch(this.agenda(nowMs - CAPTURE_BACK_MS, nowMs + CAPTURE_FWD_MS), nowMs);
+  meetingCandidates(nowMs: number, backMs: number, forwardMs: number): AgendaMeeting[] {
+    return this.agenda(nowMs - backMs, nowMs + forwardMs).filter((m) => !m.cancelled);
   }
 
   // -------------------------------------------------------------------------
@@ -1122,23 +1122,6 @@ export class SyncService {
   private isStale(syncedAt: number): boolean {
     return this.conns.atlassian.health !== 'ok' || Date.now() - syncedAt > STALE_AFTER_MS;
   }
-}
-
-/**
- * Which synced meeting a just-captured transcript belongs to (pure, testable):
- * prefer the meeting in progress, else the most recently ended, else the soonest
- * starting. Cancelled meetings never match. `candidates` is any window around now.
- */
-export function rankCaptureMatch(candidates: AgendaMeeting[], nowMs: number): AgendaMeeting | null {
-  const live = candidates.filter((m) => !m.cancelled);
-  const inProgress = live
-    .filter((m) => m.startMs <= nowMs && m.endMs >= nowMs)
-    .sort((a, b) => b.startMs - a.startMs);
-  if (inProgress[0]) return inProgress[0];
-  const ended = live.filter((m) => m.endMs <= nowMs).sort((a, b) => b.endMs - a.endMs);
-  if (ended[0]) return ended[0];
-  const upcoming = live.filter((m) => m.startMs > nowMs).sort((a, b) => a.startMs - b.startMs);
-  return upcoming[0] ?? null;
 }
 
 function shallowToRow(change: Exclude<ShallowChange, EventChange>): SyncItemRow {

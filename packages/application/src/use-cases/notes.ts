@@ -1,6 +1,6 @@
 import {
+  addTranscriptRef,
   checkFrontmatterMutation,
-  classifyCapture,
   isBodyEditable,
   normalizeLinkTarget,
   dirForType,
@@ -8,15 +8,13 @@ import {
   slugify,
   titleFromSlug,
   TYPE_RULES,
-  type CaptureKind,
   type Frontmatter,
   type MeetingFrontmatter,
   type NoteFrontmatter,
   type Note,
   type SourceNoteFrontmatter,
   type SourceRef,
-} from '@pm/domain';
-import { ARRIVAL_AGENT_NAME, buildKickoff } from '@pm/sessions';
+} from '@qale/domain';
 import type { BacklinkRow, IndexedNote, UseCaseContext } from '../ports.js';
 
 export async function getNote(ctx: UseCaseContext, path: string): Promise<Note | null> {
@@ -42,7 +40,7 @@ export interface CaptureNoteInput {
 
 /**
  * ⌘N quick capture → notes/…md. A generic authored note; the 60-second debrief
- * (Phase 3) repoints this at an After-Meeting session, but a plain capture is the
+ * (Phase 3) repoints this at an arrival session, but a plain capture is the
  * always-available fallback.
  */
 export async function captureNote(ctx: UseCaseContext, input: CaptureNoteInput): Promise<Note> {
@@ -60,41 +58,68 @@ export async function captureNote(ctx: UseCaseContext, input: CaptureNoteInput):
 
 export interface CaptureMeetingInput {
   title: string;
-  body: string;
+  /** The recording. Several parts means several files, one meeting. */
+  body: string | MeetingTranscriptPart[];
+  /**
+   * The day the meeting happened (YYYY-MM-DD), when the material says so.
+   * Defaults to today, which is right for a transcript dropped straight off the
+   * call and wrong for one dropped on Monday from a call on Thursday.
+   */
+  date?: string;
   source?: SourceRef;
   participants?: string[];
 }
 
+/** One file of a recording that arrived in several: its text and what to call it. */
+export interface MeetingTranscriptPart {
+  body: string;
+  /** Names the source note ("… transcript, part 2"); omit for a single recording. */
+  label?: string;
+}
+
 /**
  * Drop/paste a transcript → meetings/…md. One file anchors the whole meeting
- * lifecycle (prep, notes, processed summary); the transcript itself is filed as
- * an immutable source note and linked via the `transcript` frontmatter ref, so
- * the meeting page stays human-scale. After-Meeting reads both and proposes the
+ * lifecycle (prep, notes, processed summary); each transcript is filed as an
+ * immutable source note and linked from the `transcript` frontmatter ref, so
+ * the meeting page stays human-scale. Arrival reads them all and proposes the
  * truth delta. Provenance (date/participants/source) is immutable thereafter.
+ *
+ * A recording delivered as several files is ONE meeting with several
+ * transcripts, never several meetings. The parts stay separate notes and are
+ * never spliced into one body: they are raw provenance, and a join we performed
+ * is a claim about how they fit together that only the recording can settle.
  */
 export async function captureMeeting(ctx: UseCaseContext, input: CaptureMeetingInput): Promise<Note> {
-  const now = ctx.clock.now();
-  const date = now.slice(0, 10);
+  // When the meeting HAPPENED, which is only today for a transcript dropped
+  // straight off the call. Dating Thursday's call to the Monday it was filed
+  // makes it read as this week's meeting everywhere that sorts by date, and the
+  // provenance is immutable afterwards, so the wrong answer sticks.
+  const date = input.date ?? ctx.clock.now().slice(0, 10);
   const summary = input.title.slice(0, 200) || 'meeting';
   const desired = `${dirForType('meeting')}/${fileSlug(summary, date)}.md`;
   const path = await freePath(ctx, desired);
 
+  const parts: MeetingTranscriptPart[] =
+    typeof input.body === 'string' ? [{ body: input.body }] : input.body;
   const committed: string[] = [];
-  const tPath = await freePath(
-    ctx,
-    `${dirForType('source')}/${fileSlug(`${summary} transcript`, date)}.md`,
-  );
-  const tFrontmatter: SourceNoteFrontmatter = {
-    type: 'source',
-    summary: `Transcript — ${summary}`,
-    processing: 'new',
-    source: input.source ?? { system: 'transcript' },
-    captured: date,
-  };
-  const tNote = await ctx.vault.writeNote(tPath, tFrontmatter, input.body.trim());
-  ctx.index.reindex(tNote);
-  committed.push(tNote.path);
-  const transcriptRef = `[[${tNote.slug}]]`;
+  const refs: string[] = [];
+  // One at a time: `freePath` resolves collisions by looking at the disk, so
+  // two parts of one recording racing each other would both take part 1's path.
+  for (const part of parts) {
+    const name = part.label ? `${summary} transcript ${part.label}` : `${summary} transcript`;
+    const tPath = await freePath(ctx, `${dirForType('source')}/${fileSlug(name, date)}.md`);
+    const tFrontmatter: SourceNoteFrontmatter = {
+      type: 'source',
+      summary: part.label ? `Transcript (${part.label}) — ${summary}` : `Transcript — ${summary}`,
+      processing: 'new',
+      source: input.source ?? { system: 'transcript' },
+      captured: date,
+    };
+    const tNote = await ctx.vault.writeNote(tPath, tFrontmatter, part.body.trim());
+    ctx.index.reindex(tNote);
+    committed.push(tNote.path);
+    refs.push(`[[${tNote.slug}]]`);
+  }
 
   const frontmatter: MeetingFrontmatter = {
     type: 'meeting',
@@ -103,9 +128,9 @@ export async function captureMeeting(ctx: UseCaseContext, input: CaptureMeetingI
     processing: 'new' as const,
     ...(input.participants ? { participants: input.participants } : {}),
     ...(input.source ? { source: input.source } : {}),
-    transcript: transcriptRef,
+    transcript: refs.length === 1 ? refs[0]! : refs,
   };
-  const body = `## Notes\n\n## Summary\n\n_Unprocessed — After-Meeting proposes this section as a card._\n`;
+  const body = `## Notes\n\n## Summary\n\n_Not read yet. The summary arrives as an approval card._\n`;
   const note = await ctx.vault.writeNote(path, frontmatter, body);
   ctx.index.reindex(note);
   committed.push(note.path);
@@ -116,19 +141,24 @@ export async function captureMeeting(ctx: UseCaseContext, input: CaptureMeetingI
 export interface AttachTranscriptInput {
   /** The existing (typically calendar-synced) meeting note to attach to. */
   meetingPath: string;
-  body: string;
+  /** The recording. Several parts means several files, one meeting. */
+  body: string | MeetingTranscriptPart[];
   source?: SourceRef;
 }
 
 /**
- * Attach a captured transcript to a meeting note that ALREADY exists — the
+ * Attach captured transcripts to a meeting note that ALREADY exists — the
  * capture-matching path. Instead of
  * minting a second `meeting` note for a slot the calendar mirror already
- * created, file the transcript as an immutable source and link it onto the
+ * created, file each transcript as an immutable source and link it onto the
  * synced note. Only the meeting-mutable fields move (`transcript`, `processing`):
  * the machine-owned scheduling fields the mirror set (date/time/participants/
- * series/external_id…) and the PM's body are left untouched. After-Meeting then
- * reads both and proposes the truth delta, exactly as for a fresh capture.
+ * series/external_id…) and the PM's body are left untouched. Arrival then reads
+ * them all and proposes the truth delta, exactly as for a fresh capture.
+ *
+ * Transcripts APPEND. Dropping part 2 onto a meeting that already holds part 1
+ * used to overwrite the ref, which left part 1 on disk with nothing pointing at
+ * it — evidence the meeting no longer cited and nobody had deleted.
  */
 export async function attachTranscriptToMeeting(
   ctx: UseCaseContext,
@@ -143,27 +173,33 @@ export async function attachTranscriptToMeeting(
   const fm = meeting.frontmatter as Record<string, unknown>;
   const summary = (typeof fm['summary'] === 'string' && fm['summary']) || titleFromSlug(meeting.slug);
 
-  const tPath = await freePath(
-    ctx,
-    `${dirForType('source')}/${fileSlug(`${summary} transcript`, date)}.md`,
-  );
-  const tFrontmatter: SourceNoteFrontmatter = {
-    type: 'source',
-    summary: `Transcript — ${summary}`,
-    processing: 'new',
-    source: input.source ?? { system: 'transcript' },
-    captured: date,
-  };
-  const tNote = await ctx.vault.writeNote(tPath, tFrontmatter, input.body.trim());
-  ctx.index.reindex(tNote);
+  const parts: MeetingTranscriptPart[] =
+    typeof input.body === 'string' ? [{ body: input.body }] : input.body;
+  const committed: string[] = [];
+  let transcript = fm['transcript'] as string | string[] | undefined;
+  for (const part of parts) {
+    const name = part.label ? `${summary} transcript ${part.label}` : `${summary} transcript`;
+    const tPath = await freePath(ctx, `${dirForType('source')}/${fileSlug(name, date)}.md`);
+    const tFrontmatter: SourceNoteFrontmatter = {
+      type: 'source',
+      summary: part.label ? `Transcript (${part.label}) — ${summary}` : `Transcript — ${summary}`,
+      processing: 'new',
+      source: input.source ?? { system: 'transcript' },
+      captured: date,
+    };
+    const tNote = await ctx.vault.writeNote(tPath, tFrontmatter, part.body.trim());
+    ctx.index.reindex(tNote);
+    committed.push(tNote.path);
+    transcript = addTranscriptRef({ transcript }, `[[${tNote.slug}]]`);
+  }
 
-  // Link the transcript and flag the meeting for review. `processing: 'new'` is what
+  // Link the transcripts and flag the meeting for review. `processing: 'new'` is what
   // makes the freshness spine mark dependents stale — same signal captureMeeting
   // emits. Provenance and the machine-owned mirror fields ride through the spread.
-  const next = { ...meeting.frontmatter, transcript: `[[${tNote.slug}]]`, processing: 'new' } as Frontmatter;
+  const next = { ...meeting.frontmatter, transcript, processing: 'new' } as Frontmatter;
   const note = await ctx.vault.writeNote(input.meetingPath, next, meeting.body);
   ctx.index.reindex(note);
-  await ctx.git.commitPaths([tNote.path, note.path], `transcript: ${summary}`);
+  await ctx.git.commitPaths([...committed, note.path], `transcript: ${summary}`);
   return note;
 }
 
@@ -197,6 +233,46 @@ export async function captureDocument(
   const note = await ctx.vault.writeNote(path, frontmatter, input.body.trim());
   ctx.index.reindex(note);
   await ctx.git.commitPaths([note.path], `source: ${summary}`);
+  return note;
+}
+
+export interface CaptureScreenshotInput {
+  title: string;
+  /** What the picture shows and why it matters — the note's whole body. */
+  caption: string;
+  /** The image itself: the file name it arrived as, and its bytes. */
+  image: { name: string; data: Uint8Array };
+}
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
+
+/**
+ * A dropped image → `attachments/` plus a source note that captions it. The
+ * caption is the retrieval index, because it carries the claim: nothing in the
+ * memory can read pixels, so a screenshot nobody described is a file nobody
+ * will ever find again.
+ */
+export async function captureScreenshot(
+  ctx: UseCaseContext,
+  input: CaptureScreenshotInput,
+): Promise<Note> {
+  const date = ctx.clock.now().slice(0, 10);
+  const summary = (input.title.trim() || firstLine(input.caption) || 'screenshot').slice(0, 200);
+  const ext = IMAGE_EXT.exec(input.image.name)?.[1]?.toLowerCase() ?? 'png';
+  const assetPath = await freePath(ctx, `attachments/${fileSlug(summary, date)}.${ext}`);
+  await ctx.vault.writeBinary(assetPath, input.image.data);
+  const body = `${input.caption.trim()}\n\n![${summary}](../${assetPath})\n`;
+  const path = await freePath(ctx, `${dirForType('source')}/${fileSlug(summary, date)}.md`);
+  const frontmatter: SourceNoteFrontmatter = {
+    type: 'source',
+    summary,
+    processing: 'new',
+    source: { system: 'screenshot' },
+    captured: date,
+  };
+  const note = await ctx.vault.writeNote(path, frontmatter, body);
+  ctx.index.reindex(note);
+  await ctx.git.commitPaths([note.path, assetPath], `source: ${summary}`);
   return note;
 }
 
@@ -236,230 +312,30 @@ export async function captureExternalTranscript(
   return note;
 }
 
-export interface IngestCaptureInput {
-  /** What the capture is; omit to let the classifier decide. */
-  kind?: CaptureKind;
-  /**
-   * Is there anything in here to act on? (Sessions v2 Part 5.) When false the
-   * document files and nothing runs over it — extraction is time-sensitive and a
-   * four-month-old transcript has nothing left to extract, while an analysis
-   * session reads unprocessed sources perfectly well. Defaults to true.
-   */
-  process?: boolean;
-  /** The dumped content: transcript body, note text, link + comment, or a screenshot caption. */
-  text: string;
-  title?: string;
-  /**
-   * The file this came from, when there was one. The classifier reads it for
-   * both kind (`.vtt` is a transcript whatever it says) and title — without it
-   * a dropped `nordkap-qbr.txt` files as "Meeting", because a transcript's
-   * first line is a spoken turn and never a name.
-   */
-  fileName?: string;
-  /** Primary URL for a link capture. */
-  url?: string;
-  /** Transcript only — someone else's meeting: filed as a source (signal), not a meeting. */
-  external?: boolean;
-  /** External transcript only — whose meeting it was. */
-  origin?: string;
-  /** Transcript only — attach to this existing (calendar-synced) meeting note
-   *  instead of creating a new one (capture matching, job 3). Ignored when
-   *  `external` is set. */
-  attachTo?: string;
-  /** Screenshot only — the dropped image bytes, stored under attachments/. */
-  attachment?: { name: string; data: Uint8Array };
-}
-
-export interface IngestFollowUp {
-  skill: string;
-  prompt: string;
-  tabTitle: string;
-  /**
-   * Whether the firing trigger lets this arrival draft outbound — the
-   * material's permission, not the session's (Sessions v2 invariant 3). A
-   * colleague's sales call fires the same agent as the PM's own meeting but
-   * without outbound, so "never draft outbound from an external transcript" is
-   * enforced by the tool set rather than by the model remembering a rule.
-   */
-  outbound?: boolean;
-  /** Run headlessly on ingest — the gate is the review, not the run, so nothing
-   * waits on the PO to start it; cards land in the Inbox when the session settles. */
-  background?: boolean;
-}
-
-export interface IngestCaptureResult {
-  note: Note;
-  kind: CaptureKind;
-  /** The session the capture should kick off, if it needs processing. */
-  followUp?: IngestFollowUp;
-}
-
 /**
- * The session a capture fires: always the pipeline's own skill (arrival) — how
- * material is handled is the product's, not a binding the workspace can lose.
+ * Save an edit to an authored/derived note body (immutable-body types reject).
+ * `label` names the version in the history list; a restore reuses this whole
+ * path and only wants a different name for what happened.
  */
-function pipelineFollowUp(
-  mk: (skill: string) => IngestFollowUp,
-  /** The `process` toggle: false means file it and run nothing (Part 5). */
-  process: boolean,
-  /**
-   * Whether this run may draft outbound. The product invariant lives here, in
-   * code: a transcript of the PM's own meeting may draft outbound, everything
-   * else may not — a property of the material, not a rule the file remembers.
-   */
-  fallbackOutbound = false,
-): { followUp?: IngestFollowUp } {
-  if (!process) return {};
-  return { followUp: { ...mk(ARRIVAL_AGENT_NAME), ...(fallbackOutbound ? { outbound: true } : {}) } };
-}
-
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
-
-/**
- * Universal ingest (one pipeline, entry-agnostic): anything the PO dumps — via
- * the capture dialog, a shell drop, or a future watcher/bot — lands here. The
- * capture itself is a user action, so it files immediately; everything derived
- * from it still goes through approval cards. Transcripts hand off to
- * After-Meeting; links and screenshots hand off to Intake.
- */
-export async function ingestCapture(ctx: UseCaseContext, input: IngestCaptureInput): Promise<IngestCaptureResult> {
-  const guess = classifyCapture(input.text, input.attachment?.name ?? input.fileName);
-  const kind = input.kind ?? (input.attachment ? 'screenshot' : guess.kind);
-  const title = input.title?.trim() || guess.title || (kind === 'transcript' ? 'Meeting' : 'capture');
-  const now = ctx.clock.now();
-  const date = now.slice(0, 10);
-
-  if (kind === 'transcript') {
-    if (input.external) {
-      const note = await captureExternalTranscript(ctx, {
-        title,
-        body: input.text,
-        origin: input.origin,
-      });
-      const dispatched = pipelineFollowUp(
-        (skill) => ({
-          skill,
-          prompt: buildKickoff({
-            skill,
-            target: note.path,
-            instruction:
-              'the PM was NOT in this meeting, so this is signal to mine, not a meeting to process. Extract what needs to happen (commitments anyone made, dates, customer signals) and flag anything that contradicts what the memory holds. Never a decision.',
-          }),
-          tabTitle: `Signals: ${title}`,
-          background: true,
-        }),
-        input.process ?? true,
-      );
-      return { note, kind, ...dispatched };
-    }
-    // Capture matching: attach to the meeting the calendar already mirrored,
-    // rather than minting a duplicate note for the same slot.
-    const note = input.attachTo
-      ? await attachTranscriptToMeeting(ctx, { meetingPath: input.attachTo, body: input.text })
-      : await captureMeeting(ctx, { title, body: input.text });
-    const dispatched = pipelineFollowUp(
-      (skill) => ({
-        skill,
-        prompt: buildKickoff({
-          skill,
-          target: note.path,
-          instruction:
-            "this was the PM's own meeting. Read the meeting note and its linked transcript plus the memory it touches, then extract what it changes as approval cards: decisions with their decider, every commitment made, the summary, and anything that contradicts what the memory holds.",
-        }),
-        tabTitle: `After-Meeting: ${title}`,
-        background: true,
-      }),
-      input.process ?? true,
-      // The PM's own meeting is the one capture that may draft outbound.
-      true,
-    );
-    return { note, kind, ...dispatched };
-  }
-
-  const intakeFollowUp = (note: Note, display: string) => (skill: string): IngestFollowUp => ({
-    skill,
-    prompt: buildKickoff({
-      skill,
-      target: note.path,
-      instruction:
-        'read the capture, search the memory it might touch, and extract what needs to happen or to be linked, as approval cards. Ask me if something is unclear.',
-    }),
-    tabTitle: `Intake: ${display}`,
-  });
-
-  if (kind === 'link') {
-    const url = input.url ?? guess.url;
-    if (!url) throw new Error('link capture without a URL');
-    const summary = title.slice(0, 200);
-    const path = await freePath(ctx, `${dirForType('source')}/${fileSlug(summary, date)}.md`);
-    const frontmatter: SourceNoteFrontmatter = {
-      type: 'source',
-      summary,
-      processing: 'new',
-      source: { system: 'web', url },
-      captured: date,
-    };
-    const note = await ctx.vault.writeNote(path, frontmatter, input.text.trim());
-    ctx.index.reindex(note);
-    await ctx.git.commitPaths([note.path], `source: ${summary}`);
-    const dispatched = pipelineFollowUp(intakeFollowUp(note, summary), input.process ?? true);
-    return { note, kind, ...dispatched };
-  }
-
-  if (kind === 'screenshot') {
-    if (!input.attachment) throw new Error('screenshot capture without an image');
-    // The caption beats the file name as the retrieval index — it carries the claim.
-    const summary = (input.title?.trim() || firstLine(input.text) || title).slice(0, 200);
-    const ext = IMAGE_EXT.exec(input.attachment.name)?.[1]?.toLowerCase() ?? 'png';
-    const assetPath = await freePath(ctx, `attachments/${fileSlug(summary, date)}.${ext}`);
-    await ctx.vault.writeBinary(assetPath, input.attachment.data);
-    const caption = input.text.trim();
-    const body = `${caption}\n\n![${summary}](../${assetPath})\n`;
-    const path = await freePath(ctx, `${dirForType('source')}/${fileSlug(summary, date)}.md`);
-    const frontmatter: SourceNoteFrontmatter = {
-      type: 'source',
-      summary,
-      processing: 'new',
-      source: { system: 'screenshot' },
-      captured: date,
-    };
-    const note = await ctx.vault.writeNote(path, frontmatter, body);
-    ctx.index.reindex(note);
-    await ctx.git.commitPaths([note.path, assetPath], `source: ${summary}`);
-    const dispatched = pipelineFollowUp(intakeFollowUp(note, summary), input.process ?? true);
-    return { note, kind, ...dispatched };
-  }
-
-  /**
-   * Ingest is ARRIVAL, and arrival never authors. Everything that comes through
-   * this door is raw material in `sources/` — a dropped file, a pasted thread,
-   * a link, a screenshot. `notes/` is the authored layer and is reachable only
-   * by writing one (`captureNote`, ⌘N): the workspace must never claim to have
-   * written something that was handed to it, because once the memory starts
-   * citing that claim it cannot be corrected.
-   */
-  const note = await captureDocument(ctx, {
-    title,
-    body: input.text,
-    ...(input.fileName ? { fileName: input.fileName } : {}),
-  });
-  const dispatched = pipelineFollowUp(intakeFollowUp(note, title), input.process ?? true);
-  return { note, kind: 'note', ...dispatched };
-}
-
-/** Save an edit to an authored/derived note body (immutable-body types reject). */
-export async function saveAuthoredNote(ctx: UseCaseContext, path: string, body: string): Promise<Note> {
+export async function saveAuthoredNote(
+  ctx: UseCaseContext,
+  path: string,
+  body: string,
+  label?: string,
+): Promise<Note> {
   const existing = await ctx.vault.readNote(path);
-  if (!existing) throw new Error(`note not found: ${path}`);
+  // User-facing text: a toast prints these verbatim, so they name the note the
+  // way the app does everywhere else, never by where it is stored.
+  if (!existing) throw new Error(`there is no note called “${titleFromSlug(path)}”`);
   if (!isBodyEditable(existing.type)) {
-    throw new Error(`this note type has an immutable body: ${path}`);
+    throw new Error(`“${titleFromSlug(path)}” is a kind of note nobody rewrites`);
   }
   // Body-only edit: splice under the raw frontmatter block. Writing
   // `existing.frontmatter` here would persist the coerced fallback for notes
   // whose frontmatter failed validation, erasing the user's real fields.
   const note = await ctx.vault.writeBody(path, body);
   ctx.index.reindex(note);
-  await ctx.git.commitPaths([note.path], `edit: ${note.slug}`);
+  await ctx.git.commitPaths([note.path], label ?? `edit: ${note.slug}`);
   return note;
 }
 
@@ -477,7 +353,7 @@ export async function renameNote(ctx: UseCaseContext, input: RenameNoteInput): P
   const title = input.title.trim();
   if (!title) throw new Error('title must not be empty');
   const existing = await ctx.vault.readNote(input.path);
-  if (!existing) throw new Error(`note not found: ${input.path}`);
+  if (!existing) throw new Error(`there is no note called “${titleFromSlug(input.path)}”`);
   const mutable = TYPE_RULES[existing.type].mutableFields ?? 'all';
   if (mutable !== 'all' && !mutable.includes('title')) {
     throw new Error(`${existing.type} titles are immutable`);
@@ -517,7 +393,7 @@ export async function renameNote(ctx: UseCaseContext, input: RenameNoteInput): P
 /** Delete a note: remove from disk, drop from index, and commit. */
 export async function deleteNote(ctx: UseCaseContext, path: string): Promise<void> {
   const existing = await ctx.vault.readNote(path);
-  if (!existing) throw new Error(`note not found: ${path}`);
+  if (!existing) throw new Error(`there is no note called “${titleFromSlug(path)}”`);
   await ctx.vault.remove(path);
   ctx.index.removeByPath(path);
   await ctx.git.commitPaths([path], `delete: ${existing.slug}`);
@@ -530,7 +406,7 @@ export async function saveFrontmatter(
   frontmatter: Frontmatter,
 ): Promise<Note> {
   const existing = await ctx.vault.readNote(path);
-  if (!existing) throw new Error(`note not found: ${path}`);
+  if (!existing) throw new Error(`there is no note called “${titleFromSlug(path)}”`);
   // The mutability invariant (immutable meeting provenance, receipt-frozen
   // sessions, append-only decisions) is enforced HERE — every frontmatter
   // write path (IPC properties form, MCP) funnels through this use-case.

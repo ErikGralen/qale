@@ -1,5 +1,5 @@
 {
-  "extends": "@pm/typescript-config/react.json",
+  "extends": "@qale/typescript-config/react.json",
   "compilerOptions": {
     "types": ["node"],
     "lib": ["ES2023", "DOM", "DOM.Iterable"],

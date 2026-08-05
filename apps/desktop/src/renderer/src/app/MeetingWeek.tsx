@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { NoteRefDTO } from '@pm/ipc';
+import type { NoteRefDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
 import { TagChip } from '../components/TagChip';
@@ -200,7 +200,7 @@ function eventTooltip(e: CalEvent): string {
     e.note.eventStatus === 'cancelled'
       ? '\nCancelled'
       : needsReview(e.note)
-        ? '\nAwaiting After-Meeting review'
+        ? '\nHappened, not read yet'
         : '';
   return e.note.summary ? `${head}${state}\n${e.note.summary}` : `${head}${state}`;
 }

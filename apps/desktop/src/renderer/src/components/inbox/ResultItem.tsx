@@ -1,4 +1,4 @@
-import { Button } from '@pm/ui';
+import { Button } from '@qale/ui';
 import { X } from 'lucide-react';
 import type { SessionOverview } from '../../state/app-state';
 import { timeAgo } from '../../lib/session-meta';

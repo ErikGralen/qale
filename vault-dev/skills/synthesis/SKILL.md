@@ -16,7 +16,8 @@ in the memory yet says which of those nine said the same thing. Finding that is 
 ## Read
 Scope first: decide which documents are in and say the list back to the PM before reading
 anything. Use vault_list and search_vault over the tag, customer, or theme they named; sources/
-and meetings/ hold raw material, insights/ holds claims already made. Then read what you will
+and meetings/ hold raw material, insights/ holds the claims already made. Read those claims
+before the material: they are what you will extend rather than duplicate. Then read what you will
 weigh the material against: the existing themes and their current `stance`, the decisions that
 touched them (follow superseded chains to the live head), and the ticket mirrors where a theme
 links tracked work.
@@ -32,20 +33,50 @@ document its own full pass; that is what makes "six of nine accounts" a fact ins
 impression. When the question has more than one angle, add entries: three prompts over the same
 document, run in parallel, cannot color each other the way one reader asked for three things
 would. Each child writes `per-item/{target}.md`, carrying the original path and verbatim quotes
-forward.
+forward. Keep those quotes exact. They are what insights get built from, and an exact quote is
+how anyone finds the line again in a 90-minute transcript.
 
 Read the results back with files_list and files_read. If the first pass leaves clusters too big
 to hold, spawn a second wave over the per-item files; children can read everything the first wave
 wrote.
 
 ## Produce
-The clustering, each cluster its own approval card. Cite the original sources, never your session
-files; those get deleted.
+The clustering, each cluster its own approval card.
+
+Two different things get called evidence, and cards break when they are confused. A card's
+`sources` argument cites material already on disk: the original transcripts and sources, never
+your session files (those get deleted) and never a note this run has only proposed. A note's
+`evidence` frontmatter is written into the note itself and may point at anything, including the
+insights a theme rests on.
+
+How to write, whatever the card is:
+- Say what we believe, in your own voice. The claim is the content. Evidence supports it and
+  never stands in for it.
+- Strength is the count. "Six of nine accounts described some version of this" says more than six
+  pasted quotes.
+- Proof is a link. The verbatim text stays in sources/, and the quote backing a claim sits in its
+  insight, so a citation gets the reader there in one click.
+- Quote inline only where the exact wording is itself the finding: it shows how the customer
+  thinks, or it is the line you would repeat in a roadmap argument. Everything else is a citation.
+
+The cards:
+- **Insights** (propose_note, type insight): one claim, stated in your own voice, with every
+  account that backs it gathered inside it. An insight is the smallest thing we believe, and the
+  one place a transcript quote belongs. The bar is a claim someone could act on or a future theme
+  could rest on, never a summary line. List the backing accounts under `evidence`, quote each of
+  them in the body, one short quote per account, and set `confidence` (high, med or low) from how
+  many accounts back it and how directly they say it. Check insights/ first: a second account
+  making the same claim extends the existing insight rather than filing a near-copy. Extending is
+  a propose_update that restates the whole `evidence` list with the new account added, plus that
+  account's quote in the body; an update replaces a field, so a list you shorten is a list you
+  lose. Only a genuinely new claim is a new insight. That is what makes "how many accounts say
+  this" a fact read off the insight instead of a count redone every run.
 - **A new theme** (propose_note, type theme) where several sources converge on something the
-  memory does not hold: state the problem worth solving (not the feature someone asked for), list
-  `evidence`, and open with an honest `stance`: `exploring` unless the evidence is overwhelming.
-- **Insights** (propose_note, type insight) where a single account said something worth keeping
-  on its own, quoting them.
+  memory does not hold: state the problem worth solving (not the feature someone asked for), open
+  with an honest `stance` (`exploring` unless the evidence is overwhelming), and make the body an
+  argument over insights. A theme never quotes a transcript directly; if a quote is worth using,
+  it is worth keeping as an insight first. `evidence` lists the insights the theme rests on, and
+  the card's `sources` cite the transcripts underneath them.
 - **Evidence added to an existing theme** (propose_update): extend `evidence` and say in the
   rationale what the addition changes about how strong the theme now is.
 - **A stance change** (propose_update setting `stance`) only where the evidence genuinely moved:
@@ -53,11 +84,23 @@ files; those get deleted.
   up, anything to `wont-do` when the memory shows a deliberate decline (cite the decision). Never
   `committed` from here: committing is a decision with a decider, so propose the decision card
   and let the PM own it.
-- **Disagreement**: where sources in one cluster conflict, or one contradicts a live decision,
-  make that its own card instead of averaging it away. The disagreement is a finding.
+- **Disagreement**: where sources in one cluster conflict, or one contradicts a live decision or
+  a live insight, make that its own card instead of averaging it away. The disagreement is a
+  finding. A live insight the material contradicts is never quietly rewritten: propose the
+  corrected insight and point it at the old one with a `supersedes` link, so the old one carries
+  a pointer to what replaced it and anyone following a theme's evidence lands on the correction.
 - **What is thin, and what was silent**: which clusters rest on one account, and which documents
   in scope said nothing about the question. Both are findings. "One customer said this loudly,
   six never mentioned it" is worth more than a manufactured pattern.
+
+Promote before you delete. Every per-item finding a cluster ends up leaning on becomes an insight
+card, new or extended, and the cluster's card names those insights in its `evidence`. Do that
+while the session files are still there; the quotes live nowhere else. A handful per cluster is
+the right volume, and they ride along as ordinary cards beside the cluster's own.
+
+Themes written before insights existed carry their quotes inline. Leave them until a run touches
+one, then decompose the quotes it leans on into insights as part of that run's normal proposals.
+There is no sweep to do.
 
 Only when a theme is already `committed` does tracked work follow: draft_jira_issue for what no
 ticket covers, citing the theme and the decision that committed to it. Any other stance produces
@@ -67,6 +110,8 @@ theme to give an existing ticket a parent; themes come from evidence.
 Counting rules:
 - Every claim names its sources and how many distinct accounts back it. A pattern from one
   account is a signal, not a pattern; say which second account would confirm it.
+- An insight's strength is how many accounts its `evidence` lists, so a theme citing it reads the
+  count off the insight rather than recounting the transcripts.
 - Every document in scope gets a pass, and the ones that said nothing are named as silent. If
   some failed to read, report "six of nine"; do not write "the interviews show" over a partial
   read.
@@ -77,4 +122,5 @@ Counting rules:
 ## Then
 Approved cards file the themes and insights and move the stances that moved; the sources stay
 exactly as they were. Session files are working material, not memory: anything worth keeping from
-them was worth proposing as a note. What stayed thin stays visible as thin.
+them was worth proposing as a note, and any quote worth keeping belongs in an insight. What
+stayed thin stays visible as thin.

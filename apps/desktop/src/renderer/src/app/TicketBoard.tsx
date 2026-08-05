@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react';
-import type { NoteRefDTO, StateCategory } from '@pm/ipc';
+import type { NoteRefDTO, StateCategory } from '@qale/ipc';
 import { AlertTriangle } from 'lucide-react';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
@@ -83,7 +83,7 @@ function TicketCard({
         className="absolute inset-0 z-0 w-full cursor-pointer rounded-lg focus:outline-none"
         onClick={(e) => onOpen(note.path, e)}
         onAuxClick={(e) => e.button === 1 && onOpen(note.path, e)}
-        aria-label={`${key} — ${name}`}
+        aria-label={`${key}: ${name}`}
       />
       <div className="pointer-events-none relative z-10 flex flex-col gap-1.5 p-2.5">
         <div className="flex items-center gap-1.5">

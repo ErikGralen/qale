@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { zOutboundPayload } from '@pm/domain';
-import type { EventAttendee, EventStatus, StateCategory } from '@pm/domain';
+import { zOutboundPayload } from '@qale/domain';
+import type { EventAttendee, EventStatus, StateCategory } from '@qale/domain';
 import type {
   Connector,
   ConnectorProvider,
@@ -88,7 +88,7 @@ interface EventsPage {
 }
 
 /** Google never mails the guest list on our behalf. Everything written here was
- *  drafted by an agent and approved by the PM inside pm; Google's own invite and
+ *  drafted by an agent and approved by the PM inside Qale; Google's own invite and
  *  cancellation mail would be a second, unreviewed outbound channel — and with a
  *  demo cast of made-up addresses it is just a stream of mailer-daemon bounces.
  *  Attendees still land on the event, they simply aren't emailed about it. */

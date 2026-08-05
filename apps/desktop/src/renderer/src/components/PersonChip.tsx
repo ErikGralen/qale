@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { PersonCardDTO, PersonMeetingDTO } from '@pm/ipc';
-import { Popover, PopoverContent, PopoverTrigger } from '@pm/ui';
+import type { PersonCardDTO, PersonMeetingDTO } from '@qale/ipc';
+import { Popover, PopoverContent, PopoverTrigger } from '@qale/ui';
 import { ArrowUpRight, Building2, CalendarDays, History, Mail, UserPlus, X } from 'lucide-react';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
@@ -38,7 +38,7 @@ export function PersonChip({ value, onRemove }: { value: string; onRemove?: () =
         <PopoverTrigger asChild>
           <button
             className="flex min-w-0 items-center gap-1.5 rounded-full py-px pr-1 pl-px focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            title={p.kind === 'unknown' ? `${p.label} — no page yet` : p.label}
+            title={p.kind === 'unknown' ? `${p.label}, no page yet` : p.label}
           >
             <Avatar participant={p} hue={hue} />
             <span className="truncate font-medium text-foreground/90">{p.label}</span>
@@ -199,7 +199,7 @@ function PersonPreview({
         <p className="mt-2 px-3 text-xs leading-relaxed text-muted-foreground">
           {participant.email
             ? 'The calendar keeps sending this address. Give them a page and every future invite resolves to it.'
-            : 'No page for them yet — make one and this name becomes a link.'}
+            : 'No page for them yet. Make one and this name becomes a link.'}
         </p>
       )}
       {participant.kind === 'self' && !named && (

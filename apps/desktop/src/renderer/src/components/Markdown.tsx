@@ -1,15 +1,17 @@
-import { type ComponentProps } from 'react';
+import { useMemo, type ComponentProps } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { remarkPlugins } from '@pm/markdown';
+import { remarkPlugins } from '@qale/markdown';
+import { slugFromPath } from '@qale/domain';
 import { invoke } from '../lib/ipc';
 import { isExternalRef } from '../lib/connections';
 import { navFromEvent, type NavOpts } from '../lib/nav';
 import { webUrl } from '../lib/urls';
+import { useApp } from '../state/app-state';
 import { ExternalRefChip } from './ExternalRef';
 
 /**
  * Read-only note renderer. Uses the SAME remark plugin array as the indexer
- * (@pm/markdown) so `[[wikilinks]]` render identically to how they're indexed.
+ * (@qale/markdown) so `[[wikilinks]]` render identically to how they're indexed.
  * Wikilink anchors carry `data-target`; clicking resolves the target to a note
  * path over IPC and routes in-app. Plain links open in the system browser.
  */
@@ -33,6 +35,17 @@ export function Markdown({
    *  Receives the click's nav intent so ⌘click opens the note in a new tab. */
   onOpenNote?: (path: string, opts?: NavOpts) => void;
 }) {
+  const { tree } = useApp();
+  // A link the author wrote as `[[decisions/adopt-workos]]` reads as the note's
+  // own name, not as where it is filed. Storage never shows up in a read view;
+  // the editor still shows the link exactly as typed, because there it is the
+  // text being edited.
+  const titleBySlug = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of tree?.groups ?? []) for (const n of g.notes) m.set(n.slug, n.title);
+    return m;
+  }, [tree]);
+
   return (
     <div className="note-body">
       <ReactMarkdown
@@ -82,6 +95,13 @@ export function Markdown({
                 const path = await invoke['note:resolveLink'](target);
                 if (path) onOpenNote?.(path, opts);
               };
+              // No alias means the link prints its target, which is a slug. Show
+              // the note's name instead when the workspace holds it; a target
+              // nothing answers to stays as written, so a broken link still
+              // reads as one.
+              const written = typeof props.children === 'string' ? props.children : null;
+              const title =
+                written && written === target ? titleBySlug.get(slugFromPath(target)) : undefined;
               return (
                 <>
                   <TypeChip label={linkType} />
@@ -92,7 +112,9 @@ export function Markdown({
                     // Middle-click = open in background tab (browser semantics).
                     onAuxClick={(e) => e.button === 1 && void open(e)}
                     data-unresolved={undefined}
-                  />
+                  >
+                    {title ?? props.children}
+                  </a>
                 </>
               );
             }

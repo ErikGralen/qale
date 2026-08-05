@@ -1,4 +1,4 @@
-# @pm/connectors
+# @qale/connectors
 
 Provider adapters behind a generic `Connector` interface. The domain and UI speak
 only the generic vocabulary — `ticket`, `wikipage`, `container`,
@@ -36,7 +36,7 @@ cadence; the settings UI renders `authSchema` generically and calls
 
 ## Atlassian adapter (src/atlassian/)
 
-Wraps the existing `AtlassianClient` (`@pm/atlassian`) — JQL/CQL search, v2
+Wraps the existing `AtlassianClient` (`@qale/atlassian`) — JQL/CQL search, v2
 pages, ADF→markdown, serialized requests with 429/Retry-After backoff all stay
 there. This package adds the probe, the generic mapping, and the pull shapes.
 
@@ -93,7 +93,7 @@ a deliberately narrow label heuristic (`blocked`, `impediment`, `on hold`,
 
 ## Tests
 
-`pnpm --filter @pm/connectors test` — fixture-driven, no live credentials: a
+`pnpm --filter @qale/connectors test` — fixture-driven, no live credentials: a
 recording fake fetch serves JSON from `test/fixtures/` and the tests assert
 both the generic mapping and the wire shape (JQL/CQL strings, ADF bodies,
 version bumps, gateway routing for scoped tokens).

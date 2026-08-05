@@ -16,10 +16,13 @@ import {
   SYNTHESIS_SKILL,
   VOICE_EXEC,
   FILING_RULES,
+  LANGUAGE,
   DEFAULT_SKILL_BY_NAME,
   DEFAULT_SKILLS,
   DEFAULT_AGENTS,
   RETIRED_SKILL_FILES,
+  newSkillFile,
+  shippedHash,
   buildSkillBrief,
   buildKickoff,
   parseKickoff,
@@ -51,6 +54,10 @@ test('starts: what puts a file in force, defaulting to reachable', () => {
   assert.deepEqual(parseRunnable(VOICE_EXEC, 'voice-exec').starts, ['always']);
   assert.equal(parseRunnable(VOICE_EXEC, 'voice-exec').audience, 'executives');
   assert.deepEqual(parseRunnable(FILING_RULES, '_filing-rules').starts, ['always']);
+  // The language rule carries no audience on purpose: an audience would scope it
+  // to drafting, and it has to reach fan-out children, who never draft.
+  assert.deepEqual(parseRunnable(LANGUAGE, '_language').starts, ['always']);
+  assert.equal(parseRunnable(LANGUAGE, '_language').audience, undefined);
   // A file that says nothing is one you can run — never silently unreachable.
   const bare = parseRunnable(`---\ntype: skill\nsummary: s\n---\nX.\n`, 't');
   assert.deepEqual(bare.starts, ['you-run-it', 'model-picks-it-up']);
@@ -203,6 +210,60 @@ test('no shipped default carries a frontmatter error, and every one has instruct
   }
 });
 
+test('every shipped file ends the version list it is fingerprinted in', () => {
+  // The guard against the one mistake that breaks the upgrade path silently:
+  // editing a shipped file and not appending its new fingerprint. Everyone
+  // already running the old text would then be asked to review a change they
+  // never made, and nobody would find out until a user did.
+  for (const { file, content, shipped } of [...DEFAULT_SKILLS, ...DEFAULT_AGENTS]) {
+    const now = shippedHash(content);
+    assert.ok(shipped.length > 0, `${file} has no shipped versions recorded`);
+    assert.equal(
+      shipped[shipped.length - 1],
+      now,
+      `${file} changed. APPEND '${now}' to its list in shipped-versions.ts (do not replace the last one: the older entries are what let an existing workspace update quietly).`,
+    );
+    // Appended, never replaced — a list that lost its history would still pass
+    // the check above while quietly nagging everyone on the previous build.
+    assert.equal(new Set(shipped).size, shipped.length, `${file} lists a version twice`);
+  }
+});
+
+test('a retired file keeps every fingerprint it ever shipped under', () => {
+  // Its versions are the only way to tell an untouched copy (safe to take away)
+  // from one somebody rewrote (theirs to keep), so retiring a file must carry
+  // its list across rather than drop it.
+  const shipped = [...DEFAULT_SKILLS, ...DEFAULT_AGENTS];
+  for (const gone of RETIRED_SKILL_FILES) {
+    assert.ok(!shipped.some((s) => s.file === gone.file), `${gone.file} is both shipped and retired`);
+  }
+  const withHistory = RETIRED_SKILL_FILES.filter((g) => g.shipped.length > 0);
+  assert.ok(withHistory.length >= 8, 'the retired list lost its version history');
+});
+
+test('a brand new skill parses clean, and says how it starts', () => {
+  const c = parseRunnable(newSkillFile('Chase renewals'), 'chase-renewals');
+  // A red flag on a file the PM created ten seconds ago would be a bad first
+  // minute, and the flag would be ours, not theirs.
+  assert.deepEqual(c.errors, []);
+  assert.equal(c.title, 'Chase renewals');
+  assert.deepEqual(c.starts, ['you-run-it', 'model-picks-it-up']);
+  assert.ok(c.body.includes('read-when-relevant'), 'the template never names the other doors');
+  // A title with YAML punctuation in it must survive rather than break the file.
+  const odd = parseRunnable(newSkillFile('Renewals: "the hard ones"'), 'renewals');
+  assert.deepEqual(odd.errors, []);
+  assert.equal(odd.title, 'Renewals: "the hard ones"');
+});
+
+test('the fingerprint ignores what an editor changes and nothing else', () => {
+  const file = 'a: 1\n\nSome instructions.\n';
+  assert.equal(shippedHash(file), shippedHash(file.replace(/\n/g, '\r\n')));
+  assert.equal(shippedHash(file), shippedHash(`${file}\n\n`));
+  assert.notEqual(shippedHash(file), shippedHash(file.replace('Some', 'Other')));
+  // One character back is a different version, which is the whole point.
+  assert.notEqual(shippedHash(file), shippedHash(file.replace('instructions', 'instruction')));
+});
+
 test('ask and chat dissolved into built-ins: resolvable by name, never shipped as files', () => {
   assert.ok(DEFAULT_SKILL_BY_NAME['ask']);
   assert.ok(DEFAULT_SKILL_BY_NAME['chat']);
@@ -219,8 +280,8 @@ test('ask and chat dissolved into built-ins: resolvable by name, never shipped a
   // Retired files are named in the layout they were shipped in; seeding removes
   // both forms (see ensureDefaultSkills), so what matters is that none is back.
   for (const gone of RETIRED_SKILL_FILES) {
-    const folder = gone.replace(/\.md$/, '');
-    assert.ok(!files.some((f) => f.startsWith(`${folder}/`)), `${gone} is still shipped`);
+    const folder = gone.file.replace(/\.md$/, '');
+    assert.ok(!files.some((f) => f.startsWith(`${folder}/`)), `${gone.file} is still shipped`);
   }
 });
 
@@ -276,7 +337,7 @@ test('the switch is a floor, so it is deliberately outside the composing OR', ()
   const cfg = parseRunnable(off, 'synthesis');
   assert.equal(cfg.enabled, false);
   // Still parsed in full. The floor is enforced before a session is fired
-  // (runnableEnabled, @pm/application), never by quietly emptying `can`: a file
+  // (runnableEnabled, @qale/application), never by quietly emptying `can`: a file
   // whose capabilities vanished when it was switched off would show the PM a
   // page claiming it does less than it does.
   assert.deepEqual(cfg.can, ['draft-outbound', 'keep-working-files']);
@@ -306,7 +367,10 @@ test('the receipt records every skill that was in force, not just the opener', (
   assert.equal(r.frontmatter.skill, 'synthesis');
   assert.ok(r.path.includes('-synthesis-'));
   assert.deepEqual(r.frontmatter.skills, ['chat', 'synthesis']);
-  assert.ok(r.body.includes('Skills: chat → synthesis'));
+  // The frontmatter keeps the invocation names (addresses); the body, which a
+  // person reads, prints the titles.
+  assert.ok(r.body.includes('Skills: Open session → Find the pattern'));
+  assert.equal(r.frontmatter.title, 'Find the pattern session');
 });
 
 test('a skill invoked on a later turn does not rename an already-filed receipt', () => {
@@ -323,7 +387,7 @@ test('a skill invoked on a later turn does not rename an already-filed receipt',
 test('a kickoff round-trips: the chat reads back the skill, the page, and the wording', () => {
   const prompt = buildKickoff({
     skill: 'arrival',
-    target: 'sources/2026-07-30-meeting-with-xavier.md',
+    targets: ['sources/2026-07-30-meeting-with-xavier.md'],
     instruction: 'read the capture, search the memory it might touch.',
   });
   assert.equal(
@@ -332,8 +396,25 @@ test('a kickoff round-trips: the chat reads back the skill, the page, and the wo
   );
   assert.deepEqual(parseKickoff(prompt), {
     skill: 'arrival',
-    target: 'sources/2026-07-30-meeting-with-xavier.md',
+    targets: ['sources/2026-07-30-meeting-with-xavier.md'],
     instruction: 'read the capture, search the memory it might touch.',
+  });
+});
+
+test('a kickoff over several pages names every one of them', () => {
+  const prompt = buildKickoff({
+    skill: 'arrival',
+    targets: ['meetings/2026-08-04-qbr.md', 'sources/2026-08-04-deck.md'],
+    instruction: 'read both.',
+  });
+  assert.equal(
+    prompt,
+    'Run the arrival skill on meetings/2026-08-04-qbr.md, sources/2026-08-04-deck.md: read both.',
+  );
+  assert.deepEqual(parseKickoff(prompt), {
+    skill: 'arrival',
+    targets: ['meetings/2026-08-04-qbr.md', 'sources/2026-08-04-deck.md'],
+    instruction: 'read both.',
   });
 });
 
@@ -346,7 +427,7 @@ test('a kickoff without a page, and transcripts written before this contract', (
   // "session" was the older word for the same thing — old conversations still say it.
   assert.deepEqual(parseKickoff('Run the before-meeting session on meetings/2026-07-30-nordkap.md: prep it.'), {
     skill: 'before-meeting',
-    target: 'meetings/2026-07-30-nordkap.md',
+    targets: ['meetings/2026-07-30-nordkap.md'],
     instruction: 'prep it.',
   });
 });

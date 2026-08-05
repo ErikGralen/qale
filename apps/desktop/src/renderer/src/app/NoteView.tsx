@@ -1,9 +1,18 @@
-import { useEffect, useState } from 'react';
-import { isMirrorType, lifecycleValue, lifecycleValueLabel, noteTypeLabel, readOnlyReason } from '@pm/domain';
-import type { BacklinkDTO } from '@pm/ipc';
-import { Badge, Button, Separator } from '@pm/ui';
-import { CalendarDays, Link2, Lock, MessageSquare, Pin, Sparkles, Trash2, History } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  isMirrorType,
+  lifecycleValue,
+  lifecycleValueLabel,
+  noteTypeLabel,
+  readOnlyReason,
+  transcriptRefs,
+} from '@qale/domain';
+import type { BacklinkDTO } from '@qale/ipc';
+import { Badge, Button, Separator } from '@qale/ui';
+import { CalendarDays, CheckCheck, Link2, Lock, MessageSquare, Mic, Pin, Sparkles, Trash2, History } from 'lucide-react';
 import { useApp, type SessionOverview } from '../state/app-state';
+import { useAimedDrop } from '../lib/aimed-drop';
+import { requestCapture } from '../lib/capture-event';
 import { navFromEvent } from '../lib/nav';
 import { noteTypeIcon } from '../lib/note-icons';
 import { Markdown } from '../components/Markdown';
@@ -14,7 +23,7 @@ import { NoteHistory } from '../components/NoteHistory';
 import { PropertiesBlock } from '../components/PropertiesBlock';
 import { TitleEditor } from '../components/TitleEditor';
 import { SkillAgentPage } from './SkillAgentPage';
-import { askSelectionSeed, beforeMeetingSeed, handleTodoSeed, processNoteSeed } from '../lib/agent-nudges';
+import { askSelectionSeed, beforeMeetingSeed, handleTodoSeed, processNoteSeed, readMeetingSeed } from '../lib/agent-nudges';
 import { localDateStr } from '../lib/dates';
 
 /** "today 14:00" / "tomorrow" / "in 3d" — when the meeting starts, or null if past. */
@@ -64,13 +73,37 @@ function chatForReceipt(
 }
 
 export function NoteView({ path }: { path: string }) {
-  const { docData, openDoc, openFolder, loadDoc, saveNote, renameNote, deleteNote, openSession, openChat, sessions, favorites, toggleFavorite, search } =
+  const { docData, openDoc, openFolder, loadDoc, saveNote, renameNote, deleteNote, openSession, openChat, sessions, favorites, toggleFavorite, search, markMeetingReviewed } =
     useApp();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  // The live editor's "save what's typed, now". Restoring a version replaces
+  // the body underneath it, and an unsaved keystroke would otherwise win and
+  // then autosave straight back over the restore.
+  const editorFlush = useRef<(() => Promise<void>) | null>(null);
+  const registerFlush = useCallback((flush: () => Promise<void>) => {
+    editorFlush.current = flush;
+  }, []);
+  /** The live editor's cursor, for the empty-meeting block's second door. */
+  const editorFocus = useRef<(() => void) | null>(null);
+  const registerFocus = useCallback((focus: () => void) => {
+    editorFocus.current = focus;
+  }, []);
+  const flushEdits = useCallback(() => editorFlush.current?.() ?? Promise.resolve(), []);
   const data = docData[path];
   const currentNote = data?.note ?? null;
   const backlinks = data?.backlinks ?? [];
+  /**
+   * A meeting page is a drop target for its own recordings (rung 2): dropping
+   * here says which meeting this belongs to, which is the one question the
+   * matcher used to answer by looking at the clock. Declared above the early
+   * returns because hooks cannot move.
+   */
+  const aimed = useAimedDrop(
+    currentNote?.type === 'meeting'
+      ? { kind: 'meeting', path: currentNote.path, title: currentNote.title }
+      : null,
+  );
 
   // Tabs restored from localStorage (or opened in the background) have no
   // docData yet — only the active tab is loaded at boot. Fetch on first view;
@@ -134,6 +167,32 @@ export function NoteView({ path }: { path: string }) {
   const upcoming =
     currentNote.type === 'meeting' && !eventCancelled ? upcomingLabel(currentNote.frontmatter) : null;
   const offerBrief = upcoming !== null && !/^## Prep\b/m.test(currentNote.body);
+  // A meeting the calendar made, that has already happened, and that holds
+  // nothing at all. Without this the page is machine frontmatter over a blank
+  // sheet, with no hint that dropping the transcript here is the whole point
+  // (docs/capture-nudge.md). Part of the empty state, so it needs no dismiss:
+  // the first word typed takes it away.
+  const emptyMeeting =
+    syncedMeeting &&
+    !eventCancelled &&
+    upcoming === null &&
+    typeof currentNote.frontmatter['date'] === 'string' &&
+    transcriptRefs(currentNote.frontmatter).length === 0 &&
+    !currentNote.body.trim();
+  /**
+   * A meeting that has already happened. It gets two doors of its own (AR-3,
+   * AR-4): one to add another recording, because a second half or a colleague's
+   * copy arriving later had nowhere to go, and one to read what it already
+   * holds, because a review that failed to start had no way to be started again.
+   */
+  const pastMeeting = currentNote.type === 'meeting' && !eventCancelled && upcoming === null;
+  const meetingTranscripts = currentNote.type === 'meeting' ? transcriptRefs(currentNote.frontmatter) : [];
+  const unreadMeeting = pastMeeting && meetingTranscripts.length > 0;
+  /** The material's own door back into the tray, with the meeting preset. */
+  const addTranscript = () =>
+    requestCapture({
+      aim: { kind: 'meeting', path: currentNote.path, title: currentNote.title },
+    });
   // An open commitment can be handed to the memory to plan/close/reschedule.
   const todoOpen =
     currentNote.type === 'todo' && (currentNote.frontmatter['commitment'] ?? 'open') === 'open';
@@ -145,21 +204,29 @@ export function NoteView({ path }: { path: string }) {
   // is the whole record.
   const receiptChat =
     currentNote.type === 'session' ? chatForReceipt(currentNote.path, currentNote.frontmatter, sessions) : null;
-  // The path as a location, not a raw file label: type glyph → folder (opens
-  // it) → filename. Root-level notes drop the folder segment.
+  // Where you are, in the words the app uses everywhere else: type glyph →
+  // the shelf this note sits on (opens it) → the note's own name. Never the
+  // file path: where a note is stored is not something the reader has to know,
+  // and the shelf answers the only question the path was standing in for.
   const slash = currentNote.path.lastIndexOf('/');
   const folder = slash >= 0 ? currentNote.path.slice(0, slash) : null;
-  const filename = slash >= 0 ? currentNote.path.slice(slash + 1) : currentNote.path;
+  const shelf = folder ? folder.charAt(0).toUpperCase() + folder.slice(1) : null;
   const TypeIcon = noteTypeIcon(currentNote.type);
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className={`flex h-full flex-col ${aimed.over ? 'bg-brand/5 ring-1 ring-brand/40 ring-inset' : ''}`}
+      {...aimed.handlers}
+    >
       <PageHeader
         icon={TypeIcon}
-        crumbs={folder ? [{ label: folder, onClick: (e) => openFolder(folder, navFromEvent(e)) }] : undefined}
-        label={filename}
-        labelClassName="font-mono"
-        labelTitle={currentNote.path}
+        crumbs={
+          folder && shelf
+            ? [{ label: shelf, onClick: (e) => openFolder(folder, navFromEvent(e)) }]
+            : undefined
+        }
+        label={currentNote.title}
+        labelTitle={currentNote.title}
       >
         <>
           {receiptChat && (
@@ -179,13 +246,36 @@ export function NoteView({ path }: { path: string }) {
               onClick={() =>
                 openSession('process-note', {
                   initialPrompt: processNoteSeed(currentNote.path),
-                  title: `Process — ${currentNote.title}`,
+                  title: `Process: ${currentNote.title}`,
                   fresh: true,
                 })
               }
-              title="Work this note into the memory — clean it up, update the pages it touches, file what it implies — all as approval cards. Re-run anytime after adding more."
+              title="Work this note into the memory: clean it up, update the pages it touches, file what it implies, all as approval cards. Re-run anytime after adding more."
             >
               <Sparkles className="size-3.5" /> Process
+            </Button>
+          )}
+          {/* Every past meeting can take another recording, not only the empty
+              ones: a second half, a colleague's copy, a transcript that arrived
+              a week late all used to have nowhere to go (AR-4). */}
+          {pastMeeting && (
+            <Button size="sm" variant="secondary" onClick={addTranscript} title="Add a recording to this meeting">
+              <Mic className="size-3.5" /> Add transcript
+            </Button>
+          )}
+          {unreadMeeting && (
+            <Button
+              size="sm"
+              onClick={() =>
+                openSession('arrival', {
+                  initialPrompt: readMeetingSeed(currentNote.path),
+                  title: `Read: ${currentNote.title}`,
+                  fresh: true,
+                })
+              }
+              title="Read this meeting's transcripts and propose what they change, as approval cards."
+            >
+              <Sparkles className="size-3.5" /> Read this meeting
             </Button>
           )}
           {todoOpen && (
@@ -202,11 +292,11 @@ export function NoteView({ path }: { path: string }) {
                     },
                     localDateStr(),
                   ),
-                  title: `Handle — ${currentNote.title}`,
+                  title: `Handle: ${currentNote.title}`,
                   fresh: true,
                 })
               }
-              title="Help me handle this commitment — the memory proposes a plan, a close, or a reschedule as approval cards."
+              title="Help me handle this commitment: the memory proposes a plan, a close, or a reschedule as approval cards."
             >
               <Sparkles className="size-3.5" /> Help me handle this
             </Button>
@@ -227,7 +317,7 @@ export function NoteView({ path }: { path: string }) {
                 icon={Pin}
                 label={favorites.includes(currentNote.path) ? 'Unpin' : 'Pin'}
                 title={
-                  favorites.includes(currentNote.path) ? 'Unpin' : 'Pin — keep on the sidebar'
+                  favorites.includes(currentNote.path) ? 'Unpin' : 'Pin: keep on the sidebar'
                 }
                 onClick={() => toggleFavorite(currentNote.path)}
                 pressed={favorites.includes(currentNote.path)}
@@ -235,6 +325,17 @@ export function NoteView({ path }: { path: string }) {
               />
               <HeaderMenu
                 items={[
+                  // A meeting nobody is going to read: settle it by hand rather
+                  // than leave it sitting in the attention list for good (AR-3).
+                  ...(unreadMeeting && currentNote.frontmatter['processing'] !== 'processed'
+                    ? [
+                        {
+                          label: 'Mark as filed',
+                          icon: CheckCheck,
+                          action: () => void markMeetingReviewed(currentNote.path),
+                        },
+                      ]
+                    : []),
                   { label: 'Version history', icon: History, action: () => setShowHistory(true) },
                   { label: 'Delete note', icon: Trash2, action: () => setConfirmDelete(true), danger: true },
                 ]}
@@ -301,7 +402,7 @@ export function NoteView({ path }: { path: string }) {
             <div className="mb-4 flex items-center gap-2.5 rounded-lg bg-brand/6 px-3 py-2 ring-1 ring-brand/20">
               <Sparkles className="size-4 shrink-0 text-brand" aria-hidden />
               <p className="min-w-0 flex-1 text-sm">
-                Happening {upcoming} — the memory can brief you: what changed since these people were
+                Happening {upcoming}. The memory can brief you: what changed since these people were
                 last told, open questions, loose ends. One approval card writes it here.
               </p>
               <Button
@@ -309,7 +410,7 @@ export function NoteView({ path }: { path: string }) {
                 onClick={() =>
                   openSession('meeting-prep', {
                     initialPrompt: beforeMeetingSeed(currentNote.path),
-                    title: `Brief — ${currentNote.title}`,
+                    title: `Brief: ${currentNote.title}`,
                     fresh: true,
                   })
                 }
@@ -319,9 +420,28 @@ export function NoteView({ path }: { path: string }) {
             </div>
           )}
 
+          {emptyMeeting && (
+            <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-muted/50 px-3 py-2.5">
+              <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+                This meeting has nothing in it yet.
+              </p>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Button size="sm" variant="secondary" onClick={addTranscript}>
+                  <Mic className="size-3.5" /> Add transcript
+                </Button>
+                {/* Three typed lines are worth more than a guilt trip about a
+                    missing recording, so the second door just hands over the
+                    cursor. */}
+                <Button size="sm" variant="ghost" onClick={() => editorFocus.current?.()}>
+                  Write what happened
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Why there is no cursor here, one line, right where the eye lands
               when the click does nothing. A box would read as a warning; this
-              is orientation. The sentence is the domain's (@pm/domain
+              is orientation. The sentence is the domain's (@qale/domain
               readOnlyReason), so every read-only surface says the same thing. */}
           {!editable && (
             <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -348,11 +468,13 @@ export function NoteView({ path }: { path: string }) {
               body={currentNote.body}
               onSave={(body) => saveNote(currentNote.path, body)}
               onOpenNote={openDoc}
+              registerFlush={registerFlush}
+              registerFocus={registerFocus}
               searchNotes={search}
               onAsk={(text) =>
                 openSession('ask', {
                   initialPrompt: askSelectionSeed(currentNote.path, text),
-                  title: `Ask — ${currentNote.title}`,
+                  title: `Ask: ${currentNote.title}`,
                   fresh: true,
                 })
               }
@@ -398,7 +520,12 @@ export function NoteView({ path }: { path: string }) {
           )}
         </div>
       </div>
-      <NoteHistory path={currentNote.path} open={showHistory} onOpenChange={setShowHistory} />
+      <NoteHistory
+        path={currentNote.path}
+        open={showHistory}
+        onOpenChange={setShowHistory}
+        flushEdits={editable ? flushEdits : undefined}
+      />
     </div>
   );
 }

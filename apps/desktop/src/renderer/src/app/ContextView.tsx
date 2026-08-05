@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Hash } from 'lucide-react';
-import { dirForType, noteTypeLabel } from '@pm/domain';
-import type { NoteRefDTO, NoteType } from '@pm/ipc';
+import { dirForType, noteTypeLabel } from '@qale/domain';
+import type { NoteRefDTO, NoteType } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { NoteList } from './NoteList';
 import { PageHeader } from '../components/PageHeader';
@@ -23,7 +23,7 @@ const SECTION_LABEL: Partial<Record<NoteType, string>> = {
   note: 'Notes',
   source: 'Sources',
   // Mirrors read as the system they copy ("Jira mirrors"), not as a shelf of
-  // the memory — one vocabulary, from @pm/domain.
+  // the memory — one vocabulary, from @qale/domain.
   ticket: `${noteTypeLabel('ticket')}s`,
   wikipage: `${noteTypeLabel('wikipage')}s`,
 };
@@ -59,7 +59,7 @@ export function ContextView({ tag }: { tag: string }) {
         <div className="mx-auto w-full max-w-2xl">
           {notes.length === 0 ? (
             <p className="px-1 py-2 text-sm text-muted-foreground">
-              Nothing tagged #{tag} yet. The librarian suggests contexts when filing — approve a card carrying this
+              Nothing tagged #{tag} yet. The librarian suggests contexts when filing: approve a card carrying this
               tag and it fills up.
             </p>
           ) : (

@@ -1,5 +1,5 @@
 import { Bot, ChevronRight, Sparkles } from 'lucide-react';
-import type { AgentDTO } from '@pm/ipc';
+import type { AgentDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
 import { PageHeader } from '../components/PageHeader';
@@ -28,7 +28,7 @@ function AgentRow({ agent }: { agent: AgentDTO }) {
           <button
             className="truncate rounded text-sm font-semibold text-foreground after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/50 focus-visible:after:ring-inset"
             onClick={(e) => void openDoc(agent.path, navFromEvent(e))}
-            title={`Open ${agent.path}`}
+            title={`Open ${agent.title}`}
           >
             {agent.title}
           </button>
@@ -62,7 +62,7 @@ export function AgentsView() {
 
       <div className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-8 py-5">
         <p className="mb-3 px-1 text-dense text-muted-foreground">
-          Agents start themselves — on a clock, or when something happens in the workspace.
+          Agents start themselves, on a clock, or when something happens in the workspace.
           Everything they produce waits in the Inbox for your approval.
         </p>
 
@@ -74,7 +74,7 @@ export function AgentsView() {
             <h2 className="text-lg font-semibold">No agents yet</h2>
             <p className="max-w-sm text-sm text-muted-foreground">
               The built-in agents are seeded when a workspace opens, and the app starts them
-              itself — on a clock, or when something happens in the workspace.
+              itself, on a clock, or when something happens in the workspace.
             </p>
           </div>
         ) : (

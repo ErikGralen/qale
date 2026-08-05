@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { AskRequestDTO, NoteRefDTO, ProposalDTO, VaultTreeDTO } from '@pm/ipc';
+import type { AskRequestDTO, NoteRefDTO, ProposalDTO, VaultTreeDTO } from '@qale/ipc';
 import {
   buildAttention,
   countOf,
@@ -69,10 +69,28 @@ function card(id: string, extra: Partial<ProposalDTO> = {}): ProposalDTO {
   };
 }
 
-const ask = (sessionId: string): AskRequestDTO => ({ id: `ask-${sessionId}`, sessionId, questions: [] });
+/** `offered` is main's answer to "did a tidy pass nobody started ask this?" */
+const ask = (sessionId: string, offered = false): AskRequestDTO => ({
+  id: `ask-${sessionId}`,
+  sessionId,
+  questions: [],
+  offered,
+});
 
 function input(over: Partial<AttentionInput> = {}): AttentionInput {
-  return { proposals: [], sessions: [], askRequests: {}, pings: [], tree: null, ...over };
+  return {
+    proposals: [],
+    sessions: [],
+    askRequests: {},
+    tree: null,
+    captureNudge: null,
+    ...over,
+  };
+}
+
+/** A calendar mirror: the app knows it happened, whatever anyone wrote down. */
+function synced(slug: string, extra: Partial<NoteRefDTO> = {}): NoteRefDTO {
+  return note('meeting', slug, { synced: true, captured: false, durationMin: 60, ...extra });
 }
 
 const ids = (items: readonly { id: string }[]): string[] => items.map((i) => i.id);
@@ -81,26 +99,12 @@ test('attention: an empty workspace waits on nothing', () => {
   assert.deepEqual(buildAttention(input(), NOW), []);
 });
 
-test('attention: the ranking runs question → card → answer → clock → librarian', () => {
+test('attention: the ranking runs question → card → answer → clock', () => {
   const items = buildAttention(
     input({
       askRequests: { 'session-2': ask('session-2') },
       proposals: [card('p1')],
       sessions: [session('session-1'), session('session-2', { running: true }), session('session-3', { unread: true })],
-      pings: [
-        {
-          id: 'ping-1',
-          title: 'Two notes look like the same thing',
-          body: '',
-          evidence: [],
-          skill: 'librarian',
-          seedPrompt: '',
-          targetPath: null,
-          payload: null,
-          status: 'pending',
-          created: NOW,
-        },
-      ],
       tree: tree(
         note('meeting', 'nordkap', { date: '2026-07-28', time: '14:00', lifecycle: 'new' }),
         note('meeting', 'kranelund', { date: '2026-07-27', lifecycle: 'new' }),
@@ -116,18 +120,16 @@ test('attention: the ranking runs question → card → answer → clock → lib
     'meeting:meetings/nordkap.md',
     'review:meetings/kranelund.md',
     'todo:todos/send-the-summary.md',
-    'ping:ping-1',
   ]);
 });
 
-test('attention: the badge counts questions, cards and unread answers, never the librarian', () => {
+test('attention: the badge counts questions, cards and unread answers', () => {
   const items = buildAttention(
     input({
       askRequests: { 'session-1': ask('session-1') },
       proposals: [card('p1'), card('p2')],
       sessions: [session('session-1', { running: true }), session('session-2', { unread: true })],
       tree: tree(note('meeting', 'kranelund', { date: '2026-07-27', lifecycle: 'new' })),
-      pings: [],
     }),
     NOW,
   );
@@ -135,6 +137,48 @@ test('attention: the badge counts questions, cards and unread answers, never the
   // meeting is in the list but deliberately outside the Inbox badge.
   assert.equal(waitingOnYou(items).length, 4);
   assert.equal(countOf(items, 'review'), 1);
+});
+
+test('attention: a question from a background tidy pass is offered, never owed', () => {
+  const items = buildAttention(
+    input({
+      askRequests: {
+        'session-1': ask('session-1'),
+        'session-2': ask('session-2', true),
+      },
+      sessions: [session('session-1', { running: true }), session('session-2', { running: true })],
+    }),
+    NOW,
+  );
+  // Both are in the list — the Inbox shows the librarian's question too.
+  assert.deepEqual(ids(items), ['question:session-1', 'question:session-2']);
+  assert.equal(items.find((i) => i.id === 'question:session-1')!.quiet, false);
+  assert.equal(items.find((i) => i.id === 'question:session-2')!.quiet, true);
+  // But only the one the PO's own session is blocked on counts, and only that
+  // one is worth a row on Home.
+  assert.deepEqual(ids(waitingOnYou(items)), ['question:session-1']);
+  assert.deepEqual(ids(homeRows(items, 4, NOW)), ['question:session-1']);
+});
+
+test('attention: a librarian session the PO started themselves is owed like any other', () => {
+  // Same agent, both times. What differs is who started the run, which main
+  // has already folded into `offered`. The list never re-derives it from the
+  // agent's name, or a question the PO is sitting there waiting for would go
+  // quiet under them.
+  const items = buildAttention(
+    input({
+      askRequests: {
+        'by-hand': ask('by-hand'),
+        'by-the-clock': ask('by-the-clock', true),
+      },
+      sessions: [session('by-hand', { running: true }), session('by-the-clock', { running: true })],
+    }),
+    NOW,
+  );
+  assert.equal(items.find((i) => i.id === 'question:by-hand')!.quiet, false);
+  assert.equal(items.find((i) => i.id === 'question:by-the-clock')!.quiet, true);
+  assert.deepEqual(ids(waitingOnYou(items)), ['question:by-hand']);
+  assert.deepEqual(ids(homeRows(items, 4, NOW)), ['question:by-hand']);
 });
 
 test('attention: a resolved card and a shelved session leave the list', () => {
@@ -213,6 +257,81 @@ test("attention: commitments are the PO's own, due today or slipped", () => {
   assert.equal(countOf(items, 'todo'), 2);
 });
 
+test('capture: a synced meeting with nothing in it asks, once the room has cleared', () => {
+  const items = buildAttention(
+    input({
+      tree: tree(
+        // Ended 20 minutes ago: still walking back to the desk.
+        synced('just-ended', { date: '2026-07-28', time: '07:40' }),
+        synced('yesterday', { date: '2026-07-27', time: '14:00' }),
+        // Nothing to ask about: it holds something, it is off the calendar, it
+        // was called off, or it is too old to be worth anyone's guilt.
+        synced('filed', { date: '2026-07-27', time: '15:00', captured: true }),
+        note('meeting', 'handwritten', { date: '2026-07-27', time: '15:00' }),
+        synced('called-off', { date: '2026-07-27', time: '16:00', eventStatus: 'cancelled' }),
+        synced('ancient', { date: '2026-07-20', time: '10:00' }),
+      ),
+    }),
+    NOW,
+  );
+  assert.deepEqual(ids(items), ['capture:meetings/yesterday.md']);
+  assert.equal(items[0]!.label, "Yesterday's yesterday has nothing in it yet");
+  assert.deepEqual(items[0]!.target, {
+    open: 'capture',
+    path: 'meetings/yesterday.md',
+    title: 'yesterday',
+  });
+});
+
+test('capture: an all-day meeting is asked about the next day, not after midnight', () => {
+  const allDay = tree(synced('offsite', { date: '2026-07-28' }));
+  // Same day, mid-morning: the day it sits on is not over yet.
+  assert.deepEqual(buildAttention(input({ tree: allDay }), NOW), []);
+  assert.equal(countOf(buildAttention(input({ tree: allDay }), at(29, 9)), 'capture'), 1);
+});
+
+test('capture: a dismissed meeting, and a muted series, go quiet', () => {
+  const notes = tree(
+    synced('waved-off', { date: '2026-07-27', time: '09:00' }),
+    synced('standup-1', { date: '2026-07-27', time: '10:00', series: 'daily-standup' }),
+    synced('standup-2', { date: '2026-07-26', time: '10:00', series: 'daily-standup' }),
+    synced('kranelund', { date: '2026-07-27', time: '11:00' }),
+  );
+  const items = buildAttention(
+    input({
+      tree: notes,
+      captureNudge: { dismissed: ['meetings/waved-off.md'], mutedSeries: ['daily-standup'] },
+    }),
+    NOW,
+  );
+  assert.deepEqual(ids(items), ['capture:meetings/kranelund.md']);
+});
+
+test('home: empty meetings are named one by one, counted in bulk', () => {
+  const one = buildAttention(
+    input({ tree: tree(synced('nordkap', { date: '2026-07-27', time: '14:00' })) }),
+    NOW,
+  );
+  assert.equal(homeRows(one, 4, NOW)[0]!.label, "Yesterday's nordkap has nothing in it yet");
+
+  const several = buildAttention(
+    input({
+      tree: tree(
+        synced('a', { date: '2026-07-27', time: '09:00' }),
+        synced('b', { date: '2026-07-27', time: '11:00' }),
+        synced('c', { date: '2026-07-26', time: '11:00' }),
+      ),
+    }),
+    NOW,
+  );
+  const rows = homeRows(several, 4, NOW);
+  // One row for the lot, and real work would still have outranked it.
+  assert.deepEqual(
+    rows.map((r) => [r.id, r.label, r.count]),
+    [['captures', '3 meetings have nothing in them yet', 3]],
+  );
+});
+
 test('home: cards, reviews and commitments each collapse behind one door', () => {
   const items = buildAttention(
     input({
@@ -259,29 +378,14 @@ test('home: the next meeting counts down once it is nearly on top of you', () =>
   assert.equal(homeRows(items, 4, at(28, 7))[0]!.meta, '09:20');
 });
 
-test('home: suggestions stay in the Inbox, and the list is capped', () => {
+test('home: the list is capped', () => {
   const items = buildAttention(
     input({
       askRequests: { 'session-1': ask('session-1') },
       sessions: [session('session-1', { running: true })],
-      pings: [
-        {
-          id: 'ping-1',
-          title: 'Tidy-up',
-          body: '',
-          evidence: [],
-          skill: 'librarian',
-          seedPrompt: '',
-          targetPath: null,
-          payload: null,
-          status: 'pending',
-          created: NOW,
-        },
-      ],
     }),
     NOW,
   );
-  assert.equal(countOf(items, 'ping'), 1);
   assert.deepEqual(ids(homeRows(items, 4, NOW)), ['question:session-1']);
   assert.equal(homeRows(items, 0, NOW).length, 0);
 });

@@ -17,9 +17,21 @@ Sara: First tenant. Should I be flattered or worried?
 
 me: Flattered. Entra is what we've tested hardest and your team actually answer email.
 
+Sara: Then I want the rollout written down before we start. My team won't work off a phone call.
+
+me: I'll send you the rollout runbook so your team can read it before the 28th.
+
+Sara: Tomorrow, if you can. Later than that and I'm reading it in the middle of my review prep.
+
+me: Tomorrow.
+
 Sara: Fine, I'll take it. My review starts mid-August, so that's two weeks of margin. Don't spend it. SCIM?
 
 me: September holds. Scoping starts in August once the SSO rollout settles. I'm not going to give you a date inside September yet. When Tom has scoped the directory-sync work you'll get one.
+
+Sara: September then. And so you're not guessing in August, I'll forward the review scope this week so you can see what they'll poke at.
+
+me: That helps. I'd rather prepare against their real list than my idea of it.
 
 Sara: You should know we onboarded fourteen people last week. By hand. Again. I'm telling you because every time it happens, someone on my team asks me why we're renewing.
 

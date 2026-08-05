@@ -13,17 +13,17 @@ import {
   Layers,
   ListTodo,
   MessageSquare,
+  Mic,
   PenLine,
   Search,
-  Sparkles,
   SquarePen,
   TriangleAlert,
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@pm/ui';
-import { isFolderIndex } from '@pm/domain';
-import type { NoteRefDTO } from '@pm/ipc';
+import { Button } from '@qale/ui';
+import { isFolderIndex } from '@qale/domain';
+import type { NoteRefDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { useChatMentions } from './ChatMentions';
 import { SkillPicker } from './SkillPicker';
@@ -36,6 +36,7 @@ import {
   SendButton,
   useAutoGrow,
 } from '../components/Composer';
+import { FirstSteps, firstStepsShowing } from '../onboarding/FirstSteps';
 import { contentNotes } from '../lib/contexts';
 import { requestCapture } from '../lib/capture-event';
 import { navFromEvent, type NavOpts } from '../lib/nav';
@@ -90,6 +91,10 @@ export function Home() {
             <QuickActions />
           </div>
           <Notices />
+          {/* Above the waiting list on purpose: on day one there is nothing
+              waiting, and these are the moves that change that. It takes
+              itself off the page once they are done (ONB-8). */}
+          <FirstSteps />
           <Waiting />
           {/* Extra air on top of the column gap: the pause before the page's
               centerpiece is part of what makes it the centerpiece. */}
@@ -284,7 +289,14 @@ function HomeComposer({
             e.preventDefault();
             const reader = new FileReader();
             reader.onload = () =>
-              requestCapture({ image: { name: image.name || 'Pasted image', dataUrl: reader.result as string } });
+              requestCapture({
+                files: [
+                  {
+                    name: image.name || 'pasted-image.png',
+                    dataBase64: String(reader.result).split(',')[1] ?? '',
+                  },
+                ],
+              });
             reader.readAsDataURL(image);
             return;
           }
@@ -300,7 +312,7 @@ function HomeComposer({
         placeholder={
           pickedSkill
             ? `What should “${skills.find((s) => s.name === pickedSkill)?.title ?? pickedSkill}” work on?`
-            : 'Ask the memory — or paste a transcript to file it'
+            : 'Ask the memory, or paste a transcript to file it'
         }
         aria-label="Ask the memory"
         // Two lines deep at rest — unlike the docked bars, this field is the
@@ -524,12 +536,12 @@ function Starters({ onPick }: { onPick: (text: string) => void }) {
 const isMac = navigator.userAgent.includes('Macintosh');
 
 /**
- * Dismissed notices, per workspace: `pm.homeNotices.v1:<workspace path>` → ids.
+ * Dismissed notices, per workspace: `qale.homeNotices.v1:<workspace path>` → ids.
  * View-only state, like the Inbox's review asks — the answer is "I know, leave
  * me alone", which is about this person and this machine, not about the memory,
  * so it never goes near the workspace itself.
  */
-const NOTICE_KEY = 'pm.homeNotices.v1';
+const NOTICE_KEY = 'qale.homeNotices.v1';
 
 function dismissedNotices(vaultPath: string): string[] {
   try {
@@ -661,8 +673,8 @@ const KIND_ICON: Record<AttentionKind, LucideIcon> = {
   result: MessageSquare,
   meeting: CalendarClock,
   review: FileClock,
+  capture: Mic,
   todo: ListTodo,
-  ping: Sparkles,
 };
 
 /** How many rows Home will show before it stops — the rest live in the views
@@ -676,8 +688,16 @@ const MAX_ROWS = 4;
  * the same list the sidebar badge and the Inbox read (lib/attention.ts).
  */
 function Waiting() {
-  const { tree, attention, openInbox, openTodos, openDoc, openChat, openFolder } = useApp();
+  const { tree, settings, attention, openInbox, openTodos, openDoc, openChat, openFolder, dismissCapture, undoCapture } =
+    useApp();
   const now = useNow();
+  /**
+   * The series that just went quiet, if one did. Dismissing two meetings from
+   * the same recurring sync stops it asking for good, which is a bigger thing
+   * than the click looked like — so the row's place says what happened and
+   * offers the way back, until the PO leaves the page.
+   */
+  const [muted, setMuted] = useState<{ path: string; series: string } | null>(null);
 
   const rows = useMemo(() => homeRows(attention, MAX_ROWS, now), [attention, now]);
 
@@ -694,7 +714,16 @@ function Waiting() {
         return openTodos(opts);
       case 'folder':
         return openFolder(target.dir, opts);
+      case 'capture':
+        // The row IS the way to fill the meeting: the tray opens already
+        // attached to it, so nothing has to be picked twice.
+        return requestCapture({ aim: { kind: 'meeting', path: target.path, title: target.title } });
     }
+  };
+
+  /** Wave off one empty meeting for good. */
+  const dismiss = (path: string) => {
+    void dismissCapture(path).then((series) => series && setMuted({ path, series }));
   };
 
   // Day one is about the PO's own material: a fresh workspace still ships the
@@ -702,8 +731,10 @@ function Waiting() {
   const empty = contentNotes(tree).length === 0;
 
   // Day one: the memory has nothing to wait on, so the space teaches the one
-  // move that starts everything instead of sitting blank.
-  if (empty) {
+  // move that starts everything instead of sitting blank. Unless First steps
+  // is above, which teaches the same move with the rest of the sequence around
+  // it — then this would be the second card on the page saying it.
+  if (empty && !firstStepsShowing(settings)) {
     return (
       <div className="rounded-xl border border-dashed border-border px-4 py-3.5">
         <button
@@ -714,7 +745,7 @@ function Waiting() {
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium">Start with a meeting you already have</span>
             <span className="mt-0.5 block text-sm text-muted-foreground">
-              Drop a transcript anywhere in the window — the memory files it and proposes the
+              Drop a transcript anywhere in the window. The memory files it and proposes the
               follow-ups as cards you approve.
             </span>
           </span>
@@ -724,7 +755,7 @@ function Waiting() {
     );
   }
 
-  if (rows.length === 0) return null;
+  if (rows.length === 0 && !muted) return null;
 
   // A flat list, not a panel: the rows sit straight on the paper with a hover
   // pill for affordance, so the composer below stays the only card on the
@@ -736,8 +767,11 @@ function Waiting() {
       <ul className="-mx-2.5">
         {rows.map((row) => {
           const Icon = KIND_ICON[row.kind];
+          // One named meeting can be waved off; the door standing for several
+          // cannot, because it is not about any one of them.
+          const waveOff = row.kind === 'capture' && row.target.open === 'capture' ? row.target.path : null;
           return (
-            <li key={row.id}>
+            <li key={row.id} className="group/row relative">
               <button
                 className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors duration-150 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none"
                 onClick={(e: MouseEvent<HTMLButtonElement>) => openRow(row.target, navFromEvent(e))}
@@ -748,11 +782,46 @@ function Waiting() {
                 <Icon className={`size-4 shrink-0 ${TONE_CLASS[row.tone]}`} aria-hidden />
                 <span className="min-w-0 flex-1 truncate text-sm">{row.label}</span>
                 <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{row.meta}</span>
-                <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50" aria-hidden />
+                {/* The trailing slot is the dismiss on a row that can be waved
+                    off, so the column stays one column and the chevrons on the
+                    other rows keep their line. */}
+                <ChevronRight
+                  className={`size-3.5 shrink-0 text-muted-foreground/50 ${waveOff ? 'invisible' : ''}`}
+                  aria-hidden
+                />
               </button>
+              {waveOff && (
+                /* Quiet but always there — a control you can only find by
+                   hovering is a control most people never find. */
+                <button
+                  className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded-md p-1 text-muted-foreground/40 transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none group-hover/row:text-muted-foreground motion-reduce:transition-none"
+                  onClick={() => dismiss(waveOff)}
+                  aria-label="Don’t ask about this meeting again"
+                  title="Don’t ask about this meeting again"
+                >
+                  <X className="size-3.5" aria-hidden />
+                </button>
+              )}
             </li>
           );
         })}
+        {muted && (
+          <li className="flex items-center gap-2.5 px-2.5 py-2">
+            <Mic className="size-4 shrink-0 text-muted-foreground/50" aria-hidden />
+            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+              Okay, no more reminders for this series.
+            </span>
+            <button
+              className="shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none"
+              onClick={() => {
+                void undoCapture(muted.path, muted.series);
+                setMuted(null);
+              }}
+            >
+              Undo
+            </button>
+          </li>
+        )}
       </ul>
     </div>
   );
@@ -782,7 +851,7 @@ function NoWorkspace({ onOpen }: { onOpen: () => void }) {
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium">Open a workspace to start</div>
               <div className="text-sm text-muted-foreground">
-                Any folder of markdown works — an existing Obsidian vault included.
+                Any folder of markdown works, an existing Obsidian vault included.
               </div>
             </div>
             <Button size="sm" onClick={onOpen}>

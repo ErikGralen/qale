@@ -1,7 +1,7 @@
 import type { NoteType } from '../notes/frontmatter.js';
 
 /**
- * Search domain shapes. The FTS/vector implementation lives in infra (@pm/vault);
+ * Search domain shapes. The FTS/vector implementation lives in infra (@qale/vault);
  * these are the shared result contracts.
  */
 export interface SearchHit {

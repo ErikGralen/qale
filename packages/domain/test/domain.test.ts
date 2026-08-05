@@ -160,7 +160,8 @@ test('todoLane: buckets by commitment, owner and due date', () => {
   assert.equal(todoLane({ owner: 'Jonas', due: '2026-07-01' }, today), 'waiting');
   assert.equal(todoLane({ commitment: 'done', due: '2026-07-10' }, today), 'closed');
   assert.equal(todoLane({ commitment: 'dropped' }, today), 'closed');
-  // overdue predicate still fires for external items (drives the librarian ping)
+  // overdue predicate still fires for external items, which is why a lane of
+  // "waiting" and an overdue date can be true of the same todo at once
   assert.equal(isOverdueTodo({ owner: 'Jonas', due: '2026-07-01' }, today), true);
   assert.equal(isOverdueTodo({ commitment: 'done', due: '2026-07-01' }, today), false);
 });

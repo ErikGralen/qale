@@ -1,7 +1,8 @@
 import { createServer, type Server } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { shell } from 'electron';
-import { CalendarAuthError } from '@pm/connectors';
+import { CalendarAuthError } from '@qale/connectors';
+import { googleClientId, googleClientSecret } from '../build-env.js';
 import type { SettingsService } from './settings-service.js';
 
 /**
@@ -44,8 +45,8 @@ const FLOW_TIMEOUT_MS = 3 * 60 * 1000;
  * development. Empty = this build can't run the flow, and connect() says so
  * in plain language instead of opening a broken consent page.
  */
-const CLIENT_ID = process.env['PM_GOOGLE_CLIENT_ID'] ?? '';
-const CLIENT_SECRET = process.env['PM_GOOGLE_CLIENT_SECRET'] ?? '';
+const CLIENT_ID = googleClientId();
+const CLIENT_SECRET = googleClientSecret();
 
 interface TokenResponse {
   access_token?: string;
@@ -83,7 +84,7 @@ export class GoogleOAuthService {
   async connect(scopes: string = CALENDAR_SCOPES): Promise<void> {
     if (!this.isConfigured()) {
       throw new Error(
-        'This build has no Google client configured — set PM_GOOGLE_CLIENT_ID (see docs/google-cloud-setup.md).',
+        'This build has no Google client configured — set QALE_GOOGLE_CLIENT_ID (see docs/google-cloud-setup.md).',
       );
     }
     this.cancel(); // one flow at a time; a stale listener must not eat the redirect
@@ -142,7 +143,7 @@ export class GoogleOAuthService {
     if (this.hasWriteScope()) return;
     await this.connect(CALENDAR_RW_SCOPES);
     if (!this.hasWriteScope()) {
-      throw new Error('Google didn’t grant calendar write access — the event was not created.');
+      throw new Error('Google didn’t grant calendar write access, so the event was not created.');
     }
   }
 
@@ -236,7 +237,7 @@ export class GoogleOAuthService {
       });
 
       const timer = setTimeout(() => {
-        settle(() => reject(new Error('Google sign-in timed out — try Connect again.')));
+        settle(() => reject(new Error('Google sign-in timed out. Try Connect again.')));
       }, FLOW_TIMEOUT_MS);
 
       const settle = (done: () => void): void => {

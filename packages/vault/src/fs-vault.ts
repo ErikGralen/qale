@@ -12,9 +12,9 @@ import {
   type Frontmatter,
   type Note,
   type NoteType,
-} from '@pm/domain';
-import { parseNote, serializeNote, spliceBody } from '@pm/markdown';
-import type { FileListing, VaultPort } from '@pm/application';
+} from '@qale/domain';
+import { parseNote, serializeNote, spliceBody } from '@qale/markdown';
+import type { FileListing, VaultPort } from '@qale/application';
 
 /**
  * Filesystem vault (PLAN §3.5). Enforces hard path containment: every read/write

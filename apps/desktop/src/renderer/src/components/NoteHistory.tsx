@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Button, Spinner } from '@pm/ui';
-import { History, GitCommitHorizontal } from 'lucide-react';
-import type { NoteCommitDTO } from '@pm/ipc';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Button, Spinner } from '@qale/ui';
+import { History, GitCommitHorizontal, Undo2 } from 'lucide-react';
+import type { NoteCommitDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { stripFrontmatter } from '../lib/frontmatter';
 import { Markdown } from './Markdown';
+import { useToast } from './toast';
 
 
 function shortDate(iso: string): string {
@@ -14,21 +15,46 @@ function shortDate(iso: string): string {
   return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+/** Trailing-newline-insensitive equality; the workspace normalizes the tail. */
+function sameText(a: string, b: string): boolean {
+  return a.replace(/\s+$/, '') === b.replace(/\s+$/, '');
+}
+
 /**
  * A note's version history from git — the payoff of the git-backed vault. Lists
- * the commits that touched this file and shows the prose at any of them,
- * read-only. When the workspace isn't yet a repo it offers to enable history
- * (the consent point for `git init`); when git isn't installed it says so.
+ * the commits that touched this file, shows the prose at any of them, and puts
+ * the note back to one. When the workspace isn't yet a repo it offers to enable
+ * history (the consent point for `git init`); when git isn't installed it says
+ * so, and there is nothing to restore from, so no restore control renders.
  */
-export function NoteHistory({ path, open, onOpenChange }: { path: string; open: boolean; onOpenChange: (v: boolean) => void }) {
-  const { vault, enableGit } = useApp();
+export function NoteHistory({
+  path,
+  open,
+  onOpenChange,
+  flushEdits,
+}: {
+  path: string;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  /**
+   * Land whatever is unsaved in the open editor before the body is replaced.
+   * The editor keeps in-flight typing over an external change, so without this
+   * a restore would look like it worked and then be autosaved back over.
+   */
+  flushEdits?: () => Promise<void>;
+}) {
+  const { vault, enableGit, restoreVersion, docData } = useApp();
+  const toast = useToast();
   const [commits, setCommits] = useState<NoteCommitDTO[] | null>(null);
   const [selected, setSelected] = useState<NoteCommitDTO | null>(null);
   // undefined = version still loading; null = the note didn't exist at that commit.
   const [body, setBody] = useState<string | null | undefined>(undefined);
   const [enabling, setEnabling] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const gitOn = !!vault?.git;
+  const current = docData[path]?.note ?? null;
 
   useEffect(() => {
     if (!open || !gitOn) return;
@@ -41,6 +67,7 @@ export function NoteHistory({ path, open, onOpenChange }: { path: string; open: 
 
   useEffect(() => {
     setBody(undefined);
+    setConfirming(false);
     if (!selected) return;
     let cancelled = false;
     invoke['note:versionAt'](path, selected.hash).then((raw) => {
@@ -51,14 +78,48 @@ export function NoteHistory({ path, open, onOpenChange }: { path: string; open: 
     };
   }, [selected, path]);
 
+  // Restorable only when there is something to put back that isn't already
+  // there: a note whose body the workspace lets anyone edit, a version that
+  // actually held this note, and text that differs from what it says now.
+  const canRestore =
+    !!selected &&
+    typeof body === 'string' &&
+    !!current?.bodyEditable &&
+    !sameText(body, current.body);
+
+  async function restore() {
+    if (!selected) return;
+    setRestoring(true);
+    try {
+      // Anything half-typed lands first, as its own version, so the restore
+      // replaces a saved note rather than racing the editor's autosave.
+      await flushEdits?.();
+      await restoreVersion(path, selected.hash);
+      onOpenChange(false);
+    } catch (err) {
+      toast(
+        `Couldn't restore that version: ${err instanceof Error ? err.message : 'the write was rejected.'}`,
+      );
+    } finally {
+      setRestoring(false);
+      setConfirming(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[80vh] max-w-3xl overflow-hidden">
+      {/* sm:max-w-3xl, not max-w-3xl: the dialog's own base sets `sm:max-w-sm`,
+          which outranks an unprefixed cap on every window this app runs in and
+          was clipping the preview (and the restore action) off the right edge. */}
+      <DialogContent className="max-h-[80vh] sm:max-w-3xl overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <History className="size-4" /> Version history
           </DialogTitle>
-          <DialogDescription className="font-mono text-xs">{path}</DialogDescription>
+          {/* Which note this is, by its name. The file path used to sit here,
+              which said the same thing in the one vocabulary the reader never
+              has to learn. */}
+          <DialogDescription className="text-xs">{current?.title ?? 'This note'}</DialogDescription>
         </DialogHeader>
 
         {!gitOn ? (
@@ -67,7 +128,7 @@ export function NoteHistory({ path, open, onOpenChange }: { path: string; open: 
               <>
                 <p className="text-sm text-muted-foreground">
                   This workspace doesn't track version history yet. Enabling it creates a git
-                  repository in the folder and records a first snapshot of every note — nothing
+                  repository in the folder and records a first snapshot of every note. Nothing
                   leaves your machine.
                 </p>
                 <Button
@@ -100,7 +161,7 @@ export function NoteHistory({ path, open, onOpenChange }: { path: string; open: 
                 </div>
               ) : commits.length === 0 ? (
                 <p className="p-3 text-sm text-muted-foreground">
-                  No commits touch this note yet — it will appear here after its next saved change.
+                  No earlier versions of this note yet. One appears here after its next saved change.
                 </p>
               ) : (
                 <ul className="flex flex-col gap-0.5">
@@ -123,20 +184,54 @@ export function NoteHistory({ path, open, onOpenChange }: { path: string; open: 
                 </ul>
               )}
             </div>
-            <div className="min-w-0 flex-1 overflow-y-auto">
-              {!selected ? (
-                <p className="p-3 text-sm text-muted-foreground">Pick a version to view it.</p>
-              ) : body === undefined ? (
-                <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
-                  <Spinner className="size-3.5" /> Loading…
-                </div>
-              ) : body === null ? (
-                <p className="p-3 text-sm text-muted-foreground">This note didn't exist at that commit.</p>
-              ) : (
-                <div className="prose-sm max-w-none">
-                  <Markdown content={body} />
+            <div className="flex min-w-0 flex-1 flex-col">
+              {/* The action sits above the version you are reading, so "this
+                  one" is never ambiguous. Nothing renders for a note whose body
+                  the workspace won't let anyone rewrite (a piece of material, a
+                  session's record): there would be no way to honour the click. */}
+              {typeof body === 'string' && current?.bodyEditable && (
+                <div className="mb-2 flex min-h-8 items-center gap-2 border-b border-border pb-2">
+                  {!canRestore ? (
+                    <span className="text-xs text-muted-foreground">This is what the note says now.</span>
+                  ) : confirming ? (
+                    <>
+                      <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+                        Replace the note's text with this? What's there now stays in the list.
+                      </span>
+                      <Button size="sm" disabled={restoring} onClick={() => void restore()}>
+                        {restoring ? 'Restoring…' : 'Restore'}
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={restoring} onClick={() => setConfirming(false)}>
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button size="sm" variant="secondary" onClick={() => setConfirming(true)}>
+                        <Undo2 className="size-3.5" /> Restore this version
+                      </Button>
+                      <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+                        Brings back the text, not the properties.
+                      </span>
+                    </>
+                  )}
                 </div>
               )}
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {!selected ? (
+                  <p className="p-3 text-sm text-muted-foreground">Pick a version to view it.</p>
+                ) : body === undefined ? (
+                  <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+                    <Spinner className="size-3.5" /> Loading…
+                  </div>
+                ) : body === null ? (
+                  <p className="p-3 text-sm text-muted-foreground">This note didn't exist in that version.</p>
+                ) : (
+                  <div className="prose-sm max-w-none">
+                    <Markdown content={body} />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

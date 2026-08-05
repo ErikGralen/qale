@@ -1,15 +1,30 @@
 import { useEffect, useState } from 'react';
-import { Button, Input, useTheme } from '@pm/ui';
-import { Check, Copy, Eye, EyeOff, FolderOpen, KeyRound, CalendarClock, Play, Server, Settings, Sun, Moon, Monitor, UserRound, X } from 'lucide-react';
+import { Button, Input, useTheme } from '@qale/ui';
+import { Check, Copy, Eye, EyeOff, FolderOpen, KeyRound, CalendarClock, LifeBuoy, Play, Send, Server, Settings, Sun, Moon, Monitor, UserRound, X } from 'lucide-react';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/**
+ * Where a bug report goes. Deliberately the one and only place it is written
+ * down. The mailbox has to exist before the first build goes out: a report that
+ * bounces is worse than no button.
+ */
+const SUPPORT_EMAIL = 'support@qale.ai';
+/** Shown to the user and used in the report subject. */
+const APP_NAME = 'Qale';
 /** The install line for missing git is platform-specific; nothing else here is. */
 const isMac = navigator.userAgent.includes('Macintosh');
-import type { ModelInfoDTO, SettingsDTO } from '@pm/ipc';
+import {
+  TELEMETRY_IDENTITY,
+  TELEMETRY_PROCESSOR,
+  type ModelInfoDTO,
+  type SettingsDTO,
+} from '@qale/ipc';
 import { invoke } from '../lib/ipc';
 import { useApp } from '../state/app-state';
 import { useToast } from '../components/toast';
 import { PageHeader } from '../components/PageHeader';
+import { TelemetryDetails } from '../components/TelemetryDetails';
 import { ConnectionsSettings } from './ConnectionsSettings';
 
 export function SettingsView() {
@@ -72,6 +87,63 @@ export function SettingsView() {
   const setMcp = (patch: { enabled?: boolean; port?: number }) =>
     trySave('Updating the MCP server', async () => {
       setSettings(await invoke['settings:setMcp'](patch));
+    });
+
+  const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
+  const [reportNote, setReportNote] = useState<string | null>(null);
+  const say = (line: string) => {
+    setReportNote(line);
+    setTimeout(() => setReportNote(null), 15000);
+  };
+
+  const copyDiagnostics = () =>
+    trySave('Copying the diagnostics', async () => {
+      await navigator.clipboard.writeText(await invoke['diagnostics:report']());
+      setCopiedDiagnostics(true);
+      setTimeout(() => setCopiedDiagnostics(false), 2500);
+      say('Copied. Paste it into an email or a message to us.');
+    });
+
+  /**
+   * The details always go on the clipboard first, and the email carries only a
+   * skeleton and the version. Two reasons: a mailto link long enough to hold a
+   * log tail gets cut by some mail apps, and a truncated report is worse than
+   * none; and if this machine has no email app set up, nothing opens and the
+   * user is told nothing, so the copy has to have already happened.
+   */
+  const reportProblem = () =>
+    trySave('Starting the report', async () => {
+      const report = await invoke['diagnostics:report']();
+      // The copy is the only part that can fail on its own, and the email is
+      // worth opening either way: a report with no diagnostics still reaches
+      // us. The line at the end says which of the two the user got.
+      let copied = true;
+      try {
+        await navigator.clipboard.writeText(report);
+      } catch {
+        copied = false;
+      }
+      const subject = `${APP_NAME} ${settings?.appVersion ?? ''}: problem report`;
+      const body = [
+        'What happened:',
+        '',
+        '',
+        'What you expected instead:',
+        '',
+        '',
+        `Version: ${settings?.appVersion ?? 'unknown'}`,
+        '',
+        'Diagnostics (pasted from the clipboard):',
+        '',
+      ].join('\n');
+      window.open(
+        `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
+      );
+      say(
+        copied
+          ? `The diagnostics are copied, and an email to ${SUPPORT_EMAIL} should be waiting. Paste them at the bottom of it. If no email opened, write to that address yourself: the diagnostics are already on your clipboard.`
+          : `An email to ${SUPPORT_EMAIL} should be waiting, but the diagnostics would not copy. Send it anyway and we will ask.`,
+      );
     });
 
   return (
@@ -205,6 +277,12 @@ export function SettingsView() {
           {models.length === 0 ? (
             <p className="text-sm text-muted-foreground">Set an API key to see available models.</p>
           ) : (
+            <p className="text-sm text-muted-foreground">
+              What new sessions start on. You can move a single session to a different model from
+              the box you type in.
+            </p>
+          )}
+          {models.length > 0 && (
             <div className="flex flex-col gap-1">
               {models.map((m) => {
                 const active = settings?.modelId === m.id;
@@ -321,6 +399,67 @@ export function SettingsView() {
         )}
 
         <ConnectionsSettings />
+
+        {settings && (
+          <section className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Send className="size-4 text-muted-foreground" />
+              <h2 className="text-base font-semibold">What leaves your machine</h2>
+            </div>
+            {/* The same switch, the same words and the same folded list as the
+                setup screen, from the same allowlist — a promise kept in two
+                places has to be one promise (docs/onboarding.md ONB-6). */}
+            <p className="text-sm text-muted-foreground">
+              Nothing you or the agent wrote. Only whether the app worked, and who it stopped
+              working for.
+            </p>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 accent-primary"
+                checked={settings.onboarding.telemetry}
+                onChange={(e) =>
+                  trySave('Saving that choice', async () => {
+                    setSettings(await invoke['settings:setOnboarding']({ telemetry: e.target.checked }));
+                  })
+                }
+              />
+              <span>
+                Send usage and crash reports
+                {/* Who the reports are tied to stays out in the open here too. */}
+                <span className="mt-0.5 block text-muted-foreground">{TELEMETRY_IDENTITY}.</span>
+              </span>
+            </label>
+            <TelemetryDetails />
+            <p className="text-sm text-muted-foreground">{TELEMETRY_PROCESSOR}</p>
+          </section>
+        )}
+
+        <section className="space-y-2">
+          <div className="flex items-center gap-2">
+            <LifeBuoy className="size-4 text-muted-foreground" />
+            <h2 className="text-base font-semibold">Version and help</h2>
+            <span className="ml-auto font-mono text-xs text-muted-foreground">
+              {APP_NAME} {settings?.appVersion ?? '…'}
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            If something goes wrong, send us what the app knows about itself: version numbers, how
+            many notes it has open, whether your keys can be read, and the last few lines of its own
+            log. Nothing you have written is in there, and neither is your name, your folder or your
+            keys.
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={copyDiagnostics}>
+              {copiedDiagnostics ? <Check className="size-3.5 text-brand" /> : <Copy className="size-3.5" />}
+              {copiedDiagnostics ? 'Copied' : 'Copy diagnostics'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={reportProblem}>
+              Report a problem
+            </Button>
+          </div>
+          {reportNote && <p className="text-sm text-muted-foreground">{reportNote}</p>}
+        </section>
       </div>
     </div>
   );
@@ -363,11 +502,11 @@ function IdentityCard({
   return (
     <div className="space-y-3 rounded-lg border border-border bg-card p-3">
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-muted-foreground" htmlFor="pm-identity-name">
+        <label className="text-xs font-medium text-muted-foreground" htmlFor="qale-identity-name">
           Your name
         </label>
         <Input
-          id="pm-identity-name"
+          id="qale-identity-name"
           value={name}
           placeholder="Shown as “You” until you set it"
           onChange={(e) => setName(e.target.value)}

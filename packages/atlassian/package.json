@@ -1,5 +1,5 @@
 {
-  "name": "@pm/atlassian",
+  "name": "@qale/atlassian",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "turndown": "^7.2.0"
   },
   "devDependencies": {
-    "@pm/typescript-config": "workspace:*",
+    "@qale/typescript-config": "workspace:*",
     "@types/node": "^24.0.0",
     "@types/turndown": "^5.0.5",
     "typescript": "~5.9.2"

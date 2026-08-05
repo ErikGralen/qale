@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup, TooltipProvider } from '@pm/ui';
-import type { ArrivalItemInputDTO, ArrivalResultDTO } from '@pm/ipc';
-import { readableAs } from '@pm/domain';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup, TooltipProvider } from '@qale/ui';
+import type { ArrivalHandoffDTO, ArrivalItemInputDTO } from '@qale/ipc';
+import { readableAs } from '@qale/domain';
 import { FileUp } from 'lucide-react';
+import { pathForFile } from './lib/ipc';
 import { AppStateProvider, useApp } from './state/app-state';
 import { CAPTURE_EVENT, type CaptureRequest } from './lib/capture-event';
 import { Sidebar } from './app/Sidebar';
@@ -23,9 +24,9 @@ import { RightPanel } from './app/RightPanel';
 import { TabStrip } from './app/TabStrip';
 import { QuickSwitcher } from './app/QuickSwitcher';
 import { AddMaterial, type MaterialDraft } from './app/AddMaterial';
-import { ArrivalReceipt } from './components/ArrivalReceipt';
-import { worthAReceipt } from './lib/arrival-outcome';
+import { ArrivalHandoff } from './components/ArrivalHandoff';
 import { ExternalRefHoverLayer } from './components/ExternalRef';
+import { Opening } from './onboarding/Opening';
 
 function Center() {
   const { activeTab, bindTabSession, openSession } = useApp();
@@ -92,29 +93,66 @@ function Shell() {
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureDraft, setCaptureDraft] = useState<MaterialDraft | null>(null);
   /**
-   * The last arrival's receipt — persistent until dismissed. Only set when the
-   * arrival has something to report that the screen doesn't already show; a
-   * capture whose result the PO is now looking at gets no card at all.
+   * The batch that was just handed over, and the session now holding it. There
+   * is no receipt any more: nothing has been written to take back, and the
+   * session's own narration is the record (docs/arrival-agentic.md, AR-13).
    */
-  const [receipt, setReceipt] = useState<ArrivalResultDTO | null>(null);
+  const [arrival, setArrival] = useState<ArrivalHandoffDTO | null>(null);
   const [dragging, setDragging] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
-      return localStorage.getItem('pm.sidebar.visible') !== '0';
+      return localStorage.getItem('qale.sidebar.visible') !== '0';
     } catch {
       return true;
     }
   });
   const [rightOpen, setRightOpen] = useState(() => {
     try {
-      return localStorage.getItem('pm.rightPanel.visible') !== '0';
+      return localStorage.getItem('qale.rightPanel.visible') !== '0';
     } catch {
       return true;
     }
   });
+  /**
+   * A capture is in flight (ONB-9). Set the moment the tray is submitted, not
+   * when it resolves: the wait is exactly the moment that used to be silent.
+   */
+  const [handing, setHanding] = useState(false);
+  /** The arrival's session has actually been seen running, so its end means something. */
+  const [watched, setWatched] = useState(false);
   const dragDepth = useRef(0);
-  const { openSession, openHome, openSettings, activeTab, tabs, activeTabId, setActiveTab, closeTab, vault, captureNote, openDoc, goBack, goForward, reopenClosedTab, sessionFiles } =
+  const { openSession, openChat, openHome, openSettings, activeTab, tabs, activeTabId, setActiveTab, closeTab, vault, settings, captureNote, openDoc, goBack, goForward, reopenClosedTab, sessionFiles, sessions, askRequests, spawnRequests } =
     useApp();
+
+  const arrivalSession = arrival?.sessionId;
+  const arrivalRunning = !!sessions.find((s) => s.id === arrivalSession)?.running;
+
+  /**
+   * The one rule for when Add takes the screen (docs/arrival-agentic.md): when
+   * there is something to answer. A drop that turns out to be pure filing must
+   * never open a tab, and an arrival that stops to ask which of two meetings a
+   * transcript belongs to must never leave that question buried in the rail.
+   * Read off the same parked state the session view draws from, so the card and
+   * the navigation can never disagree.
+   */
+  const parked = arrivalSession ? (askRequests[arrivalSession] ?? spawnRequests[arrivalSession]) : null;
+  useEffect(() => {
+    if (arrivalSession && parked) openChat({ id: arrivalSession, title: 'Handling new material' });
+  }, [arrivalSession, parked, openChat]);
+
+  /**
+   * The handoff line lives exactly as long as the run does. It is cleared only
+   * once the session has been SEEN running, because the status event and the
+   * ingest reply race each other and clearing on "not running" alone would take
+   * the line away a frame after it appeared.
+   */
+  useEffect(() => {
+    if (arrivalRunning) setWatched(true);
+    else if (watched && arrival?.started) {
+      setWatched(false);
+      setArrival(null);
+    }
+  }, [arrivalRunning, watched, arrival]);
 
   // ⌘N: a blank note straight into the editor — capture (⇧⌘N) keeps the dialog.
   const newNote = useCallback(async () => {
@@ -126,7 +164,7 @@ function Shell() {
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((o) => {
       try {
-        localStorage.setItem('pm.sidebar.visible', o ? '0' : '1');
+        localStorage.setItem('qale.sidebar.visible', o ? '0' : '1');
       } catch {
         /* ignore quota */
       }
@@ -140,7 +178,7 @@ function Shell() {
   const toggleRightPanel = useCallback(() => {
     setRightOpen((o) => {
       try {
-        localStorage.setItem('pm.rightPanel.visible', o ? '0' : '1');
+        localStorage.setItem('qale.rightPanel.visible', o ? '0' : '1');
       } catch {
         /* ignore quota */
       }
@@ -190,6 +228,10 @@ function Shell() {
         e.preventDefault();
         setSwitcherOpen((o) => !o);
       } else if (key === 'n') {
+        // ⇧⌘N is guarded exactly like ⌘↵: pressing it with the tray already
+        // open used to re-open it with a fresh draft, throwing away every file
+        // gathered so far (AR-12). The tray is already the thing it opens.
+        if (e.shiftKey && captureOpen) return;
         e.preventDefault();
         if (e.shiftKey) openCapture();
         else void newNote();
@@ -288,6 +330,13 @@ function Shell() {
       if (dropped.length === 0 || !vault) return;
       const files: ArrivalItemInputDTO[] = [];
       for (const file of dropped) {
+        // The path route wherever there is one: it is the only way a dropped
+        // FOLDER can be read at all (AR-14), and it keeps the bytes off the wire.
+        const path = pathForFile(file);
+        if (path) {
+          files.push({ path, name: file.name, lastModified: file.lastModified });
+          continue;
+        }
         if (readableAs(file.name) === null) {
           files.push({ name: file.name, lastModified: file.lastModified });
           continue;
@@ -390,7 +439,7 @@ function Shell() {
             <div className="text-center">
               <div className="text-sm font-semibold">Drop anything</div>
               <div className="mt-0.5 text-sm text-muted-foreground">
-                A transcript, an article, a screenshot — you confirm before anything runs
+                A transcript, an article, a screenshot. You confirm before anything runs
               </div>
             </div>
           </div>
@@ -407,12 +456,34 @@ function Shell() {
         open={captureOpen}
         onOpenChange={setCaptureOpen}
         draft={captureDraft}
-        onArrived={(r) => setReceipt(worthAReceipt(r) ? r : null)}
+        onSubmitting={() => setHanding(true)}
+        onHandoff={(r) => {
+          setHanding(false);
+          setWatched(false);
+          setArrival(r);
+        }}
+        onFailed={() => setHanding(false)}
       />
-      {receipt && <ArrivalReceipt arrival={receipt} onDismiss={() => setReceipt(null)} />}
+      {/* The moment after the drop, which used to be silent (ONB-9), now
+          standing in for the whole of rung 0. */}
+      {(handing || arrival) && (
+        <ArrivalHandoff
+          arrival={arrival}
+          running={arrivalRunning}
+          onOpen={() =>
+            arrival && openChat({ id: arrival.sessionId, title: 'Handling new material' })
+          }
+          onDismiss={() => setArrival(null)}
+        />
+      )}
       {/* One hover card serves every [[PAY-142]]-style reference — read view,
           cards, and the editor's wikilink atoms all stamp data-external-ref. */}
       <ExternalRefHoverLayer onOpen={(path) => void openDoc(path)} />
+
+      {/* First run, over everything — including the no-workspace state, which
+          is what the opening is there to resolve (docs/onboarding.md ONB-1).
+          Gated on settings having loaded so nobody sees the shell flash first. */}
+      {settings && !settings.onboarding.finishedAt && <Opening />}
     </div>
   );
 }

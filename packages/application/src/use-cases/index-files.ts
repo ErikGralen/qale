@@ -5,7 +5,7 @@ import {
   type IndexEntry,
   type IndexFolder,
   type NoteType,
-} from '@pm/domain';
+} from '@qale/domain';
 import type { UseCaseContext } from '../ports.js';
 
 /**
@@ -81,7 +81,7 @@ export interface IndexGenResult {
  * Regenerate the vault's `index.md` orientation files. Returns the paths that
  * actually changed (empty when everything was already current). Best-effort by
  * contract — the caller runs it inside the librarian maintenance pass and
- * swallows errors, exactly like the ping sweep.
+ * swallows errors, exactly like the librarian's own scan.
  */
 export async function generateIndexFiles(ctx: UseCaseContext): Promise<IndexGenResult> {
   const folders = collectFolders(ctx);

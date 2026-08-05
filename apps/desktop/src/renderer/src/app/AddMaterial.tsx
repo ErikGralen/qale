@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -6,28 +6,12 @@ import {
   DialogDescription,
   Button,
   Spinner,
-} from '@pm/ui';
-import {
-  ArrowRight,
-  Check,
-  Image as ImageIcon,
-  Link as LinkIcon,
-  Mic,
-  Plus,
-  StickyNote,
-  TriangleAlert,
-  Upload,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
-import type {
-  ArrivalAmbitionDTO,
-  ArrivalItemInputDTO,
-  ArrivalPlanDTO,
-  ArrivalResultDTO,
-  CaptureKind,
-} from '@pm/ipc';
-import { readableAs } from '@pm/domain';
+} from '@qale/ui';
+import { FileText, Image as ImageIcon, Plus, TriangleAlert, Upload, X } from 'lucide-react';
+import type { ArrivalCheckDTO, ArrivalHandoffDTO, ArrivalItemInputDTO } from '@qale/ipc';
+import { readableAs } from '@qale/domain';
+import { pathForFile } from '../lib/ipc';
+import { aimLabel, aimSentence, type MaterialAim } from '../lib/material-aim';
 import { useApp } from '../state/app-state';
 import { useToast } from '../components/toast';
 
@@ -35,16 +19,14 @@ import { useToast } from '../components/toast';
 export interface MaterialDraft {
   text?: string;
   fileName?: string;
-  image?: { name: string; dataUrl: string };
   files?: ArrivalItemInputDTO[];
+  /**
+   * Where the drop was aimed (docs/arrival-agentic.md, rung 2). Dropping on a
+   * meeting page or a folder says something the agent would otherwise have to
+   * work out, so it rides along as a sentence rather than a second code path.
+   */
+  aim?: MaterialAim;
 }
-
-const KIND_ICON: Record<CaptureKind, LucideIcon> = {
-  transcript: Mic,
-  link: LinkIcon,
-  screenshot: ImageIcon,
-  note: StickyNote,
-};
 
 /** "2 files · 12,400 words" — what is in the tray, without opening anything. */
 function countWords(s: string): number {
@@ -62,90 +44,112 @@ function countWords(s: string): number {
   return n;
 }
 
+/** A row's own name, for the list and for the remove button's label. */
+function rowName(item: ArrivalItemInputDTO): string {
+  return item.name ?? 'Pasted text';
+}
+
 /**
- * Add material — the visible front door (docs/vision/arrival.md §7).
+ * Add material — the visible front door (docs/arrival-agentic.md).
  *
- * A tray, not a classification form. It holds 1..N pieces of material and says
- * one thing about the whole batch: where it lands and what will run. The old
- * capture dialog asked the PO to answer "what is this?" in our vocabulary
- * before anything could happen; the type of a file is something we can work out
- * and, when we get it wrong, something one click on the receipt corrects.
+ * A tray, and now barely that: rows with an X each, one text field, one button.
+ * Everything that used to sit here was a guess made before anything had read
+ * the material — what each file was, where it would land, whether it was old
+ * enough to skip reading, which meeting the clock said it belonged to — and
+ * every one of those guesses is now the agent's to make out loud, in a session,
+ * where a correction is a sentence rather than a radio button.
  *
- * It is also where dropping is *advertised*. A drop target nobody can see is a
- * trick, not a door — so the empty tray leads with a real drop zone next to the
- * OS picker, and once the PO has seen it here they know they can drop anywhere.
+ * What stays is what bytes alone can answer: this file cannot be read, this one
+ * is empty, this is an image. No model is needed to say "that is a zip", and
+ * the PM has to see it before they press the button.
+ *
+ * The text field is always an instruction ("these are old interviews, just file
+ * them"). It is the power-user rung of the ladder: one sentence that skips every
+ * question the agent would otherwise ask. Material never goes in it — pasting
+ * anywhere else in the tray adds a row, so the two can never be confused.
  */
 export function AddMaterial({
   open,
   onOpenChange,
   draft,
-  onArrived,
+  onSubmitting,
+  onHandoff,
+  onFailed,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   draft?: MaterialDraft | null;
-  /** Hands the batch to its receipt — the tray closes, the way back stays. */
-  onArrived: (result: ArrivalResultDTO) => void;
+  /**
+   * The batch was just submitted — nothing has landed yet. This raises the
+   * handoff line, because the wait is exactly the moment that used to be silent.
+   */
+  onSubmitting?: () => void;
+  /** The material is in a session and (usually) being read. */
+  onHandoff: (result: ArrivalHandoffDTO) => void;
+  /** The write was rejected: the tray stays open, and the handoff stands down. */
+  onFailed?: () => void;
 }) {
-  const { vault, pickMaterial, inspectArrival, ingestArrival, openSession } = useApp();
+  const { vault, pickMaterial, checkArrival, ingestArrival } = useApp();
   const toast = useToast();
   const [items, setItems] = useState<ArrivalItemInputDTO[]>([]);
-  const [text, setText] = useState('');
-  const [ambition, setAmbition] = useState<ArrivalAmbitionDTO | undefined>();
-  const [plan, setPlan] = useState<ArrivalPlanDTO | null>(null);
+  const [instruction, setInstruction] = useState('');
+  const [check, setCheck] = useState<ArrivalCheckDTO | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (open) {
-      setItems(draft?.files ?? (draft?.image ? [imageItem(draft.image)] : []));
-      setText(draft?.text ?? '');
-    } else {
-      setItems([]);
-      setText('');
-      setAmbition(undefined);
-      setPlan(null);
-      setDragOver(false);
-      setBusy(false);
-    }
-  }, [open, draft]);
+  const aim = draft?.aim;
 
   /**
-   * With files in the tray the text is an instruction *about* them; with an
-   * empty tray it is the material itself. Inferable from what is there, so it
-   * needs no toggle — only a placeholder that says which one it currently is.
+   * Anything the tray was handed, as rows. A pasted transcript from Home is
+   * material like any file (AR-5): it arrives as a row, and the text field below
+   * it keeps meaning the one thing it always means.
    */
-  const asMaterial = items.length === 0;
-  const material = useMemo(
-    () => (asMaterial && text.trim() ? [...items, { text: text.trim() }] : items),
-    [items, text, asMaterial],
-  );
-  const instruction = asMaterial ? '' : text.trim();
-
-  // The outcome line is the plan itself, computed by the code that will run it.
   useEffect(() => {
-    if (!open || material.length === 0) {
-      setPlan(null);
+    if (!open) {
+      setItems([]);
+      setInstruction('');
+      setCheck(null);
+      setDragOver(false);
+      setBusy(false);
+      return;
+    }
+    // Merged, not replaced: a second drop while the tray is open used to throw
+    // away everything already gathered (AR-12).
+    setItems((prev) => [
+      ...prev,
+      ...(draft?.files ?? []),
+      ...(draft?.text?.trim() ? [{ name: draft.fileName ?? 'Pasted text', text: draft.text }] : []),
+    ]);
+  }, [open, draft]);
+
+  // The one guess left, made by the code that will do the reading.
+  useEffect(() => {
+    if (!open || items.length === 0) {
+      setCheck(null);
       return;
     }
     let alive = true;
     const t = setTimeout(() => {
-      inspectArrival(material, ambition)
-        .then((p) => alive && setPlan(p))
-        .catch(() => alive && setPlan(null));
+      checkArrival(items)
+        .then((c) => alive && setCheck(c))
+        .catch(() => alive && setCheck(null));
     }, 120);
     return () => {
       alive = false;
       clearTimeout(t);
     };
-  }, [open, material, ambition, inspectArrival]);
+  }, [open, items, checkArrival]);
 
   const addFiles = useCallback(async (files: FileList | File[]) => {
     const next: ArrivalItemInputDTO[] = [];
     for (const file of Array.from(files)) {
-      // Name-only: main turns this into a legible refusal rather than us
-      // decoding a zip as UTF-8 and filing the result.
+      // The real path where there is one: it is the only way a dropped FOLDER
+      // can be walked at all (AR-14), and it keeps fifty files off the wire.
+      const path = pathForFile(file);
+      if (path) {
+        next.push({ path, name: file.name, lastModified: file.lastModified });
+        continue;
+      }
+      // Dragged out of a browser: no path, so the bytes ride along.
       if (readableAs(file.name) === null) {
         next.push({ name: file.name, lastModified: file.lastModified });
         continue;
@@ -157,11 +161,7 @@ export function AddMaterial({
           r.onerror = () => reject(r.error);
           r.readAsDataURL(file);
         });
-        next.push({
-          name: file.name,
-          dataBase64: dataUrl.split(',')[1] ?? '',
-          lastModified: file.lastModified,
-        });
+        next.push({ name: file.name, dataBase64: dataUrl.split(',')[1] ?? '', lastModified: file.lastModified });
       } else {
         next.push({ name: file.name, text: await file.text(), lastModified: file.lastModified });
       }
@@ -175,35 +175,29 @@ export function AddMaterial({
   }, [pickMaterial]);
 
   const submit = async () => {
-    if (material.length === 0 || busy || !vault) return;
+    if (items.length === 0 || busy || !vault) return;
     setBusy(true);
+    // Said before the await: writing forty files and starting a session takes a
+    // moment, and that gap is the whole point.
+    onSubmitting?.();
     try {
-      const result = await ingestArrival(material, ambition);
-      // An instruction turns the batch into an errand: the material is already
-      // filed and cited by path, so the session reads what landed rather than a
-      // copy of it.
-      const paths = result.items.filter((i) => i.path).map((i) => i.path!);
-      if (instruction && paths.length > 0) {
-        openSession('ask', {
-          title: `Ask · ${paths.length} new file${paths.length === 1 ? '' : 's'}`,
-          initialPrompt: `I just added these to the workspace:\n${paths.map((p) => `- ${p}`).join('\n')}\n\n${instruction}`,
-        });
-      }
-      onArrived(result);
+      // The aim goes first and the PM's own sentence last, because where they
+      // disagree the sentence they typed wins.
+      const said = [aim ? aimSentence(aim) : '', instruction.trim()].filter(Boolean).join(' ');
+      const result = await ingestArrival(items, said || undefined);
+      onHandoff(result);
       onOpenChange(false);
     } catch (err) {
       // The front door must never fail silently — the tray stays open with the
-      // material intact so nothing the PO gathered is lost.
+      // material intact so nothing the PM gathered is lost.
+      onFailed?.();
       toast(`Could not add material: ${err instanceof Error ? err.message : 'the workspace rejected the write.'}`);
     } finally {
       setBusy(false);
     }
   };
 
-  const words = useMemo(
-    () => items.reduce((n, i) => n + countWords(i.text ?? ''), 0) + countWords(text),
-    [items, text],
-  );
+  const words = useMemo(() => items.reduce((n, i) => n + countWords(i.text ?? ''), 0), [items]);
   const meta = [
     items.length > 0 ? `${items.length} file${items.length === 1 ? '' : 's'}` : null,
     words >= 25 ? `${words.toLocaleString()} words` : null,
@@ -211,21 +205,9 @@ export function AddMaterial({
     .filter(Boolean)
     .join(' · ');
 
-  const good = plan?.items.filter((i) => !i.error) ?? [];
-  const bad = plan?.items.filter((i) => i.error) ?? [];
-  /** `meetings/ ×2 · sources/ ×1` — the destination, aggregated. Keyed off the
-   *  plan itself, not off a filtered copy that is new on every render. */
-  const destinations = useMemo(() => {
-    const byDir = new Map<string, number>();
-    for (const i of plan?.items ?? []) if (!i.error) byDir.set(i.dir, (byDir.get(i.dir) ?? 0) + 1);
-    return [...byDir.entries()].map(([dir, n]) => ({ dir, n }));
-  }, [plan]);
-
-  const catchup = plan?.ambition === 'catchup';
-  // A tray holding only files we cannot read has nothing to add: the button
-  // would file an empty note and call it success.
-  const nothingReadable = !!plan && good.length === 0;
-  const canSubmit = !!vault && !busy && material.length > 0 && !nothingReadable;
+  const refused = check?.items.filter((i) => i.error) ?? [];
+  const nothingReadable = !!check?.empty;
+  const canSubmit = !!vault && !busy && items.length > 0 && !nothingReadable;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -238,6 +220,24 @@ export function AddMaterial({
             e.preventDefault();
             e.stopPropagation();
             void submit();
+          }
+        }}
+        onPaste={(e) => {
+          // Pasted material is a row like any file. Never the instruction field:
+          // a transcript pasted into it used to be sent as a prompt and the
+          // material itself thrown away (AR-5), so that field is left alone here
+          // and everything else in the tray adds a row.
+          if (e.target instanceof HTMLTextAreaElement) return;
+          const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'));
+          if (file) {
+            e.preventDefault();
+            void addFiles([file]);
+            return;
+          }
+          const text = e.clipboardData.getData('text/plain');
+          if (text.trim()) {
+            e.preventDefault();
+            setItems((prev) => [...prev, { name: 'Pasted text', text }]);
           }
         }}
         onDragOver={(e) => {
@@ -259,8 +259,8 @@ export function AddMaterial({
             Add material
           </DialogTitle>
           <DialogDescription className="sr-only">
-            Drop files, choose them, or paste a transcript. The tray says where everything lands and
-            what will run before you add it.
+            Drop files or a folder, choose them, or paste. Whatever you add is filed and read for
+            you; the field below is for anything you want to say about it.
           </DialogDescription>
           {meta && (
             <span className="ml-auto truncate font-mono text-xs text-muted-foreground">{meta}</span>
@@ -269,11 +269,13 @@ export function AddMaterial({
 
         <div className={`flex flex-col ${dragOver ? 'bg-brand/5' : ''}`}>
           {items.length === 0 ? (
-            /* The empty tray leads with the drop zone: this is where the PO
-               learns that dropping works at all. */
+            /* The empty tray leads with the drop zone: this is where the PM
+               learns that dropping works at all. It also takes focus, so ⌘V
+               lands here as material rather than in the instruction field. */
             <div className="px-4 pt-4">
               <button
                 type="button"
+                autoFocus
                 onClick={choose}
                 className={`flex h-28 w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed transition-colors duration-150 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 motion-reduce:transition-none ${
                   dragOver
@@ -282,19 +284,19 @@ export function AddMaterial({
                 }`}
               >
                 <Upload className="size-5" aria-hidden />
-                <span className="text-sm font-medium">Drop files here</span>
-                <span className="text-xs">or click to choose them</span>
+                <span className="text-sm font-medium">Drop files or a folder here</span>
+                <span className="text-xs">or click to choose them, or paste</span>
               </button>
             </div>
           ) : (
             <div className="flex max-h-56 flex-col gap-px overflow-y-auto px-2 pt-2">
               {items.map((item, i) => {
-                const planned = plan?.items[i];
-                const Icon = KIND_ICON[planned?.kind ?? 'note'];
-                const failed = planned?.error;
+                const name = rowName(item);
+                const failed = check?.items[i]?.error;
+                const Icon = readableAs(name) === 'image' ? ImageIcon : FileText;
                 return (
                   <div
-                    key={`${item.name ?? 'pasted'}-${i}`}
+                    key={`${name}-${i}`}
                     className="group flex h-8 shrink-0 items-center gap-2 rounded-md px-2 hover:bg-accent/60"
                   >
                     <Icon
@@ -302,21 +304,17 @@ export function AddMaterial({
                       aria-hidden
                     />
                     <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground/80">
-                      {item.name ?? 'Pasted text'}
+                      {name}
                     </span>
-                    {failed ? (
-                      <span className="shrink-0 text-xs text-destructive">{failed}</span>
-                    ) : (
-                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                        {planned?.dir}
-                      </span>
-                    )}
+                    {/* Only a refusal earns text here. Where a file lands is the
+                        agent's to work out and to say once it has read it. */}
+                    {failed && <span className="shrink-0 text-xs text-destructive">{failed}</span>}
                     <button
                       type="button"
                       onClick={() => setItems((prev) => prev.filter((_, n) => n !== i))}
-                      aria-label={`Remove ${item.name ?? 'pasted text'}`}
-                      /* Quiet but always present: a control you can only find
-                         by hovering is a control most people never find. */
+                      aria-label={`Remove ${name}`}
+                      /* Quiet but always present: a control you can only find by
+                         hovering is a control most people never find. */
                       className="rounded p-0.5 text-muted-foreground/45 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none group-hover:text-muted-foreground motion-reduce:transition-none"
                     >
                       <X className="size-3.5" />
@@ -340,118 +338,40 @@ export function AddMaterial({
           )}
 
           <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onPaste={(e) => {
-              const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'));
-              if (file) {
-                e.preventDefault();
-                void addFiles([file]);
-              }
-            }}
-            placeholder={
-              asMaterial
-                ? '…or paste a transcript, a link, an email thread'
-                : 'Anything I should do with these? (optional)'
-            }
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            placeholder="Anything I should know, or want done with these? (optional)"
             rows={1}
             disabled={!vault}
-            autoFocus
-            aria-label={asMaterial ? 'Paste material' : 'What to do with this material'}
-            /* Material sets at reading size; an instruction about material is
-               chrome, and setting both at 15px made the optional field read as
-               the main event. */
-            className={`w-full resize-none bg-transparent px-4 outline-none placeholder:text-foreground/70 disabled:opacity-50 ${
-              asMaterial ? 'h-28 py-3 text-body leading-relaxed' : 'h-14 py-2.5 text-sm'
-            }`}
+            aria-label="What to do with this material"
+            className="h-14 w-full resize-none bg-transparent px-4 py-2.5 text-sm outline-none placeholder:text-foreground/70 disabled:opacity-50"
           />
         </div>
 
         <div className="flex flex-col gap-2 border-t border-border bg-muted/40 px-4 py-3">
-          {/*
-            The one thing in this tray that isn't just filing: whether an agent
-            gets to work on the material. It names the skill that will actually
-            run and how many items it takes, because "2 reviews open" told the
-            PO that something would happen without saying what — and it switches
-            both ways, where the old copy could only turn extraction on.
-           */}
-          {plan && !nothingReadable && (
-            <button
-              type="button"
-              role="switch"
-              aria-checked={!catchup}
-              onClick={() => setAmbition(catchup ? 'capture' : 'catchup')}
-              className="group flex items-center gap-2 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none"
-            >
-              <span
-                className={`grid size-3.5 shrink-0 place-items-center rounded-[4px] border transition-colors duration-150 motion-reduce:transition-none ${
-                  catchup ? 'border-input' : 'border-brand bg-brand text-brand-foreground'
-                }`}
-              >
-                {!catchup && <Check className="size-2.5" strokeWidth={3} aria-hidden />}
-              </span>
-              {catchup ? (
-                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground/80">Just file them</span>
-                  {plan.ambitionAuto && plan.reason ? ` · ${plan.reason}` : ''}
-                </span>
-              ) : (
-                <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">
-                  {plan.runs.length > 0 ? (
-                    plan.runs.map((r, i) => (
-                      <span key={r.skill + r.verb}>
-                        {i > 0 && <span className="text-muted-foreground"> · </span>}
-                        <span className="font-medium">{r.title}</span>
-                        <span className="text-muted-foreground">
-                          {' '}
-                          {r.verb} {r.count === 1 ? 'it' : `all ${r.count}`}
-                        </span>
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-muted-foreground">Nothing to run over these</span>
-                  )}
-                </span>
-              )}
-              {/* Amber only where the SYSTEM decided, not where the PO did —
-                  an inference always says so (DESIGN §2). */}
-              {catchup && plan.ambitionAuto && (
-                <TriangleAlert className="size-3.5 shrink-0 text-warning" aria-hidden />
-              )}
-            </button>
+          {/* Where the drop was aimed, said back before it counts for anything.
+              The agent is told the same sentence. */}
+          {aim && (
+            <p className="truncate text-xs text-foreground/80">
+              Goes to{' '}
+              <span className="font-medium">{aimLabel(aim)}</span>
+            </p>
           )}
-          {!catchup && plan?.match && (
-            <div className="flex items-center gap-2 text-xs">
-              <Mic className="size-3.5 shrink-0 text-brand" aria-hidden />
-              <span className="min-w-0 flex-1 truncate text-foreground/80">
-                Attaches to <span className="font-medium">{plan.match.title}</span>
-                <span className="text-muted-foreground"> · already on your calendar</span>
-              </span>
-            </div>
-          )}
-
           <div className="flex items-center gap-3">
             {nothingReadable ? (
-              /* No destination to state, so state the problem instead of an
-                 arrow pointing at an empty folder name. */
               <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
                 <TriangleAlert className="size-3 shrink-0 text-warning" aria-hidden />
-                {bad.length === 1
-                  ? 'This file can’t be read yet — try a .txt, .md or .vtt export.'
-                  : 'None of these can be read yet — try .txt, .md or .vtt exports.'}
+                {items.length === 1
+                  ? 'This one can’t be read. Try a .txt, .md or .vtt export.'
+                  : 'None of these can be read. Try .txt, .md or .vtt exports.'}
               </p>
-            ) : material.length > 0 ? (
-              <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs">
-                <ArrowRight className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-                <span className="truncate font-mono text-foreground/80">
-                  {destinations.map((d) => `${d.dir}${d.n > 1 ? ` ×${d.n}` : ''}`).join('  ')}
+            ) : refused.length > 0 ? (
+              <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
+                <TriangleAlert className="size-3 shrink-0 text-warning" aria-hidden />
+                <span className="truncate">
+                  {refused.length === 1 ? '1 file can’t be read' : `${refused.length} files can’t be read`}
+                  , the rest will be added
                 </span>
-                {bad.length > 0 && (
-                  <span className="shrink-0 text-destructive">
-                    · {bad.length} unreadable
-                  </span>
-                )}
               </p>
             ) : (
               <span className="flex-1" />
@@ -482,9 +402,4 @@ export function AddMaterial({
       </DialogContent>
     </Dialog>
   );
-}
-
-/** A pasted or dropped image, already read by whoever opened the tray. */
-function imageItem(image: { name: string; dataUrl: string }): ArrivalItemInputDTO {
-  return { name: image.name, dataBase64: image.dataUrl.split(',')[1] ?? '' };
 }

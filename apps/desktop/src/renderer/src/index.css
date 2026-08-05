@@ -1,7 +1,7 @@
 @import 'tailwindcss';
-@import '@pm/ui/styles.css';
+@import '@qale/ui/styles.css';
 
 /* Tailwind v4 does not scan across workspace package boundaries on its own
-   (PLAN §6.7): point it at @pm/ui's source so the vendored component classes are
+   (PLAN §6.7): point it at @qale/ui's source so the vendored component classes are
    generated. Path is relative to this file. */
 @source '../../../../../packages/ui/src';

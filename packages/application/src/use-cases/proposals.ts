@@ -3,6 +3,7 @@ import {
   zUpdatePayload,
   zDecisionPayload,
   zOutboundPayload,
+  findDuplicate,
   parseFrontmatter,
   checkSupersede,
   checkFrontmatterMutation,
@@ -13,7 +14,8 @@ import {
   type DecisionFrontmatter,
   type Frontmatter,
   type OutboundPayload,
-} from '@pm/domain';
+  type ProposalIdentity,
+} from '@qale/domain';
 import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../ports.js';
 import { renameNote } from './notes.js';
 
@@ -39,6 +41,46 @@ export function contentHash(text: string): string {
 
 export function createProposal(ctx: UseCaseContext, input: CreateProposalInput): ProposalRecord {
   return ctx.proposals.create(input, Date.now());
+}
+
+/** What a stored card is called, for comparing it against a new one. */
+function cardTitle(rec: ProposalRecord): string {
+  const payload = rec.payload as { frontmatter?: Record<string, unknown>; title?: string } | null;
+  const fm = payload?.frontmatter;
+  const fromFm = typeof fm?.['title'] === 'string' ? fm['title'] : undefined;
+  const fromSummary = typeof fm?.['summary'] === 'string' ? fm['summary'] : undefined;
+  // An update carries no note title of its own, so what it is FOR is its
+  // rationale — the sentence the card shows the PM anyway.
+  return fromFm ?? fromSummary ?? payload?.title ?? rec.rationale;
+}
+
+/** The `type` a note card would create, so a todo never collides with an insight. */
+function cardNoteType(rec: ProposalRecord): string | undefined {
+  const fm = (rec.payload as { frontmatter?: Record<string, unknown> } | null)?.frontmatter;
+  return typeof fm?.['type'] === 'string' ? fm['type'] : undefined;
+}
+
+/**
+ * The card already waiting on the PM that this one would repeat, or null.
+ *
+ * Reads PENDING cards across every session, which is the whole point: two runs
+ * over the same material cannot see each other's proposals, and the instruction
+ * to "check existing todos first" only ever reached notes already on disk. A
+ * card the PM has already resolved is not consulted — rejecting something once
+ * is not a standing instruction never to raise it again.
+ */
+export function duplicatePending(
+  ctx: UseCaseContext,
+  candidate: ProposalIdentity,
+): ProposalRecord | null {
+  const pending = ctx.proposals.list('pending').map((rec) => ({
+    rec,
+    kind: rec.kind,
+    targetPath: rec.targetPath,
+    noteType: cardNoteType(rec),
+    title: cardTitle(rec),
+  }));
+  return findDuplicate(pending, candidate)?.rec ?? null;
 }
 
 export function listProposals(ctx: UseCaseContext, status?: string): ProposalRecord[] {
@@ -398,7 +440,7 @@ async function acceptOutbound(ctx: UseCaseContext, rec: ProposalRecord, edited?:
         await ctx.git.commitPaths([p.linkBackPath], `pushed: ${p.provider} → ${p.linkBackPath}`);
       }
     } catch (err) {
-      logError('[pm] outbound link-back failed (push already landed):', err instanceof Error ? err.message : err);
+      logError('[qale] outbound link-back failed (push already landed):', err instanceof Error ? err.message : err);
     }
   }
 

@@ -104,6 +104,17 @@ export function runnableEntryPath(dir: string, name: string): string {
 }
 
 /**
+ * Where a retired runnable's own copy is KEPT: `skills/ask/SKILL.md` becomes
+ * `skills/ask/RETIRED-SKILL.md`. Same folder, one rename, and it is out of
+ * force — the name no longer matches an entry basename, so nothing indexes it,
+ * lists it or resolves an invocation to it. Deliberately not a delete: what the
+ * PM wrote in there is theirs.
+ */
+export function retiredEntryPath(dir: string, name: string): string {
+  return `${dir}/${name}/RETIRED-${RUNNABLE_ENTRY[dir] ?? RUNNABLE_ENTRY['skills']}`;
+}
+
+/**
  * Every path a runnable called `name` could live at, in RESOLUTION order:
  * `skills/` before `agents/` (a customised copy beats the agent file of the
  * same name — the precedence the runtime has always had), and inside each

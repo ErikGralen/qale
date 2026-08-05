@@ -1,4 +1,4 @@
-import type { NoteRefDTO } from '@pm/ipc';
+import type { NoteRefDTO } from '@qale/ipc';
 import { timeAgo } from './session-meta';
 
 /** When a note was last relevant: its frontmatter date, falling back to mtime. */
@@ -50,8 +50,8 @@ export function isUpcomingMeeting(n: NoteRefDTO, now: number = Date.now()): bool
   return meetingStart(n) > now;
 }
 
-/** A meeting that happened and still awaits its After-Meeting review. A
- *  cancelled meeting never happened, so it never asks to be reviewed.
+/** A meeting that happened and has not been read yet. A cancelled meeting
+ *  never happened, so it never asks to be read.
  *  Same `Array.filter` caveat as `isUpcomingMeeting`. */
 export function needsReview(n: NoteRefDTO, now: number = Date.now()): boolean {
   if (n.eventStatus === 'cancelled') return false;
@@ -75,6 +75,44 @@ function startOfDay(ts: number): number {
 /** Whether the meeting carries a clock time at all (vs. a bare, all-day date). */
 function hasClock(n: NoteRefDTO): boolean {
   return Boolean(n.time) || Boolean(n.date?.includes('T'));
+}
+
+/** How long a meeting runs when nothing says otherwise. */
+const DEFAULT_MEETING_MIN = 60;
+
+/**
+ * When the meeting was over: its start plus its length. An all-day entry has no
+ * clock to add minutes to, so it ends when its day does — otherwise a bare date
+ * would read as "finished an hour after midnight" and anything waiting on the
+ * end would fire in the small hours of the morning it happens.
+ */
+export function meetingEnd(n: NoteRefDTO): number {
+  const start = meetingStart(n);
+  if (!hasClock(n)) return startOfDay(start) + DAY_MS;
+  return start + (n.durationMin ?? DEFAULT_MEETING_MIN) * 60_000;
+}
+
+/** The quiet hour after a meeting: still in the room, still walking back to the
+ *  desk. Asking here would be nagging. */
+export const CAPTURE_GRACE_MS = 3_600_000;
+/** After this, a meeting nobody captured is a lost cause and the ask expires
+ *  on its own instead of accumulating (docs/capture-nudge.md). */
+export const CAPTURE_WINDOW_MS = 4 * DAY_MS;
+
+/**
+ * A meeting the app knows happened and that nobody put anything into: no
+ * transcript, no typed line. Calendar-synced only — a mirror is the one note
+ * that exists whether or not the PO ever meant to write one, so its emptiness
+ * is the app's own doing and worth a word. A note somebody made by hand is
+ * empty because they left it that way.
+ *
+ * Same `Array.filter` caveat as `isUpcomingMeeting`: pass a clock.
+ */
+export function needsCapture(n: NoteRefDTO, now: number = Date.now()): boolean {
+  if (n.type !== 'meeting' || !n.synced || !n.date) return false;
+  if (n.eventStatus === 'cancelled' || n.captured) return false;
+  const since = now - meetingEnd(n);
+  return since >= CAPTURE_GRACE_MS && since < CAPTURE_WINDOW_MS;
 }
 
 /** From this local hour on, tomorrow's first meetings join today's on the rail —

@@ -10,7 +10,9 @@ tags:
   - enterprise-auth
 ---
 
-> "I'll send over the [[notes/rollout-runbook|rollout runbook]] so your team can review it before the 28th."
+> "I'll send you the rollout runbook so your team can read it before the 28th."
 > from [[meetings/2026-07-14-nordkap-checkin]]
 
-Rollout delivery is tracked on [[tickets/PAY-142|PAY-142]].
+She asked for it the next day, before any rollout planning starts. The document is the
+[[notes/rollout-runbook|rollout runbook]], and rollout delivery is tracked on
+[[tickets/PAY-142|PAY-142]].

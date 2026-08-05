@@ -3,7 +3,7 @@ type: "note"
 summary: "Friday scratch pad. Raw jottings from calls and standup, not tidied up yet"
 ---
 
-sara called re sso rollout, wants a runbook before the cutover, said id send it monday. she thinks scim is "early sept", pretty sure we only ever said september. clarify before it becomes a promise
+sara called re sso rollout, still chasing the runbook i said id send tuesday. promised her monday, no more slipping. she thinks scim is "early sept", pretty sure we only ever said september. clarify before it becomes a promise
 
 kranelund: lise is STILL screenshotting the monday report?? thought the exports pilot covered that. ask mikkel at the next checkin
 

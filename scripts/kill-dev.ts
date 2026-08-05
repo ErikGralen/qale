@@ -10,10 +10,10 @@
  *
  *   pnpm kill-dev              # terminate them
  *   pnpm kill-dev --dry        # just list what would be killed
- *   pnpm kill-dev --sandboxed  # only PM_USERDATA runs — never a human's dev server
+ *   pnpm kill-dev --sandboxed  # only QALE_USERDATA runs — never a human's dev server
  *
  * Prefer --sandboxed when something automated is doing the cleaning: a plain
- * `pnpm desktop` looks identical whoever started it, but a PM_USERDATA launch is
+ * `pnpm desktop` looks identical whoever started it, but a QALE_USERDATA launch is
  * always a throwaway verification run.
  */
 import { execFileSync } from 'node:child_process';
@@ -39,20 +39,20 @@ function list(args: string[]): Proc[] {
     .filter((p): p is Proc => p !== null);
 }
 
-/** PIDs of sandboxed verification launches. The marker is the PM_USERDATA env
+/** PIDs of sandboxed verification launches. The marker is the QALE_USERDATA env
  *  var — never an argv flag — so this needs `-E`, which appends the environment
  *  to each line.
  *
  *  Two traps in that listing, both hit in practice: it also splices in every
  *  process's PWD (so path-matching against it sweeps up any shell sitting in the
- *  repo), and a shell whose *command text* merely mentions PM_USERDATA matches
+ *  repo), and a shell whose *command text* merely mentions QALE_USERDATA matches
  *  as readily as a process that actually has it set. Hence: require an expanded
  *  absolute path after the `=`, and require the process to be Electron itself —
  *  which is all we ever wanted to kill, since it is what holds the dock icon. */
 function sandboxed(): Set<number> {
   return new Set(
     list(['-Eaxww', '-o', 'pid=,command='])
-      .filter((p) => p.command.includes(ELECTRON) && /PM_USERDATA=\//.test(p.command))
+      .filter((p) => p.command.includes(ELECTRON) && /QALE_USERDATA=\//.test(p.command))
       .map((p) => p.pid),
   );
 }

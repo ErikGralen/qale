@@ -157,6 +157,18 @@ test('macOS: no developer tools means no git — history stays empty and the stu
     assert.equal(await git.fileAt('note.md', 'HEAD'), null);
     assert.ok((await fake.calls()) >= 1, 'the safe check ran');
   });
+
+  // The one every open goes through: a vault with no `.git` of its own can only
+  // be answered by asking git, so it must be answered by the safe check instead.
+  const outer = await tmp();
+  await simpleGit(outer).init();
+  const nested = join(outer, 'vault');
+  await mkdir(nested);
+  const fake2 = await fakeXcodeSelect(1);
+  await withPath(fake2.dir, async () => {
+    assert.equal(await new GitAdapter(nested).isRepo(), false);
+    assert.ok((await fake2.calls()) >= 1, 'the safe check ran instead of git');
+  });
 });
 
 test('the availability probe is cached — a save does not spawn a process per call', { skip: process.platform !== 'darwin' }, async () => {

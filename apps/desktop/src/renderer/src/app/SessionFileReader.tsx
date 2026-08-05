@@ -95,7 +95,7 @@ export function SessionFileBody({
     return (
       <div className={`flex flex-col items-start gap-3 ${className}`}>
         <p className="text-dense leading-relaxed text-muted-foreground">
-          This file is gone. Session files are working material — nothing keeps them.
+          This file is gone. Session files are working material, and nothing keeps them.
         </p>
         {onGone}
       </div>
@@ -114,7 +114,7 @@ export function SessionFileBody({
   if (!body) {
     return (
       <p className={`text-dense leading-relaxed text-muted-foreground ${className}`}>
-        Empty so far — the session has the file open but hasn't written to it yet.
+        Empty so far. The session has the file open but hasn't written to it yet.
       </p>
     );
   }

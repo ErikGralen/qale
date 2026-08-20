@@ -51,7 +51,11 @@ type Outcome =
  *  Retry-After wait is fine, but never sit out a long throttle window. */
 const THROTTLE_WAIT_CAP_MS = 5_000;
 
-async function probeEndpoint(url: string, headers: Record<string, string>, fetchImpl: FetchLike): Promise<Outcome> {
+async function probeEndpoint(
+  url: string,
+  headers: Record<string, string>,
+  fetchImpl: FetchLike,
+): Promise<Outcome> {
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
@@ -62,7 +66,11 @@ async function probeEndpoint(url: string, headers: Record<string, string>, fetch
     if (res.status === 429) {
       if (attempt > 0) return { kind: 'throttled' };
       const seconds = Number(res.headers.get('Retry-After'));
-      await sleep(Number.isFinite(seconds) && seconds >= 0 ? Math.min(seconds * 1000, THROTTLE_WAIT_CAP_MS) : 1_000);
+      await sleep(
+        Number.isFinite(seconds) && seconds >= 0
+          ? Math.min(seconds * 1000, THROTTLE_WAIT_CAP_MS)
+          : 1_000,
+      );
       continue;
     }
     if (res.ok) return { kind: 'ok', json: await res.json().catch(() => undefined) };
@@ -85,19 +93,31 @@ function toHealth(o: Outcome): ConnectorHealth {
 }
 
 /** Sharpest evidence wins when a product was probed on both site and gateway. */
-const RANK: Record<Outcome['kind'], number> = { ok: 4, throttled: 3, auth: 2, error: 1, network: 0 };
+const RANK: Record<Outcome['kind'], number> = {
+  ok: 4,
+  throttled: 3,
+  auth: 2,
+  error: 1,
+  network: 0,
+};
 function best(site: Outcome, gateway: Outcome | null): Outcome {
   if (!gateway) return site;
   return RANK[gateway.kind] > RANK[site.kind] ? gateway : site;
 }
 
-function identityOf(jira: Outcome, fallbackEmail: string): { displayName: string; email?: string } | null {
+function identityOf(
+  jira: Outcome,
+  fallbackEmail: string,
+): { displayName: string; email?: string } | null {
   if (jira.kind !== 'ok') return null;
   const me = jira.json as RawMyself | undefined;
   return { displayName: me?.displayName ?? fallbackEmail, email: me?.emailAddress };
 }
 
-export async function probeAtlassian(auth: AtlassianAuth, fetchImpl: FetchLike): Promise<ProbeResult> {
+export async function probeAtlassian(
+  auth: AtlassianAuth,
+  fetchImpl: FetchLike,
+): Promise<ProbeResult> {
   const site = auth.siteUrl.replace(/\/$/, '');
   const headers = {
     Authorization: `Basic ${Buffer.from(`${auth.email}:${auth.apiToken}`).toString('base64')}`,
@@ -137,7 +157,9 @@ export async function probeAtlassian(auth: AtlassianAuth, fetchImpl: FetchLike):
   if (jiraSite.kind === 'auth' || wikiSite.kind === 'auth') {
     let cloudId: string | undefined;
     try {
-      const tenant = await fetchImpl(`${site}/_edge/tenant_info`, { headers: { Accept: 'application/json' } });
+      const tenant = await fetchImpl(`${site}/_edge/tenant_info`, {
+        headers: { Accept: 'application/json' },
+      });
       if (tenant.ok) cloudId = ((await tenant.json()) as { cloudId?: string }).cloudId;
     } catch {
       // The site answered but the gateway path didn't — treat as network
@@ -188,7 +210,9 @@ export async function probeAtlassian(auth: AtlassianAuth, fetchImpl: FetchLike):
       error: 'Atlassian rejected the credentials — the API token may have expired.',
     };
   }
-  const errored = [jiraFinal, wikiFinal].find((o): o is Extract<Outcome, { kind: 'error' }> => o.kind === 'error');
+  const errored = [jiraFinal, wikiFinal].find(
+    (o): o is Extract<Outcome, { kind: 'error' }> => o.kind === 'error',
+  );
   return {
     ok: false,
     health: 'unreachable',

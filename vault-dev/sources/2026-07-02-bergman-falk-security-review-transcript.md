@@ -5,8 +5,8 @@ processing: processed
 source:
   system: transcript
 captured: 2026-07-02
-customer: "[[customers/bergman-falk]]"
-meeting: "[[meetings/2026-07-02-bergman-falk-security-review]]"
+customer: '[[customers/bergman-falk]]'
+meeting: '[[meetings/2026-07-02-bergman-falk-security-review]]'
 ---
 
 Elin: Process first, so nobody's guessing. You'll get our questionnaire this week. We collect

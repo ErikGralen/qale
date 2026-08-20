@@ -5,7 +5,11 @@ import { useApp } from '../../state/app-state';
 import { Screen } from '../Opening';
 
 /**
- * Screen 6 (ONB-6). What leaves the machine.
+ * Screen 6 (ONB-6), and the last one. What leaves the machine.
+ *
+ * Getting the first transcript in used to be a screen after this one. It is a
+ * First steps row instead: the ask lands better once the app is in front of
+ * someone than as the final gate of a setup flow.
  *
  * One question, answered in four lines: nothing you wrote, it is tied to your
  * name, it goes to one place in Europe, and here is the switch. The full list
@@ -23,6 +27,10 @@ import { Screen } from '../Opening';
  * The switch is on by default, invited beta users are asked at invite time too,
  * and it is a real switch: off means nothing is sent, and the same switch, in
  * the same words, sits in Settings afterwards.
+ *
+ * What the title promises is bigger than what the switch controls, so the line
+ * naming the two channels it does NOT close ({@link TelemetryDetails}, from
+ * `TELEMETRY_LIMIT`) sits in the open under it, not inside the fold (OW10).
  */
 export function Telemetry({ onNext }: { onNext: () => void }) {
   const { settings, patchOnboarding } = useApp();
@@ -34,7 +42,7 @@ export function Telemetry({ onNext }: { onNext: () => void }) {
       why="Nothing you or the agent wrote. Only whether the app worked, and who it stopped working for."
       footer={
         <Button data-opening-primary size="lg" onClick={onNext}>
-          Continue
+          Open my workspace
         </Button>
       }
     >

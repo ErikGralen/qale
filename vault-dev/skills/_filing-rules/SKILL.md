@@ -18,7 +18,8 @@ Where each kind of note lives. The librarian follows these when proposing paths 
   anchor for the whole lifecycle: `## Prep` before, `## Notes` during, `## Summary` once
   processed, linking the decisions and insights it produced. The immutable transcript lives in
   sources/ and is linked via the `transcript` frontmatter ref. Recurring meetings share a
-  `series` slug. Carries `processing`, `new` until the arrival cards land. A meeting whose `date`
+  `series` slug. Carries `processing`: a slot the calendar synced sits at `new` until its cards
+  land, while a page proposed from a recording arrives already read. A meeting whose `date`
   is in the future is upcoming; that is derived, never a lifecycle value.
 - **decisions/**: the append-only decision spine, `YYYY-MM-DD-<slug>.md`. Never edit a decision's
   body. To change one, supersede it: a new file with `supersedes`, and the old file flipped to

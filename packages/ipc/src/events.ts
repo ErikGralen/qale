@@ -54,6 +54,26 @@ export interface SessionStatusEvent {
    * the time this arrives, so the refresh this event triggers drops its row.
    */
   quiet?: boolean;
+  /**
+   * The model provider refused this turn, said in one sentence with the fix in
+   * it. `blocking` means nothing runs until the PM does something (no credit, a
+   * rejected key) as opposed to something that clears on its own (overloaded,
+   * rate limited); main only interrupts for the first kind.
+   */
+  fault?: { text: string; blocking: boolean };
+}
+
+/**
+ * A session took its own name, a second or so into its first turn: a cheap
+ * model read the first message and named the conversation after it. Separate
+ * from `session:status` on purpose — status starting or settling drives the
+ * rail, the badges, telemetry and the librarian's ledger, and none of that is
+ * true of a word changing. The name is already on disk when this fires.
+ */
+export interface SessionRenamedEvent {
+  channel: 'session:renamed';
+  sessionId: string;
+  title: string;
 }
 
 /**
@@ -122,6 +142,7 @@ export type PushEvent =
   | VaultChangedEvent
   | ProposalsChangedEvent
   | SessionStatusEvent
+  | SessionRenamedEvent
   | SessionFilesChangedEvent
   | SpawnRequestEvent
   | AskRequestEvent
@@ -141,6 +162,7 @@ export const PUSH_CHANNELS = [
   'vault:changed',
   'proposals:changed',
   'session:status',
+  'session:renamed',
   'session:files',
   'session:spawn',
   'session:ask',

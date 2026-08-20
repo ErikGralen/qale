@@ -8,8 +8,7 @@
  * still argue with it in the tray's own field.
  */
 export type MaterialAim =
-  | { kind: 'meeting'; path: string; title: string }
-  | { kind: 'folder'; dir: string };
+  { kind: 'meeting'; path: string; title: string } | { kind: 'folder'; dir: string };
 
 /** The aim, said the way the PM would say it. */
 export function aimSentence(aim: MaterialAim): string {

@@ -7,6 +7,7 @@ import {
   type NoteType,
 } from '@qale/domain';
 import type { UseCaseContext } from '../ports.js';
+import { workspaceNameOf } from './vault.js';
 
 /**
  * OKF `index.md` generation (alignment phase 1) — the librarian's
@@ -62,7 +63,12 @@ function collectFolders(ctx: UseCaseContext): IndexFolder[] {
       description: n.summary,
       lifecycle: n.lifecycle,
     }));
-    folders.push({ dir: meta.dir, label: labelFor(meta.dir), purpose: FOLDER_PURPOSE[type], entries });
+    folders.push({
+      dir: meta.dir,
+      label: labelFor(meta.dir),
+      purpose: FOLDER_PURPOSE[type],
+      entries,
+    });
   }
   return folders;
 }
@@ -79,13 +85,19 @@ export interface IndexGenResult {
 
 /**
  * Regenerate the vault's `index.md` orientation files. Returns the paths that
- * actually changed (empty when everything was already current). Best-effort by
- * contract — the caller runs it inside the librarian maintenance pass and
- * swallows errors, exactly like the librarian's own scan.
+ * actually changed (empty when everything was already current).
+ *
+ * A map that cannot be written is NOT best-effort, whatever the maintenance pass
+ * around it can absorb. These files are how anything orients before it retrieves,
+ * so a folder silently missing its map is retrieval quietly getting worse on
+ * exactly the workspaces big enough to need it — and the failure would show up
+ * as thinner answers rather than as an error. So every map is attempted, what did
+ * land is still committed (a partial refresh beats a stale one), and then the
+ * refusals are raised by name. The maintenance pass logs that at error level.
  */
 export async function generateIndexFiles(ctx: UseCaseContext): Promise<IndexGenResult> {
   const folders = collectFolders(ctx);
-  const workspaceName = ctx.vault.root().split('/').filter(Boolean).pop() ?? 'workspace';
+  const workspaceName = workspaceNameOf(ctx.vault.root()) ?? 'workspace';
 
   const targets: { path: string; content: string }[] = [
     { path: 'index.md', content: renderRootIndex(folders, workspaceName) },
@@ -93,14 +105,22 @@ export async function generateIndexFiles(ctx: UseCaseContext): Promise<IndexGenR
   ];
 
   const written: string[] = [];
+  const refused: string[] = [];
   for (const t of targets) {
     const existing = await ctx.vault.readRaw(t.path);
     if (existing === t.content) continue;
-    await ctx.vault.writeRaw(t.path, t.content);
-    written.push(t.path);
+    try {
+      await ctx.vault.writeRaw(t.path, t.content);
+      written.push(t.path);
+    } catch (err) {
+      refused.push(`${t.path} (${err instanceof Error ? err.message : String(err)})`);
+    }
   }
   if (written.length > 0) {
     await ctx.git.commitPaths(written, 'librarian: refresh index.md orientation maps');
+  }
+  if (refused.length > 0) {
+    throw new Error(`index.md maps could not be written: ${refused.join('; ')}`);
   }
   return { written };
 }

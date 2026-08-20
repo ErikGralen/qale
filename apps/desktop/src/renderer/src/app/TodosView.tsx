@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import {
   Calendar,
   Check,
+  Clock,
   CornerDownRight,
   ListTodo,
   Plus,
@@ -11,7 +12,15 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { Spinner, cn } from '@qale/ui';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Spinner,
+  cn,
+} from '@qale/ui';
 import type { NoteRefDTO } from '@qale/ipc';
 import { byDue, todoLane, type TodoLane, isFolderIndex } from '@qale/domain';
 import { useApp } from '../state/app-state';
@@ -43,8 +52,16 @@ const LANE_LABEL: Record<TodoLane, string> = {
 };
 
 const dueFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
-const dueFmtYear = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-const todayHeadFmt = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+const dueFmtYear = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+});
+const todayHeadFmt = new Intl.DateTimeFormat('en-GB', {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+});
 
 /** today + n days as a local YYYY-MM-DD string — the this-week / later cutoff. */
 function addDays(iso: string, days: number): string {
@@ -66,10 +83,37 @@ function dueLabel(due: string, today: string): string {
   return (d.getFullYear() === t.getFullYear() ? dueFmt : dueFmtYear).format(d);
 }
 
+/** The next Monday strictly after `today` — the "start of next week" snooze. */
+function nextMonday(today: string): string {
+  const dow = new Date(`${today}T00:00`).getDay();
+  return addDays(today, (8 - dow) % 7 || 7);
+}
+
 /** "[[people/jonas]]" or "people/jonas" → slug; plain names return null. */
 function refSlug(ref: string): string | null {
   const m = /^\[\[([^\]|#]+)/.exec(ref.trim());
   return m?.[1]?.replace(/\.md$/, '') ?? (ref.includes('/') ? ref.replace(/\.md$/, '') : null);
+}
+
+/** Row-hover action: small, but a button you can see, with a word on it. */
+const ROW_ACTION =
+  'flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:border-brand/40 hover:text-brand focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50';
+
+/** Snooze steps, in the order a PO reaches for them. */
+const SNOOZE_STEPS: { label: string; due: (today: string) => string }[] = [
+  { label: 'Tomorrow', due: (t) => addDays(t, 1) },
+  { label: 'Next Monday', due: nextMonday },
+  { label: 'In a week', due: (t) => addDays(t, 7) },
+  { label: 'In two weeks', due: (t) => addDays(t, 14) },
+];
+
+/**
+ * The steps as dates, minus the collisions — on a Friday "next Monday" and "in
+ * three days" are the same day, and offering it twice makes the menu look broken.
+ */
+function snoozeChoices(today: string): { label: string; due: string }[] {
+  const all = SNOOZE_STEPS.map((s) => ({ label: s.label, due: s.due(today) }));
+  return all.filter((s, i) => all.findIndex((o) => o.due === s.due) === i);
 }
 
 interface TodoRow {
@@ -162,6 +206,7 @@ function TodoRowItem({
   onToggle,
   onDrop,
   onReopen,
+  onSnooze,
 }: {
   row: TodoRow;
   today: string;
@@ -172,15 +217,23 @@ function TodoRowItem({
   onToggle: () => void;
   onDrop: () => void;
   onReopen: () => void;
+  /** Move the due date; `null` clears it and the todo drops to Someday. */
+  onSnooze: (due: string | null) => void;
 }) {
   const { openDoc, openSession } = useApp();
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
   const n = row.note;
   const closed = row.lane === 'closed';
   const dropped = n.lifecycle === 'dropped';
 
   const ownerSlug = n.owner ? refSlug(n.owner) : null;
   const ownerNote = ownerSlug ? peopleBySlug.get(ownerSlug) : undefined;
-  const ownerName = ownerNote?.title ?? n.owner?.replace(/^\[\[|\]\]$/g, '').split('/').pop();
+  const ownerName =
+    ownerNote?.title ??
+    n.owner
+      ?.replace(/^\[\[|\]\]$/g, '')
+      .split('/')
+      .pop();
 
   const srcSlug = n.sourceRef ? refSlug(n.sourceRef) : null;
   const srcNote = srcSlug ? peopleBySlug.get(srcSlug) : undefined;
@@ -206,7 +259,9 @@ function TodoRowItem({
         aria-label={`${n.title}${n.due ? `, due ${dueLabel(n.due, today)}` : ''}${
           row.overdue ? ', overdue' : ''
         }${ownerName ? `, waiting on ${ownerName}` : ''}${
-          risk && !closed ? `, at risk: ${risk.externalId} ${risk.reason === 'blocked' ? 'blocked' : 'changed'}` : ''
+          risk && !closed
+            ? `, at risk: ${risk.externalId} ${risk.reason === 'blocked' ? 'blocked' : 'changed'}`
+            : ''
         }${closed ? (dropped ? ', dropped' : ', done') : ''}`}
         aria-keyshortcuts="Space Enter"
         title={n.title}
@@ -220,7 +275,11 @@ function TodoRowItem({
             aria-label={`Reopen "${n.title}"`}
             title="Reopen"
           >
-            {dropped ? <X className="size-2.5" aria-hidden /> : <Check className="size-2.5" aria-hidden />}
+            {dropped ? (
+              <X className="size-2.5" aria-hidden />
+            ) : (
+              <Check className="size-2.5" aria-hidden />
+            )}
           </button>
         ) : (
           <button
@@ -254,8 +313,9 @@ function TodoRowItem({
             {ownerName}
           </span>
         )}
-        {ownerName && (row.lane === 'waiting' || closed) && (
-          ownerNote ? (
+        {ownerName &&
+          (row.lane === 'waiting' || closed) &&
+          (ownerNote ? (
             <button
               className="pointer-events-auto flex shrink-0 items-center gap-1 rounded text-xs text-muted-foreground transition-colors hover:text-brand focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
               onClick={() => void openDoc(ownerNote.path)}
@@ -269,8 +329,7 @@ function TodoRowItem({
               <User className="size-3" aria-hidden />
               {ownerName}
             </span>
-          )
-        )}
+          ))}
 
         {srcNote && (
           <button
@@ -295,40 +354,94 @@ function TodoRowItem({
               overdue · {dueLabel(n.due, today)}
             </span>
           ) : (
-            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{dueLabel(n.due, today)}</span>
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              {dueLabel(n.due, today)}
+            </span>
           )
         ) : null}
 
         {!closed && (
-          <button
-            className="pointer-events-auto shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-brand focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={() =>
-              openSession('commitment-check', {
-                initialPrompt: handleTodoSeed(
-                  { path: n.path, title: n.title, due: n.due, owner: n.owner },
-                  today,
-                ),
-                title: `Handle: ${n.title}`,
-                fresh: true,
-              })
-            }
-            aria-label={`Help me handle "${n.title}"`}
-            title="Help me handle this: the memory plans it out as approval cards"
+          // Named buttons with real chrome, not bare glyphs: on a row this dense
+          // an icon alone reads as decoration, so nobody presses it.
+          <div
+            data-todo-actions
+            className={cn(
+              'flex shrink-0 items-center gap-1 transition-opacity',
+              'group-hover:pointer-events-auto group-hover:opacity-100',
+              'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+              snoozeOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
+            )}
           >
-            <Sparkles className="size-3.5" aria-hidden />
-          </button>
-        )}
+            <DropdownMenu open={snoozeOpen} onOpenChange={setSnoozeOpen}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className={ROW_ACTION}
+                  disabled={busy}
+                  aria-label={`${n.due ? 'Snooze' : 'Set a date for'} "${n.title}"`}
+                  title={
+                    n.due
+                      ? 'Snooze: move the due date and bring it back later'
+                      : 'Give it a date so it comes back on the day'
+                  }
+                >
+                  <Clock className="size-3.5" aria-hidden />
+                  {n.due ? 'Snooze' : 'Set a date'}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" sideOffset={6} className="w-56">
+                {snoozeChoices(today).map((step) => (
+                  <DropdownMenuItem
+                    key={step.label}
+                    className="gap-3 px-2 py-1.5"
+                    onClick={() => onSnooze(step.due)}
+                  >
+                    <span className="min-w-0">{step.label}</span>
+                    <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                      {dueLabel(step.due, today)}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+                {n.due && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="gap-3 px-2 py-1.5" onClick={() => onSnooze(null)}>
+                      <span className="min-w-0">No date</span>
+                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">someday</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-        {!closed && (
-          <button
-            className="pointer-events-auto shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={onDrop}
-            disabled={busy}
-            aria-label={`Drop "${n.title}"`}
-            title="Drop: keeps the record, closes the todo"
-          >
-            <X className="size-3" aria-hidden />
-          </button>
+            <button
+              className={ROW_ACTION}
+              onClick={() =>
+                openSession('commitment-check', {
+                  initialPrompt: handleTodoSeed(
+                    { path: n.path, title: n.title, due: n.due, owner: n.owner },
+                    today,
+                  ),
+                  title: `Handle: ${n.title}`,
+                  fresh: true,
+                })
+              }
+              aria-label={`Help me handle "${n.title}"`}
+              title="Help me handle this: reads the todo, where it came from and what's on the calendar, then proposes what to do as cards you approve"
+            >
+              <Sparkles className="size-3.5" aria-hidden />
+              Help me
+            </button>
+
+            <button
+              className={cn(ROW_ACTION, 'px-1 hover:border-destructive/40 hover:text-destructive')}
+              onClick={onDrop}
+              disabled={busy}
+              aria-label={`Drop "${n.title}"`}
+              title="Drop: keeps the record, closes the todo"
+            >
+              <X className="size-3.5" aria-hidden />
+            </button>
+          </div>
         )}
       </div>
     </li>
@@ -381,13 +494,15 @@ function SubLabel({ children }: { children: React.ReactNode }) {
 }
 
 export function TodosView() {
-  const { tree, setTodoStatus, openFolder } = useApp();
+  const { tree, setTodoStatus, setTodoDue, openFolder } = useApp();
   const toast = useToast();
   const today = localDateStr();
   const risks = useAtRisk();
   const [showDone, setShowDone] = useState(false);
   /** Optimistic commitment while the write+reindex round-trips. */
   const [pending, setPending] = useState<Record<string, string>>({});
+  /** Todos whose due date is mid-write — their row actions stay disabled. */
+  const [snoozing, setSnoozing] = useState<string[]>([]);
 
   // People resolve owner refs; todos come straight off the live tree.
   const { todos, peopleBySlug } = useMemo(() => {
@@ -416,19 +531,25 @@ export function TodosView() {
     }
     for (const [lane, rows] of map) {
       if (lane === 'closed') {
-        rows.sort((a, b) =>
-          (b.note.resolvedOn ?? '').localeCompare(a.note.resolvedOn ?? '') || b.note.mtime - a.note.mtime,
+        rows.sort(
+          (a, b) =>
+            (b.note.resolvedOn ?? '').localeCompare(a.note.resolvedOn ?? '') ||
+            b.note.mtime - a.note.mtime,
         );
       } else if (lane === 'someday') {
         rows.sort((a, b) => b.note.mtime - a.note.mtime);
       } else {
-        rows.sort((a, b) => byDue({ due: a.note.due }, { due: b.note.due }) || b.note.mtime - a.note.mtime);
+        rows.sort(
+          (a, b) => byDue({ due: a.note.due }, { due: b.note.due }) || b.note.mtime - a.note.mtime,
+        );
       }
     }
     return map;
   }, [todos, pending, today]);
 
-  const openCount = todos.filter((n) => (pending[n.path] ?? n.lifecycle ?? 'open') === 'open' && !n.owner).length;
+  const openCount = todos.filter(
+    (n) => (pending[n.path] ?? n.lifecycle ?? 'open') === 'open' && !n.owner,
+  ).length;
   const waitingCount = lanes.get('waiting')?.length ?? 0;
   const closedRows = lanes.get('closed') ?? [];
 
@@ -457,13 +578,26 @@ export function TodosView() {
       await setTodoStatus(path, commitment);
     } catch (err) {
       // The optimistic checkbox reverts (pending cleared below) — say why.
-      toast(`Couldn't update the todo: ${err instanceof Error ? err.message : 'the write failed.'}`);
+      toast(
+        `Couldn't update the todo: ${err instanceof Error ? err.message : 'the write failed.'}`,
+      );
     } finally {
       setPending((p) => {
         const next = { ...p };
         delete next[path];
         return next;
       });
+    }
+  };
+
+  const snooze = async (path: string, due: string | null) => {
+    setSnoozing((s) => [...s, path]);
+    try {
+      await setTodoDue(path, due);
+    } catch (err) {
+      toast(`Couldn't move the date: ${err instanceof Error ? err.message : 'the write failed.'}`);
+    } finally {
+      setSnoozing((s) => s.filter((p) => p !== path));
     }
   };
 
@@ -488,11 +622,12 @@ export function TodosView() {
           row={row}
           today={today}
           peopleBySlug={peopleBySlug}
-          busy={row.note.path in pending}
+          busy={row.note.path in pending || snoozing.includes(row.note.path)}
           risk={riskFor(risks, row.note.path)}
           onToggle={() => void flip(row.note.path, 'done')}
           onDrop={() => void flip(row.note.path, 'dropped')}
           onReopen={() => void flip(row.note.path, 'open')}
+          onSnooze={(due) => void snooze(row.note.path, due)}
         />
       ))}
     </ul>
@@ -510,7 +645,9 @@ export function TodosView() {
           empty ? undefined : (
             <>
               {openCount} open
-              {ownOverdue > 0 && <span className="font-semibold text-warning"> · {ownOverdue} overdue</span>}
+              {ownOverdue > 0 && (
+                <span className="font-semibold text-warning"> · {ownOverdue} overdue</span>
+              )}
               {waitingCount > 0 ? ` · ${waitingCount} waiting` : ''}
             </>
           )
@@ -650,6 +787,7 @@ export function TodosView() {
                       onToggle={() => void flip(row.note.path, 'done')}
                       onDrop={() => void flip(row.note.path, 'dropped')}
                       onReopen={() => void flip(row.note.path, 'open')}
+                      onSnooze={(due) => void snooze(row.note.path, due)}
                     />
                   ))}
                 </ul>

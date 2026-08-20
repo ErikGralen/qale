@@ -20,6 +20,30 @@ let installed = false;
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0']);
 
 /**
+ * The credentials this install actually holds, longest first so a token that
+ * contains a shorter one is still blanked whole. Nothing is ever removed: a
+ * rotated token has to keep redacting, because a line written before the
+ * rotation is still sitting in the buffer.
+ */
+const secrets: string[] = [];
+/** Under this a "secret" is more likely a word, and blanking every occurrence
+ *  of it would mangle ordinary lines. */
+const MIN_SECRET = 6;
+
+/**
+ * Tell the scrubber about a credential the moment we hold it. The shape rules
+ * below only catch formats we anticipated; this catches a credential in any
+ * shape, including the next connector's.
+ */
+export function registerSecretValue(value: string | null | undefined): void {
+  if (typeof value !== 'string') return;
+  const secret = value.trim();
+  if (secret.length < MIN_SECRET || secrets.includes(secret)) return;
+  secrets.push(secret);
+  secrets.sort((a, b) => b.length - a.length);
+}
+
+/**
  * Scrub a line on the way IN, not on the way out, so that whatever sits in the
  * buffer is already safe to hand over. Log lines carry the PM's own material
  * today: git names the note file it failed on, the sync engine names a calendar
@@ -27,15 +51,23 @@ const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0']);
  * any absolute path spells out their name and their folders.
  */
 export function redactLogLine(text: string): string {
+  // The value pass runs first, on the whole line: a credential we hold goes
+  // whatever it is wrapped in (a URL, a JSON body, a header dump). Plain
+  // split/join rather than a regex — the value is a secret, not a pattern, and
+  // its own characters must not be read as one.
+  let scrubbed = text;
+  for (const secret of secrets) scrubbed = scrubbed.split(secret).join('<redacted>');
   return (
-    text
+    scrubbed
       // Before the bare-path rule gets at their slashes.
       .replace(/\bfile:\/\/\S+/gi, '<path>')
       // A hostname identifies the customer (their Jira site, their company
       // domain), and so does everything after it: a Confluence URL spells out
       // the page title. Keep only that a request went somewhere.
-      .replace(/\b(https?:\/\/)([^\s/:]+)(:\d+)?/gi, (whole, scheme: string, host: string, port?: string) =>
-        LOOPBACK.has(host) ? whole : `${scheme}<host>${port ?? ''}`,
+      .replace(
+        /\b(https?:\/\/)([^\s/:]+)(:\d+)?/gi,
+        (whole, scheme: string, host: string, port?: string) =>
+          LOOPBACK.has(host) ? whole : `${scheme}<host>${port ?? ''}`,
       )
       .replace(/[A-Za-z]:\\[^\s'"]+/g, '<path>')
       // An absolute path, but not the tail of a URL we just kept (loopback).
@@ -51,6 +83,33 @@ export function redactLogLine(text: string): string {
       // Anything key-shaped: the MCP token, an API key that reached a log line.
       .replace(/\b(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{24,}\b/g, '<redacted>')
   );
+}
+
+/** One thing a background pass tried and could not do. */
+export interface PassFailure {
+  /** What was being worked, in the fewest words that identify it. */
+  item: string;
+  /** Whatever came back — an Error, a string, anything a catch caught. */
+  reason: unknown;
+}
+
+/**
+ * Every failure a background pass hit, as ONE already-scrubbed line naming each
+ * item and its reason (OW3). A pass that logs a row per failure turns one bad
+ * network minute into a wall of red, and a pass that swallows them leaves a
+ * workspace that quietly stopped being tidied with nothing to explain it.
+ *
+ * Scrubbed here rather than left to the capture hook, because console still
+ * prints straight to stderr and the items are the PM's own note paths.
+ * Returns null when nothing failed: there is no line to write then.
+ */
+export function failureReport(pass: string, failures: PassFailure[]): string | null {
+  if (failures.length === 0) return null;
+  const items = failures
+    .map((f) => `${f.item} (${f.reason instanceof Error ? f.reason.message : String(f.reason)})`)
+    .join('; ');
+  const count = failures.length === 1 ? '1 item' : `${failures.length} items`;
+  return redactLogLine(`[qale] ${pass}: ${count} failed this pass — ${items}`);
 }
 
 /** Errors go in as name + message: a stack is long, and it is all paths. */
@@ -98,4 +157,9 @@ export function recentLog(limit: number): { lines: string[]; total: number } {
 export function resetLogForTest(): void {
   lines.length = 0;
   total = 0;
+}
+
+/** Tests only, and for the same reason: registered values never expire in life. */
+export function resetSecretsForTest(): void {
+  secrets.length = 0;
 }

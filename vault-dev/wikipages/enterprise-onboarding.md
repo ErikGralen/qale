@@ -1,13 +1,13 @@
 ---
 type: wikipage
-summary: "Enterprise Onboarding: the Confluence runbook for enterprise tenants; still describes the pre-deferral SCIM plan"
+summary: 'Enterprise Onboarding: the Confluence runbook for enterprise tenants; still describes the pre-deferral SCIM plan'
 title: Enterprise Onboarding
 processing: processed
 provider: confluence
-external_id: "910231"
+external_id: '910231'
 container: Product
 version: 12
-remote_updated: "2026-04-02T09:40:00Z"
+remote_updated: '2026-04-02T09:40:00Z'
 url: https://tavla.atlassian.net/wiki/spaces/PRODUCT/pages/910231
 ---
 

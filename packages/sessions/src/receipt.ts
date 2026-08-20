@@ -1,5 +1,20 @@
-import { fileSlug, type SessionFrontmatter } from '@qale/domain';
+import { fileSlug, isIndexableNote, type SessionFrontmatter } from '@qale/domain';
 import type { SessionHarness } from './harness.js';
+
+/**
+ * A path the receipt mentions, as a link where a link would work and as plain
+ * text where it would not.
+ *
+ * A run reads orientation maps and its own working files, and neither is a note:
+ * nothing indexes them, so `[[notes/index]]` is a link that can never resolve.
+ * Writing it anyway put four or five permanently broken links into the workspace
+ * per session, which the librarian then dutifully found. The receipt still says
+ * exactly what was read; it just stops pretending those are pages.
+ */
+function mention(path: string): string {
+  const slug = path.replace(/\.md$/, '');
+  return isIndexableNote(path) ? `[[${slug}]]` : `\`${slug}\``;
+}
 
 /**
  * The filed session transcript (PLAN-V2 §3.2) — the human-auditable receipt in
@@ -42,7 +57,9 @@ export function buildSessionReceipt(
     session_id: harness.sessionId,
     started: harness.started,
     ended: now,
-    reads: reads.map((r) => `[[${r.replace(/\.md$/, '')}]]`),
+    // The frontmatter half is an edge list the index reads, so only real notes
+    // belong in it. What was read and is not a note is still in the body below.
+    reads: reads.filter(isIndexableNote).map((r) => `[[${r.replace(/\.md$/, '')}]]`),
     writes: [...new Set(writes)],
     ...(sourceMeeting ? { source_meeting: sourceMeeting } : {}),
   };
@@ -57,13 +74,21 @@ export function buildSessionReceipt(
   lines.push('', '## Turns');
   for (const [i, turn] of harness.turns.entries()) {
     const n = turn.cardIds.length;
-    lines.push(`${i + 1}. ${truncate(turn.prompt, 200)}${n ? ` (${n} ${n === 1 ? 'card' : 'cards'})` : ''}`);
+    lines.push(
+      `${i + 1}. ${truncate(turn.prompt, 200)}${n ? ` (${n} ${n === 1 ? 'card' : 'cards'})` : ''}`,
+    );
   }
-  lines.push('', '## Read', reads.length ? reads.map((r) => `- [[${r.replace(/\.md$/, '')}]]`).join('\n') : '_none_');
+  lines.push(
+    '',
+    '## Read',
+    reads.length ? reads.map((r) => `- ${mention(r)}`).join('\n') : '_none_',
+  );
   lines.push('', '## Proposed (approval cards)');
   lines.push(
     harness.writes.length
-      ? harness.writes.map((w) => `- ${w.kind}: [[${w.path.replace(/\.md$/, '')}]] (${w.cardId})`).join('\n')
+      ? harness.writes
+          .map((w) => `- ${w.kind}: [[${w.path.replace(/\.md$/, '')}]] (${w.cardId})`)
+          .join('\n')
       : '_none_',
   );
 

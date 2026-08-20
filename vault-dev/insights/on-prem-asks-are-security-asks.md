@@ -1,10 +1,14 @@
 ---
-type: "insight"
-summary: "On-prem requests usually unpack into data-control and audit concerns rather than a real hardware requirement"
-tags: ["compliance"]
-evidence: ["[[meetings/2026-06-16-fenno-energi-intro]]", "[[meetings/2026-07-02-bergman-falk-security-review]]"]
-confidence: "med"
-theme: "[[themes/on-prem-deployment]]"
+type: 'insight'
+summary: 'On-prem requests usually unpack into data-control and audit concerns rather than a real hardware requirement'
+tags: ['compliance']
+evidence:
+  [
+    '[[meetings/2026-06-16-fenno-energi-intro]]',
+    '[[meetings/2026-07-02-bergman-falk-security-review]]',
+  ]
+confidence: 'med'
+theme: '[[themes/on-prem-deployment]]'
 ---
 
 Self-hosting has come up twice. Both times, asking what the policy was actually protecting

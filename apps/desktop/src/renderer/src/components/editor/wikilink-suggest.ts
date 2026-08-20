@@ -110,7 +110,9 @@ export const WikilinkSuggest = Extension.create<WikilinkSuggestOptions>({
           const picks: WikiPick[] = hits.slice(0, 8).map((hit) => ({ kind: 'note', hit }));
           const exact =
             hits.some(
-              (h) => h.slug.toLowerCase() === q.toLowerCase() || h.title.toLowerCase() === q.toLowerCase(),
+              (h) =>
+                h.slug.toLowerCase() === q.toLowerCase() ||
+                h.title.toLowerCase() === q.toLowerCase(),
             ) || external.some((i) => i.externalId.toLowerCase() === q.toLowerCase());
           // "Link as typed" makes a vault note, so it belongs with the vault
           // rows — appended before the external group, never rendered as the
@@ -155,7 +157,10 @@ export const WikilinkSuggest = Extension.create<WikilinkSuggestOptions>({
             if (!typed) return null;
             return createElement(
               'div',
-              { className: 'flex items-center gap-1.5 px-2 pt-1 pb-1.5 text-xs text-muted-foreground' },
+              {
+                className:
+                  'flex items-center gap-1.5 px-2 pt-1 pb-1.5 text-xs text-muted-foreground',
+              },
               createElement(
                 'span',
                 { className: 'rounded bg-muted px-1 font-medium text-foreground' },
@@ -166,7 +171,10 @@ export const WikilinkSuggest = Extension.create<WikilinkSuggestOptions>({
           },
           footer: createElement(
             'div',
-            { className: 'mt-1 border-t border-border px-2 pt-1.5 pb-0.5 text-micro text-muted-foreground' },
+            {
+              className:
+                'mt-1 border-t border-border px-2 pt-1.5 pb-0.5 text-micro text-muted-foreground',
+            },
             '↵ link · ⇧↵ link with a relationship',
           ),
           shiftSelect: (pick) => ({ ...pick, withType: true }),

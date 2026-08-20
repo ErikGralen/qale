@@ -147,7 +147,12 @@ export function classifyCapture(text: string, fileName?: string): CaptureClassif
   if (urlLines.length === 1 && nonEmpty.length <= 3 && nonEmpty.every((l) => l.length <= 200)) {
     const url = urlLines[0]!;
     const comment = nonEmpty.find((l) => l !== url);
-    return { kind: 'link', confidence: 'high', title: comment ? cleanTitle(comment) : hostOf(url), url };
+    return {
+      kind: 'link',
+      confidence: 'high',
+      title: comment ? cleanTitle(comment) : hostOf(url),
+      url,
+    };
   }
   if (nonEmpty.length === 1 && URL_ANYWHERE.test(firstLine) && firstLine.length <= 200) {
     const url = URL_ANYWHERE.exec(firstLine)![0];

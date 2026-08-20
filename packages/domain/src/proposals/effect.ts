@@ -1,4 +1,5 @@
 import type { OutboundPayload } from './index.js';
+import { formatStamp, parseEventStamp, rsvpAnswer } from './event-time.js';
 
 /**
  * The effect line on an outbound card: one sentence pair saying what approving
@@ -31,8 +32,6 @@ export interface OutboundEffectFacts {
   titles?: ReadonlyMap<string, string>;
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
 const lower = (s: string): string => s.trim().toLowerCase();
 const quote = (s: string): string => `“${s}”`;
 
@@ -47,19 +46,11 @@ function joinAnd(parts: string[]): string {
 
 const domainOf = (email: string): string => lower(email).split('@')[1] ?? '';
 
-/**
- * The event time as a person says it: "4 Aug, 15:00". Read off the literal
- * RFC3339 string rather than through a Date, because the offset in the payload
- * IS the intended local time — parsing it would re-render it in the app's zone
- * and quietly show a different hour than the one being approved.
- */
+/** The event time as a person says it: "4 Aug, 15:00". Read off the literal
+ *  stamp — see event-time.ts for why it never goes through a Date. */
 function formatWhen(iso: string): string | undefined {
-  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(iso.trim());
-  if (!m) return undefined;
-  const month = MONTHS[Number(m[2]) - 1];
-  const day = Number(m[3]);
-  if (!month || !day) return undefined;
-  return m[4] ? `${day} ${month}, ${m[4]}:${m[5]}` : `${day} ${month}`;
+  const stamp = parseEventStamp(iso);
+  return stamp ? formatStamp(stamp) : undefined;
 }
 
 /**
@@ -72,10 +63,15 @@ function formatWhen(iso: string): string | undefined {
  * ours is exactly what a PO skims past. One outsider is marked in place, more
  * than one is counted at the end (marking each would triple the line).
  */
-function guestList(attendees: readonly string[] | undefined, facts: OutboundEffectFacts): string | undefined {
+function guestList(
+  attendees: readonly string[] | undefined,
+  facts: OutboundEffectFacts,
+): string | undefined {
   const mine = new Set((facts.selfEmails ?? []).map(lower));
   const ourDomains = new Set([...mine].map(domainOf).filter(Boolean));
-  const guests = (attendees ?? []).map((a) => a.trim()).filter((a) => a.length > 0 && !mine.has(lower(a)));
+  const guests = (attendees ?? [])
+    .map((a) => a.trim())
+    .filter((a) => a.length > 0 && !mine.has(lower(a)));
   if (guests.length === 0) return undefined;
 
   const entries = guests.map((email) => ({
@@ -88,7 +84,9 @@ function guestList(attendees: readonly string[] | undefined, facts: OutboundEffe
   const hidden = entries.length - shown.length;
   const inline = outside === 1 && shown.some((e) => e.external);
 
-  const parts = shown.map((e) => (inline && e.external ? `${e.label} (outside your company)` : e.label));
+  const parts = shown.map((e) =>
+    inline && e.external ? `${e.label} (outside your company)` : e.label,
+  );
   if (hidden > 0) parts.push(`${hidden} ${hidden === 1 ? 'other' : 'others'}`);
   const list = joinAnd(parts);
   return outside > 0 && !inline ? `${list} (${outside} outside your company)` : list;
@@ -99,7 +97,10 @@ function guestList(attendees: readonly string[] | undefined, facts: OutboundEffe
  * a true one. Kept in the domain so every surface that shows a card shows the
  * same sentence.
  */
-export function outboundEffect(p: OutboundPayload, facts: OutboundEffectFacts = {}): string | undefined {
+export function outboundEffect(
+  p: OutboundPayload,
+  facts: OutboundEffectFacts = {},
+): string | undefined {
   switch (p.action) {
     case 'create_ticket': {
       // A brand-new ticket has no watchers yet, and project notification
@@ -154,10 +155,8 @@ export function outboundEffect(p: OutboundPayload, facts: OutboundEffectFacts = 
       return `${lead}. Guests see the change, with no email.`;
     }
 
-    case 'respond_to_event': {
-      const answer = p.responseStatus === 'declined' ? 'no' : p.responseStatus === 'tentative' ? 'maybe' : 'yes';
-      return `Replies ${answer} on your behalf. The organiser sees it on the event.`;
-    }
+    case 'respond_to_event':
+      return `Replies ${rsvpAnswer(p.responseStatus)} on your behalf. The organiser sees it on the event.`;
 
     default:
       return undefined;

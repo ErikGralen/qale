@@ -27,8 +27,8 @@ import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent
  * None of the three decides on its own. The runtime asks whether the run
  * actually PRODUCED anything first (a card, a draft, a question put to the PM),
  * and a run that produced something is never silent however it phrased itself.
- * A run that FAILED is never silent either: a scheduled run that broke is
- * exactly the one the PM needs to see.
+ * A run that FAILED before producing anything is silent here and loud elsewhere:
+ * see {@link ranSilent}.
  */
 
 export const END_QUIETLY_TOOL_NAME = 'end_quietly';
@@ -115,10 +115,20 @@ export interface RunOutcome {
  *
  * The order of the checks is the design. What the run PRODUCED is asked before
  * anything the model said, because a card or a question is work the PM now has
- * to do and no closing line can take that back. A run that FAILED never
- * qualifies either, whatever it managed to say on the way down: "ran and had
- * nothing to report" and "ran and broke" are different outcomes, and the second
- * one keeps its row, its receipt and its notification.
+ * to do and no closing line can take that back — including a run that got a card
+ * out and then broke.
+ *
+ * A run nobody was watching that FAILED leaves nothing too, and gets the same
+ * treatment. It used to be the loud exception, on the reasoning that a broken
+ * background run is exactly the one the PM needs to see, and that is still true
+ * of the failure — but not of the session. What an empty account produces is a
+ * conversation with one message in it and no reply, once every tick, and a dozen
+ * of those in a morning say nothing the first one did not. The failure is worth
+ * one sentence in one place, which `providerFault` and the notification it feeds
+ * already are. So the transcript stays on disk for anyone who goes looking, and
+ * the row, the receipt and the badge do not happen. A session somebody started
+ * is untouched: they are sitting in front of it waiting for an answer, and the
+ * error is the answer.
  *
  * A run that stopped for want of a decision counts as silent without being asked
  * how it phrased itself: it was told to stop and say nothing, so waiting for a
@@ -126,7 +136,8 @@ export interface RunOutcome {
  * and a receipt for a run that did not happen.
  */
 export function ranSilent(o: RunOutcome): boolean {
-  if (!o.scheduled || o.failed || o.produced) return false;
+  if (!o.scheduled || o.produced) return false;
+  if (o.failed) return true;
   return o.blocked || o.ended || readsAsNothingToReport(o.finalText);
 }
 

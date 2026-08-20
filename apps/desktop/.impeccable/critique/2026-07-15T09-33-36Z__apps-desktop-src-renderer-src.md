@@ -6,25 +6,26 @@ p1_count: 4
 timestamp: 2026-07-15T09-33-36Z
 slug: apps-desktop-src-renderer-src
 ---
+
 Method: dual-agent (A: ad73ecfe30d89ee86 · B: a05deeaebfd3fa64e)
 
 # Design Critique — Produktminnet desktop shell (`apps/desktop/src/renderer/src`)
 
 ## Design Health Score
 
-| # | Heuristic | Score | Key Issue |
-|---|-----------|-------|-----------|
-| 1 | Visibility of System Status | 2 | "Loading…" text instead of skeletons; no receipt at the moment of approve/capture; no pre-first-token indicator in ChatView |
-| 2 | Match System / Real World | 3 | Strong PO vocabulary, but "golden answer", "stale claims", "Lands in notes/" never explained in-surface |
-| 3 | User Control and Freedom | 2 | No undo after Approve/Discard; no edit-before-approve; session tabs silently dropped on restart |
-| 4 | Consistency and Standards | 2 | "vault" vs "workspace" split; duplicate "After-Meeting" tab titles; h-9 vs h-11 headers; serif in chrome violates own Serif Boundary Rule |
-| 5 | Error Prevention | 3 | Stale-write guard, spot-audit, earned auto-apply are excellent; undermined by global ⌘↵ collision |
-| 6 | Recognition Rather Than Recall | 2 | ⌘K is search-only — no commands, no recents; Weekly Update session nearly undiscoverable |
-| 7 | Flexibility and Efficiency | 2 | No keyboard path through the Inbox; no ⌘W / tab cycling; power path stops at navigation |
-| 8 | Aesthetic and Minimalist Design | 3 | Distinctive and restrained; marred by logo overlapping wordmark, grey warning color, raw tool-output dumps |
-| 9 | Error Recovery | 1 | InboxView accept/reject lack try/finally — one IPC error disables the whole Inbox; chat error is a bare red string |
-| 10 | Help and Documentation | 1 | No first-run guidance; empty views teach nothing; help lives in title attributes |
-| **Total** | | **21/40** | **Acceptable — significant improvements needed** |
+| #         | Heuristic                       | Score     | Key Issue                                                                                                                                 |
+| --------- | ------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 1         | Visibility of System Status     | 2         | "Loading…" text instead of skeletons; no receipt at the moment of approve/capture; no pre-first-token indicator in ChatView               |
+| 2         | Match System / Real World       | 3         | Strong PO vocabulary, but "golden answer", "stale claims", "Lands in notes/" never explained in-surface                                   |
+| 3         | User Control and Freedom        | 2         | No undo after Approve/Discard; no edit-before-approve; session tabs silently dropped on restart                                           |
+| 4         | Consistency and Standards       | 2         | "vault" vs "workspace" split; duplicate "After-Meeting" tab titles; h-9 vs h-11 headers; serif in chrome violates own Serif Boundary Rule |
+| 5         | Error Prevention                | 3         | Stale-write guard, spot-audit, earned auto-apply are excellent; undermined by global ⌘↵ collision                                         |
+| 6         | Recognition Rather Than Recall  | 2         | ⌘K is search-only — no commands, no recents; Weekly Update session nearly undiscoverable                                                  |
+| 7         | Flexibility and Efficiency      | 2         | No keyboard path through the Inbox; no ⌘W / tab cycling; power path stops at navigation                                                   |
+| 8         | Aesthetic and Minimalist Design | 3         | Distinctive and restrained; marred by logo overlapping wordmark, grey warning color, raw tool-output dumps                                |
+| 9         | Error Recovery                  | 1         | InboxView accept/reject lack try/finally — one IPC error disables the whole Inbox; chat error is a bare red string                        |
+| 10        | Help and Documentation          | 1         | No first-run guidance; empty views teach nothing; help lives in title attributes                                                          |
+| **Total** |                                 | **21/40** | **Acceptable — significant improvements needed**                                                                                          |
 
 ## Anti-Patterns Verdict
 
@@ -77,5 +78,5 @@ The trust mechanics (stale-target guard, spot-audit, earned auto-apply) are genu
 ## Questions to Consider
 
 1. Why does an app whose home is "the Inbox, not a dashboard" launch to a capture box while a pending card waits? Should pendingCount > 0 make the Inbox the landing?
-2. Where does week 6 actually look different from week 1? What surface makes the memory *felt*?
+2. Where does week 6 actually look different from week 1? What surface makes the memory _felt_?
 3. Should writing to Jira cost more than one identical click — target preview, named audience, a deliberately heavier gesture — so speed on internal cards stays cheap because external ones visibly aren't?

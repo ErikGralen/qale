@@ -4,9 +4,9 @@ summary: Sara to send Nordkap's security-review scope so we know what August wil
 title: Send Nordkap's security-review scope
 commitment: open
 due: 2026-07-16
-owner: "[[people/sara-lindqvist]]"
+owner: '[[people/sara-lindqvist]]'
 sources:
-  - "[[meetings/2026-07-14-nordkap-checkin]]"
+  - '[[meetings/2026-07-14-nordkap-checkin]]'
 tags:
   - enterprise-auth
 ---

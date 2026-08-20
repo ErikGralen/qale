@@ -1,5 +1,7 @@
+import { randomBytes } from 'node:crypto';
 import {
   TELEMETRY_ENVS,
+  VIEW_KINDS,
   filterTelemetryProps,
   telemetryAllows,
   telemetryEvent,
@@ -64,6 +66,10 @@ const PERSON_PROPS = [
   'google',
   'atlassian',
   'notes',
+  'meetings',
+  'people',
+  'todos',
+  'customSkills',
 ] as const;
 
 export type PersonProps = Partial<Record<(typeof PERSON_PROPS)[number], TelemetryValue>>;
@@ -94,9 +100,32 @@ export interface TelemetryFacts {
 /** Where a crash came from, in the words the allowlist knows. */
 export type CrashOrigin = 'main' | 'promise' | 'renderer' | 'child';
 
+/**
+ * One id per run of the app, sent as `$session_id` so PostHog reads a launch to
+ * quit as one session. A UUIDv7 because that is the shape PostHog's session
+ * tools expect: the first 48 bits are the mint time, the rest is random. It
+ * carries nothing else and is never stored.
+ */
+function mintRunId(): string {
+  const b = randomBytes(16);
+  const t = Date.now();
+  b[0] = (t / 2 ** 40) & 0xff;
+  b[1] = (t / 2 ** 32) & 0xff;
+  b[2] = (t / 2 ** 24) & 0xff;
+  b[3] = (t / 2 ** 16) & 0xff;
+  b[4] = (t / 2 ** 8) & 0xff;
+  b[5] = t & 0xff;
+  b[6] = ((b[6] as number) & 0x0f) | 0x70;
+  b[8] = ((b[8] as number) & 0x3f) | 0x80;
+  const hex = b.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 interface Held {
   event: string;
   props: Record<string, TelemetryValue>;
+  /** The view that was open when the event happened, not when it drains. */
+  view: string | null;
 }
 
 export class Telemetry {
@@ -117,6 +146,10 @@ export class Telemetry {
   private held: Held[] = [];
   private person: PersonProps = {};
   private distinctId: string | null = null;
+  /** The last view the renderer reported. Null until the first report lands. */
+  private view: string | null = null;
+  /** This run's `$session_id`. One per process, minted before anything sends. */
+  private readonly runId = mintRunId();
   /** Set by {@link shutdown}. A late event must not build a new client mid-quit. */
   private stopped = false;
 
@@ -161,6 +194,17 @@ export class Telemetry {
     if (answered) this.drain();
   }
 
+  /**
+   * Which part of the app is open right now. The renderer reports it through
+   * `telemetry:view`, and it is remembered here so every later event says where
+   * it happened: a card decided in the Inbox and one decided from a session
+   * review are different facts about the product. Only words from the closed
+   * set are kept; a stray string is dropped, never stamped.
+   */
+  setView(view: string): void {
+    if ((VIEW_KINDS as readonly string[]).includes(view)) this.view = view;
+  }
+
   /** Who this is (TEL-4). Merged, so a later launch can add what screen 2 gave us. */
   describe(props: PersonProps): void {
     for (const key of PERSON_PROPS) {
@@ -183,12 +227,16 @@ export class Telemetry {
       // refused whatever the switch says, and must not even be held.
       if (!telemetryEvent(event)) return;
       const filtered = filterTelemetryProps(event, props);
+      // The view is read here, when the event happens, so one that waits on
+      // consent keeps the screen it happened on rather than gaining the one
+      // the backlog drains under.
+      const view = this.view;
       if (!this.consentKnown || !this.answered || !this.distinctId) {
-        if (this.held.length < MAX_HELD) this.held.push({ event, props: filtered });
+        if (this.held.length < MAX_HELD) this.held.push({ event, props: filtered, view });
         return;
       }
       if (!telemetryAllows(this.consented, event)) return;
-      this.emit(event, filtered);
+      this.emit(event, filtered, view);
     } catch {
       // An observer never throws into what it observes.
     }
@@ -234,17 +282,17 @@ export class Telemetry {
     if (!this.distinctId || !this.consentKnown || !this.consented) return;
     const waiting = this.held;
     this.held = [];
-    for (const item of waiting) this.emit(item.event, item.props);
+    for (const item of waiting) this.emit(item.event, item.props, item.view);
   }
 
-  private emit(event: string, props: Record<string, TelemetryValue>): void {
+  private emit(event: string, props: Record<string, TelemetryValue>, view: string | null): void {
     const sink = this.sink;
     const distinctId = this.distinctId;
     if (!distinctId) return;
     if (!sink) {
       // The client is still coming up. Hold rather than drop, then let the
       // start finish the job.
-      if (this.held.length < MAX_HELD) this.held.push({ event, props });
+      if (this.held.length < MAX_HELD) this.held.push({ event, props, view });
       void this.start();
       return;
     }
@@ -252,7 +300,12 @@ export class Telemetry {
       distinctId,
       event,
       properties: {
+        // The context stamps (TELEMETRY_CONTEXT in @qale/ipc): where in the app
+        // it happened, and which run of the app it belongs to. First, so an
+        // event's own declared property of the same name wins.
+        ...(view ? { view } : {}),
         ...props,
+        $session_id: this.runId,
         env: ENV,
         appVersion: this.facts.appVersion,
         platform: this.facts.platform,

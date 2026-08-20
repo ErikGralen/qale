@@ -28,7 +28,11 @@ export function webUrl(raw: unknown): string | null {
 
   // Bare `host.tld[/path]` — require a dotted host with a real TLD, and don't
   // swallow a link to a local markdown file.
-  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(host) && /\.[a-z]{2,24}$/i.test(host) && !/\.(md|markdown)$/i.test(host)) {
+  if (
+    /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(host) &&
+    /\.[a-z]{2,24}$/i.test(host) &&
+    !/\.(md|markdown)$/i.test(host)
+  ) {
     return `https://${s}`;
   }
   return null;

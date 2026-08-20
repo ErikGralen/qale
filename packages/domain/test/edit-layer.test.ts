@@ -68,8 +68,14 @@ test('provider labels read as their product names', () => {
 
 test('the read-only sentences stay short and plain', () => {
   assert.equal(readOnlyReason('source'), 'Raw material. Never rewritten.');
-  assert.equal(readOnlyReason('session'), 'A record of what happened. Kept exactly as it was filed.');
-  assert.equal(readOnlyReason('decision'), 'Superseded, never edited. Write a new one to change course.');
+  assert.equal(
+    readOnlyReason('session'),
+    'A record of what happened. Kept exactly as it was filed.',
+  );
+  assert.equal(
+    readOnlyReason('decision'),
+    'Superseded, never edited. Write a new one to change course.',
+  );
   for (const type of NOTE_TYPES) {
     const sentence = readOnlyReason(type);
     if (!sentence) continue;

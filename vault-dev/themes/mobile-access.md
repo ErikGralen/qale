@@ -1,9 +1,9 @@
 ---
-type: "theme"
-summary: "Mobile access: occasional asks from field staff, nothing gating a deal yet"
-tags: ["mobile"]
-stance: "exploring"
-evidence: ["[[meetings/2026-06-12-kranelund-checkin]]"]
+type: 'theme'
+summary: 'Mobile access: occasional asks from field staff, nothing gating a deal yet'
+tags: ['mobile']
+stance: 'exploring'
+evidence: ['[[meetings/2026-06-12-kranelund-checkin]]']
 ---
 
 # Mobile access

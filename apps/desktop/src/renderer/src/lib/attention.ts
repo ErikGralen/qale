@@ -51,7 +51,23 @@ export type AttentionTarget =
   | { open: 'todos' }
   | { open: 'folder'; dir: string }
   /** Add material, attached to this meeting — the row IS the way to fill it. */
-  | { open: 'capture'; path: string; title: string };
+  | { open: 'capture'; path: string; title: string }
+  /** Not a place: a group row that unfolds its own rows where it stands. */
+  | { open: 'expand' };
+
+/**
+ * A label with one openable thing inside it. An empty-meeting row's sentence
+ * names a meeting, and the name of a meeting should behave like one — a link to
+ * the note, while the row around it keeps its own action. `label` is the same
+ * sentence flattened, so a surface that only prints text needs none of this.
+ */
+export interface AttentionLink {
+  before: string;
+  /** The title: the part that reads, and behaves, as a link. */
+  text: string;
+  after: string;
+  path: string;
+}
 
 /** How loud a row is allowed to be (DESIGN: amber is for "verify me"). */
 export type AttentionTone = 'brand' | 'warning' | 'muted';
@@ -66,6 +82,8 @@ export interface AttentionItem {
   meta: string;
   tone: AttentionTone;
   target: AttentionTarget;
+  /** The one note this row's label names, when its label names one. */
+  link?: AttentionLink;
   /** The instant the item is about, when it has one — a meeting's start, a due
    *  date, a card's creation. Surfaces that count down format this themselves. */
   when?: number;
@@ -263,13 +281,20 @@ export function buildAttention(input: AttentionInput, now: number = Date.now()):
   const dismissed = new Set(captureNudge?.dismissed ?? []);
   const muted = new Set(captureNudge?.mutedSeries ?? []);
   const uncaptured = meetings
-    .filter((n) => needsCapture(n, now) && !dismissed.has(n.path) && !(n.series && muted.has(n.series)))
+    .filter(
+      (n) => needsCapture(n, now) && !dismissed.has(n.path) && !(n.series && muted.has(n.series)),
+    )
     .sort((a, b) => meetingStart(b) - meetingStart(a));
   for (const n of uncaptured) {
+    // Built once, two ways: the flat sentence for surfaces that only print, and
+    // the same sentence in parts so the title can be a link to the meeting.
+    const before = `${dayPossessive(meetingStart(n), now)} `;
+    const after = ' has nothing in it yet';
     items.push({
       id: `capture:${n.path}`,
       kind: 'capture',
-      label: `${dayPossessive(meetingStart(n), now)} ${n.title} has nothing in it yet`,
+      label: `${before}${n.title}${after}`,
+      link: { before, text: n.title, after, path: n.path },
       meta: 'add a transcript',
       tone: 'muted',
       target: { open: 'capture', path: n.path, title: n.title },
@@ -310,21 +335,29 @@ export interface AttentionRow {
   meta: string;
   tone: AttentionTone;
   target: AttentionTarget;
+  link?: AttentionLink;
   /** How many list items this row stands for. 1 unless the row is a door. */
   count: number;
+  /** The rows a group folds away. Present only on a group row; the surface
+   *  shows them under it when the PO unfolds it, and never navigates away. */
+  children?: AttentionRow[];
 }
 
 /**
  * Kinds Home never lists one by one: four cards would fill the page and say
  * nothing four times. They collapse into a single door to the view that holds
  * them — the count on that door is `countOf(items, kind)`, not a second sum.
+ *
+ * `capture` is deliberately NOT in here. A door reading "2 meetings have
+ * nothing in them" drops the PO in the calendar with no idea which two, and
+ * the one move that fills a meeting (the tray, already attached to it) only
+ * exists on the named row. So empty meetings stay named — see CAPTURE_MAX.
  */
-const COLLAPSED: ReadonlySet<AttentionKind> = new Set<AttentionKind>([
-  'card',
-  'review',
-  'capture',
-  'todo',
-]);
+const COLLAPSED: ReadonlySet<AttentionKind> = new Set<AttentionKind>(['card', 'review', 'todo']);
+
+/** How many empty meetings Home will name flat. Past three it is a backlog
+ *  rather than a few specific things, so they fold into one row that unfolds. */
+const CAPTURE_MAX = 3;
 
 const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? '' : 's'}`;
 
@@ -346,33 +379,66 @@ function startsIn(when: number, fallback: string, now: number): string {
 }
 
 /**
- * Home's named view over the list: the top `max` rows, quiet items dropped
+ * Home's named view over the list: the top `max` entries, quiet items dropped
  * (Home is the ninety-second read and maintenance can always wait), and the
  * collapsible kinds behind one door each. A door takes the rank of its first
  * item, so the ordering is still the list's.
+ *
+ * `max` counts entries, not lines: the empty meetings are one entry however
+ * many of them there are, so a bad week of unfilled meetings can never push
+ * commitments off the bottom of the page.
  */
 export function homeRows(
   items: readonly AttentionItem[],
   max: number,
   now: number = Date.now(),
 ): AttentionRow[] {
-  const rows: AttentionRow[] = [];
+  const entries: AttentionRow[][] = [];
   const doorsDone = new Set<AttentionKind>();
+  const captures: AttentionRow[] = [];
+  let captureAt = -1;
   for (const item of items) {
     if (item.quiet) continue;
+    if (item.kind === 'capture') {
+      // All of them in one entry, holding the rank of the first.
+      if (captureAt < 0) captureAt = entries.push(captures) - 1;
+      captures.push({ ...item, count: 1 });
+      continue;
+    }
     if (COLLAPSED.has(item.kind)) {
       if (doorsDone.has(item.kind)) continue;
       doorsDone.add(item.kind);
-      rows.push(door(item, items, now));
+      entries.push([door(item, items, now)]);
       continue;
     }
-    rows.push({
-      ...item,
-      count: 1,
-      meta: item.kind === 'meeting' && item.when ? startsIn(item.when, item.meta, now) : item.meta,
-    });
+    entries.push([
+      {
+        ...item,
+        count: 1,
+        meta:
+          item.kind === 'meeting' && item.when ? startsIn(item.when, item.meta, now) : item.meta,
+      },
+    ]);
   }
-  return rows.slice(0, max);
+  // Past three, the named rows are a list to work through rather than a few
+  // things to notice — so they fold, and unfold in place. They never become a
+  // count pointing at the calendar: the name is the whole point of the row.
+  if (captures.length > CAPTURE_MAX) entries[captureAt] = [captureGroup(captures)];
+  return entries.slice(0, max).flat();
+}
+
+/** The one row every empty meeting folds into, carrying them all. */
+function captureGroup(captures: readonly AttentionRow[]): AttentionRow {
+  return {
+    id: 'captures',
+    kind: 'capture',
+    label: `${captures.length} meetings have nothing in them yet`,
+    meta: 'show',
+    tone: 'muted',
+    target: { open: 'expand' },
+    count: captures.length,
+    children: [...captures],
+  };
 }
 
 /** The one row standing for every item of a collapsible kind. */
@@ -404,20 +470,6 @@ function door(first: AttentionItem, items: readonly AttentionItem[], now: number
         count: n,
       };
     }
-    case 'capture':
-      // One empty meeting is a specific, fillable thing; several are a week,
-      // and the meetings folder is where you look at a week.
-      return n === 1
-        ? { ...first, count: 1 }
-        : {
-            id: 'captures',
-            kind: 'capture',
-            label: `${n} meetings have nothing in them yet`,
-            meta: 'meetings',
-            tone: 'muted',
-            target: { open: 'folder', dir: 'meetings' },
-            count: n,
-          };
     default:
       // One unfiled meeting is worth naming; several are a backlog, and the
       // meetings folder is the place to work through them.

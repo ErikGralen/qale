@@ -52,7 +52,7 @@ Lead time: the EUIPO check.
 
 **Decision:**
 
-Let's rename to "Qale" for now - remove all traces of "pm" , leveret produktbminnet, product brain etc. 
+Let's rename to "Qale" for now - remove all traces of "pm" , leveret produktbminnet, product brain etc.
 
 **Notes:**
 Done. The app is **Qale**, the app id is **`ai.qale.app`** (reverse DNS of qale.ai, which we own), and the
@@ -61,24 +61,24 @@ bundle is `Qale.app`. Verified in the packaged Info.plist: `CFBundleIdentifier a
 
 What moved, in four groups.
 
-*Identity and copy.* `electron-builder.yml` (app id and product name), the window title (now just
+_Identity and copy._ `electron-builder.yml` (app id and product name), the window title (now just
 "Qale", no dash), `APP_NAME` and `SUPPORT_EMAIL` in Settings, the MCP server name and its
 unauthorized message, both agent preambles in `packages/agent/src/prompts.ts`, the design system's
 own name in `DESIGN.md`, `PRODUCT.md` and `.impeccable/design.json`, and the logo comment (the glyph
 itself is untouched, waiting on ticket 6).
 
-*Things that leave the machine.* The Confluence page version message is now "Qale update", which is
+_Things that leave the machine._ The Confluence page version message is now "Qale update", which is
 what a customer sees in their page history forever. It is the only attributed string any connector
 writes: Jira comments and calendar invites carry a "Source: ..." provenance line with no product
 name in it. The repo-local git identity for a workspace with no global git config is now
 `Qale <qale@localhost>`, and the `git init` commit reads "qale: initialize workspace history".
 
-*Namespaces.* The preload bridge is `window.qale` and `QaleBridge`; log lines are prefixed `[qale]`;
+_Namespaces._ The preload bridge is `window.qale` and `QaleBridge`; log lines are prefixed `[qale]`;
 localStorage keys are `qale.*`; CSS classes are `qale-*`; the two custom DOM events are `qale:*`. All
 eleven workspace packages plus the root are `@qale/*` (root package is `qale`), which touched about
 180 files and the lockfile.
 
-*The dev harness.* Every `PM_*` variable is now `QALE_*`: `QALE_VAULT`, `QALE_USERDATA`,
+_The dev harness._ Every `PM_*` variable is now `QALE_*`: `QALE_VAULT`, `QALE_USERDATA`,
 `QALE_SCREENSHOT`, `QALE_SCREENSHOT_DELAY`, `QALE_SCREENSHOT_CLICK`, `QALE_OPEN`, `QALE_MCP`,
 `QALE_SEED_PROPOSAL`, `QALE_GOOGLE_*`. No fallback to the old names, deliberately.
 
@@ -126,11 +126,11 @@ worst possible place to lose someone.
 
 **Options:**
 
-| Option | Verdict |
-|---|---|
-| Ship our key inside the app | No. Thirty seconds to pull it out of the asar. |
+| Option                                                                                      | Verdict                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ship our key inside the app                                                                 | No. Thirty seconds to pull it out of the asar.                                                                                                                       |
 | Mint a real per-user key via the Anthropic Admin API, one workspace each with a spend limit | Attractive: native per-user cost, no service to run. **But I could not confirm the Admin API can create keys.** Worth ten minutes to check before we plan around it. |
-| Run a thin gateway holding our key | What I would do. |
+| Run a thin gateway holding our key                                                          | What I would do.                                                                                                                                                     |
 
 **Proposal:** a small worker holds our Anthropic key. The app sends a per-user beta token instead.
 The worker checks the token, forwards to the Anthropic API, streams the response straight back, and
@@ -151,7 +151,7 @@ Keep the BYOK field either way. It becomes the escape hatch for anyone who prefe
 and Settings already supports it.
 
 **Decision:**
-We will set it up as BYOK, but manually create keys for our users. So no changes needed for now. 
+We will set it up as BYOK, but manually create keys for our users. So no changes needed for now.
 
 **Notes:**
 
@@ -169,7 +169,7 @@ prompt caching is actually working. Long sessions at $5 in / $25 out per million
 money fast, and if the numbers are bad the fallback is defaulting to Sonnet 5.
 
 **Decision:**
-Yes bump the pi but we should also have a way for the user to set the model for a session manually. Also see if the new version has aynthing    we can use. 
+Yes bump the pi but we should also have a way for the user to set the model for a session manually. Also see if the new version has aynthing we can use.
 **Notes:**
 
 ---
@@ -260,13 +260,13 @@ arm64 only. Verified: mounts, the app copies out, launches, and writes its profi
   `apps/desktop/build/icon-source.png`; `pnpm --filter @qale/desktop icon` regenerates
   `build/icon.png` from it via `scripts/make-icon.mjs`, and electron-builder makes the icns at
   package time. The script exists because macOS expects the rounded-rect body and its margin to be
-  *in* the artwork (Apple's grid: an 824px body on a 1024px canvas): a full-bleed square reads as
+  _in_ the artwork (Apple's grid: an 824px body on a 1024px canvas): a full-bleed square reads as
   unfinished next to every other Mac icon. No new dependency, just `zlib`.
 - **Optional third argument, `zoom`.** The source carries its own margin and Apple's inset stacks on
   top of it, so the mark sits smallish in the dock. `pnpm icon` uses 1; passing 1.2 scales the
   artwork and centre-crops, which costs nothing on a flat ground. Judgment call, not yet made.
 - **Signing, and why there is a hook.** `mac.identity: null` makes electron-builder skip signing,
-  which leaves *Electron's* signature on our bundle: `Identifier=Electron`, Info.plist not bound, and
+  which leaves _Electron's_ signature on our bundle: `Identifier=Electron`, Info.plist not bound, and
   `codesign --verify` fails. On Apple Silicon that is worse than unsigned, because a signature that
   does not match the bundle gets the app killed as "damaged" once the download has set the quarantine
   bit. `build/after-pack.cjs` ad-hoc signs the packed app instead, so the identity is `ai.qale.app`
@@ -279,7 +279,7 @@ arm64 only. Verified: mounts, the app copies out, launches, and writes its profi
   dialog read "Qale wants to use your confidential information stored in **@qale/desktop Safe
   Storage**", and userData was the nested `~/Library/Application Support/@qale/desktop`. Fixed by one
   line in `apps/desktop/package.json`. Verified after the rebuild: the app now creates `Qale Safe
-  Storage` / `Qale Key`, silently, with no prompt. `scripts/refresh-demo.ts` already read
+Storage` / `Qale Key`, silently, with no prompt. `scripts/refresh-demo.ts` already read
   `productName` from package.json, so it followed on its own.
 - **Dev and the installed app are now separate installs.** They shared one identity, so one
   `settings.json`, one "which workspace is open", one set of session receipts and one keychain item:
@@ -287,7 +287,7 @@ arm64 only. Verified: mounts, the app copies out, launches, and writes its profi
   calls itself **Qale Dev** (`app.setName` in `src/main/index.ts`, `is.dev` only), which splits the
   userData directory and the keychain item in one move and labels the menu bar so you can tell them
   apart. Verified: a dev run creates `~/Library/Application Support/Qale Dev` and `Qale Dev Safe
-  Storage`, the packaged app creates `Qale` and `Qale Safe Storage`. `QALE_USERDATA` still layers a
+Storage`, the packaged app creates `Qale` and `Qale Safe Storage`. `QALE_USERDATA` still layers a
   per-run scratch on top.
   **`scripts/refresh-demo.ts` had to follow, and it was the dangerous half:** it resolves a userData
   dir and deletes the search index and session receipts in it. Left pointed at the installed profile
@@ -319,7 +319,7 @@ a problem" action that opens a prefilled issue or email with that attached. Beta
 die on this, and it is cheap.
 
 **Decision:**
-yes implment this. 
+yes implment this.
 **Notes:**
 Done. `apps/desktop/package.json` is `0.1.0` and nothing else moved: it is the only version that
 leaves the machine (electron-builder takes the bundle version from it, verified `0.1.0` in the
@@ -370,7 +370,7 @@ is exactly why the rename has to land before the first build.
 
 1. **Manual reinstall for the beta.** Correct given ticket 2, and safe per the above. Say so in the
    invite so nobody is surprised.
-2. **Build the update *check* now, because it needs no signing.** On launch, fetch a small JSON
+2. **Build the update _check_ now, because it needs no signing.** On launch, fetch a small JSON
    (current version, download URL, and a `minimumVersion`). If a newer version exists, show a quiet
    banner with a link. If the running build is below `minimumVersion`, show a blocking notice
    instead, because a gateway change or a schema change can make an old build misbehave in ways the
@@ -392,7 +392,7 @@ independent of how the app arrives:
   `PRAGMA user_version` and a refusal-to-open check the day we ship a second build.
 
 **Decision:**
-skip for now. needs to be a part of a new plan. 
+skip for now. needs to be a part of a new plan.
 **Notes:**
 
 ---
@@ -406,7 +406,7 @@ remembers, which is how the suite went red unnoticed once before.
 workflow that produces the signed dmg so releases are not tied to your laptop.
 
 **Decision:**
-skip for now. 
+skip for now.
 **Notes:**
 
 ---
@@ -439,7 +439,7 @@ is a dev-server allowance and it ships inside the packaged HTML.
 `base-uri 'none'` while we are in there.
 
 **Decision:**
-yes make this change. 
+yes make this change.
 **Notes:**
 
 ---
@@ -502,7 +502,7 @@ is a card in the Inbox that looks like the agent's own suggestion, and it gets m
 beta users connect real Jira.
 
 **Decision:**
-think we implemented this already recently. otherwise tell me. 
+think we implemented this already recently. otherwise tell me.
 **Notes:**
 
 ---
@@ -537,7 +537,7 @@ a beta. Rule: record a hash of the version we shipped, overwrite anything the us
 leave edited files alone and say so, archive retired skills instead of deleting them.
 
 **Decision:**
-Yes we should build this somehow. We should have a way for the users to review our changes to the skills and apply them if they want as well. Or perhaps just override theirs if they also want that. If they have made no changes, no need to distrub the user. 
+Yes we should build this somehow. We should have a way for the users to review our changes to the skills and apply them if they want as well. Or perhaps just override theirs if they also want that. If they have made no changes, no need to distrub the user.
 **Notes:**
 Built. `packages/sessions/src/shipped-versions.ts` holds a fingerprint of every version of every
 pack file we have ever shipped, recovered from git history, so the check is stateless and travels
@@ -582,7 +582,7 @@ you can undo". The arrival vision's sixth principle says the whole design trades
 reversibility, and if undo is approximate the trade is a lie. (`docs/open-work.md` §4.6)
 
 **Decision:**
-Sure lets implement this. 
+Sure lets implement this.
 **Notes:**
 
 **Built (per-note restore).** `NoteHistory` now restores the version you are previewing.
@@ -600,15 +600,15 @@ this feature agree.
 session changed, so a "take back this run" button would be a promise we could not keep. Three
 independent gaps:
 
-1. *The only durable session→file link is proposal-shaped, not write-shaped.* `proposals.session_id`
-   + `target_path` describes cards, not applied writes: `target_path` is NULL for every outbound
-   card, and the cascade writes an accept performs (`markCitedSourcesProcessed`,
-   `markMeetingReviewed`, the superseded decision in `acceptDecision`, the post-accept `renameNote`)
-   touch paths that appear on no row for that session.
-2. *No before-state, no commit identity.* `commitPaths` returns void, so the hash is discarded and
+1. _The only durable session→file link is proposal-shaped, not write-shaped._ `proposals.session_id`
+   - `target_path` describes cards, not applied writes: `target_path` is NULL for every outbound
+     card, and the cascade writes an accept performs (`markCitedSourcesProcessed`,
+     `markMeetingReviewed`, the superseded decision in `acceptDecision`, the post-accept `renameNote`)
+     touch paths that appear on no row for that session.
+2. _No before-state, no commit identity._ `commitPaths` returns void, so the hash is discarded and
    never stored, and no commit message carries a session id. `base_hash` exists only on update cards
    and is a fingerprint, not content.
-3. *The ledger that would be right does not survive.* `SessionHarness.writes` is in memory and comes
+3. _The ledger that would be right does not survive._ `SessionHarness.writes` is in memory and comes
    back empty on resume; its persisted form (the receipt's `writes[]`) is a deduped list of
    extension-stripped links describing proposals, including rejected ones.
 
@@ -634,7 +634,7 @@ old capture copy), against a rule that says storage is never on screen.
 and nearly finished, and a beta user reads that as whether we know what we are doing.
 
 **Decision:**
-Sessions  over chat, workspace over vault. yes lets not show the filepath. and the word "Ask" in the sidebar etc needs to be replaces with New Session perhaps. 
+Sessions over chat, workspace over vault. yes lets not show the filepath. and the word "Ask" in the sidebar etc needs to be replaces with New Session perhaps.
 **Notes:**
 
 ---
@@ -646,7 +646,7 @@ proposal-tool helper, the triplicated accept/reject plumbing, the `vault:changed
 real, none of them is what a beta user meets, and touching them now buys risk instead of readiness.
 
 **Decision:**
-yes lets not do those. 
+yes lets not do those.
 **Notes:**
 
 ---
@@ -662,18 +662,18 @@ it, whatever pack we ship at build 1 is the pack those users keep forever.
 **What ships today.** From `DEFAULT_SKILLS` / `DEFAULT_AGENTS` in `packages/sessions/src/defaults.ts`,
 seeded into a workspace by `ensureDefaultSkills`, which never overwrites an existing file:
 
-| File | How it starts |
-|---|---|
-| `skills/arrival` | the capture pipeline invokes it, always |
-| `skills/process-note` | you run it, model picks it up |
-| `skills/weekly-update` | you run it, model picks it up, schedulable |
-| `skills/synthesis` | you run it, model picks it up |
-| `skills/commitment-check` | you run it, model picks it up |
-| `skills/_filing-rules` | always |
-| `skills/voice-exec` | always, audience: executives |
-| `skills/voice-cs` | always, audience: customers |
-| `agents/librarian` | triggered |
-| `agents/meeting-prep` | triggered |
+| File                      | How it starts                              |
+| ------------------------- | ------------------------------------------ |
+| `skills/arrival`          | the capture pipeline invokes it, always    |
+| `skills/process-note`     | you run it, model picks it up              |
+| `skills/weekly-update`    | you run it, model picks it up, schedulable |
+| `skills/synthesis`        | you run it, model picks it up              |
+| `skills/commitment-check` | you run it, model picks it up              |
+| `skills/_filing-rules`    | always                                     |
+| `skills/voice-exec`       | always, audience: executives               |
+| `skills/voice-cs`         | always, audience: customers                |
+| `agents/librarian`        | triggered                                  |
+| `agents/meeting-prep`     | triggered                                  |
 
 Plus `chat` and `ask`, which are built-in only and have no file.
 
@@ -696,7 +696,7 @@ straight copy. `broken-demo` at minimum, and the same question asked of anything
 only exists to exercise a code path.
 
 **Decision:**
-skip for now. 
+skip for now.
 **Notes:**
 
 ---
@@ -715,7 +715,7 @@ shortly before it bites.
 `docs/onboarding.md`) gets the real pack for free.
 
 **Decision:**
-skip for now. 
+skip for now.
 **Notes:**
 
 ---
@@ -733,7 +733,7 @@ That matters more than one file: the shipped pack currently demonstrates three o
 the folder layout do something visible instead of looking like ceremony.
 
 **Decision:**
-skip for now. 
+skip for now.
 **Notes:**
 
 ---
@@ -748,7 +748,7 @@ often as to the exec team, and these are the cheapest quality lever in the pack:
 every draft the agent writes gets better.
 
 **Decision:**
-skip fo rnow. 
+skip fo rnow.
 **Notes:**
 
 ---
@@ -767,8 +767,13 @@ Probably the single highest-leverage file in the pack, because it improves every
 once, and it is the one file we cannot write for them.
 
 **Decision:**
-yes we should have this, implement. 
+yes we should have this, implement.
 **Notes:**
+Built, and then superseded 2026-08-07 by docs/product-understanding.md. The file was right about
+the leverage and wrong about who does the writing: `_about-us` asked the user to write an essay
+into a skill file on day one, and nothing ever helped them do it. The same facts now arrive through
+an interview (`learn-the-product`) and are kept under `_understanding`, which is instructions to the
+agent rather than a form. `_about-us` stopped shipping; a filled-in one is user data and stays.
 
 ---
 
@@ -779,12 +784,12 @@ channels for either, and neither view has a create affordance. Shipped files can
 purpose-built page saves title, summary and instructions), but adding your own means opening Finder
 and making a folder with a `SKILL.md` in it.
 
-**Proposal:** a "New skill" action that writes a starter file and opens it. A starter *library*
+**Proposal:** a "New skill" action that writes a starter file and opens it. A starter _library_
 implies you can add to it, and "write your own" is what makes this product theirs rather than ours.
 It is also how we learn what to ship next: the skills beta users write by hand are the roadmap.
 
 **Decision:**
-yes add this. but the users cshouldnt be avle to create agents. 
+yes add this. but the users cshouldnt be avle to create agents.
 **Notes:**
 Built. "New skill" sits in the Skills page header only; the Agents page gets nothing. The PM types
 the name once, up front, because a skill's folder is the address the runtime resolves and the skill
@@ -814,7 +819,7 @@ Two things I notice missing:
   the format better than any documentation would, and pairs with ticket 30.
 
 **Decision:** (list anything else you want in the pack here)
-we skip this for now. 
+we skip this for now.
 **Notes:**
 
 ---
@@ -869,7 +874,7 @@ default.
    real port rather than a swap, and I would not do it for this beta.
 
 **Decision:**
-yes do this. 
+yes do this.
 **Notes:**
 
 ---
@@ -880,15 +885,15 @@ yes do this.
 
 **Proposal:** roughly four weeks of focused work, one person.
 
-| Phase | Tickets | Size |
-|---|---|---|
-| 0 | 1, 2, 3, 4, 5 (decisions, plus enrolment and EUIPO lead time) | mostly waiting |
-| 1 | 1, 2, 6, 7, 9 (name sweep, app id, icon, dmg, signing, version, CI) | 3 to 4 days |
-| 2 | 3, 3b, 4 (gateway, invite codes, redemption, spend caps, model bump) | 3 to 4 days |
-| 3 | 5 (telemetry: schema, allowlist, transport, consent, a way to read it) | 2 days |
-| 4 | onboarding (ONB-1 to ONB-10 in `docs/onboarding.md`), 14, 32, 25, 26 (first run, example workspace and its strip list, handoff, synced-folder guard, the no-git case, stop hand-copying the pack) | 4 to 5 days |
-| 5 | 19, 20, 21, 11, 12, 13, 10 (rework, security, smoke test) | 4 to 5 days |
-| 6 | 27, 28, 29, 30, 31, 22 (the pack itself, then the naming and copy sweep) | 3 to 4 days |
+| Phase | Tickets                                                                                                                                                                                           | Size           |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| 0     | 1, 2, 3, 4, 5 (decisions, plus enrolment and EUIPO lead time)                                                                                                                                     | mostly waiting |
+| 1     | 1, 2, 6, 7, 9 (name sweep, app id, icon, dmg, signing, version, CI)                                                                                                                               | 3 to 4 days    |
+| 2     | 3, 3b, 4 (gateway, invite codes, redemption, spend caps, model bump)                                                                                                                              | 3 to 4 days    |
+| 3     | 5 (telemetry: schema, allowlist, transport, consent, a way to read it)                                                                                                                            | 2 days         |
+| 4     | onboarding (ONB-1 to ONB-10 in `docs/onboarding.md`), 14, 32, 25, 26 (first run, example workspace and its strip list, handoff, synced-folder guard, the no-git case, stop hand-copying the pack) | 4 to 5 days    |
+| 5     | 19, 20, 21, 11, 12, 13, 10 (rework, security, smoke test)                                                                                                                                         | 4 to 5 days    |
+| 6     | 27, 28, 29, 30, 31, 22 (the pack itself, then the naming and copy sweep)                                                                                                                          | 3 to 4 days    |
 
 Section G splits across phases on purpose. Tickets 25 and 26 are prerequisites for shipping an
 example workspace at all, so they ride with phase 4. Ticket 19 in phase 5 is what makes an improved

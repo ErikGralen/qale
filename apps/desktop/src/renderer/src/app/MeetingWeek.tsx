@@ -258,14 +258,8 @@ export function MeetingWeek({
   }, [weekStart, weekEvents]);
 
   const multiDay = useMemo(() => weekEvents.filter(isMultiDay), [weekEvents]);
-  const timed = useMemo(
-    () => weekEvents.filter((e) => e.timed && !isMultiDay(e)),
-    [weekEvents],
-  );
-  const untimed = useMemo(
-    () => weekEvents.filter((e) => !e.timed && !isMultiDay(e)),
-    [weekEvents],
-  );
+  const timed = useMemo(() => weekEvents.filter((e) => e.timed && !isMultiDay(e)), [weekEvents]);
+  const untimed = useMemo(() => weekEvents.filter((e) => !e.timed && !isMultiDay(e)), [weekEvents]);
 
   // Multi-day events become horizontal banners spanning their visible days,
   // stacked into rows so concurrent spans never collide.
@@ -315,7 +309,8 @@ export function MeetingWeek({
   const nowTop = (now.getHours() + now.getMinutes() / 60 - startHour) * HOUR_PX;
   const gridCols = { gridTemplateColumns: `3.25rem repeat(${days.length}, minmax(0, 1fr))` };
 
-  const openEvent = (e: CalEvent, click?: React.MouseEvent) => void openDoc(e.note.path, click && navFromEvent(click));
+  const openEvent = (e: CalEvent, click?: React.MouseEvent) =>
+    void openDoc(e.note.path, click && navFromEvent(click));
 
   const eventBody = (e: CalEvent, heightPx: number) => {
     const tone = eventTone(e, now);
@@ -499,9 +494,7 @@ export function MeetingWeek({
           )}
           {untimed.length > 0 && (
             <div className="grid border-t border-border/50" style={gridCols}>
-              <div className="py-1 pr-1.5 text-right text-xs text-muted-foreground">
-                no time
-              </div>
+              <div className="py-1 pr-1.5 text-right text-xs text-muted-foreground">no time</div>
               {days.map((d) => (
                 <div
                   key={d.getTime()}
@@ -600,7 +593,6 @@ export function MeetingWeek({
             );
           })}
         </div>
-
       </div>
     </div>
   );

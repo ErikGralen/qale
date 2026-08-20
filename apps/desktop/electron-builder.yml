@@ -7,6 +7,15 @@ afterPack: ./build/after-pack.cjs
 files:
   - out/**/*
   - package.json
+  # Everything below is publishing artefacts that no packaged build ever reads.
+  # Sourcemaps alone were ~60 MB of the asar; types and readmes another few.
+  - '!**/node_modules/**/*.{map,md,markdown,flow,gyp,gypi,mk}'
+  - '!**/node_modules/**/*.{ts,mts,cts}'
+  - '!**/node_modules/**/{test,tests,__tests__,docs,example,examples,.github}/**'
+  # better-sqlite3 ships the whole sqlite amalgamation and the object files it
+  # was compiled from (~22 MB). At runtime it needs lib/ and the built .node.
+  - '!**/node_modules/better-sqlite3/{deps,src,bin}/**'
+  - '!**/node_modules/better-sqlite3/build/{deps,Release/obj}/**'
 # Native modules and sqlite-vec must be unpacked from the asar so they load at
 # runtime (PLAN §6). --dir builds are unsigned prototype artifacts.
 asarUnpack:
@@ -44,8 +53,139 @@ dmg:
       type: link
       path: /Applications
 win:
+  # NSIS, x64 only for the beta. Same shape of reasoning as the mac block: build
+  # the one thing beta users can actually run and add the second the day someone
+  # needs it. On Windows the split is not close. Windows on ARM is a rounding
+  # error outside of a few Surface and Snapdragon laptops, and x64 binaries run
+  # on those anyway through the emulator, slower but correctly. What would make
+  # arm64 worth adding is a tester on Windows on ARM complaining about startup
+  # time or battery, or auto-update landing (beta-launch ticket 8), at which
+  # point shipping the emulated build forever becomes a standing tax rather than
+  # a one-off. Adding it is one more `arch:` entry, but it doubles the CI matrix
+  # and better-sqlite3 has to be rebuilt for that ABI too, which is exactly the
+  # part that cannot be done from a Mac.
+  #
+  # Why nsis and not the alternatives: `portable` produces a single exe that
+  # unpacks to temp on every launch, which breaks any expectation of a stable
+  # install path; `msi` cannot do a per-user install without a per-machine
+  # elevation dance and gives us nothing we need; `squirrel` is tied to an
+  # auto-update mechanism we have not built. NSIS is also the only one of them
+  # that writes a Start Menu shortcut carrying an AppUserModelID, which we
+  # depend on (see below).
   target:
-    - dir
+    - target: nsis
+      arch:
+        - x64
+  # Explicit, because the fallback is silently wrong. With no icon.ico here,
+  # electron-builder derives one from build/icon.png, and that PNG is the mark
+  # already shaped for macOS: an 824px body inset on a 1024px canvas with rounded
+  # corners. Windows masks nothing, so that would ship a small rounded stamp
+  # floating in an empty box in the taskbar. build/icon.ico is built full-bleed
+  # from the same source by `pnpm icon:win` (scripts/make-ico.mjs) and committed
+  # next to icon.png, so a packaging run never has to generate art.
+  icon: build/icon.ico
+  # No certificate yet, and this is the Windows twin of the Gatekeeper problem
+  # the mac block documents. What a beta user sees downloading an unsigned exe:
+  # Edge or Chrome flags the download itself ("isn't commonly downloaded... make
+  # sure you trust"), and on running it SmartScreen throws a full-screen blue
+  # "Windows protected your PC, Unknown publisher" panel where the only obvious
+  # button is "Don't run". Getting past it is More info → Run anyway. That is
+  # worse than the Mac right-click → Open, because nothing on the panel suggests
+  # a way forward. Tell testers the exact click path or half of them stop here.
+  #
+  # Nothing needs configuring here to build unsigned: electron-builder already
+  # runs the signing step, finds no credential, logs that it skipped, and carries
+  # on. Note what it does NOT skip. `signAndEditExecutable` stays at its default
+  # true, which is what stamps the icon and the version metadata onto Qale.exe
+  # via resedit. Do not reach for `signAndEditExecutable: false` to quiet the
+  # signing log; that also throws away the icon and leaves a nameless exe in Task
+  # Manager. electron-builder 26 has `signExecutable: false` for the "edit but
+  # do not sign" case, and even that is unnecessary here.
+  #
+  # The two realistic ways to get signed, in the order we should try them:
+  #
+  # 1. Azure Trusted Signing. Roughly $10/month, no hardware, and the private key
+  #    never leaves Azure, so CI signs by authenticating rather than by holding a
+  #    secret file. The catch is eligibility: Microsoft requires a legal entity
+  #    that has existed for three years to get a standard (non-individual)
+  #    certificate. A newly registered company does not qualify, and the
+  #    individual validation tier is a slower, more personal identity check.
+  #    Turn it on by uncommenting azureSignOptions below and giving the CI job
+  #    AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET, which is what the
+  #    Azure EnvironmentCredential reads.
+  #
+  # 2. An OV or EV certificate from a CA (Sectigo, DigiCert). Several hundred
+  #    dollars a year, and since June 2023 every one of them ships on a hardware
+  #    token or an HSM, so it cannot simply be dropped into a GitHub secret. That
+  #    means either signing on a self-hosted runner with the token plugged in, or
+  #    a cloud-HSM signing service. EV buys instant SmartScreen reputation; OV
+  #    has to earn it over a few hundred downloads, during which testers still
+  #    see the panel.
+  #
+  # When a certificate lands, exactly one of these two blocks gets uncommented.
+  # They are mutually exclusive; setting both makes electron-builder silently
+  # prefer Azure. `publisherName` in either case must match the certificate's
+  # common name character for character, because it is what an eventual
+  # auto-updater checks the downloaded exe against.
+  #
+  # signtoolOptions:
+  #   publisherName: <exact CN on the certificate>
+  #   # The pfx and its password come from WIN_CSC_LINK (a path, or base64 of the
+  #   # file) and WIN_CSC_KEY_PASSWORD in the environment, never from this file.
+  #
+  # azureSignOptions:
+  #   publisherName: <exact CN on the certificate>
+  #   endpoint: https://weu.codesigning.azure.net
+  #   codeSigningAccountName: <account>
+  #   certificateProfileName: <profile>
+nsis:
+  # Assisted (wizard) rather than one-click. A one-click installer is less
+  # friction in the abstract, but it lands immediately after SmartScreen has just
+  # told the user this software is dangerous, and a program that then flashes and
+  # vanishes with no window and no choices reads as confirmation of that. A short
+  # wizard that names the app, says where it is going and can be cancelled is the
+  # more trustworthy shape while we are unsigned. It is also the only mode where
+  # allowToChangeInstallationDirectory is legal.
+  oneClick: false
+  # Per-user. This is the line that keeps the install out of UAC: a per-user
+  # install writes to %LOCALAPPDATA%\Programs\Qale and HKCU, which an ordinary
+  # account can do unelevated, so there is no consent dialog at all. A
+  # per-machine install into Program Files needs elevation, and a UAC prompt
+  # showing "Publisher: Unknown" stacked on top of the SmartScreen panel is two
+  # scary dialogs for a beta. It also means testers on locked-down work laptops
+  # without an admin password can still install.
+  #
+  # `false` here does not remove the choice, it sets the default: an assisted
+  # installer shows an install-mode page, per-user preselected (that is
+  # selectPerMachineByDefault, left at its default false), and anyone putting
+  # Qale on a shared machine can still pick all-users and accept the elevation.
+  perMachine: false
+  allowElevation: true
+  # Let them pick the directory. Beta testers are the people most likely to have
+  # a small system SSD, to want the app on D:, or to simply want to know where
+  # their files went, and the wizard already exists to hold the page.
+  allowToChangeInstallationDirectory: true
+  # Both shortcuts. The Start Menu one is not cosmetic: electron-builder stamps
+  # the electron-builder `appId` onto it as its AppUserModelID (SetLnkAUMI in the
+  # NSIS template), and that shortcut is how the Windows shell resolves the id
+  # the app declares at runtime. Without it, the notifications wired up in
+  # src/main/index.ts and handlers.ts come out unattributed or do not appear at
+  # all. Which is why `ai.qale.app` now has to be identical in two places: the
+  # `appId` at the top of this file and the electronApp.setAppUserModelId call in
+  # src/main/index.ts. Change one without the other and nothing errors, toasts
+  # just stop arriving.
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  # Default is `${productName} Setup ${version}.${ext}`, which puts spaces in a
+  # filename people will download over HTTP and paste into chat. Dashes travel
+  # better. The arch is spelled out even though there is only one today, so that
+  # the day an arm64 build appears the two artifacts cannot be confused, and so
+  # nobody has to guess what an older download was.
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+  # Leave the vault and the app database behind on uninstall. Qale's userData is
+  # the user's notes; an uninstaller that deletes them is a data-loss bug wearing
+  # a checkbox. This is the default, stated because it is worth being a decision.
+  deleteAppDataOnUninstall: false
 linux:
   target:
     - dir

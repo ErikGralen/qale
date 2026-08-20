@@ -5,6 +5,9 @@ import { isSessionFile } from '../notes/slug.js';
 /** The "what will happen" line an outbound card carries above its rationale. */
 export { outboundEffect, type OutboundEffectFacts } from './effect.js';
 
+/** When a calendar card lands, said the same way everywhere it is shown. */
+export { describeEventWhen, rsvpAnswer, type EventWhen } from './event-time.js';
+
 /** Whether a card repeats one already waiting on the PM. */
 export {
   contentTokens,
@@ -16,8 +19,8 @@ export {
 
 /**
  * Proposals (approval cards) are the ONLY write path for the agent (PLAN-V2 §3.3).
- * The trust mechanic — evidence must resolve, or the card is flagged inference — is
- * validated structurally here (domain), then enforced at the tool layer. Card kinds
+ * The trust mechanic — evidence must resolve, or the card says what it rests on
+ * instead — is validated structurally here (domain), then enforced at the tool layer. Card kinds
  * grow per phase: note/update now, decision/outbound land in Phases 3 & 5.
  */
 
@@ -85,7 +88,8 @@ export const zOutboundPayload = z.preprocess(
     const rec = { ...(val as Record<string, unknown>) };
     // `provider` is canonical: when both are present it wins outright, so a
     // conflicting legacy `system` can never leak a different value to readers.
-    if (rec['provider'] == null && typeof rec['system'] === 'string') rec['provider'] = rec['system'];
+    if (rec['provider'] == null && typeof rec['system'] === 'string')
+      rec['provider'] = rec['system'];
     if (typeof rec['provider'] === 'string') rec['system'] = rec['provider'];
     if (typeof rec['action'] === 'string' && rec['action'] in LEGACY_OUTBOUND_ACTIONS) {
       rec['action'] = LEGACY_OUTBOUND_ACTIONS[rec['action']];
@@ -141,9 +145,16 @@ export const zOutboundPayload = z.preprocess(
     // Required target per action, enforced at FILING time — a card missing its
     // target must be rejected where the agent can react, not at approval.
     .superRefine((p, refCtx) => {
-      const need = (field: 'projectKey' | 'issueKey' | 'pageId' | 'eventId' | 'title' | 'start' | 'attendeeEmail'): void => {
+      const need = (
+        field:
+          'projectKey' | 'issueKey' | 'pageId' | 'eventId' | 'title' | 'start' | 'attendeeEmail',
+      ): void => {
         if (!p[field]?.toString().trim()) {
-          refCtx.addIssue({ code: 'custom', path: [field], message: `${p.action} requires ${field}` });
+          refCtx.addIssue({
+            code: 'custom',
+            path: [field],
+            message: `${p.action} requires ${field}`,
+          });
         }
       };
       if (p.action === 'create_ticket') need('projectKey');
@@ -158,7 +169,11 @@ export const zOutboundPayload = z.preprocess(
         need('eventId');
         need('attendeeEmail');
         if (!p.responseStatus) {
-          refCtx.addIssue({ code: 'custom', path: ['responseStatus'], message: 'respond_to_event requires responseStatus' });
+          refCtx.addIssue({
+            code: 'custom',
+            path: ['responseStatus'],
+            message: 'respond_to_event requires responseStatus',
+          });
         }
       }
     }),
@@ -181,6 +196,13 @@ export const zUpdatePayload = z
     /** Body search/replace blocks. Optional: a card may change only frontmatter. */
     patch: z.array(zSearchReplace).optional(),
     /**
+     * Text added at the end of the body on approval. Search/replace has nothing
+     * to bite on in an empty body, and the notes that most need writing on start
+     * empty — a meeting page mirrored from the calendar is frontmatter and
+     * nothing else — so a card needs a lever that cannot miss its anchor.
+     */
+    append: z.string().optional(),
+    /**
      * Frontmatter keys to set on approval (shallow-merged over the note's current
      * frontmatter) — the only way a card edits metadata like a todo's
      * `due`/`commitment`, a meeting's `processing`, or a person's `last_told`.
@@ -192,10 +214,16 @@ export const zUpdatePayload = z
     title: z.string().optional(),
   })
   // A no-op card is meaningless: require at least one real change.
-  .refine((d) => (d.patch?.length ?? 0) > 0 || Object.keys(d.frontmatter ?? {}).length > 0, {
-    message: 'an update must change the body (patch) or the frontmatter',
-    path: ['patch'],
-  });
+  .refine(
+    (d) =>
+      (d.patch?.length ?? 0) > 0 ||
+      !!d.append?.trim() ||
+      Object.keys(d.frontmatter ?? {}).length > 0,
+    {
+      message: 'an update must change the body (patch or append) or the frontmatter',
+      path: ['patch'],
+    },
+  );
 export type UpdatePayload = z.infer<typeof zUpdatePayload>;
 
 /** A decision card carries the new decision plus an optional supersede target. */
@@ -215,19 +243,39 @@ export interface EvidenceValidation {
 }
 
 /**
- * Evidence must be present and resolvable unless explicitly flagged inference.
- * `resolve` reports whether a given wikilink/URL target exists in the index or a
- * tool result from this session (PLAN-V2 §3.3 — cite or decline).
+ * What a card rests on when it names no sources. Two different things, and the
+ * card says which:
+ *
+ * - `asked` — the PM said it themselves, in the conversation. There is no note
+ *   to cite because the source is a chat message, and a message is not a note.
+ *   The best-sourced kind of card there is.
+ * - `inference` — the agent worked it out and nothing in the workspace says it.
+ *   The claim to double-check.
+ *
+ * Collapsing the two was the bug: a note the PM dictated word for word came back
+ * flagged "the agent inferred this without citing a source", because `inference`
+ * was the only way past an empty sources[].
+ */
+export interface EvidenceBasis {
+  inference?: boolean;
+  asked?: boolean;
+}
+
+/**
+ * Evidence must be present and resolvable unless the card declares a basis that
+ * stands in for sources (see `EvidenceBasis`). `resolve` reports whether a given
+ * wikilink/URL target exists in the index or a tool result from this session
+ * (PLAN-V2 §3.3 — cite or decline).
  */
 export function validateEvidence(
   sources: string[],
-  inference: boolean,
   resolve: (ref: string) => boolean,
+  basis: EvidenceBasis = {},
 ): EvidenceValidation {
   // Sessions v2 invariant 2: citations pass THROUGH session files, never
   // terminate in them. A subagent reads sources/2026-06-12-kranelund.md and
-  // writes per-item/kranelund.md; the card must cite the former. Checked even
-  // for inference cards, and before the empty check, because this is the failure
+  // writes per-item/kranelund.md; the card must cite the former. Checked whatever
+  // the card's basis is, and before the empty check, because this is the failure
   // that stays silent: you get a memory full of insights whose evidence points
   // at deleted scratch, and nothing complains until someone follows a link.
   const scratch = sources.filter((s) => isSessionFile(refToSlug(s) ?? s));
@@ -239,9 +287,14 @@ export function validateEvidence(
         'Cite the original source the file was written from; that path is carried inside the file.',
     };
   }
-  if (inference) return { ok: true };
+  if (basis.asked || basis.inference) return { ok: true };
   if (sources.length === 0) {
-    return { ok: false, reason: 'proposal has no sources[]; set inference:true to allow' };
+    return {
+      ok: false,
+      reason:
+        'proposal has no sources[]; set asked:true if the PM asked for this in the conversation, ' +
+        'or inference:true if you worked it out yourself',
+    };
   }
   const unresolved = sources.filter((s) => !isUrl(s) && !resolve(s));
   if (unresolved.length > 0) {

@@ -125,17 +125,8 @@ export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[
     },
     TAGS,
   ],
-  customer: [
-    SUMMARY,
-    RELATIONSHIP,
-    { key: 'segment', label: 'Segment', widget: 'text' },
-    TAGS,
-  ],
-  theme: [
-    SUMMARY,
-    STANCE,
-    TAGS,
-  ],
+  customer: [SUMMARY, RELATIONSHIP, { key: 'segment', label: 'Segment', widget: 'text' }, TAGS],
+  theme: [SUMMARY, STANCE, TAGS],
   person: [
     SUMMARY,
     { key: 'role', label: 'Role', widget: 'text' },
@@ -189,7 +180,15 @@ export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[
 };
 
 /** Ref-array frontmatter keys shown read-only as chips. */
-export const REF_FIELDS = ['evidence', 'sources', 'supersedes', 'superseded_by', 'theme', 'customer', 'transcript'] as const;
+export const REF_FIELDS = [
+  'evidence',
+  'sources',
+  'supersedes',
+  'superseded_by',
+  'theme',
+  'customer',
+  'transcript',
+] as const;
 
 /**
  * Frontmatter the harness/domain writes, not the human: session receipt fields

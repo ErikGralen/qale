@@ -9,6 +9,7 @@ import type {
   BacklinkDTO,
   ConnectionDTO,
   ConnectResultDTO,
+  ContainerRecommendationDTO,
   DeliveryDeltaDTO,
   ExternalRefMetaDTO,
   ProviderDescriptorDTO,
@@ -17,6 +18,8 @@ import type {
   CaptureNudgeDismissDTO,
   CaptureNudgeStateDTO,
   CaptureTodoInputDTO,
+  CreateNoteInputDTO,
+  LlmProviderDTO,
   MaintenanceReportDTO,
   MeetingReviewAskDTO,
   NoteCommitDTO,
@@ -75,18 +78,39 @@ export interface InvokeMap {
 
   // Settings / lifecycle
   'settings:get': { args: []; result: SettingsDTO };
-  'settings:setAnthropicKey': { args: [key: string]; result: SettingsDTO };
+  /**
+   * Store one provider's key. It does not choose the provider: the two are
+   * separate calls, so the opening can ask for them in either order. An empty
+   * key removes that provider's stored one.
+   */
+  'settings:setProviderKey': {
+    args: [provider: LlmProviderDTO, key: string];
+    result: SettingsDTO;
+  };
+  /**
+   * Whose API answers, from now on. The model moves with it: a session default
+   * belonging to the other provider is carried to this one's default.
+   */
+  'settings:setProvider': { args: [provider: LlmProviderDTO]; result: SettingsDTO };
   /**
    * Does this key work? One minimal call from main, so a typo fails at the
    * field instead of twenty minutes later inside a session (ONB-5). Never
-   * stores anything — saving is still `settings:setAnthropicKey`.
+   * stores anything: saving is still `settings:setProviderKey`.
    */
-  'settings:verifyAnthropicKey': { args: [key: string]; result: { ok: boolean; error?: string } };
+  'settings:verifyProviderKey': {
+    args: [provider: LlmProviderDTO, key: string];
+    result: { ok: boolean; error?: string };
+  };
   'settings:setAtlassian': {
     args: [creds: { baseUrl: string; email: string; token: string }];
     result: SettingsDTO;
   };
   'settings:setModel': { args: [modelId: string]; result: SettingsDTO };
+  /**
+   * What the workspace is written in, as a language tag. Only affects what gets
+   * written from now on: notes already on disk keep the language they are in.
+   */
+  'settings:setLanguage': { args: [language: string]; result: SettingsDTO };
   'settings:setSchedule': {
     args: [skill: string, patch: { dayOfWeek?: number; hour?: number; enabled?: boolean }];
     result: SettingsDTO;
@@ -131,6 +155,12 @@ export interface InvokeMap {
   'vault:suggestPath': { args: []; result: PathCheckDTO };
   /** The same question about any path the PM typed or picked. */
   'vault:checkPath': { args: [path: string]; result: PathCheckDTO };
+  /**
+   * A folder picker that only answers "where" — the folder to put a new
+   * workspace *in*. Unlike `vault:pick` it opens nothing and changes nothing,
+   * so the PM can back out of the new-workspace form with the old one intact.
+   */
+  'vault:pickLocation': { args: []; result: string | null };
   /** Make the folder if it isn't there, then open it as the workspace. */
   'vault:create': { args: [path: string]; result: VaultInfoDTO };
   'vault:current': { args: []; result: VaultInfoDTO | null };
@@ -144,6 +174,7 @@ export interface InvokeMap {
   'note:get': { args: [path: string]; result: NoteDTO | null };
   'note:save': { args: [input: SaveNoteInput]; result: NoteDTO };
   'note:saveFrontmatter': { args: [input: SaveFrontmatterInput]; result: NoteDTO };
+  'note:create': { args: [input: CreateNoteInputDTO]; result: NoteDTO };
   'note:rename': { args: [input: RenameNoteInput]; result: NoteDTO };
   'note:delete': { args: [path: string]; result: { ok: boolean } };
   'note:backlinks': { args: [path: string]; result: BacklinkDTO[] };
@@ -160,6 +191,8 @@ export interface InvokeMap {
   // Todos (the commitment ledger)
   'todos:capture': { args: [input: CaptureTodoInputDTO]; result: NoteDTO };
   'todos:setStatus': { args: [path: string, commitment: TodoCommitment]; result: NoteDTO };
+  /** Snooze: move the due date, or `null` to clear it (→ Someday). */
+  'todos:setDue': { args: [path: string, due: string | null]; result: NoteDTO };
 
   // Capture / search
   'note:capture': { args: [input: CaptureNoteInput]; result: NoteDTO };
@@ -182,7 +215,18 @@ export interface InvokeMap {
   'proposals:preview': { args: [id: string]; result: ProposalPreviewDTO | null };
   // `review` rides along on the resolve that empties a session: the question to
   // put to the PO when their cards were all discarded (see MeetingReviewAskDTO).
-  'proposals:accept': { args: [id: string, edited?: unknown]; result: { ok: boolean; stale?: boolean; error?: string; url?: string; review?: MeetingReviewAskDTO } };
+  'proposals:accept': {
+    args: [id: string, edited?: unknown];
+    result: {
+      ok: boolean;
+      stale?: boolean;
+      /** Why a stale refusal refused, in the preview's vocabulary. */
+      staleReason?: 'unanchored' | 'duplicate';
+      error?: string;
+      url?: string;
+      review?: MeetingReviewAskDTO;
+    };
+  };
   'proposals:reject': { args: [id: string]; result: { ok: boolean; review?: MeetingReviewAskDTO } };
   /** The PO's answer to that question: take the meeting out of "needs review". */
   'meeting:markReviewed': { args: [path: string]; result: { ok: boolean } };
@@ -259,13 +303,27 @@ export interface InvokeMap {
   };
   'connections:syncNow': { args: []; result: { ok: boolean; error?: string } };
   /**
+   * What this connection's survey says is worth following, busiest first
+   * (docs/product-understanding.md FL-1/FL-2). Hits the provider, so it is
+   * asked for once when the picker opens rather than on every list. An empty
+   * result is the honest answer for a brand-new hire, and the picker falls back
+   * to the flat catalogue without comment.
+   */
+  'connections:recommend': {
+    args: [connectionId: string];
+    result: ContainerRecommendationDTO[];
+  };
+  /**
    * The one thing only the renderer knows: which part of the app is open
    * (docs/telemetry-posthog.md TEL-5). Deliberately not a free string — the
    * main side folds anything it does not recognise away, so a view name can
    * never carry a note title. Fire and forget, like the other void channels.
    */
-  'telemetry:view': { args: [view: string]; result: void };
-  'connections:searchIndex': { args: [query: string, limit?: number]; result: ShallowIndexItemDTO[] };
+  'telemetry:view': { args: [view: string, tabs: number]; result: void };
+  'connections:searchIndex': {
+    args: [query: string, limit?: number];
+    result: ShallowIndexItemDTO[];
+  };
   'connections:refMeta': { args: [slug: string]; result: ExternalRefMetaDTO | null };
   'connections:atRisk': { args: []; result: AtRiskLinkDTO[] };
   'connections:deliveryDelta': { args: [meetingPath: string]; result: DeliveryDeltaDTO[] };
@@ -284,10 +342,12 @@ export const INVOKE_CHANNELS = [
   'app:ping',
   'diagnostics:report',
   'settings:get',
-  'settings:setAnthropicKey',
-  'settings:verifyAnthropicKey',
+  'settings:setProviderKey',
+  'settings:setProvider',
+  'settings:verifyProviderKey',
   'settings:setAtlassian',
   'settings:setModel',
+  'settings:setLanguage',
   'settings:setSchedule',
   'settings:setMcp',
   'settings:setIdentity',
@@ -305,6 +365,7 @@ export const INVOKE_CHANNELS = [
   'vault:open',
   'vault:suggestPath',
   'vault:checkPath',
+  'vault:pickLocation',
   'vault:create',
   'vault:current',
   'vault:initGit',
@@ -315,6 +376,7 @@ export const INVOKE_CHANNELS = [
   'note:get',
   'note:save',
   'note:saveFrontmatter',
+  'note:create',
   'note:rename',
   'note:delete',
   'note:backlinks',
@@ -327,6 +389,7 @@ export const INVOKE_CHANNELS = [
   'people:create',
   'todos:capture',
   'todos:setStatus',
+  'todos:setDue',
   'note:capture',
   'arrival:pick',
   'arrival:check',
@@ -363,6 +426,7 @@ export const INVOKE_CHANNELS = [
   'connections:cancelOAuth',
   'connections:setFollow',
   'connections:syncNow',
+  'connections:recommend',
   'telemetry:view',
   'connections:searchIndex',
   'connections:refMeta',
@@ -373,8 +437,9 @@ export const INVOKE_CHANNELS = [
 
 // Compile-time completeness guard: every InvokeMap key must appear above.
 type _AllChannelsListed = Exclude<InvokeChannel, (typeof INVOKE_CHANNELS)[number]>;
-const _exhaustive: _AllChannelsListed extends never ? true : ['missing channels', _AllChannelsListed] =
-  true as never;
+const _exhaustive: _AllChannelsListed extends never
+  ? true
+  : ['missing channels', _AllChannelsListed] = true as never;
 void _exhaustive;
 
 /** The typed client surface exposed on `window.qale.invoke`. */

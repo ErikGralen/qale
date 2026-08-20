@@ -7,6 +7,7 @@ import {
   latestVerification,
   trustTierLabel,
   parseFrontmatter,
+  type Verification,
 } from '../src/index.js';
 
 /**
@@ -70,4 +71,57 @@ test('verified is accepted, optional, and additive on the base schema', () => {
   // Malformed verified entries are rejected by the schema (must be {by, at}).
   const bad = parseFrontmatter({ type: 'note', summary: 's', verified: [{ by: 'human:asa' }] });
   assert.equal(bad.ok, false);
+});
+
+test('a lone verified mapping reads as the one-entry list it means', () => {
+  // What a model (or a hand-edit) writes when there is only one verifier:
+  //   verified:
+  //     by: human:asa
+  //     at: 2026-07-20
+  const one = parseFrontmatter({
+    type: 'note',
+    summary: 's',
+    verified: { by: 'human:asa', at: '2026-07-20' },
+  });
+  assert.ok(one.ok, one.error);
+  assert.deepEqual((one.data as { verified?: unknown[] }).verified, [
+    { by: 'human:asa', at: '2026-07-20' },
+  ]);
+  assert.equal(trustTier((one.data as { verified?: Verification[] }).verified), 'human');
+
+  // The tolerance is for the shape, not for missing keys.
+  const halfWritten = parseFrontmatter({
+    type: 'note',
+    summary: 's',
+    verified: { by: 'human:asa' },
+  });
+  assert.equal(halfWritten.ok, false);
+});
+
+test('a list field written as one value is the one-entry list it means', () => {
+  // The dash left off is the same mistake `verified` made, and it is not
+  // special to `verified`: every list field takes it the same way.
+  const meeting = parseFrontmatter({
+    type: 'meeting',
+    summary: 's',
+    tags: 'pricing',
+    participants: 'Åsa Lind',
+  });
+  assert.ok(meeting.ok, meeting.error);
+  assert.deepEqual((meeting.data as { tags?: unknown }).tags, ['pricing']);
+  assert.deepEqual((meeting.data as { participants?: unknown }).participants, ['Åsa Lind']);
+
+  const insight = parseFrontmatter({ type: 'insight', summary: 's', evidence: '[[sources/x]]' });
+  assert.ok(insight.ok, insight.error);
+  assert.deepEqual((insight.data as { evidence?: unknown }).evidence, ['[[sources/x]]']);
+
+  // `tags:` with nothing after it is the field being absent, not a broken note.
+  const empty = parseFrontmatter({ type: 'note', summary: 's', tags: null, sources: null });
+  assert.ok(empty.ok, empty.error);
+  assert.equal((empty.data as { tags?: unknown }).tags, undefined);
+  assert.deepEqual((empty.data as { sources?: unknown }).sources, []);
+
+  // Still a real list of real refs: an empty entry is not silently swallowed.
+  const junk = parseFrontmatter({ type: 'note', summary: 's', sources: [''] });
+  assert.equal(junk.ok, false);
 });

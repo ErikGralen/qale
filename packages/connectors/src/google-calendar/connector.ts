@@ -20,8 +20,8 @@ import type {
  * the main-process OAuth service owns tokens/refresh; the connector only ever
  * sees a fresh access token, so it stays fixture-testable with a stub supplier.
  *
- * Incremental pulls ride Google's native `syncToken` (stored as the container's
- * high-water mark verbatim — it's an opaque cursor, not a timestamp). On `410
+ * Incremental pulls ride Google's native `syncToken`, stored inside the
+ * container's high-water mark (an opaque cursor, not a timestamp). On `410
  * GONE` (expired token) the pull silently re-lists the window; that costs one
  * fuller pull, and the engine's upserts are idempotent anyway.
  */
@@ -49,9 +49,42 @@ export const googleCalendarAuthSchema = z.custom<GoogleCalendarAuth>(
 
 const API = 'https://www.googleapis.com/calendar/v3';
 
-/** Sync horizon (§Scope): recent past for capture-matching, ~2 months ahead. */
-const HORIZON_BACK_DAYS = 7;
+/** Sync horizon (§Scope): a month of past for capture-matching and for the
+ *  meetings you already had, ~2 months ahead. */
+const HORIZON_BACK_DAYS = 30;
 const HORIZON_FORWARD_DAYS = 60;
+
+/**
+ * Google pins a sync token to the `timeMin`/`timeMax` of the request that
+ * minted it, permanently — those params are illegal alongside a token, so
+ * there is no way to widen the window of a token you already hold. Riding one
+ * forever means the forward edge stops moving on the day of the first pull and
+ * events booked past it never arrive at all. So the mark carries the instant
+ * its window was anchored to, and a pull re-lists once the remaining forward
+ * window gets this thin.
+ */
+const HORIZON_REFRESH_DAYS = 30;
+
+/** Mark format: `<VERSION>|<anchorMs>|<token>`. Bumping the version re-lists
+ *  every calendar once, which is how a change to the horizon constants above
+ *  reaches calendars that are already syncing. */
+const MARK_VERSION = 'v2';
+
+function encodeMark(anchorMs: number, token: string): string {
+  return `${MARK_VERSION}|${anchorMs}|${token}`;
+}
+
+/** Anything unparseable (a pre-anchor mark, a future version, junk) reads as
+ *  "no usable token" and costs exactly one windowed re-list. */
+function decodeMark(mark: string | null): { anchorMs: number; token: string } | null {
+  if (!mark) return null;
+  const parts = mark.split('|');
+  if (parts.length < 3 || parts[0] !== MARK_VERSION) return null;
+  const anchorMs = Number(parts[1]);
+  if (!Number.isFinite(anchorMs)) return null;
+  const token = parts.slice(2).join('|');
+  return token ? { anchorMs, token } : null;
+}
 
 /** Calendar-noise event types that never belong in the index. */
 const SKIPPED_EVENT_TYPES = new Set(['workingLocation', 'birthday']);
@@ -124,7 +157,11 @@ class GoogleCalendarConnector implements Connector {
   /** Write request (outbound events, phase 4) — POST/PATCH with a JSON body.
    *  Same 401 → auth-expired mapping as reads; surfaces the API error body so a
    *  failed card returns to the Inbox with something the PM can act on. */
-  private async mutate(method: 'POST' | 'PATCH', path: string, body: unknown): Promise<GoogleEvent> {
+  private async mutate(
+    method: 'POST' | 'PATCH',
+    path: string,
+    body: unknown,
+  ): Promise<GoogleEvent> {
     const token = await this.auth.getAccessToken();
     const res = await this.fetchImpl(`${API}${path}?${NO_GUEST_MAIL}`, {
       method,
@@ -138,7 +175,9 @@ class GoogleCalendarConnector implements Connector {
     if (res.status === 401) throw new CalendarAuthError();
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      throw new Error(`Google Calendar ${res.status} for ${method} ${path}${detail ? `: ${detail.slice(0, 200)}` : ''}`);
+      throw new Error(
+        `Google Calendar ${res.status} for ${method} ${path}${detail ? `: ${detail.slice(0, 200)}` : ''}`,
+      );
     }
     return (await res.json()) as GoogleEvent;
   }
@@ -196,7 +235,10 @@ class GoogleCalendarConnector implements Connector {
       pageToken = page.nextPageToken;
     } while (pageToken);
     // Primary first — it's the one nearly everyone follows.
-    return out.sort((a, b) => Number(b.id.includes('@')) - Number(a.id.includes('@')) || a.name.localeCompare(b.name));
+    return out.sort(
+      (a, b) =>
+        Number(b.id.includes('@')) - Number(a.id.includes('@')) || a.name.localeCompare(b.name),
+    );
   }
 
   async pullChanges(
@@ -235,17 +277,34 @@ class GoogleCalendarConnector implements Connector {
       timeMax: new Date(now + HORIZON_FORWARD_DAYS * 86_400_000).toISOString(),
     });
 
-    let result = sinceHighWaterMark
-      ? await collect({ ...base, syncToken: sinceHighWaterMark })
+    // A token whose window has nearly run out is worse than no token: it still
+    // reports changes, so nothing looks broken while the far end of the
+    // calendar quietly stops arriving. Re-anchor before that happens.
+    const prior = decodeMark(sinceHighWaterMark);
+    const usable =
+      prior &&
+      prior.anchorMs + HORIZON_FORWARD_DAYS * 86_400_000 - now >= HORIZON_REFRESH_DAYS * 86_400_000
+        ? prior
+        : null;
+
+    let anchorMs = usable?.anchorMs ?? now;
+    let result = usable
+      ? await collect({ ...base, syncToken: usable.token })
       : await collect(windowed());
     // Expired sync token: silent windowed re-list, one fuller pull, no drama.
-    if (result.gone) result = await collect(windowed());
+    if (result.gone) {
+      anchorMs = now;
+      result = await collect(windowed());
+    }
 
     const nowIso = new Date(now).toISOString();
     const changes = result.events
       .filter((e) => !SKIPPED_EVENT_TYPES.has(e.eventType ?? 'default'))
       .map((e): EventChange => toEventChange(e, container.id, nowIso));
-    return { changes, highWaterMark: result.syncToken ?? sinceHighWaterMark };
+    return {
+      changes,
+      highWaterMark: result.syncToken ? encodeMark(anchorMs, result.syncToken) : sinceHighWaterMark,
+    };
   }
 
   async fetchFull(_kind: ContainerKind, externalId: string): Promise<FullItem> {
@@ -267,7 +326,9 @@ class GoogleCalendarConnector implements Connector {
   async execute(payload: unknown): Promise<ExecuteResult> {
     const parsed = zOutboundPayload.safeParse(payload);
     if (!parsed.success) {
-      throw new Error(`invalid google-calendar payload: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
+      throw new Error(
+        `invalid google-calendar payload: ${parsed.error.issues.map((i) => i.message).join('; ')}`,
+      );
     }
     const p = parsed.data;
     if (p.provider !== 'google-calendar') {
@@ -302,7 +363,9 @@ class GoogleCalendarConnector implements Connector {
       // attendees array, so read the event, flip the one matching attendee, and
       // write the list back — never dropping the other guests.
       const eventId = encodeURIComponent(p.eventId!);
-      const current = await this.requestJson<GoogleEvent>(`/calendars/${calendarId}/events/${eventId}`);
+      const current = await this.requestJson<GoogleEvent>(
+        `/calendars/${calendarId}/events/${eventId}`,
+      );
       const wanted = p.attendeeEmail!.trim().toLowerCase();
       const attendees = (current.attendees ?? []).map((a) =>
         a.email?.trim().toLowerCase() === wanted ? { ...a, responseStatus: p.responseStatus } : a,
@@ -310,7 +373,9 @@ class GoogleCalendarConnector implements Connector {
       if (!attendees.some((a) => a.email?.trim().toLowerCase() === wanted)) {
         attendees.push({ email: p.attendeeEmail!, responseStatus: p.responseStatus });
       }
-      const ev = await this.mutate('PATCH', `/calendars/${calendarId}/events/${eventId}`, { attendees });
+      const ev = await this.mutate('PATCH', `/calendars/${calendarId}/events/${eventId}`, {
+        attendees,
+      });
       return { externalId: ev.id, url: ev.htmlLink ?? '' };
     }
 
@@ -322,7 +387,12 @@ class GoogleCalendarConnector implements Connector {
  *  status, little else) — fields fall back to empty and the sync engine merges
  *  them over the shallow row it already holds. */
 export function toEventChange(e: GoogleEvent, containerId: string, nowIso: string): EventChange {
-  const startRaw = e.start?.dateTime ?? e.start?.date ?? e.originalStartTime?.dateTime ?? e.originalStartTime?.date ?? '';
+  const startRaw =
+    e.start?.dateTime ??
+    e.start?.date ??
+    e.originalStartTime?.dateTime ??
+    e.originalStartTime?.date ??
+    '';
   const allDay = Boolean(e.start?.date ?? (!e.start?.dateTime && e.originalStartTime?.date));
   const status: EventStatus =
     e.status === 'cancelled' ? 'cancelled' : e.status === 'tentative' ? 'tentative' : 'confirmed';

@@ -68,7 +68,13 @@ function selectedWikilink(editor: Editor): { attrs: WikiLinkAttrs; pos: number }
   return { attrs: sel.node.attrs as WikiLinkAttrs, pos: sel.from };
 }
 
-export function SelectionToolbar({ editor, onAsk }: { editor: Editor; onAsk?: (text: string) => void }) {
+export function SelectionToolbar({
+  editor,
+  onAsk,
+}: {
+  editor: Editor;
+  onAsk?: (text: string) => void;
+}) {
   const [mode, setMode] = useState<'bar' | 'link' | 'turninto' | 'linktype'>('bar');
   // Set by the pill's chevron / the picker's ⇧↵ just before they move the
   // selection onto the link — so the selection change below opens the
@@ -193,7 +199,9 @@ export function SelectionToolbar({ editor, onAsk }: { editor: Editor; onAsk?: (t
               aria-label="Relationship"
             >
               {state.wikiType ? (
-                <span className="text-brand">{linkTypeLabel(state.wikiType, state.wikiReversed)}</span>
+                <span className="text-brand">
+                  {linkTypeLabel(state.wikiType, state.wikiReversed)}
+                </span>
               ) : (
                 <span className="text-muted-foreground">Add relationship</span>
               )}
@@ -261,14 +269,41 @@ export function SelectionToolbar({ editor, onAsk }: { editor: Editor; onAsk?: (t
 
           <div className="mx-0.5 h-5 w-px bg-border" aria-hidden />
 
-          <MarkButton icon={Bold} label="Bold" shortcut="⌘B" active={state.bold} onClick={() => editor.chain().focus().toggleBold().run()} />
-          <MarkButton icon={Italic} label="Italic" shortcut="⌘I" active={state.italic} onClick={() => editor.chain().focus().toggleItalic().run()} />
-          <MarkButton icon={Strikethrough} label="Strikethrough" active={state.strike} onClick={() => editor.chain().focus().toggleStrike().run()} />
-          <MarkButton icon={Code} label="Inline code" active={state.code} onClick={() => editor.chain().focus().toggleCode().run()} />
+          <MarkButton
+            icon={Bold}
+            label="Bold"
+            shortcut="⌘B"
+            active={state.bold}
+            onClick={() => editor.chain().focus().toggleBold().run()}
+          />
+          <MarkButton
+            icon={Italic}
+            label="Italic"
+            shortcut="⌘I"
+            active={state.italic}
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+          />
+          <MarkButton
+            icon={Strikethrough}
+            label="Strikethrough"
+            active={state.strike}
+            onClick={() => editor.chain().focus().toggleStrike().run()}
+          />
+          <MarkButton
+            icon={Code}
+            label="Inline code"
+            active={state.code}
+            onClick={() => editor.chain().focus().toggleCode().run()}
+          />
 
           <div className="mx-0.5 h-5 w-px bg-border" aria-hidden />
 
-          <MarkButton icon={LinkIcon} label={state.link ? 'Edit link' : 'Add link'} active={state.link} onClick={() => setMode('link')} />
+          <MarkButton
+            icon={LinkIcon}
+            label={state.link ? 'Edit link' : 'Add link'}
+            active={state.link}
+            onClick={() => setMode('link')}
+          />
           <MarkButton icon={Brackets} label="Link to note" onClick={linkToNote} />
 
           {onAsk && (

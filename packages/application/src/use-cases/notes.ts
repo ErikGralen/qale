@@ -1,15 +1,17 @@
 import {
   addTranscriptRef,
   checkFrontmatterMutation,
+  typeToWrite,
   isBodyEditable,
   normalizeLinkTarget,
   dirForType,
   fileSlug,
+  isHandCreatable,
   slugify,
   titleFromSlug,
   TYPE_RULES,
+  type HandCreatableType,
   type Frontmatter,
-  type MeetingFrontmatter,
   type NoteFrontmatter,
   type Note,
   type SourceNoteFrontmatter,
@@ -56,18 +58,58 @@ export async function captureNote(ctx: UseCaseContext, input: CaptureNoteInput):
   return note;
 }
 
-export interface CaptureMeetingInput {
-  title: string;
-  /** The recording. Several parts means several files, one meeting. */
-  body: string | MeetingTranscriptPart[];
+export interface CreateNoteInput {
+  type: HandCreatableType;
   /**
-   * The day the meeting happened (YYYY-MM-DD), when the material says so.
-   * Defaults to today, which is right for a transcript dropped straight off the
-   * call and wrong for one dropped on Monday from a call on Thursday.
+   * What to call it. Blank is fine and is the common case: the page opens with
+   * the cursor in the title, and renaming moves the file while nothing cites it.
    */
-  date?: string;
-  source?: SourceRef;
-  participants?: string[];
+  title?: string;
+}
+
+/**
+ * Start a page of a given type from nothing — the "+" on a Memory shelf.
+ *
+ * The type decides the filename shape, and the two shapes mean different things.
+ * A note is about a moment, so it keeps the date prefix quick capture gives it
+ * (`notes/2026-08-14-…`). A hub is about a thing that persists — an account, a
+ * person, a problem — and is named after that thing alone (`customers/nordkap`),
+ * which is what every hub written by the agent already looks like and what the
+ * slug in a wikilink reads as.
+ *
+ * Only the types a human may author get through here ({@link HAND_CREATABLE_TYPES}):
+ * this path writes a blank page, and a blank page of a type nobody can type into
+ * is a dead end, not a start.
+ */
+export async function createNote(ctx: UseCaseContext, input: CreateNoteInput): Promise<Note> {
+  if (!isHandCreatable(input.type)) {
+    throw new Error(`a ${input.type} is not something you write from a blank page`);
+  }
+  const title = (input.title ?? '').trim().slice(0, 200) || 'Untitled';
+  const dir = dirForType(input.type);
+  const desired =
+    input.type === 'note'
+      ? `${dir}/${fileSlug(title, ctx.clock.now().slice(0, 10))}.md`
+      : `${dir}/${slugify(title) || 'untitled'}.md`;
+  const path = await freePath(ctx, desired);
+
+  // The lifecycle values a new page starts on: a problem you have just written
+  // down is one you are exploring, and an account you bothered to make a page
+  // for is one you are working. Both are one click away on the page itself.
+  const lifecycle =
+    input.type === 'theme'
+      ? { stance: 'exploring' as const, evidence: [] }
+      : input.type === 'customer'
+        ? { relationship: 'active' as const }
+        : input.type === 'note'
+          ? { sources: [] }
+          : {};
+  const frontmatter = { type: input.type, title, summary: title, ...lifecycle } as Frontmatter;
+
+  const note = await ctx.vault.writeNote(path, frontmatter, '');
+  ctx.index.reindex(note);
+  await ctx.git.commitPaths([note.path], `create: ${input.type} ${title}`);
+  return note;
 }
 
 /** One file of a recording that arrived in several: its text and what to call it. */
@@ -77,65 +119,64 @@ export interface MeetingTranscriptPart {
   label?: string;
 }
 
+export interface CaptureTranscriptsInput {
+  /** What the recording is of — the source notes are named after it. */
+  title: string;
+  /** The recording. Several parts means several files, one recording. */
+  parts: MeetingTranscriptPart[];
+  /**
+   * The day the meeting happened (YYYY-MM-DD), when the material says so.
+   * Defaults to today, which is right for a transcript dropped straight off the
+   * call and wrong for one dropped on Monday from a call on Thursday.
+   */
+  date?: string;
+  source?: SourceRef;
+}
+
 /**
- * Drop/paste a transcript → meetings/…md. One file anchors the whole meeting
- * lifecycle (prep, notes, processed summary); each transcript is filed as an
- * immutable source note and linked from the `transcript` frontmatter ref, so
- * the meeting page stays human-scale. Arrival reads them all and proposes the
- * truth delta. Provenance (date/participants/source) is immutable thereafter.
+ * Put a recording on the shelf: one immutable source note per file, and nothing
+ * else. This is the whole of what arriving material writes by itself.
  *
- * A recording delivered as several files is ONE meeting with several
- * transcripts, never several meetings. The parts stay separate notes and are
- * never spliced into one body: they are raw provenance, and a join we performed
- * is a claim about how they fit together that only the recording can settle.
+ * There used to be a `captureMeeting` here that wrote a meeting page too — an
+ * empty scaffold with "not read yet" where the summary goes, which the agent
+ * then had to patch with an update card. That was two steps for one thing, and
+ * the first of them created a page in `meetings/` that nobody had approved. Now
+ * the transcript lands (it is the PM's own material, and every card cites it)
+ * and the meeting page is proposed whole, summary included: see `propose_meeting`.
+ *
+ * A recording delivered as several files is ONE recording with several parts,
+ * never several meetings. The parts stay separate notes and are never spliced
+ * into one body: they are raw provenance, and a join we performed is a claim
+ * about how they fit together that only the recording can settle.
  */
-export async function captureMeeting(ctx: UseCaseContext, input: CaptureMeetingInput): Promise<Note> {
-  // When the meeting HAPPENED, which is only today for a transcript dropped
-  // straight off the call. Dating Thursday's call to the Monday it was filed
-  // makes it read as this week's meeting everywhere that sorts by date, and the
-  // provenance is immutable afterwards, so the wrong answer sticks.
+export async function captureTranscripts(
+  ctx: UseCaseContext,
+  input: CaptureTranscriptsInput,
+): Promise<Note[]> {
   const date = input.date ?? ctx.clock.now().slice(0, 10);
   const summary = input.title.slice(0, 200) || 'meeting';
-  const desired = `${dirForType('meeting')}/${fileSlug(summary, date)}.md`;
-  const path = await freePath(ctx, desired);
-
-  const parts: MeetingTranscriptPart[] =
-    typeof input.body === 'string' ? [{ body: input.body }] : input.body;
-  const committed: string[] = [];
-  const refs: string[] = [];
+  const written: Note[] = [];
   // One at a time: `freePath` resolves collisions by looking at the disk, so
   // two parts of one recording racing each other would both take part 1's path.
-  for (const part of parts) {
+  for (const part of input.parts) {
     const name = part.label ? `${summary} transcript ${part.label}` : `${summary} transcript`;
-    const tPath = await freePath(ctx, `${dirForType('source')}/${fileSlug(name, date)}.md`);
-    const tFrontmatter: SourceNoteFrontmatter = {
+    const path = await freePath(ctx, `${dirForType('source')}/${fileSlug(name, date)}.md`);
+    const frontmatter: SourceNoteFrontmatter = {
       type: 'source',
       summary: part.label ? `Transcript (${part.label}) — ${summary}` : `Transcript — ${summary}`,
       processing: 'new',
       source: input.source ?? { system: 'transcript' },
       captured: date,
     };
-    const tNote = await ctx.vault.writeNote(tPath, tFrontmatter, part.body.trim());
-    ctx.index.reindex(tNote);
-    committed.push(tNote.path);
-    refs.push(`[[${tNote.slug}]]`);
+    const note = await ctx.vault.writeNote(path, frontmatter, part.body.trim());
+    ctx.index.reindex(note);
+    written.push(note);
   }
-
-  const frontmatter: MeetingFrontmatter = {
-    type: 'meeting',
-    summary,
-    date,
-    processing: 'new' as const,
-    ...(input.participants ? { participants: input.participants } : {}),
-    ...(input.source ? { source: input.source } : {}),
-    transcript: refs.length === 1 ? refs[0]! : refs,
-  };
-  const body = `## Notes\n\n## Summary\n\n_Not read yet. The summary arrives as an approval card._\n`;
-  const note = await ctx.vault.writeNote(path, frontmatter, body);
-  ctx.index.reindex(note);
-  committed.push(note.path);
-  await ctx.git.commitPaths(committed, `meeting: ${summary}`);
-  return note;
+  await ctx.git.commitPaths(
+    written.map((n) => n.path),
+    `transcript: ${summary}`,
+  );
+  return written;
 }
 
 export interface AttachTranscriptInput {
@@ -168,34 +209,26 @@ export async function attachTranscriptToMeeting(
   if (!meeting || meeting.type !== 'meeting') {
     throw new Error(`attach target is not a meeting note: ${input.meetingPath}`);
   }
-  const now = ctx.clock.now();
-  const date = now.slice(0, 10);
   const fm = meeting.frontmatter as Record<string, unknown>;
-  const summary = (typeof fm['summary'] === 'string' && fm['summary']) || titleFromSlug(meeting.slug);
+  const summary =
+    (typeof fm['summary'] === 'string' && fm['summary']) || titleFromSlug(meeting.slug);
 
   const parts: MeetingTranscriptPart[] =
     typeof input.body === 'string' ? [{ body: input.body }] : input.body;
-  const committed: string[] = [];
+  const written = await captureTranscripts(ctx, {
+    title: summary,
+    parts,
+    ...(input.source ? { source: input.source } : {}),
+  });
+  const committed = written.map((n) => n.path);
   let transcript = fm['transcript'] as string | string[] | undefined;
-  for (const part of parts) {
-    const name = part.label ? `${summary} transcript ${part.label}` : `${summary} transcript`;
-    const tPath = await freePath(ctx, `${dirForType('source')}/${fileSlug(name, date)}.md`);
-    const tFrontmatter: SourceNoteFrontmatter = {
-      type: 'source',
-      summary: part.label ? `Transcript (${part.label}) — ${summary}` : `Transcript — ${summary}`,
-      processing: 'new',
-      source: input.source ?? { system: 'transcript' },
-      captured: date,
-    };
-    const tNote = await ctx.vault.writeNote(tPath, tFrontmatter, part.body.trim());
-    ctx.index.reindex(tNote);
-    committed.push(tNote.path);
-    transcript = addTranscriptRef({ transcript }, `[[${tNote.slug}]]`);
+  for (const note of written) {
+    transcript = addTranscriptRef({ transcript }, `[[${note.slug}]]`);
   }
 
-  // Link the transcripts and flag the meeting for review. `processing: 'new'` is what
-  // makes the freshness spine mark dependents stale — same signal captureMeeting
-  // emits. Provenance and the machine-owned mirror fields ride through the spread.
+  // Link the transcripts and flag the meeting for review. `processing: 'new'` is
+  // what makes the freshness spine mark dependents stale. Provenance and the
+  // machine-owned mirror fields ride through the spread.
   const next = { ...meeting.frontmatter, transcript, processing: 'new' } as Frontmatter;
   const note = await ctx.vault.writeNote(input.meetingPath, next, meeting.body);
   ctx.index.reindex(note);
@@ -363,7 +396,9 @@ export async function renameNote(ctx: UseCaseContext, input: RenameNoteInput): P
   const frontmatter = { ...existing.frontmatter, title } as Frontmatter;
   // A summary that just mirrored the old title (or the "Untitled" placeholder)
   // was never authored — it follows the new title.
-  const oldTitle = ((prev['title'] as string | undefined) ?? titleFromSlug(existing.slug)).trim().toLowerCase();
+  const oldTitle = ((prev['title'] as string | undefined) ?? titleFromSlug(existing.slug))
+    .trim()
+    .toLowerCase();
   const summary = (prev['summary'] as string | undefined)?.trim().toLowerCase();
   if (!summary || summary === oldTitle || summary === 'untitled') {
     (frontmatter as Record<string, unknown>)['summary'] = title.slice(0, 200);
@@ -407,12 +442,19 @@ export async function saveFrontmatter(
 ): Promise<Note> {
   const existing = await ctx.vault.readNote(path);
   if (!existing) throw new Error(`there is no note called “${titleFromSlug(path)}”`);
+  // A note that failed its schema is in memory as a plain `note`, and the form
+  // above shows what it was given — so saving it back would quietly replace the
+  // file's own `type: meeting` with our reading of it. The file's word wins
+  // unless this save is a deliberate retype (see {@link typeToWrite}).
+  const declared = typeToWrite(existing, (frontmatter as Record<string, unknown>)['type']);
+  const next = { ...frontmatter, type: declared } as Frontmatter;
+  const prev = { ...existing.frontmatter, type: declared } as Frontmatter;
   // The mutability invariant (immutable meeting provenance, receipt-frozen
   // sessions, append-only decisions) is enforced HERE — every frontmatter
   // write path (IPC properties form, MCP) funnels through this use-case.
-  const check = checkFrontmatterMutation(existing.type, existing.frontmatter, frontmatter);
+  const check = checkFrontmatterMutation(existing.type, prev, next);
   if (!check.allowed) throw new Error(check.reason ?? 'immutable frontmatter field');
-  const note = await ctx.vault.writeNote(path, frontmatter, existing.body);
+  const note = await ctx.vault.writeNote(path, next, existing.body);
   ctx.index.reindex(note);
   await ctx.git.commitPaths([note.path], `properties: ${note.slug}`);
   return note;
@@ -436,7 +478,14 @@ export function getBacklinks(ctx: UseCaseContext, path: string): Backlink[] {
   const out: Backlink[] = [];
   for (const row of rows) {
     const from = ctx.index.get(row.fromPath);
-    if (from) out.push({ from, type: row.type, reversed: row.reversed, origin: row.origin, line: row.line });
+    if (from)
+      out.push({
+        from,
+        type: row.type,
+        reversed: row.reversed,
+        origin: row.origin,
+        line: row.line,
+      });
   }
   return out;
 }
@@ -449,5 +498,8 @@ export function resolveLink(ctx: UseCaseContext, target: string): string | null 
 
 function firstLine(text: string): string {
   const line = text.trim().split('\n', 1)[0] ?? '';
-  return line.replace(/^#+\s*/, '').replace(/^>\s*/, '').trim();
+  return line
+    .replace(/^#+\s*/, '')
+    .replace(/^>\s*/, '')
+    .trim();
 }

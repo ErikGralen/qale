@@ -41,16 +41,31 @@ function baked(value: string | undefined, envName: string): string {
 }
 
 export const posthogKey = (): string =>
-  baked(typeof __QALE_POSTHOG_KEY__ === 'string' ? __QALE_POSTHOG_KEY__ : undefined, 'QALE_POSTHOG_KEY');
+  baked(
+    typeof __QALE_POSTHOG_KEY__ === 'string' ? __QALE_POSTHOG_KEY__ : undefined,
+    'QALE_POSTHOG_KEY',
+  );
 
 export const posthogHost = (): string =>
-  baked(typeof __QALE_POSTHOG_HOST__ === 'string' ? __QALE_POSTHOG_HOST__ : undefined, 'QALE_POSTHOG_HOST');
+  baked(
+    typeof __QALE_POSTHOG_HOST__ === 'string' ? __QALE_POSTHOG_HOST__ : undefined,
+    'QALE_POSTHOG_HOST',
+  );
 
 export const posthogDev = (): string =>
-  baked(typeof __QALE_POSTHOG_DEV__ === 'string' ? __QALE_POSTHOG_DEV__ : undefined, 'QALE_POSTHOG_DEV');
+  baked(
+    typeof __QALE_POSTHOG_DEV__ === 'string' ? __QALE_POSTHOG_DEV__ : undefined,
+    'QALE_POSTHOG_DEV',
+  );
 
 export const googleClientId = (): string =>
-  baked(typeof __QALE_GOOGLE_CLIENT_ID__ === 'string' ? __QALE_GOOGLE_CLIENT_ID__ : undefined, 'QALE_GOOGLE_CLIENT_ID');
+  baked(
+    typeof __QALE_GOOGLE_CLIENT_ID__ === 'string' ? __QALE_GOOGLE_CLIENT_ID__ : undefined,
+    'QALE_GOOGLE_CLIENT_ID',
+  );
 
 export const googleClientSecret = (): string =>
-  baked(typeof __QALE_GOOGLE_CLIENT_SECRET__ === 'string' ? __QALE_GOOGLE_CLIENT_SECRET__ : undefined, 'QALE_GOOGLE_CLIENT_SECRET');
+  baked(
+    typeof __QALE_GOOGLE_CLIENT_SECRET__ === 'string' ? __QALE_GOOGLE_CLIENT_SECRET__ : undefined,
+    'QALE_GOOGLE_CLIENT_SECRET',
+  );

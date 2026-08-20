@@ -108,10 +108,22 @@ test('mirrors are raw layer: body immutable, only re-sync fields may change', ()
 
 test('outbound: legacy persisted records normalize to provider + generic actions', () => {
   const cases: [Record<string, unknown>, { provider: string; action: string }][] = [
-    [{ system: 'jira', action: 'create_issue', projectKey: 'PAY' }, { provider: 'jira', action: 'create_ticket' }],
-    [{ system: 'jira', action: 'add_comment', issueKey: 'PAY-142' }, { provider: 'jira', action: 'comment_ticket' }],
-    [{ system: 'confluence', action: 'update_page', pageId: '98342' }, { provider: 'confluence', action: 'update_page' }],
-    [{ system: 'message', action: 'message', audience: 'cs' }, { provider: 'message', action: 'send_message' }],
+    [
+      { system: 'jira', action: 'create_issue', projectKey: 'PAY' },
+      { provider: 'jira', action: 'create_ticket' },
+    ],
+    [
+      { system: 'jira', action: 'add_comment', issueKey: 'PAY-142' },
+      { provider: 'jira', action: 'comment_ticket' },
+    ],
+    [
+      { system: 'confluence', action: 'update_page', pageId: '98342' },
+      { provider: 'confluence', action: 'update_page' },
+    ],
+    [
+      { system: 'message', action: 'message', audience: 'cs' },
+      { provider: 'message', action: 'send_message' },
+    ],
   ];
   for (const [legacy, want] of cases) {
     const r = zOutboundPayload.safeParse({ ...legacy, body: 'b', rationale: 'r' });
@@ -140,13 +152,26 @@ test('outbound: new-shape payloads parse and are a fixpoint of the transform', (
 
 test('outbound: unknown actions and providers are rejected, not passed through', () => {
   assert.equal(
-    zOutboundPayload.safeParse({ provider: 'jira', action: 'transition_issue', body: 'b', rationale: 'r' }).success,
+    zOutboundPayload.safeParse({
+      provider: 'jira',
+      action: 'transition_issue',
+      body: 'b',
+      rationale: 'r',
+    }).success,
     false,
   );
   assert.equal(
-    zOutboundPayload.safeParse({ provider: 'linear', action: 'create_ticket', body: 'b', rationale: 'r' }).success,
+    zOutboundPayload.safeParse({
+      provider: 'linear',
+      action: 'create_ticket',
+      body: 'b',
+      rationale: 'r',
+    }).success,
     false,
   );
   // Missing provider entirely (malformed row) fails loudly.
-  assert.equal(zOutboundPayload.safeParse({ action: 'create_ticket', body: 'b', rationale: 'r' }).success, false);
+  assert.equal(
+    zOutboundPayload.safeParse({ action: 'create_ticket', body: 'b', rationale: 'r' }).success,
+    false,
+  );
 });

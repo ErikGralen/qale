@@ -1,10 +1,10 @@
 ---
-type: "insight"
-summary: "Ops teams need reports delivered on a schedule. Today a person is the delivery mechanism"
-tags: ["reporting"]
-evidence: ["[[meetings/2026-06-12-kranelund-checkin]]", "[[meetings/2026-07-13-cs-sync]]"]
-confidence: "med"
-theme: "[[themes/scheduled-reporting]]"
+type: 'insight'
+summary: 'Ops teams need reports delivered on a schedule. Today a person is the delivery mechanism'
+tags: ['reporting']
+evidence: ['[[meetings/2026-06-12-kranelund-checkin]]', '[[meetings/2026-07-13-cs-sync]]']
+confidence: 'med'
+theme: '[[themes/scheduled-reporting]]'
 ---
 
 The people who need the Monday numbers are depot managers and finance, and they don't open

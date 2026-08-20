@@ -1,10 +1,10 @@
 ---
-type: "insight"
-summary: "Treat the exports pilot date as a retention date at Kranelund: someone in ops may have taken an Insikt demo"
-tags: ["competition", "reporting"]
-evidence: ["[[meetings/2026-07-13-cs-sync]]"]
-confidence: "low"
-customer: "[[customers/kranelund-logistics]]"
+type: 'insight'
+summary: 'Treat the exports pilot date as a retention date at Kranelund: someone in ops may have taken an Insikt demo'
+tags: ['competition', 'reporting']
+evidence: ['[[meetings/2026-07-13-cs-sync]]']
+confidence: 'low'
+customer: '[[customers/kranelund-logistics]]'
 ---
 
 Treat the exports pilot date as a retention date at Kranelund, not just a delivery date. We

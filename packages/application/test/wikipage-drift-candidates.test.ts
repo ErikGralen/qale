@@ -37,7 +37,11 @@ function tavlaNotes() {
     type: 'decision',
     title: 'Defer SCIM to Q3',
     mtime: 500,
-    frontmatter: { standing: 'active', theme: '[[themes/enterprise-onboarding]]', date: '2026-04-15' },
+    frontmatter: {
+      standing: 'active',
+      theme: '[[themes/enterprise-onboarding]]',
+      date: '2026-04-15',
+    },
     links: ['themes/enterprise-onboarding'],
   });
   const workos = inote({
@@ -71,7 +75,10 @@ test('pairs a hub-linked wikipage with every active decision in the hub orbit', 
   );
   const scimPair = pairs[0]!;
   assert.equal(scimPair.page.externalId, '910231');
-  assert.equal(scimPair.key, 'page-drift:wikipages/enterprise-onboarding:decisions/2026-04-15-defer-scim-to-q3');
+  assert.equal(
+    scimPair.key,
+    'page-drift:wikipages/enterprise-onboarding:decisions/2026-04-15-defer-scim-to-q3',
+  );
   assert.equal(scimPair.via, 'themes/enterprise-onboarding.md');
 });
 
@@ -84,14 +91,21 @@ test('a superseded decision never heads a pair, but rides along as chain context
   const workosPair = pairs.find((p) => p.decision.slug.includes('adopt-workos'))!;
   assert.deepEqual(
     workosPair.chain.map((c) => `${c.slug}:${c.standing}`),
-    ['decisions/2026-02-10-use-firebase-auth:superseded', 'decisions/2026-05-20-adopt-workos:active'],
+    [
+      'decisions/2026-02-10-use-firebase-auth:superseded',
+      'decisions/2026-05-20-adopt-workos:active',
+    ],
   );
 });
 
 test('a wikipage nobody in the spine links is never a candidate', () => {
   const { page, scim } = tavlaNotes();
   // Only a plain note links the page — that is not a tracking gesture.
-  const note = inote({ path: 'notes/scratch.md', type: 'note', links: ['wikipages/enterprise-onboarding'] });
+  const note = inote({
+    path: 'notes/scratch.md',
+    type: 'note',
+    links: ['wikipages/enterprise-onboarding'],
+  });
   const notes = [page, scim, note];
   assert.deepEqual(selectDriftPairs(notes, resolverFor(notes)), []);
 });
@@ -114,7 +128,8 @@ test('revision moves with the page version and the decision mtime — and only w
   const { page, hub, scim, workos, firebase } = tavlaNotes();
   const notes = [page, hub, scim, workos, firebase];
   const rev = () =>
-    selectDriftPairs(notes, resolverFor(notes)).find((p) => p.decision.slug.includes('defer-scim'))!.revision;
+    selectDriftPairs(notes, resolverFor(notes)).find((p) => p.decision.slug.includes('defer-scim'))!
+      .revision;
 
   const before = rev();
   assert.equal(rev(), before); // stable when nothing changed

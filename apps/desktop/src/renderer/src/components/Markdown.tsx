@@ -1,4 +1,4 @@
-import { useMemo, type ComponentProps } from 'react';
+import { useMemo, useRef, useState, type ComponentProps } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { remarkPlugins } from '@qale/markdown';
 import { slugFromPath } from '@qale/domain';
@@ -23,6 +23,38 @@ function TypeChip({ label }: { label?: string }) {
     <span className="mr-1 rounded bg-muted px-1 align-[1px] text-2xs font-medium text-muted-foreground">
       {label}
     </span>
+  );
+}
+
+/**
+ * A fenced block is nearly always something to use somewhere else: a prompt to
+ * run, a command, a snippet to paste. Reading it off the screen and retyping it
+ * is the failure mode, so every block carries a copy button. The text comes off
+ * the rendered node rather than the AST, which keeps this indifferent to how the
+ * block was built.
+ */
+function CodeBlock({ node: _node, ...props }: ComponentProps<'pre'> & { node?: unknown }) {
+  const ref = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="group relative">
+      {/* Wrapped, not side-scrolled. These blocks are read and copied, and a
+          prompt whose right-hand half is off the edge of a 700px column reads
+          as a broken screen long before anyone thinks to drag it sideways. */}
+      <pre {...props} ref={ref} className="pr-14 whitespace-pre-wrap break-words" />
+      <button
+        type="button"
+        aria-label="Copy"
+        className="absolute top-1.5 right-1.5 rounded border border-border bg-background/90 px-1.5 py-0.5 text-2xs font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        onClick={() => {
+          void navigator.clipboard.writeText(ref.current?.textContent ?? '');
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        }}
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+    </div>
   );
 }
 
@@ -51,7 +83,10 @@ export function Markdown({
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         components={{
-          a: (props: ComponentProps<'a'> & { 'data-target'?: string; 'data-link-type'?: string }) => {
+          pre: CodeBlock,
+          a: (
+            props: ComponentProps<'a'> & { 'data-target'?: string; 'data-link-type'?: string },
+          ) => {
             // Wikilinks carry data-target; a relative href is a note path too
             // (e.g. a session answer's [label](decisions/x.md)). Both route in-app.
             const dataTarget = props['data-target'];
@@ -84,7 +119,11 @@ export function Markdown({
               return (
                 <>
                   <TypeChip label={linkType} />
-                  <ExternalRefChip target={target} alias={typeof props.children === 'string' ? props.children : undefined} onOpen={onOpenNote} />
+                  <ExternalRefChip
+                    target={target}
+                    alias={typeof props.children === 'string' ? props.children : undefined}
+                    onOpen={onOpenNote}
+                  />
                 </>
               );
             }

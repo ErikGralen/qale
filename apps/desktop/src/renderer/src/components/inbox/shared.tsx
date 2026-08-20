@@ -10,7 +10,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { OutboundPayloadDTO } from '@qale/ipc';
-import { normalizeLinkTarget } from '@qale/domain';
+import { normalizeLinkTarget, rsvpAnswer } from '@qale/domain';
 import { invoke } from '../../lib/ipc';
 import { isExternalRef } from '../../lib/connections';
 import { ExternalRefChip } from '../ExternalRef';
@@ -44,6 +44,18 @@ export function useQueueFocus<T extends HTMLElement>(focused: boolean) {
  *  the row suppresses the browser's own outline and never paints two. */
 export function rowFocusClass(focused: boolean): string {
   return `outline-none ring-1 transition-shadow ${focused ? 'ring-2 ring-ring/60' : 'ring-foreground/10'}`;
+}
+
+/**
+ * What to say when an accept is refused because the edit has nowhere to land.
+ * The keyboard path can approve a card without ever opening it, so this is often
+ * the only sentence about it the PM ever sees — it has to say what happened and
+ * where the way out is (opening the card, which carries "Fix this").
+ */
+export function staleAcceptMessage(reason?: 'unanchored' | 'duplicate'): string {
+  if (reason === 'duplicate')
+    return 'What this adds is already in the note word for word, so nothing was written. Open it to see.';
+  return "The text this edit was pointing at isn't in the note any more. Open it to send it back to be redone.";
 }
 
 const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
@@ -155,21 +167,34 @@ export function outboundAct(ob: OutboundPayloadDTO): OutboundAct {
 }
 
 /**
- * The outbound target as the PO says it: "Comment on PAY-142", "File a ticket
- * in PAY", "Update a page". The reference itself renders as a live chip in the
- * card (see CardItem's target line); this string is the plain-text fallback for
- * headlines and aria labels.
+ * The whole outbound act as the PO says it, in plain text: "Comment on PAY-142",
+ * "File a ticket in PAY: SCIM group-mapping", "Add “Erik x Daniel: sync” to your
+ * calendar". The reference itself renders as a live chip in the card (see
+ * CardItem's target line); this string is the flat fallback for headlines and
+ * aria labels, so it names the thing itself — a calendar event reading "Send an
+ * update" told the PO about a delivery that never happens.
  */
 export function outboundTarget(ob: OutboundPayloadDTO): string {
+  const named = (s: string): string => `“${s}”`;
   switch (ob.action) {
     case 'comment_ticket':
       return ob.issueKey ? `Comment on ${ob.issueKey}` : 'Comment on a ticket';
-    case 'create_ticket':
-      return `File a ${ob.issueType?.toLowerCase() ?? 'ticket'}${ob.projectKey ? ` in ${ob.projectKey}` : ''}`;
+    case 'create_ticket': {
+      const file = `File a ${ob.issueType?.toLowerCase() ?? 'ticket'}${ob.projectKey ? ` in ${ob.projectKey}` : ''}`;
+      return ob.title ? `${file}: ${ob.title}` : file;
+    }
     case 'update_page':
-      return ob.title ? `Update ${ob.title}` : 'Update a page';
-    default:
-      return `Send an update${ob.audience ? ` to ${ob.audience}` : ''}`;
+      return ob.title ? `Update ${named(ob.title)}` : 'Update a page';
+    case 'create_event':
+      return `Add ${ob.title ? named(ob.title) : 'an event'} to your calendar`;
+    case 'update_event':
+      return ob.title ? `Change ${named(ob.title)}` : 'Change an event';
+    case 'respond_to_event':
+      return `Reply ${rsvpAnswer(ob.responseStatus)} to ${ob.title ? named(ob.title) : 'an invite'}`;
+    default: {
+      const send = `Send an update${ob.audience ? ` to ${ob.audience}` : ''}`;
+      return ob.title ? `${send}: ${ob.title}` : send;
+    }
   }
 }
 
@@ -191,7 +216,7 @@ export function outboundReceipt(ob: OutboundPayloadDTO): string {
     case 'update_event':
       return `Changed ${ob.title ?? 'an event'} in your calendar`;
     case 'respond_to_event':
-      return `Replied ${ob.responseStatus ?? ''} to ${ob.title ?? 'an invite'}`.replace('  ', ' ');
+      return `Replied ${rsvpAnswer(ob.responseStatus)} to ${ob.title ?? 'an invite'}`;
     default:
       return `Sent an update${ob.audience ? ` to ${ob.audience}` : ''}`;
   }

@@ -9,7 +9,6 @@ import type {
   ConnectionProgress,
   FirstStepId,
   MeetingReviewAskDTO,
-  ModelInfoDTO,
   OpeningStepId,
   PathCheckDTO,
   SettingsDTO,
@@ -22,6 +21,7 @@ import {
   sessionFilesRoot,
   writeSessionBinary,
   writeSessionFile,
+  type SessionStatus,
 } from '@qale/agent';
 import {
   acceptProposal,
@@ -29,6 +29,7 @@ import {
   captureNote,
   captureNudgeState,
   captureTodo,
+  createNote,
   createPerson,
   dismissCaptureNudge,
   undoCaptureNudge,
@@ -52,12 +53,16 @@ import {
   listSkills,
   listAgentFiles,
   migrateRunnableFolders,
+  normalizeVaultFrontmatter,
   runnableEnabled,
   markMeetingReviewed,
   queryNotes,
   planLibrarianSweep,
-  markLibrarianHandled,
+  newContainerFinding,
   markLibrarianRun,
+  settleLibrarianPass,
+  vaultFingerprint,
+  type LibrarianPassResult,
   listProposals,
   previewProposal,
   rebuild,
@@ -68,11 +73,21 @@ import {
   saveAuthoredNote,
   saveFrontmatter,
   searchNotes,
+  setTodoDue,
   setTodoStatus,
   type UseCaseContext,
 } from '@qale/application';
-import { detectSyncedFolder } from '@qale/application';
-import { parseFrontmatter, readableAs, refToSlug, unreadableReason, type Frontmatter } from '@qale/domain';
+import { detectSyncedFolder, isWindowsPathTooDeep } from '@qale/application';
+import {
+  parseFrontmatter,
+  providerName,
+  readableAs,
+  refToSlug,
+  unreadableReason,
+  type Frontmatter,
+  type HandCreatableType,
+} from '@qale/domain';
+import { materialName } from './material-name.js';
 import { atlassianAuthSchema } from '@qale/connectors';
 import {
   ARRIVAL_AGENT_NAME,
@@ -84,6 +99,7 @@ import {
   MEETING_PREP_INSTRUCTION,
 } from '@qale/sessions';
 import { handle, pushEvent } from './ipc.js';
+import { failureReport, type PassFailure } from './log.js';
 import { appVersion, buildDiagnostics } from './diagnostics.js';
 import {
   CODE_RUN_FACTS,
@@ -96,7 +112,7 @@ import { setDockBadge } from './dock-badge.js';
 import { seedDemoProposal } from './dev-seed.js';
 import { Telemetry } from './telemetry.js';
 import { SettingsService } from './services/settings-service.js';
-import { verifyAnthropicKey } from './services/verify-key.js';
+import { verifyProviderKey } from './services/verify-key.js';
 import { GoogleOAuthService } from './services/google-oauth-service.js';
 import { VaultService } from './services/vault-service.js';
 import { makeOutbound } from './services/outbound-service.js';
@@ -117,12 +133,12 @@ import {
   vaultInfoToDTO,
 } from './dto.js';
 
-// Placeholder model list until pi's model runtime has a live key.
-const MODELS: ModelInfoDTO[] = [
-  { id: 'claude-opus-5', label: 'Claude Opus 5' },
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
-  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
-];
+/**
+ * Where the product understanding lives (docs/product-understanding.md U-1).
+ * The `_understanding` skill names these three notes; main only needs the
+ * prefix, to know when the first one has actually been kept.
+ */
+const UNDERSTANDING_PREFIX = 'notes/understanding-';
 
 /**
  * Any of the PO's own open commitments due today or already slipped. `owner`
@@ -212,7 +228,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     googleOAuth,
     (mirrorPaths) => {
       pushEvent(getWindow(), { channel: 'connections:changed' });
-      if (mirrorPaths.length > 0) pushEvent(getWindow(), { channel: 'vault:changed', paths: mirrorPaths });
+      if (mirrorPaths.length > 0)
+        pushEvent(getWindow(), { channel: 'vault:changed', paths: mirrorPaths });
     },
   );
 
@@ -227,6 +244,21 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   const agentLastChecked = new Map<string, number>();
 
   /**
+   * Librarian passes whose session is still running, by session id: what the
+   * run was handed, and the fingerprint the workspace had when it started
+   * (OW3). Nothing is stamped at this end any more — `agent.onStatus` settles
+   * the pass once the run is over and the question "did anything change" can
+   * finally be answered.
+   *
+   * It is also the second reentrancy guard. The interval that used to keep two
+   * librarian sessions apart is read off a stamp that is now written at the END
+   * of a pass, so while one is in flight there is nothing on the ledger to stop
+   * the next tick stacking another on top of it. A pass in this map is a pass
+   * still happening.
+   */
+  const librarianPasses = new Map<string, LibrarianPassResult & { containers: string[] }>();
+
+  /**
    * The librarian maintenance pass, ONE entry point for every trigger
    * (app-open catch-up AND the 5-minute tick). The in-flight guard is the
    * reentrancy fix: sync and the scan both take real time, and two overlapping
@@ -237,12 +269,32 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   let maintenanceInFlight: Promise<void> | null = null;
   const runMaintenance = (): Promise<void> => {
     if (maintenanceInFlight) return maintenanceInFlight;
+    // Collected, not logged one at a time: the pass reports every failure it
+    // hit in a single scrubbed line at the end (OW3). A tick that fires every
+    // five minutes is exactly where a row per failure becomes a wall of red,
+    // and the alternative anyone reaches for instead — swallowing them — leaves
+    // a workspace that quietly stopped being tidied with nothing to explain it.
+    const failures: PassFailure[] = [];
     maintenanceInFlight = (async () => {
-      await syncService.tick().catch((err) => {
-        console.error('[qale] sync tick failed:', err instanceof Error ? err.message : err);
-      });
+      await syncService
+        .tick()
+        .catch((err) => failures.push({ item: 'connector sync', reason: err }));
       const ctx = vaultService.context();
       if (!ctx) return;
+      // Frontmatter first, before anything reads a note (OW4). Deterministic
+      // machinery like the index.md maps below, and for the same reason: a
+      // session that opens a note with no `type` and no summary spends its first
+      // turn on the mess instead of on the work. What cannot be derived is left
+      // as a marked placeholder the same run picks up through a card.
+      const tidy = await normalizeVaultFrontmatter(ctx).catch((err) => {
+        console.error(
+          '[qale] frontmatter normalize failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return null;
+      });
+      if (tidy && tidy.written.length > 0)
+        pushEvent(getWindow(), { channel: 'vault:changed', paths: tidy.written });
       // The librarian's off switch (its file's `enabled` frontmatter) is
       // enforced HERE, before the scan is entered: off has to mean nothing is
       // even looked at, not a hidden pass whose output is filtered later. The
@@ -251,15 +303,35 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       // workspace would drip a failure notification every five minutes.
       // Connector sync and the index maps below aren't the agent's work, so
       // they keep running.
-      if (settings.getAnthropicKey() && (await runnableEnabled(ctx, 'librarian'))) {
+      // A librarian session from an earlier tick is still going: nothing on the
+      // ledger says so until it settles, so the guard has to be this map.
+      if (
+        librarianPasses.size === 0 &&
+        settings.getActiveKey() &&
+        (await runnableEnabled(ctx, 'librarian'))
+      ) {
         const now = Date.now();
         // The scan and the ledger, and nothing else: what a finding MEANS is
         // read out of the notes, which is the session's job below.
+        // A new space full of the PM's own work is a question the scan cannot
+        // see: it is a fact about the connected site, not about the notes. It
+        // rides in as an ordinary finding so the settle and quiet windows, the
+        // interval and the cap all apply to it unchanged
+        // (docs/product-understanding.md FL-3).
+        const offers = await syncService.containerOffers(now).catch((err) => {
+          failures.push({ item: 'new-space survey', reason: err });
+          return [];
+        });
         const work = await planLibrarianSweep(ctx, now, {
           settleMs: LIBRARIAN_SETTLE_MS,
           intervalMs: LIBRARIAN_SESSION_INTERVAL_MS,
+          extra: offers.map(newContainerFinding),
         });
         if (work) {
+          // Taken before the run, and the whole of OW3's first half: what the
+          // workspace said a moment ago, to be compared with what it says when
+          // the run is over.
+          const before = vaultFingerprint(ctx);
           // `unattended: true`, and NOT `scheduled: true`. The two are not
           // interchangeable here: a scheduled run refuses to park a question at
           // all (AskParking.park returns straight away), and asking when it
@@ -267,17 +339,38 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
           // buys the quiet ending a pass that found nothing needs
           // (settleQuietly reads scheduled OR unattended) and leaves ask_user
           // working. `trigger` is only the word the finished run reports.
+          //
+          // `deferAnnounce`: a pass announces itself on the first thing it
+          // actually works, never on starting. Which for a run that may turn
+          // out to have found nothing worth doing means not at all.
           const started = await fireSession(
             'librarian',
             buildKickoff({ skill: 'librarian', instruction: work.worklist }),
-            { trigger: 'scheduled', unattended: true, modelId: BACKGROUND_MODEL_ID },
+            {
+              trigger: 'scheduled',
+              unattended: true,
+              modelId: BACKGROUND_MODEL_ID,
+              deferAnnounce: true,
+            },
           );
-          // Stamped only once a session really started. A run blocked by a
-          // missing key must leave every finding for the next pass rather than
-          // marking them handled by something that never read them.
+          // Nothing is stamped here any more. A run that started still has to
+          // do something before it counts as having run, and only its own
+          // settle knows whether it did — see the librarian branch in
+          // `agent.onStatus`. A run that never started (no key, switched off
+          // between the check and the fire) leaves every finding where it was.
           if (started) {
-            markLibrarianHandled(ctx, work.findings, now);
-            markLibrarianRun(ctx, now);
+            librarianPasses.set(started.sessionId, {
+              findings: work.findings,
+              before,
+              cards: 0,
+              asked: false,
+              // Offered means asked: once the pass counts, the container is not
+              // raised again from here, whatever the PM ends up answering — a
+              // question they left sitting is still a question they were asked.
+              containers: work.findings
+                .filter((f) => f.kind === 'new-container')
+                .map((f) => f.key.slice('librarian:container:'.length)),
+            });
           }
         } else {
           // A look, not a run — the same distinction meeting-prep makes, and
@@ -287,15 +380,31 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       }
       // Refresh the OKF index.md orientation maps from the (now reconciled)
       // index. Idempotent — no write, no commit when nothing changed.
-      const idx = await generateIndexFiles(ctx);
-      if (idx.written.length > 0) pushEvent(getWindow(), { channel: 'vault:changed', paths: idx.written });
+      //
+      // A map it could not write throws, and the throw already names every
+      // refused map with its reason: "orientation is missing for a folder" is a
+      // diagnosis, and the alternative is retrieval quietly getting worse with
+      // nothing in the log to explain it. It joins the pass report rather than
+      // taking a line of its own — same rule as everything else here, and the
+      // reasons survive either way. Whatever DID land is already committed and
+      // the watcher pushes it.
+      const idx = await generateIndexFiles(ctx).catch((err) => {
+        failures.push({ item: 'orientation maps', reason: err });
+        return null;
+      });
+      if (idx && idx.written.length > 0)
+        pushEvent(getWindow(), { channel: 'vault:changed', paths: idx.written });
     })()
       .catch((err) => {
         // The tick must never surface as an unhandledRejection (it fires every
         // 5 minutes — offline would mean a steady drip of them).
-        console.error('[qale] maintenance pass failed:', err instanceof Error ? err.message : err);
+        failures.push({ item: 'the pass itself', reason: err });
       })
       .finally(() => {
+        // One line, at the end, already scrubbed — or no line at all when the
+        // pass went through clean (OW3).
+        const report = failureReport('librarian', failures);
+        if (report) console.error(report);
         maintenanceInFlight = null;
         // Also the badge's heartbeat: the 5-minute tick is what carries a todo
         // over midnight from "due tomorrow" into "due today".
@@ -321,11 +430,17 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       if (migrated.moved.length > 0)
         console.log(`[qale] moved ${migrated.moved.length / 2} skill/agent file(s) into folders`);
       for (const path of migrated.left)
-        console.warn(`[qale] ${path} differs from its folder copy — left both in place, nothing lost`);
+        console.warn(
+          `[qale] ${path} differs from its folder copy — left both in place, nothing lost`,
+        );
       // Seed what is missing, quietly update what nobody has touched, and take
       // retired files out of force. Anything the PM edited is left exactly as it
       // is; the Skills page offers those as a review (`skills:review`).
-      const pack = await ensureDefaultSkills(ctx, [...DEFAULT_SKILLS, ...DEFAULT_AGENTS], RETIRED_SKILL_FILES);
+      const pack = await ensureDefaultSkills(
+        ctx,
+        [...DEFAULT_SKILLS, ...DEFAULT_AGENTS],
+        RETIRED_SKILL_FILES,
+      );
       const touched = [...pack.seeded, ...pack.updated, ...pack.removed];
       if (touched.length > 0) pushEvent(getWindow(), { channel: 'vault:changed', paths: touched });
       // One-time migration: agent off switches used to live in settings; the
@@ -361,9 +476,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       vaultDir: ctx.vault.root(),
       userDataDir: app.getPath('userData'),
       modelId: s.modelId,
-      apiKey: settings.getAnthropicKey(),
+      provider: settings.getProvider(),
+      apiKey: settings.getActiveKey(),
       atlassian: settings.getAtlassian(),
+      language: settings.getLanguage(),
       trackExternal: (kind, externalId) => syncService.trackExternal(kind, externalId),
+      answerContainerOffer: (containerId, follow) =>
+        syncService.answerContainerOffer(containerId, follow),
     });
     syncService.reconfigure();
   };
@@ -387,12 +506,18 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       vaultPath: vaultService.currentVaultPath() ?? s.vaultPath,
       appVersion: appVersion(),
       modelId: s.modelId,
-      hasAnthropicKey: !!settings.getAnthropicKey(),
+      provider: settings.getProvider(),
+      hasApiKey: !!settings.getActiveKey(),
+      storedKeys: {
+        anthropic: !!settings.getKey('anthropic'),
+        google: !!settings.getKey('google'),
+      },
       hasAtlassianCreds: !!settings.getAtlassian(),
       secretsEncrypted: settings.secretsEncrypted(),
       // Read AFTER the two secret getters above — they are what trips the flag.
       secretsUnreadable: settings.secretsUnreadable(),
       schedules: s.schedules,
+      language: settings.getLanguage(),
       mcp: { enabled: s.mcpEnabled, port: s.mcpPort, token: s.mcpToken, running: mcp.isRunning() },
       identity: {
         name: settings.getIdentity().name,
@@ -423,15 +548,42 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   };
 
   /**
-   * What this install looks like as counts and flags — the same four facts the
-   * person record and `app.launched` both want, read live rather than stored.
+   * What this install looks like as counts and flags — the facts the person
+   * record and `app.launched` both want, read live rather than stored. All the
+   * counts leave as bands, and the skill count is the number of skills the PM
+   * wrote themselves (any skill or agent whose name is not one of ours), which
+   * answers "are people building on this" without ever carrying a name.
    */
-  const telemetryFacts = (): { hasKey: boolean; google: boolean; atlassian: boolean; notes: string } => ({
-    hasKey: !!settings.getAnthropicKey(),
-    google: connectionProgress('google-calendar') !== 'none',
-    atlassian: connectionProgress('atlassian') !== 'none',
-    notes: countBand(vaultService.context()?.index.count() ?? 0),
-  });
+  const telemetryFacts = (): {
+    hasKey: boolean;
+    google: boolean;
+    atlassian: boolean;
+    notes: string;
+    meetings: string;
+    people: string;
+    todos: string;
+    customSkills: string;
+  } => {
+    const index = vaultService.context()?.index;
+    const openTodos = index
+      ? index.listByType('todo').filter((n) => (n.lifecycle ?? 'open') === 'open').length
+      : 0;
+    const customSkills = index
+      ? [...index.listByType('skill'), ...index.listByType('agent')].filter(
+          (n) => skillWord(n.slug) === 'custom',
+        ).length
+      : 0;
+    return {
+      hasKey: !!settings.getActiveKey(),
+      google: connectionProgress('google-calendar') !== 'none',
+      atlassian: connectionProgress('atlassian') !== 'none',
+      notes: countBand(index?.count() ?? 0),
+      meetings: countBand(index?.listByType('meeting').length ?? 0),
+      people: countBand(index?.listByType('person').length ?? 0),
+      todos: countBand(openTodos),
+      customSkills: countBand(customSkills),
+    };
+  };
 
   /**
    * Hand the sender the consent switch and who this is (TEL-4, TEL-6).
@@ -512,7 +664,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         agentLastRun.get(a.name) ?? null,
         agentLastChecked.get(a.name) ?? null,
         CODE_RUN_FACTS[a.name],
-        !!settings.getAnthropicKey(),
+        !!settings.getActiveKey(),
         // The sweep's cards carry `sessionId: 'librarian'`; a fired session's
         // cards carry the agent's name as their `skill`.
         pending.filter((p) => p.skill === a.name || p.sessionId === a.name).length,
@@ -522,7 +674,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
 
   const notifyProposalsFor = (): void => {
     const ctx = vaultService.context();
-    if (ctx) pushEvent(getWindow(), { channel: 'proposals:changed', pendingCount: ctx.proposals.pendingCount() });
+    if (ctx)
+      pushEvent(getWindow(), {
+        channel: 'proposals:changed',
+        pendingCount: ctx.proposals.pendingCount(),
+      });
     refreshDockBadge();
   };
 
@@ -583,19 +739,34 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
        * call; the session it starts has to be that one.
        */
       sessionId?: string;
+      /**
+       * Hold the "last ran" stamp back; the caller sets it once the run has
+       * actually worked something (OW3). Background work announces itself on
+       * the first item it really does, never on starting — a tidy pass that
+       * turns out to have had nothing to do must not leave "ran just now"
+       * behind it on the agent's page.
+       */
+      deferAnnounce?: boolean;
     },
   ): Promise<{ sessionId: string } | null> => {
     const ctx = vaultService.context();
     if (!ctx) return null;
     // The off switch is a FLOOR, and this is its one door. Every path that
     // starts a session by name comes through here: the 5-minute sweep, a
-    // schedule's slot, "Run now" in Settings, an Inbox card's "Re-run session",
-    // a reaction to an approved decision. So switching a file off in the Agents
+    // schedule's slot, "Run now" in Settings, a reaction to an approved decision. So switching a file off in the Agents
     // view stops all of them, not only the ones whose author remembered to look.
     // (The sweeps check first as well: they do judgment work before firing
     // anything, and off has to mean that work never happens either.)
     if (!(await runnableEnabled(ctx, skill))) {
       console.log(`[qale] ${skill} is switched off, not firing it`);
+      return null;
+    }
+    // Same door, the other floor: while the provider is refusing everything for
+    // a reason only the PM can clear, the clock stops asking. A person's own
+    // request always goes through, and getting an answer to one is what lifts
+    // this (see `clockBlocked`).
+    if ((opts?.scheduled || opts?.trigger === 'scheduled') && clockBlocked) {
+      console.log(`[qale] not firing ${skill}: ${clockBlocked}`);
       return null;
     }
     try {
@@ -615,8 +786,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         () => {},
       );
       // A file agent's "last ran" stamp — same ledger the code watchers use, so
-      // the Agents view answers "when did this last fire" for both kinds.
-      agentLastRun.set(skill, Date.now());
+      // the Agents view answers "when did this last fire" for both kinds. A
+      // deferred one is stamped by the caller, at the far end of the run, and
+      // only if the run turned out to be one.
+      if (!opts?.deferAnnounce) agentLastRun.set(skill, Date.now());
       // Recorded against the id rather than threaded through the runtime: a
       // session that settles minutes later has to be able to say what started
       // it, and the runtime has no reason to carry that.
@@ -670,7 +843,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   const runBeforeMeetingSweep = async (): Promise<void> => {
     const ctx = vaultService.context();
     if (!ctx || !ctx.checks) return;
-    if (!settings.getAnthropicKey()) return;
+    if (!settings.getActiveKey()) return;
     // The file holds the instructions and the switch; the app holds the clock.
     // The switch is read before any meeting is looked at — off costs nothing.
     if (!(await runnableEnabled(ctx, 'meeting-prep'))) return;
@@ -681,12 +854,14 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const prepSkills = new Set(['before-meeting', 'meeting-prep']);
     for (const m of syncService.agenda(now, now + MEETING_PREP_LEAD_MS)) {
       if (m.cancelled || m.startMs <= now) continue; // upcoming, within the lead window
+      if (!m.withOthers) continue; // a solo block is a note, not a meeting to prep for
       const startIso = new Date(m.startMs).toISOString();
       if (checks.get(prepKey(m.notePath)) === startIso) continue;
       const note = await ctx.vault.readNote(m.notePath).catch(() => null);
       if (!note) continue;
       if (/^## Prep\b/m.test(note.body)) continue;
-      if (pending.some((p) => prepSkills.has(p.skill ?? '') && p.targetPath === m.notePath)) continue;
+      if (pending.some((p) => prepSkills.has(p.skill ?? '') && p.targetPath === m.notePath))
+        continue;
       // Written BEFORE the run is fired: the ledger also covers the async window
       // between firing and the card landing.
       checks.set(prepKey(m.notePath), startIso, now);
@@ -697,7 +872,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       // that DOES brief has proposed a card and can never count as silent.
       void fireSession(
         'meeting-prep',
-        buildKickoff({ skill: 'meeting-prep', targets: [m.notePath], instruction: MEETING_PREP_INSTRUCTION }),
+        buildKickoff({
+          skill: 'meeting-prep',
+          targets: [m.notePath],
+          instruction: MEETING_PREP_INSTRUCTION,
+        }),
         { scheduled: true },
       ).then((handle) => {
         if (handle) checks.set(selfPrepKey(handle.sessionId), provenance, Date.now());
@@ -712,6 +891,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   // must fill live, not after the turn settles.
   agent.onFilesChanged = (sessionId) => {
     pushEvent(getWindow(), { channel: 'session:files', sessionId });
+  };
+
+  // A conversation named itself a moment after its first message. Nothing else
+  // to do here: the name is already in the transcript, so the tab, the rail and
+  // the Sessions row all follow from this one push.
+  agent.onRename = ({ sessionId, title }) => {
+    pushEvent(getWindow(), { channel: 'session:renamed', sessionId, title });
   };
 
   const setParked = (key: string, waiting: boolean): void => {
@@ -737,6 +923,75 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     setParked(`ask:${sessionId}`, !!request && !request.offered);
   };
 
+  /**
+   * The last blocking refusal we interrupted for, and when. An account with no
+   * credit left fails every run, and the app fires plenty of them: a tidy pass, a
+   * meeting brief, whatever the PM types next. Notifying per failure would turn
+   * one billing problem into a stream of identical banners, so the same sentence
+   * is worth saying at most once every few hours.
+   */
+  let lastFaultNotice = { text: '', at: 0 };
+  const FAULT_NOTICE_QUIET_HOURS = 4 * 60 * 60 * 1000;
+
+  /**
+   * The provider is refusing everything for a reason only the PM can clear, so
+   * the clock stops asking. Set when a run settles on a blocking fault, cleared
+   * when they change the key or when anything gets an answer back.
+   *
+   * Backing off to the librarian's own half-hour interval was not enough on its
+   * own: an empty account fails a meeting sweep, a schedule's slot and a tidy
+   * pass alike, and every one of those is a request the PM is billed nothing for
+   * and told nothing about. Nothing they started is ever held back — a message
+   * they type, a "Run now" they click, material they drop — because retrying by
+   * hand is exactly how somebody checks whether they have fixed it, and the
+   * answer to that clears the latch.
+   */
+  let clockBlocked: string | null = null;
+  const unblockClock = (): void => {
+    if (!clockBlocked) return;
+    console.log('[qale] the model is answering again, so scheduled work resumes');
+    clockBlocked = null;
+  };
+
+  /**
+   * Say it out loud when the provider stops the app for a reason only the PM can
+   * clear: no credit, a key that is not accepted. Being overloaded or rate
+   * limited is not this — that fixes itself, and interrupting somebody over it
+   * teaches them to ignore the next one (`blocking` in api-errors.ts).
+   *
+   * A run they started, with the window in front of them, already says it in the
+   * chat. Everything else has no surface at all: a scheduled pass that dies at
+   * 3am used to leave nothing behind anywhere, so the first sign was a meeting
+   * brief that never appeared.
+   */
+  const notifyBlockingFault = (s: SessionStatus, trigger: string): void => {
+    if (!s.fault?.blocking) return;
+    const win = getWindow();
+    if (trigger === 'manual' && win?.isFocused()) return;
+    const now = Date.now();
+    if (
+      s.fault.text === lastFaultNotice.text &&
+      now - lastFaultNotice.at < FAULT_NOTICE_QUIET_HOURS
+    )
+      return;
+    lastFaultNotice = { text: s.fault.text, at: now };
+    console.error(`[qale] sessions are blocked: ${s.fault.text}`);
+    if (!Notification.isSupported()) return;
+    const notification = new Notification({
+      title: 'Qale has stopped: it cannot reach the model',
+      body: s.fault.text,
+      silent: true,
+    });
+    notification.on('click', () => {
+      const w = getWindow();
+      if (!w) return;
+      if (w.isMinimized()) w.restore();
+      w.show();
+      w.focus();
+    });
+    notification.show();
+  };
+
   // Session lifecycle → renderer rail/badges, plus an OS notification when a
   // background run finishes while the PO is elsewhere (nothing silent).
   agent.onStatus = (s) => {
@@ -752,6 +1007,52 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       sessionStarted.set(s.sessionId, Date.now());
     if (s.status !== 'settled') return;
     notifyProposalsFor();
+    // Whether the clock keeps asking, decided on the way past. A settle with no
+    // fault at all is the proof the latch was waiting for.
+    if (s.fault?.blocking) clockBlocked ??= s.fault.text;
+    else if (!s.fault) unblockClock();
+    // OW3's byte snapshot, and the end of the librarian pass this session was:
+    // do the work, THEN decide whether it counts as a run. A pass that left the
+    // workspace byte-identical with no card and no question writes nothing at
+    // all — no handled rows, no run stamp, no "last ran" — and is
+    // indistinguishable from not having run. (The receipt and the Sessions row
+    // are already gone by then: an unattended run that produced nothing settles
+    // quiet, and a quiet run files no receipt. A run the provider refused settles
+    // quiet too, and leaves the same nothing for a worse reason.)
+    const pass = librarianPasses.get(s.sessionId);
+    // Dropped whatever comes next, including the workspace having closed under
+    // the run: the map is also what stops the next tick starting a second
+    // librarian, and an entry nothing can ever settle would stop it for good.
+    librarianPasses.delete(s.sessionId);
+    if (pass && ctx) {
+      const at = Date.now();
+      const counted = settleLibrarianPass(
+        ctx,
+        {
+          ...pass,
+          cards: pendingCards,
+          asked: !!ctx.asks?.forSession(s.sessionId),
+          failed: !!s.fault,
+        },
+        at,
+      );
+      if (s.fault) {
+        // The one place this run leaves a trace, now that it leaves no row and
+        // no receipt. The notification below is for the PM; this is for whoever
+        // reads the log afterwards wondering why the workspace went quiet.
+        console.error(`[qale] the librarian pass could not run: ${s.fault.text}`);
+        agentLastChecked.set('librarian', at);
+      } else if (counted) {
+        // The first thing it actually worked has now been worked, so the pass
+        // may say so — and the containers it asked about stop being offered.
+        agentLastRun.set('librarian', at);
+        syncService.markContainersOffered(pass.containers);
+      } else {
+        // A look, not a run. Same word the tick uses for a tick that found
+        // nothing, because this is the same thing one step later.
+        agentLastChecked.set('librarian', at);
+      }
+    }
     const startedAt = sessionStarted.get(s.sessionId);
     sessionStarted.delete(s.sessionId);
     const trigger = sessionTrigger.get(s.sessionId) ?? 'manual';
@@ -763,12 +1064,16 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       trigger,
       // Omitted rather than guessed when the start is gone.
       ...(startedAt ? { duration: durationBand(Date.now() - startedAt) } : {}),
-      // `SessionStatus` reports "settled, any outcome" and nothing here can
-      // tell a run that failed from one that finished. False is the honest
-      // answer until the runtime carries the distinction.
-      failed: false,
+      // A provider refusal is the one failure the runtime names (api-errors.ts).
+      // Everything else it cannot yet tell from a finish, so false stays the
+      // honest answer for those.
+      failed: !!s.fault,
       cards: countBand(pendingCards),
+      // Whether it parked a question for the PM, read off the same signal the
+      // librarian ledger uses. The flag only, never the question.
+      asked: !!ctx?.asks?.forSession(s.sessionId),
     });
+    notifyBlockingFault(s, trigger);
     // Two First steps are "a session of this kind finished" (ONB-8): a meeting
     // prepped, and a question asked of the memory. Read off the signal that
     // already fires rather than a second ledger that could disagree with it.
@@ -795,7 +1100,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     if ((win && win.isFocused()) || !Notification.isSupported()) return;
     const notification = new Notification({
       title: s.title || 'Session ready',
-      body: pendingCards > 0 ? `${pendingCards} proposal${pendingCards === 1 ? '' : 's'} to review` : 'Finished',
+      body:
+        pendingCards > 0
+          ? `${pendingCards} proposal${pendingCards === 1 ? '' : 's'} to review`
+          : 'Finished',
       silent: true,
     });
     notification.on('click', () => {
@@ -846,10 +1154,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
             synced: info.syncedBy !== null,
           }
         : null,
-      keychainAvailable: settings.secretsEncrypted(),
-      hasApiKey: !!settings.getAnthropicKey(),
+      secretStore: settings.secretsEncrypted(),
+      hasApiKey: !!settings.getActiveKey(),
       // Read after the key getter above: that read is what trips the flag.
       secretsUnreadable: settings.secretsUnreadable(),
+      provider: providerName(settings.getProvider()),
       modelId: s.modelId,
       connectors: syncService.list().map((c) => ({ label: c.providerLabel, health: c.health })),
       mcp: { enabled: s.mcpEnabled, port: s.mcpPort, running: mcp.isRunning() },
@@ -865,12 +1174,31 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     reconfigureAgent();
     return settingsDTO();
   });
-  handle('settings:setAnthropicKey', async (key) => {
-    await settings.setAnthropicKey(key);
+  // The language is baked into every session's system prompt, so the runtime has
+  // to be told: live sessions are rebuilt on it, the way a model change is.
+  handle('settings:setLanguage', async (language) => {
+    await settings.setLanguage(language);
     reconfigureAgent();
     return settingsDTO();
   });
-  handle('settings:verifyAnthropicKey', (key) => verifyAnthropicKey(key));
+  handle('settings:setProviderKey', async (provider, key) => {
+    await settings.setKey(provider, key);
+    reconfigureAgent();
+    // They have done the thing the refusal asked for, or at least tried. Either
+    // way the next tick gets to find out for itself rather than staying stopped
+    // on the strength of an answer from before the fix.
+    unblockClock();
+    return settingsDTO();
+  });
+  handle('settings:setProvider', async (provider) => {
+    await settings.setProvider(provider);
+    reconfigureAgent();
+    // Same reason as a new key: the workspace now has a credential it did not
+    // have a moment ago, so a clock stopped on the old one gets to try again.
+    unblockClock();
+    return settingsDTO();
+  });
+  handle('settings:verifyProviderKey', (provider, key) => verifyProviderKey(provider, key));
   handle('settings:setAtlassian', async (creds) => {
     // An empty token is a disconnect, not a credential — a truthy-but-empty
     // record here would make every downstream `hasAtlassianCreds` check lie.
@@ -882,7 +1210,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const site = /^https?:\/\//i.test(creds.baseUrl.trim())
       ? creds.baseUrl.trim().replace(/\/+$/, '')
       : `https://${creds.baseUrl.trim().replace(/\/+$/, '')}`;
-    const parsed = atlassianAuthSchema.safeParse({ siteUrl: site, email: creds.email.trim(), apiToken: creds.token.trim() });
+    const parsed = atlassianAuthSchema.safeParse({
+      siteUrl: site,
+      email: creds.email.trim(),
+      apiToken: creds.token.trim(),
+    });
     if (!parsed.success) {
       throw new Error('Check the site URL, email and API token. One of them looks malformed.');
     }
@@ -907,7 +1239,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       // The provider ids are ours; anything the allowlist has no word for is
       // not reported at all rather than reported as something else.
       const provider =
-        providerId === 'google-calendar' ? 'google' : providerId === 'atlassian' ? 'atlassian' : null;
+        providerId === 'google-calendar'
+          ? 'google'
+          : providerId === 'atlassian'
+            ? 'atlassian'
+            : null;
       if (provider)
         telemetry.send('connection.added', {
           provider,
@@ -933,6 +1269,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     reconfigureAgent();
     pushSettings();
   });
+  handle('connections:recommend', (connectionId) => syncService.recommend(connectionId));
   handle('connections:setFollow', async (connectionId, containerId, followed) => {
     await syncService.setFollow(connectionId, containerId, followed);
     // Following the first container is what turns "connected" into a row that
@@ -1039,7 +1376,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // flips the switch or puts the First steps card away says nothing about
     // progress, so it sends nothing at all.
     if (patch.finished)
-      telemetry.send('onboarding.step', { step: settings.getOnboarding().step, action: 'finished' });
+      telemetry.send('onboarding.step', {
+        step: settings.getOnboarding().step,
+        action: 'finished',
+      });
     // Other windows and the Settings mirror of the telemetry switch follow the
     // same record; the caller gets the DTO back directly either way.
     pushSettings();
@@ -1048,13 +1388,16 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   // Which parts of the app get opened — the one thing only the renderer knows
   // (TEL-5). A view kind and nothing else; the allowlist refuses anything that
   // is not one of ours, so a wrong string is dropped rather than sent.
-  handle('telemetry:view', (view) => {
-    telemetry.send('view.opened', { view });
+  handle('telemetry:view', (view, tabs) => {
+    // Remembered first, so this event and every one after it carries the view
+    // as context, then reported as the open it is. The tab count arrives as a
+    // number and leaves as a band, like every count.
+    telemetry.setView(view);
+    telemetry.send('view.opened', { view, tabs: countBand(tabs) });
   });
-  handle('models:list', async () => {
-    const live = await agent.listModels();
-    return live.length > 0 ? live : MODELS;
-  });
+  // The chosen provider's shortlist. No key needed: the list is what the app
+  // OFFERS, so Settings can show it before anybody has pasted anything.
+  handle('models:list', () => agent.listModels());
 
   handle('vault:pick', async () => {
     const win = getWindow();
@@ -1084,6 +1427,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
    * it. The sync warning has to land before the scaffold, not after: telling
    * someone their workspace is in iCloud once we have already put files there
    * is a report, not a choice (ONB-4).
+   *
+   * The Windows path-length check rides along for the same reason, and it is the
+   * one warning here that can only be given at this moment: a folder too deep for
+   * MAX_PATH cannot be fixed later without moving the whole workspace, and the
+   * failure it causes never says "path too long" out loud. It arrives as one
+   * session that could not write a working file, or a note that saves everywhere
+   * except one folder.
    */
   const checkPath = async (path: string): Promise<PathCheckDTO> => {
     let exists = false;
@@ -1109,7 +1459,17 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     } catch {
       // An unresolvable parent just means we check the literal path.
     }
-    return { path, exists, hasNotes, syncedBy: detectSyncedFolder(canonical) };
+    // Measured on the literal path, not the canonical one: what Windows counts
+    // against MAX_PATH is the path the app actually opens files through, and
+    // resolving a junction can hand back a longer or shorter route than the one
+    // that will be used.
+    return {
+      path,
+      exists,
+      hasNotes,
+      syncedBy: detectSyncedFolder(canonical),
+      pathTooDeep: isWindowsPathTooDeep(path),
+    };
   };
 
   // ~/Documents is the folder people already keep documents in, and on a Mac
@@ -1118,6 +1478,20 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   // PM would never think to look for their own files.
   handle('vault:suggestPath', () => checkPath(join(app.getPath('documents'), 'Qale')));
   handle('vault:checkPath', (path) => checkPath(path));
+
+  // Only "where", never "open": the new-workspace form needs a parent folder
+  // while the current workspace stays open behind it.
+  handle('vault:pickLocation', async () => {
+    const win = getWindow();
+    const result = await dialog.showOpenDialog(win ?? undefined!, {
+      title: 'Where should the new workspace go?',
+      buttonLabel: 'Choose',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0]!;
+  });
+
   handle('vault:create', async (path) => {
     // Recursive and forgiving: an existing folder is opened as it stands (an
     // Obsidian vault arrives this way too), a missing one is made.
@@ -1151,17 +1525,27 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   });
   handle('note:save', async (input) => {
     const note = await saveAuthoredNote(vaultService.requireContext(), input.path, input.body);
-    // Editing the about-us skill is the step that teaches the biggest idea in
-    // the product: the instructions are files, and they are yours to change.
-    if (input.path.startsWith('skills/_about-us/')) {
-      markFirstStep('about-us', 'Told it about your product, and every session reads this now');
-    }
     return noteToDTO(note);
   });
   handle('note:saveFrontmatter', async (input) => {
     const parsed = parseFrontmatter(input.frontmatter);
     if (!parsed.ok || !parsed.data) throw new Error(`invalid frontmatter: ${parsed.error}`);
-    const note = await saveFrontmatter(vaultService.requireContext(), input.path, parsed.data as Frontmatter);
+    const note = await saveFrontmatter(
+      vaultService.requireContext(),
+      input.path,
+      parsed.data as Frontmatter,
+    );
+    return noteToDTO(note);
+  });
+  // A blank page of a chosen type, straight from the Memory shelves. The use
+  // case is the gate on which types that's allowed for — the renderer only
+  // offers four, and this refuses the rest whatever calls it.
+  handle('note:create', async (input) => {
+    const note = await createNote(vaultService.requireContext(), {
+      type: input.type as HandCreatableType,
+      ...(input.title ? { title: input.title } : {}),
+    });
+    pushEvent(getWindow(), { channel: 'vault:changed', paths: [note.path] });
     return noteToDTO(note);
   });
   handle('note:rename', async (input) => {
@@ -1177,7 +1561,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   );
   handle('note:resolveLink', (target) => resolveLink(vaultService.requireContext(), target));
   handle('note:history', (path) => getNoteHistory(vaultService.requireContext(), path));
-  handle('note:versionAt', (path, hash) => getNoteVersion(vaultService.requireContext(), path, hash));
+  handle('note:versionAt', (path, hash) =>
+    getNoteVersion(vaultService.requireContext(), path, hash),
+  );
   handle('note:restoreVersion', async (input) => {
     const note = await restoreNoteVersion(vaultService.requireContext(), input);
     return noteToDTO(note);
@@ -1206,6 +1592,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   });
   handle('todos:setStatus', async (path, status) => {
     const note = await setTodoStatus(vaultService.requireContext(), path, status);
+    refreshDockBadge();
+    return noteToDTO(note);
+  });
+  handle('todos:setDue', async (path, due) => {
+    const note = await setTodoDue(vaultService.requireContext(), path, due);
     refreshDockBadge();
     return noteToDTO(note);
   });
@@ -1309,7 +1700,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         continue;
       }
       if (item.dataBase64) {
-        out.push({ name: item.name ?? 'image.png', data: new Uint8Array(Buffer.from(item.dataBase64, 'base64')) });
+        out.push({
+          name: item.name ?? 'image.png',
+          data: new Uint8Array(Buffer.from(item.dataBase64, 'base64')),
+        });
         continue;
       }
       if (item.text?.trim()) {
@@ -1343,23 +1737,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     };
   });
 
-  /**
-   * A file name safe to write inside the session folder, and unique within it.
-   * The original name is worth keeping — it is often the only date and title the
-   * material carries — so this only takes out what a path cannot hold.
-   */
-  const materialName = (raw: string, taken: Set<string>): string => {
-    const base = (raw.split(/[\\/]/).pop() ?? 'material').replace(/[^\p{L}\p{N}._ -]+/gu, '-').slice(0, 120);
-    let name = base || 'material';
-    let n = 2;
-    while (taken.has(name.toLowerCase())) {
-      name = base.replace(/(\.[a-z0-9]+)$|$/i, `-${n}$1`);
-      n++;
-    }
-    taken.add(name.toLowerCase());
-    return name;
-  };
-
   handle('arrival:ingest', async (items, instruction) => {
     const ctx = vaultService.requireContext();
     const landed = await resolveItems(items);
@@ -1378,7 +1755,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       const file = `material/${name}`;
       if (piece.data) await writeSessionBinary(root, file, piece.data);
       else await writeSessionFile(root, file, piece.text ?? '');
-      written.push({ file, original: piece.name, bytes: piece.data?.byteLength ?? (piece.text ?? '').length });
+      written.push({
+        file,
+        original: piece.name,
+        bytes: piece.data?.byteLength ?? (piece.text ?? '').length,
+      });
     }
 
     /**
@@ -1390,7 +1771,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
      */
     const candidates = syncService
       .meetingCandidates(Date.now(), 7 * 24 * 60 * 60 * 1000, 24 * 60 * 60 * 1000)
-      .map((m) => `- ${m.notePath} — “${m.title}”, ${new Date(m.startMs).toISOString().slice(0, 16).replace('T', ' ')}`);
+      .map(
+        (m) =>
+          `- ${m.notePath} — “${m.title}”, ${new Date(m.startMs).toISOString().slice(0, 16).replace('T', ' ')}`,
+      );
 
     // A manifest, so the agent starts from a list rather than a directory walk,
     // and so the PM opening the session folder tomorrow can see what arrived.
@@ -1401,7 +1785,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       ``,
       ...written.map((w) => `- \`${w.file}\` — dropped as "${w.original}", ${w.bytes} bytes`),
       ...(refused.length
-        ? ['', 'Could not be read, so they are not here:', ...refused.map((r) => `- ${r.name}: ${r.error}`)]
+        ? [
+            '',
+            'Could not be read, so they are not here:',
+            ...refused.map((r) => `- ${r.name}: ${r.error}`),
+          ]
         : []),
       ...(instruction?.trim() ? ['', '## What the PM asked for', '', instruction.trim()] : []),
       ...(candidates.length
@@ -1416,11 +1804,15 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
           ]
         : []),
     ].join('\n');
-    await writeSessionFile(root, 'arrival.md', `${manifest}\n`);
+    await writeSessionFile(root, 'input.md', `${manifest}\n`);
     pushEvent(getWindow(), { channel: 'session:files', sessionId });
 
     // One event per drop, saying how it arrived and nothing about what is in it.
-    const kind = good.some((g) => g.data) ? 'image' : items.some((i) => i.text && !i.path) ? 'text' : 'file';
+    const kind = good.some((g) => g.data)
+      ? 'image'
+      : items.some((i) => i.text && !i.path)
+        ? 'text'
+        : 'file';
     telemetry.send('material.added', {
       kind,
       count: countBand(written.length),
@@ -1428,15 +1820,23 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     });
 
     if (written.length === 0) {
-      return { sessionId, landed: 0, refused, started: false, reason: 'Nothing in that batch could be read.' };
+      return {
+        sessionId,
+        landed: 0,
+        refused,
+        started: false,
+        reason: 'Nothing in that batch could be read.',
+      };
     }
 
     const prompt = buildKickoff({
       skill: ARRIVAL_AGENT_NAME,
       instruction: [
         `${written.length} piece${written.length === 1 ? '' : 's'} of material just landed in your session folder, unfiled.`,
-        `Read \`arrival.md\` for the list, work out what each thing is, file it, and read what is worth reading.`,
-        instruction?.trim() ? `What I asked for when I handed them over, which takes precedence: ${instruction.trim()}` : '',
+        `Read \`input.md\` for the list, work out what each thing is, file it, and read what is worth reading.`,
+        instruction?.trim()
+          ? `What I asked for when I handed them over, which takes precedence: ${instruction.trim()}`
+          : '',
       ]
         .filter(Boolean)
         .join(' '),
@@ -1452,9 +1852,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         landed: written.length,
         refused,
         started: false,
-        reason: settings.getAnthropicKey()
+        reason: settings.getActiveKey()
           ? 'Handle new material is switched off, so nothing is reading these yet.'
-          : 'Set an Anthropic API key in Settings and these will be read.',
+          : `Set a ${providerName(settings.getProvider())} API key in Settings and these will be read.`,
       };
     }
 
@@ -1564,6 +1964,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   };
   handle('proposals:accept', async (id, edited) => {
     const card = cardFacts(id);
+    // Read before the accept: the record is resolved by the time it returns.
+    const target = vaultService.context()?.proposals.get(id)?.targetPath ?? null;
     const result = await acceptProposal(vaultService.requireContext(), id, edited);
     if (result.ok) {
       // A card handed back with `edited` is one they changed before keeping.
@@ -1576,7 +1978,17 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     }
     const review = await afterCardResolved(id);
     notifyProposalsFor();
-    if (result.ok) markFirstStep('proposal', 'Approved your first card, and it went into the memory');
+    if (result.ok)
+      markFirstStep('proposal', 'Approved your first card, and it went into the memory');
+    // Keeping the first thing the interview drafted is what "tell it about your
+    // product" now means (docs/product-understanding.md U-4). The step is the
+    // approval, not a file save: you talk, it drafts, you approve.
+    if (result.ok && target?.startsWith(UNDERSTANDING_PREFIX)) {
+      markFirstStep(
+        'understanding',
+        'Told it about your product, and every session reads this now',
+      );
+    }
     return review ? { ...result, review } : result;
   });
   handle('proposals:reject', async (id) => {
@@ -1592,7 +2004,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     markFirstStep('proposal', 'Passed on your first card, so nothing was written');
     return review ? { ...result, review } : result;
   });
-  handle('meeting:markReviewed', (path) => markMeetingReviewed(vaultService.requireContext(), path));
+  handle('meeting:markReviewed', (path) =>
+    markMeetingReviewed(vaultService.requireContext(), path),
+  );
 
   // The capture nudge's memory. Reads are cheap and local; the renderer holds
   // the derivation and only asks here what the PO already answered.
@@ -1613,7 +2027,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('agent:abort', (streamId) => agent.abort(streamId, vaultService.context() ?? undefined));
 
   handle('chats:list', () => agent.listChats());
-  handle('chats:history', (sessionId) => ({ id: sessionId, messages: agent.chatHistory(sessionId) }));
+  handle('chats:history', (sessionId) => ({
+    id: sessionId,
+    messages: agent.chatHistory(sessionId),
+  }));
   handle('chats:delete', async (sessionId) => {
     await agent.deleteChat(sessionId, vaultService.context() ?? undefined);
     return { ok: true };
@@ -1638,9 +2055,14 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // The context and the emitter are what let an answer reach a question whose
     // turn died with the last app run: without a live promise to resolve, the
     // session is reopened and the answer replayed into it (QM ticket 9).
-    await agent.resolveAsk(requestId, { answers }, vaultService.context() ?? undefined, (streamId, chunk) => {
-      pushEvent(getWindow(), { channel: 'agent:event', streamId, chunk });
-    });
+    await agent.resolveAsk(
+      requestId,
+      { answers },
+      vaultService.context() ?? undefined,
+      (streamId, chunk) => {
+        pushEvent(getWindow(), { channel: 'agent:event', streamId, chunk });
+      },
+    );
     return { ok: true };
   });
 

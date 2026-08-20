@@ -86,7 +86,11 @@ test('an update is identified by its rationale, having no title of its own', () 
     {
       kind: 'update',
       targetPath: 'customers/nordkap.md',
-      payload: { path: 'customers/nordkap.md', patch: [{ search: 'x', replace: 'y' }], rationale: 'record the SSO rollout dates they were given' },
+      payload: {
+        path: 'customers/nordkap.md',
+        patch: [{ search: 'x', replace: 'y' }],
+        rationale: 'record the SSO rollout dates they were given',
+      },
       rationale: 'record the SSO rollout dates they were given',
     },
   ]);
@@ -109,7 +113,12 @@ test('an update is identified by its rationale, having no title of its own', () 
 
 test('an empty queue never matches', () => {
   assert.equal(
-    duplicatePending(worldWith([]), { kind: 'note', targetPath: 'todos/a.md', noteType: 'todo', title: 'Anything' }),
+    duplicatePending(worldWith([]), {
+      kind: 'note',
+      targetPath: 'todos/a.md',
+      noteType: 'todo',
+      title: 'Anything',
+    }),
     null,
   );
 });

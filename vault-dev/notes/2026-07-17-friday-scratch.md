@@ -1,6 +1,6 @@
 ---
-type: "note"
-summary: "Friday scratch pad. Raw jottings from calls and standup, not tidied up yet"
+type: 'note'
+summary: 'Friday scratch pad. Raw jottings from calls and standup, not tidied up yet'
 ---
 
 sara called re sso rollout, still chasing the runbook i said id send tuesday. promised her monday, no more slipping. she thinks scim is "early sept", pretty sure we only ever said september. clarify before it becomes a promise

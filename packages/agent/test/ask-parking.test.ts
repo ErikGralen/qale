@@ -93,7 +93,9 @@ test('the id comes from the session and the questions, so re-asking is one quest
   // Same questions, different conversation: two questions, two cards.
   assert.notEqual(askRequestId('s1', p), askRequestId('s2', p));
   const other = planAsk({
-    questions: [{ header: 'Scope', question: 'How wide?', options: [{ label: 'A' }, { label: 'B' }] }],
+    questions: [
+      { header: 'Scope', question: 'How wide?', options: [{ label: 'A' }, { label: 'B' }] },
+    ],
   });
   if ('error' in other) throw new Error(other.error);
   assert.notEqual(askRequestId('s1', p), askRequestId('s1', other.plan));
@@ -130,7 +132,10 @@ test('a question asked before a quit is still there after the relaunch, and answ
   // from the row, never re-derived.
   assert.equal(recovered!.questions[0]!.header, 'Whose');
   assert.equal(recovered!.questions[0]!.options.length, 2);
-  assert.deepEqual(after.all(store).map((r) => r.id), [request.id]);
+  assert.deepEqual(
+    after.all(store).map((r) => r.id),
+    [request.id],
+  );
 
   // Answering it now has no promise to resolve, so it resumes the session.
   const replayed: { asked: StoredAsk; decision: AskDecision }[] = [];

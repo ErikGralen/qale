@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Button, Input } from '@qale/ui';
-import { BookOpen, Cable, CalendarDays, Check, KeyRound, Plus, Ticket } from 'lucide-react';
+import { BookOpen, CalendarDays, Check, KeyRound, Plus, Ticket } from 'lucide-react';
+import { FollowPicker } from '../components/FollowPicker';
+import { Setting } from '../components/Setting';
 import { relativeTime } from '../lib/dates';
 import {
   connections,
@@ -47,17 +49,10 @@ export function ConnectionsSettings() {
   }, []);
 
   return (
-    <section className="space-y-2">
-      <div className="flex items-center gap-2">
-        <Cable className="size-4 text-muted-foreground" />
-        <h2 className="text-base font-semibold">Connections</h2>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        Where your delivery truth lives: tickets and pages from followed projects stay readable
-        here, and anything you link from a note keeps itself up to date. Reading never asks;
-        writing always goes through an approval card.
-      </p>
-
+    <Setting
+      title="Connected systems"
+      description="Where your delivery truth lives: tickets and pages from followed projects stay readable here, and anything you link from a note keeps itself up to date. Reading never asks, and writing always goes through an approval card. What comes in becomes notes like any other, so it goes to your model provider with the rest when the agent works."
+    >
       {loadFailed ? (
         <p className="text-sm text-muted-foreground">
           Couldn’t load connections.{' '}
@@ -92,7 +87,7 @@ export function ConnectionsSettings() {
           )}
         </>
       )}
-    </section>
+    </Setting>
   );
 }
 
@@ -119,6 +114,16 @@ function ConnectionCard({
   const [busyContainer, setBusyContainer] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  /**
+   * A connection reading nothing is an unfinished connection, so it opens on
+   * the same recommendation card the opening uses (FL-2) rather than on a flat
+   * list of everything on the site. Once something is followed this settles
+   * back into the per-row toggles, which is the right surface for maintenance:
+   * one box, one immediate effect, no confirm to hunt for.
+   */
+  const [picking, setPicking] = useState(
+    () => conn.containers.length > 0 && !conn.containers.some((c) => c.followed),
+  );
 
   const toggleFollow = async (c: ConnectionContainerDTO) => {
     setBusyContainer(c.id);
@@ -151,7 +156,9 @@ function ConnectionCard({
         <span className="text-sm text-muted-foreground">{conn.siteLabel}</span>
         {conn.identity && <span className="text-xs text-muted-foreground">as {conn.identity}</span>}
         <span className="ml-auto flex items-baseline gap-2 text-xs text-muted-foreground tabular-nums">
-          {conn.health === 'ok' && conn.lastSync !== null && `synced ${relativeTime(conn.lastSync)}`}
+          {conn.health === 'ok' &&
+            conn.lastSync !== null &&
+            `synced ${relativeTime(conn.lastSync)}`}
           {conn.health === 'unreachable' && 'offline, showing local data'}
           {conn.health !== 'auth-expired' && (
             <button
@@ -170,33 +177,37 @@ function ConnectionCard({
         <TokenRenewal conn={conn} provider={provider} onChanged={onChanged} />
       )}
 
-      <ul className="mt-2 flex flex-col divide-y divide-border/60">
-        {conn.containers.map((c) => (
-          <li key={c.id} className="flex items-center gap-2.5 py-1.5">
-            {c.kind === 'ticket' ? (
-              <Ticket className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-            ) : c.kind === 'calendar' ? (
-              <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-            ) : (
-              <BookOpen className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-            )}
-            <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
-            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-              {containerHealth(c, conn.health)}
-            </span>
-            <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={c.followed}
-                disabled={busyContainer === c.id}
-                onChange={() => void toggleFollow(c)}
-                aria-label={`Follow ${c.name}`}
-              />
-              Follow
-            </label>
-          </li>
-        ))}
-      </ul>
+      {picking ? (
+        <FollowPicker conn={conn} onChanged={onChanged} onDone={() => setPicking(false)} />
+      ) : (
+        <ul className="mt-2 flex flex-col divide-y divide-border/60">
+          {conn.containers.map((c) => (
+            <li key={c.id} className="flex items-center gap-2.5 py-1.5">
+              {c.kind === 'ticket' ? (
+                <Ticket className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              ) : c.kind === 'calendar' ? (
+                <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              ) : (
+                <BookOpen className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              )}
+              <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                {containerHealth(c, conn.health)}
+              </span>
+              <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={c.followed}
+                  disabled={busyContainer === c.id}
+                  onChange={() => void toggleFollow(c)}
+                  aria-label={`Follow ${c.name}`}
+                />
+                Follow
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
       {conn.providerId === 'google-calendar' ? (
         <p className="mt-1.5 text-xs text-muted-foreground">
           Meetings on followed calendars appear as meeting notes by themselves: dates, people and
@@ -210,6 +221,14 @@ function ConnectionCard({
       )}
 
       <div className="mt-2 flex items-center justify-end gap-2">
+        {!picking && conn.containers.length > 0 && (
+          <button
+            className="mr-auto rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            onClick={() => setPicking(true)}
+          >
+            Change what it reads
+          </button>
+        )}
         {confirmRemove ? (
           <>
             <span className="text-xs text-destructive">
@@ -234,7 +253,12 @@ function ConnectionCard({
             >
               {removing ? 'Disconnecting…' : 'Disconnect'}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setConfirmRemove(false)} disabled={removing}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmRemove(false)}
+              disabled={removing}
+            >
               Cancel
             </Button>
           </>
@@ -309,7 +333,13 @@ function TokenRenewal({
           />
         ))}
         <Button size="sm" onClick={() => void submit()} disabled={oauth ? busy : !ready}>
-          {busy ? (oauth ? 'Waiting for the browser…' : 'Checking…') : oauth ? 'Reconnect' : 'Update'}
+          {busy
+            ? oauth
+              ? 'Waiting for the browser…'
+              : 'Checking…'
+            : oauth
+              ? 'Reconnect'
+              : 'Update'}
         </Button>
         {oauth && busy && (
           <Button
@@ -339,7 +369,9 @@ function ConnectForm({
   onDone: () => void;
   onCancel?: () => void;
 }) {
-  const [providerId, setProviderId] = useState<string | null>(providers.length === 1 ? providers[0]!.id : null);
+  const [providerId, setProviderId] = useState<string | null>(
+    providers.length === 1 ? providers[0]!.id : null,
+  );
   const provider = providers.find((p) => p.id === (providerId ?? providers[0]?.id));
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);

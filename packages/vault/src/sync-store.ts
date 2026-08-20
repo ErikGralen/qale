@@ -22,6 +22,19 @@ import type { EventAttendee, EventStatus } from '@qale/domain';
  *   syncs, and `[[INFRA-88]]` in a note does nothing unless you follow INFRA.
  */
 
+/**
+ * Where a container sits in the drift check (docs/product-understanding.md
+ * FL-3). Null is the ordinary state: nothing to say about it.
+ *
+ * - `pending` — new since the last check and full of this person's own work, so
+ *   worth one quiet question. Waiting for the librarian to carry it.
+ * - `offered` — the question has been asked; never asked again from here.
+ * - `declined` — they said no. That answer is permanent, the same posture the
+ *   capture-nudge dismissal takes: a "not this one" that comes back next month
+ *   is not a memory, it is a nag.
+ */
+export type ContainerOfferState = 'pending' | 'offered' | 'declined';
+
 export interface SyncContainerRow {
   provider: string;
   kind: 'ticket' | 'wikipage' | 'calendar';
@@ -31,6 +44,9 @@ export interface SyncContainerRow {
   highWater: string | null;
   /** ms epoch of the last successful pull; null before the first. */
   lastSync: number | null;
+  /** ms epoch of the first catalogue refresh that listed it. */
+  firstSeen: number | null;
+  offerState: ContainerOfferState | null;
 }
 
 export interface SyncItemRow {
@@ -71,6 +87,12 @@ export interface SyncTrackedRow {
   source: TrackSource;
   addedAt: number;
 }
+
+/** Same idempotent ALTER TABLE treatment, for the container catalogue. */
+const SYNC_CONTAINER_MIGRATIONS: [column: string, decl: string][] = [
+  ['first_seen', 'INTEGER'],
+  ['offer_state', 'TEXT'],
+];
 
 /** Columns added after first release — applied via idempotent ALTER TABLE so
  *  existing per-vault app.db files upgrade in place. */
@@ -127,37 +149,66 @@ export class SyncStore {
         PRIMARY KEY (provider, external_id)
       );
       CREATE INDEX IF NOT EXISTS sync_tracked_source ON sync_tracked (provider, source);
+      CREATE TABLE IF NOT EXISTS sync_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
     `);
-    const have = new Set(
-      (this.db.prepare('PRAGMA table_info(sync_items)').all() as { name: string }[]).map((c) => c.name),
-    );
-    for (const [column, decl] of SYNC_ITEM_MIGRATIONS) {
-      if (!have.has(column)) this.db.exec(`ALTER TABLE sync_items ADD COLUMN ${column} ${decl}`);
+    for (const [table, migrations] of [
+      ['sync_items', SYNC_ITEM_MIGRATIONS],
+      ['sync_containers', SYNC_CONTAINER_MIGRATIONS],
+    ] as const) {
+      const have = new Set(
+        (this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
+          (c) => c.name,
+        ),
+      );
+      for (const [column, decl] of migrations) {
+        if (!have.has(column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+      }
     }
   }
 
   listContainers(provider?: string): SyncContainerRow[] {
     const rows = provider
-      ? this.db.prepare('SELECT * FROM sync_containers WHERE provider = ? ORDER BY kind, name').all(provider)
+      ? this.db
+          .prepare('SELECT * FROM sync_containers WHERE provider = ? ORDER BY kind, name')
+          .all(provider)
       : this.db.prepare('SELECT * FROM sync_containers ORDER BY provider, kind, name').all();
     return (rows as RawContainer[]).map(toContainerRow);
   }
 
   followedContainers(provider: string): SyncContainerRow[] {
     const rows = this.db
-      .prepare('SELECT * FROM sync_containers WHERE provider = ? AND followed = 1 ORDER BY kind, name')
+      .prepare(
+        'SELECT * FROM sync_containers WHERE provider = ? AND followed = 1 ORDER BY kind, name',
+      )
       .all(provider);
     return (rows as RawContainer[]).map(toContainerRow);
   }
 
-  /** Remember a listed container (name refresh); never clobbers follow/mark. */
-  upsertContainer(provider: string, kind: string, containerId: string, name: string): void {
+  /**
+   * Remember a listed container (name refresh); never clobbers follow/mark.
+   * `first_seen` is stamped on insert and never touched again — it is what lets
+   * the drift check tell a space that appeared this week from the thirty-nine
+   * that were there when the token was pasted.
+   */
+  upsertContainer(
+    provider: string,
+    kind: string,
+    containerId: string,
+    name: string,
+    now = Date.now(),
+  ): void {
     this.db
       .prepare(
-        `INSERT INTO sync_containers (provider, kind, container_id, name) VALUES (?, ?, ?, ?)
-         ON CONFLICT(provider, container_id) DO UPDATE SET name = excluded.name, kind = excluded.kind`,
+        `INSERT INTO sync_containers (provider, kind, container_id, name, first_seen) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(provider, container_id) DO UPDATE SET
+           name = excluded.name,
+           kind = excluded.kind,
+           first_seen = COALESCE(sync_containers.first_seen, excluded.first_seen)`,
       )
-      .run(provider, kind, containerId, name);
+      .run(provider, kind, containerId, name, now);
   }
 
   setFollow(provider: string, containerId: string, followed: boolean): void {
@@ -166,9 +217,56 @@ export class SyncStore {
       .run(followed ? 1 : 0, provider, containerId);
   }
 
+  /**
+   * Where this container sits in the drift check (FL-3). Following one clears
+   * the offer state to null: the question has been answered by the follow, and
+   * a row that is followed AND remembered as declined would only ever confuse
+   * whatever reads it next.
+   */
+  setOfferState(provider: string, containerId: string, state: ContainerOfferState | null): void {
+    this.db
+      .prepare('UPDATE sync_containers SET offer_state = ? WHERE provider = ? AND container_id = ?')
+      .run(state, provider, containerId);
+  }
+
+  /** Containers waiting to be offered, in catalogue order. */
+  pendingOffers(provider: string): SyncContainerRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM sync_containers
+         WHERE provider = ? AND offer_state = 'pending' AND followed = 0
+         ORDER BY kind, name`,
+      )
+      .all(provider);
+    return (rows as RawContainer[]).map(toContainerRow);
+  }
+
+  /**
+   * Small durable facts about syncing itself, next to the containers they are
+   * about: when the drift check last ran, and nothing else so far. A stamp like
+   * that belongs beside the follows rather than in the note-check ledger — it
+   * is a fact about this site, not about the workspace's notes.
+   */
+  getMeta(key: string): string | null {
+    const row = this.db.prepare('SELECT value FROM sync_meta WHERE key = ?').get(key) as
+      { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  setMeta(key: string, value: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO sync_meta (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(key, value);
+  }
+
   setHighWater(provider: string, containerId: string, mark: string | null, lastSync: number): void {
     this.db
-      .prepare('UPDATE sync_containers SET high_water = ?, last_sync = ? WHERE provider = ? AND container_id = ?')
+      .prepare(
+        'UPDATE sync_containers SET high_water = ?, last_sync = ? WHERE provider = ? AND container_id = ?',
+      )
       .run(mark, lastSync, provider, containerId);
   }
 
@@ -342,7 +440,9 @@ export class SyncStore {
   /** Null when untracked — also the "is this tracked at all?" test. */
   trackedSource(provider: string, externalId: string): TrackSource | null {
     const row = this.db
-      .prepare('SELECT source FROM sync_tracked WHERE provider = ? AND external_id = ? COLLATE NOCASE')
+      .prepare(
+        'SELECT source FROM sync_tracked WHERE provider = ? AND external_id = ? COLLATE NOCASE',
+      )
       .get(provider, externalId) as { source: string } | undefined;
     return (row?.source as TrackSource) ?? null;
   }
@@ -363,6 +463,8 @@ interface RawContainer {
   followed: number;
   high_water: string | null;
   last_sync: number | null;
+  first_seen: number | null;
+  offer_state: string | null;
 }
 
 interface RawTracked {
@@ -403,6 +505,8 @@ function toContainerRow(r: RawContainer): SyncContainerRow {
     followed: r.followed === 1,
     highWater: r.high_water,
     lastSync: r.last_sync,
+    firstSeen: r.first_seen ?? null,
+    offerState: (r.offer_state as ContainerOfferState | null) ?? null,
   };
 }
 

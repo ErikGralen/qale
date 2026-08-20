@@ -36,7 +36,13 @@ if (existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
 // launched from Finder gets launchd's environment, so a runtime lookup is always
 // empty in a packaged build and the feature it configures dies quietly. Read
 // through src/main/build-env.ts, which falls back to `process.env` for dev.
-const BAKED_ENV = ['QALE_POSTHOG_KEY', 'QALE_POSTHOG_HOST', 'QALE_POSTHOG_DEV', 'QALE_GOOGLE_CLIENT_ID', 'QALE_GOOGLE_CLIENT_SECRET'];
+const BAKED_ENV = [
+  'QALE_POSTHOG_KEY',
+  'QALE_POSTHOG_HOST',
+  'QALE_POSTHOG_DEV',
+  'QALE_GOOGLE_CLIENT_ID',
+  'QALE_GOOGLE_CLIENT_SECRET',
+];
 const define = Object.fromEntries(
   // `?? ''` matters: an undefined value would emit the bare token `undefined`.
   BAKED_ENV.map((name) => [`__${name}__`, JSON.stringify(process.env[name] ?? '')]),

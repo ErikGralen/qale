@@ -32,7 +32,14 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['@qale/vault', '@qale/agent', '@qale/atlassian', '@qale/markdown', '@qale/ipc', '@qale/ui'],
+              group: [
+                '@qale/vault',
+                '@qale/agent',
+                '@qale/atlassian',
+                '@qale/markdown',
+                '@qale/ipc',
+                '@qale/ui',
+              ],
               message: 'domain is the enterprise core — it may only depend on zod.',
             },
           ],
@@ -49,7 +56,13 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['@qale/domain', '@qale/vault', '@qale/agent', '@qale/atlassian', '@qale/application'],
+              group: [
+                '@qale/domain',
+                '@qale/vault',
+                '@qale/agent',
+                '@qale/atlassian',
+                '@qale/application',
+              ],
               message: 'renderer is presentation-only — import @qale/ipc DTOs, not domain/infra.',
             },
           ],

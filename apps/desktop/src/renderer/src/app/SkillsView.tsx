@@ -35,8 +35,16 @@ const SHELF_ORDER: Shelf[] = ['playbook', 'always', 'reference'];
 
 const SHELF_META: Record<Shelf, { label: string; icon: LucideIcon; blurb: string }> = {
   playbook: { label: 'Playbooks', icon: Wand2, blurb: 'Work you hand over from the composer.' },
-  always: { label: 'Always on', icon: Lock, blurb: 'Rules the agent follows in everything it does here.' },
-  reference: { label: 'Reference', icon: BookOpen, blurb: 'The agent reads these when they become relevant.' },
+  always: {
+    label: 'Always on',
+    icon: Lock,
+    blurb: 'Rules the agent follows in everything it does here.',
+  },
+  reference: {
+    label: 'Reference',
+    icon: BookOpen,
+    blurb: 'The agent reads these when they become relevant.',
+  },
 };
 
 /**
@@ -105,7 +113,10 @@ function SkillRow({ skill }: { skill: SkillDTO }) {
           )}
         </div>
 
-        <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" aria-hidden />
+        <ChevronRight
+          className="mt-0.5 size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground"
+          aria-hidden
+        />
       </button>
     </li>
   );
@@ -211,9 +222,8 @@ export function SkillsView() {
         {/* The one sentence that defines the noun — the sibling of the Agents
             page's opening line, with the door to that page in it. */}
         <p className="mb-3 px-1 text-dense text-muted-foreground">
-          Skills are how work you hand over gets done: playbooks you run, rules that are always
-          in force, and reference the agent reads when relevant. What starts by itself lives on
-          the{' '}
+          Skills are how work you hand over gets done: playbooks you run, rules that are always in
+          force, and reference the agent reads when relevant. What starts by itself lives on the{' '}
           <button
             className="rounded font-medium text-brand underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
             onClick={(e) => openAgents(navFromEvent(e))}
@@ -262,7 +272,9 @@ export function SkillsView() {
               Every skill is a file you can read and edit. Ask the{' '}
               <button
                 className="rounded font-medium text-brand underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                onClick={() => openSession('librarian', { initialPrompt: 'Help me write or adjust a skill.' })}
+                onClick={() =>
+                  openSession('librarian', { initialPrompt: 'Help me write or adjust a skill.' })
+                }
               >
                 librarian
               </button>{' '}

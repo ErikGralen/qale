@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { OnboardingDTO, SettingsDTO } from '@qale/ipc';
 import { requestCapture } from '../lib/capture-event';
+import type { SettingsSection } from '../lib/settings-sections';
 import { useApp } from '../state/app-state';
 
 /**
@@ -60,17 +61,8 @@ function rank(r: Row): number {
 }
 
 export function FirstSteps() {
-  const {
-    settings,
-    patchOnboarding,
-    openSettings,
-    openInbox,
-    openSession,
-    openFolder,
-    skills,
-    tree,
-    openDoc,
-  } = useApp();
+  const { settings, patchOnboarding, openSettings, openInbox, openSession, openFolder, tree } =
+    useApp();
   const onboarding = settings?.onboarding;
   /** A meeting to be briefed on has to exist before that row can go anywhere. */
   const hasMeetings = !!tree?.groups.find((g) => g.type === 'meeting')?.notes.length;
@@ -79,19 +71,22 @@ export function FirstSteps() {
     if (!settings || !onboarding) return [];
     return buildRows(settings, onboarding, {
       hasMeetings,
-      openSettings: () => openSettings(),
+      openSettings: (section) => openSettings(section),
       openInbox: () => openInbox(),
       openMeetings: () => openFolder('meetings'),
       addMaterial: () => requestCapture(),
       ask: () => openSession('ask'),
-      aboutUs: () => {
-        // The skill IS a file; its page is where the instructions are edited.
-        const about = skills.find((s) => s.name === '_about-us');
-        if (about) void openDoc(about.path);
-        else openSettings();
-      },
+      // The interview, not a file to edit (docs/product-understanding.md U-4).
+      // It opens in its own tab and starts talking, because the whole lesson of
+      // this row is that you say it out loud and it drafts.
+      learnProduct: () =>
+        openSession('learn-the-product', {
+          initialPrompt: 'Learn about my product.',
+          title: 'Learn about the product',
+          fresh: true,
+        }),
     });
-  }, [settings, onboarding, hasMeetings, openSettings, openInbox, openFolder, openSession, openDoc, skills]);
+  }, [settings, onboarding, hasMeetings, openSettings, openInbox, openFolder, openSession]);
 
   const remaining = rows.filter((r) => !r.done).length;
   const finished = rows.length > 0 && remaining === 0;
@@ -180,12 +175,12 @@ function buildRows(
   onboarding: OnboardingDTO,
   go: {
     hasMeetings: boolean;
-    openSettings: () => void;
+    openSettings: (section: SettingsSection) => void;
     openInbox: () => void;
     openMeetings: () => void;
     addMaterial: () => void;
     ask: () => void;
-    aboutUs: () => void;
+    learnProduct: () => void;
   },
 ): Row[] {
   const stamped = onboarding.checklist;
@@ -198,9 +193,9 @@ function buildRows(
       label: 'Add your API key',
       hint: 'Nothing can run without it',
       icon: KeyRound,
-      done: settings.hasAnthropicKey,
+      done: settings.hasApiKey,
       line: 'Your key is in, so sessions can run',
-      go: go.openSettings,
+      go: () => go.openSettings('agent'),
       cta: 'Settings',
     },
     {
@@ -236,7 +231,7 @@ function buildRows(
       icon: CalendarClock,
       done: !!stamped.prep,
       line: stamped.prep?.line,
-      go: go.hasMeetings ? go.openMeetings : go.openSettings,
+      go: go.hasMeetings ? go.openMeetings : () => go.openSettings('connections'),
       cta: go.hasMeetings ? 'Meetings' : 'Connect',
     },
     {
@@ -250,14 +245,17 @@ function buildRows(
       cta: 'Ask',
     },
     {
-      id: 'about-us',
+      id: 'understanding',
       label: 'Tell it about your product',
-      hint: 'Its instructions are files you can edit',
+      hint: 'It asks, you talk, and it writes down what you said',
       icon: PenLine,
-      done: !!stamped['about-us'],
-      line: stamped['about-us']?.line,
-      go: go.aboutUs,
-      cta: 'Edit',
+      // The row this replaced asked people to edit a skill file by hand. Anyone
+      // who did that has still told it about their product, so their tick
+      // stands.
+      done: !!stamped.understanding || !!stamped['about-us'],
+      line: stamped.understanding?.line ?? stamped['about-us']?.line,
+      go: go.learnProduct,
+      cta: 'Start',
     },
     {
       id: 'google',
@@ -271,7 +269,7 @@ function buildRows(
       icon: CalendarClock,
       done: google === 'following',
       line: 'Your calendar is in, so meetings arrive on their own',
-      go: go.openSettings,
+      go: () => go.openSettings('connections'),
       cta: 'Connect',
     },
     {
@@ -284,7 +282,7 @@ function buildRows(
       icon: Ticket,
       done: atlassian === 'following',
       line: 'Jira and Confluence are in, so linked work stays current',
-      go: go.openSettings,
+      go: () => go.openSettings('connections'),
       cta: 'Connect',
     },
   ];

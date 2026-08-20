@@ -83,7 +83,9 @@ export function ScopedAskComposer({
     setPickedSkill(null);
     // A picked skill takes the session's name too, so the tab says what it is
     // rather than calling everything "Ask".
-    const title = skill ? `${skill.title} · ${scope.kind === 'context' ? scopeName : scope.label}` : sessionTitle;
+    const title = skill
+      ? `${skill.title} · ${scope.kind === 'context' ? scopeName : scope.label}`
+      : sessionTitle;
     openSession(pickedSkill ?? 'ask', { title, initialPrompt: `${scopePrefix} ${q}` });
   };
 
@@ -155,4 +157,3 @@ export function ScopedAskComposer({
     </div>
   );
 }
-

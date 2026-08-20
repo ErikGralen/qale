@@ -12,8 +12,14 @@ import { PageHeader } from '../components/PageHeader';
 import { QuestionItem } from '../components/inbox/QuestionItem';
 import { CardItem, HousekeepingItem } from '../components/inbox/CardItem';
 import { ResultItem } from '../components/inbox/ResultItem';
-import { outboundAct, outboundReceipt } from '../components/inbox/shared';
-import { bareRef, cardRank, HOUSEKEEPING_RANK, orderCards, titleForRef } from '../components/inbox/cardMeta';
+import { outboundAct, outboundReceipt, staleAcceptMessage } from '../components/inbox/shared';
+import {
+  bareRef,
+  cardRank,
+  HOUSEKEEPING_RANK,
+  orderCards,
+  titleForRef,
+} from '../components/inbox/cardMeta';
 
 /**
  * The document a group of cards is ABOUT — the meeting or source they target,
@@ -39,7 +45,9 @@ function groupAnchor(cards: ProposalDTO[]): string | null {
  */
 function groupCause(cards: ProposalDTO[]): string | null {
   if (cards.length === 0 || !cards.every((c) => c.kind === 'update')) return null;
-  const cause = cards[0]!.evidence.map((e) => bareRef(e.ref)).find((r) => r.startsWith('decisions/'));
+  const cause = cards[0]!.evidence
+    .map((e) => bareRef(e.ref))
+    .find((r) => r.startsWith('decisions/'));
   if (!cause) return null;
   return cards.every((c) => c.evidence.some((e) => bareRef(e.ref) === cause)) ? cause : null;
 }
@@ -122,7 +130,10 @@ export function InboxView() {
     markSessionSeen,
   } = useApp();
   const [busy, setBusy] = useState(false);
-  const [receipt, setReceipt] = useState<{ accepted: number; rejected: number }>({ accepted: 0, rejected: 0 });
+  const [receipt, setReceipt] = useState<{ accepted: number; rejected: number }>({
+    accepted: 0,
+    rejected: 0,
+  });
   const [sent, setSent] = useState<SentReceipt[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   // Outbound cards whose send was refused because the target moved — they get
@@ -208,7 +219,8 @@ export function InboxView() {
       r.newest = Math.max(r.newest, when);
       return r;
     };
-    for (const g of groups) if (fromMaintenance(g.cards)) run(g.sessionId, g.newest).cards = g.cards;
+    for (const g of groups)
+      if (fromMaintenance(g.cards)) run(g.sessionId, g.newest).cards = g.cards;
     // A pass that only asked something has no cards and so no group above.
     for (const q of quietQuestions)
       if (q.target.open === 'session') run(q.target.sessionId, q.when ?? 0).questions.push(q);
@@ -321,12 +333,15 @@ export function InboxView() {
         } else if (r.stale) {
           // The keyboard path can accept without ever seeing the preview's
           // stale banner — a stale refusal must speak, never no-op.
-          setError(p.id, "This card no longer fits the note's current text. Open it to review, or re-run the session to regenerate it.");
+          setError(p.id, staleAcceptMessage(r.staleReason));
         } else {
           setError(p.id, r.error ?? 'Could not apply this card: the workspace rejected the write.');
         }
       } catch (err) {
-        setError(p.id, err instanceof Error ? err.message : 'Something went wrong applying this card.');
+        setError(
+          p.id,
+          err instanceof Error ? err.message : 'Something went wrong applying this card.',
+        );
       } finally {
         setBusy(false);
       }
@@ -343,7 +358,10 @@ export function InboxView() {
         setReceipt((x) => ({ ...x, rejected: x.rejected + 1 }));
         setStreak(0);
       } catch (err) {
-        setError(p.id, err instanceof Error ? err.message : 'Something went wrong discarding this card.');
+        setError(
+          p.id,
+          err instanceof Error ? err.message : 'Something went wrong discarding this card.',
+        );
       } finally {
         setBusy(false);
       }
@@ -380,7 +398,8 @@ export function InboxView() {
           }
         }
         setStreak(local);
-        if (failed > 0) toast(`${failed} of ${attempted} cards failed to apply. See the cards for details.`);
+        if (failed > 0)
+          toast(`${failed} of ${attempted} cards failed to apply. See the cards for details.`);
       } finally {
         setBusy(false);
       }
@@ -405,7 +424,8 @@ export function InboxView() {
           }
         }
         setStreak(0);
-        if (failed > 0) toast(`${failed} of ${cards.length} cards failed to discard. See the cards for details.`);
+        if (failed > 0)
+          toast(`${failed} of ${cards.length} cards failed to discard. See the cards for details.`);
       } finally {
         setBusy(false);
       }
@@ -441,7 +461,9 @@ export function InboxView() {
   /** The focused outbound card's send button — the queue's ↵ moves to it
    *  instead of pressing it for you. */
   const focusSend = (id: string): void => {
-    const button = listRef.current?.querySelector<HTMLButtonElement>(`[data-send="${CSS.escape(id)}"]`);
+    const button = listRef.current?.querySelector<HTMLButtonElement>(
+      `[data-send="${CSS.escape(id)}"]`,
+    );
     button?.focus();
   };
 
@@ -530,7 +552,13 @@ export function InboxView() {
           </span>
         )}
         {internalCount > 1 && (
-          <Button size="sm" variant="ghost" className="shrink-0" onClick={() => void acceptCards(queue)} disabled={busy}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="shrink-0"
+            onClick={() => void acceptCards(queue)}
+            disabled={busy}
+          >
             <Layers className="size-3.5" /> Accept all internal ({internalCount})
           </Button>
         )}
@@ -572,7 +600,9 @@ export function InboxView() {
               <span className="font-medium text-foreground">Left your workspace</span>
               <ul className="mt-0.5 text-muted-foreground">
                 {sent.slice(-3).map((s) => (
-                  <li key={s.id} className="truncate">{s.target}</li>
+                  <li key={s.id} className="truncate">
+                    {s.target}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -588,9 +618,15 @@ export function InboxView() {
             className="mb-3 flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm"
           >
             <span className="min-w-0 flex-1 text-muted-foreground">
-              Nothing kept from <span className="text-foreground">{ask.title}</span>. Mark it reviewed?
+              Nothing kept from <span className="text-foreground">{ask.title}</span>. Mark it
+              reviewed?
             </span>
-            <Button size="sm" variant="ghost" className="shrink-0" onClick={() => void answerReviewAsk(ask)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0"
+              onClick={() => void answerReviewAsk(ask)}
+            >
               <Check className="size-3.5" /> Mark reviewed
             </Button>
             <button
@@ -648,10 +684,15 @@ export function InboxView() {
               // it IS the whole group there is no story to spare the PO, and every
               // card stays legible.
               const hkOnly = g.cards.every((c) => cardRank(c) === HOUSEKEEPING_RANK);
-              const hkStart = hkOnly ? -1 : g.cards.findIndex((c) => cardRank(c) === HOUSEKEEPING_RANK);
+              const hkStart = hkOnly
+                ? -1
+                : g.cards.findIndex((c) => cardRank(c) === HOUSEKEEPING_RANK);
               const hkEnd =
-                hkStart === -1 ? -1 : g.cards.findIndex((c, i) => i >= hkStart && cardRank(c) > HOUSEKEEPING_RANK);
-              const hk = hkStart === -1 ? [] : g.cards.slice(hkStart, hkEnd === -1 ? undefined : hkEnd);
+                hkStart === -1
+                  ? -1
+                  : g.cards.findIndex((c, i) => i >= hkStart && cardRank(c) > HOUSEKEEPING_RANK);
+              const hk =
+                hkStart === -1 ? [] : g.cards.slice(hkStart, hkEnd === -1 ? undefined : hkEnd);
               const renderCard = (p: ProposalDTO, ci: number, compact: boolean) => {
                 const idx = groupStarts[gi]! + ci;
                 const shared = {
@@ -665,7 +706,11 @@ export function InboxView() {
                   onReject: () => onReject(p),
                   onOpen: openDoc,
                 };
-                return compact ? <HousekeepingItem key={p.id} {...shared} /> : <CardItem key={p.id} {...shared} />;
+                return compact ? (
+                  <HousekeepingItem key={p.id} {...shared} />
+                ) : (
+                  <CardItem key={p.id} {...shared} />
+                );
               };
               const internalN = g.cards.filter((c) => c.kind !== 'outbound').length;
               // The header speaks the meeting, or the cause — never the prompt or a path.
@@ -680,7 +725,13 @@ export function InboxView() {
                   <div className="mb-2 flex items-start gap-3 px-0.5">
                     <div className="min-w-0 flex-1">
                       <h3 className="text-sm leading-snug font-semibold text-balance break-words text-foreground">
-                        {cause ? title : <>From <span className="text-foreground">{title}</span></>}
+                        {cause ? (
+                          title
+                        ) : (
+                          <>
+                            From <span className="text-foreground">{title}</span>
+                          </>
+                        )}
                       </h3>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {summary && <>{summary} · </>}
@@ -692,8 +743,14 @@ export function InboxView() {
                         // The batch never sends, so it counts only what it will
                         // actually apply — a group with a pending send says "3",
                         // not "all", and the send stays its own decision below.
-                        <Button size="sm" variant="ghost" onClick={() => void acceptCards(g.cards)} disabled={busy}>
-                          <Check className="size-3.5" /> {cause ? 'Update' : 'Approve'} all {internalN}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void acceptCards(g.cards)}
+                          disabled={busy}
+                        >
+                          <Check className="size-3.5" /> {cause ? 'Update' : 'Approve'} all{' '}
+                          {internalN}
                         </Button>
                       )}
                       {cause ? (
@@ -720,7 +777,10 @@ export function InboxView() {
                             <button
                               className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                               onClick={(e) =>
-                                openChat({ id: g.session!.id, title: g.session!.title }, navFromEvent(e))
+                                openChat(
+                                  { id: g.session!.id, title: g.session!.title },
+                                  navFromEvent(e),
+                                )
                               }
                             >
                               Open session <ArrowRight className="size-3" />
@@ -813,11 +873,18 @@ export function InboxView() {
                   {librarianRuns.map((run, ri) => (
                     <div key={run.sessionId}>
                       <div className="mb-1 flex items-baseline gap-2 px-0.5">
-                        <span className="text-xs text-muted-foreground">Ran {timeAgo(run.newest)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          Ran {timeAgo(run.newest)}
+                        </span>
                         {run.session && (
                           <button
                             className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                            onClick={(e) => openChat({ id: run.session!.id, title: run.session!.title }, navFromEvent(e))}
+                            onClick={(e) =>
+                              openChat(
+                                { id: run.session!.id, title: run.session!.title },
+                                navFromEvent(e),
+                              )
+                            }
                           >
                             Open session <ArrowRight className="size-3" />
                           </button>

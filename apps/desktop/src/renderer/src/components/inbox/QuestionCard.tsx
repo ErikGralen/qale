@@ -243,7 +243,9 @@ function TrailRow({
           className={`size-3 shrink-0 self-center ${parts.length ? 'text-brand' : 'text-muted-foreground/50'}`}
           aria-hidden
         />
-        <span className="shrink-0 text-xs font-medium text-muted-foreground">{question.header}</span>
+        <span className="shrink-0 text-xs font-medium text-muted-foreground">
+          {question.header}
+        </span>
         <span
           className={`min-w-0 flex-1 truncate text-sm ${parts.length ? 'text-foreground/80' : 'text-muted-foreground italic'}`}
         >
@@ -351,7 +353,9 @@ function QuestionStep({
           multi
           checked={writing}
           disabled={disabled}
-          label={question.multiSelect && picked.length > 0 ? 'Add something else' : 'Something else'}
+          label={
+            question.multiSelect && picked.length > 0 ? 'Add something else' : 'Something else'
+          }
           onSelect={onToggleWriting}
         />
         {writing && (

@@ -49,7 +49,9 @@ export function SessionFileView({ sessionId, path }: { sessionId: string; path: 
         labelTitle={name}
       />
       <div className="flex shrink-0 items-center gap-3 border-b border-border bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground">
-        <span className="truncate">Session file · not part of your memory · read-only, and safe to delete</span>
+        <span className="truncate">
+          Session file · not part of your memory · read-only, and safe to delete
+        </span>
         {meta && (
           <span className="ml-auto shrink-0 tabular-nums">
             {formatBytes(meta.bytes)} · written {relativeTime(meta.mtime)}

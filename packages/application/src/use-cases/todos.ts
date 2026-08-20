@@ -63,6 +63,28 @@ export async function captureTodo(ctx: UseCaseContext, input: CaptureTodoInput):
   return note;
 }
 
+/**
+ * Move a todo's due date — the snooze on the ledger row. `null` clears the date
+ * and drops it to Someday. The commitment itself is untouched: pushing a date
+ * is not closing a promise, and the file keeps its provenance either way.
+ */
+export async function setTodoDue(
+  ctx: UseCaseContext,
+  path: string,
+  due: string | null,
+): Promise<Note> {
+  if (due !== null && !DATE_RE.test(due)) throw new Error(`invalid due date: ${due}`);
+  const existing = await ctx.vault.readNote(path);
+  if (!existing || existing.type !== 'todo') throw new Error(`not a todo: ${path}`);
+  const frontmatter = { ...existing.frontmatter } as Record<string, unknown>;
+  if (due === null) delete frontmatter['due'];
+  else frontmatter['due'] = due;
+  const note = await ctx.vault.writeNote(path, frontmatter as Frontmatter, existing.body);
+  ctx.index.reindex(note);
+  await ctx.git.commitPaths([note.path], `todo: ${note.slug} due ${due ?? 'cleared'}`);
+  return note;
+}
+
 /** Flip a todo open/done/dropped — stamps `resolved` on close, clears on reopen. */
 export async function setTodoStatus(
   ctx: UseCaseContext,

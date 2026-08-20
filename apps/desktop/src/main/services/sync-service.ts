@@ -1,5 +1,6 @@
 import {
   deriveSeriesSlug,
+  hasOtherAttendee,
   meetingPathForEvent,
   planMeetingMirror,
   slugify,
@@ -13,11 +14,12 @@ import {
   atlassianAuthSchema,
   googleCalendarConnector,
   type Connector,
+  type ContainerFootprint,
   type EventChange,
   type ExternalContainer,
   type ShallowChange,
 } from '@qale/connectors';
-import type { IndexedNote, UseCaseContext } from '@qale/application';
+import { isVaultBoundaryError, type IndexedNote, type UseCaseContext } from '@qale/application';
 import type { SyncItemRow, SyncStore } from '@qale/vault';
 import type {
   AtRiskLinkDTO,
@@ -25,6 +27,7 @@ import type {
   ConnectionDTO,
   ConnectionHealth,
   ConnectResultDTO,
+  ContainerRecommendationDTO,
   DeliveryDeltaDTO,
   ExternalRefMetaDTO,
   ProviderDescriptorDTO,
@@ -57,6 +60,28 @@ const STALE_AFTER_MS = 12 * 60 * 60 * 1000;
 const BLOCKER_TRACK_CAP = 100;
 
 const GOOGLE_PROVIDER = 'google-calendar';
+
+/**
+ * How often the drift check looks for new containers worth offering
+ * (docs/product-understanding.md FL-3). Weekly: the survey costs real requests,
+ * and a space that appeared this morning is not urgent by lunchtime.
+ */
+const DRIFT_CHECK_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+/** When the drift check last ran, in the connector store beside the follows. */
+const DRIFT_CHECK_KEY = 'drift-check:atlassian';
+
+/** A container the drift check thinks is worth one quiet question. */
+export interface ContainerOffer {
+  containerId: string;
+  kind: 'ticket' | 'wikipage' | 'calendar';
+  name: string;
+  /** Why it is worth asking about, in the same words the connect card uses. */
+  reason?: string;
+}
+
+/** Where a pending offer's reason line is kept, so the question can be raised
+ *  weeks later without re-running the survey to remember why. */
+const offerReasonKey = (containerId: string): string => `offer-reason:atlassian:${containerId}`;
 
 /** Registered provider descriptors (Atlassian fields mirror atlassianAuthSchema;
  *  Google has no fields — its auth is a browser flow, rendered as a button). */
@@ -108,6 +133,9 @@ export interface AgendaMeeting {
   startMs: number;
   endMs: number;
   cancelled: boolean;
+  /** Someone other than the PM is on it. Solo blocks get notes like anything
+   *  else, but they aren't a meeting to prepare for. */
+  withOthers: boolean;
 }
 
 /** Per-connection runtime state; credentials live in settings, data in the store. */
@@ -195,13 +223,21 @@ export class SyncService {
     const google = this.settings.getGoogle();
     if (google && this.conns[GOOGLE_PROVIDER].connector) {
       out.push(
-        this.connectionDto(GOOGLE_PROVIDER, GOOGLE_DESCRIPTOR.label, google.email ?? 'Google account'),
+        this.connectionDto(
+          GOOGLE_PROVIDER,
+          GOOGLE_DESCRIPTOR.label,
+          google.email ?? 'Google account',
+        ),
       );
     }
     return out;
   }
 
-  private connectionDto(id: 'atlassian' | typeof GOOGLE_PROVIDER, providerLabel: string, siteLabel: string): ConnectionDTO {
+  private connectionDto(
+    id: 'atlassian' | typeof GOOGLE_PROVIDER,
+    providerLabel: string,
+    siteLabel: string,
+  ): ConnectionDTO {
     const store = this.getStore();
     const state = this.conns[id];
     const containers: ConnectionContainerDTO[] = (store?.listContainers(id) ?? []).map((c) => ({
@@ -362,8 +398,137 @@ export class SyncService {
     if (followed) void this.tick().catch(() => {});
   }
 
+  /**
+   * What this connection should read, in the order a person should meet it
+   * (docs/product-understanding.md FL-2). The connector surveys where they
+   * actually work; this turns each row into the one line that makes the
+   * recommendation checkable ("you edited 12 pages here, last one on Tuesday").
+   *
+   * Never throws and never blocks anything: a provider without a survey, a
+   * survey that fails, and a brand-new hire with no footprint all come back as
+   * an empty list, and the picker falls back to the flat catalogue.
+   */
+  async recommend(connectionId: string): Promise<ContainerRecommendationDTO[]> {
+    this.reconfigure();
+    if (connectionId !== 'atlassian' && connectionId !== GOOGLE_PROVIDER) return [];
+    const connector = this.conns[connectionId].connector;
+    if (!connector?.surveyFootprint) return [];
+    let footprint: ContainerFootprint[];
+    try {
+      footprint = await connector.surveyFootprint();
+    } catch (err) {
+      console.error(
+        '[qale] sync: footprint survey failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return [];
+    }
+    // Only containers the catalogue actually holds: a project the survey names
+    // but the picker cannot show is a row nobody could tick.
+    const known = new Set(
+      (this.getStore()?.listContainers(connectionId) ?? []).map((c) => c.containerId),
+    );
+    return footprint
+      .filter((f) => f.count > 0 && known.has(f.id))
+      .map((f) => ({ id: f.id, kind: f.kind, reason: footprintReason(f) }));
+  }
+
+  // -------------------------------------------------------------------------
+  // The drift check (docs/product-understanding.md FL-3)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Spaces and projects that turned up since the last check and are full of
+   * this person's own work. One quiet question each, carried by the librarian.
+   *
+   * Three rules, all of them about not being a nag:
+   *
+   * - **Weekly, not every tick.** The survey costs real requests against their
+   *   rate limit, and a new space does not become urgent in five minutes.
+   * - **No footprint, no question.** A space the PM has never touched is not
+   *   news, however new it is. This is what keeps a big instance quiet.
+   * - **The first check only sets the baseline.** Without that, connecting a
+   *   site would make every space on it "new", and the first pass would ask
+   *   about forty of them.
+   *
+   * The offer lives on the container row rather than in memory, so a pending
+   * question survives a quit, and an answered one is answered for good. Returns
+   * everything still pending — including offers raised on an earlier tick that
+   * no session has carried yet.
+   */
+  async containerOffers(now = Date.now()): Promise<ContainerOffer[]> {
+    const store = this.getStore();
+    if (!store) return [];
+    const last = Number(store.getMeta(DRIFT_CHECK_KEY));
+    if (!Number.isFinite(last) || last === 0) {
+      // First look: everything currently listed is the baseline, not news.
+      store.setMeta(DRIFT_CHECK_KEY, String(now));
+      return [];
+    }
+    if (now - last >= DRIFT_CHECK_INTERVAL_MS) {
+      store.setMeta(DRIFT_CHECK_KEY, String(now));
+      await this.markNewContainersPending(store, last).catch((err) => {
+        console.error('[qale] sync: drift check failed:', err instanceof Error ? err.message : err);
+      });
+    }
+    return store.pendingOffers('atlassian').map((row) => {
+      const reason = store.getMeta(offerReasonKey(row.containerId));
+      return {
+        containerId: row.containerId,
+        kind: row.kind,
+        name: row.name,
+        ...(reason ? { reason } : {}),
+      };
+    });
+  }
+
+  /** The survey half of the drift check, run at most weekly. */
+  private async markNewContainersPending(store: SyncStore, since: number): Promise<void> {
+    const fresh = store
+      .listContainers('atlassian')
+      .filter((c) => !c.followed && c.offerState === null && (c.firstSeen ?? 0) > since);
+    if (fresh.length === 0) return;
+    const connector = this.conns.atlassian.connector;
+    if (!connector?.surveyFootprint) return;
+    const footprint = await connector.surveyFootprint();
+    const worked = new Map(footprint.filter((f) => f.count > 0).map((f) => [f.id, f]));
+    for (const container of fresh) {
+      const found = worked.get(container.containerId);
+      if (!found) continue;
+      store.setMeta(offerReasonKey(container.containerId), footprintReason(found));
+      store.setOfferState('atlassian', container.containerId, 'pending');
+    }
+  }
+
+  /** The question has been put to the PM; it is never raised again from here. */
+  markContainersOffered(containerIds: string[]): void {
+    const store = this.getStore();
+    for (const id of containerIds) store?.setOfferState('atlassian', id, 'offered');
+  }
+
+  /**
+   * What the PM said. Yes follows it through the ordinary path (which syncs it
+   * immediately); no is remembered for good, so the container never comes back
+   * round — the same posture as waving off a capture nudge.
+   */
+  async answerContainerOffer(containerId: string, follow: boolean): Promise<boolean> {
+    const store = this.getStore();
+    if (!store) return false;
+    const known = store.listContainers('atlassian').some((c) => c.containerId === containerId);
+    if (!known) return false;
+    if (follow) {
+      store.setOfferState('atlassian', containerId, null);
+      await this.setFollow('atlassian', containerId, true);
+    } else {
+      store.setOfferState('atlassian', containerId, 'declined');
+    }
+    return true;
+  }
+
   /** Pull a provider's container catalogue into the store (names refresh, follows kept). */
-  async refreshContainers(providerId: 'atlassian' | typeof GOOGLE_PROVIDER = 'atlassian'): Promise<ExternalContainer[]> {
+  async refreshContainers(
+    providerId: 'atlassian' | typeof GOOGLE_PROVIDER = 'atlassian',
+  ): Promise<ExternalContainer[]> {
     this.reconfigure();
     const store = this.getStore();
     const connector = this.conns[providerId].connector;
@@ -457,7 +622,10 @@ export class SyncService {
             }
           }
         } catch (err) {
-          console.error('[qale] sync: promotion sweep failed:', err instanceof Error ? err.message : err);
+          console.error(
+            '[qale] sync: promotion sweep failed:',
+            err instanceof Error ? err.message : err,
+          );
         }
 
         // Tracked pass: everything we hold by id rather than by container.
@@ -468,7 +636,10 @@ export class SyncService {
             anyChange = true;
           }
         } catch (err) {
-          console.error('[qale] sync: tracked pull failed:', err instanceof Error ? err.message : err);
+          console.error(
+            '[qale] sync: tracked pull failed:',
+            err instanceof Error ? err.message : err,
+          );
         }
       }
 
@@ -488,7 +659,9 @@ export class SyncService {
     }
 
     if (written.length > 0) {
-      await ctx.git.commitPaths(written, `sync: ${written.length} mirror${written.length === 1 ? '' : 's'}`).catch(() => {});
+      await ctx.git
+        .commitPaths(written, `sync: ${written.length} mirror${written.length === 1 ? '' : 's'}`)
+        .catch(() => {});
     }
     if (anyChange || written.length > 0 || anyFailed) this.onChanged(written);
   }
@@ -517,14 +690,19 @@ export class SyncService {
       // deleted a synced note — that's a human gesture; never recreate it.
       let notePath = row.notePath;
       let note = notePath ? await ctx.vault.readNote(notePath) : null;
-      if (notePath && !note) return null;
       if (!note) {
         // Adopt hand-written or restored notes that already carry this event id.
+        // A bound path whose file vanished comes through here too: renaming a
+        // meeting MOVES it, and without this the binding would read as a
+        // deletion and that meeting would quietly stop syncing for good.
         const adopted = this.mirrorMeetingByExternalId(ctx, change.external_id);
         if (adopted) {
           notePath = adopted.path;
           note = await ctx.vault.readNote(adopted.path);
           store.setNotePath(GOOGLE_PROVIDER, change.external_id, adopted.path);
+        } else if (notePath) {
+          // Nothing in the vault carries this id any more: it really is gone.
+          return null;
         }
       }
 
@@ -537,12 +715,18 @@ export class SyncService {
         provider: GOOGLE_PROVIDER,
         ...(seriesSlug ? { seriesSlug } : {}),
         participants: resolveParticipants(ctx, event),
-        existing: note ? { frontmatter: note.frontmatter as Record<string, unknown>, body: note.body } : null,
+        existing: note
+          ? { frontmatter: note.frontmatter as Record<string, unknown>, body: note.body }
+          : null,
       });
 
       if (plan.action === 'skip') return null;
       if (plan.action === 'patch') {
-        const written = await ctx.vault.writeNote(notePath!, plan.frontmatter as unknown as Frontmatter, note!.body);
+        const written = await ctx.vault.writeNote(
+          notePath!,
+          plan.frontmatter as unknown as Frontmatter,
+          note!.body,
+        );
         ctx.index.reindex(written);
         return notePath!;
       }
@@ -551,7 +735,11 @@ export class SyncService {
       for (let i = 2; i <= 9 && (await ctx.vault.exists(path)); i += 1) {
         path = meetingPathForEvent(event).replace(/\.md$/, `-${i}.md`);
       }
-      const written = await ctx.vault.writeNote(path, plan.frontmatter as unknown as Frontmatter, '');
+      const written = await ctx.vault.writeNote(
+        path,
+        plan.frontmatter as unknown as Frontmatter,
+        '',
+      );
       ctx.index.reindex(written);
       store.setNotePath(GOOGLE_PROVIDER, change.external_id, path);
       return path;
@@ -560,6 +748,11 @@ export class SyncService {
         `[qale] sync: meeting mirror failed for ${change.external_id}:`,
         err instanceof Error ? err.message : err,
       );
+      // Swallowed like the rest, a refused path would let the container's
+      // high-water mark advance past an event that never landed: the meeting
+      // would be missing for good and the connection would still read healthy.
+      // Out to the pull loop instead, which leaves the mark where it is.
+      if (isVaultBoundaryError(err)) throw err;
       return null;
     }
   }
@@ -568,9 +761,8 @@ export class SyncService {
     return (
       ctx.index
         .listByType('meeting')
-        .find(
-          (n) => (n.frontmatter as Record<string, unknown>)['external_id'] === externalId,
-        ) ?? null
+        .find((n) => (n.frontmatter as Record<string, unknown>)['external_id'] === externalId) ??
+      null
     );
   }
 
@@ -589,8 +781,10 @@ export class SyncService {
       for (const link of note.links) {
         const bare = link.target.split('#')[0]!.replace(/\.md$/, '').trim();
         if (TICKET_KEY_RE.test(bare)) ticketKeys.add(bare.toUpperCase());
-        else if (bare.startsWith('tickets/')) ticketKeys.add(bare.slice('tickets/'.length).toUpperCase());
-        else if (bare.startsWith('wikipages/')) pageSlugs.add(bare.slice('wikipages/'.length).toLowerCase());
+        else if (bare.startsWith('tickets/'))
+          ticketKeys.add(bare.slice('tickets/'.length).toUpperCase());
+        else if (bare.startsWith('wikipages/'))
+          pageSlugs.add(bare.slice('wikipages/'.length).toLowerCase());
         else pageSlugs.add(slugify(bare).toLowerCase());
       }
     }
@@ -612,10 +806,7 @@ export class SyncService {
     deep: { ticketKeys: Set<string>; pageSlugs: Set<string> },
     store: SyncStore,
   ): boolean {
-    return this.isDeepRow(
-      store.itemByExternalId(change.external_id) ?? shallowToRow(change),
-      deep,
-    );
+    return this.isDeepRow(store.itemByExternalId(change.external_id) ?? shallowToRow(change), deep);
   }
 
   private isDeepRow(
@@ -642,7 +833,11 @@ export class SyncService {
    * The set is small by construction, and `writeMirror` skips items whose
    * `remote_updated` hasn't changed, so re-reading it each tick is close to free.
    */
-  private async syncTracked(ctx: UseCaseContext, store: SyncStore, nowMs: number): Promise<string[]> {
+  private async syncTracked(
+    ctx: UseCaseContext,
+    store: SyncStore,
+    nowMs: number,
+  ): Promise<string[]> {
     const connector = this.conns.atlassian.connector;
     if (!connector?.pullByKeys) return [];
 
@@ -788,7 +983,7 @@ export class SyncService {
               container: change.container,
               state: full.state ?? change.state,
               state_category: full.state_category ?? change.state_category,
-              ...(full.assignee ?? change.assignee
+              ...((full.assignee ?? change.assignee)
                 ? { assignee: full.assignee ?? change.assignee }
                 : {}),
               // Provider relationships: the indexer turns
@@ -820,6 +1015,10 @@ export class SyncService {
         `[qale] sync: mirror write failed for ${change.external_id}:`,
         err instanceof Error ? err.message : err,
       );
+      // Same as the meeting mirror: a fetch that failed is worth shrugging off
+      // and retrying, a path we built wrong is not, and only the second one can
+      // leave the mark advanced over a mirror that was never written.
+      if (isVaultBoundaryError(err)) throw err;
       return null;
     }
   }
@@ -832,17 +1031,26 @@ export class SyncService {
     const store = this.getStore();
     if (!store || !query.trim()) return [];
     // searchItems never returns events (SQL-side filter); the guard narrows the type.
-    return store.searchItems(query.trim(), limit).flatMap((row) => (row.kind === 'event' ? [] : [{
-      kind: row.kind,
-      externalId: row.externalId,
-      slug: row.kind === 'ticket' ? `tickets/${row.externalId}` : `wikipages/${slugify(row.title)}`,
-      container: row.container,
-      containerName: this.containerName(row.container) ?? row.container,
-      title: row.title,
-      ...(row.state ? { state: row.state } : {}),
-      ...(isStateCategory(row.stateCategory) ? { stateCategory: row.stateCategory } : {}),
-      url: row.url,
-    }]));
+    return store.searchItems(query.trim(), limit).flatMap((row) =>
+      row.kind === 'event'
+        ? []
+        : [
+            {
+              kind: row.kind,
+              externalId: row.externalId,
+              slug:
+                row.kind === 'ticket'
+                  ? `tickets/${row.externalId}`
+                  : `wikipages/${slugify(row.title)}`,
+              container: row.container,
+              containerName: this.containerName(row.container) ?? row.container,
+              title: row.title,
+              ...(row.state ? { state: row.state } : {}),
+              ...(isStateCategory(row.stateCategory) ? { stateCategory: row.stateCategory } : {}),
+              url: row.url,
+            },
+          ],
+    );
   }
 
   /** Chip/hover metadata for one mirror slug ("tickets/PAY-142", a wikipage
@@ -868,9 +1076,9 @@ export class SyncService {
     const found =
       store?.itemByExternalId(key) ??
       (bare.startsWith('wikipages/')
-        ? (store?.itemsByKind('wikipage') ?? []).find(
+        ? ((store?.itemsByKind('wikipage') ?? []).find(
             (r) => slugify(r.title).toLowerCase() === bare.slice('wikipages/'.length).toLowerCase(),
-          ) ?? null
+          ) ?? null)
         : null);
     if (!found || found.kind === 'event') return null;
     const row = found;
@@ -897,8 +1105,7 @@ export class SyncService {
     const ctx = this.getContext();
     if (!ctx) return null;
     const bare = externalIdOrSlug.replace(/\.md$/, '').trim();
-    const note =
-      this.mirrorByExternalId(ctx, 'wikipage', bare) ?? this.wikipageBySlug(ctx, bare);
+    const note = this.mirrorByExternalId(ctx, 'wikipage', bare) ?? this.wikipageBySlug(ctx, bare);
     if (!note) return null;
     // Bodies aren't in the index — read from disk synchronously? The vault port
     // is async; callers get the indexed summary path instead. Handled in the
@@ -1011,6 +1218,7 @@ export class SyncService {
         startMs,
         endMs,
         cancelled: r.eventStatus === 'cancelled',
+        withOthers: hasOtherAttendee(rowToEvent(r)),
       });
     }
     return out.sort((a, b) => a.startMs - b.startMs);
@@ -1064,8 +1272,9 @@ export class SyncService {
         .listByType(type)
         .find(
           (n) =>
-            String((n.frontmatter as Record<string, unknown>)['external_id'] ?? '').toLowerCase() ===
-            externalId.toLowerCase(),
+            String(
+              (n.frontmatter as Record<string, unknown>)['external_id'] ?? '',
+            ).toLowerCase() === externalId.toLowerCase(),
         ) ?? null
     );
   }
@@ -1081,7 +1290,8 @@ export class SyncService {
 
   private metaFromNote(note: IndexedNote): ExternalRefMetaDTO {
     const fm = note.frontmatter as Record<string, unknown>;
-    const str = (k: string): string | undefined => (typeof fm[k] === 'string' ? (fm[k] as string) : undefined);
+    const str = (k: string): string | undefined =>
+      typeof fm[k] === 'string' ? (fm[k] as string) : undefined;
     const container = str('container') ?? '';
     const row = this.getStore()?.itemByExternalId(str('external_id') ?? '');
     const syncedAt = this.lastSyncFor(container) ?? note.mtime;
@@ -1122,6 +1332,33 @@ export class SyncService {
   private isStale(syncedAt: number): boolean {
     return this.conns.atlassian.health !== 'ok' || Date.now() - syncedAt > STALE_AFTER_MS;
   }
+}
+
+/**
+ * The reason line under a recommended container. Two facts, both checkable: how
+ * much of it is theirs, and when they were last in it. The count is the
+ * provider's own total (the connector spends a second query on exactly that),
+ * so this line can be read literally.
+ */
+function footprintReason(f: ContainerFootprint): string {
+  const what =
+    f.kind === 'wikipage'
+      ? `You edited ${f.count} ${f.count === 1 ? 'page' : 'pages'} here`
+      : `${f.count} ${f.count === 1 ? 'ticket is' : 'tickets are'} yours here`;
+  const when = f.lastTouched ? whenLastTouched(f.lastTouched) : null;
+  return when ? `${what}, ${when}` : what;
+}
+
+/** "last one yesterday" / "the newest 3 weeks ago" — never a bare timestamp. */
+function whenLastTouched(iso: string): string | null {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return null;
+  const days = Math.floor((Date.now() - at) / (24 * 60 * 60 * 1000));
+  if (days <= 0) return 'the last one today';
+  if (days === 1) return 'the last one yesterday';
+  if (days < 14) return `the last one ${days} days ago`;
+  if (days < 60) return `the last one ${Math.round(days / 7)} weeks ago`;
+  return `the last one ${Math.round(days / 30)} months ago`;
 }
 
 function shallowToRow(change: Exclude<ShallowChange, EventChange>): SyncItemRow {

@@ -108,9 +108,7 @@ export function selectDriftPairs(
 
     // Who links this page? Only spine-adjacent linkers count.
     const linkers = notes.filter(
-      (n) =>
-        (n.type === 'theme' || n.type === 'decision') &&
-        linkPaths(n).includes(page.path),
+      (n) => (n.type === 'theme' || n.type === 'decision') && linkPaths(n).includes(page.path),
     );
     if (linkers.length === 0) continue;
 
@@ -123,7 +121,9 @@ export function selectDriftPairs(
       // Hub → every decision in the hub's orbit.
       for (const d of decisions) {
         const dLinks = linkPaths(d);
-        const themeRef = refToSlug((d.frontmatter as Record<string, unknown>)['theme'] as string | undefined);
+        const themeRef = refToSlug(
+          (d.frontmatter as Record<string, unknown>)['theme'] as string | undefined,
+        );
         const inOrbit =
           linkPaths(linker).includes(d.path) ||
           dLinks.includes(linker.path) ||

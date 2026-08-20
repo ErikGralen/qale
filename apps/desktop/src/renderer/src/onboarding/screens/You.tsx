@@ -12,11 +12,17 @@ import { Screen } from '../Opening';
  * deliberate "rather not say", and the app falls back to calling you "You".
  * What it cannot do without the email is tell your own promises from everyone
  * else's, which is what the line under the fields says.
+ *
+ * Come back to it and the fields hold what was saved, so this is where a typo
+ * in your own address gets fixed. Which is also why the write always names the
+ * address list: clearing the field has to clear it, or a wrong one could never
+ * be taken back out from here.
  */
 export function You({ onNext }: { onNext: () => void }) {
-  const { refreshSettings } = useApp();
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const { refreshSettings, settings } = useApp();
+  const identity = settings?.identity;
+  const [name, setName] = useState(identity?.name ?? '');
+  const [email, setEmail] = useState(identity?.aliases[0] ?? '');
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
@@ -25,7 +31,7 @@ export function You({ onNext }: { onNext: () => void }) {
       const address = email.trim().toLowerCase();
       await invoke['settings:setIdentity']({
         name: name.trim() || null,
-        ...(address ? { aliases: [address] } : {}),
+        aliases: address ? [address] : [],
       });
       await refreshSettings();
     } catch {

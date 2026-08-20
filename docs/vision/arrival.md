@@ -1,6 +1,6 @@
 # Arrival
 
-Vision, 2026-07-30. The principles marked *product-wide* are meant to outlive this feature.
+Vision, 2026-07-30. The principles marked _product-wide_ are meant to outlive this feature.
 
 Written after a design conversation that started as "redesign the capture modal" and ended with the
 conclusion that the modal is the wrong shape for the problem.
@@ -14,7 +14,7 @@ session, out loud. `docs/arrival-agentic.md` is the direction doc that carried t
 code comments cite it. What ships:
 
 - **Add material** (`app/AddMaterial.tsx`) — file rows with an X each, one text field, one button.
-  It leads with a drop zone next to the native picker (files *and* folders) and decides exactly one
+  It leads with a drop zone next to the native picker (files _and_ folders) and decides exactly one
   thing by itself: whether these bytes can be read at all. Pasted text is a row like any file, so
   the text field always means the same thing.
 - **Landing is mechanical** (`main/handlers.ts`, `arrival:ingest`). The moment Add is pressed the
@@ -84,14 +84,14 @@ with a name attached, answers they can defend, and the feeling of not being behi
 The emotional state at the moment of arrival varies more than the material does, and it's the better
 design signal:
 
-| Situation | State | What they want |
-|---|---|---|
-| Just came out of a call | Rushing, holding something | To put it down and stop carrying it |
-| Behind by weeks or months | Mild guilt | Absolution, without reliving it |
-| Read something interesting | Curiosity, no stakes | For it not to be lost |
-| Forwarded someone's recording | Obligation, low ownership | To know what's in it |
-| Has a question, has the files | Impatient, investigative | An answer, not a filing outcome |
-| Trying the product for real | Skeptical, protective | To see it work on *their* material |
+| Situation                     | State                      | What they want                      |
+| ----------------------------- | -------------------------- | ----------------------------------- |
+| Just came out of a call       | Rushing, holding something | To put it down and stop carrying it |
+| Behind by weeks or months     | Mild guilt                 | Absolution, without reliving it     |
+| Read something interesting    | Curiosity, no stakes       | For it not to be lost               |
+| Forwarded someone's recording | Obligation, low ownership  | To know what's in it                |
+| Has a question, has the files | Impatient, investigative   | An answer, not a filing outcome     |
+| Trying the product for real   | Skeptical, protective      | To see it work on _their_ material  |
 
 Note that "correctly classified" appears nowhere on the right-hand side. Taxonomy is our concern that
 we promoted into a user question.
@@ -100,31 +100,31 @@ we promoted into a user question.
 
 ## 3. The jobs
 
-**Close the loop.** *When a meeting ends and I'm already late for the next one, I want to hand off
-what I'm holding, so I can stop carrying it.* Done = the commitments are somewhere that will remind
+**Close the loop.** _When a meeting ends and I'm already late for the next one, I want to hand off
+what I'm holding, so I can stop carrying it._ Done = the commitments are somewhere that will remind
 me, and I didn't have to think about folders.
 
-**Catch the memory up.** *When the memory doesn't know something everyone assumes it knows, I want to
-pour in what I have, so it stops being behind.* Done = the pile is absorbed, I know roughly what came
+**Catch the memory up.** _When the memory doesn't know something everyone assumes it knows, I want to
+pour in what I have, so it stops being behind._ Done = the pile is absorbed, I know roughly what came
 of it, and I was not handed hundreds of small decisions to make.
 
-**Move in.** *When I decide to try a tool for something as personal as my own thinking, I want to
+**Move in.** _When I decide to try a tool for something as personal as my own thinking, I want to
 bring my existing notes with me without losing their structure or my ability to leave, so I can judge
-it against my real material instead of a demo.* Done = my stuff is here, it looks like my stuff, and
+it against my real material instead of a demo._ Done = my stuff is here, it looks like my stuff, and
 I can see exactly what was done to it.
 
-**Get an answer.** *When someone asks me something I should be able to answer, I want to point at the
-evidence and get an answer I can defend.* Done = an answer with citations. Whether the evidence got
+**Get an answer.** _When someone asks me something I should be able to answer, I want to point at the
+evidence and get an answer I can defend._ Done = an answer with citations. Whether the evidence got
 filed is beside the point.
 
-**Keep it for later.** *When I find something that might matter eventually, I want to keep it without
-deciding why.* Done = it's findable later. Nothing else needed to happen.
+**Keep it for later.** _When I find something that might matter eventually, I want to keep it without
+deciding why._ Done = it's findable later. Nothing else needed to happen.
 
-**Teach it my way.** *When I have a way I like things handled, I don't want to re-explain it every
-time.* Done = it keeps doing that, and I never had to open a config file.
+**Teach it my way.** _When I have a way I like things handled, I don't want to re-explain it every
+time._ Done = it keeps doing that, and I never had to open a config file.
 
-**Learn to trust it.** *When the system did something on its own, I want to see what it did and take
-it back, so I can decide how much rope to give it.* Done = I stopped checking.
+**Learn to trust it.** _When the system did something on its own, I want to see what it did and take
+it back, so I can decide how much rope to give it._ Done = I stopped checking.
 
 That last one is the adoption job. It's not a feature; it's the precondition for every other job
 being allowed to happen without a confirmation step.
@@ -135,7 +135,7 @@ being allowed to happen without a confirmation step.
 
 Anything handed to the system is one of three things, and they want opposite treatment.
 
-**A deposit.** "This belongs in the memory." Filing *is* the point; success is that it's there and
+**A deposit.** "This belongs in the memory." Filing _is_ the point; success is that it's there and
 findable. The user has no opinion about what happens next and shouldn't need one.
 
 **An errand.** "Do this with it." An action is the point and filing is a byproduct. The user has
@@ -165,7 +165,7 @@ per item and high stakes in aggregate, rare.
 
 Drawn this way, one whole class of failure disappears by definition rather than by heuristic:
 **catch-up is not permitted to create commitments or outbound drafts.** History has no live
-commitments. It may *report* that six commitments were made and never closed — that's a finding, and
+commitments. It may _report_ that six commitments were made and never closed — that's a finding, and
 adopting them is one deliberate act — but it can't quietly mint two hundred todos.
 
 It also means fifty transcripts from this week is capture at scale, while fifty from last year is
@@ -185,11 +185,11 @@ the PM's own sentence overrides it in either direction. Nobody says "ingest", an
 Catch-up has three flavours, and they are not variations — they're different jobs with different
 failure modes. This matters most because moving in is the first thing a real user does.
 
-**A transcript archive** — *"here are forty recordings."* No structure exists. The job is to
+**A transcript archive** — _"here are forty recordings."_ No structure exists. The job is to
 **create** structure: meetings, the people in them, the customers they concern, the decisions made,
 the themes that recur. The failure mode is flooding the approval queue.
 
-**A knowledge vault** — *"here's my Obsidian folder."* Structure already exists, the user authored it,
+**A knowledge vault** — _"here's my Obsidian folder."_ Structure already exists, the user authored it,
 and it encodes their own vocabulary and habits. The job is the opposite one: **preserve and index,
 don't reorganise.** Their folder names, tags, and link graph are the asset — arguably more valuable
 than the prose, because the graph is the part they can't rebuild. The failure mode is arriving to
@@ -201,12 +201,12 @@ is, resolve the links, recognise the entities, and let the user opt into promoti
 typed notes as they turn out to matter. Their material starts as theirs and becomes ours only by
 invitation.
 
-**An everything dump** — *"here's my Evernote export."* Structure is nominal and most of the content
+**An everything dump** — _"here's my Evernote export."_ Structure is nominal and most of the content
 is sediment: web clippings, receipts, half-written notes, three copies of the same thing. The job is
 to **separate signal from sediment and be honest about the ratio.** The failure mode here is the worst
 of the three and the least visible: importing eighteen hundred web clippings degrades retrieval for
 everything else, forever, and it degrades it silently. Nothing looks broken; the memory just gets
-worse at answering. Imported-but-unvetted material has to be rankable *below* material that was
+worse at answering. Imported-but-unvetted material has to be rankable _below_ material that was
 earned, or the import quietly poisons the product's core value.
 
 Across all three, two things are non-negotiable. **Nothing the user wrote gets rewritten** — we add
@@ -226,8 +226,8 @@ of a leap.
 - **An optional sentence.** Empty means "you decide," and that's the common case. A sentence turns
   the drop into an errand or a question. A named skill of the user's own does the same thing more
   precisely.
-- **A conversation instead of a dialog.** What used to be a receipt strip with *undo* and *not my
-  meeting* on it is a session that narrates what it is doing and can be argued with: the correction
+- **A conversation instead of a dialog.** What used to be a receipt strip with _undo_ and _not my
+  meeting_ on it is a session that narrates what it is doing and can be argued with: the correction
   is typing, and the agent has a tool to act on it. One line on screen says it is happening and
   offers the way in; ignore it and the right thing happens.
 - **The drop target carries intent, at no UI cost.** On the window: you decide. On a composer: I have
@@ -238,8 +238,8 @@ of a leap.
   it run, and get a report organised by what was learned rather than by files touched.
 - **Ambiguity parks; it never blocks.** Anything the system can't place lands raw and unclaimed, and
   one question at the end covers the whole residue. During a batch it never stops to ask.
-- **Rules are promoted, never authored.** After a run the user liked: *"always handle these this
-  way."* That's how someone reaches power-user configuration without ever facing a blank rule editor.
+- **Rules are promoted, never authored.** After a run the user liked: _"always handle these this
+  way."_ That's how someone reaches power-user configuration without ever facing a blank rule editor.
 
 What disappears: the type chips, the "someone else's meeting" checkbox, the "act on it" toggle. Each
 was the system asking the user to fill in a field it could either infer or ask about later, and only
@@ -253,11 +253,11 @@ when the answer actually mattered.
 
 1. **Arrival is free.** Nothing the user hands us waits on a decision, a form, or a model. If we
    need to know something, we ask after the material is safe.
-2. **Silence is an answer.** An empty field means "you decide," never "you forgot." *(product-wide:
-   applies to every optional input we ship)*
+2. **Silence is an answer.** An empty field means "you decide," never "you forgot." _(product-wide:
+   applies to every optional input we ship)_
 3. **Ask only what only they know, and only when the answer changes what happens.** A question whose
    answer we could have inferred costs more than being occasionally wrong and correctable.
-   *(product-wide)*
+   _(product-wide)_
 4. **Defer, don't block.** Ambiguity parks and batches. A system that stops five times to ask is
    worse than five separate dialogs, because you can't answer question four until it gets there.
 
@@ -266,20 +266,20 @@ when the answer actually mattered.
 5. **Reversibility inside, permission outside.** Pre-approval is absolute for anything that leaves
    the machine — Jira, Confluence, Slack, email. Anything that stays in the user's own versioned
    directory gets legibility and correction instead. Filing a file and posting to a stakeholder are
-   not the same risk, and treating them the same is what made fifty files unusable. *(product-wide
-   — this is a deliberate narrowing of "nothing writes without an approval card")*
+   not the same risk, and treating them the same is what made fifty files unusable. _(product-wide
+   — this is a deliberate narrowing of "nothing writes without an approval card")_
 6. **Correction beats undo.** Filing is reversible by moving, not by rewinding: the material is the
    user's own and they will not regret handing it over. So the affordance is "that was Kranelund's
-   call", answered in a sentence, rather than a batch rewind nobody reaches for. *(revised
-   2026-08-05; the earlier form asked for a real one-click undo of everything a run touched)*
+   call", answered in a sentence, rather than a batch rewind nobody reaches for. _(revised
+   2026-08-05; the earlier form asked for a real one-click undo of everything a run touched)_
 7. **The narration is the interface.** For anything the system did on its own, the account it gives
-   of itself *is* the UI — not a log to go find, and not a separate artifact that can go stale
-   beside it. *(product-wide: sessions, scheduled runs, sync)*
+   of itself _is_ the UI — not a log to go find, and not a separate artifact that can go stale
+   beside it. _(product-wide: sessions, scheduled runs, sync)_
 8. **Never rewrite what the user authored.** Add alongside. This is what makes handing us a personal
-   vault a reasonable act. *(product-wide)*
+   vault a reasonable act. _(product-wide)_
 9. **Propose at the altitude of the finding, not the file.** Forty files should not produce forty
    cards. One finding that spans forty files produces one card. Approval fatigue destroys the value of
-   the approvals that matter. *(product-wide)*
+   the approvals that matter. _(product-wide)_
 
 ### Adoption
 
@@ -287,14 +287,14 @@ when the answer actually mattered.
     accretes — catch-up is the time machine that lets week one look like week six. It's an activation
     mechanism, not a bulk-convenience feature.
 11. **Structure is earned, never manufactured.** No themes or insights invented from a single document
-    on arrival, with nothing to weigh it against. *(product-wide: this is already the Synthesis
-    skill's position; it should be everyone's)*
+    on arrival, with nothing to weigh it against. _(product-wide: this is already the Synthesis
+    skill's position; it should be everyone's)_
 12. **History doesn't make commitments.** What arrives as past produces structure and findings, not
     todos and drafts.
 13. **Imported material ranks below earned material** until something vouches for it. Otherwise a
     dump degrades retrieval for everything, silently.
 14. **The exit stays open.** Plain markdown, git, no proprietary format. The files are theirs; we're a
-    lens over them. *(product-wide — this is the foundation the rest of the trust story stands on)*
+    lens over them. _(product-wide — this is the foundation the rest of the trust story stands on)_
 
 ---
 
@@ -311,7 +311,7 @@ Signals to watch for, in rough order of how badly each one means we've failed:
 - The user can't answer "what did it do to my stuff?" without reading a session transcript.
 - Anything has to be configured before the first useful thing happens.
 - There are two inboxes and the user has to keep both at zero.
-- We're maintaining a classifier *and* a router, and neither is authoritative.
+- We're maintaining a classifier _and_ a router, and neither is authoritative.
 
 ---
 
@@ -323,9 +323,9 @@ Deliberately out of scope here, to be designed separately:
   disappears as an input method entirely and the session and the report become the only surfaces.
   That's an argument for putting the intelligence in the pipeline rather than the drop UI, which this
   document assumes but does not specify.
-- ~~**The instruction ambiguity.**~~ *Answered 2026-08-05.* "Summarise these" over five interviews
-  could mean five summaries or one synthesis. It was briefly a control the PM set (*each* or
-  *together*); it is now simply what the agent is reading, since one session handles the whole drop
+- ~~**The instruction ambiguity.**~~ _Answered 2026-08-05._ "Summarise these" over five interviews
+  could mean five summaries or one synthesis. It was briefly a control the PM set (_each_ or
+  _together_); it is now simply what the agent is reading, since one session handles the whole drop
   and can hold five interviews at once. What is left open is unchanged: whether a run over genuinely
   unrelated material should look for patterns across it. The arrival skill says no and points at
   synthesis, which needs a question to work from.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import {
   CalendarClock,
@@ -28,6 +28,7 @@ import { useApp } from '../state/app-state';
 import { useChatMentions } from './ChatMentions';
 import { SkillPicker } from './SkillPicker';
 import { PageHeader } from '../components/PageHeader';
+import { NewWorkspace } from '../components/NewWorkspace';
 import {
   COMPOSER_INPUT,
   COMPOSER_ROW,
@@ -38,12 +39,13 @@ import {
 } from '../components/Composer';
 import { FirstSteps, firstStepsShowing } from '../onboarding/FirstSteps';
 import { contentNotes } from '../lib/contexts';
-import { requestCapture } from '../lib/capture-event';
+import { isBulkPaste, requestCapture } from '../lib/capture-event';
 import { navFromEvent, type NavOpts } from '../lib/nav';
 import { localDateStr } from '../lib/dates';
 import {
   homeRows,
   type AttentionKind,
+  type AttentionRow,
   type AttentionTarget,
   type AttentionTone,
 } from '../lib/attention';
@@ -208,15 +210,6 @@ function QuickActions() {
 // Composer — the front door for questions
 // ---------------------------------------------------------------------------
 
-/** Long enough that it is material, not a question — a pasted transcript goes to
- *  capture (where it is classified and confirmed), never into the agent as prose. */
-const BULK_PASTE_CHARS = 800;
-const BULK_PASTE_LINES = 10;
-
-function isBulk(text: string): boolean {
-  return text.length > BULK_PASTE_CHARS || text.split('\n').length > BULK_PASTE_LINES;
-}
-
 /**
  * The app's front door for questions: the same composer shell as the session and the
  * browse pages. Typing asks the memory; a pasted transcript or screenshot
@@ -302,7 +295,7 @@ function HomeComposer({
           }
           // A wall of text pasted into an empty bar is material, not a question.
           const text = e.clipboardData.getData('text/plain');
-          if (!ask.trim() && isBulk(text)) {
+          if (!ask.trim() && isBulkPaste(text)) {
             e.preventDefault();
             requestCapture({ text });
           }
@@ -345,7 +338,9 @@ function HomeComposer({
 /** All meeting notes in the workspace (index files aren't meetings). */
 function meetingNotes(tree: ReturnType<typeof useApp>['tree']): NoteRefDTO[] {
   const group = tree?.groups.find((g) => g.type === 'meeting');
-  return (group?.notes ?? []).filter((n) => !isFolderIndex(n.path) && n.eventStatus !== 'cancelled');
+  return (group?.notes ?? []).filter(
+    (n) => !isFolderIndex(n.path) && n.eventStatus !== 'cancelled',
+  );
 }
 
 interface Starter {
@@ -534,6 +529,9 @@ function Starters({ onPick }: { onPick: (text: string) => void }) {
 // ---------------------------------------------------------------------------
 
 const isMac = navigator.userAgent.includes('Macintosh');
+const isWindows = navigator.userAgent.includes('Windows');
+/** Where the Windows installer lives. Opens in the browser, like every link here. */
+const GIT_FOR_WINDOWS = 'https://git-scm.com/download/win';
 
 /**
  * Dismissed notices, per workspace: `qale.homeNotices.v1:<workspace path>` → ids.
@@ -606,11 +604,33 @@ function Notices() {
               To turn it on, run <Command>xcode-select --install</Command> in Terminal, then reopen
               the workspace.
             </>
+          ) : isWindows ? (
+            <>
+              To turn it on, install{' '}
+              <a
+                href={GIT_FOR_WINDOWS}
+                target="_blank"
+                rel="noreferrer"
+                className={`rounded-sm font-medium underline underline-offset-2 ${FOCUS_RING}`}
+              >
+                Git for Windows
+              </a>
+              , then reopen the workspace.
+            </>
           ) : (
             'To turn it on, install git, then reopen the workspace.'
           )}
         </>
       ),
+    });
+  }
+  // Windows only, and never dismissed by the platform check: `pathTooDeep` is
+  // false everywhere else, so this costs a macOS reader nothing.
+  if (vault.pathTooDeep) {
+    notices.push({
+      id: 'deep-path',
+      title: 'This folder sits too deep for Windows',
+      body: 'Windows cannot open a file whose full path is longer than 260 characters, so notes and session files in here can fail to save. Make a workspace nearer the top of the drive, like C:\\Qale, and move these files into it.',
     });
   }
   if (vault.syncedBy) {
@@ -688,8 +708,18 @@ const MAX_ROWS = 4;
  * the same list the sidebar badge and the Inbox read (lib/attention.ts).
  */
 function Waiting() {
-  const { tree, settings, attention, openInbox, openTodos, openDoc, openChat, openFolder, dismissCapture, undoCapture } =
-    useApp();
+  const {
+    tree,
+    settings,
+    attention,
+    openInbox,
+    openTodos,
+    openDoc,
+    openChat,
+    openFolder,
+    dismissCapture,
+    undoCapture,
+  } = useApp();
   const now = useNow();
   /**
    * The series that just went quiet, if one did. Dismissing two meetings from
@@ -698,6 +728,8 @@ function Waiting() {
    * offers the way back, until the PO leaves the page.
    */
   const [muted, setMuted] = useState<{ path: string; series: string } | null>(null);
+  /** Whether the folded group of empty meetings is open. Nothing else folds. */
+  const [unfolded, setUnfolded] = useState(false);
 
   const rows = useMemo(() => homeRows(attention, MAX_ROWS, now), [attention, now]);
 
@@ -718,6 +750,10 @@ function Waiting() {
         // The row IS the way to fill the meeting: the tray opens already
         // attached to it, so nothing has to be picked twice.
         return requestCapture({ aim: { kind: 'meeting', path: target.path, title: target.title } });
+      case 'expand':
+        // Not a place. The group unfolds where it stands, so the meetings it
+        // holds are read and dealt with without leaving the page.
+        return setUnfolded((v) => !v);
     }
   };
 
@@ -765,46 +801,30 @@ function Waiting() {
     <div>
       <h2 className="mb-1 text-dense font-semibold text-muted-foreground">Waiting on you</h2>
       <ul className="-mx-2.5">
-        {rows.map((row) => {
-          const Icon = KIND_ICON[row.kind];
-          // One named meeting can be waved off; the door standing for several
-          // cannot, because it is not about any one of them.
-          const waveOff = row.kind === 'capture' && row.target.open === 'capture' ? row.target.path : null;
-          return (
-            <li key={row.id} className="group/row relative">
-              <button
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors duration-150 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none"
-                onClick={(e: MouseEvent<HTMLButtonElement>) => openRow(row.target, navFromEvent(e))}
-                onAuxClick={(e: MouseEvent<HTMLButtonElement>) =>
-                  e.button === 1 && openRow(row.target, navFromEvent(e))
-                }
-              >
-                <Icon className={`size-4 shrink-0 ${TONE_CLASS[row.tone]}`} aria-hidden />
-                <span className="min-w-0 flex-1 truncate text-sm">{row.label}</span>
-                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{row.meta}</span>
-                {/* The trailing slot is the dismiss on a row that can be waved
-                    off, so the column stays one column and the chevrons on the
-                    other rows keep their line. */}
-                <ChevronRight
-                  className={`size-3.5 shrink-0 text-muted-foreground/50 ${waveOff ? 'invisible' : ''}`}
-                  aria-hidden
+        {rows.map((row) => (
+          <Fragment key={row.id}>
+            <WaitingRow
+              row={row}
+              unfolded={unfolded}
+              openRow={openRow}
+              openDoc={openDoc}
+              dismiss={dismiss}
+            />
+            {row.children &&
+              unfolded &&
+              row.children.map((child) => (
+                <WaitingRow
+                  key={child.id}
+                  row={child}
+                  nested
+                  unfolded={unfolded}
+                  openRow={openRow}
+                  openDoc={openDoc}
+                  dismiss={dismiss}
                 />
-              </button>
-              {waveOff && (
-                /* Quiet but always there — a control you can only find by
-                   hovering is a control most people never find. */
-                <button
-                  className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded-md p-1 text-muted-foreground/40 transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none group-hover/row:text-muted-foreground motion-reduce:transition-none"
-                  onClick={() => dismiss(waveOff)}
-                  aria-label="Don’t ask about this meeting again"
-                  title="Don’t ask about this meeting again"
-                >
-                  <X className="size-3.5" aria-hidden />
-                </button>
-              )}
-            </li>
-          );
-        })}
+              ))}
+          </Fragment>
+        ))}
         {muted && (
           <li className="flex items-center gap-2.5 px-2.5 py-2">
             <Mic className="size-4 shrink-0 text-muted-foreground/50" aria-hidden />
@@ -827,11 +847,128 @@ function Waiting() {
   );
 }
 
+/** The shared shape of a waiting row: icon, sentence, short fact, chevron. */
+const ROW_SHELL =
+  'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors duration-150 hover:bg-accent motion-reduce:transition-none';
+const FOCUS_RING = 'focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none';
+
+/**
+ * One row of the waiting list.
+ *
+ * Most rows are a single button: one thing to look at, one place it goes. An
+ * empty-meeting row is two things at once — the meeting, and the move that
+ * fills it — so it is a plain element carrying the click, with the meeting's
+ * name and the "add a transcript" fact as real buttons inside it. That keeps
+ * both reachable by keyboard, which a link nested in a button could not be.
+ */
+function WaitingRow({
+  row,
+  nested,
+  unfolded,
+  openRow,
+  openDoc,
+  dismiss,
+}: {
+  row: AttentionRow;
+  nested?: boolean;
+  unfolded: boolean;
+  openRow: (target: AttentionTarget, opts?: NavOpts) => void;
+  openDoc: (path: string, opts?: NavOpts) => unknown;
+  dismiss: (path: string) => void;
+}) {
+  const Icon = KIND_ICON[row.kind];
+  // One named meeting can be waved off; the group standing for several cannot,
+  // because it is not about any one of them.
+  const waveOff = row.target.open === 'capture' ? row.target.path : null;
+  const group = !!row.children;
+  const open = (e: MouseEvent<HTMLElement>) => openRow(row.target, navFromEvent(e));
+
+  const icon = <Icon className={`size-4 shrink-0 ${TONE_CLASS[row.tone]}`} aria-hidden />;
+  // The trailing slot is the dismiss on a row that can be waved off, so the
+  // column stays one column and the chevrons on the other rows keep their line.
+  // A group's chevron points down at what it holds, and turns when it opens.
+  const chevron = (
+    <ChevronRight
+      className={`size-3.5 shrink-0 text-muted-foreground/50 transition-transform duration-150 motion-reduce:transition-none ${
+        waveOff ? 'invisible' : ''
+      } ${group ? (unfolded ? '-rotate-90' : 'rotate-90') : ''}`}
+      aria-hidden
+    />
+  );
+
+  return (
+    <li className={`group/row relative ${nested ? 'pl-6' : ''}`}>
+      {row.link ? (
+        <div
+          className={`${ROW_SHELL} cursor-pointer`}
+          onClick={open}
+          onAuxClick={(e: MouseEvent<HTMLDivElement>) => e.button === 1 && open(e)}
+        >
+          {icon}
+          <span className="min-w-0 flex-1 truncate text-sm">
+            {row.link.before}
+            <button
+              className={`rounded-sm text-brand underline-offset-2 hover:underline ${FOCUS_RING}`}
+              onClick={(e: MouseEvent<HTMLButtonElement>) => {
+                e.stopPropagation();
+                void openDoc(row.link!.path, navFromEvent(e));
+              }}
+            >
+              {row.link.text}
+            </button>
+            {row.link.after}
+          </span>
+          <button
+            className={`shrink-0 rounded-sm text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline ${FOCUS_RING}`}
+            onClick={(e: MouseEvent<HTMLButtonElement>) => {
+              e.stopPropagation();
+              open(e);
+            }}
+          >
+            {row.meta}
+          </button>
+          {chevron}
+        </div>
+      ) : (
+        <button
+          className={`${ROW_SHELL} ${FOCUS_RING}`}
+          onClick={open}
+          onAuxClick={(e: MouseEvent<HTMLButtonElement>) => e.button === 1 && open(e)}
+          aria-expanded={group ? unfolded : undefined}
+        >
+          {icon}
+          <span className="min-w-0 flex-1 truncate text-sm">{row.label}</span>
+          <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+            {group && unfolded ? 'hide' : row.meta}
+          </span>
+          {chevron}
+        </button>
+      )}
+      {waveOff && (
+        /* Quiet but always there — a control you can only find by hovering is a
+           control most people never find. */
+        <button
+          className={`absolute top-1/2 right-1.5 -translate-y-1/2 rounded-md p-1 text-muted-foreground/40 transition-colors duration-150 hover:bg-accent hover:text-foreground group-hover/row:text-muted-foreground motion-reduce:transition-none ${FOCUS_RING}`}
+          onClick={() => dismiss(waveOff)}
+          aria-label="Don’t ask about this meeting again"
+          title="Don’t ask about this meeting again"
+        >
+          <X className="size-3.5" aria-hidden />
+        </button>
+      )}
+    </li>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // No workspace
 // ---------------------------------------------------------------------------
 
 function NoWorkspace({ onOpen }: { onOpen: () => void }) {
+  // Two doors, same as the opening: start a fresh folder, or point at one that
+  // already exists. Starting one is the commoner answer here, so it is the
+  // form that unfolds in place rather than another OS picker.
+  const [creating, setCreating] = useState(false);
   return (
     <div className="flex h-full flex-col">
       <PageHeader icon={House} label="Home" />
@@ -846,18 +983,26 @@ function NoWorkspace({ onOpen }: { onOpen: () => void }) {
               markdown in a folder you own, and nothing is ever written without your approval.
             </p>
           </div>
-          <div className="flex items-center gap-3 rounded-xl bg-card p-4 ring-1 ring-border">
-            <FolderOpen className="size-5 shrink-0 text-muted-foreground" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium">Open a workspace to start</div>
-              <div className="text-sm text-muted-foreground">
-                Any folder of markdown works, an existing Obsidian vault included.
+          {creating ? (
+            <NewWorkspace onCancel={() => setCreating(false)} />
+          ) : (
+            <div className="flex items-center gap-3 rounded-xl bg-card p-4 ring-1 ring-border">
+              <FolderOpen className="size-5 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium">Pick a folder to work in</div>
+                <div className="text-sm text-muted-foreground">
+                  Start a new one, or open a folder of markdown you already have — an existing
+                  Obsidian vault included.
+                </div>
               </div>
+              <Button size="sm" onClick={() => setCreating(true)}>
+                New workspace…
+              </Button>
+              <Button size="sm" variant="outline" onClick={onOpen}>
+                Open…
+              </Button>
             </div>
-            <Button size="sm" onClick={onOpen}>
-              Open workspace…
-            </Button>
-          </div>
+          )}
         </div>
       </div>
     </div>

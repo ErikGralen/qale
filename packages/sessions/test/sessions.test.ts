@@ -71,17 +71,26 @@ test('an unknown start is flagged and dropped, and the file stays reachable', ()
 });
 
 test('governs: material is read, everything else takes over the session', () => {
-  const ref = parseRunnable(`---\ntype: skill\nstarts: [read-when-relevant]\nsummary: s\n---\nX.\n`, 'g');
+  const ref = parseRunnable(
+    `---\ntype: skill\nstarts: [read-when-relevant]\nsummary: s\n---\nX.\n`,
+    'g',
+  );
   assert.equal(governs(ref), false);
   assert.equal(describeStarts(ref), 'The agent reads it when it becomes relevant.');
   assert.equal(governs(parseRunnable(SYNTHESIS_SKILL, 'synthesis')), true);
-  assert.equal(describeStarts(parseRunnable(VOICE_EXEC, 'voice-exec')), 'Always applied when drafting for executives.');
+  assert.equal(
+    describeStarts(parseRunnable(VOICE_EXEC, 'voice-exec')),
+    'Always applied when drafting for executives.',
+  );
 });
 
 test('can: capabilities are a list, and the floor is empty', () => {
   assert.deepEqual(parseRunnable(ASK_SKILL, 'ask').can, []);
   assert.deepEqual(parseRunnable(WEEKLY_UPDATE_SKILL, 'weekly-update').can, ['draft-outbound']);
-  assert.deepEqual(parseRunnable(SYNTHESIS_SKILL, 'synthesis').can, ['draft-outbound', 'keep-working-files']);
+  assert.deepEqual(parseRunnable(SYNTHESIS_SKILL, 'synthesis').can, [
+    'draft-outbound',
+    'keep-working-files',
+  ]);
   const junk = parseRunnable(`---\ntype: skill\ncan: [rm-rf]\nsummary: s\n---\nX.\n`, 't');
   assert.deepEqual(junk.can, [], 'a typo must never read as a capability');
   assert.ok(junk.errors.some((e) => /unknown can "rm-rf"/.test(e)));
@@ -142,10 +151,23 @@ test('keys whose machinery is gone are flagged and honour nothing', () => {
   ].join('\n');
   const c = parseRunnable(raw, 'legacy');
   for (const key of [
-    'use', 'outbound', 'session_files', 'checkpoints', 'gate_output',
-    'completion_bar', 'red_flags', 'stopping_conditions', 'on', 'skill_kind', 'tier', 'bindings',
+    'use',
+    'outbound',
+    'session_files',
+    'checkpoints',
+    'gate_output',
+    'completion_bar',
+    'red_flags',
+    'stopping_conditions',
+    'on',
+    'skill_kind',
+    'tier',
+    'bindings',
   ]) {
-    assert.ok(c.errors.some((e) => e.includes(key)), `${key} was not flagged`);
+    assert.ok(
+      c.errors.some((e) => e.includes(key)),
+      `${key} was not flagged`,
+    );
   }
 });
 
@@ -201,7 +223,10 @@ test('no shipped default carries a frontmatter error, and every one has instruct
   // surface as a red flag on the Skills page instead of a red test.
   const shipped: [string, string][] = [
     ...Object.entries(DEFAULT_SKILL_BY_NAME),
-    ...[...DEFAULT_SKILLS, ...DEFAULT_AGENTS].map(({ file, content }): [string, string] => [file, content]),
+    ...[...DEFAULT_SKILLS, ...DEFAULT_AGENTS].map(({ file, content }): [string, string] => [
+      file,
+      content,
+    ]),
   ];
   for (const [name, raw] of shipped) {
     const c = parseRunnable(raw, name);
@@ -235,7 +260,10 @@ test('a retired file keeps every fingerprint it ever shipped under', () => {
   // its list across rather than drop it.
   const shipped = [...DEFAULT_SKILLS, ...DEFAULT_AGENTS];
   for (const gone of RETIRED_SKILL_FILES) {
-    assert.ok(!shipped.some((s) => s.file === gone.file), `${gone.file} is both shipped and retired`);
+    assert.ok(
+      !shipped.some((s) => s.file === gone.file),
+      `${gone.file} is both shipped and retired`,
+    );
   }
   const withHistory = RETIRED_SKILL_FILES.filter((g) => g.shipped.length > 0);
   assert.ok(withHistory.length >= 8, 'the retired list lost its version history');
@@ -305,6 +333,30 @@ test('receipt records reads, writes and turns', () => {
   assert.ok(r.body.includes('decision: [[decisions/adopt-x]] (p_1)'));
 });
 
+/**
+ * A run reads the orientation maps, and those are deliberately never indexed, so
+ * `[[notes/index]]` is a link that can never resolve. Writing it anyway put four
+ * or five permanently broken links into the workspace per session, and the
+ * librarian found every one of them, every week, with no repair that would have
+ * worked.
+ */
+test('receipt does not link what nothing can link', () => {
+  const c = parseRunnable(ARRIVAL_SKILL, 'arrival');
+  const h = new SessionHarness('abcd1234ef', c, '2026-07-15T09:00:00Z');
+  h.beginTurn('Run the arrival skill.', '2026-07-15T09:00:00Z');
+  h.recordRead('notes/index.md');
+  h.recordRead('sessions/.files/abcd1234ef/input.md');
+  h.recordRead('meetings/acme.md');
+  const r = buildSessionReceipt(h, '2026-07-15T09:05:00Z');
+
+  // The frontmatter half is an edge list, so only the real page is in it.
+  assert.deepEqual(r.frontmatter.reads, ['[[meetings/acme]]']);
+  // The body still says everything the run read, links where a link works.
+  assert.ok(r.body.includes('- `notes/index`'), r.body);
+  assert.ok(r.body.includes('- `sessions/.files/abcd1234ef/input`'), r.body);
+  assert.ok(r.body.includes('- [[meetings/acme]]'), r.body);
+});
+
 // --- Sessions v2 Part 3: skills arrive, they aren't a mode you're locked in ---
 
 test('buildSkillBrief: a playbook arrives as rules in force, material as prose', () => {
@@ -358,7 +410,11 @@ test('a quieter arrival never strips permissions the session already had', () =>
 });
 
 test('the receipt records every skill that was in force, not just the opener', () => {
-  const h = new SessionHarness('abcd1234ef', parseRunnable(CHAT_SKILL, 'chat'), '2026-07-28T09:00:00Z');
+  const h = new SessionHarness(
+    'abcd1234ef',
+    parseRunnable(CHAT_SKILL, 'chat'),
+    '2026-07-28T09:00:00Z',
+  );
   h.beginTurn('what do these nine interviews add up to?', '2026-07-28T09:00:00Z');
   h.invokeSkill(parseRunnable(SYNTHESIS_SKILL, 'synthesis'));
   const r = buildSessionReceipt(h, '2026-07-28T09:30:00Z');
@@ -374,7 +430,11 @@ test('the receipt records every skill that was in force, not just the opener', (
 });
 
 test('a skill invoked on a later turn does not rename an already-filed receipt', () => {
-  const h = new SessionHarness('abcd1234ef', parseRunnable(CHAT_SKILL, 'chat'), '2026-07-28T09:00:00Z');
+  const h = new SessionHarness(
+    'abcd1234ef',
+    parseRunnable(CHAT_SKILL, 'chat'),
+    '2026-07-28T09:00:00Z',
+  );
   h.beginTurn('what changed this week?', '2026-07-28T09:00:00Z');
   const first = buildSessionReceipt(h, '2026-07-28T09:05:00Z');
   assert.ok(first.path.includes('-chat-'));
@@ -419,17 +479,23 @@ test('a kickoff over several pages names every one of them', () => {
 });
 
 test('a kickoff without a page, and transcripts written before this contract', () => {
-  assert.equal(buildKickoff({ skill: 'weekly-update', instruction: '' }), 'Run the weekly-update skill.');
+  assert.equal(
+    buildKickoff({ skill: 'weekly-update', instruction: '' }),
+    'Run the weekly-update skill.',
+  );
   assert.deepEqual(parseKickoff('Run the weekly-update skill.'), {
     skill: 'weekly-update',
     instruction: '',
   });
   // "session" was the older word for the same thing — old conversations still say it.
-  assert.deepEqual(parseKickoff('Run the before-meeting session on meetings/2026-07-30-nordkap.md: prep it.'), {
-    skill: 'before-meeting',
-    targets: ['meetings/2026-07-30-nordkap.md'],
-    instruction: 'prep it.',
-  });
+  assert.deepEqual(
+    parseKickoff('Run the before-meeting session on meetings/2026-07-30-nordkap.md: prep it.'),
+    {
+      skill: 'before-meeting',
+      targets: ['meetings/2026-07-30-nordkap.md'],
+      instruction: 'prep it.',
+    },
+  );
 });
 
 test('a message the PM typed is never mistaken for a kickoff', () => {

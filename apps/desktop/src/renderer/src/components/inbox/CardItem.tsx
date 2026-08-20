@@ -1,8 +1,19 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@qale/ui';
-import { AlertTriangle, ArrowUpRight, Check, ChevronDown, Clock, MessageSquare, Pencil, RefreshCw, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  CalendarClock,
+  Check,
+  ChevronDown,
+  Clock,
+  MessageSquare,
+  Pencil,
+  Wrench,
+  X,
+} from 'lucide-react';
 import type { OutboundPayloadDTO, ProposalDTO, UpdatePayloadDTO } from '@qale/ipc';
-import { normalizeLinkTarget } from '@qale/domain';
+import { describeEventWhen, normalizeLinkTarget, rsvpAnswer } from '@qale/domain';
 import { useApp } from '../../state/app-state';
 import { invoke } from '../../lib/ipc';
 import {
@@ -18,7 +29,14 @@ import { navFromEvent, type NavOpts } from '../../lib/nav';
 import { Markdown } from '../Markdown';
 import { ExternalRefChip } from '../ExternalRef';
 import { outboundAct, providerName, rowFocusClass, useQueueFocus, WikiText } from './shared';
-import { bareRef, cardHeadline, iconForRef, sourceHint, stripFrontmatter, titleForRef } from './cardMeta';
+import {
+  bareRef,
+  cardHeadline,
+  iconForRef,
+  sourceHint,
+  stripFrontmatter,
+  titleForRef,
+} from './cardMeta';
 
 export interface CardItemProps {
   proposal: ProposalDTO;
@@ -100,6 +118,22 @@ function InferenceFlag() {
   );
 }
 
+/** The PO's own words are the source. Quiet, and never the amber flag: a card
+ *  built on what they just said is the best-sourced kind there is, and telling
+ *  them to double-check it is telling them to double-check themselves. A chat
+ *  message is not a note, so there was nothing to cite and the card said
+ *  "Unverified" instead of saying who asked. */
+function AskedLine() {
+  return (
+    <span
+      className="inline-flex items-center gap-1"
+      title="You asked for this in the conversation. Nothing here was inferred."
+    >
+      <MessageSquare className="size-3 shrink-0" aria-hidden /> You asked for this
+    </span>
+  );
+}
+
 /**
  * The housekeeping tier of a meeting review — mechanical writes (hub links,
  * ledger bumps) shown as one-line rows so the review reads as a couple of real
@@ -157,7 +191,13 @@ export function HousekeepingItem(props: CardItemProps) {
       >
         <Pencil className="size-3.5" />
       </button>
-      <Button size="sm" variant="ghost" onClick={() => onAccept()} disabled={busy} aria-label="Approve">
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => onAccept()}
+        disabled={busy}
+        aria-label="Approve"
+      >
         <Check className="size-3.5" />
       </Button>
       <Button size="sm" variant="ghost" onClick={onReject} disabled={busy} aria-label="Discard">
@@ -180,19 +220,21 @@ export function CardItem({
   initialExpanded,
   onCollapse,
 }: CardItemProps) {
-  const { previewProposal, openSession } = useApp();
+  const { previewProposal, openSession, askInSession, sessions } = useApp();
   const [preview, setPreview] = useState<{
     before: string;
     after: string;
     stale: boolean;
-    staleReason?: 'changed' | 'unanchored';
+    staleReason?: 'unanchored' | 'duplicate' | 'missing';
+    moved?: boolean;
     frontmatterChanges?: { key: string; before: unknown; after: unknown }[];
   } | null>(null);
-  const [rerunning, setRerunning] = useState(false);
   const [expanded, setExpanded] = useState(!!initialExpanded);
   const [editing, setEditing] = useState(false);
   const [draftBody, setDraftBody] = useState('');
   const [draftPatch, setDraftPatch] = useState<{ search: string; replace: string }[]>([]);
+  // null = this card has no append lever, so editing must not add one.
+  const [draftAppend, setDraftAppend] = useState<string | null>(null);
   const [whyOpen, setWhyOpen] = useState(false);
   const ref = useQueueFocus<HTMLLIElement>(focused);
 
@@ -211,7 +253,8 @@ export function CardItem({
     else setExpanded((x) => !x);
   };
 
-  const { Icon, headline, authored, verb, note, replaces, retitle } = cardHeadline(proposal);
+  const { Icon, headline, authored, verb, note, creates, replaces, retitle } =
+    cardHeadline(proposal);
   // Provenance is stated once. Closed, it is this line — the only thing telling
   // the PO where a change came from. Open, the evidence chips below say it
   // better (they open), so the line goes rather than sit above its own echo.
@@ -242,7 +285,9 @@ export function CardItem({
 
   const startEdit = () => {
     if (proposal.kind === 'update') {
-      setDraftPatch(((proposal.payload as UpdatePayloadDTO).patch ?? []).map((p) => ({ ...p })));
+      const payload = proposal.payload as UpdatePayloadDTO;
+      setDraftPatch((payload.patch ?? []).map((p) => ({ ...p })));
+      setDraftAppend(payload.append ?? null);
     } else {
       setDraftBody((proposal.payload as { body?: string }).body ?? '');
     }
@@ -258,7 +303,9 @@ export function CardItem({
       '',
       `Change: ${headline}`,
       `Why: ${proposal.rationale}`,
-      proposal.evidence.length > 0 ? `Sources: ${proposal.evidence.map((e) => e.ref).join(', ')}` : null,
+      proposal.evidence.length > 0
+        ? `Sources: ${proposal.evidence.map((e) => e.ref).join(', ')}`
+        : null,
       '',
       'Proposed payload:',
       '```json',
@@ -276,10 +323,56 @@ export function CardItem({
     });
   };
 
+  // Why this edit has nowhere to go, in one sentence — the card's own words for
+  // it, reused by the banner and by the message the session gets.
+  const placementProblem = (() => {
+    if (preview?.staleReason === 'duplicate')
+      return 'the text it adds is already in the note word for word';
+    if (preview?.staleReason === 'missing') return 'the note it belongs to is gone';
+    return "the text it was pointing at isn't in the note any more, or it now appears there more than once";
+  })();
+
+  // Hand a card that can no longer be applied back to the conversation that
+  // wrote it: that session is the only one allowed to withdraw its own card,
+  // and the only one that knows what the card was for. This used to re-run the
+  // skill from scratch, which opened a session that had never heard of the card
+  // and asked the PM what they wanted.
+  const owningSession = sessions.find((s) => s.id === proposal.sessionId);
+  const fix = () => {
+    const payload = proposal.payload as UpdatePayloadDTO;
+    const anchors = (payload.patch ?? []).map((p) => p.search).filter(Boolean);
+    const prompt = [
+      `A card you put in front of me can't be applied any more: ${placementProblem}.`,
+      '',
+      `Card: ${proposal.id}`,
+      `Note: ${payload.path}`,
+      `What it was for: ${proposal.rationale}`,
+      anchors.length > 0 ? ['', 'The text it was anchored to:', '```', ...anchors, '```'] : null,
+      '',
+      owningSession
+        ? `Read ${payload.path} as it stands now, then withdraw_proposal ${proposal.id} and propose the edit again against the note's current text. If what it wanted is already there, or no longer needed, withdraw it and say so in one line. Don't touch anything else.`
+        : `Read ${payload.path} as it stands now, then propose this edit again against the note's current text. The card came from a session that is gone, so I'll discard the old one myself. If what it wanted is already there, or no longer needed, say so in one line. Don't touch anything else.`,
+    ]
+      .flat()
+      .filter((line) => line !== null)
+      .join('\n');
+    if (owningSession) askInSession({ id: owningSession.id, title: owningSession.title }, prompt);
+    else
+      openSession(undefined, {
+        initialPrompt: prompt,
+        title: `Fix: ${headline.slice(0, 48)}`,
+        fresh: true,
+      });
+  };
+
   const approveEdited = () => {
     const edited =
       proposal.kind === 'update'
-        ? { ...(proposal.payload as UpdatePayloadDTO), patch: draftPatch }
+        ? {
+            ...(proposal.payload as UpdatePayloadDTO),
+            patch: draftPatch,
+            ...(draftAppend !== null ? { append: draftAppend } : {}),
+          }
         : { ...(proposal.payload as unknown as Record<string, unknown>), body: draftBody };
     setEditing(false);
     onAccept(edited);
@@ -306,91 +399,132 @@ export function CardItem({
             <span className="font-medium text-foreground">Leaves your workspace</span>
           </div>
           <OutboundTargetLine payload={outbound} onOpen={onOpen} />
+          {/* When it lands. On a calendar card this is the fact being approved —
+              the head named the event and the system and never once said which
+              day or hour, which is the only thing a person checks. */}
+          <EventWhenLine payload={outbound} />
           {/* The target line names the record; this names the change. Full ink,
               regular weight — the longest line in the head shouldn't also be
               the faintest one. 4px binds the label to its target, 8px separates
-              the pair from the sentence: one beat, not three even ones. */}
-          <p className="mt-2 text-sm leading-snug text-balance break-words text-foreground">{headline}</p>
-          {(proposal.inference || proposal.selfStarted) && (
+              the pair from the sentence: one beat, not three even ones. Only an
+              agent-authored headline earns the line: the mechanical fallback is
+              built from the same payload as the target line, so it can only
+              ever restate it. */}
+          {authored && (
+            <p className="mt-2 text-sm leading-snug text-balance break-words text-foreground">
+              {headline}
+            </p>
+          )}
+          {(proposal.asked || proposal.inference || proposal.selfStarted) && (
             <span className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
-              {proposal.inference && <InferenceFlag />}
+              {proposal.asked ? <AskedLine /> : proposal.inference && <InferenceFlag />}
               {proposal.selfStarted && <SelfStartedLine text={proposal.selfStarted} />}
             </span>
           )}
         </div>
       ) : (
-      /* Header: the scannable human headline + inline approve/discard. The whole
+        /* Header: the scannable human headline + inline approve/discard. The whole
          line toggles the detail. Actions stay top-aligned and reachable even
          when the headline wraps to two lines. */
-      <div className="flex items-start gap-2 px-4 py-3">
-        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <div className="min-w-0 flex-1 cursor-pointer" onClick={toggleDetail}>
-          <span className="block text-sm leading-snug font-medium text-balance break-words text-foreground">
-            {note && !authored ? (
-              // "Update <note>" — the note is the subject, so it renders as a
-              // distinct, openable chip instead of running into the verb.
-              <>
-                <span className="text-muted-foreground">{verb} </span>
-                <NoteChip title={note.title} path={note.path} onOpen={(opts) => onOpen(note.path, opts)} />
-              </>
-            ) : (
-              headline
-            )}
-          </span>
-          {(replaces || retitle || (note && authored) || source || proposal.inference || proposal.selfStarted) && (
-            <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
-              {note && authored && (
-                <NoteChip title={note.title} path={note.path} onOpen={(opts) => onOpen(note.path, opts)} small />
+        <div className="flex items-start gap-2 px-4 py-3">
+          <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <div className="min-w-0 flex-1 cursor-pointer" onClick={toggleDetail}>
+            <span className="block text-sm leading-snug font-medium text-balance break-words text-foreground">
+              {note && !authored ? (
+                // "Update <note>" — the note is the subject, so it renders as a
+                // distinct, openable chip instead of running into the verb.
+                <>
+                  <span className="text-muted-foreground">{verb} </span>
+                  <NoteChip
+                    title={note.title}
+                    path={note.path}
+                    onOpen={(opts) => onOpen(note.path, opts)}
+                  />
+                </>
+              ) : (
+                headline
               )}
-              {replaces && (
-                <span>
-                  Replaces <span className="text-foreground/75">“{replaces}”</span>
-                </span>
-              )}
-              {retitle && (
-                <span>
-                  Retitles to <span className="text-foreground/75">“{retitle}”</span>
-                </span>
-              )}
-              {proposal.inference ? <InferenceFlag /> : source && <span>from {source}</span>}
-              {proposal.selfStarted && <SelfStartedLine text={proposal.selfStarted} />}
             </span>
-          )}
-        </div>
+            {(replaces ||
+              retitle ||
+              (note && authored) ||
+              creates ||
+              source ||
+              proposal.asked ||
+              proposal.inference ||
+              proposal.selfStarted) && (
+              <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+                {note && authored && (
+                  <NoteChip
+                    title={note.title}
+                    path={note.path}
+                    onOpen={(opts) => onOpen(note.path, opts)}
+                    small
+                  />
+                )}
+                {/* Where a create card lands. Plain text, not a chip: the note
+                    does not exist yet, and a chip that cannot be clicked is a
+                    promise the card can't keep. The path is on hover. */}
+                {creates && (
+                  <span title={creates.path}>
+                    Files as <span className="text-foreground/75">“{creates.title}”</span>
+                  </span>
+                )}
+                {replaces && (
+                  <span>
+                    Replaces <span className="text-foreground/75">“{replaces}”</span>
+                  </span>
+                )}
+                {retitle && (
+                  <span>
+                    Retitles to <span className="text-foreground/75">“{retitle}”</span>
+                  </span>
+                )}
+                {proposal.asked ? (
+                  <AskedLine />
+                ) : proposal.inference ? (
+                  <InferenceFlag />
+                ) : (
+                  source && <span>from {source}</span>
+                )}
+                {proposal.selfStarted && <SelfStartedLine text={proposal.selfStarted} />}
+              </span>
+            )}
+          </div>
 
-        <div className="flex shrink-0 items-center gap-0.5">
-          {!open && (
-            <>
-              <button
-                className="rounded-md p-1.5 text-brand transition-colors hover:bg-brand/10 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                onClick={() => onAccept()}
-                disabled={busy || preview?.stale}
-                aria-label="Approve"
-                title="Approve"
-              >
-                <Check className="size-4" />
-              </button>
-              <button
-                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                onClick={onReject}
-                disabled={busy}
-                aria-label="Discard"
-                title="Discard"
-              >
-                <X className="size-4" />
-              </button>
-            </>
-          )}
-          <button
-            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={toggleDetail}
-            aria-label={open ? 'Collapse' : 'Show detail'}
-            title={open ? 'Collapse' : 'Show detail'}
-          >
-            <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
-          </button>
+          <div className="flex shrink-0 items-center gap-0.5">
+            {!open && (
+              <>
+                <button
+                  className="rounded-md p-1.5 text-brand transition-colors hover:bg-brand/10 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  onClick={() => onAccept()}
+                  disabled={busy || preview?.stale}
+                  aria-label="Approve"
+                  title="Approve"
+                >
+                  <Check className="size-4" />
+                </button>
+                <button
+                  className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  onClick={onReject}
+                  disabled={busy}
+                  aria-label="Discard"
+                  title="Discard"
+                >
+                  <X className="size-4" />
+                </button>
+              </>
+            )}
+            <button
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              onClick={toggleDetail}
+              aria-label={open ? 'Collapse' : 'Show detail'}
+              title={open ? 'Collapse' : 'Show detail'}
+            >
+              <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
         </div>
-      </div>
       )}
 
       {open && (
@@ -446,7 +580,12 @@ export function CardItem({
                 // Resolve then open, honoring browser-style modifiers so ⌘/middle
                 // click drops the note into a background tab. Snapshot the intent
                 // before the await — the event is pooled and gone by then.
-                const openEvidence = async (ev: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; button?: number }) => {
+                const openEvidence = async (ev: {
+                  metaKey: boolean;
+                  ctrlKey: boolean;
+                  shiftKey: boolean;
+                  button?: number;
+                }) => {
                   const opts = navFromEvent(ev);
                   const path = await invoke['note:resolveLink'](evTarget);
                   if (path) onOpen(path, opts);
@@ -479,8 +618,10 @@ export function CardItem({
               kind={proposal.kind}
               draftBody={draftBody}
               draftPatch={draftPatch}
+              draftAppend={draftAppend}
               onBody={setDraftBody}
               onPatch={setDraftPatch}
+              onAppend={setDraftAppend}
             />
           ) : outbound ? (
             <OutboundDetail payload={outbound} onOpen={onOpen} />
@@ -493,38 +634,41 @@ export function CardItem({
             <PreviewSkeleton />
           )}
 
-          {preview?.stale && (
+          {preview?.stale ? (
             <div
               role="alert"
               className="mt-3 flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive"
             >
-              <span className="flex-1">
-                {preview.staleReason === 'unanchored'
-                  ? "Couldn't line this edit up with the note's current text, so there's nothing to apply."
-                  : 'The note changed since this card was proposed, so the edit no longer fits.'}{' '}
-                {proposal.skill
-                  ? 'Re-run the session to regenerate it against the current note.'
-                  : 'Discard it and let the agent propose a fresh one.'}
-              </span>
-              {proposal.skill && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={rerunning}
-                  onClick={async () => {
-                    setRerunning(true);
-                    try {
-                      await invoke['schedule:runNow'](proposal.skill!);
-                    } finally {
-                      setRerunning(false);
-                    }
-                  }}
-                >
-                  <RefreshCw className={`size-3.5${rerunning ? ' animate-spin' : ''}`} />
-                  {rerunning ? 'Re-running…' : 'Re-run session'}
-                </Button>
+              {preview.staleReason === 'missing' ? (
+                // Nothing to redo it against, so there is no repair to offer.
+                <span className="flex-1">
+                  The note this edit belongs to is gone, so there is nothing to change. Discard the
+                  card.
+                </span>
+              ) : (
+                <>
+                  <span className="flex-1">
+                    This edit has nowhere to go: {placementProblem}. Send it back to be redone
+                    against the note as it reads now, or edit it yourself.
+                  </span>
+                  <Button size="sm" variant="outline" onClick={fix}>
+                    <Wrench className="size-3.5" />
+                    Fix this
+                  </Button>
+                </>
               )}
             </div>
+          ) : (
+            // The note moved under a card that still fits. Not a warning: the
+            // diff above is against the note as it reads now, so what gets
+            // approved is what is on screen. Said quietly because the sentence
+            // the card was written about may have moved with it.
+            preview?.moved && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                The note changed after this was proposed. The change above is against the note as it
+                reads now.
+              </p>
+            )
           )}
 
           {error && (
@@ -589,7 +733,12 @@ export function CardItem({
                     identical outlines flanking it, so three buttons competed at
                     the same weight; as ghosts they read as what they are —
                     adjuncts to the one decision the card is asking for. */}
-                <Button size="sm" variant="ghost" onClick={startEdit} disabled={busy || preview?.stale}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={startEdit}
+                  disabled={busy || preview?.stale}
+                >
                   <Pencil className="size-3.5" /> Edit
                 </Button>
                 <Button size="sm" variant="ghost" onClick={onReject} disabled={busy}>
@@ -613,33 +762,61 @@ function EditFields({
   kind,
   draftBody,
   draftPatch,
+  draftAppend,
   onBody,
   onPatch,
+  onAppend,
 }: {
   kind: ProposalDTO['kind'];
   draftBody: string;
   draftPatch: { search: string; replace: string }[];
+  /** The card's appended text, or null when it has no append lever to edit. */
+  draftAppend: string | null;
   onBody: (v: string) => void;
-  onPatch: (fn: (d: { search: string; replace: string }[]) => { search: string; replace: string }[]) => void;
+  onPatch: (
+    fn: (d: { search: string; replace: string }[]) => { search: string; replace: string }[],
+  ) => void;
+  onAppend: (v: string) => void;
 }) {
   return (
     <div className="mt-3 flex flex-col gap-2">
       {kind === 'update' ? (
-        draftPatch.map((blk, i) => (
-          <div key={i} className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">Replace this:</span>
-            <pre className="max-h-24 overflow-y-auto rounded-lg bg-destructive/6 p-2 text-xs whitespace-pre-wrap text-muted-foreground">
-              {blk.search}
-            </pre>
-            <span className="text-xs font-medium text-muted-foreground">With:</span>
-            <textarea
-              value={blk.replace}
-              onChange={(e) => onPatch((d) => d.map((b, j) => (j === i ? { ...b, replace: e.target.value } : b)))}
-              rows={Math.min(10, blk.replace.split('\n').length + 1)}
-              className="w-full resize-y rounded-lg border border-input bg-background p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            />
-          </div>
-        ))
+        <>
+          {draftPatch.map((blk, i) => (
+            <div key={i} className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">Replace this:</span>
+              <pre className="max-h-24 overflow-y-auto rounded-lg bg-destructive/6 p-2 text-xs whitespace-pre-wrap text-muted-foreground">
+                {blk.search}
+              </pre>
+              <span className="text-xs font-medium text-muted-foreground">With:</span>
+              <textarea
+                value={blk.replace}
+                onChange={(e) =>
+                  onPatch((d) => d.map((b, j) => (j === i ? { ...b, replace: e.target.value } : b)))
+                }
+                rows={Math.min(10, blk.replace.split('\n').length + 1)}
+                className="w-full resize-y rounded-lg border border-input bg-background p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              />
+            </div>
+          ))}
+          {/* An appended section has no "replace this" half — it is only the new
+              text, which on an empty page (a meeting the calendar made) is the
+              whole write-up. */}
+          {draftAppend !== null && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">
+                Add this to the end:
+              </span>
+              <textarea
+                value={draftAppend}
+                onChange={(e) => onAppend(e.target.value)}
+                rows={Math.min(16, draftAppend.split('\n').length + 2)}
+                autoFocus={draftPatch.length === 0}
+                className="w-full resize-y rounded-lg border border-input bg-background p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              />
+            </div>
+          )}
+        </>
       ) : (
         <textarea
           value={draftBody}
@@ -706,11 +883,18 @@ function useOutboundRefMeta(ob: OutboundPayloadDTO | null): ExternalRefMetaDTO |
  * Every branch names the system, because a card with no chip (a message, a
  * calendar event) would otherwise never say where it lands.
  */
-function OutboundTargetLine({ payload, onOpen }: { payload: OutboundPayloadDTO; onOpen: (p: string) => void }) {
+function OutboundTargetLine({
+  payload,
+  onOpen,
+}: {
+  payload: OutboundPayloadDTO;
+  onOpen: (p: string) => void;
+}) {
   const meta = useOutboundRefMeta(payload);
   const ref = outboundRef(payload);
   const system = providerName(payload);
-  const line = 'mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-medium text-foreground';
+  const line =
+    'mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-medium text-foreground';
   const quiet = 'text-muted-foreground';
 
   if (payload.action === 'create_ticket') {
@@ -726,26 +910,47 @@ function OutboundTargetLine({ payload, onOpen }: { payload: OutboundPayloadDTO; 
   }
 
   // Calendar and message cards touch no mirrored record, so the sentence is
-  // the whole target: it must carry the name and the system on its own.
+  // the whole target: it must carry the name and the system on its own. The
+  // event's own name is quoted — a title with a colon in it ("Erik x Daniel:
+  // sync") otherwise runs straight into the words around it.
   if (!ref) {
-    const event = payload.title ?? 'the event';
+    const event = payload.title ? `“${payload.title}”` : 'the event';
     const where = system ? ` in ${system}` : '';
     if (payload.action === 'create_event')
-      return <div className={line}>Add {event}{system ? ` to ${system}` : ''}</div>;
-    if (payload.action === 'update_event') return <div className={line}>Change {event}{where}</div>;
-    if (payload.action === 'respond_to_event')
       return (
         <div className={line}>
-          Reply {payload.responseStatus ?? ''} to {event}
+          Add {event} to {system ?? 'your calendar'}
+        </div>
+      );
+    if (payload.action === 'update_event')
+      return (
+        <div className={line}>
+          Change {event}
           {where}
         </div>
       );
-    return <div className={line}>Send an update to {payload.audience ?? 'stakeholders'}</div>;
+    if (payload.action === 'respond_to_event')
+      return (
+        <div className={line}>
+          Reply {rsvpAnswer(payload.responseStatus)} to {event}
+          {where}
+        </div>
+      );
+    return (
+      <div className={line}>
+        <span>Send an update to {payload.audience ?? 'stakeholders'}</span>
+        {payload.title && <span className={quiet}>: {payload.title}</span>}
+      </div>
+    );
   }
 
   return (
     <div className={line}>
-      <span>{payload.action === 'comment_ticket' ? `Comment on the${system ? ` ${system}` : ''} ticket` : 'Update'}</span>
+      <span>
+        {payload.action === 'comment_ticket'
+          ? `Comment on the${system ? ` ${system}` : ''} ticket`
+          : 'Update'}
+      </span>
       {/* A page is addressed by an opaque id, so the draft's own title is the
           fallback label — an unsynced connection must never leave the PO
           approving a write to "910231". A ticket key needs no such rescue. */}
@@ -761,12 +966,77 @@ function OutboundTargetLine({ payload, onOpen }: { payload: OutboundPayloadDTO; 
 }
 
 /**
+ * When a calendar card lands: "Mon 10 Aug · 14:00–14:30 · 30 min". The head used
+ * to name the event, the system and the reasoning while never once saying the
+ * day or the hour — the one fact a person actually checks before letting
+ * something onto their calendar. So it sits directly under the target line, at
+ * full ink, with the length as the quiet part.
+ *
+ * A start already in the past is the classic drafting miss ("the tenth" read as
+ * last month's tenth), and it is invisible in a date you have to work out. It is
+ * marked here instead, in the card's warning vocabulary.
+ */
+function EventWhenLine({ payload }: { payload: OutboundPayloadDTO }) {
+  const when = useMemo(
+    () => describeEventWhen(payload.start, payload.end),
+    [payload.start, payload.end],
+  );
+  if (!when) return null;
+  // The 30-minute default is a create_event behaviour: rescheduling with a new
+  // start leaves the existing end alone, so a length there would be a number
+  // nobody wrote and the calendar won't honour.
+  const length = when.allDay
+    ? 'All day'
+    : !when.assumedLength
+      ? when.length
+      : payload.action === 'create_event'
+        ? `${when.length} by default`
+        : null;
+  const dot = (
+    <span className="text-muted-foreground/50" aria-hidden>
+      ·
+    </span>
+  );
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+      <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+        <CalendarClock className="size-3.5 shrink-0 text-brand" aria-hidden />
+        {when.day}
+      </span>
+      {when.time && (
+        <>
+          {dot}
+          <span className="font-medium text-foreground">{when.time}</span>
+        </>
+      )}
+      {length && (
+        <>
+          {dot}
+          <span className="text-muted-foreground">{length}</span>
+        </>
+      )}
+      {when.past && (
+        <span className="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning">
+          <AlertTriangle className="size-3" aria-hidden /> Already passed
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
  * Outbound detail: the body exactly as it will be sent (rendered, never raw
  * syntax), a redline against the page's current text for `update_page`, and the
  * drafted-against-stale banner when the target moved after this was written —
  * one extra glance, never a blocked send.
  */
-function OutboundDetail({ payload, onOpen }: { payload: OutboundPayloadDTO; onOpen: (p: string) => void }) {
+function OutboundDetail({
+  payload,
+  onOpen,
+}: {
+  payload: OutboundPayloadDTO;
+  onOpen: (p: string) => void;
+}) {
   const meta = useOutboundRefMeta(payload);
   const [pageBefore, setPageBefore] = useState<string | null>(null);
   const [mirrorVersion, setMirrorVersion] = useState<number | null>(null);
@@ -802,7 +1072,9 @@ function OutboundDetail({ payload, onOpen }: { payload: OutboundPayloadDTO; onOp
   const changedSince =
     meta !== null &&
     ((payload.remote_updated !== undefined && meta.remoteUpdated !== payload.remote_updated) ||
-      (payload.version !== undefined && mirrorVersion !== null && mirrorVersion !== payload.version));
+      (payload.version !== undefined &&
+        mirrorVersion !== null &&
+        mirrorVersion !== payload.version));
   const redline = payload.action === 'update_page' && pageBefore !== null;
 
   // A localized patch previews as the page with just that passage rewritten —
@@ -822,7 +1094,9 @@ function OutboundDetail({ payload, onOpen }: { payload: OutboundPayloadDTO; onOp
 
   // Pages read by their title; only tickets go by key.
   const refName =
-    payload.action === 'update_page' ? (payload.title ?? meta?.title ?? 'The page') : meta?.externalId;
+    payload.action === 'update_page'
+      ? (payload.title ?? meta?.title ?? 'The page')
+      : meta?.externalId;
 
   return (
     <div className="mt-3">
@@ -851,7 +1125,7 @@ function OutboundDetail({ payload, onOpen }: { payload: OutboundPayloadDTO; onOp
               : payload.action === 'create_ticket'
                 ? 'The ticket'
                 : payload.action.endsWith('_event')
-                  ? 'The event'
+                  ? 'The event description'
                   : 'What gets sent'}
       </div>
       <PreviewSurface>
@@ -946,11 +1220,15 @@ function PropertyChanges({
     <ul className="flex flex-col gap-1.5">
       {changes.map((c) => (
         <li key={c.key} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-dense">
-          <span className="font-medium text-foreground/80 capitalize">{c.key.replace(/_/g, ' ')}</span>
+          <span className="font-medium text-foreground/80 capitalize">
+            {c.key.replace(/_/g, ' ')}
+          </span>
           <span className="text-muted-foreground/70 line-through decoration-destructive/40">
             {renderInline(fmValue(c.before), onOpen, `${c.key}-was`)}
           </span>
-          <span className="text-muted-foreground/50" aria-hidden>→</span>
+          <span className="text-muted-foreground/50" aria-hidden>
+            →
+          </span>
           <span className="rounded-sm bg-success/10 px-1 font-medium text-foreground">
             {renderInline(fmValue(c.after), onOpen, `${c.key}-now`)}
           </span>
@@ -973,7 +1251,11 @@ function ChangePreview({
   onOpen,
 }: {
   kind: ProposalDTO['kind'];
-  preview: { before: string; after: string; frontmatterChanges?: { key: string; before: unknown; after: unknown }[] };
+  preview: {
+    before: string;
+    after: string;
+    frontmatterChanges?: { key: string; before: unknown; after: unknown }[];
+  };
   onOpen: (path: string) => void;
 }) {
   const fmChanges = preview.frontmatterChanges ?? [];
@@ -988,7 +1270,9 @@ function ChangePreview({
         {kind === 'update' ? (
           <div className="flex flex-col gap-3">
             {fmChanges.length > 0 && <PropertyChanges changes={fmChanges} onOpen={onOpen} />}
-            {bodyChanged && <RenderedDiff before={preview.before} after={preview.after} onOpen={onOpen} />}
+            {bodyChanged && (
+              <RenderedDiff before={preview.before} after={preview.after} onOpen={onOpen} />
+            )}
           </div>
         ) : (
           <Markdown content={stripFrontmatter(preview.after)} onOpenNote={onOpen} />
@@ -1103,7 +1387,12 @@ function renderInline(text: string, onOpen: (p: string) => void, keyBase: string
   return nodes;
 }
 
-type LineStructure = { inner: string; structural: string; padLeft: number; lead: 'bullet' | 'quote' | null };
+type LineStructure = {
+  inner: string;
+  structural: string;
+  padLeft: number;
+  lead: 'bullet' | 'quote' | null;
+};
 
 /** Read a note line's block role (heading / bullet / quote) and hand back the
  *  bare inner text — markers become real structure, never raw `#`/`-`/`>`. */
@@ -1111,21 +1400,47 @@ function parseStructure(text: string): LineStructure {
   const heading = /^\s{0,3}(#{1,6})\s+(.*)$/.exec(text);
   const bullet = /^(\s*)([-*+]|\d+\.)\s+(.*)$/.exec(text);
   const quote = /^\s{0,3}>\s?(.*)$/.exec(text);
-  if (heading) return { inner: heading[2]!, structural: 'font-semibold text-foreground', padLeft: 0, lead: null };
+  if (heading)
+    return {
+      inner: heading[2]!,
+      structural: 'font-semibold text-foreground',
+      padLeft: 0,
+      lead: null,
+    };
   if (bullet)
-    return { inner: bullet[3]!, structural: '', padLeft: Math.floor((bullet[1]?.length ?? 0) / 2) * 0.85 + 0.9, lead: 'bullet' };
-  if (quote) return { inner: quote[1]!, structural: 'text-foreground/70 italic', padLeft: 0.9, lead: 'quote' };
+    return {
+      inner: bullet[3]!,
+      structural: '',
+      padLeft: Math.floor((bullet[1]?.length ?? 0) / 2) * 0.85 + 0.9,
+      lead: 'bullet',
+    };
+  if (quote)
+    return {
+      inner: quote[1]!,
+      structural: 'text-foreground/70 italic',
+      padLeft: 0.9,
+      lead: 'quote',
+    };
   return { inner: text, structural: '', padLeft: 0, lead: null };
 }
 
 function leadNode(lead: LineStructure['lead']): ReactNode {
   if (lead === 'bullet') return <span className="absolute left-2 text-muted-foreground/60">•</span>;
-  if (lead === 'quote') return <span className="absolute top-0 bottom-0 left-1.5 w-0.5 rounded bg-brand/30" aria-hidden />;
+  if (lead === 'quote')
+    return (
+      <span className="absolute top-0 bottom-0 left-1.5 w-0.5 rounded bg-brand/30" aria-hidden />
+    );
   return null;
 }
 
 /** A wholly added or removed line — the change is carried by color + strikethrough. */
-function DiffLine({ row, onOpen }: { row: { kind: 'same' | 'add' | 'del'; text: string }; onOpen: (p: string) => void }) {
+function DiffLine({
+  row,
+  onOpen,
+}: {
+  row: { kind: 'same' | 'add' | 'del'; text: string };
+  onOpen: (p: string) => void;
+}) {
   // A blank line is paragraph spacing, not content — render the gap, never an
   // empty colored bar.
   if (row.text.trim() === '') return <div className="h-2" aria-hidden />;
@@ -1157,7 +1472,15 @@ function DiffLine({ row, onOpen }: { row: { kind: 'same' | 'add' | 'del'; text: 
  * click away ("was…") rather than doubling the text inline. A pure deletion has
  * nothing new to show, so the removed span is struck in place.
  */
-function ReplaceLine({ before, after, onOpen }: { before: string; after: string; onOpen: (p: string) => void }) {
+function ReplaceLine({
+  before,
+  after,
+  onOpen,
+}: {
+  before: string;
+  after: string;
+  onOpen: (p: string) => void;
+}) {
   const s = parseStructure(after);
   const beforeInner = parseStructure(before).inner;
   const d = useMemo(() => affixDiff(beforeInner, s.inner), [beforeInner, s.inner]);
@@ -1167,12 +1490,17 @@ function ReplaceLine({ before, after, onOpen }: { before: string; after: string;
   const pad = s.padLeft ? { paddingLeft: `${s.padLeft}rem` } : undefined;
   return (
     <div>
-      <div className={`relative -mx-1 rounded-sm px-2 py-0.5 text-foreground/90 ${s.structural}`} style={pad}>
+      <div
+        className={`relative -mx-1 rounded-sm px-2 py-0.5 text-foreground/90 ${s.structural}`}
+        style={pad}
+      >
         {leadNode(s.lead)}
         <span className="[overflow-wrap:anywhere] whitespace-pre-wrap">
           {d.pre && renderInline(d.pre, onOpen, 'pre')}
           {added && (
-            <span className="rounded-sm bg-success/10 text-foreground">{renderInline(d.midAfter, onOpen, 'ma')}</span>
+            <span className="rounded-sm bg-success/10 text-foreground">
+              {renderInline(d.midAfter, onOpen, 'ma')}
+            </span>
           )}
           {!added && removed && (
             <span className="rounded-sm bg-destructive/10 text-muted-foreground line-through decoration-destructive/40">
@@ -1219,7 +1547,11 @@ function RenderedDiff({
   // Frontmatter never reaches the PO — diff only the readable body. Isolated
   // one-line edits collapse to a single word-level line before context-trimming.
   const rows = useMemo(
-    () => withContext(mergeReplacements(diffLines(stripFrontmatter(before), stripFrontmatter(after))), 2),
+    () =>
+      withContext(
+        mergeReplacements(diffLines(stripFrontmatter(before), stripFrontmatter(after))),
+        2,
+      ),
     [before, after],
   );
   return (

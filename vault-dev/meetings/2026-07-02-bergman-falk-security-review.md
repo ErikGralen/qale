@@ -1,16 +1,17 @@
 ---
-type: "meeting"
-summary: "Bergman & Falk security review kickoff: six-week process, SSO required, we owe the questionnaire and evidence"
-tags: ["compliance"]
-date: "2026-07-02"
-time: "13:30"
+type: 'meeting'
+summary: 'Bergman & Falk security review kickoff: six-week process, SSO required, we owe the questionnaire and evidence'
+tags: ['compliance']
+date: '2026-07-02'
+time: '13:30'
 duration_minutes: 60
-participants: ["me", "David Strand", "Elin Vestergaard"]
-customer: "[[customers/bergman-falk]]"
-transcript: "[[sources/2026-07-02-bergman-falk-security-review-transcript]]"
+participants: ['me', 'David Strand', 'Elin Vestergaard']
+customer: '[[customers/bergman-falk]]'
+transcript: '[[sources/2026-07-02-bergman-falk-security-review-transcript]]'
 ---
 
 ## Summary
+
 Kickoff of the vendor security review that gates the whole ~250-seat deal. Elin walked us
 through the process first: questionnaire, evidence collection, review board, six weeks if
 nothing surprising turns up. Missing SSO would be an automatic no for a firm-wide rollout, and

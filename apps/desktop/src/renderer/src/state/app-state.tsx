@@ -42,20 +42,13 @@ import type {
   VaultTreeDTO,
   VIEW_KINDS,
 } from '@qale/ipc';
-import { isFolderIndex, titleFromSlug } from '@qale/domain';
+import { isFolderIndex, titleFromSlug, type HandCreatableType } from '@qale/domain';
 import { invoke, onEvent } from '../lib/ipc';
 import { requestCapture } from '../lib/capture-event';
 import { meetingRailHorizon, qualifiesForRail } from '../lib/note-status';
 import { buildAttention, waitingOnYou, type AttentionItem } from '../lib/attention';
-import {
-  CORE_TYPES,
-  contentTypes,
-  loadRevealSeen,
-  loadRevealed,
-  persistRevealSeen,
-  persistRevealed,
-} from '../lib/reveal';
 import type { NavOpts } from '../lib/nav';
+import { isSettingsSection, type SettingsSection } from '../lib/settings-sections';
 
 /**
  * One visitable place — a document, a session, or an app view. Tabs navigate
@@ -63,35 +56,38 @@ import type { NavOpts } from '../lib/nav';
  * ACTIVE tab's history, ⌘click opens it in a new tab, and every tab has its
  * own back/forward.
  */
-export type ViewBody = { title: string } & (
+export type ViewBody = { title: string } &
   /** The gateway: greeting, one composer, what's waiting. Also what an empty
    *  workbench falls back to, so Home is never a place you can lose. */
-  | { kind: 'home' }
-  | { kind: 'doc'; path: string; noteType?: NoteType }
-  /** `skill` is the invocation the FIRST turn carries — not a kind of session.
-   *  A bound conversation (sessionId set) has already spent it and passes none.
-   *  `autoTitle` marks a placeholder title ("Ask", "Session") that the session
-   *  itself replaces once it has a first message to name itself with. */
-  | {
-      kind: 'session';
-      skill?: string;
-      sessionId?: string;
-      initialPrompt?: string;
-      autoTitle?: boolean;
-    }
-  /** A session's working file, read-only and visibly not a note (Sessions v2). */
-  | { kind: 'sessionFile'; sessionId: string; path: string }
-  | { kind: 'chats' }
-  | { kind: 'inbox' }
-  | { kind: 'todos' }
-  | { kind: 'memory' }
-  | { kind: 'folder'; dir: string }
-  | { kind: 'context'; tag: string }
-  | { kind: 'settings' }
-  | { kind: 'skills' }
-  /** The background watchers and their off switches — Skills' sibling. */
-  | { kind: 'agents' }
-);
+  (
+    | { kind: 'home' }
+    | { kind: 'doc'; path: string; noteType?: NoteType }
+    /** `skill` is the invocation the FIRST turn carries — not a kind of session.
+     *  A bound conversation (sessionId set) has already spent it and passes none.
+     *  `autoTitle` marks a placeholder title ("Ask", "Session") that the session
+     *  itself replaces once it has a first message to name itself with. */
+    | {
+        kind: 'session';
+        skill?: string;
+        sessionId?: string;
+        initialPrompt?: string;
+        autoTitle?: boolean;
+      }
+    /** A session's working file, read-only and visibly not a note (Sessions v2). */
+    | { kind: 'sessionFile'; sessionId: string; path: string }
+    | { kind: 'chats' }
+    | { kind: 'inbox' }
+    | { kind: 'todos' }
+    | { kind: 'memory' }
+    | { kind: 'folder'; dir: string }
+    | { kind: 'context'; tag: string }
+    /** `section` is which tab is showing — carried on the view so a deep link
+     *  can aim at one, and so switching tabs survives leaving and coming back. */
+    | { kind: 'settings'; section?: SettingsSection }
+    | { kind: 'skills' }
+    /** The background watchers and their off switches — Skills' sibling. */
+    | { kind: 'agents' }
+  );
 
 /**
  * The kinds telemetry is allowed to name (`VIEW_KINDS` in the allowlist).
@@ -131,6 +127,13 @@ function sameTarget(a: View, b: ViewBody): boolean {
       return a.dir === (b as Extract<ViewBody, { kind: 'folder' }>).dir;
     case 'context':
       return a.tag === (b as Extract<ViewBody, { kind: 'context' }>).tag;
+    case 'settings': {
+      // Aiming at a section means that section; asking for Settings with no
+      // section in mind (⌘, the cog, ⌘K) means "wherever it is already open",
+      // so it lands you back where you left off instead of resetting the tab.
+      const s = b as Extract<ViewBody, { kind: 'settings' }>;
+      return s.section === undefined || a.section === s.section;
+    }
     case 'session': {
       const s = b as Extract<ViewBody, { kind: 'session' }>;
       // Bound conversations match by id; two unbound blanks opening on the same
@@ -164,6 +167,9 @@ export interface SessionOverview {
   running: boolean;
   /** In-flight stream — present while running; lets any surface stop the run. */
   streamId?: string;
+  /** When the in-flight turn started — present only while running, so a
+   *  watching surface can say how long the agent has been at it. */
+  startedAt?: number;
   pendingCards: number;
   /** Activity since the PO last looked at this session (and it isn't running). */
   unread: boolean;
@@ -225,19 +231,9 @@ interface AppState {
    */
   dismissed: string[];
   /**
-   * Progressive reveal: every type the UI may surface — the core set plus any
-   * type the memory has ever held. Earned stays earned; nothing un-reveals.
-   */
-  revealed: Set<NoteType>;
-  /** Freshly earned types the PO hasn't visited yet — they carry the quiet
-   *  "new" mark until first click. */
-  revealNew: Set<NoteType>;
-  /** Acknowledge a newly earned type (clears its "new" mark). */
-  markRevealSeen: (type: NoteType) => void;
-  /**
    * Paths the auto-pinner put on the rail that the PO hasn't opened from there
-   * yet — they carry the same quiet mark a freshly revealed type does. Only the
-   * system's additions land here; a hand-pin is never marked.
+   * yet — they carry a quiet mark until first contact. Only the system's
+   * additions land here; a hand-pin is never marked.
    */
   autoPinNew: Set<string>;
   /** Acknowledge an auto-pinned row (clears its mark). */
@@ -286,11 +282,33 @@ interface AppState {
   ) => void;
   /** Reopen a stored conversation (replayed from the pi JSONL). */
   openChat: (chat: { id: string; title: string }, opts?: NavOpts) => void;
+  /** Reopen a conversation with a turn to send: it goes as soon as that session
+   *  is free, whether or not its view was already on screen. */
+  askInSession: (session: { id: string; title: string }, prompt: string, opts?: NavOpts) => void;
+  /** Turns queued by {@link askInSession}, by session id. */
+  sessionSeeds: Record<string, string>;
+  /** Claim the queued turn for a session (sends it once, then it is gone). */
+  takeSessionSeed: (sessionId: string) => string | null;
   /** Open the chat-history list. */
   openChats: (opts?: NavOpts) => void;
   /** Fan-out approval cards waiting on the PM, keyed by session id. */
   spawnRequests: Record<string, SpawnRequestDTO>;
-  resolveSpawn: (request: SpawnRequestDTO, decision: { approved: boolean; modelId?: string }) => Promise<void>;
+  resolveSpawn: (
+    request: SpawnRequestDTO,
+    decision: { approved: boolean; modelId?: string },
+  ) => Promise<void>;
+  /**
+   * The model provider is refusing everything for a reason only the PM can
+   * clear: no credit, a key it will not accept. One sentence with the fix in it,
+   * or null when nothing is in the way.
+   *
+   * App-wide because the condition is: it is not a property of the session that
+   * happened to hit it first, and the run that hits it next may be a 3am tidy
+   * pass with nobody watching. The notification is the interruption; this is the
+   * thing still on screen when they come back an hour later and find an app that
+   * otherwise just looks dead.
+   */
+  blockedBy: string | null;
   /** Question cards a running turn is parked on, keyed by session id. */
   askRequests: Record<string, AskRequestDTO>;
   /** Answer one — `null` skips it, which un-parks the turn rather than stopping it. */
@@ -312,7 +330,8 @@ interface AppState {
   openFolder: (dir: string, opts?: NavOpts) => void;
   /** Open a context (tag) page — the cross-cutting project/product/area axis. */
   openContext: (tag: string, opts?: NavOpts) => void;
-  openSettings: (opts?: NavOpts) => void;
+  openSettings: (section?: SettingsSection, opts?: NavOpts) => void;
+  setSettingsSection: (viewKey: string, section: SettingsSection) => void;
   /** Open the Skills view — the parsed skill catalogue (Skills v2). */
   openSkills: (opts?: NavOpts) => void;
   /** Open the Agents view — the background watchers and their off switches. */
@@ -341,17 +360,13 @@ interface AppState {
   /** Which of these bytes we can read at all — the tray's only remaining guess. */
   checkArrival: (items: ArrivalItemInputDTO[]) => Promise<ArrivalCheckDTO>;
   /** Hand a batch to a session: the files land in its folder and it reads them. */
-  ingestArrival: (
-    items: ArrivalItemInputDTO[],
-    instruction?: string,
-  ) => Promise<ArrivalHandoffDTO>;
-  previewProposal: (
-    id: string,
-  ) => Promise<{
+  ingestArrival: (items: ArrivalItemInputDTO[], instruction?: string) => Promise<ArrivalHandoffDTO>;
+  previewProposal: (id: string) => Promise<{
     before: string;
     after: string;
     stale: boolean;
-    staleReason?: 'changed' | 'unanchored';
+    staleReason?: 'unanchored' | 'duplicate' | 'missing';
+    moved?: boolean;
   } | null>;
   refreshProposals: () => Promise<void>;
   /** Both resolves can hand back a `review` ask: the session emptied with
@@ -362,6 +377,7 @@ interface AppState {
   ) => Promise<{
     ok: boolean;
     stale?: boolean;
+    staleReason?: 'unanchored' | 'duplicate';
     error?: string;
     url?: string;
     review?: MeetingReviewAskDTO;
@@ -370,10 +386,14 @@ interface AppState {
   /** The PO's answer to that ask: take the meeting out of "needs review". */
   markMeetingReviewed: (path: string) => Promise<{ ok: boolean }>;
   captureNote: (input: CaptureNoteInput) => Promise<NoteDTO>;
+  /** Start a blank page of a chosen type (the "+" on a Memory shelf) and open it. */
+  createNote: (type: HandCreatableType, title?: string) => Promise<NoteDTO>;
   /** Quick-add a todo (already parsed from the one-liner). */
   captureTodo: (input: CaptureTodoInputDTO) => Promise<NoteDTO>;
   /** Flip a todo open/done/dropped. */
   setTodoStatus: (path: string, commitment: TodoCommitment) => Promise<void>;
+  /** Snooze a todo: move its due date, or `null` to clear it (→ Someday). */
+  setTodoDue: (path: string, due: string | null) => Promise<void>;
   saveNote: (path: string, body: string) => Promise<void>;
   /** Put a note back to an earlier version, saved forward as the newest one. */
   restoreVersion: (path: string, hash: string) => Promise<void>;
@@ -382,7 +402,22 @@ interface AppState {
   renameNote: (path: string, title: string) => Promise<NoteDTO>;
   /** Delete a note: close open tabs, drop from favourites, purge docData, remove file. */
   deleteNote: (path: string) => Promise<void>;
+  /** Delete a whole selection. One refresh at the end, and a report per note. */
+  deleteNotes: (paths: string[]) => Promise<BulkResult>;
+  /** Add and/or remove context tags across a selection, note by note. */
+  tagNotes: (paths: string[], change: { add?: string[]; remove?: string[] }) => Promise<BulkResult>;
   search: (query: string) => Promise<SearchHitDTO[]>;
+}
+
+/**
+ * What a bulk action did. Nothing silent: a partial run reports which notes it
+ * could not touch, so the caller can say so instead of pretending it all went
+ * through. `ok` counts notes that ended in the state the PO asked for, which
+ * includes ones that were already there.
+ */
+export interface BulkResult {
+  ok: number;
+  failed: string[];
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -575,14 +610,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [themes, setThemes] = useState<ThemeHeatDTO[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [dismissed, setDismissed] = useState<string[]>([]);
-  /** Types the memory has ever held (persisted); core types are implicit. */
-  const [revealedStored, setRevealedStored] = useState<NoteType[]>([]);
-  /** Earned types whose reveal the PO has acknowledged. */
-  const [revealSeen, setRevealSeen] = useState<NoteType[]>([]);
   /** Auto-pinned paths still wearing their mark (persisted). */
   const [autoPinNewPaths, setAutoPinNewPaths] = useState<string[]>([]);
   const [chats, setChats] = useState<ChatRefDTO[]>([]);
   const [live, setLive] = useState<Record<string, LiveSessionDTO>>({});
+  const [blockedBy, setBlockedBy] = useState<string | null>(null);
   /** Capture nudges the PO has already waved off — null until it is read, so
    *  the list never flashes a row that was dismissed weeks ago. */
   const [captureNudge, setCaptureNudge] = useState<CaptureNudgeStateDTO | null>(null);
@@ -600,6 +632,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [spawnRequests, setSpawnRequests] = useState<Record<string, SpawnRequestDTO>>({});
   /** Questions the agent is parked on, by session id. One per session at a time. */
   const [askRequests, setAskRequests] = useState<Record<string, AskRequestDTO>>({});
+  /**
+   * A turn waiting to be typed into a conversation that already exists, by
+   * session id. The Inbox uses it to hand a card that can no longer be applied
+   * back to the session that proposed it: only that session can withdraw its own
+   * card, and it is the one that knows what the card was for. Held here rather
+   * than passed as `initialPrompt` because the session view may already be
+   * mounted (the card is often sitting inside it), and a mounted view spends its
+   * initial prompt exactly once.
+   */
+  const [sessionSeeds, setSessionSeeds] = useState<Record<string, string>>({});
+  const seedsRef = useRef<Record<string, string>>({});
 
   // Consumers see each tab as its current view, flattened next to the id.
   const tabs = useMemo<Tab[]>(
@@ -834,7 +877,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const openSession = useCallback(
-    (skill?: string, opts?: { initialPrompt?: string; title?: string; fresh?: boolean } & NavOpts) => {
+    (
+      skill?: string,
+      opts?: { initialPrompt?: string; title?: string; fresh?: boolean } & NavOpts,
+    ) => {
       // No caller-supplied name means nobody has named this yet, and the skill's
       // invocation name is an address, not a title. "Session" is what it is
       // until the first turn renames it.
@@ -869,9 +915,38 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [navigate],
   );
 
+  /**
+   * Put a message to a conversation that already exists and bring it up. The
+   * session's own view sends it as an ordinary turn as soon as it is free, so a
+   * run still in flight keeps it rather than losing it.
+   */
+  const askInSession = useCallback(
+    (session: { id: string; title: string }, prompt: string, opts?: NavOpts) => {
+      seedsRef.current = { ...seedsRef.current, [session.id]: prompt };
+      setSessionSeeds(seedsRef.current);
+      navigate({ kind: 'session', sessionId: session.id, title: session.title }, opts);
+    },
+    [navigate],
+  );
+
+  /** Claim a queued turn. The ref is what is claimed, synchronously, so the same
+   *  seed can't be sent twice by two views that both saw the state change. */
+  const takeSessionSeed = useCallback((sessionId: string): string | null => {
+    const prompt = seedsRef.current[sessionId];
+    if (prompt === undefined) return null;
+    const next = { ...seedsRef.current };
+    delete next[sessionId];
+    seedsRef.current = next;
+    setSessionSeeds(next);
+    return prompt;
+  }, []);
+
   const openSessionFile = useCallback(
     (sessionId: string, path: string, opts?: NavOpts) =>
-      navigate({ kind: 'sessionFile', sessionId, path, title: path.split('/').pop() ?? path }, opts),
+      navigate(
+        { kind: 'sessionFile', sessionId, path, title: path.split('/').pop() ?? path },
+        opts,
+      ),
     [navigate],
   );
 
@@ -928,9 +1003,29 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     (tag: string, opts?: NavOpts) => navigate({ kind: 'context', tag, title: `#${tag}` }, opts),
     [navigate],
   );
+  /**
+   * Settings, optionally aimed at one tab. Everywhere the app says "Open
+   * Settings" it is because something specific is missing — a key, a calendar,
+   * your name — and naming the section is what makes that link land on the
+   * thing instead of on the top of the page.
+   */
   const openSettings = useCallback(
-    (opts?: NavOpts) => navigate({ kind: 'settings', title: 'Settings' }, opts),
+    (section?: SettingsSection, opts?: NavOpts) =>
+      navigate({ kind: 'settings', title: 'Settings', section }, opts),
     [navigate],
+  );
+
+  /** Switching tabs inside Settings replaces the current entry rather than
+   *  pushing one: back should leave Settings, not walk the tabs you clicked. */
+  const setSettingsSection = useCallback(
+    (viewKey: string, section: SettingsSection) => {
+      mapViews((v) =>
+        v.key === viewKey && v.kind === 'settings' && v.section !== section
+          ? { ...v, section }
+          : v,
+      );
+    },
+    [mapViews],
   );
   const openSkills = useCallback(
     (opts?: NavOpts) => {
@@ -1045,46 +1140,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setFavorites(vault ? loadFavorites(vault.path) : []);
     setDismissed(vault ? loadDismissed(vault.path) : []);
     setAutoPinNewPaths(vault ? loadAutoPinNew(vault.path) : []);
-    setRevealedStored([]);
-    setRevealSeen(vault ? loadRevealSeen(vault.path) : []);
   }, [vault]);
 
-  // Progressive reveal: a type earns its surface the first time the memory
-  // holds one, and keeps it forever. First launch against an existing workspace
-  // grandfathers everything already there — silently, no "new" marks — so only
-  // growth the PO actually witnesses gets announced.
-  useEffect(() => {
-    if (!vault || !tree) return;
-    const content = contentTypes(tree);
-    const stored = loadRevealed(vault.path);
-    if (stored === null) {
-      persistRevealed(vault.path, content);
-      persistRevealSeen(vault.path, content);
-      setRevealedStored(content);
-      setRevealSeen(content);
-      return;
-    }
-    const next = [...stored, ...content.filter((t) => !stored.includes(t))];
-    if (next.length > stored.length) persistRevealed(vault.path, next);
-    setRevealedStored((prev) =>
-      prev.length === next.length && next.every((t, i) => prev[i] === t) ? prev : next,
-    );
-  }, [vault, tree]);
-
-  const markRevealSeen = useCallback(
-    (type: NoteType) => {
-      setRevealSeen((prev) => {
-        if (prev.includes(type)) return prev;
-        const next = [...prev, type];
-        if (vault) persistRevealSeen(vault.path, next);
-        return next;
-      });
-    },
-    [vault],
-  );
-
-  // The auto-pin mark is spent on first contact with the row, exactly like a
-  // newly revealed section's.
+  // The auto-pin mark is spent on first contact with the row.
   const markPinSeen = useCallback(
     (path: string) => {
       setAutoPinNewPaths((prev) => {
@@ -1098,12 +1156,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const autoPinNew = useMemo(() => new Set(autoPinNewPaths), [autoPinNewPaths]);
-
-  const revealed = useMemo(() => new Set([...CORE_TYPES, ...revealedStored]), [revealedStored]);
-  const revealNew = useMemo(
-    () => new Set(revealedStored.filter((t) => !CORE_TYPES.includes(t) && !revealSeen.includes(t))),
-    [revealedStored, revealSeen],
-  );
 
   // Pin ⇄ unpin as exact opposites: pinning adds to the rail and clears any prior
   // unpin; unpinning removes it and remembers the path so the auto-pinner leaves
@@ -1185,7 +1237,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const query = useCallback((q: NoteQueryDTO) => invoke['vault:query'](q), []);
 
   const pickMaterial = useCallback(() => invoke['arrival:pick'](), []);
-  const checkArrival = useCallback((items: ArrivalItemInputDTO[]) => invoke['arrival:check'](items), []);
+  const checkArrival = useCallback(
+    (items: ArrivalItemInputDTO[]) => invoke['arrival:check'](items),
+    [],
+  );
 
   /**
    * Hand a batch over. Nothing is filed here and nothing opens: the files land
@@ -1244,7 +1299,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const refreshSessionFiles = useCallback(async (sessionId: string) => {
     try {
       const files = await invoke['sessions:files'](sessionId);
-      setSessionFiles((prev) => (prev[sessionId]?.length === 0 && files.length === 0 ? prev : { ...prev, [sessionId]: files }));
+      setSessionFiles((prev) =>
+        prev[sessionId]?.length === 0 && files.length === 0
+          ? prev
+          : { ...prev, [sessionId]: files },
+      );
     } catch {
       /* a session with no folder is the common case, not an error */
     }
@@ -1254,14 +1313,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
    * Answer a fan-out card. Clearing the row locally rather than waiting for the
    * push keeps Approve feeling instant — the children take seconds to start.
    */
-  const resolveSpawn = useCallback(async (request: SpawnRequestDTO, decision: { approved: boolean; modelId?: string }) => {
-    setSpawnRequests((prev) => {
-      const next = { ...prev };
-      delete next[request.sessionId];
-      return next;
-    });
-    await invoke['sessions:resolveSpawn'](request.id, decision).catch(() => undefined);
-  }, []);
+  const resolveSpawn = useCallback(
+    async (request: SpawnRequestDTO, decision: { approved: boolean; modelId?: string }) => {
+      setSpawnRequests((prev) => {
+        const next = { ...prev };
+        delete next[request.sessionId];
+        return next;
+      });
+      await invoke['sessions:resolveSpawn'](request.id, decision).catch(() => undefined);
+    },
+    [],
+  );
 
   /**
    * Answer (or skip) a question card. Cleared locally on submit for the same
@@ -1316,6 +1378,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         updated: chat.updated,
         running,
         streamId: live[chat.id]?.streamId,
+        startedAt: live[chat.id]?.startedAt,
         pendingCards: cardsBySession.get(chat.id) ?? 0,
         unread: !running && chat.updated > (seen[chat.id] ?? initAt),
         messageCount: chat.messageCount,
@@ -1332,6 +1395,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         updated: l.startedAt,
         running: true,
         streamId: l.streamId,
+        startedAt: l.startedAt,
         pendingCards: cardsBySession.get(l.sessionId) ?? 0,
         unread: false,
         messageCount: 0,
@@ -1420,8 +1484,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         // inbox just re-query).
         if (prev && info && prev.path !== info.path) {
           setDocData({});
-          // The old tree must not leak into the new workspace's derived state
-          // (the reveal ledger persists per vault path from whatever tree it sees).
+          // The old tree must not leak into the new workspace's derived state.
           setTree(null);
           dropViews((v) => v.kind === 'doc' || v.kind === 'folder' || v.kind === 'session');
         }
@@ -1496,6 +1559,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [refreshTree],
   );
 
+  const createNote = useCallback(
+    async (type: HandCreatableType, title?: string) => {
+      const note = await invoke['note:create']({ type, ...(title ? { title } : {}) });
+      await refreshTree();
+      return note;
+    },
+    [refreshTree],
+  );
+
   const captureTodo = useCallback(
     async (input: CaptureTodoInputDTO) => {
       const note = await invoke['todos:capture'](input);
@@ -1508,6 +1580,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const setTodoStatus = useCallback(
     async (path: string, commitment: TodoCommitment) => {
       await invoke['todos:setStatus'](path, commitment);
+      await refreshTree();
+    },
+    [refreshTree],
+  );
+
+  const setTodoDue = useCallback(
+    async (path: string, due: string | null) => {
+      await invoke['todos:setDue'](path, due);
       await refreshTree();
     },
     [refreshTree],
@@ -1596,6 +1676,101 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [vault, refreshTree, dropViews, markPinSeen],
   );
 
+  /**
+   * The same delete, for a selection. It repeats the single-note bookkeeping
+   * (tabs, favourites, docData) ONCE over everything that actually went, and
+   * refreshes the tree once at the end rather than after every file: thirty
+   * deletes should cost one repaint, not thirty.
+   */
+  const deleteNotes = useCallback(
+    async (paths: string[]): Promise<BulkResult> => {
+      const done: string[] = [];
+      const failed: string[] = [];
+      for (const path of paths) {
+        try {
+          await invoke['note:delete'](path);
+          done.push(path);
+        } catch {
+          failed.push(path);
+        }
+      }
+      if (done.length > 0) {
+        const gone = new Set(done);
+        setDocData((d) => Object.fromEntries(Object.entries(d).filter(([p]) => !gone.has(p))));
+        dropViews((v) => v.kind === 'doc' && gone.has(v.path));
+        setFavorites((prev) => {
+          const next = prev.filter((p) => !gone.has(p));
+          if (next.length !== prev.length && vault) persistFavorites(vault.path, next);
+          return next;
+        });
+        for (const path of done) markPinSeen(path); // no rows left to mark
+        await refreshTree();
+      }
+      return { ok: done.length, failed };
+    },
+    [vault, refreshTree, dropViews, markPinSeen],
+  );
+
+  /**
+   * Filing a selection into (or out of) a context. Tags are mutable on every
+   * note type, mirrors and decisions included, so this is the one edit a bulk
+   * action may make to notes the PO cannot otherwise type into.
+   *
+   * Each note is read before it is written: the frontmatter save replaces the
+   * whole block, so merging against a stale list would drop fields the agent
+   * wrote in the meantime.
+   */
+  const tagNotes = useCallback(
+    async (paths: string[], change: { add?: string[]; remove?: string[] }): Promise<BulkResult> => {
+      const add = change.add ?? [];
+      const remove = new Set(change.remove ?? []);
+      const failed: string[] = [];
+      const touched: string[] = [];
+      let ok = 0;
+      for (const path of paths) {
+        try {
+          const note = await invoke['note:get'](path);
+          if (!note) {
+            failed.push(path);
+            continue;
+          }
+          const current = Array.isArray(note.frontmatter['tags'])
+            ? (note.frontmatter['tags'] as unknown[]).filter(
+                (t): t is string => typeof t === 'string',
+              )
+            : [];
+          const next = [
+            ...current.filter((t) => !remove.has(t)),
+            ...add.filter((t) => !current.includes(t)),
+          ];
+          // Already where the PO asked for it: a no-op counts as done, and
+          // writing it anyway would bump the note's history for nothing.
+          if (next.length === current.length && next.every((t, i) => t === current[i])) {
+            ok++;
+            continue;
+          }
+          await invoke['note:saveFrontmatter']({
+            path,
+            frontmatter: { ...note.frontmatter, tags: next.length > 0 ? next : undefined },
+          });
+          touched.push(path);
+          ok++;
+        } catch {
+          failed.push(path);
+        }
+      }
+      if (touched.length > 0) {
+        // Drop the stale copies instead of re-fetching them: a doc view loads
+        // what it is missing, so only the note actually on screen pays.
+        const stale = new Set(touched);
+        setDocData((d) => Object.fromEntries(Object.entries(d).filter(([p]) => !stale.has(p))));
+        await Promise.all([refreshTree(), refreshThemes()]);
+      }
+      return { ok, failed };
+    },
+    [refreshTree, refreshThemes],
+  );
+
   const search = useCallback(async (q: string) => {
     if (!q.trim()) return [];
     return invoke['search:query'](q, 20);
@@ -1616,7 +1791,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const view = active ? currentView(active) : undefined;
       if (info && view?.kind === 'doc') void loadDoc(view.path);
       const open = new URLSearchParams(window.location.search).get('open');
-      if (info && open === '__settings') openSettings();
+      // `__settings` opens the page; `__settings:agent` opens one of its tabs,
+      // so a screenshot run can land on a named panel without clicking.
+      if (info && open?.startsWith('__settings')) {
+        const section = open.split(':')[1];
+        openSettings(isSettingsSection(section) ? section : undefined);
+      }
       else if (info && open === '__skills') openSkills();
       else if (info && open === '__agents') openAgents();
       else if (info && open === '__chat') openSession(undefined);
@@ -1654,6 +1834,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         // Agent rows carry a pending-card count — keep it honest.
         void refreshAgents();
       } else if (event.channel === 'session:status') {
+        // What the provider is refusing, and whether it is the PM's to fix. A
+        // turn that got an answer is the proof the block is over, so any settle
+        // without a blocking fault takes the banner down: it clears itself the
+        // moment they top the account up, with nothing to dismiss.
+        if (event.status === 'settled')
+          setBlockedBy(event.fault?.blocking ? event.fault.text : null);
         // The rail's heartbeat: track runs as they start, refresh rows on settle.
         if (event.status === 'running') {
           setLive((prev) => ({
@@ -1662,7 +1848,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
               sessionId: event.sessionId,
               title: event.title,
               streamId: '',
-              startedAt: event.updated,
+              // A re-announcement of the same run must not restart its clock.
+              startedAt: prev[event.sessionId]?.startedAt ?? event.updated,
             },
           }));
           void refreshSessions();
@@ -1676,6 +1863,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           // A settled run may have been an agent's — its "last ran" moved.
           void refreshAgents();
         }
+      } else if (event.channel === 'session:renamed') {
+        // Both halves of the row: the live entry the running turn is showing,
+        // and the stored one behind it. Tabs follow from the merged list.
+        setLive((prev) => {
+          const row = prev[event.sessionId];
+          return row ? { ...prev, [event.sessionId]: { ...row, title: event.title } } : prev;
+        });
+        void refreshSessions();
       } else if (event.channel === 'session:files') {
         void refreshSessionFiles(event.sessionId);
       } else if (event.channel === 'session:spawn') {
@@ -1759,13 +1954,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const activeViewKey = activeTab?.key ?? 'no-tabs';
   const activeViewKind: ViewKind = activeTab?.kind ?? 'home';
   const lastViewSent = useRef<string | null>(null);
+  // How many tabs sit open rides along, read at the moment of the open. A ref
+  // rather than a dependency: a tab opening in the background must not re-report
+  // the view that stayed in front.
+  const tabCount = useRef(0);
+  tabCount.current = tabs.length;
   useEffect(() => {
     if (lastViewSent.current === activeViewKey) return;
     lastViewSent.current = activeViewKey;
     // Fire and forget, both ways it could fail: telemetry must never be able to
     // break navigation, which is the thing it is watching.
     try {
-      void invoke['telemetry:view'](activeViewKind).catch(() => undefined);
+      void invoke['telemetry:view'](activeViewKind, tabCount.current).catch(() => undefined);
     } catch {
       /* no sink, no problem */
     }
@@ -1790,9 +1990,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       favorites,
       toggleFavorite,
       dismissed,
-      revealed,
-      revealNew,
-      markRevealSeen,
       autoPinNew,
       markPinSeen,
       proposals,
@@ -1812,9 +2009,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openDoc,
       openSession,
       openChat,
+      askInSession,
+      sessionSeeds,
+      takeSessionSeed,
       openChats,
       spawnRequests,
       resolveSpawn,
+      blockedBy,
       askRequests,
       resolveAsk,
       sessionFiles,
@@ -1828,6 +2029,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openFolder,
       openContext,
       openSettings,
+      setSettingsSection,
       openSkills,
       openAgents,
       goBack,
@@ -1855,13 +2057,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       dismissCapture,
       undoCapture,
       captureNote,
+      createNote,
       captureTodo,
       setTodoStatus,
+      setTodoDue,
       saveNote,
       restoreVersion,
       saveFrontmatter,
       renameNote,
       deleteNote,
+      deleteNotes,
+      tagNotes,
       search,
     }),
     [
@@ -1882,9 +2088,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       favorites,
       toggleFavorite,
       dismissed,
-      revealed,
-      revealNew,
-      markRevealSeen,
       autoPinNew,
       markPinSeen,
       proposals,
@@ -1904,9 +2107,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openDoc,
       openSession,
       openChat,
+      askInSession,
+      sessionSeeds,
+      takeSessionSeed,
       openChats,
       spawnRequests,
       resolveSpawn,
+      blockedBy,
       askRequests,
       resolveAsk,
       sessionFiles,
@@ -1920,6 +2127,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openFolder,
       openContext,
       openSettings,
+      setSettingsSection,
       openSkills,
       openAgents,
       goBack,
@@ -1946,13 +2154,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       dismissCapture,
       undoCapture,
       captureNote,
+      createNote,
       captureTodo,
       setTodoStatus,
+      setTodoDue,
       saveNote,
       restoreVersion,
       saveFrontmatter,
       renameNote,
       deleteNote,
+      deleteNotes,
+      tagNotes,
       search,
       loadDoc,
     ],

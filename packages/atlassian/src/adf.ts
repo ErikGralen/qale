@@ -40,7 +40,9 @@ function renderNode(node: AdfNode): string {
     case 'codeBlock':
       return `\`\`\`\n${renderNodes(node.content ?? [])}\n\`\`\`\n\n`;
     case 'blockquote':
-      return `> ${renderNodes(node.content ?? []).trim().replace(/\n/g, '\n> ')}\n\n`;
+      return `> ${renderNodes(node.content ?? [])
+        .trim()
+        .replace(/\n/g, '\n> ')}\n\n`;
     case 'hardBreak':
       return '\n';
     case 'rule':

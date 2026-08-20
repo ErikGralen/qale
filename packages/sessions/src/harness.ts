@@ -46,6 +46,23 @@ export class SessionHarness {
     this.current?.cardIds.push(cardId);
   }
 
+  /**
+   * A card was taken back, so the ledger forgets it. The receipt is what the PM
+   * reads to see what a session did, and a withdrawn card did nothing: it never
+   * reached the queue's far end and no note was ever written for it. This is
+   * also what keeps `ranSilent` honest — a run that proposed and then retracted
+   * has produced nothing, and should settle as quietly as one that never
+   * proposed at all.
+   */
+  dropWrite(cardId: string): void {
+    const at = this.writes.findIndex((w) => w.cardId === cardId);
+    if (at !== -1) this.writes.splice(at, 1);
+    for (const turn of this.turns) {
+      const i = turn.cardIds.indexOf(cardId);
+      if (i !== -1) turn.cardIds.splice(i, 1);
+    }
+  }
+
   /** A runnable arrived. What it may do folds into what the session may do. */
   invokeSkill(config: Runnable): void {
     this.invoked.push(config);

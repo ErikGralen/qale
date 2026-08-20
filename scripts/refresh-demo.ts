@@ -37,7 +37,15 @@
  * derives every freshness/overdue/upcoming signal from frontmatter dates, not
  * filenames.
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -51,7 +59,17 @@ const ANCHOR = '2026-07-17';
 // hold wikilinks, so shifting their date tokens can't corrupt a link.
 // remote_updated (ticket/wikipage mirrors) is a full ISO timestamp; only its
 // date part shifts, the time-of-day stays.
-const DATE_KEYS = ['date', 'due', 'captured', 'updated', 'last_told', 'resolved', 'started', 'ended', 'remote_updated'];
+const DATE_KEYS = [
+  'date',
+  'due',
+  'captured',
+  'updated',
+  'last_told',
+  'resolved',
+  'started',
+  'ended',
+  'remote_updated',
+];
 
 // Frontmatter string keys that hold human prose (never wikilinks): their date
 // tokens shift too, so a summary like "SSO date 2026-07-28" stays consistent.
@@ -244,8 +262,8 @@ function electronUserDataDir(): string | null {
     platform() === 'darwin'
       ? join(homedir(), 'Library', 'Application Support')
       : platform() === 'win32'
-        ? process.env['APPDATA'] ?? join(homedir(), 'AppData', 'Roaming')
-        : process.env['XDG_CONFIG_HOME'] ?? join(homedir(), '.config');
+        ? (process.env['APPDATA'] ?? join(homedir(), 'AppData', 'Roaming'))
+        : (process.env['XDG_CONFIG_HOME'] ?? join(homedir(), '.config'));
   return join(appData, appName);
 }
 
@@ -308,12 +326,16 @@ function main(): void {
   const source = resolve(join(import.meta.dirname, '..', 'vault-dev'));
   const target = resolve(args.target);
   if (target === source) {
-    console.error('Target is the canonical demo vault itself; pick another directory (default .vault-dev).');
+    console.error(
+      'Target is the canonical demo vault itself; pick another directory (default .vault-dev).',
+    );
     process.exit(1);
   }
 
   const offset = daysBetween(args.anchor, args.today);
-  console.log(`Anchor ${args.anchor} → today ${args.today}  (offset ${offset >= 0 ? '+' : ''}${offset} days)`);
+  console.log(
+    `Anchor ${args.anchor} → today ${args.today}  (offset ${offset >= 0 ? '+' : ''}${offset} days)`,
+  );
   if (args.dry) console.log('(dry run — no files written)\n');
 
   // 1. Rebuild the target from scratch so nothing stale survives — deleted-from-
@@ -324,7 +346,9 @@ function main(): void {
   if (!args.dry) {
     if (existsSync(target)) {
       if (!existsSync(join(target, 'notes'))) {
-        console.error(`Refusing to overwrite ${target}: it exists but has no notes/ — not a demo vault.`);
+        console.error(
+          `Refusing to overwrite ${target}: it exists but has no notes/ — not a demo vault.`,
+        );
         process.exit(1);
       }
       rmSync(target, { recursive: true, force: true });
@@ -344,7 +368,9 @@ function main(): void {
 
   // 2. Shift dates across the copy (or the source, read-only, in dry mode).
   const readRoot = args.dry ? source : target;
-  const mdFiles = walk(readRoot).filter((f) => f.endsWith('.md') && !f.split(sep).includes('sessions'));
+  const mdFiles = walk(readRoot).filter(
+    (f) => f.endsWith('.md') && !f.split(sep).includes('sessions'),
+  );
   let filesTouched = 0;
   let fmShifts = 0;
   let bodyShifts = 0;
@@ -377,9 +403,14 @@ function main(): void {
     // A skill's own material (anything beside its SKILL.md) is not a note: it is
     // never indexed and only ever read by the path its skill names, so it has no
     // frontmatter to check.
-    if (!isRunnableResource(rel) && (!fmMatch || !/^\s*type:/m.test(fmMatch[1] ?? ''))) untyped.push(rel);
+    if (!isRunnableResource(rel) && (!fmMatch || !/^\s*type:/m.test(fmMatch[1] ?? '')))
+      untyped.push(rel);
     for (const link of extractLinks(raw)) {
       if (/^https?:\/\//.test(link)) continue;
+      // A skill writes `[[people/…]]` to show the agent the shape of a link it
+      // should emit. The ellipsis can never be part of a real slug, so it is a
+      // placeholder in prose, not a broken reference.
+      if (link.includes('…')) continue;
       if (!slugs.has(link)) unresolved.push(`${rel}  →  [[${link}]]`);
     }
   }
@@ -388,14 +419,21 @@ function main(): void {
   // Dry mode reads the unshifted source, so compare its dues to the anchor; the
   // lane outcome is offset-invariant, so this matches the real build's result.
   const laneToday = args.dry ? args.anchor : args.today;
-  const lanes: Record<string, number> = { overdue: 0, today: 0, upcoming: 0, someday: 0, waiting: 0, closed: 0 };
+  const lanes: Record<string, number> = {
+    overdue: 0,
+    today: 0,
+    upcoming: 0,
+    someday: 0,
+    waiting: 0,
+    closed: 0,
+  };
   try {
     for (const f of readdirSync(join(validateRoot, 'todos'))) {
       if (!f.endsWith('.md')) continue;
-      const fm = readFileSync(join(validateRoot, 'todos', f), 'utf8').match(FRONTMATTER_RE)?.[1] ?? '';
+      const fm =
+        readFileSync(join(validateRoot, 'todos', f), 'utf8').match(FRONTMATTER_RE)?.[1] ?? '';
       // Accept the legacy `status:` key too, exactly as the frontmatter parser does.
-      const commitment =
-        fm.match(/^\s*(?:commitment|status):\s*"?([\w-]+)"?/m)?.[1] ?? 'open';
+      const commitment = fm.match(/^\s*(?:commitment|status):\s*"?([\w-]+)"?/m)?.[1] ?? 'open';
       const due = fm.match(/^\s*due:\s*"?(\d{4}-\d{2}-\d{2})"?/m)?.[1] ?? null;
       const owner = /^\s*owner:\s*\S/m.test(fm);
       if (commitment !== 'open') lanes.closed++;
@@ -405,7 +443,11 @@ function main(): void {
       else if (due === laneToday) lanes.today++;
       else lanes.upcoming++;
     }
-    console.log(`Todo lanes @ today: ${Object.entries(lanes).map(([k, v]) => `${v} ${k}`).join(' · ')}`);
+    console.log(
+      `Todo lanes @ today: ${Object.entries(lanes)
+        .map(([k, v]) => `${v} ${k}`)
+        .join(' · ')}`,
+    );
   } catch {
     /* no todos dir — skip */
   }

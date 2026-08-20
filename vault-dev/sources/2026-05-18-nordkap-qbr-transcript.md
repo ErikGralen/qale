@@ -5,8 +5,8 @@ processing: processed
 source:
   system: transcript
 captured: 2026-05-18
-customer: "[[customers/nordkap-payments]]"
-meeting: "[[meetings/2026-05-18-nordkap-qbr]]"
+customer: '[[customers/nordkap-payments]]'
+meeting: '[[meetings/2026-05-18-nordkap-qbr]]'
 ---
 
 Sara: Before we do usage numbers, can we do the renewal. It goes to our security team in

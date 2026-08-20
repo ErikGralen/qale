@@ -129,7 +129,8 @@ export interface Runnable {
 const MOVED_KEYS: Record<string, string> = {
   use: '`use` moved: write `starts: [you-run-it, model-picks-it-up]`, `[always]`, or `[read-when-relevant]`. Read as before until you do.',
   outbound: '`outbound: true` moved: write `can: [draft-outbound]`. Read as before until you do.',
-  session_files: '`session_files: true` moved: write `can: [keep-working-files]`. Read as before until you do.',
+  session_files:
+    '`session_files: true` moved: write `can: [keep-working-files]`. Read as before until you do.',
 };
 
 /**
@@ -229,12 +230,18 @@ export function parseRunnable(raw: string, name: string): Runnable {
 
   const audience = typeof fm['audience'] === 'string' ? fm['audience'].trim() : '';
   if (audience && !starts.includes('always'))
-    errors.push('`audience` scopes an always-on rule, and this file does not declare `starts: [always]`');
+    errors.push(
+      '`audience` scopes an always-on rule, and this file does not declare `starts: [always]`',
+    );
 
   return {
     name,
-    title: typeof fm['title'] === 'string' && fm['title'].trim() ? fm['title'].trim() : titleFromName(name),
-    summary: typeof fm['summary'] === 'string' && fm['summary'].trim() ? fm['summary'].trim() : name,
+    title:
+      typeof fm['title'] === 'string' && fm['title'].trim()
+        ? fm['title'].trim()
+        : titleFromName(name),
+    summary:
+      typeof fm['summary'] === 'string' && fm['summary'].trim() ? fm['summary'].trim() : name,
     starts,
     can: [...readList(fm['can'], CAPABILITIES, 'can', errors), ...legacyCan(fm)].filter(
       (c, i, all) => all.indexOf(c) === i,

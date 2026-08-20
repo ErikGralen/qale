@@ -73,9 +73,7 @@ function StaleDot() {
 /** The type badge on a chip — the state pill's neutral sibling, same geometry
  *  so a row of chips keeps one silhouette whichever pill it carries. */
 function KindPill({ label }: { label: string }) {
-  return (
-    <span className={`${pillClass('open')} self-center font-normal`}>{label}</span>
-  );
+  return <span className={`${pillClass('open')} self-center font-normal`}>{label}</span>;
 }
 
 export function ExternalRefChip({
@@ -127,7 +125,9 @@ export function ExternalRefChip({
         void openExternalRef(target, meta ?? null, onOpen && ((path) => onOpen(path, opts)));
       }}
     >
-      {meta?.kind === 'wikipage' && <BookOpen className="size-3 shrink-0 self-center opacity-70" aria-hidden />}
+      {meta?.kind === 'wikipage' && (
+        <BookOpen className="size-3 shrink-0 self-center opacity-70" aria-hidden />
+      )}
       <span className="truncate">{label}</span>
       {/* One pill slot, one job: saying what this reference is. A live state
           answers that for a ticket, so the kind pill yields to it. */}
@@ -180,7 +180,13 @@ export function riskFor(risks: AtRiskLinkDTO[], path: string): AtRiskLinkDTO | u
  * The in-row at-risk marker (a todo row, a meeting header): amber, icon + word
  * — never color alone. Hover raises the shared card; click opens the ticket.
  */
-export function AtRiskMarker({ risk, onOpen }: { risk: AtRiskLinkDTO; onOpen?: (path: string) => void }) {
+export function AtRiskMarker({
+  risk,
+  onOpen,
+}: {
+  risk: AtRiskLinkDTO;
+  onOpen?: (path: string) => void;
+}) {
   return (
     <button
       type="button"
@@ -217,7 +223,9 @@ const HIDE_GRACE_MS = 160;
  * the card; Escape dismisses it.
  */
 export function ExternalRefHoverLayer({ onOpen }: { onOpen: (path: string) => void }) {
-  const [state, setState] = useState<{ anchor: HTMLElement; meta: ExternalRefMetaDTO } | null>(null);
+  const [state, setState] = useState<{ anchor: HTMLElement; meta: ExternalRefMetaDTO } | null>(
+    null,
+  );
   const cardRef = useRef<HTMLDivElement>(null);
   const showTimer = useRef<number | null>(null);
   const hideTimer = useRef<number | null>(null);
@@ -315,7 +323,9 @@ export function ExternalRefHoverLayer({ onOpen }: { onOpen: (path: string) => vo
             {m.kind === 'ticket' ? (
               <>
                 <span className="font-medium text-foreground/75">{m.externalId}</span>
-                {m.state && m.stateCategory && <StatePill state={m.state} category={m.stateCategory} />}
+                {m.state && m.stateCategory && (
+                  <StatePill state={m.state} category={m.stateCategory} />
+                )}
               </>
             ) : (
               <span className="inline-flex items-center gap-1">
@@ -328,7 +338,9 @@ export function ExternalRefHoverLayer({ onOpen }: { onOpen: (path: string) => vo
       </div>
 
       <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
-        {m.kind === 'ticket' && <span>{m.assignee ? `Assigned to ${m.assignee}` : 'Unassigned'}</span>}
+        {m.kind === 'ticket' && (
+          <span>{m.assignee ? `Assigned to ${m.assignee}` : 'Unassigned'}</span>
+        )}
         <span>
           {m.lastChange?.by ? `Changed by ${m.lastChange.by}` : 'Updated'}
           {m.lastChange?.from && m.lastChange?.to && (

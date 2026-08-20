@@ -73,8 +73,7 @@ function TicketCard({
   // when it says something more ("In Review" under In progress), never when it
   // just echoes the column ("Done" under Done).
   const columnLabel = COLUMNS.find((c) => c.cat === note.stateCategory)?.label;
-  const showState =
-    note.state && normalizeLabel(note.state) !== normalizeLabel(columnLabel ?? '');
+  const showState = note.state && normalizeLabel(note.state) !== normalizeLabel(columnLabel ?? '');
 
   return (
     <li className="group relative rounded-lg bg-card ring-1 ring-border/70 transition-[box-shadow,transform] duration-150 hover:ring-brand/40 hover:shadow-sm has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-ring/50">
@@ -90,13 +89,9 @@ function TicketCard({
           <span className="rounded-sm bg-brand/10 px-1 py-px font-mono text-micro font-medium tracking-tight text-brand">
             {key}
           </span>
-          {blocked && (
-            <AlertTriangle className="size-3 shrink-0 text-warning" aria-hidden />
-          )}
+          {blocked && <AlertTriangle className="size-3 shrink-0 text-warning" aria-hidden />}
           {showState && (
-            <span className="ml-auto truncate text-micro text-muted-foreground">
-              {note.state}
-            </span>
+            <span className="ml-auto truncate text-micro text-muted-foreground">{note.state}</span>
           )}
         </div>
 
@@ -129,9 +124,7 @@ function TicketCard({
           ) : (
             <span className="truncate text-muted-foreground/70">Unassigned</span>
           )}
-          {when && (
-            <span className="ml-auto shrink-0 tabular-nums">{relativeTime(when)}</span>
-          )}
+          {when && <span className="ml-auto shrink-0 tabular-nums">{relativeTime(when)}</span>}
         </div>
       </div>
     </li>

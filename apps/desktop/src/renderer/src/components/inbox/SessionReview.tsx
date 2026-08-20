@@ -5,6 +5,7 @@ import type { ProposalDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 import { CardItem } from './CardItem';
 import { orderCards } from './cardMeta';
+import { staleAcceptMessage } from './shared';
 
 /**
  * The in-session review (the session-focused path): the cards a session just
@@ -42,12 +43,15 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
           setError(
             p.id,
             r.stale
-              ? "This card no longer fits the note's current text. Open it to review, or re-run the session to regenerate it."
-              : r.error ?? 'Could not apply this card: the workspace rejected the write.',
+              ? staleAcceptMessage(r.staleReason)
+              : (r.error ?? 'Could not apply this card: the workspace rejected the write.'),
           );
         }
       } catch (err) {
-        setError(p.id, err instanceof Error ? err.message : 'Something went wrong applying this card.');
+        setError(
+          p.id,
+          err instanceof Error ? err.message : 'Something went wrong applying this card.',
+        );
       } finally {
         setBusy(false);
       }
@@ -62,7 +66,10 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
       try {
         await rejectProposal(p.id);
       } catch (err) {
-        setError(p.id, err instanceof Error ? err.message : 'Something went wrong discarding this card.');
+        setError(
+          p.id,
+          err instanceof Error ? err.message : 'Something went wrong discarding this card.',
+        );
       } finally {
         setBusy(false);
       }
@@ -87,13 +94,18 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
 
   if (cards.length === 0) return null;
 
+  const heading = `${cards.length} change${cards.length === 1 ? '' : 's'} to review`;
+
   return (
-    <div className="rounded-xl border border-border bg-card/60 ring-1 ring-foreground/5">
-      <div className="flex items-start gap-3 border-b border-border/60 px-3.5 py-2.5">
+    /* A heading over the cards, not a container around them. Each card already
+       carries its own surface, so wrapping the set in a second one boxed a box
+       and pushed the change three frames deep before a word of it showed. The
+       Inbox groups the same cards under a bare section header; the session says
+       it the same way. */
+    <section aria-label={heading} className="mt-1">
+      <div className="mb-1.5 flex items-start gap-3 px-0.5">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">
-            {cards.length} change{cards.length === 1 ? '' : 's'} to review
-          </p>
+          <h3 className="text-sm font-semibold text-foreground">{heading}</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Nothing's filed until you approve ·{' '}
             <button
@@ -106,12 +118,18 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
           </p>
         </div>
         {internal.length > 1 && (
-          <Button size="sm" variant="ghost" className="shrink-0" onClick={() => void acceptAll()} disabled={busy}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="-mt-1 shrink-0"
+            onClick={() => void acceptAll()}
+            disabled={busy}
+          >
             <Check className="size-3.5" /> Approve all ({internal.length})
           </Button>
         )}
       </div>
-      <ul className="flex flex-col gap-2 p-2.5">
+      <ul className="flex flex-col gap-2">
         {cards.map((p) => (
           <CardItem
             key={p.id}
@@ -126,6 +144,6 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
           />
         ))}
       </ul>
-    </div>
+    </section>
   );
 }

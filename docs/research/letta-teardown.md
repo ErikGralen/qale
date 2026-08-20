@@ -16,7 +16,7 @@ The reason this repo matters more than supermemory: their memory layer is genuin
 
 What they do instead is push the whole problem into write-time discipline, and that part is worth taking: file descriptions must state **purpose, not contents**, because the description is the only thing the agent sees when deciding whether to open a file. Section 4.
 
-**On question 2 (how the background pass decides what to promote): it is a prompt, not an algorithm, but the prompt is good and the machinery around it is better.** The promotion rule is four lines in a review checklist. What is genuinely worth stealing is the two-stage structure: a cheap *selector* agent reads a scored catalogue of past conversations and picks up to five worth a full pass, then the *reflection* agent opens only those. Plus replay slices, so already-reviewed sessions get re-read on purpose to catch contradictions. Section 5.
+**On question 2 (how the background pass decides what to promote): it is a prompt, not an algorithm, but the prompt is good and the machinery around it is better.** The promotion rule is four lines in a review checklist. What is genuinely worth stealing is the two-stage structure: a cheap _selector_ agent reads a scored catalogue of past conversations and picks up to five worth a full pass, then the _reflection_ agent opens only those. Plus replay slices, so already-reviewed sessions get re-read on purpose to catch contradictions. Section 5.
 
 **The single best idea in the repo is an argument against doing the obvious thing.** Their context-doctor skill explains why compressing in-context detail into reference files makes an agent measurably worse even when every fact survives: in-context detail also does attention anchoring, semantic priming, and reasoning templates, and a `[[link]]` does none of those because it is latent until something already knows to fetch it. Section 6. This is the thing I would put in front of the librarian before letting it tidy anything.
 
@@ -40,7 +40,7 @@ The harness is genuinely open and genuinely complete. The memory filesystem proj
 
 Two things are not in the repo:
 
-- **Recall memory.** Message history search (`letta messages search`, hybrid vector plus full text with RRF scoring) is a server API. The recall subagent in this repo is a prompt that shells out to that CLI. So the *conversation* store is hosted, even though the *memory* store is local files.
+- **Recall memory.** Message history search (`letta messages search`, hybrid vector plus full text with RRF scoring) is a server API. The recall subagent in this repo is a prompt that shells out to that CLI. So the _conversation_ store is hosted, even though the _memory_ store is local files.
 - **MemFS Search.** The docs say there is no semantic index by default and that optional hybrid search over memory requires installing a separate mod with QMD indexing. Neither the mod nor the indexer is here. I grepped; there is no `qmd` reference anywhere in `src/`.
 
 There is a real local backend (`src/backend/local/`, with its own compaction and context estimation) and a `LETTA_LOCAL_BACKEND_DIR`, so local-only operation is a supported mode rather than a demo. But the default path is Letta Cloud: memory git sync goes through `api.letta.com` via a proxy (`src/backend/api/memfs-git-proxy.ts`), and there is a `GIT_MEMORY_ENABLED_TAG` stamped on the agent server-side.
@@ -190,11 +190,11 @@ Budgets throughout: 150,000 characters total across all slices, tool call argume
 
 **Phase 2, Extract.** Candidates in priority order: mistakes and corrections, preferences and patterns, new durable facts, contradictions, reusable procedures. Then five filters, each with worked examples:
 
-- *Durable or ephemeral?* Line numbers, error strings, temp paths, debug ports: no.
-- *Already captured?* Skip.
-- *Generalizable?* "User prefers short chapters with cliffhanger endings" yes; "User edited chapter 3 paragraph 2 on Tuesday" no. With the reason attached: "The raw conversation is already searchable, don't re-record it."
-- *Temporal references?* Convert every relative date to an absolute one before writing.
-- *Memory or skill?* Facts and preferences are memory. A repeatable multi-step workflow is a skill. One-off task state belongs nowhere.
+- _Durable or ephemeral?_ Line numbers, error strings, temp paths, debug ports: no.
+- _Already captured?_ Skip.
+- _Generalizable?_ "User prefers short chapters with cliffhanger endings" yes; "User edited chapter 3 paragraph 2 on Tuesday" no. With the reason attached: "The raw conversation is already searchable, don't re-record it."
+- _Temporal references?_ Convert every relative date to an absolute one before writing.
+- _Memory or skill?_ Facts and preferences are memory. A repeatable multi-step workflow is a skill. One-off task state belongs nowhere.
 
 If nothing survives, skip to the end and do not commit.
 
@@ -240,6 +240,7 @@ I would not copy the worktree-and-merge dance. Our writes go through approval ca
 From `context-doctor/SKILL.md`, and I am quoting it nearly whole because paraphrasing loses it:
 
 > **Why detail is load-bearing (read this before cutting anything)**: In-context detail does more than carry information. It does at least four things, and byte-counting sweeps only see the first:
+>
 > 1. **Information**: the literal facts stated
 > 2. **Attention anchoring**: makes certain topics feel important to the model when it's reasoning
 > 3. **Semantic priming**: raises the prior on codebase-specific patterns ("this codebase has weird X, don't assume defaults")
@@ -247,11 +248,11 @@ From `context-doctor/SKILL.md`, and I am quoting it nearly whole because paraphr
 >
 > Compression preserves (1). It destroys (2), (3), (4). That's why a compressed prompt can make an agent measurably worse at codebase-specific reasoning even though the explicit facts are all "still there" in reference files.
 >
-> **Reference links (`[[path]]`) are NOT equivalent to in-context presence.** They're latent until the agent actively fetches them. An agent only fetches when it already knows it doesn't know. The priming cues that tell it *when* it doesn't know are in the system prompt itself; they can't be replaced by links.
+> **Reference links (`[[path]]`) are NOT equivalent to in-context presence.** They're latent until the agent actively fetches them. An agent only fetches when it already knows it doesn't know. The priming cues that tell it _when_ it doesn't know are in the system prompt itself; they can't be replaced by links.
 
 And the operational rules that follow:
 
-- Only intervene if the prompt is *meaningfully* over target. At or near target, leave it alone. "A prompt that feels 'a bit long' is almost always better than one that's been aggressively trimmed."
+- Only intervene if the prompt is _meaningfully_ over target. At or near target, leave it alone. "A prompt that feels 'a bit long' is almost always better than one that's been aggressively trimmed."
 - Compression must be **even across topics**: if the original was 50% about one issue, the compressed one should still be 50% about it. Otherwise you have silently reprioritised the agent's attention while claiming to have only saved tokens.
 - Prefer moving whole files or deleting stale sections over compressing detailed sections into summaries.
 - "Favor the smallest possible change that resolves the issue. If the system prompt is 1.5x the target, don't cut it to half the target 'for headroom'."
@@ -266,7 +267,7 @@ Related, and also worth having: the last line of the doctor skill, on who gets a
 
 > **Ask the user about their goals for you, not the implementation**: You understand your own context best. Do NOT ask the user about their structural preferences. The context is for YOU, not them. Ask them how they want YOU to behave or know instead.
 
-For us this inverts, and usefully. Our vault *is* for the PM, so structure is genuinely theirs to decide. The transferable half is the discipline of knowing which question you are asking: "should this note be split" is a question for whoever reads the note, and "how should I behave next time" is a question for the PM regardless.
+For us this inverts, and usefully. Our vault _is_ for the PM, so structure is genuinely theirs to decide. The transferable half is the discipline of knowing which question you are asking: "should this note be split" is a question for whoever reads the note, and "how should I behave next time" is a question for the PM regardless.
 
 ---
 

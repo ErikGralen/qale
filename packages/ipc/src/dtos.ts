@@ -170,6 +170,12 @@ export interface VaultInfoDTO {
    * writing the same files is how edits and the index get lost.
    */
   syncedBy: string | null;
+  /**
+   * Windows only: the workspace folder is so deep that ordinary files inside it
+   * would run past the 260-character path limit. Always false on macOS and
+   * Linux, where no such limit exists.
+   */
+  pathTooDeep: boolean;
   noteCount: number;
 }
 
@@ -186,6 +192,8 @@ export interface PathCheckDTO {
   syncedBy: string | null;
   /** It exists and already holds markdown — opening it adopts that material. */
   hasNotes: boolean;
+  /** Windows only: too deep for the files inside it to stay under the path limit. */
+  pathTooDeep: boolean;
 }
 
 /** One commit in a note's version history. */
@@ -260,6 +268,12 @@ export interface CaptureNoteInput {
   body: string;
   summary?: string;
   source?: SourceRefDTO;
+}
+
+/** Start a blank page of a chosen type. Main-side refuses the types nobody authors. */
+export interface CreateNoteInputDTO {
+  type: NoteType;
+  title?: string;
 }
 
 /** Quick-add todo — parsed renderer-side from the smart one-liner. */
@@ -349,9 +363,13 @@ export interface ProposalPreviewDTO {
   before: string;
   after: string;
   stale: boolean;
-  /** Why it's stale, so the card can be honest: the note changed vs. the patch
-   *  anchor couldn't be located on an otherwise-unchanged note. */
-  staleReason?: 'changed' | 'unanchored';
+  /** Why this edit has nowhere to land: its anchor text is gone or now ambiguous
+   *  (`unanchored`), the text it appends is already there (`duplicate`), or the
+   *  note itself is gone (`missing`). */
+  staleReason?: 'unanchored' | 'duplicate' | 'missing';
+  /** The note was edited after the card was proposed, but the edit still fits.
+   *  Said out loud next to the diff; never a reason to refuse. */
+  moved?: boolean;
   /** Frontmatter keys this update changes — the body diff hides frontmatter, so a
    *  metadata-only edit (reschedule/close a todo) is shown from here instead. */
   frontmatterChanges?: { key: string; before: unknown; after: unknown }[];
@@ -404,6 +422,9 @@ export interface UpdatePayloadDTO {
   /** Body search/replace blocks (LLM-reliable patch format, PLAN-V2 §3.1).
    *  Optional: a card may change only frontmatter. */
   patch?: { search: string; replace: string }[];
+  /** Text added at the end of the body on approval — the lever for a note with
+   *  nothing to anchor a patch in (a meeting page mirrored from the calendar). */
+  append?: string;
   /** Frontmatter keys to set on approval (shallow-merged) — the card path for
    *  editing metadata like a todo's due/status or a person's last_told. */
   frontmatter?: Record<string, unknown>;
@@ -475,7 +496,16 @@ export interface ProposalDTO {
   effect?: string;
   rationale: string;
   evidence: EvidenceRefDTO[];
+  /** The agent worked this out and nothing in the workspace says it — the claim
+   *  to double-check, and the card flags it. */
   inference: boolean;
+  /**
+   * The PM asked for this in the conversation. There is no note to cite because
+   * the source is their own message, which is the opposite of an unsourced
+   * guess, so the card says so plainly instead of raising a warning. Never both
+   * this and `inference`: the card shows this one when they disagree.
+   */
+  asked: boolean;
   status: ProposalStatus;
   created: number;
   resolved: number | null;
@@ -681,16 +711,11 @@ export interface ScheduleDTO {
 
 /**
  * The opening's screens, in the order they are shown (docs/onboarding.md).
- * `first-light` is the last one; finishing it sets `finishedAt`.
+ * `telemetry` is the last one; finishing it sets `finishedAt`. Getting the
+ * first transcript in is not a screen here — it is a First steps row, so the
+ * opening ends and the app itself makes the ask.
  */
-export type OpeningStepId =
-  | 'hello'
-  | 'you'
-  | 'files'
-  | 'key'
-  | 'connections'
-  | 'telemetry'
-  | 'first-light';
+export type OpeningStepId = 'hello' | 'you' | 'files' | 'key' | 'connections' | 'telemetry';
 
 export const OPENING_STEPS: readonly OpeningStepId[] = [
   'hello',
@@ -699,7 +724,6 @@ export const OPENING_STEPS: readonly OpeningStepId[] = [
   'key',
   'connections',
   'telemetry',
-  'first-light',
 ] as const;
 
 /**
@@ -709,7 +733,21 @@ export const OPENING_STEPS: readonly OpeningStepId[] = [
  * — see {@link ConnectionProgress} — so a key added from Settings months later
  * still ticks its row.
  */
-export type FirstStepId = 'transcript' | 'proposal' | 'prep' | 'ask' | 'about-us';
+export type FirstStepId =
+  | 'transcript'
+  | 'proposal'
+  | 'prep'
+  | 'ask'
+  /**
+   * The interview drafted a picture of the product and the PM kept it
+   * (docs/product-understanding.md U-4). `about-us` is the row it replaced,
+   * kept in the union so a workspace that already ticked it stays ticked: the
+   * lesson moved from "skills are files you edit" to "you talk, it drafts, you
+   * approve", but somebody who did the old one has still told it about their
+   * product.
+   */
+  | 'understanding'
+  | 'about-us';
 
 /** How far one provider got. Connected but following nothing reads nothing. */
 export type ConnectionProgress = 'none' | 'connected' | 'following';
@@ -752,18 +790,45 @@ export interface OnboardingPatchDTO {
   telemetry?: boolean;
 }
 
+/**
+ * Whose API answers. The same two words pi uses, so nothing has to translate
+ * between the app and the model layer. Structurally `LlmProvider` from
+ * `@qale/domain`; restated here because the wire types stay dependency-free.
+ */
+export type LlmProviderDTO = 'anthropic' | 'google';
+
 export interface SettingsDTO {
   vaultPath: string | null;
   /** Which build this is, so a bug report can say. Never Electron's version. */
   appVersion: string;
+  /** Whose API answers. One at a time, and the model belongs to it. */
+  provider: LlmProviderDTO;
   modelId: string;
-  hasAnthropicKey: boolean;
+  /** Whether the CHOSEN provider has a key. What every "can the agent run" check reads. */
+  hasApiKey: boolean;
+  /**
+   * Which providers have a key stored, whether or not they are the chosen one.
+   * Both are kept, so somebody trying the other one for a week does not have to
+   * find the first key again to come back. Settings reads this to say which
+   * choice is ready to go.
+   */
+  storedKeys: Record<LlmProviderDTO, boolean>;
   hasAtlassianCreds: boolean;
-  /** False when the OS keychain is unavailable — secrets are only obfuscated at rest. */
+  /** False when the OS offers no secret store, so secrets are only obfuscated at rest. */
   secretsEncrypted: boolean;
-  /** True when a stored secret failed to decrypt (keychain reset) — the keys must be re-entered. */
+  /**
+   * True when a stored secret failed to decrypt, so the keys must be re-entered.
+   * Two causes, one state: a denied or reset keychain on macOS, and settings
+   * carried to another Windows account or machine, which DPAPI cannot unlock.
+   */
   secretsUnreadable: boolean;
   schedules: ScheduleDTO[];
+  /**
+   * What this workspace is written in, as a bare language tag ("sv"). Never a
+   * locale: a region is not a language, so sv-SE and sv-FI are the same setting
+   * (OW5). Names for the tags live in `@qale/domain` (`LANGUAGE_NAMES`).
+   */
+  language: string;
   mcp: { enabled: boolean; port: number; token: string | null; running: boolean };
   /**
    * Who the PO is. `name` is what participant chips show for their own row;
@@ -1000,6 +1065,18 @@ export interface ConnectionDTO {
   health: ConnectionHealth;
   lastSync: number | null;
   containers: ConnectionContainerDTO[];
+}
+
+/**
+ * One container the survey says this person actually works in
+ * (docs/product-understanding.md FL-2). `reason` is the whole feature: a
+ * recommendation without one reads as a guess, and the count in it is the
+ * provider's real total, never the page the survey happened to fetch.
+ */
+export interface ContainerRecommendationDTO {
+  id: string;
+  kind: 'ticket' | 'wikipage' | 'calendar';
+  reason: string;
 }
 
 export interface ConnectResultDTO {

@@ -1,4 +1,10 @@
-import { layerForType, type Frontmatter, type NoteType } from './frontmatter.js';
+import {
+  badDayField,
+  layerForType,
+  NORMALIZER_MARKERS,
+  type Frontmatter,
+  type NoteType,
+} from './frontmatter.js';
 
 /**
  * Edit invariants, precisely (PLAN-V2 §3.1). Different note types have different
@@ -60,7 +66,16 @@ export const TYPE_RULES: Record<NoteType, TypeRule> = {
   // url) never changes — a moved item is a new mirror.
   ticket: {
     bodyEditable: false,
-    mutableFields: ['processing', 'summary', 'title', 'tags', 'state', 'state_category', 'assignee', 'remote_updated'],
+    mutableFields: [
+      'processing',
+      'summary',
+      'title',
+      'tags',
+      'state',
+      'state_category',
+      'assignee',
+      'remote_updated',
+    ],
   },
   wikipage: {
     bodyEditable: false,
@@ -89,16 +104,34 @@ export function checkFrontmatterMutation(
   prev: Frontmatter,
   next: Frontmatter,
 ): MutationCheck {
+  const prevRec = prev as Record<string, unknown>;
+  const nextRec = next as Record<string, unknown>;
+
+  // Before mutability, because it applies to every type including the freely
+  // editable ones: a date field only works if it holds a date (see
+  // {@link badDayField}). Checked here so every write path gets it at once —
+  // the card accept, the properties form, MCP.
+  const day = badDayField(nextRec, prevRec);
+  if (day) {
+    return {
+      allowed: false,
+      reason: `"${day.field}" has to be a date written "YYYY-MM-DD" (e.g. 2026-08-13), not ${JSON.stringify(day.value)}`,
+    };
+  }
+
   const rule = TYPE_RULES[type];
   const mutable = rule.mutableFields ?? 'all';
   if (mutable === 'all') return { allowed: true };
   // `type` is deliberately NOT allowed: retyping a restricted note (e.g. a
   // mirror → `note`) would unlock every other field. An unchanged `type`
   // compares equal below and passes anyway.
-  const allowed = new Set<string>([...mutable]);
+  //
+  // The normalizer's markers are allowed on every type, whatever else that type
+  // freezes. They are not the note's content: the deterministic pass put them
+  // there to say a session still owes this note a summary, and a type whose
+  // rules refused to let the session clear one would carry it for good.
+  const allowed = new Set<string>([...mutable, ...NORMALIZER_MARKERS]);
 
-  const prevRec = prev as Record<string, unknown>;
-  const nextRec = next as Record<string, unknown>;
   const keys = new Set([...Object.keys(prevRec), ...Object.keys(nextRec)]);
 
   for (const key of keys) {

@@ -1,16 +1,17 @@
 ---
-type: "meeting"
-summary: "Fenno Energi intro: on-prem policy stated up front, unpacked to data control and audit, countered with EU region, ISO 27001 and DPA"
-tags: ["compliance"]
-date: "2026-06-16"
-time: "11:00"
+type: 'meeting'
+summary: 'Fenno Energi intro: on-prem policy stated up front, unpacked to data control and audit, countered with EU region, ISO 27001 and DPA'
+tags: ['compliance']
+date: '2026-06-16'
+time: '11:00'
 duration_minutes: 45
-participants: ["me", "David Strand", "Antti Korhonen"]
-customer: "[[customers/fenno-energi]]"
-transcript: "[[sources/2026-06-16-fenno-energi-intro-transcript]]"
+participants: ['me', 'David Strand', 'Antti Korhonen']
+customer: '[[customers/fenno-energi]]'
+transcript: '[[sources/2026-06-16-fenno-energi-intro-transcript]]'
 ---
 
 ## Summary
+
 Intro call David set up. Genuine interest in ops dashboards for grid maintenance, potentially
 around 150 seats, but Antti opened with their policy that operational systems run in their own
 data centre. We said plainly there's no self-hosted version and asked what the policy protects

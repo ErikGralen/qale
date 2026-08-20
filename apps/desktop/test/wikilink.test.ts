@@ -74,16 +74,37 @@ test('typed links canonicalize inverse spellings, keep the raw source', () => {
 
 test('renderWikilink reconstructs from parts when raw is missing', () => {
   assert.equal(
-    renderWikilink({ raw: '', target: 'a/b', anchor: 'H', alias: 'X', linkType: null, reversed: false }),
+    renderWikilink({
+      raw: '',
+      target: 'a/b',
+      anchor: 'H',
+      alias: 'X',
+      linkType: null,
+      reversed: false,
+    }),
     '[[a/b#H|X]]',
   );
   assert.equal(
-    renderWikilink({ raw: '', target: 'a/b', anchor: null, alias: null, linkType: null, reversed: false }),
+    renderWikilink({
+      raw: '',
+      target: 'a/b',
+      anchor: null,
+      alias: null,
+      linkType: null,
+      reversed: false,
+    }),
     '[[a/b]]',
   );
   // The type re-emits in the author's direction — never silently stripped.
   assert.equal(
-    renderWikilink({ raw: '', target: 'PAY-1', anchor: null, alias: null, linkType: 'blocks', reversed: true }),
+    renderWikilink({
+      raw: '',
+      target: 'PAY-1',
+      anchor: null,
+      alias: null,
+      linkType: 'blocks',
+      reversed: true,
+    }),
     '[[blocked-by::PAY-1]]',
   );
 });
@@ -103,7 +124,10 @@ test('retypeWikilink sets, changes and clears a relationship in place', () => {
 
   // Clearing returns the plain link — target, anchor and alias all survive.
   assert.equal(renderWikilink(retypeWikilink(blocks, null)), '[[tickets/PAY-142|PAY-142]]');
-  const anchored = wikilinkAttrs('[[sources/call#pricing|the call]]', 'sources/call#pricing|the call');
+  const anchored = wikilinkAttrs(
+    '[[sources/call#pricing|the call]]',
+    'sources/call#pricing|the call',
+  );
   assert.equal(
     renderWikilink(retypeWikilink(anchored, { type: 'evidence', reversed: false })),
     '[[evidence::sources/call#pricing|the call]]',
@@ -122,7 +146,10 @@ test('targetNoteType reads the kind of thing a link points at', () => {
 
 test('splitTypePrefix holds a usable type out of the picker query', () => {
   assert.deepEqual(splitTypePrefix('blocks::pay'), { typePrefix: 'blocks::', search: 'pay' });
-  assert.deepEqual(splitTypePrefix('waiting on::asa'), { typePrefix: 'waiting on::', search: 'asa' });
+  assert.deepEqual(splitTypePrefix('waiting on::asa'), {
+    typePrefix: 'waiting on::',
+    search: 'asa',
+  });
   // Not a usable type token — the whole thing stays search text.
   assert.deepEqual(splitTypePrefix('::pay'), { typePrefix: '', search: '::pay' });
   assert.deepEqual(splitTypePrefix('pay'), { typePrefix: '', search: 'pay' });

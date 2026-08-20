@@ -1,8 +1,4 @@
-import {
-  MEETING_SYNC_FIELDS,
-  type CalendarProvider,
-  type EventStatus,
-} from './frontmatter.js';
+import { MEETING_SYNC_FIELDS, type CalendarProvider, type EventStatus } from './frontmatter.js';
 import { slugify } from './slug.js';
 
 /**
@@ -48,14 +44,27 @@ export interface SyncedCalendarEvent {
 }
 
 /**
- * Which events deserve a note: at least one other human attendee (not a
- * room/resource, not the PM), and the PM hasn't declined. Solo blocks, holds
- * and all-day OOO stay in the shallow index. Cancelled events never qualify
- * for CREATION — cancellation of an existing note is handled by the plan.
+ * Which events deserve a note: anything on the calendar the PM hasn't declined.
+ * Solo blocks, holds and all-day OOO count — a day is largely made of them, and
+ * a week view that hides them isn't showing the week. Cancelled events never
+ * qualify for CREATION; cancellation of an existing note is handled by the plan.
+ *
+ * This used to also require another human attendee, which quietly dropped every
+ * solo entry on a real calendar and made the sync look broken.
  */
 export function eventQualifies(event: SyncedCalendarEvent): boolean {
   if (event.event_status === 'cancelled') return false;
   if (selfDeclined(event)) return false;
+  return true;
+}
+
+/**
+ * At least one attendee who is neither a room nor the PM. NOT a note-worthiness
+ * test (see {@link eventQualifies}) — it's the line between a meeting and a
+ * block, which is what the before-meeting agent gates on. Nobody wants a prep
+ * session written for their cleaning slot.
+ */
+export function hasOtherAttendee(event: SyncedCalendarEvent): boolean {
   return event.attendees.some((a) => !a.resource && !a.self);
 }
 

@@ -11,8 +11,8 @@ import {
   attachTranscriptToMeeting,
   captureDocument,
   captureExternalTranscript,
-  captureMeeting,
   captureScreenshot,
+  captureTranscripts,
   deleteNote,
   renameNote,
   resolveLink,
@@ -36,6 +36,15 @@ import {
  * PM handed the file over, so filing it carries out an instruction rather than
  * proposing one, and a wrong shelf is fixed by moving it. Everything DERIVED
  * from the material is still a card.
+ *
+ * Which is why nothing here creates a page in `meetings/` any more. A meeting
+ * page is not the material; it is what we make of it, and it used to be written
+ * the moment a transcript arrived — an empty scaffold saying "not read yet",
+ * which the agent then patched with a summary through a second card. The PM saw
+ * a note appear that they never approved, and then a card editing it. Now the
+ * transcript files itself and the meeting is proposed whole (`propose_meeting`),
+ * summary already in it. Approve and the page exists, finished; decline and only
+ * the raw recording is on the shelf.
  */
 
 /** One file of material, already read out of the session folder. */
@@ -57,16 +66,17 @@ export interface FileMaterialInput {
    */
   parts: ArrivalPart[];
   /**
-   * `meeting` is a meeting the PM was in and gets a page of its own in
-   * `meetings/`. Everything else is `source`: a colleague's call, an article, a
-   * spec, a screenshot. Nothing arriving ever reaches `notes/`, which means "the
-   * PM wrote this".
+   * `meeting` is a recording of a meeting the PM was in: its files land in
+   * `sources/` as transcripts of one conversation, and the meeting page they
+   * belong to is either named by `attachTo` or proposed afterwards. Everything
+   * else is `source`: a colleague's call, an article, a spec, a screenshot.
+   * Nothing arriving ever reaches `notes/`, which means "the PM wrote this".
    */
   as: 'meeting' | 'source';
   title: string;
   /** The day the material is about (YYYY-MM-DD), where the material says so. */
   date?: string;
-  /** Attach to this already-synced meeting rather than minting a second one. */
+  /** Attach to a meeting page that already exists (a synced calendar slot). */
   attachTo?: string;
   /** Whose meeting it was, on a transcript the PM was not in. */
   origin?: string;
@@ -75,10 +85,15 @@ export interface FileMaterialInput {
 }
 
 export interface FileMaterialResult {
-  /** The page this became: the meeting, or the first source. */
+  /** The page to cite from here on: the meeting it joined, or the first source. */
   path: string;
   /** Every note this call created, so the agent can cite them straight away. */
   wrote: string[];
+  /**
+   * A meeting recording that landed with no meeting page to belong to, so one
+   * still has to be proposed. The transcripts are the paths in `wrote`.
+   */
+  needsMeeting?: true;
 }
 
 /**
@@ -105,14 +120,23 @@ export async function fileMaterial(
       body: p.text ?? '',
       ...(parts.length > 1 ? { label: p.label ?? `part ${parts.indexOf(p) + 1}` } : {}),
     }));
+
+    // No page to join: the recording goes on the shelf and the meeting it
+    // records is proposed, not written.
+    if (!input.attachTo) {
+      const written = await captureTranscripts(ctx, {
+        title,
+        parts: body,
+        ...(input.date ? { date: input.date } : {}),
+      });
+      const paths = written.map((n) => n.path);
+      return { path: paths[0]!, wrote: paths, needsMeeting: true };
+    }
+
     // What the meeting held BEFORE, so the report names the transcripts this
     // call wrote rather than every one the page has ever collected.
-    const before = input.attachTo
-      ? transcriptRefs((await ctx.vault.readNote(input.attachTo))?.frontmatter ?? {})
-      : [];
-    const note = input.attachTo
-      ? await attachTranscriptToMeeting(ctx, { meetingPath: input.attachTo, body })
-      : await captureMeeting(ctx, { title, body, ...(input.date ? { date: input.date } : {}) });
+    const before = transcriptRefs((await ctx.vault.readNote(input.attachTo))?.frontmatter ?? {});
+    const note = await attachTranscriptToMeeting(ctx, { meetingPath: input.attachTo, body });
     const added = transcriptRefs(note.frontmatter)
       .filter((r) => !before.includes(r))
       .flatMap((r) => refPath(ctx, r) ?? []);
@@ -135,7 +159,11 @@ export async function fileMaterial(
       continue;
     }
     const note = input.origin
-      ? await captureExternalTranscript(ctx, { title: name, body: part.text ?? '', origin: input.origin })
+      ? await captureExternalTranscript(ctx, {
+          title: name,
+          body: part.text ?? '',
+          origin: input.origin,
+        })
       : await captureDocument(ctx, { title: name, body: part.text ?? '', fileName: part.name });
     wrote.push(note.path);
   }
@@ -167,10 +195,12 @@ export interface RefileMaterialResult {
 }
 
 /**
- * The scaffold `captureMeeting` writes, and nothing else. A meeting page that
- * still says only this is a container, so moving its transcripts elsewhere
- * leaves nothing behind worth keeping. One that carries a prep section, notes
- * or a summary is somebody's work and is never deleted from under them.
+ * The empty scaffold a synced calendar slot arrives as, and nothing else. A
+ * meeting page that still says only this is a container, so moving its
+ * transcripts elsewhere leaves nothing behind worth keeping. One that carries a
+ * prep section, notes or a summary is somebody's work and is never deleted from
+ * under them — which is every meeting an approved card created, since those are
+ * born with their summary in place.
  */
 function meetingIsEmpty(body: string): boolean {
   const stripped = body
@@ -200,7 +230,11 @@ function transcriptPaths(ctx: UseCaseContext, note: Note): string[] {
 }
 
 /** Take one transcript ref off a meeting, leaving the rest of it alone. */
-async function unlinkTranscript(ctx: UseCaseContext, meetingPath: string, ref: string): Promise<void> {
+async function unlinkTranscript(
+  ctx: UseCaseContext,
+  meetingPath: string,
+  ref: string,
+): Promise<void> {
   const meeting = await ctx.vault.readNote(meetingPath);
   if (!meeting) return;
   const rest = transcriptRefs(meeting.frontmatter).filter((r) => r !== ref);
@@ -212,7 +246,12 @@ async function unlinkTranscript(ctx: UseCaseContext, meetingPath: string, ref: s
 }
 
 /** Write one frontmatter field onto a note, leaving body and everything else. */
-async function setField(ctx: UseCaseContext, path: string, key: string, value: string): Promise<string> {
+async function setField(
+  ctx: UseCaseContext,
+  path: string,
+  key: string,
+  value: string,
+): Promise<string> {
   const note = await ctx.vault.readNote(path);
   if (!note) throw new Error(`there is no note called “${titleFromSlug(path)}”`);
   const next = { ...note.frontmatter, [key]: value } as Frontmatter;
@@ -244,7 +283,9 @@ export async function refileMaterial(
   if (target && !toNothing) {
     const meeting = await ctx.vault.readNote(target);
     if (!meeting || meeting.type !== 'meeting') {
-      throw new Error(`“${titleFromSlug(target)}” is not a meeting page, so nothing can be attached to it`);
+      throw new Error(
+        `“${titleFromSlug(target)}” is not a meeting page, so nothing can be attached to it`,
+      );
     }
   }
 
@@ -258,7 +299,9 @@ export async function refileMaterial(
     } else {
       const sources = transcriptPaths(ctx, note);
       if (sources.length === 0) {
-        throw new Error(`“${titleFromSlug(note.slug)}” holds no transcript, so there is nothing to move off it`);
+        throw new Error(
+          `“${titleFromSlug(note.slug)}” holds no transcript, so there is nothing to move off it`,
+        );
       }
       if (!meetingIsEmpty(note.body)) {
         throw new Error(
@@ -329,7 +372,10 @@ export async function refileMaterial(
 function meetingHolding(ctx: UseCaseContext, source: Note): { path: string } | null {
   for (const row of ctx.index.backlinks(source.slug)) {
     const from = ctx.index.get(row.fromPath);
-    if (from?.type === 'meeting' && transcriptRefs(from.frontmatter).includes(`[[${source.slug}]]`)) {
+    if (
+      from?.type === 'meeting' &&
+      transcriptRefs(from.frontmatter).includes(`[[${source.slug}]]`)
+    ) {
       return { path: from.path };
     }
   }

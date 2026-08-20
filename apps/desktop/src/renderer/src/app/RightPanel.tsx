@@ -31,7 +31,7 @@ export function RightPanel() {
     return <SessionFilesPanel sessionId={activeTab.sessionId} />;
   }
   const path = activeTab?.kind === 'doc' ? activeTab.path : null;
-  const note = path ? docData[path]?.note ?? null : null;
+  const note = path ? (docData[path]?.note ?? null) : null;
 
   if (!note) {
     return (
@@ -378,7 +378,12 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
     return (
       <div className="flex h-full flex-col bg-card/40">
         <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-1.5">
-          <ToolbarButton icon={ChevronLeft} label="Back to session files" keys={['esc']} onClick={closePreview} />
+          <ToolbarButton
+            icon={ChevronLeft}
+            label="Back to session files"
+            keys={['esc']}
+            onClick={closePreview}
+          />
           <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           {/* Same leaf as the page rail states; this bar only adds a way back.
               The file's name, not its path: the tree behind this bar already
@@ -390,7 +395,9 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
             className="ml-auto"
             icon={SquareArrowOutUpRight}
             label="Open in a tab"
-            onClick={() => openSessionFile(sessionId, previewPath, { newTab: true, foreground: true })}
+            onClick={() =>
+              openSessionFile(sessionId, previewPath, { newTab: true, foreground: true })
+            }
           />
         </div>
         <div
@@ -413,7 +420,9 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
         </div>
         <div className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-1.5 text-micro text-muted-foreground">
           <span className="truncate tabular-nums">
-            {meta ? `${formatBytes(meta.bytes)} · written ${relativeTime(meta.mtime)}` : 'no longer on disk'}
+            {meta
+              ? `${formatBytes(meta.bytes)} · written ${relativeTime(meta.mtime)}`
+              : 'no longer on disk'}
           </span>
           <span className="ml-auto shrink-0">not part of your memory</span>
         </div>
@@ -432,8 +441,8 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
       />
       {files.length === 0 ? (
         <p className="px-4 py-3.5 text-dense leading-relaxed text-muted-foreground">
-          Nothing yet. Working material this session writes (a brief, per-item notes, a draft)
-          shows up here to read. It never enters your memory, and you can ignore it.
+          Nothing yet. Working material this session writes (a brief, per-item notes, a draft) shows
+          up here to read. It never enters your memory, and you can ignore it.
         </p>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
@@ -450,7 +459,8 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
       )}
       {files.length > 0 && (
         <div className="shrink-0 border-t border-border px-4 py-1.5 text-micro text-muted-foreground">
-          {files.length} file{files.length === 1 ? '' : 's'} · {formatBytes(bytes)} · not part of your memory
+          {files.length} file{files.length === 1 ? '' : 's'} · {formatBytes(bytes)} · not part of
+          your memory
         </div>
       )}
     </div>

@@ -1,10 +1,10 @@
 ---
-type: "decision"
-summary: "Price per seat across all tiers"
-tags: ["pricing"]
-standing: "active"
-date: "2026-03-01"
-deciders: ["me", "Jonas Palm"]
+type: 'decision'
+summary: 'Price per seat across all tiers'
+tags: ['pricing']
+standing: 'active'
+date: '2026-03-01'
+deciders: ['me', 'Jonas Palm']
 sources: []
 ---
 

@@ -29,7 +29,7 @@ export function beforeMeetingSeed(path: string): string {
 }
 
 /**
- * Read a meeting that is already filed (meeting page → "Read this meeting").
+ * Read a meeting that is already filed (meeting page → "Go through the transcript").
  *
  * The one door back into a review (AR-3). An arrival that could not start — no
  * API key that afternoon, the skill switched off, the app quit mid-run — used to

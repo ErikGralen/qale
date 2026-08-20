@@ -5,7 +5,7 @@ title: Send Sara the SSO rollout runbook
 commitment: open
 due: 2026-07-15
 sources:
-  - "[[meetings/2026-07-14-nordkap-checkin]]"
+  - '[[meetings/2026-07-14-nordkap-checkin]]'
 tags:
   - enterprise-auth
 ---

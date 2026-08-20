@@ -72,13 +72,13 @@ export const CODE_RUN_FACTS: Record<string, CodeRunFacts> = {
       { kind: 'event', event: 'decision-superseded' },
     ],
     needsApiKey: true,
-    blockedReason: 'No Anthropic API key yet — it can’t tidy and file pages until one is set.',
+    blockedReason: 'No API key yet, so it can’t tidy and file pages until one is set.',
   },
   'meeting-prep': {
     // Only meetings the calendar connector promoted to a note are visible to
     // it (syncService.agenda) — "before a synced meeting", not "each meeting".
     starts: [{ kind: 'before-meeting', leadMs: MEETING_PREP_LEAD_MS }],
     needsApiKey: true,
-    blockedReason: 'No Anthropic API key yet — it can’t write meeting briefs until one is set.',
+    blockedReason: 'No API key yet, so it can’t write meeting briefs until one is set.',
   },
 };

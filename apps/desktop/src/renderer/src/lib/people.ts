@@ -64,7 +64,8 @@ export function resolveParticipant(raw: string, dir: PeopleDirectoryDTO | null):
 
   // A dangling `[[people/…]]` link reads as a name, not as its slug — the page
   // is what's missing, not the person.
-  if (EMAIL.test(lower)) return { kind: 'unknown', raw, label: bare, email: bare, name: nameFromEmail(bare) };
+  if (EMAIL.test(lower))
+    return { kind: 'unknown', raw, label: bare, email: bare, name: nameFromEmail(bare) };
   const label = target ? titleFromSlug(bare) : bare;
   return { kind: 'unknown', raw, label, name: label };
 }
@@ -81,7 +82,10 @@ function titleFromSlug(slug: string): string {
 
 /** Two letters at most — "Sara Lindqvist" → SL, "egralen@gmail.com" → EG. */
 export function initials(label: string): string {
-  const cleaned = label.replace(/@.*$/, '').replace(/[._-]+/g, ' ').trim();
+  const cleaned = label
+    .replace(/@.*$/, '')
+    .replace(/[._-]+/g, ' ')
+    .trim();
   const words = cleaned.split(/\s+/).filter(Boolean);
   const first = words[0]?.charAt(0) ?? '?';
   const second = words.length > 1 ? (words[words.length - 1]?.charAt(0) ?? '') : '';

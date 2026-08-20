@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { NoteType } from '@qale/domain';
-import { generateIndexFiles, searchNotes, reconcileIndex } from '../src/index.js';
+import { generateIndexFiles, searchNotes, reconcileIndex, notIndexable } from '../src/index.js';
+import { VaultBoundaryError } from '../src/ports.js';
 import type { IndexedNote, IndexPort, UseCaseContext, VaultPort } from '../src/ports.js';
 
 /**
@@ -11,7 +12,12 @@ import type { IndexedNote, IndexPort, UseCaseContext, VaultPort } from '../src/p
  * files stay out of the index and out of search.
  */
 
-function inote(path: string, type: NoteType, summary: string, lifecycle: string | null = null): IndexedNote {
+function inote(
+  path: string,
+  type: NoteType,
+  summary: string,
+  lifecycle: string | null = null,
+): IndexedNote {
   const slug = path.replace(/\.md$/, '');
   return {
     path,
@@ -28,14 +34,20 @@ function inote(path: string, type: NoteType, summary: string, lifecycle: string 
   };
 }
 
-/** A minimal in-memory ctx: file store + a fixed note set + a commit recorder. */
-function fakeCtx(notes: IndexedNote[]) {
+/**
+ * A minimal in-memory ctx: file store + a fixed note set + a commit recorder.
+ * `refuse` stands in for the containment guard turning a path down.
+ */
+function fakeCtx(notes: IndexedNote[], refuse?: (path: string) => boolean) {
   const files = new Map<string, string>();
   const commits: { paths: string[]; message: string }[] = [];
   const vault = {
     root: () => '/tmp/vault-dev',
     readRaw: async (p: string) => files.get(p) ?? null,
-    writeRaw: async (p: string, content: string) => void files.set(p, content),
+    writeRaw: async (p: string, content: string) => {
+      if (refuse?.(p)) throw new VaultBoundaryError(p);
+      files.set(p, content);
+    },
   } as unknown as VaultPort;
   const index = {
     all: () => notes,
@@ -81,14 +93,56 @@ test('generateIndexFiles is idempotent — a second pass writes nothing and does
   assert.equal(commits.length, 1, 'no second commit');
 });
 
+test('a refused map is raised by name, and the maps that landed still commit', async () => {
+  // OW8, and the exact shape of OpenWiki #496: a write the guard turned down,
+  // absorbed quietly, shows up as retrieval getting worse rather than as an
+  // error. An orientation map missing has to be a sentence in the log.
+  const notes = [
+    inote('decisions/adopt-workos.md', 'decision', 'Adopt WorkOS for auth.', 'active'),
+    inote('insights/acme-scim.md', 'insight', 'Acme wants SCIM before rollout.', 'active'),
+  ];
+  const { ctx, files, commits } = fakeCtx(notes, (p) => p === 'insights/index.md');
+
+  await assert.rejects(
+    () => generateIndexFiles(ctx),
+    /insights\/index\.md/,
+    'the refused map must be named, not swallowed',
+  );
+  // The rest of the refresh is not thrown away with it: a partial map beats a
+  // stale one, and the commit is what makes it survive.
+  assert.ok(files.has('index.md'), 'the root map still landed');
+  assert.ok(files.has('decisions/index.md'), 'the folder that could be written still landed');
+  assert.equal(files.has('insights/index.md'), false);
+  assert.equal(commits.length, 1, 'what landed is committed before the refusal is raised');
+});
+
 test('searchNotes drops reserved orientation files from results', () => {
   const hits = [
-    { path: 'insights/acme.md', slug: 'insights/acme', type: 'insight', title: 'Acme', summary: 's', snippet: '', score: 2 },
-    { path: 'insights/index.md', slug: 'insights/index', type: 'insight', title: 'Index', summary: 's', snippet: '', score: 1 },
+    {
+      path: 'insights/acme.md',
+      slug: 'insights/acme',
+      type: 'insight',
+      title: 'Acme',
+      summary: 's',
+      snippet: '',
+      score: 2,
+    },
+    {
+      path: 'insights/index.md',
+      slug: 'insights/index',
+      type: 'insight',
+      title: 'Index',
+      summary: 's',
+      snippet: '',
+      score: 1,
+    },
   ];
   const ctx = { index: { search: () => hits } } as unknown as UseCaseContext;
   const out = searchNotes(ctx, 'acme');
-  assert.deepEqual(out.map((h) => h.path), ['insights/acme.md']);
+  assert.deepEqual(
+    out.map((h) => h.path),
+    ['insights/acme.md'],
+  );
 });
 
 test('reconcileIndex never indexes reserved files, and evicts any already indexed', async () => {
@@ -113,4 +167,47 @@ test('reconcileIndex never indexes reserved files, and evicts any already indexe
   await reconcileIndex(vault, index);
   assert.deepEqual(reindexed, ['insights/acme.md'], 'only the real note is indexed');
   assert.ok(removed.includes('insights/index.md'), 'the stale reserved row is evicted');
+});
+
+test('a session working file is not a note, and a row holding one is evicted', async () => {
+  const reindexed: string[] = [];
+  const removed: string[] = [];
+  // The scan cannot see these (the dot folder is skipped), so they arrive here as
+  // rows the live watcher put in before it agreed with the scan.
+  const stale = ['sessions/.files/abc123/input.md', 'sessions/.files/abc123/material/kranelund.md'];
+  const vault = {
+    list: async () => [{ path: 'sessions/2026-08-13-arrival-abc123.md', mtime: 5 }],
+    readNote: async (p: string) => ({ path: p }),
+  } as unknown as VaultPort;
+  const index = {
+    all: () => stale.map((path) => ({ path, mtime: 1 }) as IndexedNote),
+    reindex: (n: { path: string }) => void reindexed.push(n.path),
+    removeByPath: (p: string) => void removed.push(p),
+  } as unknown as IndexPort;
+
+  await reconcileIndex(vault, index);
+  assert.deepEqual(
+    reindexed,
+    ['sessions/2026-08-13-arrival-abc123.md'],
+    'the session note itself is a note',
+  );
+  assert.deepEqual(removed.sort(), [...stale].sort(), 'every phantom Input row goes');
+});
+
+test('notIndexable covers all three kinds of not-a-note, and nothing else', () => {
+  for (const path of [
+    'index.md',
+    'insights/index.md',
+    'skills/librarian/reference.md',
+    'sessions/.files/abc123/input.md',
+  ]) {
+    assert.equal(notIndexable(path), true, `${path} is not a note`);
+  }
+  for (const path of [
+    'insights/acme.md',
+    'sessions/2026-08-13-arrival-abc123.md',
+    'meetings/weekly.md',
+  ]) {
+    assert.equal(notIndexable(path), false, `${path} is a note`);
+  }
 });

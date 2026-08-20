@@ -14,10 +14,25 @@ Three things came out differently from the sketch below, all of them small:
 - **The row's right-hand line is `add a transcript`.** "Drop the transcript or
   jot three lines" is the block on the meeting page; on Home that column is a
   short fact beside a truncating label, and the longer sentence squeezed it.
-- **Only a named row can be waved off.** The door standing for several meetings
-  has no dismiss, because it is not about any one of them. The series mute is
-  still reachable the way it actually happens: instances turn up one at a time,
-  and the second dismissal silences the series.
+- **There is no door any more (changed 2026-08-10).** The sketch below collapsed
+  two or more empty meetings into `3 meetings have nothing in them yet`, opening
+  the meetings folder. In use that row was a dead end: it never said _which_
+  meetings, the calendar does not mark them, and the one move that fills a
+  meeting (the tray, already attached to it) only exists on a named row. Empty
+  meetings are now always named, newest first. From the fourth on (`CAPTURE_MAX`
+  in `attention.ts`) they fold into one row that unfolds _in place_ — the count
+  never becomes a destination. Every named row keeps its own dismiss, folded or
+  not, so the series mute still arrives the way it always did.
+- **The meeting's name is a link (2026-08-10).** The row does two things: it
+  fills the meeting, and it names one. So the title inside the sentence opens
+  the note and everything else on the row opens the tray. `AttentionItem.link`
+  carries the sentence in parts for that, alongside the flat `label` every other
+  surface prints. The row itself is then a plain element with real buttons
+  inside it rather than one big button, because a link nested in a button
+  cannot be reached by keyboard.
+- **`max` counts entries, not lines.** All the empty meetings are one entry in
+  Home's four, so a week of unfilled meetings can never push the commitments
+  door off the bottom of the page.
 
 ## The problem
 
@@ -32,7 +47,7 @@ The user opens the app, sees an empty-ish Home, and leaves. The habit never form
 ## Principles
 
 1. **A row, not an interruption.** The nudge is a line in "Waiting on you" that exists while it is true and vanishes when it stops being true. No OS notification, no dock badge, no modal, no sound. Same doctrine as the librarian's maintenance rows (`refreshDockBadge` in `handlers.ts`).
-2. **Anchored to a real thing, not an interval.** We nudge about *this meeting*, never "you haven't added anything in a while". The overdue-todo interval sweep was deleted for exactly this reason: interval sweeps pile up duplicate, un-actioned nags (`scheduler-service.ts:74-78`).
+2. **Anchored to a real thing, not an interval.** We nudge about _this meeting_, never "you haven't added anything in a while". The overdue-todo interval sweep was deleted for exactly this reason: interval sweeps pile up duplicate, un-actioned nags (`scheduler-service.ts:74-78`).
 3. **Lives where its subject lives.** The primary home is the meeting note itself; Home gets one summary row. Never the Inbox's maintenance section, which is the librarian's and is for workspace upkeep only.
 4. **Dismissal is respected and remembered.** Dismiss a meeting's nudge once and it never comes back. Dismiss the same recurring series twice and the whole series goes quiet.
 5. **The ask carries the payoff.** Where we can, the copy says what the user gets, not what they owe: "Thursday's prep will be thin without this" beats "you forgot to upload".
@@ -56,7 +71,7 @@ The 1 hour delay matters: nudging while the meeting is still fresh-but-busy feel
 A new `AttentionKind: 'capture'` in `attention.ts`, ranked between `review` and `todo`:
 
 - One meeting: `Yesterday's Nordkap sync has nothing in it yet` with meta `Drop the transcript or jot three lines`. Tone `muted`, not `warning`. Nothing is wrong; something is possible.
-- Two or more: collapse to a door row via the existing `door()` mechanism (`attention.ts:339-382`): `3 meetings this week have nothing in them yet`, opening the meetings folder.
+- Two or more: (superseded — see the note at the top; each meeting is named, two at most.)
 - Hard cap: `capture` occupies at most one of the four Home rows, and real work (questions, cards, reviews) always outranks it.
 
 Clicking the single-meeting row opens capture with the meeting preselected: `requestCapture()` already exists (`lib/capture-event.ts`) and the arrival pipeline already supports attaching to a meeting (`ArrivalItemInputDTO.attachTo`, `ArrivalPlanDTO.match`). This is wiring, not new machinery.

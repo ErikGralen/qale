@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { kebabLinkType, linkTypeLabel, linkTypeOptions, normalizeLinkType, type LinkTypeOption, type NoteType } from '@qale/domain';
+import {
+  kebabLinkType,
+  linkTypeLabel,
+  linkTypeOptions,
+  normalizeLinkType,
+  type LinkTypeOption,
+  type NoteType,
+} from '@qale/domain';
 import { Check, Minus } from 'lucide-react';
 
 /**
@@ -40,9 +47,8 @@ export function LinkTypeMenu({
     const matches = linkTypeOptions(targetType).filter(
       (o) => !q || o.label.toLowerCase().includes(q) || o.token.includes(kebabLinkType(q)),
     );
-    const rows: { key: string; label: string; option: LinkTypeOption | null; custom?: boolean }[] = matches.map(
-      (o) => ({ key: `${o.token}-${String(o.reversed)}`, label: o.label, option: o }),
-    );
+    const rows: { key: string; label: string; option: LinkTypeOption | null; custom?: boolean }[] =
+      matches.map((o) => ({ key: `${o.token}-${String(o.reversed)}`, label: o.label, option: o }));
     // Free text: anything typed that no enum row already covers.
     const free = normalizeLinkType(query);
     if (free && !matches.some((o) => o.token === kebabLinkType(query))) {
@@ -81,7 +87,8 @@ export function LinkTypeMenu({
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault();
-            if (rows.length) setIndex((i) => (i + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length);
+            if (rows.length)
+              setIndex((i) => (i + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length);
           } else if (e.key === 'Enter') {
             e.preventDefault();
             pick(index);
@@ -92,11 +99,20 @@ export function LinkTypeMenu({
         }}
         aria-label="Relationship"
       />
-      <div ref={listRef} role="listbox" aria-label="Relationships" className="max-h-64 overflow-y-auto">
-        {rows.length === 0 && <p className="px-2 py-1.5 text-sm text-muted-foreground">No relationship matches.</p>}
+      <div
+        ref={listRef}
+        role="listbox"
+        aria-label="Relationships"
+        className="max-h-64 overflow-y-auto"
+      >
+        {rows.length === 0 && (
+          <p className="px-2 py-1.5 text-sm text-muted-foreground">No relationship matches.</p>
+        )}
         {rows.map((row, i) => {
           const active =
-            row.option !== null && current?.type === row.option.type && current.reversed === row.option.reversed;
+            row.option !== null &&
+            current?.type === row.option.type &&
+            current.reversed === row.option.reversed;
           return (
             <button
               key={row.key}

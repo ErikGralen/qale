@@ -65,22 +65,29 @@ const SHIPPED_VERSIONS: Record<string, string[]> = {
     '1zm.rpd6cu.16b3bw0',
     '5wv.ammmiy.142go7k',
     '61w.1g17866.q1803y',
+    '6rl.erudjt.bfng0l',
+    '78x.saq08b.131d63b',
+    '89m.z190z4.ic6ho8',
   ],
   'agents/meeting-prep': ['1uh.1sio3id.agirl9'],
-  'skills/_about-us': ['19h.15yrv59.9eyvbd'],
   'skills/_filing-rules': [
     '103.1rrplbr.u0ann7',
     '21k.1sye54d.1bs4rqr',
     '27v.ijs3um.1y7xpek',
     '2ce.rktoxz.25qpoh',
+    '2ew.i2i4pe.229lvy',
   ],
-  'skills/_language': ['125.16bb1r3.dnnznt'],
+  'skills/_language': ['125.16bb1r3.dnnznt', '1fz.233phq.11spkca'],
+  'skills/_understanding': ['2k4.57zknt.nqgitv', '2o8.1wopa0b.1dfofsv', '30w.cur4ml.ycjgnd'],
+  'skills/learn-the-product': ['3fz.1i6bnlp.14ksfel', '472.1hau6rz.nb7j5l', '4bk.1fof55c.1llrbse'],
   'skills/arrival': [
     '4nl.1awfavz.4dny5d',
     '42d.1a7awl.vtvcnl',
     '4hm.hu02ga.115uqhq',
     '4sw.hhht3z.19lnzx1',
     '70a.1mj7r70.14h70xw',
+    '7mf.imw86l.1ksz52p',
+    '89h.1sm3i1h.1mjn2f7',
   ],
   'skills/commitment-check': ['2tx.6u8hrg.vune7q', '2gb.1lzuw03.ac2r2n'],
   'skills/process-note': ['23w.7lq1u2.1b9sk4w', '1qu.1pwoy5p.1yyao8n'],
@@ -107,6 +114,7 @@ const SHIPPED_VERSIONS: Record<string, string[]> = {
 
   // Retired. Their versions stay listed forever: it is the only way to tell an
   // untouched copy (safe to take away) from one somebody rewrote (theirs).
+  'skills/_about-us': ['19h.15yrv59.9eyvbd'],
   'skills/after-meeting': [
     '1fx.1mhx2gy.gr26xw',
     '1xl.11n64wd.1ckxmeb',

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, TooltipProvider } from '@qale/ui';
-import type { ArrivalHandoffDTO, ArrivalItemInputDTO } from '@qale/ipc';
+import type { ArrivalItemInputDTO } from '@qale/ipc';
 import { readableAs } from '@qale/domain';
-import { FileUp } from 'lucide-react';
+import { AlertTriangle, FileUp } from 'lucide-react';
 import { pathForFile } from './lib/ipc';
 import { AppStateProvider, useApp } from './state/app-state';
 import { CAPTURE_EVENT, type CaptureRequest } from './lib/capture-event';
@@ -24,7 +24,6 @@ import { RightPanel } from './app/RightPanel';
 import { TabStrip } from './app/TabStrip';
 import { QuickSwitcher } from './app/QuickSwitcher';
 import { AddMaterial, type MaterialDraft } from './app/AddMaterial';
-import { ArrivalHandoff } from './components/ArrivalHandoff';
 import { ExternalRefHoverLayer } from './components/ExternalRef';
 import { Opening } from './onboarding/Opening';
 
@@ -71,7 +70,7 @@ function Center() {
     case 'context':
       return <ContextView key={activeTab.tag} tag={activeTab.tag} />;
     case 'settings':
-      return <SettingsView />;
+      return <SettingsView viewKey={activeTab.key} section={activeTab.section} />;
     case 'skills':
       return <SkillsView />;
     case 'agents':
@@ -85,19 +84,18 @@ function Center() {
 function inEditable(e: KeyboardEvent): boolean {
   const t = e.target;
   if (!(t instanceof HTMLElement)) return false;
-  return t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT';
+  return (
+    t.isContentEditable ||
+    t.tagName === 'INPUT' ||
+    t.tagName === 'TEXTAREA' ||
+    t.tagName === 'SELECT'
+  );
 }
 
 function Shell() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureDraft, setCaptureDraft] = useState<MaterialDraft | null>(null);
-  /**
-   * The batch that was just handed over, and the session now holding it. There
-   * is no receipt any more: nothing has been written to take back, and the
-   * session's own narration is the record (docs/arrival-agentic.md, AR-13).
-   */
-  const [arrival, setArrival] = useState<ArrivalHandoffDTO | null>(null);
   const [dragging, setDragging] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
@@ -113,46 +111,27 @@ function Shell() {
       return true;
     }
   });
-  /**
-   * A capture is in flight (ONB-9). Set the moment the tray is submitted, not
-   * when it resolves: the wait is exactly the moment that used to be silent.
-   */
-  const [handing, setHanding] = useState(false);
-  /** The arrival's session has actually been seen running, so its end means something. */
-  const [watched, setWatched] = useState(false);
   const dragDepth = useRef(0);
-  const { openSession, openChat, openHome, openSettings, activeTab, tabs, activeTabId, setActiveTab, closeTab, vault, settings, captureNote, openDoc, goBack, goForward, reopenClosedTab, sessionFiles, sessions, askRequests, spawnRequests } =
-    useApp();
-
-  const arrivalSession = arrival?.sessionId;
-  const arrivalRunning = !!sessions.find((s) => s.id === arrivalSession)?.running;
-
-  /**
-   * The one rule for when Add takes the screen (docs/arrival-agentic.md): when
-   * there is something to answer. A drop that turns out to be pure filing must
-   * never open a tab, and an arrival that stops to ask which of two meetings a
-   * transcript belongs to must never leave that question buried in the rail.
-   * Read off the same parked state the session view draws from, so the card and
-   * the navigation can never disagree.
-   */
-  const parked = arrivalSession ? (askRequests[arrivalSession] ?? spawnRequests[arrivalSession]) : null;
-  useEffect(() => {
-    if (arrivalSession && parked) openChat({ id: arrivalSession, title: 'Handling new material' });
-  }, [arrivalSession, parked, openChat]);
-
-  /**
-   * The handoff line lives exactly as long as the run does. It is cleared only
-   * once the session has been SEEN running, because the status event and the
-   * ingest reply race each other and clearing on "not running" alone would take
-   * the line away a frame after it appeared.
-   */
-  useEffect(() => {
-    if (arrivalRunning) setWatched(true);
-    else if (watched && arrival?.started) {
-      setWatched(false);
-      setArrival(null);
-    }
-  }, [arrivalRunning, watched, arrival]);
+  const {
+    openSession,
+    openChat,
+    openHome,
+    openSettings,
+    activeTab,
+    tabs,
+    activeTabId,
+    setActiveTab,
+    closeTab,
+    vault,
+    settings,
+    captureNote,
+    openDoc,
+    goBack,
+    goForward,
+    reopenClosedTab,
+    sessionFiles,
+    blockedBy,
+  } = useApp();
 
   // ⌘N: a blank note straight into the editor — capture (⇧⌘N) keeps the dialog.
   const newNote = useCallback(async () => {
@@ -214,7 +193,8 @@ function Shell() {
   // Home, deep links, and anything outside the Shell request capture by event —
   // with a draft when they already hold the material (a pasted transcript).
   useEffect(() => {
-    const onCapture = (e: Event) => openCapture((e as CustomEvent<CaptureRequest | undefined>).detail ?? undefined);
+    const onCapture = (e: Event) =>
+      openCapture((e as CustomEvent<CaptureRequest | undefined>).detail ?? undefined);
     window.addEventListener(CAPTURE_EVENT, onCapture);
     return () => window.removeEventListener(CAPTURE_EVENT, onCapture);
   }, [openCapture]);
@@ -265,7 +245,10 @@ function Shell() {
         // way a browser's home button does; ⌘T is the one that opens a new one.
         e.preventDefault();
         openHome();
-      } else if ((key === '[' || key === ']' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.altKey) {
+      } else if (
+        (key === '[' || key === ']' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') &&
+        !e.altKey
+      ) {
         // Per-tab history — both browser spellings (⌘[/⌘] and ⌘←/⌘→). Never
         // inside an editable: there ⌘← is line-start and ⌘[ may be outdent.
         if (inEditable(e)) return;
@@ -313,7 +296,23 @@ function Shell() {
       window.removeEventListener('keydown', onCycle);
       window.removeEventListener('mouseup', onMouseNav);
     };
-  }, [openSession, openHome, openSettings, openCapture, newNote, toggleSidebar, toggleRightPanel, activeTabId, tabs, setActiveTab, closeTab, goBack, goForward, reopenClosedTab, captureOpen]);
+  }, [
+    openSession,
+    openHome,
+    openSettings,
+    openCapture,
+    newNote,
+    toggleSidebar,
+    toggleRightPanel,
+    activeTabId,
+    tabs,
+    setActiveTab,
+    closeTab,
+    goBack,
+    goForward,
+    reopenClosedTab,
+    captureOpen,
+  ]);
 
   /**
    * Shell-wide drop: everything dragged anywhere lands in the Add material
@@ -366,7 +365,9 @@ function Shell() {
   // tree. A session with no files gets no panel: an empty 35% column would read
   // as a broken feature on every ordinary session.
   const sessionFileCount =
-    activeTab?.kind === 'session' && activeTab.sessionId ? sessionFiles[activeTab.sessionId]?.length ?? 0 : 0;
+    activeTab?.kind === 'session' && activeTab.sessionId
+      ? (sessionFiles[activeTab.sessionId]?.length ?? 0)
+      : 0;
   const rightAvailable = activeTab?.kind === 'doc' || sessionFileCount > 0;
   const showRight = rightAvailable && rightOpen;
   // The toggle names what it would open — "session files", not "panel" — and
@@ -375,7 +376,12 @@ function Shell() {
   const rightPanel = {
     open: rightOpen,
     available: rightAvailable,
-    name: activeTab?.kind === 'session' ? 'session files' : activeTab?.kind === 'doc' ? 'the session' : 'panel',
+    name:
+      activeTab?.kind === 'session'
+        ? 'session files'
+        : activeTab?.kind === 'doc'
+          ? 'the session'
+          : 'panel',
     count: sessionFileCount,
     onToggle: toggleRightPanel,
   };
@@ -412,7 +418,22 @@ function Shell() {
           {/* The tab strip spans the full workbench so it never reflows when a
               tab without a session panel becomes active; the panel splits below it. */}
           <div className="flex h-full flex-col">
-            <TabStrip sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} rightPanel={rightPanel} />
+            <TabStrip
+              sidebarOpen={sidebarOpen}
+              onToggleSidebar={toggleSidebar}
+              rightPanel={rightPanel}
+            />
+            {/* Nothing can run until this is cleared, so it sits above whatever
+                you are looking at rather than inside the session that happened
+                to hit it first. It takes itself down the moment a turn gets an
+                answer: there is nothing here to dismiss, because dismissing it
+                would not unblock anything. */}
+            {blockedBy && (
+              <div className="flex items-start gap-2 border-b border-warning/40 bg-warning/10 px-6 py-2 text-sm text-warning">
+                <AlertTriangle className="mt-px size-4 shrink-0" aria-hidden />
+                <span>{blockedBy}</span>
+              </div>
+            )}
             <div className="min-h-0 flex-1">
               <ResizablePanelGroup orientation="horizontal">
                 <ResizablePanel defaultSize={showRight ? '65%' : '100%'} minSize="40%">
@@ -456,26 +477,13 @@ function Shell() {
         open={captureOpen}
         onOpenChange={setCaptureOpen}
         draft={captureDraft}
-        onSubmitting={() => setHanding(true)}
-        onHandoff={(r) => {
-          setHanding(false);
-          setWatched(false);
-          setArrival(r);
-        }}
-        onFailed={() => setHanding(false)}
+        /* Pressing Add goes to the session holding the material. It used to
+           close onto a floating line asking whether you wanted to look, plus a
+           second rule that opened the tab anyway once the run stopped to ask
+           something. Both are gone: the session is where the work is, so that
+           is where Add lands you, and there is nothing left to dismiss. */
+        onHandoff={(r) => openChat({ id: r.sessionId, title: 'Handling new material' })}
       />
-      {/* The moment after the drop, which used to be silent (ONB-9), now
-          standing in for the whole of rung 0. */}
-      {(handing || arrival) && (
-        <ArrivalHandoff
-          arrival={arrival}
-          running={arrivalRunning}
-          onOpen={() =>
-            arrival && openChat({ id: arrival.sessionId, title: 'Handling new material' })
-          }
-          onDismiss={() => setArrival(null)}
-        />
-      )}
       {/* One hover card serves every [[PAY-142]]-style reference — read view,
           cards, and the editor's wikilink atoms all stamp data-external-ref. */}
       <ExternalRefHoverLayer onOpen={(path) => void openDoc(path)} />

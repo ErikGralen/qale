@@ -6,7 +6,9 @@ import { useApp } from '../state/app-state';
 import { NoteList } from './NoteList';
 import { PageHeader } from '../components/PageHeader';
 import { ScopedAskComposer } from '../components/ScopedAskComposer';
+import { SelectionBar } from '../components/SelectionBar';
 import { notesInContext, refDate, SPINE_ORDER } from '../lib/contexts';
+import { selectionKeyDown, useSelection } from '../lib/selection';
 
 /**
  * Section labels in spine order — how a context page reads. Only the content
@@ -45,22 +47,32 @@ export function ContextView({ tag }: { tag: string }) {
   const sections = useMemo(() => {
     const byType = new Map<NoteType, NoteRefDTO[]>();
     for (const n of notes) byType.set(n.type, [...(byType.get(n.type) ?? []), n]);
-    return SPINE_ORDER.filter((t) => byType.has(t)).map((t) => ({
-      type: t,
-      rows: (byType.get(t) ?? []).sort((a, b) => refDate(b).getTime() - refDate(a).getTime()),
-    }));
+    return SPINE_ORDER.filter((t) => byType.has(t)).map((t) => {
+      const rows = (byType.get(t) ?? []).sort(
+        (a, b) => refDate(b).getTime() - refDate(a).getTime(),
+      );
+      return { type: t, rows, shown: rows.slice(0, SECTION_LIMIT) };
+    });
   }, [notes]);
 
+  // Selection runs across the sections, in reading order, and only over rows
+  // the page actually shows: a truncated section's tail belongs to the folder
+  // page, and a batch must never reach further than the eye can check.
+  const ordered = useMemo(() => sections.flatMap((s) => s.shown.map((n) => n.path)), [sections]);
+  const selection = useSelection(ordered);
+
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" onKeyDown={(e) => void selectionKeyDown(e, selection)}>
       <PageHeader icon={Hash} iconClassName="text-brand" label={tag} meta={notes.length} />
+
+      <SelectionBar selection={selection} total={ordered.length} />
 
       <div className="flex-1 overflow-y-auto px-8 py-4">
         <div className="mx-auto w-full max-w-2xl">
           {notes.length === 0 ? (
             <p className="px-1 py-2 text-sm text-muted-foreground">
-              Nothing tagged #{tag} yet. The librarian suggests contexts when filing: approve a card carrying this
-              tag and it fills up.
+              Nothing tagged #{tag} yet. The librarian suggests contexts when filing: approve a card
+              carrying this tag and it fills up.
             </p>
           ) : (
             <div className="flex flex-col gap-5">
@@ -68,14 +80,16 @@ export function ContextView({ tag }: { tag: string }) {
                 // The on-disk folder, not the display label — 'wiki pages' opens nothing.
                 const dirName = dirForType(s.type);
                 const label = SECTION_LABEL[s.type] ?? dirName;
-                const truncated = s.rows.length > SECTION_LIMIT;
+                const truncated = s.rows.length > s.shown.length;
                 return (
                   <section key={s.type}>
                     <div className="mb-0.5 flex items-baseline gap-2 px-2">
                       <h2 className="text-xs font-medium text-muted-foreground">{label}</h2>
-                      <span className="text-xs text-muted-foreground tabular-nums">{s.rows.length}</span>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {s.rows.length}
+                      </span>
                     </div>
-                    <NoteList rows={truncated ? s.rows.slice(0, SECTION_LIMIT) : s.rows} empty="" omitTag={tag} />
+                    <NoteList rows={s.shown} empty="" omitTag={tag} selection={selection} />
                     {truncated && (
                       <button
                         className="mt-1 rounded px-2 text-xs font-medium text-brand hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"

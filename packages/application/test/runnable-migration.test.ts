@@ -33,7 +33,12 @@ function world(files: Record<string, string>) {
     all: () => [...indexed.values()],
     get: (p: string) => indexed.get(p) ?? null,
     reindex: (n: { path: string }) =>
-      void indexed.set(n.path, { path: n.path, slug: slugFromPath(n.path), type: 'skill', mtime: 1 } as IndexedNote),
+      void indexed.set(n.path, {
+        path: n.path,
+        slug: slugFromPath(n.path),
+        type: 'skill',
+        mtime: 1,
+      } as IndexedNote),
     removeByPath: (p: string) => void indexed.delete(p),
   } as unknown as IndexPort;
   const git = { commitPaths: async (paths: string[]) => void committed.push(...paths) };
@@ -83,7 +88,10 @@ test('an interrupted move finishes on the next run instead of leaving a shadow',
 test('when the two copies disagree, both are left alone and the path is reported', async () => {
   // Someone edited the flat file after a half-migration. There is no honest way
   // to pick a winner, and picking the wrong one silently deletes their writing.
-  const w = world({ 'skills/mine.md': `${AUTHORED}\n\nEdited later.`, 'skills/mine/SKILL.md': AUTHORED });
+  const w = world({
+    'skills/mine.md': `${AUTHORED}\n\nEdited later.`,
+    'skills/mine/SKILL.md': AUTHORED,
+  });
   const { moved, left } = await migrateRunnableFolders(w.ctx);
   assert.deepEqual(moved, []);
   assert.deepEqual(left, ['skills/mine.md']);

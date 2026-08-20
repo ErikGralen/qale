@@ -10,6 +10,7 @@ import {
   isBodyEditable,
   refToSlug,
   titleFromSlug,
+  typeToWrite,
   type DecisionNode,
   type DecisionFrontmatter,
   type Frontmatter,
@@ -17,12 +18,14 @@ import {
   type ProposalIdentity,
 } from '@qale/domain';
 import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../ports.js';
+import { clearReasons } from './deferrals.js';
 import { renameNote } from './notes.js';
 
 /**
  * Proposals (approval cards) are the only write path for the agent (PLAN-V2 §3.3).
  * Tools persist card rows here; the Inbox applies accepted ones through these use
- * cases, which write files + git-commit. Accept is staleness-safe via base_hash;
+ * cases, which write files + git-commit. Accept is staleness-safe by re-placing
+ * the edit in the note as it reads at that moment (see {@link placeBodyChange});
  * decisions supersede rather than overwrite.
  */
 
@@ -87,19 +90,105 @@ export function listProposals(ctx: UseCaseContext, status?: string): ProposalRec
   return ctx.proposals.list(status);
 }
 
+/** One card a session put in front of the PM, as it stands right now. */
+export interface SessionCardState {
+  id: string;
+  kind: string;
+  /** What the card is called, in the words the PM sees on it. */
+  title: string;
+  targetPath: string | null;
+  /** pending / accepted / rejected / withdrawn / stale. */
+  status: string;
+}
+
+/**
+ * The cards THIS session proposed, oldest first, with what has become of them.
+ *
+ * A session's only record of its own cards is the tool result it got when it
+ * made them ("Proposed new note (p_x): …. Awaiting review."), and that sentence
+ * is true for about as long as it takes the PM to click. Nothing then told the
+ * session that two were approved and two are still waiting, so a correction
+ * typed into the chat ("it's qale.ai, not kale") reached a model whose best
+ * picture was "I proposed four cards, all pending" — and it redid the batch:
+ * the approved ones came back as cards that can never land, the wrong ones
+ * stayed. This is what the runtime hands it at the top of each turn instead.
+ */
+export function sessionCards(ctx: UseCaseContext, sessionId: string): SessionCardState[] {
+  return ctx.proposals
+    .list()
+    .filter((rec) => rec.sessionId === sessionId)
+    .sort((a, b) => a.created - b.created)
+    .map((rec) => ({
+      id: rec.id,
+      kind: rec.kind,
+      title: cardTitle(rec),
+      targetPath: rec.targetPath,
+      status: rec.status,
+    }));
+}
+
+export interface WithdrawResult {
+  ok: boolean;
+  /** Why not, in a sentence the agent can act on. */
+  error?: string;
+}
+
+/**
+ * Take back a card the PM has not decided yet.
+ *
+ * The queue used to be write-only from the agent's side: `propose_*` created,
+ * and nothing else. So the only way to fix a wrong card was to propose a second
+ * one next to it, leaving the PM to notice the first was dead and discard it by
+ * hand. Withdrawing is deliberately narrower than rejecting: it is the session
+ * saying "ignore what I said", never a stand-in for the PM's decision. Hence the
+ * two refusals below — a card another session owns, and a card already resolved
+ * (approving it wrote a note; that note is now the PM's, and only an update card
+ * may touch it).
+ */
+export function withdrawProposal(
+  ctx: UseCaseContext,
+  id: string,
+  /** The session doing the withdrawing. It may only take back its own cards. */
+  sessionId: string,
+): WithdrawResult {
+  const rec = ctx.proposals.get(id);
+  if (!rec) return { ok: false, error: `no card called ${id}` };
+  if (rec.sessionId !== sessionId) {
+    return {
+      ok: false,
+      error: `${id} was proposed by another session, so it is not yours to take back`,
+    };
+  }
+  if (rec.status !== 'pending') {
+    return {
+      ok: false,
+      error: `${id} is already ${rec.status} — the PM decided it, and a decided card cannot be taken back`,
+    };
+  }
+  ctx.proposals.setStatus(id, 'withdrawn', Date.now());
+  return { ok: true };
+}
+
 export interface ProposalPreview {
   before: string;
   after: string;
   stale: boolean;
   /**
-   * Why an update is stale, so the card can speak honestly instead of always
-   * blaming a change that may not have happened:
-   *  - `changed`    — the note really was edited since the card was proposed
-   *                   (base hash differs, or the target was deleted).
-   *  - `unanchored` — the note is unchanged but the patch's search text can't be
-   *                   located, so there's nothing to apply.
+   * Why an update has nowhere to land, so the card can say what actually
+   * happened instead of blaming a change:
+   *  - `unanchored` — the text the patch points at isn't in the note any more,
+   *                   or now appears more than once.
+   *  - `duplicate`  — the appended text is already there word for word.
+   *  - `missing`    — the target note is gone.
    */
-  staleReason?: 'changed' | 'unanchored';
+  staleReason?: PlacementFailure | 'missing';
+  /**
+   * The note was edited after this card was proposed, but the edit still fits.
+   * Not a blocker: the diff below is computed against the note as it now reads,
+   * so what you approve is what you see. It is worth saying out loud all the
+   * same, because the sentence the card was written about may have moved.
+   */
+  moved?: boolean;
   /**
    * Frontmatter keys this update changes, so the card can SHOW a metadata edit
    * (a todo's due/commitment) — the body diff deliberately hides frontmatter, so a
@@ -123,7 +212,10 @@ function frontmatterDiff(
 }
 
 /** Compute the review-time diff for a proposal against CURRENT file content. */
-export async function previewProposal(ctx: UseCaseContext, id: string): Promise<ProposalPreview | null> {
+export async function previewProposal(
+  ctx: UseCaseContext,
+  id: string,
+): Promise<ProposalPreview | null> {
   const rec = ctx.proposals.get(id);
   if (!rec) return null;
   if (rec.kind === 'note' || rec.kind === 'decision' || rec.kind === 'outbound') {
@@ -131,25 +223,23 @@ export async function previewProposal(ctx: UseCaseContext, id: string): Promise<
     return { before: '', after: payload.body ?? '', stale: false };
   }
   if (rec.kind === 'update') {
-    const payload = rec.payload as {
+    const payload = rec.payload as BodyChange & {
       path: string;
-      patch?: { search: string; replace: string }[];
       frontmatter?: Record<string, unknown>;
     };
     const note = await ctx.vault.readNote(payload.path);
-    if (!note) return { before: '', after: '', stale: true, staleReason: 'changed' };
-    const changed = !!rec.baseHash && contentHash(note.body) !== rec.baseHash;
-    const patch = payload.patch ?? [];
-    // No body patch (frontmatter-only) → nothing to anchor; the body stands as-is.
-    const applied = patch.length > 0 ? applyPatch(note.body, patch) : note.body;
-    const stale = changed || applied === null;
+    if (!note) return { before: '', after: '', stale: true, staleReason: 'missing' };
+    const placed = placeBodyChange(note.body, payload);
     return {
       before: note.body,
-      after: applied ?? note.body,
-      stale,
-      // A missed anchor on an unchanged note is an anchoring failure, not drift.
-      staleReason: stale ? (changed ? 'changed' : 'unanchored') : undefined,
-      frontmatterChanges: frontmatterDiff(note.frontmatter as Record<string, unknown>, payload.frontmatter),
+      after: placed.ok ? placed.applied : note.body,
+      stale: !placed.ok,
+      staleReason: placed.ok ? undefined : placed.reason,
+      moved: !!rec.baseHash && contentHash(note.body) !== rec.baseHash,
+      frontmatterChanges: frontmatterDiff(
+        note.frontmatter as Record<string, unknown>,
+        payload.frontmatter,
+      ),
     };
   }
   return null;
@@ -165,6 +255,8 @@ export function rejectProposal(ctx: UseCaseContext, id: string): { ok: boolean }
 export interface AcceptResult {
   ok: boolean;
   stale?: boolean;
+  /** For a stale refusal, the same vocabulary the preview uses. */
+  staleReason?: PlacementFailure;
   error?: string;
   /** Deterministic link produced by an outbound write, if any. */
   url?: string;
@@ -196,13 +288,23 @@ export async function acceptProposal(
     else if (rec.kind === 'decision') result = await acceptDecision(ctx, rec, edited);
     else if (rec.kind === 'outbound') result = await acceptOutbound(ctx, rec, edited);
     else return { ok: false };
+    // A deferral is a run's note to itself that a note is not covered yet
+    // (OW6). An approved card against that note IS the coverage, so the entry
+    // has done its job and goes; leaving it would have the next pass reminded
+    // about work that has already landed. Best-effort bookkeeping, never
+    // something that can turn a successful accept into a failure.
+    if (result.ok && rec.targetPath) clearReasons(ctx, rec.targetPath);
     return result;
   } finally {
     acceptsInFlight.delete(id);
   }
 }
 
-async function acceptNote(ctx: UseCaseContext, rec: ProposalRecord, edited?: unknown): Promise<AcceptResult> {
+async function acceptNote(
+  ctx: UseCaseContext,
+  rec: ProposalRecord,
+  edited?: unknown,
+): Promise<AcceptResult> {
   const parsed = zNotePayload.safeParse(edited ?? rec.payload);
   if (!parsed.success) return { ok: false, error: 'invalid note payload' };
   const { path, frontmatter, body } = parsed.data;
@@ -211,13 +313,16 @@ async function acceptNote(ctx: UseCaseContext, rec: ProposalRecord, edited?: unk
   // A `note` card means a NEW note; the preview shows `before: ''`, so an
   // overwrite here would clobber an existing file sight-unseen.
   if (await ctx.vault.exists(path)) {
-    return { ok: false, error: `a note already exists at ${path} — propose an update to it instead` };
+    return {
+      ok: false,
+      error: `a note already exists at ${path} — propose an update to it instead`,
+    };
   }
   const written = await ctx.vault.writeNote(path, fm.data, body);
   ctx.index.reindex(written);
   await ctx.git.commitPaths([path], `note: ${written.slug}`);
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
-  await markCitedSourcesProcessed(ctx, fm.data);
+  await markCitedSourcesProcessed(ctx, fm.data, rec);
   return { ok: true };
 }
 
@@ -225,12 +330,22 @@ async function acceptNote(ctx: UseCaseContext, rec: ProposalRecord, edited?: unk
  * When an approved derived note cites raw material (`evidence`/`sources` refs),
  * the analysis has landed: flip cited sources and unprocessed meetings from
  * `new`/`stale` to `processed`. Best-effort — a bad ref never blocks the accept.
+ *
+ * The CARD's evidence counts as well as the note's frontmatter. A meeting page
+ * has no `sources` field — it cites its recording through `transcript` — so
+ * without this an approved meeting card would leave the very transcript it was
+ * written from sitting at `new`, waiting to be read a second time.
  */
-async function markCitedSourcesProcessed(ctx: UseCaseContext, fm: Frontmatter): Promise<void> {
+async function markCitedSourcesProcessed(
+  ctx: UseCaseContext,
+  fm: Frontmatter,
+  card?: ProposalRecord,
+): Promise<void> {
   const rec = fm as Record<string, unknown>;
   const refs = [
     ...(Array.isArray(rec['evidence']) ? (rec['evidence'] as string[]) : []),
     ...(Array.isArray(rec['sources']) ? (rec['sources'] as string[]) : []),
+    ...(card?.evidence ?? []).map((e) => e.ref),
   ];
   for (const ref of refs) {
     const slug = refToSlug(ref);
@@ -253,38 +368,71 @@ async function markCitedSourcesProcessed(ctx: UseCaseContext, fm: Frontmatter): 
   }
 }
 
-async function acceptUpdate(ctx: UseCaseContext, rec: ProposalRecord, edited?: unknown): Promise<AcceptResult> {
+async function acceptUpdate(
+  ctx: UseCaseContext,
+  rec: ProposalRecord,
+  edited?: unknown,
+): Promise<AcceptResult> {
   const parsed = zUpdatePayload.safeParse(edited ?? rec.payload);
   if (!parsed.success) return { ok: false, error: 'invalid update payload' };
-  const { path, patch, frontmatter, title } = parsed.data;
+  const { path, patch, append, frontmatter, title } = parsed.data;
   const note = await ctx.vault.readNote(path);
   if (!note) return { ok: false, error: 'target not found' };
-  // Staleness: the target may have been edited in Obsidian since the proposal.
-  if (rec.baseHash && contentHash(note.body) !== rec.baseHash) {
-    ctx.proposals.setStatus(rec.id, 'stale', Date.now());
-    return { ok: false, stale: true };
-  }
   // The same invariants saveFrontmatter/saveAuthoredNote enforce apply to
   // cards: an update card must not patch an immutable raw-layer body, and its
   // frontmatter merge must not rewrite protected fields (a mirror's identity,
   // a decision's spine) — a card is a write path, not a side door.
-  if (patch && patch.length > 0 && !isBodyEditable(note.type)) {
-    return { ok: false, error: `the body of a ${note.type} note can't be edited — it only changes on re-sync` };
+  if ((patch?.length || append?.trim()) && !isBodyEditable(note.type)) {
+    return {
+      ok: false,
+      error: `the body of a ${note.type} note can't be edited — it only changes on re-sync`,
+    };
   }
-  // A frontmatter-only card carries no patch — the body stands as-is.
-  const applied = patch && patch.length > 0 ? applyPatch(note.body, patch) : note.body;
-  if (applied === null) {
+  // Re-placed against the note as it reads at this instant, never against the
+  // text it read when the card was written. Approving a sibling card a second
+  // ago is exactly that kind of change, and it must not cost this one its place.
+  const placed = placeBodyChange(note.body, { patch, append });
+  if (!placed.ok) {
     ctx.proposals.setStatus(rec.id, 'stale', Date.now());
-    return { ok: false, stale: true };
+    return { ok: false, stale: true, staleReason: placed.reason };
   }
+  const applied = placed.applied;
   // Shallow-merge any frontmatter changes (reschedule a due date, close a todo)
   // over the note's current metadata — the only card path that edits frontmatter.
+  //
+  // `prevFm` is the note as the FILE describes itself, which is only different
+  // for one that failed its schema and is therefore in memory as a plain `note`
+  // (see {@link typeToWrite}). Judging such a card against our own fallback, and
+  // then writing the fallback back, is how a repairable file becomes a
+  // permanently mistyped one — so the declared type is restored on both sides.
+  const declared = typeToWrite(
+    note,
+    (frontmatter as Record<string, unknown> | undefined)?.['type'],
+  );
+  const prevFm = { ...note.frontmatter, type: declared } as typeof note.frontmatter;
   const nextFm = frontmatter
-    ? ({ ...note.frontmatter, ...frontmatter } as typeof note.frontmatter)
+    ? ({ ...prevFm, ...frontmatter, type: declared } as typeof note.frontmatter)
     : note.frontmatter;
   if (frontmatter) {
-    const check = checkFrontmatterMutation(note.type, note.frontmatter, nextFm);
+    // Judged as the type it is BEING READ as, which for a demoted note is the
+    // permissive `note`. Deliberate: the meeting rules would refuse a repair to
+    // the very provenance field that broke the file, so the librarian's card
+    // could never land and the note would stay demoted for good. A file only
+    // reaches that state by being edited outside the app, and the repair is
+    // still something the PM approves.
+    const check = checkFrontmatterMutation(note.type, prevFm, nextFm);
     if (!check.allowed) return { ok: false, error: check.reason };
+    // And it has to still BE a note of its type afterwards. `acceptNote` has
+    // always parsed what it writes; this path never did, so a malformed field
+    // reached disk silently and the note came back from the next read as an
+    // untyped `note` — the meeting gone from meetings/, with no error anywhere.
+    // Only what this card breaks: a note already carrying something the schema
+    // refuses must still be repairable BY a card, which is exactly the card the
+    // librarian raises for one.
+    const merged = parseFrontmatter(nextFm);
+    if (!merged.ok && parseFrontmatter(prevFm).ok) {
+      return { ok: false, error: merged.error };
+    }
   }
   const written = frontmatter
     ? await ctx.vault.writeNote(path, nextFm, applied)
@@ -294,10 +442,16 @@ async function acceptUpdate(ctx: UseCaseContext, rec: ProposalRecord, edited?: u
   if (title?.trim()) {
     // Best-effort: an immutable-title type refuses the rename, but the body
     // change above already landed — the card must not fail over its garnish.
+    // Said out loud all the same: a rename moves the FILE, so a refusal here can
+    // be the containment guard catching a slug we built wrong, and that must not
+    // look identical to "decisions cannot be retitled".
     try {
       await renameNote(ctx, { path, title });
-    } catch {
-      /* body update stands; title stays */
+    } catch (err) {
+      logError(
+        '[qale] update card: retitle failed (the body change stands):',
+        err instanceof Error ? err.message : err,
+      );
     }
   }
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
@@ -309,7 +463,11 @@ async function acceptUpdate(ctx: UseCaseContext, rec: ProposalRecord, edited?: u
  * supersedes an existing one, flip the old file's standing + set the forward pointer
  * — never editing the old body. Cycle/lineage guarded (PLAN-V2 §5.6).
  */
-async function acceptDecision(ctx: UseCaseContext, rec: ProposalRecord, edited?: unknown): Promise<AcceptResult> {
+async function acceptDecision(
+  ctx: UseCaseContext,
+  rec: ProposalRecord,
+  edited?: unknown,
+): Promise<AcceptResult> {
   const parsed = zDecisionPayload.safeParse(edited ?? rec.payload);
   if (!parsed.success) return { ok: false, error: 'invalid decision payload' };
   const { path, frontmatter, body, supersedes } = parsed.data;
@@ -329,7 +487,10 @@ async function acceptDecision(ctx: UseCaseContext, rec: ProposalRecord, edited?:
   // BEFORE the supersede flip — a later refusal would leave the old decision
   // half-flipped.
   if (await ctx.vault.exists(path)) {
-    return { ok: false, error: `a note already exists at ${path} — propose a supersede or update instead` };
+    return {
+      ok: false,
+      error: `a note already exists at ${path} — propose a supersede or update instead`,
+    };
   }
 
   const committed: string[] = [];
@@ -341,7 +502,8 @@ async function acceptDecision(ctx: UseCaseContext, rec: ProposalRecord, edited?:
     if (!check.allowed) return { ok: false, error: check.reason };
     const targetPath = ctx.index.resolve(targetSlug);
     const target = targetPath ? await ctx.vault.readNote(targetPath) : null;
-    if (!target || !targetPath) return { ok: false, error: `supersede target not found: ${targetSlug}` };
+    if (!target || !targetPath)
+      return { ok: false, error: `supersede target not found: ${targetSlug}` };
     // Flip the old decision: standing → superseded, forward pointer set. Body frozen.
     const oldFm = {
       ...target.frontmatter,
@@ -357,9 +519,12 @@ async function acceptDecision(ctx: UseCaseContext, rec: ProposalRecord, edited?:
   const written = await ctx.vault.writeNote(path, newFm, body);
   ctx.index.reindex(written);
   committed.push(path);
-  await ctx.git.commitPaths(committed, `decision: ${written.slug}${targetSlug ? ` (supersedes ${targetSlug})` : ''}`);
+  await ctx.git.commitPaths(
+    committed,
+    `decision: ${written.slug}${targetSlug ? ` (supersedes ${targetSlug})` : ''}`,
+  );
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
-  await markCitedSourcesProcessed(ctx, newFm);
+  await markCitedSourcesProcessed(ctx, newFm, rec);
   return { ok: true };
 }
 
@@ -369,7 +534,11 @@ async function acceptDecision(ctx: UseCaseContext, rec: ProposalRecord, edited?:
  * returns to the Inbox with the error — nothing half-applied). The deterministic
  * link is appended to the workspace note that spawned it.
  */
-async function acceptOutbound(ctx: UseCaseContext, rec: ProposalRecord, edited?: unknown): Promise<AcceptResult> {
+async function acceptOutbound(
+  ctx: UseCaseContext,
+  rec: ProposalRecord,
+  edited?: unknown,
+): Promise<AcceptResult> {
   const parsed = zOutboundPayload.safeParse(edited ?? rec.payload);
   if (!parsed.success) return { ok: false, error: 'invalid outbound payload' };
   const p: OutboundPayload = parsed.data;
@@ -378,9 +547,11 @@ async function acceptOutbound(ctx: UseCaseContext, rec: ProposalRecord, edited?:
   // Slack/Teams/email are out of scope until MVP2 (the card model already fits).
   if (p.provider === 'message') {
     const dateLine = `> Draft for ${p.audience ?? 'stakeholders'} — ${ctx.clock.now().slice(0, 10)}\n\n`;
-    if (!p.linkBackPath) return { ok: false, error: 'no note to save this draft to — the card has no link-back path' };
+    if (!p.linkBackPath)
+      return { ok: false, error: 'no note to save this draft to — the card has no link-back path' };
     const note = await ctx.vault.readNote(p.linkBackPath);
-    if (!note) return { ok: false, error: `can't save the draft — ${p.linkBackPath} no longer exists` };
+    if (!note)
+      return { ok: false, error: `can't save the draft — ${p.linkBackPath} no longer exists` };
     const next = `${note.body.trimEnd()}\n\n## Draft: ${p.title ?? p.audience ?? 'update'}\n${dateLine}${p.body}\n`;
     const written = await ctx.vault.writeBody(p.linkBackPath, next);
     ctx.index.reindex(written);
@@ -389,7 +560,8 @@ async function acceptOutbound(ctx: UseCaseContext, rec: ProposalRecord, edited?:
     return { ok: true };
   }
 
-  if (!ctx.outbound) return { ok: false, error: 'no outbound integration configured (set Atlassian in Settings)' };
+  if (!ctx.outbound)
+    return { ok: false, error: 'no outbound integration configured (set Atlassian in Settings)' };
 
   // Drafted-against-stale: the card snapshotted the mirror's `remote_updated`
   // (and `version` for pages) at draft time. If the mirror has since re-synced
@@ -400,7 +572,9 @@ async function acceptOutbound(ctx: UseCaseContext, rec: ProposalRecord, edited?:
   if (mirror) {
     const fm = mirror.frontmatter as Record<string, unknown>;
     const changedSince =
-      (p.remote_updated && typeof fm['remote_updated'] === 'string' && fm['remote_updated'] !== p.remote_updated) ||
+      (p.remote_updated &&
+        typeof fm['remote_updated'] === 'string' &&
+        fm['remote_updated'] !== p.remote_updated) ||
       (p.version !== undefined && typeof fm['version'] === 'number' && fm['version'] !== p.version);
     if (changedSince) {
       return {
@@ -440,7 +614,10 @@ async function acceptOutbound(ctx: UseCaseContext, rec: ProposalRecord, edited?:
         await ctx.git.commitPaths([p.linkBackPath], `pushed: ${p.provider} → ${p.linkBackPath}`);
       }
     } catch (err) {
-      logError('[qale] outbound link-back failed (push already landed):', err instanceof Error ? err.message : err);
+      logError(
+        '[qale] outbound link-back failed (push already landed):',
+        err instanceof Error ? err.message : err,
+      );
     }
   }
 
@@ -548,8 +725,75 @@ export async function completeMeetingReview(
   // A cancelled meeting never asked to be reviewed in the first place (the
   // renderer's `needsReview` agrees), so it is not worth a question either.
   if (fm['event_status'] === 'cancelled') return nothing;
-  const title = typeof fm['title'] === 'string' && fm['title'].trim() ? (fm['title'] as string) : titleFromSlug(note.slug);
+  const title =
+    typeof fm['title'] === 'string' && fm['title'].trim()
+      ? (fm['title'] as string)
+      : titleFromSlug(note.slug);
   return { completed: null, ask: { path: meetingPath, title } };
+}
+
+/** The two body levers an update card carries. */
+export interface BodyChange {
+  patch?: { search: string; replace: string }[];
+  append?: string;
+}
+
+/**
+ * The body an update card produces: its patch blocks applied in order, then its
+ * `append` text added at the end. Review and approval both go through here, so
+ * what the card previews is by construction what approving it writes.
+ *
+ * `append` is the lever for a note there is nothing to anchor in. A meeting page
+ * mirrored from the calendar is frontmatter and no body at all, and it is
+ * exactly where the write-up belongs — search/replace can never match there, so
+ * without this the documented path (attach the transcript, put the summary on
+ * the page the calendar already holds) had no way to end in an applied card.
+ *
+ * Returns null when a patch anchor can't be found — the same refusal applyPatch
+ * makes, carried through so the card reads as stale rather than clobbering.
+ */
+export function applyBodyChange(body: string, change: BodyChange): string | null {
+  const placed = placeBodyChange(body, change);
+  return placed.ok ? placed.applied : null;
+}
+
+/** Why an edit has nowhere to go in the note as it currently reads. */
+export type PlacementFailure =
+  /** The text the patch points at is gone, or now appears more than once. */
+  | 'unanchored'
+  /** The appended text is already in the note word for word. */
+  | 'duplicate';
+
+/**
+ * Place an update card's body change in the note as it reads RIGHT NOW, or say
+ * why it has nowhere to go.
+ *
+ * This is the whole staleness test. It used to be preceded by a base-hash
+ * comparison, which asked a different question ("did this note change at all?")
+ * and was read as the answer to this one. Any byte of drift killed every other
+ * pending card against the note — most often the app's own approvals, since
+ * applying card 1 IS a change, so a session that proposed three edits to one
+ * meeting page could only ever land the first. Anchoring is the honest test:
+ * two edits to different paragraphs both apply, in either order, and two edits
+ * to the same sentence still refuse, because the second one's anchor really is
+ * gone once the first lands.
+ *
+ * `duplicate` is the guard the hash used to provide by accident. An `append` has
+ * no anchor to lose, so two cards appending the same block would both apply and
+ * the note would say it twice.
+ */
+export function placeBodyChange(
+  body: string,
+  change: BodyChange,
+): { ok: true; applied: string } | { ok: false; reason: PlacementFailure } {
+  // No patch (frontmatter-only, or append-only) → nothing to anchor; the body stands.
+  const patched = change.patch?.length ? applyPatch(body, change.patch) : body;
+  if (patched === null) return { ok: false, reason: 'unanchored' };
+  const added = change.append?.trim();
+  if (!added) return { ok: true, applied: patched };
+  if (patched.includes(added)) return { ok: false, reason: 'duplicate' };
+  const head = patched.replace(/\s+$/, '');
+  return { ok: true, applied: head ? `${head}\n\n${added}` : added };
 }
 
 /**
@@ -559,7 +803,10 @@ export async function completeMeetingReview(
  * blank-line count, CRLF), and an exact-only match falsely reports those as stale.
  * Returns null only when a block genuinely can't be located (→ stale, don't clobber).
  */
-export function applyPatch(body: string, patch: { search: string; replace: string }[]): string | null {
+export function applyPatch(
+  body: string,
+  patch: { search: string; replace: string }[],
+): string | null {
   let result = body;
   for (const block of patch) {
     const idx = result.indexOf(block.search);

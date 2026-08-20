@@ -89,11 +89,17 @@ test('restoring brings back the text, not the properties', async () => {
 
   // `commitment: open` and the invalid `status: wip` are the live state: an old
   // version must not re-open finished work or rewrite fields it never validated.
-  await writeFile(file, '---\ntype: note\nsummary: s\nstatus: wip\ncommitment: open\n---\n\nOld text.\n');
+  await writeFile(
+    file,
+    '---\ntype: note\nsummary: s\nstatus: wip\ncommitment: open\n---\n\nOld text.\n',
+  );
   await git.commitPaths([path], 'create: todo');
   const [old] = await git.history(path);
 
-  await writeFile(file, '---\ntype: note\nsummary: s\nstatus: wip\ncommitment: done\n---\n\nNew text.\n');
+  await writeFile(
+    file,
+    '---\ntype: note\nsummary: s\nstatus: wip\ncommitment: done\n---\n\nNew text.\n',
+  );
   await git.commitPaths([path], 'edit: todo');
 
   await restoreNoteVersion(ctx, { path, hash: old!.hash });

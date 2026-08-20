@@ -44,7 +44,8 @@ export function noteToDTO(note: Note): NoteDTO {
     slug: note.slug,
     type: note.type,
     layer: note.layer,
-    title: (note.frontmatter as Record<string, unknown>)['title'] as string ?? deriveTitle(note.slug),
+    title:
+      ((note.frontmatter as Record<string, unknown>)['title'] as string) ?? deriveTitle(note.slug),
     summary: note.frontmatter.summary,
     frontmatter: note.frontmatter as Record<string, unknown>,
     body: note.body,
@@ -71,7 +72,9 @@ export function indexedToRefDTO(n: IndexedNote): NoteRefDTO {
     time: typeof fm['time'] === 'string' ? fm['time'] : undefined,
     durationMin: typeof fm['duration_minutes'] === 'number' ? fm['duration_minutes'] : undefined,
     eventStatus:
-      fm['event_status'] === 'confirmed' || fm['event_status'] === 'tentative' || fm['event_status'] === 'cancelled'
+      fm['event_status'] === 'confirmed' ||
+      fm['event_status'] === 'tentative' ||
+      fm['event_status'] === 'cancelled'
         ? fm['event_status']
         : undefined,
     // Meetings only. A calendar mirror is the one note the app knows happened
@@ -222,6 +225,7 @@ export function vaultInfoToDTO(info: VaultInfo): VaultInfoDTO {
     git: info.git,
     gitAvailable: info.gitAvailable,
     syncedBy: info.syncedBy,
+    pathTooDeep: info.pathTooDeep,
     noteCount: info.noteCount,
   };
 }
@@ -241,7 +245,10 @@ export function themeHeatToDTO(row: ThemeHeatRow): ThemeHeatDTO {
  * is actually called. Two index scans for a whole queue, so a card never costs a
  * request to say what approving it does.
  */
-export function outboundEffectFacts(ctx: UseCaseContext, selfEmails: string[]): OutboundEffectFacts {
+export function outboundEffectFacts(
+  ctx: UseCaseContext,
+  selfEmails: string[],
+): OutboundEffectFacts {
   const names = new Map<string, string>();
   for (const n of ctx.index.listByType('person')) {
     const email = n.frontmatter['email'];
@@ -296,6 +303,7 @@ export function proposalToDTO(
     rationale: rec.rationale,
     evidence: rec.evidence,
     inference: rec.inference,
+    asked: !!rec.asked,
     status: rec.status as ProposalDTO['status'],
     created: rec.created,
     resolved: rec.resolved,
@@ -320,7 +328,8 @@ const _outboundProviderLock: _MutualLock<
   import('@qale/ipc').OutboundProvider,
   import('@qale/domain').OutboundProvider
 > = true;
-const _noteTypeLock: _MutualLock<import('@qale/ipc').NoteType, import('@qale/domain').NoteType> = true;
+const _noteTypeLock: _MutualLock<import('@qale/ipc').NoteType, import('@qale/domain').NoteType> =
+  true;
 const _stateCategoryLock: _MutualLock<
   import('@qale/ipc').StateCategory,
   import('@qale/domain').StateCategory

@@ -5,7 +5,7 @@ processing: processed
 source:
   system: transcript
 captured: 2026-07-10
-meeting: "[[meetings/2026-07-10-internal-auth-review]]"
+meeting: '[[meetings/2026-07-10-internal-auth-review]]'
 ---
 
 Tom: Staging's done. SAML works against Okta and Entra. Session handling took longer than I

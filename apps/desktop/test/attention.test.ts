@@ -104,7 +104,11 @@ test('attention: the ranking runs question → card → answer → clock', () =>
     input({
       askRequests: { 'session-2': ask('session-2') },
       proposals: [card('p1')],
-      sessions: [session('session-1'), session('session-2', { running: true }), session('session-3', { unread: true })],
+      sessions: [
+        session('session-1'),
+        session('session-2', { running: true }),
+        session('session-3', { unread: true }),
+      ],
       tree: tree(
         note('meeting', 'nordkap', { date: '2026-07-28', time: '14:00', lifecycle: 'new' }),
         note('meeting', 'kranelund', { date: '2026-07-27', lifecycle: 'new' }),
@@ -307,12 +311,23 @@ test('capture: a dismissed meeting, and a muted series, go quiet', () => {
   assert.deepEqual(ids(items), ['capture:meetings/kranelund.md']);
 });
 
-test('home: empty meetings are named one by one, counted in bulk', () => {
+test('home: empty meetings are named, and the name is a link to the meeting', () => {
   const one = buildAttention(
     input({ tree: tree(synced('nordkap', { date: '2026-07-27', time: '14:00' })) }),
     NOW,
   );
-  assert.equal(homeRows(one, 4, NOW)[0]!.label, "Yesterday's nordkap has nothing in it yet");
+  const row = homeRows(one, 4, NOW)[0]!;
+  assert.equal(row.label, "Yesterday's nordkap has nothing in it yet");
+  // The row fills the meeting; the title inside it opens the meeting.
+  assert.deepEqual(row.target, { open: 'capture', path: 'meetings/nordkap.md', title: 'nordkap' });
+  assert.deepEqual(row.link, {
+    before: "Yesterday's ",
+    text: 'nordkap',
+    after: ' has nothing in it yet',
+    path: 'meetings/nordkap.md',
+  });
+  // The parts and the flat sentence are the same sentence.
+  assert.equal(`${row.link!.before}${row.link!.text}${row.link!.after}`, row.label);
 
   const several = buildAttention(
     input({
@@ -324,12 +339,67 @@ test('home: empty meetings are named one by one, counted in bulk', () => {
     }),
     NOW,
   );
-  const rows = homeRows(several, 4, NOW);
-  // One row for the lot, and real work would still have outranked it.
+  // Three stay named, newest first — a count pointing at the calendar would
+  // send the PO hunting for which meetings it meant.
+  assert.deepEqual(
+    homeRows(several, 4, NOW).map((r) => [r.id, r.label, r.count]),
+    [
+      ['capture:meetings/b.md', "Yesterday's b has nothing in it yet", 1],
+      ['capture:meetings/a.md', "Yesterday's a has nothing in it yet", 1],
+      ['capture:meetings/c.md', "Sunday's c has nothing in it yet", 1],
+    ],
+  );
+});
+
+test('home: from the fourth on, empty meetings fold into one row that carries them', () => {
+  const items = buildAttention(
+    input({
+      tree: tree(
+        ...['a', 'b', 'c', 'd'].map((t, i) =>
+          synced(t, { date: '2026-07-27', time: `0${i + 1}:00` }),
+        ),
+        note('todo', 'ship', { lifecycle: 'open', due: '2026-07-20' }),
+      ),
+    }),
+    NOW,
+  );
+  const rows = homeRows(items, 4, NOW);
   assert.deepEqual(
     rows.map((r) => [r.id, r.label, r.count]),
-    [['captures', '3 meetings have nothing in them yet', 3]],
+    [
+      ['captures', '4 meetings have nothing in them yet', 4],
+      ['todos', '1 commitment due', 1],
+    ],
   );
+  // It unfolds where it stands rather than sending the PO anywhere.
+  assert.deepEqual(rows[0]!.target, { open: 'expand' });
+  // And it carries the named rows, each still fillable and still linked.
+  const children = rows[0]!.children!;
+  assert.equal(children.length, 4);
+  assert.equal(children[0]!.label, "Yesterday's d has nothing in it yet");
+  assert.deepEqual(children[0]!.target, { open: 'capture', path: 'meetings/d.md', title: 'd' });
+  assert.equal(children[0]!.link!.path, 'meetings/d.md');
+});
+
+test('home: a flood of empty meetings cannot push commitments off the page', () => {
+  const items = buildAttention(
+    input({
+      proposals: [card('p1')],
+      tree: tree(
+        ...['a', 'b', 'c'].map((t, i) => synced(t, { date: '2026-07-27', time: `0${i + 1}:00` })),
+        note('todo', 'ship', { lifecycle: 'open', due: '2026-07-20' }),
+      ),
+    }),
+    NOW,
+  );
+  // `max` counts entries, not lines: the named meetings are one entry, so the
+  // commitments door still makes the page.
+  const rows = homeRows(items, 2, NOW);
+  assert.deepEqual(
+    rows.map((r) => r.kind),
+    ['card', 'capture', 'capture', 'capture'],
+  );
+  assert.deepEqual(homeRows(items, 3, NOW).at(-1)!.id, 'todos');
 });
 
 test('home: cards, reviews and commitments each collapse behind one door', () => {

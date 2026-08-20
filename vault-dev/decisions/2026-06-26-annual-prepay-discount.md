@@ -1,11 +1,11 @@
 ---
-type: "decision"
-summary: "Offer a 15% annual prepay discount in mid-market; the per-seat model itself stays"
-tags: ["pricing"]
-standing: "active"
-date: "2026-06-26"
-deciders: ["Jonas Palm", "David Strand", "me"]
-sources: ["[[meetings/2026-06-12-kranelund-checkin]]"]
+type: 'decision'
+summary: 'Offer a 15% annual prepay discount in mid-market; the per-seat model itself stays'
+tags: ['pricing']
+standing: 'active'
+date: '2026-06-26'
+deciders: ['Jonas Palm', 'David Strand', 'me']
+sources: ['[[meetings/2026-06-12-kranelund-checkin]]']
 ---
 
 Our answer to the seasonal-headcount pushback ([[insights/per-seat-resistance-midmarket]]):

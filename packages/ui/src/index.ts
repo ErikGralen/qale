@@ -52,11 +52,7 @@ export {
 } from './components/ui/dropdown-menu';
 export { Popover, PopoverTrigger, PopoverAnchor, PopoverContent } from './components/ui/popover';
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
-export {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from './components/ui/resizable';
+export { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './components/ui/resizable';
 export { Collapsible, CollapsibleTrigger, CollapsibleContent } from './components/ui/collapsible';
 export { Empty } from './components/ui/empty';
 export { Item } from './components/ui/item';

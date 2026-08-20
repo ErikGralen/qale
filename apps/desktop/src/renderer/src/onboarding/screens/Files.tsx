@@ -36,6 +36,13 @@ export function Files({ onNext }: { onNext: () => void }) {
   const [error, setError] = useState<string | null>(null);
   /** A sync warning the PM has been shown once and can now overrule. */
   const [warned, setWarned] = useState<string | null>(null);
+  /**
+   * Windows only: the folder is too deep for the 260-character path limit. Its
+   * own flag rather than a second message in `warned`, because both can be true
+   * of the same folder (a deeply nested OneDrive is the likeliest one of all)
+   * and the PM should see both reasons, not whichever we checked first.
+   */
+  const [tooDeep, setTooDeep] = useState(false);
 
   useEffect(() => {
     void invoke['vault:suggestPath']()
@@ -45,8 +52,9 @@ export function Files({ onNext }: { onNext: () => void }) {
 
   const create = async (force = false) => {
     if (!suggested) return;
-    if (suggested.syncedBy && !force) {
+    if ((suggested.syncedBy || suggested.pathTooDeep) && !force) {
       setWarned(suggested.syncedBy);
+      setTooDeep(suggested.pathTooDeep);
       return;
     }
     setBusy(true);
@@ -67,13 +75,15 @@ export function Files({ onNext }: { onNext: () => void }) {
     // Clear any standing warning first: it was about the folder they just
     // walked away from, and leaving it up would make a clean pick look unsafe.
     setWarned(null);
+    setTooDeep(false);
     try {
       const info = await openVaultDialog();
       // Cancelling the picker is not a failure and not an answer — the screen
       // just stays where it was.
       if (!info) return;
-      if (info.syncedBy) {
+      if (info.syncedBy || info.pathTooDeep) {
         setWarned(info.syncedBy);
+        setTooDeep(info.pathTooDeep);
         return;
       }
       onNext();
@@ -91,12 +101,17 @@ export function Files({ onNext }: { onNext: () => void }) {
     else void create(true);
   };
 
+  // Coming back with a workspace already open: the screen says which folder it
+  // is, rather than offering to make one as though the choice never happened.
+  // Changing it is still one click, and it is the same picker.
+  const settled = vault !== null && !warned && !tooDeep;
+
   return (
     <Screen
-      title="Where should your files live?"
+      title={settled ? 'Your files live here' : 'Where should your files live?'}
       why="A plain folder of markdown that you own. Everything the app writes goes here, readable and editable without it."
       footer={
-        warned ? (
+        warned || tooDeep ? (
           <>
             <Button data-opening-primary size="lg" disabled={busy} onClick={proceedAnyway}>
               Use it anyway
@@ -105,9 +120,24 @@ export function Files({ onNext }: { onNext: () => void }) {
               Choose another folder
             </Button>
           </>
+        ) : settled ? (
+          <>
+            <Button data-opening-primary size="lg" disabled={busy} onClick={onNext}>
+              Continue
+            </Button>
+            <Button size="lg" variant="outline" disabled={busy} onClick={() => void open()}>
+              <FolderOpen className="size-4" aria-hidden />
+              Choose a different folder
+            </Button>
+          </>
         ) : (
           <>
-            <Button data-opening-primary size="lg" disabled={busy || !suggested} onClick={() => void create()}>
+            <Button
+              data-opening-primary
+              size="lg"
+              disabled={busy || !suggested}
+              onClick={() => void create()}
+            >
               <FolderPlus className="size-4" aria-hidden />
               {suggested?.exists ? 'Use this folder' : 'Create it'}
             </Button>
@@ -121,22 +151,31 @@ export function Files({ onNext }: { onNext: () => void }) {
     >
       <div className="space-y-3">
         <div className="rounded-xl bg-card p-4 ring-1 ring-border">
-          <div className="text-dense font-medium text-muted-foreground">New workspace</div>
-          <div className="mt-1 truncate font-mono text-sm" title={suggested?.path}>
-            {suggested?.path ?? '…'}
+          <div className="text-dense font-medium text-muted-foreground">
+            {settled ? 'Your workspace' : 'New workspace'}
           </div>
-          {suggested?.hasNotes && (
+          <div
+            className="mt-1 truncate font-mono text-sm"
+            title={settled ? vault.path : suggested?.path}
+          >
+            {settled ? vault.path : (suggested?.path ?? '…')}
+          </div>
+          {!settled && suggested?.hasNotes && (
             <p className="mt-1.5 text-sm text-muted-foreground">
               This folder already has markdown in it. Opening it reads what is there and leaves it
               alone.
             </p>
           )}
         </div>
-        <p className="text-sm text-muted-foreground">
-          Use Obsidian? Put this folder inside your vault. Qale sets up its own folders in here and
-          leaves the rest of your vault alone, and everything it writes is plain markdown you can
-          open and edit in Obsidian.
-        </p>
+        {/* Advice for a folder not picked yet. Once one is open it is a
+            suggestion about a decision already made. */}
+        {!settled && (
+          <p className="text-sm text-muted-foreground">
+            Use Obsidian? Put this folder inside your vault. Qale sets up its own folders in here
+            and leaves the rest of your vault alone, and everything it writes is plain markdown you
+            can open and edit in Obsidian.
+          </p>
+        )}
         {warned && (
           <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
             <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -144,6 +183,16 @@ export function Files({ onNext }: { onNext: () => void }) {
               {warned} is syncing this folder. When two programs write the same file at once, edits
               can go missing and search can stop working. A plain folder on this computer is safer,
               but you know your setup.
+            </span>
+          </p>
+        )}
+        {tooDeep && (
+          <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              Windows cannot open a file whose full path is longer than 260 characters, and this
+              folder is deep enough that notes inside it would pass that. Put the workspace nearer
+              the top of the drive, like C:\Qale, or shorten the folders above it.
             </span>
           </p>
         )}

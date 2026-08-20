@@ -32,44 +32,32 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={toast}>
       {children}
-      {/* One bottom-right rail for everything that reports on the app's own
-          behaviour. Transient failures stack on top; the arrival receipt mounts
-          into the slot below them, so an eight-second error can never cover a
-          persistent Undo. The rail ignores the pointer where it is empty. */}
+      {/* One bottom-right rail, and only for things that failed. Nothing
+          persistent lives here any more: the app's own progress belongs in the
+          view doing the work, not in a card floating over it. The rail ignores
+          the pointer where it is empty. */}
       <div
         className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 flex-col items-stretch gap-2 *:pointer-events-auto"
         data-slot="notification-rail"
       >
-        {toasts.length > 0 && (
-          <>
-            {toasts.map((t) => (
-            <div
-              key={t.id}
-              role="alert"
-              className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-background p-3 text-sm shadow-lg"
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            role="alert"
+            className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-background p-3 text-sm shadow-lg"
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+            <p className="min-w-0 flex-1">{t.message}</p>
+            <button
+              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+              onClick={() => dismiss(t.id)}
+              aria-label="Dismiss"
             >
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
-              <p className="min-w-0 flex-1">{t.message}</p>
-              <button
-                className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-                onClick={() => dismiss(t.id)}
-                aria-label="Dismiss"
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
-            ))}
-          </>
-        )}
-        <div id={RAIL_SLOT_ID} className="contents" />
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ))}
       </div>
     </ToastContext.Provider>
   );
 }
-
-/**
- * Where persistent rail items mount (the arrival receipt). A slot rather than a
- * second fixed container, so the two never overlap and neither has to know the
- * other's height.
- */
-export const RAIL_SLOT_ID = 'qale-notification-rail-slot';

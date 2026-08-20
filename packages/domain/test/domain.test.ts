@@ -9,6 +9,7 @@ import {
   slugify,
   titleFromSlug,
   isSessionFile,
+  isIndexableNote,
   validateEvidence,
   todoLane,
   isOverdueTodo,
@@ -19,7 +20,12 @@ import {
 } from '../src/index.js';
 
 test('parseFrontmatter validates + applies defaults + preserves unknown keys', () => {
-  const r = parseFrontmatter({ type: 'insight', summary: 'x', evidence: ['[[meetings/a]]'], custom_x: 42 });
+  const r = parseFrontmatter({
+    type: 'insight',
+    summary: 'x',
+    evidence: ['[[meetings/a]]'],
+    custom_x: 42,
+  });
   assert.equal(r.ok, true);
   const fm = r.data as Record<string, unknown>;
   assert.equal(fm['confidence'], 'med'); // default applied
@@ -85,13 +91,26 @@ test('source: origin marks an external meeting transcript (signal, not meeting)'
 
 test('processing is enum-validated on meetings and notes too', () => {
   assert.equal(parseFrontmatter({ type: 'meeting', summary: 'm', processing: 'new' }).ok, true);
-  assert.equal(parseFrontmatter({ type: 'meeting', summary: 'm', processing: 'whatever' }).ok, false);
+  assert.equal(
+    parseFrontmatter({ type: 'meeting', summary: 'm', processing: 'whatever' }).ok,
+    false,
+  );
   assert.equal(parseFrontmatter({ type: 'note', summary: 'n', processing: 'stale' }).ok, true);
 });
 
 test('checkFrontmatterMutation: decision body-frozen fields immutable, standing mutable', () => {
-  const prev = { type: 'decision', summary: 's', standing: 'active', date: '2026-01-01', sources: ['[[m]]'] } as Frontmatter;
-  const okChange = { ...prev, standing: 'superseded', superseded_by: '[[decisions/new]]' } as Frontmatter;
+  const prev = {
+    type: 'decision',
+    summary: 's',
+    standing: 'active',
+    date: '2026-01-01',
+    sources: ['[[m]]'],
+  } as Frontmatter;
+  const okChange = {
+    ...prev,
+    standing: 'superseded',
+    superseded_by: '[[decisions/new]]',
+  } as Frontmatter;
   assert.equal(checkFrontmatterMutation('decision', prev, okChange).allowed, true);
   const badChange = { ...prev, summary: 'edited!' } as Frontmatter;
   assert.equal(checkFrontmatterMutation('decision', prev, badChange).allowed, false);
@@ -99,14 +118,35 @@ test('checkFrontmatterMutation: decision body-frozen fields immutable, standing 
 
 test('decision supersedes-chain: build, cycle guard', () => {
   const nodes: Record<string, DecisionNode> = {
-    'decisions/d1': { slug: 'decisions/d1', frontmatter: { type: 'decision', summary: 'd1', standing: 'superseded', superseded_by: '[[decisions/d2]]', sources: [] } as never },
-    'decisions/d2': { slug: 'decisions/d2', frontmatter: { type: 'decision', summary: 'd2', standing: 'active', supersedes: '[[decisions/d1]]', sources: [] } as never },
+    'decisions/d1': {
+      slug: 'decisions/d1',
+      frontmatter: {
+        type: 'decision',
+        summary: 'd1',
+        standing: 'superseded',
+        superseded_by: '[[decisions/d2]]',
+        sources: [],
+      } as never,
+    },
+    'decisions/d2': {
+      slug: 'decisions/d2',
+      frontmatter: {
+        type: 'decision',
+        summary: 'd2',
+        standing: 'active',
+        supersedes: '[[decisions/d1]]',
+        sources: [],
+      } as never,
+    },
   };
   const resolve = (slug: string): DecisionNode | null => nodes[slug] ?? null;
 
   const { chain, cycle } = buildChain('decisions/d2', resolve);
   assert.equal(cycle, false);
-  assert.deepEqual(chain.map((n) => n.slug), ['decisions/d1', 'decisions/d2']);
+  assert.deepEqual(
+    chain.map((n) => n.slug),
+    ['decisions/d1', 'decisions/d2'],
+  );
 
   // superseding an already-superseded decision is refused
   assert.equal(checkSupersede('decisions/d3', 'decisions/d1', resolve).allowed, false);
@@ -144,7 +184,10 @@ test('todo: defaults to open, commitment is enum, owner marks external', () => {
   const fm = r.data as Record<string, unknown>;
   assert.equal(fm['commitment'], 'open');
   assert.deepEqual(fm['sources'], []);
-  assert.equal(parseFrontmatter({ type: 'todo', summary: 'x', commitment: 'maybe-later' }).ok, false);
+  assert.equal(
+    parseFrontmatter({ type: 'todo', summary: 'x', commitment: 'maybe-later' }).ok,
+    false,
+  );
   assert.equal(isExternalTodo({ owner: '[[people/jonas-bergman]]' }), true);
   assert.equal(isExternalTodo({ owner: '  ' }), false);
   assert.equal(isExternalTodo({}), false);
@@ -168,23 +211,49 @@ test('todoLane: buckets by commitment, owner and due date', () => {
 
 test('byDue: dated before undated, earlier first', () => {
   const sorted = [{ due: undefined }, { due: '2026-07-20' }, { due: '2026-07-18' }].sort(byDue);
-  assert.deepEqual(sorted.map((t) => t.due), ['2026-07-18', '2026-07-20', undefined]);
+  assert.deepEqual(
+    sorted.map((t) => t.due),
+    ['2026-07-18', '2026-07-20', undefined],
+  );
 });
 
 // --- Sessions v2 invariant 2: citations pass THROUGH session files ---
 
 test('evidence may not cite a session file — the card must cite the original source', () => {
   const resolves = () => true;
-  const bad = validateEvidence(['[[sessions/.files/a1b2c3/per-item/nordkap]]'], false, resolves);
+  const bad = validateEvidence(['[[sessions/.files/a1b2c3/per-item/nordkap]]'], resolves);
   assert.equal(bad.ok, false);
   assert.match(bad.reason ?? '', /session files/);
-  // Even flagged as inference — this is the failure that otherwise stays silent
-  // until someone follows a link months later and finds deleted scratch.
-  assert.equal(validateEvidence(['sessions/.files/a1b2c3/brief.md'], true, resolves).ok, false);
+  // Whatever basis the card claims — this is the failure that otherwise stays
+  // silent until someone follows a link months later and finds deleted scratch.
+  assert.equal(
+    validateEvidence(['sessions/.files/a1b2c3/brief.md'], resolves, { inference: true }).ok,
+    false,
+  );
+  assert.equal(
+    validateEvidence(['sessions/.files/a1b2c3/brief.md'], resolves, { asked: true }).ok,
+    false,
+  );
   // The source the file was written FROM is exactly what should be cited.
-  assert.equal(validateEvidence(['[[sources/2026-06-12-nordkap]]'], false, resolves).ok, true);
+  assert.equal(validateEvidence(['[[sources/2026-06-12-nordkap]]'], resolves).ok, true);
   // A real session receipt is still citable — only its `.files` body is not.
-  assert.equal(validateEvidence(['[[sessions/2026-07-28-synthesis-a1b2c3]]'], false, resolves).ok, true);
+  assert.equal(validateEvidence(['[[sessions/2026-07-28-synthesis-a1b2c3]]'], resolves).ok, true);
+});
+
+test('a card with no sources says what it rests on: the PM asked, or the agent inferred', () => {
+  const resolves = () => true;
+  // Nothing at all is the one thing that never files: the card would claim a
+  // fact about the product with neither a note nor a stated basis behind it.
+  const bare = validateEvidence([], resolves);
+  assert.equal(bare.ok, false);
+  assert.match(bare.reason ?? '', /asked:true/);
+  assert.match(bare.reason ?? '', /inference:true/);
+  // Both routes are open, and they mean opposite things to the PM: `asked` is
+  // their own words coming back, `inference` is the claim to double-check.
+  assert.equal(validateEvidence([], resolves, { asked: true }).ok, true);
+  assert.equal(validateEvidence([], resolves, { inference: true }).ok, true);
+  // A source that does not resolve is still a broken citation, basis or not.
+  assert.equal(validateEvidence(['[[insights/ghost]]'], () => false).ok, false);
 });
 
 test('isSessionFile matches the folder and its contents, nothing adjacent', () => {
@@ -192,4 +261,22 @@ test('isSessionFile matches the folder and its contents, nothing adjacent', () =
   assert.equal(isSessionFile('sessions/.files/a1/brief.md'), true);
   assert.equal(isSessionFile('sessions/2026-07-28-synthesis.md'), false);
   assert.equal(isSessionFile('sessions/.filesystem/x.md'), false);
+});
+
+/**
+ * The one sentence for "is this a note", asked by the scan, the watcher and now
+ * the index itself. It was being said in several places and only most of them
+ * were asked: a session's `input.md` was skipped by both doors and still ended
+ * up indexed, where the librarian found it and reported it as an unlinked note.
+ */
+test('isIndexableNote: notes yes, orientation and scratch and skill material no', () => {
+  assert.equal(isIndexableNote('notes/rollout-plan.md'), true);
+  assert.equal(isIndexableNote('sessions/2026-07-28-synthesis-a1b2c3.md'), true);
+  assert.equal(isIndexableNote('skills/librarian/SKILL.md'), true);
+
+  assert.equal(isIndexableNote('index.md'), false);
+  assert.equal(isIndexableNote('notes/index.md'), false);
+  assert.equal(isIndexableNote('notes/log.md'), false);
+  assert.equal(isIndexableNote('sessions/.files/a1/input.md'), false);
+  assert.equal(isIndexableNote('skills/librarian/checklist.md'), false);
 });

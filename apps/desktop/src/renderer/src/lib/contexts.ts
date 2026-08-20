@@ -8,7 +8,11 @@ import { isFolderIndex } from '@qale/domain';
  */
 
 /** Chrome types never participate in context navigation. */
-const NON_CONTENT_TYPES: ReadonlySet<NoteType> = new Set(['session', 'skill', 'agent'] satisfies NoteType[]);
+const NON_CONTENT_TYPES: ReadonlySet<NoteType> = new Set([
+  'session',
+  'skill',
+  'agent',
+] satisfies NoteType[]);
 
 export interface ContextInfo {
   tag: string;
@@ -71,7 +75,11 @@ export function refDate(n: NoteRefDTO): Date {
 }
 
 const DATE_FMT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
-const DATE_FMT_YEAR = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+const DATE_FMT_YEAR = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+});
 
 /** Compact date label: "Jun 24" this year, "Jun 24, 2025" otherwise. */
 export function formatRefDate(n: NoteRefDTO, now = new Date()): string {

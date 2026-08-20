@@ -17,7 +17,11 @@ const dir: PeopleDirectoryDTO = {
 };
 
 test('a wikilink participant resolves to the person, never to its target text', () => {
-  for (const raw of ['[[people/sara-lindqvist]]', '[[sara-lindqvist]]', '[[people/sara-lindqvist|Sara]]']) {
+  for (const raw of [
+    '[[people/sara-lindqvist]]',
+    '[[sara-lindqvist]]',
+    '[[people/sara-lindqvist|Sara]]',
+  ]) {
     const p = resolveParticipant(raw, dir);
     assert.equal(p.kind, 'person', raw);
     assert.equal(p.label, 'Sara Lindqvist');
@@ -34,7 +38,10 @@ test('the PO is themselves — by connected address or by the "me" the vault wri
   assert.equal(resolveParticipant('egralen@gmail.com', dir).label, 'Erik Gralén');
   assert.equal(resolveParticipant('me', dir).label, 'Erik Gralén');
   // No name set yet: "You" beats an email address, always.
-  const anon: PeopleDirectoryDTO = { people: [], self: { name: null, emails: ['egralen@gmail.com'] } };
+  const anon: PeopleDirectoryDTO = {
+    people: [],
+    self: { name: null, emails: ['egralen@gmail.com'] },
+  };
   assert.equal(resolveParticipant('egralen@gmail.com', anon).label, 'You');
   assert.equal(resolveParticipant('egralen@gmail.com', anon).kind, 'self');
 });

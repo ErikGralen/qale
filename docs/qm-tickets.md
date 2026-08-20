@@ -47,7 +47,7 @@ and does not depend on it.
 **Implementation notes:**
 Done 2026-08-02.
 
-*What is wrapped.* All four Atlassian reads: `jira_get_issue` (origin `jira:PAY-142`), `jira_search`
+_What is wrapped._ All four Atlassian reads: `jira_get_issue` (origin `jira:PAY-142`), `jira_search`
 (`jira:search`, since every summary was typed by whoever filed the issue), `confluence_get_page`
 (`confluence:12345`) and `confluence_search` (`confluence:search`). Plus `vault_read`, conditionally.
 The line drawn there is the domain's own raw layer, which is exactly `sources/`, `tickets/` and
@@ -57,18 +57,18 @@ too would teach the model the marker means "text" rather than "someone else's te
 failure mode that makes the whole thing inert. The check reads `rec.layer === 'raw'` from the index
 and falls back to the folder, so a raw note missing from the index cannot slip through.
 
-*The envelope.* `<<<EXTERNAL_MATERIAL id=7f3a9c2e origin="jira:PAY-142">>>` … `<<<END_EXTERNAL_MATERIAL
+_The envelope._ `<<<EXTERNAL_MATERIAL id=7f3a9c2e origin="jira:PAY-142">>>` … `<<<END_EXTERNAL_MATERIAL
 id=7f3a9c2e>>>`, with a fresh 8-char id per call. Two defences against breakout: the content cannot
 guess an unpredictable id, and `defang()` rewrites any literal marker the body carries to `<<`, so the
 only real delimiters are the two we wrote. A test feeds a page body containing both a forged closing
 marker and an injected instruction and asserts the instruction survives as readable material while the
 delimiter does not.
 
-*Prompt.* One new Operating rules bullet in `SHARED_PREAMBLE`, and its own version in `CHILD_PREAMBLE`
+_Prompt._ One new Operating rules bullet in `SHARED_PREAMBLE`, and its own version in `CHILD_PREAMBLE`
 since subagents are pure readers and meet wrapped text more often than the parent. Both end by telling
 the model never to copy the markers into a card, a note or a file.
 
-*The UI leak, found and fixed.* The first pass left one: `bridge.ts` `stringifyToolResult` and
+_The UI leak, found and fixed._ The first pass left one: `bridge.ts` `stringifyToolResult` and
 `history.ts` both pass the raw tool result to the renderer, and `SessionView.tsx` prints the first 2000
 characters of it in the expanded tool step. So the markers would have been visible the moment anyone
 expanded a step, live and on replay. Fixed by moving the marker vocabulary into one module,
@@ -81,10 +81,10 @@ including a defanged `<<` the content carried. Worth noting the underlying expos
 ticket: Jira and Confluence text was already rendered verbatim there and already persisted to
 `<userData>/sessions/*.jsonl`. The envelope added two lines to something already raw.
 
-*Verified:* `pnpm check-types` 11/11 clean, `pnpm test` green with 37 `@qale/agent` tests (30 pre-existing
+_Verified:_ `pnpm check-types` 11/11 clean, `pnpm test` green with 37 `@qale/agent` tests (30 pre-existing
 plus 7 new across `test/tools.test.ts` and `test/history.test.ts`), lint no new warnings.
 
-*Open, flagged rather than decided:* `vault_grep` and `search_vault` return short snippets (100 chars,
+_Open, flagged rather than decided:_ `vault_grep` and `search_vault` return short snippets (100 chars,
 FTS snippet) drawn from all notes including raw ones, so an injected sentence can fit. They were left
 alone because the result set mixes PM-authored and external text, and marking a mixed list as external
 is a lie that dilutes the marker everywhere else. Doing it properly means per-row wrapping. Worth a
@@ -128,7 +128,7 @@ Agents view built for the librarian ticket is the natural home.
 **Implementation notes:**
 Done 2026-08-02.
 
-*The prompt.* A new `SCHEDULED_PREAMBLE` in `prompts.ts`, appended only when a run carries
+_The prompt._ A new `SCHEDULED_PREAMBLE` in `prompts.ts`, appended only when a run carries
 `scheduled: true`:
 
 > **## This run started on a schedule**
@@ -142,15 +142,15 @@ Set by a schedule's slot in `SchedulerService.tick` and by the before-meeting sw
 set by Settings "Run now", the Inbox card's "Re-run session", a capture, an arrival, or the supersede
 reaction, all of which have someone waiting.
 
-*The backstop.* Five markers in `packages/agent/src/quiet.ts`: "nothing to report", "nothing new",
+_The backstop._ Five markers in `packages/agent/src/quiet.ts`: "nothing to report", "nothing new",
 "nothing changed", "nothing to add", "no changes". It takes the last non-empty line, strips markdown
 decoration and bullets, lowercases, collapses whitespace, drops trailing punctuation, then requires the
-marker to *start* the line *and* the line to be 80 characters or fewer. Two narrowings rather than one:
+marker to _start_ the line _and_ the line to be 80 characters or fewer. Two narrowings rather than one:
 starting the line means "Nothing to report on pricing, but three interviews landed…" is still
 delivered, and the length cap means a closing line long enough to carry a fact is treated as a report.
 Both are pinned by tests.
 
-*How a run is judged silent.* `ranSilent()` is a pure function so it can be tested; the runtime only
+_How a run is judged silent._ `ranSilent()` is a pure function so it can be tested; the runtime only
 supplies inputs. Order: not scheduled, no. Failed, no. Produced anything, no. Then the tool call or the
 backstop. "Produced" is read off the ledgers the tools write and never off the model's word:
 `harness.writes.length > 0`, which every `propose_*` and `draft_*` stamps through `recordWrite`, plus a
@@ -160,7 +160,7 @@ resets field by field, so "scheduled" is a property of the turn rather than the 
 makes the interactive no-op real: the PM can write into a scheduled run that did produce something and
 still gets answered.
 
-*Where a quiet run goes.* `fileReceipt` stamps last-used and returns before writing, so the receipt is
+_Where a quiet run goes._ `fileReceipt` stamps last-used and returns before writing, so the receipt is
 never created rather than created and removed (a note that exists for a second is one the librarian can
 index, git can commit and the watcher can push). It also writes `runnable-quiet:<name>` into the same
 durable `ctx.checks` ledger ticket 8 added, which surfaces on the agent's page as "Ran 2d ago, nothing
@@ -172,16 +172,16 @@ transcript stays on disk on purpose: a schedule that goes wrongly silent has to 
 writing into a quiet session reopens it like any shelved one. The status also rides the settle event so
 main holds back the "Finished" notification.
 
-*A failed scheduled run still surfaces*, via three independent guards. `state.turn.failed` is set in the
+_A failed scheduled run still surfaces_, via three independent guards. `state.turn.failed` is set in the
 `prompt().catch`, and `ranSilent` refuses a failed run before it looks at anything the model said, so
 the receipt, the row and the notification all survive. `fireSession`'s own catch and `tick`'s catch are
 untouched. And a run that broke early has no marker on its last line anyway. `quiet` is documented as a
 success, never a shelving and never a failure.
 
-*Verified:* `pnpm check-types` 11/11, `pnpm test` 8/8 with 52 `@qale/agent` tests (10 new), lint 0 errors
+_Verified:_ `pnpm check-types` 11/11, `pnpm test` 8/8 with 52 `@qale/agent` tests (10 new), lint 0 errors
 and no new warnings.
 
-*Not done, flagged rather than decided:* `track_external` is not counted as "produced". It starts a
+_Not done, flagged rather than decided:_ `track_external` is not counted as "produced". It starts a
 local mirror, which is a real effect, but it is not a card and costs no attention. Also: no parameters
 on `end_quietly`, since a `reason` field would invite the model to write the very message this ticket
 suppresses, and the transcript already holds the trail. The tool was not exercised live, because that
@@ -226,17 +226,17 @@ lines and let the effect line be the thing that is always visible.
 **Implementation notes:**
 Done 2026-08-02. One line per outbound kind:
 
-| tool | line |
-| --- | --- |
-| `draft_jira_issue` | "Creates a ticket in PAY." (with an issue type: "Creates an epic in PAY.") |
-| `draft_jira_comment` | "Posts a comment on PAY-142. Anyone watching the ticket is notified." |
-| `draft_confluence_update` | "Adds a section to 'Rollout plan'. Anyone watching the page is notified." (a patch reads "Edits 'Rollout plan' in place.") |
-| `draft_message` | "Saves the draft for CS in your workspace. Nothing is sent." |
-| `draft_calendar_event` | "Creates the event for Åsa, Johan and marcus@kranelund.example (outside your company). No invite email goes out." (no guests: "Creates the event on your calendar. Nobody else is invited.") |
-| `draft_calendar_reschedule` | "Moves 'Nordkap sync' to 4 Aug, 15:00. Guests see the change, with no email." |
-| `draft_calendar_rsvp` | "Replies yes on your behalf. The organiser sees it on the event." |
+| tool                        | line                                                                                                                                                                                         |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `draft_jira_issue`          | "Creates a ticket in PAY." (with an issue type: "Creates an epic in PAY.")                                                                                                                   |
+| `draft_jira_comment`        | "Posts a comment on PAY-142. Anyone watching the ticket is notified."                                                                                                                        |
+| `draft_confluence_update`   | "Adds a section to 'Rollout plan'. Anyone watching the page is notified." (a patch reads "Edits 'Rollout plan' in place.")                                                                   |
+| `draft_message`             | "Saves the draft for CS in your workspace. Nothing is sent."                                                                                                                                 |
+| `draft_calendar_event`      | "Creates the event for Åsa, Johan and marcus@kranelund.example (outside your company). No invite email goes out." (no guests: "Creates the event on your calendar. Nobody else is invited.") |
+| `draft_calendar_reschedule` | "Moves 'Nordkap sync' to 4 Aug, 15:00. Guests see the change, with no email."                                                                                                                |
+| `draft_calendar_rsvp`       | "Replies yes on your behalf. The organiser sees it on the event."                                                                                                                            |
 
-*Where it is computed.* `outboundEffect(payload, facts)` is a pure function in
+_Where it is computed._ `outboundEffect(payload, facts)` is a pure function in
 `packages/domain/src/proposals/effect.ts`, called from `proposalToDTO` and carried as
 `ProposalDTO.effect`. Not at draft time in `tools.ts`: a card filed before the PM set their own address
 in Settings would have frozen without the "outside your company" flag, and every card already sitting
@@ -245,28 +245,28 @@ and any later surface says the same words. The lookups (email to person name, ex
 title, plus `settings.selfEmails()` for our own domains) are built once per `proposals:list` from two
 index scans. No network calls, no per-card work.
 
-*The ticket's own example was wrong, and the fix is better.* I had written "Sends invites to three
+_The ticket's own example was wrong, and the fix is better._ I had written "Sends invites to three
 people". Our Google connector writes with `sendUpdates=none`
 (`packages/connectors/src/google-calendar/connector.ts:95`), so no invite email is ever sent. Guests
 land on the event and hear nothing. The line now says exactly that, which is both true and the more
 reassuring fact.
 
-*Keeping it short.* One paragraph above the rationale, full ink while the rationale stays muted and
+_Keeping it short._ One paragraph above the rationale, full ink while the rationale stays muted and
 clamped to two lines. Two sentences maximum, the same shape per kind, and every missing fact makes the
 line shorter rather than longer: "the page" when the title is unknown, the raw address when there is no
 person page, no external claim at all when no self identity is configured. Guest lists cap at three
 names plus "and 2 others", and several outsiders are counted once at the end rather than tagged one by
 one. A test pins every kind at two sentences or fewer, 120 characters or fewer, and no em dash.
 
-*Deliberately left out:* watcher counts (one API call per card, so the line names who is notified
+_Deliberately left out:_ watcher counts (one API call per card, so the line names who is notified
 without counting), guest counts on reschedule and RSVP (not in the payload, and the PM can see them on
 the event), and notification schemes on a brand-new ticket (it has no watchers yet).
 
-*Verified:* `pnpm check-types` clean, `pnpm test` green apart from the 4 known better-sqlite3 ABI skips,
+_Verified:_ `pnpm check-types` clean, `pnpm test` green apart from the 4 known better-sqlite3 ABI skips,
 lint no new warnings. New tests in `packages/domain/test/outbound-effect.test.ts`, 14 cases including
 the external attendee, the no-self-identity degradation, unknown ids, and an unparsable start time.
 
-*Process note:* this ran concurrently with ticket 8 and briefly used `git stash` in the shared working
+_Process note:_ this ran concurrently with ticket 8 and briefly used `git stash` in the shared working
 tree to compare lint baselines. It restored cleanly and I verified afterwards that nothing was lost,
 but it was the wrong tool with another agent in the same tree.
 
@@ -308,7 +308,7 @@ preamble plus skill config plus voice plus the skill index plus session files pl
 **What the user sees:** Nothing directly, and that is the point. The effect is the agent staying
 sharp in a two-year-old vault instead of getting vaguer for reasons nobody can name.
 
-**Decision:** Skip this for now, we can address this at a later stage. 
+**Decision:** Skip this for now, we can address this at a later stage.
 
 **Implementation notes:**
 
@@ -370,7 +370,7 @@ already ship, and this makes it structurally true.
 Done 2026-08-02. The investigation found one real bug, one un-actionable-card bug, and one place that
 was already right.
 
-*The bug: the Agents view switch did not actually stop an agent.* `agentFileEnabled` was checked at
+_The bug: the Agents view switch did not actually stop an agent._ `agentFileEnabled` was checked at
 exactly three call sites, all in `handlers.ts` (the librarian sweep, the meeting-prep sweep, the
 supersede reaction). Nothing enforced it at the resolution point: `AgentRuntime.resolveSkill` reads
 `skills/<name>.md` then `agents/<name>.md` and never looks at `enabled`. The reachable bypass was
@@ -383,24 +383,24 @@ was not true.
 
 Fixed by moving the check into `fireSession`, the single door every trigger-started session passes
 through, and deleting the now-redundant one in `fireSupersedeReactions`. The two sweep checks stay:
-they do judgment work *before* any session is fired, so off has to stop that too. `agentFileEnabled`
+they do judgment work _before_ any session is fired, so off has to stop that too. `agentFileEnabled`
 became `runnableEnabled` and now covers `skills/` as well as `agents/`, with a file under either name
 holding a veto. That sidesteps the shadowing trap: `skills/x.md` wins in `resolveSkill` but the Agents
 view writes the switch into `agents/x.md`, and a floor that depends on getting that order right is not
 a floor.
 
-*The second bug: a skill could grant itself `draft-outbound` with no connector configured.*
+_The second bug: a skill could grant itself `draft-outbound` with no connector configured._
 `toolNamesFor` activated all seven draft tools on `harness.outbound` alone, while the read tools one
 line below were already gated on `atlassianActive`. Drafting succeeded, the card landed in the Inbox,
 and the failure only arrived on approval ("no outbound integration configured"), leaving a permanently
 un-actionable card. Nothing leaked, but the vault file had granted itself something the workspace could
 not honour. `toolNamesFor` now takes `connected`, read on each activation so a new grant is picked up
 without rebuilding the session. With nothing connected only `draft_message` survives, since an approved
-message card is written into the memory rather than sent. Which *specific* connector a card needs stays
+message card is written into the memory rather than sent. Which _specific_ connector a card needs stays
 an approval-time question on purpose: Google's write scope is granted by incremental consent at push
 time and is not knowable when tools are activated.
 
-*Already right, and left alone.* The skill-to-skill OR in `SessionHarness.grants` is correct as
+_Already right, and left alone._ The skill-to-skill OR in `SessionHarness.grants` is correct as
 designed: invoking a skill mid-session adds permission and never subtracts, which is what stops a
 quieter skill silently stripping draft tools the PM already approved into existence. The `outbound`
 flag on `invokeSkillInto` genuinely widens a file's `can` at invocation, and that is also right:
@@ -409,23 +409,23 @@ transcript of the PM's own meeting may draft outbound, a colleague's may not". I
 over vault config, not vault config widening over app policy, and it can no longer exceed the
 connector floor.
 
-*The rule is now written at the definitions.* `Capability` in `runnable.ts` states both layering rules
+_The rule is now written at the definitions._ `Capability` in `runnable.ts` states both layering rules
 (instructions widen and replace as they narrow, permissions only tighten) and names both floors with
 the one place each is enforced. `grants()` says it is the only widening path and points there. A test
 in `sessions.test.ts` pins the switch as deliberately outside the composing OR: a disabled file still
 parses its full `can`, and `grants()` does not read `enabled`. That is the test that stops someone
 "fixing" this later by moving the floor into the widening path.
 
-*Prompt templating: nothing to do.* There is no `{{var}}` renderer anywhere. `buildSystemPrompt` is
+_Prompt templating: nothing to do._ There is no `{{var}}` renderer anywhere. `buildSystemPrompt` is
 string concatenation, `buildSkillBrief` and `buildKickoff` are template literals. A repo-wide search for
 `{{ident` matches only these two docs. A missing value is a type error or an empty string, never a
 literal `{{meetingTitle}}` in a card. Building a templating engine so it could throw would be inventing
 the problem, so this half of the ticket is closed as not applicable.
 
-*Verified:* `pnpm check-types` clean, `@qale/sessions` 26/26, `@qale/application` 66/66, lint 0 errors and
+_Verified:_ `pnpm check-types` clean, `@qale/sessions` 26/26, `@qale/application` 66/66, lint 0 errors and
 no new warnings.
 
-*Open, flagged:* `listLoadableSkills` in `packages/agent/src/tools.ts` does not filter on `enabled`, so
+_Open, flagged:_ `listLoadableSkills` in `packages/agent/src/tools.ts` does not filter on `enabled`, so
 the model can still `use_skill` a switched-off skill mid-session. One line beside the existing `always`
 skip. It is inconsistent today, because `alwaysOnGuides` already honours the switch, so a switched-off
 house rule is silent while a switched-off playbook is not. Also open, both product calls rather than
@@ -467,13 +467,13 @@ which will show up as jank on long answers before it shows up as a bug.
 **Implementation notes:**
 Done 2026-08-02, all three gaps closed in `SessionView.tsx` (the only file touched).
 
-*Raw-name fallback.* The verb table moved into `doneLabel` (same switch, cases unchanged); `stepLabel`
+_Raw-name fallback._ The verb table moved into `doneLabel` (same switch, cases unchanged); `stepLabel`
 is now a thin wrapper that applies the failed phrasing. The `default` fallthrough keeps the
 `propose_` / `draft_` prefix handling and ends at `{ verb: 'Worked' }`, with no detail either, since a
 machine name in the detail slot is the same leak by another door. `liveLabel` never had the problem:
 its default already returned "Working…".
 
-*Failed variant.* The error signal was already there on both paths, so nothing was invented: live runs
+_Failed variant._ The error signal was already there on both paths, so nothing was invented: live runs
 get it from `packages/agent/src/bridge.ts:52`, which turns pi's `tool_execution_end` `isError` into a
 `tool-output-error` chunk, and replayed transcripts get the same `state: 'output-error'` from
 `packages/agent/src/history.ts:103`. So a reopened session reads the same as the live run. A new
@@ -484,7 +484,7 @@ table for Read/Wrote/Ran, `-ed → -ing` for the rest) rather than a third colum
 needs only one entry: "Tried reading", "Tried searching Confluence", "Tried proposing a meeting note",
 and the fallback "Tried a step".
 
-*Elapsed time.* Nothing on the parts carries a clock (an AI SDK tool part is state/input/output, and
+_Elapsed time._ Nothing on the parts carries a clock (an AI SDK tool part is state/input/output, and
 pi's entries carry no timestamp through `entriesToUiMessages`), so a small `useElapsed(live)` hook
 measures it in the renderer. The interval only runs while live and is torn down with it; the reading
 freezes at its final value when the run settles; the start is not reset when a turn dips out of the
@@ -539,7 +539,7 @@ so there is no way to see which skills are dead.
 Done 2026-08-02. Layout is `skills/<name>/SKILL.md` and `agents/<name>/AGENT.md`, one folder each with
 no exceptions, and anything else in the folder is that skill's own material.
 
-*The move that kept this from touching every caller* is one line in `slugFromPath`
+_The move that kept this from touching every caller_ is one line in `slugFromPath`
 (`packages/domain/src/notes/slug.ts`): an entry file's slug is its folder, so `skills/synthesis/SKILL.md`
 slugs to `skills/synthesis`. Every existing "name is the last slug segment" caller (`listRunnables`,
 `runnableEnabled`, `alwaysOnGuides`, `listLoadableSkills`, `matchSkill`) works unchanged. Reads tolerate
@@ -547,7 +547,7 @@ either entry basename in either folder; writes always use the folder's own. New 
 file: `isRunnableEntry`, `isRunnableResource`, `runnableNameFromPath`, `runnableEntryPath`,
 `runnableCandidates`, `runnableForms`.
 
-*Migration.* `migrateRunnableFolders` runs in the post-open sweep, before `ensureDefaultSkills`. It
+_Migration._ `migrateRunnableFolders` runs in the post-open sweep, before `ensureDefaultSkills`. It
 reads raw and writes raw, never a note round trip, so content comes out byte-identical (checked with
 shasums across 12 real files after a live run). A half-migrated vault is safe because it writes then
 removes, so a crash leaves both files with the folder form already winning resolution, and the next run
@@ -557,12 +557,12 @@ is deleted on a guess. `ensureDefaultSkills` now checks both forms before seedin
 failed migration would shadow the PM's edited copy with a pristine one, and it retires files in both
 forms.
 
-*Shadowing.* `runnableCandidates(name)` owns the order: every `skills/` form before every `agents/`
+_Shadowing._ `runnableCandidates(name)` owns the order: every `skills/` form before every `agents/`
 form, and within each, the folder entry before the legacy flat file. `resolveSkill` walks that list.
 `runnableEnabled` still vetoes on a file of either kind. Tested including the mixed case where one name
 is in the new layout and the other is still flat.
 
-*The third tier, which is the actual point.* A skill's instructions name a sibling's vault path in
+_The third tier, which is the actual point._ A skill's instructions name a sibling's vault path in
 prose, and the agent reads it with `vault_read` when it gets there. Nothing else in the folder is
 indexed: `reconcile.ts` and the vault watcher skip `isRunnableResource` alongside the reserved files, so
 material cannot reach the skill index in the prompt, search, `vault_list`, the Skills view, or
@@ -572,13 +572,13 @@ material cannot reach the skill index in the prompt, search, `vault_list`, the S
 list with the one line a reader needs: name one of these paths in the instructions and the agent reads
 it then.
 
-*Last used.* Stamped into the existing durable `ctx.checks` ledger under `runnable-used:<name>` once per
+_Last used._ Stamped into the existing durable `ctx.checks` ledger under `runnable-used:<name>` once per
 settled turn, for every runnable in force plus any entry file read, so read-when-relevant material
 counts too. Surfaced as `SkillDTO.lastUsedMs` ("Used 3d ago" / "Not used yet" on each Skills row) and as
 the fallback behind `AgentDTO.lastRunMs`, which now survives a restart instead of resetting to "never
 ran".
 
-*Demo vault.* All 10 skills and 2 agents moved into folders, `git mv` for the tracked ones, content
+_Demo vault._ All 10 skills and 2 agents moved into folders, `git mv` for the tracked ones, content
 confirmed identical against `defaults.ts`. `discovery-guide` gained a real sibling, `question-bank.md`,
 plus one line pointing at it, chosen because it is the one vault-dev skill with no `defaults.ts` twin,
 so the "both must move together" rule stays undisturbed. `refresh-demo.ts` learned the same two rules
@@ -586,7 +586,7 @@ locally (it runs under bare node, so it cannot import them): resources are exemp
 check, and the slug index folds entry files so `[[skills/x]]` still resolves. `.vault-dev` regenerated
 with `--keep-app-state`, 88 notes, all wikilinks resolve.
 
-*Verified:* `pnpm check-types` 11/11, `pnpm test` 8/8 with 16 new tests across
+_Verified:_ `pnpm check-types` 11/11, `pnpm test` 8/8 with 16 new tests across
 `packages/domain/test/runnable-folders.test.ts`, `packages/application/test/runnable-migration.test.ts`
 and additions to `list-skills.test.ts` and `sessions.test.ts`. Lint no new warnings. Plus three
 self-exiting app runs on a scratch userData against a scratch flat vault: run 1 migrated 12 files with
@@ -630,7 +630,7 @@ yes implement this (both parts!)
 **Implementation notes:**
 Done 2026-08-02, both parts.
 
-*The shape: a parked question rides the proposal rails.* A new `AskStore` sits on the same `AppDb`
+_The shape: a parked question rides the proposal rails._ A new `AskStore` sits on the same `AppDb`
 connection beside `ProposalStore` and `PingStore`, with an `AskPort` on `UseCaseContext`, exactly like a
 proposal. One deliberate difference, and it is the whole schema: no status column and no accept/reject
 log. A row exists if and only if the question is unanswered, so "is this still waiting" is the row's
@@ -649,7 +649,7 @@ normal path, where the answer lands as a tool result mid-turn) and the durable r
 card is pushed. Same argument ticket 1 made for `external.ts`: the two halves have to stay symmetric and
 the failure when they drift is silent. `runtime.ts` got smaller here, not bigger.
 
-*In-turn work survives, and here is exactly how much.* Not by resuming the tool call, which is not
+_In-turn work survives, and here is exactly how much._ Not by resuming the tool call, which is not
 possible. But pi persists every assistant message and tool result as they happen, so reopening hands the
 model back everything it read before it asked; cards it had already proposed are durable in the Inbox
 where it left them; and pi-ai already synthesises a result for the orphaned `ask_user` call, so the
@@ -660,7 +660,7 @@ stored row carries the skill and its outbound grant, so the replay resumes under
 asked under instead of as a plain chat. If the replay cannot start (no key, session busy) the row is put
 back and re-pushed rather than swallowed.
 
-*Part two, the scheduled run.* `askThePm` reads `turn.scheduled` and sets `turn.blocked` instead of
+_Part two, the scheduled run._ `askThePm` reads `turn.scheduled` and sets `turn.blocked` instead of
 `turn.asked`; `AskParking.park` refuses outright, so nothing is written and nothing is pushed, and there
 is no recoverable card asking about a turn that stopped days ago. The tool tells the model to stop,
 worded deliberately away from the dismissal register ("Nobody is here to answer… Stop now", never "pick
@@ -672,7 +672,7 @@ instead of `runnable-quiet:<name>`, never both, since the same timestamp would f
 `AgentLifeSigns` renders it above the quiet line: **"Stopped 2d ago: needed a decision, nobody was
 here"**. Pulled, not pushed, per the overdue-todo decision.
 
-*Also touched, deliberately.* A new `sessions:pendingAsks` IPC feeds `refreshSessions`, so a restored
+_Also touched, deliberately._ A new `sessions:pendingAsks` IPC feeds `refreshSessions`, so a restored
 question reaches the badge, Home and the sidebar without the session being opened. Parked questions rank
 first in `buildAttention`, so storing one and never surfacing it would have been half a fix.
 `refreshDockBadge` ORs in stored asks, since `parked` only knows about this app run. `abort` and
@@ -681,10 +681,10 @@ first in `buildAttention`, so storing one and never surfacing it would have been
 their title from the transcript's first user message, otherwise a replayed answer would rename an old
 conversation "You asked this in an earlier run…".
 
-*Verified:* `pnpm check-types` 11/11, `pnpm test` 8/8 with 59 `@qale/agent` tests (12 new), lint 0 errors
+_Verified:_ `pnpm check-types` 11/11, `pnpm test` 8/8 with 59 `@qale/agent` tests (12 new), lint 0 errors
 and no new warnings. Two self-exiting one-shots on a scratch userData and scratch vault.
 
-*Open, flagged rather than decided:* **`spawn` has the same hole.** `askToSpawn` still parks a fan-out
+_Open, flagged rather than decided:_ **`spawn` has the same hole.** `askToSpawn` still parks a fan-out
 approval on a scheduled run and it is not durable either. The same two fixes apply and it is a small
 follow-up. Also: `resolveAsk` returns once the replay run starts rather than when the turn finishes
 (matching `agent:run`), which leaves a one-round-trip race where a refresh in flight during a resolve

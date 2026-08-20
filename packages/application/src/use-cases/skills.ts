@@ -127,7 +127,10 @@ function stamp(ctx: UseCaseContext, key: string): number | null {
 const bareName = (slug: string): string => slug.split('/').pop() ?? slug;
 
 /** Every file of one note type, parsed for its view. */
-async function listRunnables(ctx: UseCaseContext, type: 'skill' | 'agent'): Promise<RunnableSummary[]> {
+async function listRunnables(
+  ctx: UseCaseContext,
+  type: 'skill' | 'agent',
+): Promise<RunnableSummary[]> {
   const out: RunnableSummary[] = [];
   for (const n of ctx.index.all().filter((x) => x.type === type)) {
     const raw = (await ctx.vault.readRaw(n.path)) ?? '';
@@ -135,7 +138,9 @@ async function listRunnables(ctx: UseCaseContext, type: 'skill' | 'agent'): Prom
     // Only the folder layout can carry material; a legacy flat file has nowhere
     // to put any. Listed, never read: the page shows what is there.
     const files = isRunnableEntry(n.path)
-      ? (await ctx.vault.listDir(n.path.slice(0, n.path.lastIndexOf('/')))).filter((f) => f !== n.path)
+      ? (await ctx.vault.listDir(n.path.slice(0, n.path.lastIndexOf('/')))).filter(
+          (f) => f !== n.path,
+        )
       : [];
     out.push({
       path: n.path,

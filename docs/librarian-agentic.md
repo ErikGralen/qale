@@ -181,3 +181,44 @@ copy that exists today in TypeScript:
    traversal; sending an agent to rediscover it every run buys nothing and costs plenty.
 8. **Sequencing: arrival first.** `docs/arrival-agentic.md` is being implemented now and
    lands before this starts, so this design inherits proven quiet sessions and worklists.
+
+## What went wrong in the wild (2026-08-13)
+
+Nine librarian sessions in one morning, one per 5-minute tick, every one of them an empty
+page. The cause was three separate things lining up, and each is fixed where it belongs.
+
+1. **A run that broke counted as a run that found nothing.** The Anthropic account was out of
+   credit, so every pass died in under a second. It left no card, no question and no byte
+   changed, which is exactly the OW3 signature of "nothing to do here" — so no run stamp was
+   written, so the 30-minute interval never engaged, so the next tick started another one.
+   `settleLibrarianPass` now takes `failed` and stamps the run without marking anything
+   handled: the findings come back when the workspace can think again, but the interval, not
+   the tick, paces the retry. Above it, `fireSession` refuses every clock-started run while
+   the provider is refusing for a reason only the PM can clear (no credit, a rejected key);
+   anything a person starts still goes through, and getting an answer to one lifts the latch.
+
+2. **A failed background run was still a session.** It was deliberate — a scheduled run that
+   broke is the one you want to see — but what it actually produces is a row, a receipt and a
+   badge per attempt, all showing a conversation with one message and no reply. `ranSilent`
+   now shelves a failed unwatched run like any other silent one. The transcript stays on disk;
+   the failure is said once, as a provider fault, through the notification main already hangs
+   off it. A session somebody started is untouched, because there the error is the answer.
+   (The turn only knew it had failed when the prompt threw. The common refusal comes back as
+   an assistant message with `stopReason: error` instead, so the settle reads the bridge's
+   fault as well.)
+
+3. **The scan was feeding on the app's own exhaust.** Every finding on the worklist was a
+   broken link inside a session receipt, pointing at `[[notes/index]]` and friends. Receipts
+   list what a run read, as links; runs read the orientation maps; the maps are reserved files
+   nothing indexes, so those links can never resolve. Each session manufactured four or five
+   permanent findings, and each librarian pass filed a receipt of its own. Machinery is now
+   out of the dangling-link half of `getMaintenanceReport` as it already was out of the orphan
+   half, a link to an orientation map is never a finding, and the receipt writes what it read
+   as plain text where a link would not work. On the workspace this was found in: 24 findings
+   before, 0 after.
+
+Two smaller things fell out of the same session. `isIndexableNote` is now one predicate in the
+domain, checked on the index itself rather than only at the two doors in front of it, because a
+session's `input.md` was getting a row anyway and turning up as an unlinked note. And a run
+nobody started now writes its deterministic name into its transcript, so the row reads
+"Librarian" instead of the first sixty characters of the worklist it was handed.

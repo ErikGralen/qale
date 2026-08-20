@@ -31,12 +31,19 @@ export function MeetingDelivery({ path, onOpen }: { path: string; onOpen: (p: st
       <span className="text-xs font-medium text-muted-foreground">Since last time</span>
       <ul className="mt-1 flex flex-col gap-1">
         {deltas.map((d) => (
-          <li key={d.externalId} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
+          <li
+            key={d.externalId}
+            className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm"
+          >
             <ExternalRefChip target={d.slug} onOpen={onOpen} />
             <span className="min-w-0 truncate text-muted-foreground">{d.title}</span>
             <span
               className={`inline-flex items-center gap-1 font-medium ${
-                d.stateCategory === 'blocked' ? 'text-warning' : d.stateCategory === 'done' ? 'text-success' : 'text-foreground/80'
+                d.stateCategory === 'blocked'
+                  ? 'text-warning'
+                  : d.stateCategory === 'done'
+                    ? 'text-success'
+                    : 'text-foreground/80'
               }`}
             >
               {d.stateCategory === 'blocked' && <AlertTriangle className="size-3" aria-hidden />}

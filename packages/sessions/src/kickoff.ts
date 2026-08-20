@@ -44,7 +44,10 @@ const KICKOFF =
 export function parseKickoff(text: string): Kickoff | null {
   const m = KICKOFF.exec(text.trim());
   if (!m) return null;
-  const targets = m[2]?.split(',').map((t) => t.trim()).filter(Boolean);
+  const targets = m[2]
+    ?.split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
   return {
     skill: m[1]!,
     ...(targets?.length ? { targets } : {}),

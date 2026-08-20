@@ -38,7 +38,15 @@ export function Hello({ onNext }: { onNext: () => void }) {
           </p>
           <p>
             It drafts, you approve. Everything it writes is plain markdown in a folder on your own
-            computer, and nothing leaves it or reaches your team without you saying so.
+            computer, and nothing reaches your team or your tools without you saying so.
+          </p>
+          {/* The limit of the sentence above, said in the same breath as the
+              promise (OW10). "Nothing leaves" was never true of the model, and
+              a boundary whose one gap you find out about later is not one you
+              agreed to. */}
+          <p>
+            The model is the exception: when the agent works, the notes it reads go to the model
+            provider you pick.
           </p>
         </div>
       </div>

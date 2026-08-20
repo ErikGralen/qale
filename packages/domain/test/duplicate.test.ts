@@ -12,7 +12,10 @@ import { findDuplicate, titleOverlap, type ProposalIdentity } from '../src/propo
  * far.
  */
 
-const todo = (title: string, path = `todos/2026-08-05-${title.toLowerCase().replace(/\W+/g, '-')}.md`): ProposalIdentity => ({
+const todo = (
+  title: string,
+  path = `todos/2026-08-05-${title.toLowerCase().replace(/\W+/g, '-')}.md`,
+): ProposalIdentity => ({
   kind: 'note',
   targetPath: path,
   noteType: 'todo',
@@ -36,7 +39,10 @@ test('one word apart in a way that changes the meaning stays two commitments', (
 });
 
 test('same verb, different object, stays two commitments', () => {
-  const pending = [todo('Send Nordkap the SSO rollout dates'), todo('Write up the schema decision')];
+  const pending = [
+    todo('Send Nordkap the SSO rollout dates'),
+    todo('Write up the schema decision'),
+  ];
   assert.equal(findDuplicate(pending, todo('Send Kranelund the billing export')), null);
   assert.equal(findDuplicate(pending, todo('Talk to Sara about pricing')), null);
 });
@@ -65,7 +71,11 @@ test('two cards writing the same path collide whatever they are called', () => {
 
 test('an update to one page does not block a different update to the same page', () => {
   const pending: ProposalIdentity[] = [
-    { kind: 'update', targetPath: 'customers/nordkap.md', title: 'record the SSO rollout dates they were given' },
+    {
+      kind: 'update',
+      targetPath: 'customers/nordkap.md',
+      title: 'record the SSO rollout dates they were given',
+    },
   ];
   assert.equal(
     findDuplicate(pending, {
@@ -86,7 +96,11 @@ test('an update to one page does not block a different update to the same page',
 
 test('the same words about a different page are not a duplicate', () => {
   const pending: ProposalIdentity[] = [
-    { kind: 'update', targetPath: 'customers/nordkap.md', title: 'record the rollout dates they were given' },
+    {
+      kind: 'update',
+      targetPath: 'customers/nordkap.md',
+      title: 'record the rollout dates they were given',
+    },
   ];
   assert.equal(
     findDuplicate(pending, {
@@ -103,7 +117,11 @@ test('kinds never cross', () => {
     { kind: 'decision', targetPath: 'decisions/adopt-workos.md', title: 'Adopt WorkOS for SSO' },
   ];
   assert.equal(
-    findDuplicate(pending, { kind: 'note', targetPath: 'notes/x.md', title: 'Adopt WorkOS for SSO' }),
+    findDuplicate(pending, {
+      kind: 'note',
+      targetPath: 'notes/x.md',
+      title: 'Adopt WorkOS for SSO',
+    }),
     null,
   );
 });

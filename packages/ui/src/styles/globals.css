@@ -334,6 +334,63 @@
     }
   }
 
+  /*
+   * The agent-at-work mark — three lines of ink writing themselves, in a slow
+   * loop: each stroke draws left-to-right, holds, and fades as the next line
+   * starts. One mark for one meaning: a session turn is running. Set the
+   * colour with `text-*` (the strokes paint in currentColor); ink blue is the
+   * voice that means "the agent is touching this".
+   *
+   * Reduced motion needs no extra rule here: the global clamp ends the
+   * animation after one instant iteration, and the base styles underneath are
+   * the finished mark — three static written lines.
+   */
+  .qale-ink-writing {
+    display: flex;
+    width: 16px;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .qale-ink-writing > i {
+    display: block;
+    height: 2px;
+    border-radius: 1px;
+    background: currentColor;
+    transform-origin: left center;
+    animation: qale-ink-write 2s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+  }
+  .qale-ink-writing > i:nth-child(1) {
+    opacity: 0.85;
+  }
+  .qale-ink-writing > i:nth-child(2) {
+    width: 72%;
+    opacity: 0.65;
+    animation-delay: 0.28s;
+  }
+  .qale-ink-writing > i:nth-child(3) {
+    width: 88%;
+    opacity: 0.45;
+    animation-delay: 0.56s;
+  }
+  /* Beside 12px text (the activity trail) the mark steps down with it. */
+  .qale-ink-writing[data-size='sm'] {
+    width: 12px;
+    gap: 2px;
+  }
+  @keyframes qale-ink-write {
+    0% {
+      transform: scaleX(0);
+    }
+    50%,
+    78% {
+      transform: scaleX(1);
+    }
+    100% {
+      transform: scaleX(1);
+      opacity: 0;
+    }
+  }
+
   /* Block selected via the grip (ProseMirror NodeSelection). */
   .note-body .ProseMirror-selectednode {
     @apply rounded-sm bg-brand/8;

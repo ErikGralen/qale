@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyPatch } from '../src/index.js';
+import { applyBodyChange, applyPatch } from '../src/index.js';
 
 // The core of the "changed underneath the card" false positive: an exact-only
 // applyPatch returned null whenever the LLM's anchor drifted in insignificant
@@ -48,4 +48,49 @@ test('refuses an ambiguous fuzzy anchor rather than guessing a location', () => 
   // twice — it must bail to null instead of editing a guessed occurrence.
   const body = 'the  cat\nthe  cat';
   assert.equal(applyPatch(body, [{ search: 'the cat', replace: 'X' }]), null);
+});
+
+// `append` is the lever for a note with nothing to anchor in. Every meeting page
+// the calendar mirrors is frontmatter and no body, and that is exactly where a
+// write-up goes — search/replace could never land there, so the whole documented
+// path (attach the transcript, write onto the page that exists) used to dead-end
+// in a card the Inbox could only report as unanchored.
+
+test('appending onto an empty body writes just the appended text', () => {
+  assert.equal(
+    applyBodyChange('', { append: '## Summary\n\nWhat was decided.' }),
+    '## Summary\n\nWhat was decided.',
+  );
+  // A calendar mirror's body is whitespace, not the empty string.
+  assert.equal(applyBodyChange('\n\n', { append: '## Summary' }), '## Summary');
+});
+
+test('appending onto a written body keeps it and adds a blank line between', () => {
+  assert.equal(
+    applyBodyChange('## Notes\n\nalready here\n', { append: '## Prep\n\nnew' }),
+    '## Notes\n\nalready here\n\n## Prep\n\nnew',
+  );
+});
+
+test('a patch and an append in one card apply in that order', () => {
+  const out = applyBodyChange('alpha\nomega', {
+    patch: [{ search: 'alpha', replace: 'ALPHA' }],
+    append: 'tail',
+  });
+  assert.equal(out, 'ALPHA\nomega\n\ntail');
+});
+
+test('a missed anchor still refuses, and the append never lands on its own', () => {
+  assert.equal(
+    applyBodyChange('nothing here', {
+      patch: [{ search: 'absent', replace: 'x' }],
+      append: 'tail',
+    }),
+    null,
+  );
+});
+
+test('no body levers at all (a frontmatter-only card) leaves the body untouched', () => {
+  assert.equal(applyBodyChange('as written', {}), 'as written');
+  assert.equal(applyBodyChange('as written', { append: '   ' }), 'as written');
 });

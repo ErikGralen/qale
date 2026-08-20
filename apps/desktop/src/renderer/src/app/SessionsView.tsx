@@ -22,7 +22,15 @@ import { HeaderAction, HeaderActions, PageHeader } from '../components/PageHeade
  * carry the ink-blue dot and the reason, everything else rests with a check.
  */
 export function SessionsView() {
-  const { sessions, openChat, openSession, openInbox, refreshSessions, deleteSession, setSessionLifecycle } = useApp();
+  const {
+    sessions,
+    openChat,
+    openSession,
+    openInbox,
+    refreshSessions,
+    deleteSession,
+    setSessionLifecycle,
+  } = useApp();
   const [loaded, setLoaded] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
@@ -39,7 +47,9 @@ export function SessionsView() {
   const rows = useMemo(
     () =>
       sessions.filter((s) =>
-        showArchived ? s.lifecycle !== 'active' && !s.running : s.lifecycle === 'active' || s.running,
+        showArchived
+          ? s.lifecycle !== 'active' && !s.running
+          : s.lifecycle === 'active' || s.running,
       ),
     [sessions, showArchived],
   );
@@ -59,7 +69,11 @@ export function SessionsView() {
       <div className="flex-1 overflow-y-auto px-6">
         <div className="mx-auto max-w-2xl py-4">
           {archivedCount > 0 && (
-            <div className="mb-3 flex flex-wrap items-center gap-1" role="group" aria-label="Filter sessions">
+            <div
+              className="mb-3 flex flex-wrap items-center gap-1"
+              role="group"
+              aria-label="Filter sessions"
+            >
               <span className="ml-auto">
                 <FilterChip
                   label={`Archived (${archivedCount})`}
@@ -100,11 +114,21 @@ export function SessionsView() {
   );
 }
 
-function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function FilterChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       className={`rounded-md px-2 py-0.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
-        active ? 'bg-secondary font-medium text-secondary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+        active
+          ? 'bg-secondary font-medium text-secondary-foreground'
+          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
       }`}
       aria-pressed={active}
       onClick={onClick}
@@ -141,14 +165,20 @@ function SessionRow({
       >
         <span className="flex items-center gap-2 pr-8">
           <MessageSquare className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-          <span className={`truncate text-sm ${needsYou ? 'font-semibold' : 'font-medium'}`}>{s.title}</span>
+          <span className={`truncate text-sm ${needsYou ? 'font-semibold' : 'font-medium'}`}>
+            {s.title}
+          </span>
           {s.running ? (
             <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
               <Spinner className="size-3" /> working
             </span>
           ) : archived ? (
             <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground/70">
-              {s.lifecycle === 'done' ? <Check className="size-3" aria-hidden /> : <Archive className="size-3" aria-hidden />}
+              {s.lifecycle === 'done' ? (
+                <Check className="size-3" aria-hidden />
+              ) : (
+                <Archive className="size-3" aria-hidden />
+              )}
               {s.lifecycle === 'done' ? 'done' : 'dismissed'}
             </span>
           ) : s.pendingCards > 0 ? (
@@ -203,7 +233,12 @@ function SessionRow({
           <>
             {!s.running && s.lifecycle === 'active' && (
               <>
-                <RowAction Icon={Check} label={`Mark "${s.title}" done`} title="Mark done" onClick={() => onSetLifecycle('done')} />
+                <RowAction
+                  Icon={Check}
+                  label={`Mark "${s.title}" done`}
+                  title="Mark done"
+                  onClick={() => onSetLifecycle('done')}
+                />
                 <RowAction
                   Icon={Archive}
                   label={`Dismiss "${s.title}"`}
@@ -213,7 +248,12 @@ function SessionRow({
               </>
             )}
             {archived && (
-              <RowAction Icon={RotateCcw} label={`Reopen "${s.title}"`} title="Reopen" onClick={() => onSetLifecycle('active')} />
+              <RowAction
+                Icon={RotateCcw}
+                label={`Reopen "${s.title}"`}
+                title="Reopen"
+                onClick={() => onSetLifecycle('active')}
+              />
             )}
             <RowAction
               Icon={Trash2}
@@ -245,7 +285,9 @@ function RowAction({
   return (
     <button
       className={`rounded p-1 text-muted-foreground opacity-0 group-focus-within:opacity-70 group-hover:opacity-70 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
-        destructive ? 'hover:bg-destructive/10 hover:text-destructive' : 'hover:bg-accent hover:text-foreground'
+        destructive
+          ? 'hover:bg-destructive/10 hover:text-destructive'
+          : 'hover:bg-accent hover:text-foreground'
       }`}
       onClick={onClick}
       aria-label={label}

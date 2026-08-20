@@ -6,17 +6,21 @@ summary: Turns a scratch dump into a clean page and updates what it touches.
 ---
 
 ## When
+
 The PM dumped rough text into a note (half-sentences from a call, a day's running log) and hit
 "Process" on the note page. Re-runs are normal: yesterday's processed note with today's raw
 additions at the bottom.
 
 ## Read
+
 The note first. Then the memory it touches: search_vault for the people, customers, themes, and
 decisions it mentions. Existing wikilinks mean an earlier run already handled those parts; leave
 them alone and work on what is new or still raw.
 
 ## Produce
+
 Each piece its own approval card:
+
 - **The note itself**, as one propose_update: fix typos and half-sentences, group related lines
   under short headings, and turn plain-text mentions into wikilinks to pages that exist. This is
   a copy edit, not a rewrite: keep the PM's wording and meaning, and add nothing the dump does
@@ -37,6 +41,7 @@ Every wikilink you add points at a page that exists. If the note is already proc
 was added since the last run, say so and propose nothing.
 
 ## Then
+
 Approved cards clean the note and propagate it: hubs updated, loops closed, new todos, insights,
 and decisions filed. The note stays the PM's scratch pad. More gets dumped, the button gets hit
 again, and only the new material is touched.

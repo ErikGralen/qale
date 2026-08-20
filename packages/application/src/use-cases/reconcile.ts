@@ -1,14 +1,19 @@
-import { isReservedFile, isRunnableResource } from '@qale/domain';
+import { isIndexableNote } from '@qale/domain';
 import type { IndexPort, VaultPort } from '../ports.js';
 
 /**
- * Files that are not concept notes: orientation (`index.md`/`log.md`) and the
- * material sitting beside a skill's `SKILL.md`. Neither is indexed, so neither
- * can surface as a note in a listing, a search or the prompt's skill index — a
- * skill's own reference table is read by path when its instructions ask, and
- * never before.
+ * Files that are not concept notes: orientation (`index.md`/`log.md`), the
+ * material sitting beside a skill's `SKILL.md`, and a session's own working
+ * files. None is indexed, so none can surface as a note in a listing, a search
+ * or the prompt's skill index — a skill's own reference table is read by path
+ * when its instructions ask, and never before, and `input.md` in a session
+ * folder is a note to the agent about what just arrived, not a note in the
+ * workspace.
+ *
+ * Exported because both doors into the index have to agree on it: this
+ * reconcile, and the watcher batch the desktop app drains.
  */
-const notContent = (path: string): boolean => isReservedFile(path) || isRunnableResource(path);
+export const notIndexable = (path: string): boolean => !isIndexableNote(path);
 
 /**
  * Startup reconciliation — a three-way diff between the filesystem and the index
@@ -27,7 +32,7 @@ export async function reconcileIndex(
 
   let changed = 0;
   for (const file of fsList) {
-    if (notContent(file.path)) continue;
+    if (notIndexable(file.path)) continue;
     const existing = indexedByPath.get(file.path);
     if (existing && existing.mtime >= file.mtime) continue;
     const note = await vault.readNote(file.path);
@@ -41,7 +46,7 @@ export async function reconcileIndex(
   for (const record of indexed) {
     // Drop ghosts AND anything an older index still holds that is not content —
     // a reserved file, or a sibling indexed before skills became folders.
-    if (!fsByPath.has(record.path) || notContent(record.path)) {
+    if (!fsByPath.has(record.path) || notIndexable(record.path)) {
       index.removeByPath(record.path);
       removed++;
     }
@@ -59,7 +64,7 @@ export async function rebuildIndex(
   const fsList = await vault.list();
   let indexed = 0;
   for (const file of fsList) {
-    if (notContent(file.path)) continue;
+    if (notIndexable(file.path)) continue;
     const note = await vault.readNote(file.path);
     if (note) {
       index.reindex(note);

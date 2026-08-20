@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { parseNote, serializeNote, spliceBody, extractLinks } from '../src/index.js';
 
 test('parse → serialize round-trip keeps frontmatter fields and body', () => {
-  const raw = '---\ntype: decision\nsummary: pick X\nsources:\n  - "[[meetings/kickoff]]"\n---\n\nWe picked X.\n';
+  const raw =
+    '---\ntype: decision\nsummary: pick X\nsources:\n  - "[[meetings/kickoff]]"\n---\n\nWe picked X.\n';
   const parsed = parseNote(raw);
   assert.equal(parsed.frontmatter['type'], 'decision');
   const out = serializeNote(parsed.frontmatter, parsed.body);
@@ -43,7 +44,9 @@ test('extractLinks finds wikilinks with alias and anchor', () => {
 });
 
 test('extractLinks carries the canonical type of [[type::target]] links', () => {
-  const links = extractLinks('Held by [[blocked-by::PAY-155]], see [[evidence::sources/call|the call]] and [[notes/y]].\n');
+  const links = extractLinks(
+    'Held by [[blocked-by::PAY-155]], see [[evidence::sources/call|the call]] and [[notes/y]].\n',
+  );
   assert.equal(links.length, 3);
   assert.deepEqual(
     links.map((l) => ({ target: l.target, linkType: l.linkType, reversed: l.reversed })),

@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Input, Spinner } from '@qale/ui';
-import { BookOpen, CalendarDays, Check, Ticket } from 'lucide-react';
+import { CalendarDays, Check, Ticket } from 'lucide-react';
 import {
   connections,
   type AuthFieldDTO,
   type ConnectionDTO,
   type ProviderDescriptorDTO,
 } from '../../lib/connections';
+import { FollowPicker } from '../../components/FollowPicker';
 import { useApp } from '../../state/app-state';
 import { Screen, SkipLink } from '../Opening';
 
@@ -32,6 +33,11 @@ export function Connections({ onNext, onSkip }: { onNext: () => void; onSkip: ()
   const [providers, setProviders] = useState<ProviderDescriptorDTO[]>([]);
   const [conns, setConns] = useState<ConnectionDTO[]>([]);
   const [loading, setLoading] = useState(true);
+  // Which providers still have their "what should it watch?" list open. The
+  // footer needs to know: an open list is an unfinished one, and Continue
+  // sitting there lit up is how you walk past the connection you meant to set
+  // up next.
+  const [picking, setPicking] = useState<Record<string, boolean>>({});
 
   const reload = useCallback(async () => {
     try {
@@ -56,6 +62,7 @@ export function Connections({ onNext, onSkip }: { onNext: () => void; onSkip: ()
   };
 
   const followedSomething = conns.some((c) => c.containers.some((k) => k.followed));
+  const midPick = Object.values(picking).some(Boolean);
 
   return (
     <Screen
@@ -65,10 +72,15 @@ export function Connections({ onNext, onSkip }: { onNext: () => void; onSkip: ()
         // One button, labelled honestly. With nothing followed this screen IS
         // a skip, and dressing it as "Continue" beside a second "Skip" link
         // would be two ways past the same door.
+        //
+        // While a list is open the card's own Done is the next step, so
+        // Continue steps back. "Not now" never does — that is the way out of
+        // any half-finished state, including this one.
         <Button
           data-opening-primary
           size="lg"
           variant={followedSomething ? 'default' : 'outline'}
+          disabled={followedSomething && midPick}
           onClick={followedSomething ? onNext : onSkip}
         >
           {followedSomething ? 'Continue' : 'Not now'}
@@ -91,13 +103,17 @@ export function Connections({ onNext, onSkip }: { onNext: () => void; onSkip: ()
                 await refreshSettings();
               }}
               onSkip={() => skipProvider(provider.id)}
+              onPicking={(open) => setPicking((prev) => ({ ...prev, [provider.id]: open }))}
             />
           ))
         )}
-        {/* The sentence that decides whether anyone connects at all. */}
+        {/* The sentence that decides whether anyone connects at all, and the
+            thing it does not promise (OW10). "Reading only" is about writes;
+            it says nothing about where what was read then goes. */}
         <p className="pt-1 text-sm text-muted-foreground">
           Reading only. Nothing is ever written back to a ticket, a page or your calendar without
-          you approving that exact change first.
+          you approving that exact change first. What it reads becomes notes in your workspace, and
+          from there it can go to your model provider with the rest when the agent works.
         </p>
       </div>
     </Screen>
@@ -109,17 +125,25 @@ export function Connections({ onNext, onSkip }: { onNext: () => void; onSkip: ()
  * row on purpose — the follow choice belongs to the same moment as the connect,
  * and a screen that sent people to Settings for the second half would lose most
  * of them between the two.
+ *
+ * The card has a finish, though. Connecting opens the watch list; Done closes
+ * it and the card settles back into one line saying what it now watches. Left
+ * permanently open, a finished connection reads as an unfinished one, and the
+ * only forward-looking button on screen belongs to the whole screen rather
+ * than to the thing you were in the middle of.
  */
 function ProviderRow({
   provider,
   connections: conns,
   onChanged,
   onSkip,
+  onPicking,
 }: {
   provider: ProviderDescriptorDTO;
   connections: ConnectionDTO[];
   onChanged: () => Promise<void>;
   onSkip: () => void;
+  onPicking: (open: boolean) => void;
 }) {
   const oauth = provider.authKind === 'oauth';
   const [open, setOpen] = useState(false);
@@ -129,6 +153,22 @@ function ProviderRow({
 
   const connected = conns.length > 0;
   const ready = oauth || provider.fields.every((f) => values[f.key]?.trim());
+  const followedNames = conns.flatMap((c) =>
+    c.containers.filter((k) => k.followed).map((k) => k.name),
+  );
+  const hasContainers = conns.some((c) => c.containers.length > 0);
+
+  // Open on arrival only for a connection left with nothing followed — coming
+  // back to a card that reads nothing, the unanswered question is the point.
+  const [picking, setPicking] = useState(
+    () => connected && hasContainers && followedNames.length === 0,
+  );
+  const showPicker = picking && connected && hasContainers;
+  // Through a ref: the parent hands us a fresh closure every render, and a
+  // plain dependency on it would report the same state back on every one.
+  const report = useRef(onPicking);
+  report.current = onPicking;
+  useEffect(() => report.current(showPicker), [showPicker]);
 
   const submit = async () => {
     setBusy(true);
@@ -138,6 +178,7 @@ function ProviderRow({
       if (res.ok) {
         setValues({});
         setOpen(false);
+        setPicking(true);
         await onChanged();
       } else {
         // Inline, and the skip stays right there: a provider that will not
@@ -165,17 +206,29 @@ function ProviderRow({
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">{provider.label}</div>
           <div className="text-sm text-balance text-muted-foreground">
-            {connected
-              ? conns.map((c) => c.identity ?? c.siteLabel).join(', ')
-              : provider.id === 'google-calendar'
+            {!connected
+              ? provider.id === 'google-calendar'
                 ? 'Your meetings arrive as notes by themselves'
-                : 'Tickets and pages you link stay current'}
+                : 'Tickets and pages you link stay current'
+              : showPicker || !hasContainers
+                ? conns.map((c) => c.identity ?? c.siteLabel).join(', ')
+                : // Settled: say what it watches, not who you signed in as.
+                  // A green tick over nothing is the lie this screen exists
+                  // to avoid telling.
+                  watchLine(followedNames)}
           </div>
         </div>
         {connected ? (
-          <span className="flex shrink-0 items-center gap-1 text-xs text-success">
-            <Check className="size-3.5" aria-hidden /> Connected
-          </span>
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="flex items-center gap-1 text-xs text-success">
+              <Check className="size-3.5" aria-hidden /> Connected
+            </span>
+            {hasContainers && !showPicker && (
+              <Button size="sm" variant="ghost" onClick={() => setPicking(true)}>
+                Change
+              </Button>
+            )}
+          </div>
         ) : open && !oauth ? null : (
           <Button
             size="sm"
@@ -231,73 +284,29 @@ function ProviderRow({
 
       {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
 
-      {conns.map((conn) => (
-        <FollowList key={conn.id} conn={conn} onChanged={onChanged} />
-      ))}
+      {showPicker &&
+        conns.map((conn) => (
+          /* The recommendation card owns its own confirm: ticking is not
+             following, and the writes happen in one deliberate gesture. It is
+             always live, even with nothing ticked — someone who wants nothing
+             watched yet must be able to close this, and the card above says so
+             plainly once they do. */
+          <FollowPicker
+            key={conn.id}
+            conn={conn}
+            onChanged={onChanged}
+            onDone={() => setPicking(false)}
+          />
+        ))}
     </div>
   );
 }
 
-/**
- * The second question, asked in place: which of these should it watch?
- *
- * Nothing is preselected. A PM with forty Jira projects would not thank us for
- * a helpful "all", and the sync it would kick off is real work against their
- * account. One tick is enough to move on, and Settings holds the same list, so
- * a hasty answer here costs nothing to change.
- */
-function FollowList({ conn, onChanged }: { conn: ConnectionDTO; onChanged: () => Promise<void> }) {
-  const [busyId, setBusyId] = useState<string | null>(null);
-  if (conn.containers.length === 0) return null;
-
-  const toggle = async (id: string, followed: boolean) => {
-    setBusyId(id);
-    try {
-      await connections.setFollow(conn.id, id, followed);
-      await onChanged();
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const followed = conn.containers.filter((c) => c.followed).length;
-
-  return (
-    <div className="mt-3 border-t border-border/60 pt-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-dense font-medium text-muted-foreground">
-          Which of these should it watch?
-        </span>
-        {followed === 0 && (
-          // Said plainly rather than left as a green tick with nothing behind
-          // it: connected and following nothing reads nothing at all.
-          <span className="text-xs text-muted-foreground">Pick at least one</span>
-        )}
-      </div>
-      <ul className="mt-1.5 flex max-h-52 flex-col overflow-y-auto">
-        {conn.containers.map((c) => (
-          <li key={c.id}>
-            <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1.5 hover:bg-accent/60">
-              <input
-                type="checkbox"
-                checked={c.followed}
-                disabled={busyId === c.id}
-                onChange={() => void toggle(c.id, !c.followed)}
-              />
-              {c.kind === 'ticket' ? (
-                <Ticket className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              ) : c.kind === 'calendar' ? (
-                <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              ) : (
-                <BookOpen className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              )}
-              <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
-            </label>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+/** "Watching Qale" — two names, then a count, so the line stays one line. */
+function watchLine(names: string[]): string {
+  if (names.length === 0) return 'Connected, watching nothing yet';
+  if (names.length <= 2) return `Watching ${names.join(' and ')}`;
+  return `Watching ${names.slice(0, 2).join(', ')} and ${names.length - 2} more`;
 }
 
 function ProviderIcon({ id }: { id: string }) {

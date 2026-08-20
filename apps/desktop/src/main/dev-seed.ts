@@ -34,11 +34,40 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
         },
         body: '## Insight\n\nSara flagged that **SSO must be live before August** or the Nordkap rollout slips. She was explicit this is a gate, not a nice-to-have.\n',
         rationale: 'A new insight heard in the demo meeting.',
-        headline: 'Learned: Sara says SSO must be live before August, or the Nordkap rollout slips.',
+        headline:
+          'Learned: Sara says SSO must be live before August, or the Nordkap rollout slips.',
       },
-      rationale: 'Sara raised this as a hard gate on the rollout — worth remembering as its own insight.',
+      rationale:
+        'Sara raised this as a hard gate on the rollout — worth remembering as its own insight.',
       evidence: ev,
       inference: false,
+    });
+
+    // A note the PM asked for in the chat. There is no meeting behind it and
+    // nothing to cite, so it carries the `asked` basis: the card says they asked
+    // rather than flagging their own words as an unsourced guess. No authored
+    // headline either, so the mechanical "New note: <summary>" runs long and the
+    // "Files as" line under it is the only thing naming the file.
+    createProposal(ctx, {
+      kind: 'note',
+      sessionId: 'seed',
+      targetPath: 'notes/dropped-material-tags.md',
+      baseHash: null,
+      payload: {
+        path: 'notes/dropped-material-tags.md',
+        frontmatter: {
+          type: 'note',
+          summary:
+            'Convention for dropped external material: tag competitors `competitor` and analyses of comparable systems `prior-art`, on the source note and on anything derived from it.',
+          tags: ['research'],
+        },
+        body: '## The two tags\n\n`competitor`: material about a product that competes with Qale for the same buyer and the same job.\n\n`prior-art`: analysis of a system that is not a competitor but is worth learning from.\n',
+        rationale: 'You asked for two standing tags for the material you are about to drop in.',
+      },
+      rationale: 'You asked for two standing tags for the material you are about to drop in.',
+      evidence: [],
+      inference: false,
+      asked: true,
     });
 
     // A new decision that replaces an earlier one — shows the "replaces …" line
@@ -94,7 +123,8 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
           rationale: 'Note the committed SCIM dates on the meeting page.',
           headline: 'Note on the meeting summary that SCIM dates are now committed for September.',
         },
-        rationale: 'Capture the decision on the meeting summary itself, so the record reads on its own.',
+        rationale:
+          'Capture the decision on the meeting summary itself, so the record reads on its own.',
         evidence: ev,
         inference: false,
       });
@@ -143,7 +173,8 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
           rationale: 'Put the confirmed go-live date on the epic where engineering will see it.',
           headline: 'Comment on the SSO epic: Nordkap confirms first-tenant go-live Jul 28.',
         },
-        rationale: 'Sara confirmed the date in the check-in — the epic should say so before standup.',
+        rationale:
+          'Sara confirmed the date in the check-in — the epic should say so before standup.',
         evidence: ev,
         inference: false,
       },
@@ -202,7 +233,9 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
       const canchor = cnote?.body
         .split('\n')
         .map((l) => l.trim())
-        .find((l) => l.length >= 12 && !l.startsWith('#') && !l.startsWith('>') && !l.startsWith('-'));
+        .find(
+          (l) => l.length >= 12 && !l.startsWith('#') && !l.startsWith('>') && !l.startsWith('-'),
+        );
       if (!canchor) continue;
       createProposal(ctx, {
         kind: 'update',
@@ -221,7 +254,8 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
           rationale: 'This still describes the deferred plan; repoint it at the committed dates.',
           headline: `${cand.title}: point it at the committed SCIM dates, not the deferred plan.`,
         },
-        rationale: 'This note still describes the old "defer to Q3" plan, which the new decision replaced.',
+        rationale:
+          'This note still describes the old "defer to Q3" plan, which the new decision replaced.',
         evidence: [{ ref: decisionRef, resolved: true }],
         inference: false,
       });

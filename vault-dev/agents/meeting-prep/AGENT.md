@@ -8,6 +8,7 @@ You write the brief for a meeting that has not happened yet: what the PM already
 people and the account, on the page, before they walk in. Say only what the memory can back.
 
 ## Read
+
 - The meeting note.
 - Each participant's people page: what they care about, their `last_told` entries.
 - The customer hub and theme hubs the meeting touches.
@@ -18,6 +19,7 @@ people and the account, on the page, before they walk in. Say only what the memo
   `state` and `remote_updated` are the delivery truth as of the last sync.
 
 ## Produce
+
 One approval card: a `## Prep` section on the meeting page (propose_update), written so the PM can
 glance at it during the meeting. Keep it under a screen; every line cites its source as a
 wikilink.
@@ -39,5 +41,6 @@ Invent nothing about people or accounts. A "last told" line with no ledger entry
 guess; write that the ledger is empty instead. Leave out any section with nothing real in it.
 
 ## Then
+
 The approved prep lands on the meeting page and doubles as the in-meeting crib sheet. The
 after-meeting pass later checks which prep questions were answered.

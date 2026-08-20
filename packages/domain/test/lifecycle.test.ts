@@ -56,7 +56,7 @@ test('values render as labels, never raw tokens', () => {
   assert.equal(lifecycleValueLabel(null, 'wont-do'), 'Wont do');
 });
 
-test('compat read: a legacy `status:` folds onto the type\'s own key', () => {
+test("compat read: a legacy `status:` folds onto the type's own key", () => {
   const decision = parseFrontmatter({
     type: 'decision',
     summary: 'Adopt WorkOS',

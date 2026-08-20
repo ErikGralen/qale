@@ -163,10 +163,20 @@ function PersonPreview({
             </Fact>
           )}
           {person.nextMeeting && (
-            <MeetingFact icon={CalendarDays} label="Next" meeting={person.nextMeeting} onOpen={onClose} />
+            <MeetingFact
+              icon={CalendarDays}
+              label="Next"
+              meeting={person.nextMeeting}
+              onOpen={onClose}
+            />
           )}
           {person.lastMet && !person.nextMeeting && (
-            <MeetingFact icon={CalendarDays} label="Last met" meeting={person.lastMet} onOpen={onClose} />
+            <MeetingFact
+              icon={CalendarDays}
+              label="Last met"
+              meeting={person.lastMet}
+              onOpen={onClose}
+            />
           )}
           {person.email && (
             <Fact icon={Mail} label="Email">
@@ -188,7 +198,10 @@ function PersonPreview({
       {person?.caresAbout && person.caresAbout.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1 px-3">
           {person.caresAbout.map((c) => (
-            <span key={c} className="rounded-sm bg-brand/8 px-1.5 py-px text-xs font-medium text-brand">
+            <span
+              key={c}
+              className="rounded-sm bg-brand/8 px-1.5 py-px text-xs font-medium text-brand"
+            >
               {c}
             </span>
           ))}
@@ -231,7 +244,7 @@ function PersonPreview({
             icon={ArrowUpRight}
             onClick={() => {
               onClose();
-              openSettings();
+              openSettings('you');
             }}
           >
             {named ? 'Your details' : 'Set your name'}
@@ -325,7 +338,13 @@ export function PersonChips({ values }: { values: string[] }) {
 }
 
 /** A person's page reference, for pickers that need the same avatar language. */
-export function PersonAvatar({ person, size = 'sm' }: { person: PersonCardDTO; size?: 'sm' | 'lg' }) {
+export function PersonAvatar({
+  person,
+  size = 'sm',
+}: {
+  person: PersonCardDTO;
+  size?: 'sm' | 'lg';
+}) {
   return (
     <Avatar
       participant={{ kind: 'person', raw: person.slug, label: person.name, person }}

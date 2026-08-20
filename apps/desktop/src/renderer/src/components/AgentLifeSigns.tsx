@@ -31,7 +31,9 @@ export function AgentLifeSigns({ agent, className }: { agent: AgentDTO; classNam
   // absence (QM ticket 9). This is the whole of what that run leaves, and it
   // waits here to be found rather than arriving as a notification.
   const stoppedRun =
-    agent.lastStoppedMs && agent.lastStoppedMs >= (agent.lastRunMs ?? 0) ? agent.lastStoppedMs : null;
+    agent.lastStoppedMs && agent.lastStoppedMs >= (agent.lastRunMs ?? 0)
+      ? agent.lastStoppedMs
+      : null;
   return (
     <div className={cn('flex flex-col gap-1', className)}>
       {selfStarting ? (
@@ -103,7 +105,7 @@ export function AgentBlockedNotice({ agent, className }: { agent: AgentDTO; clas
       {!broken && (
         <button
           className="relative shrink-0 rounded font-medium underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-          onClick={(e) => openSettings(navFromEvent(e))}
+          onClick={(e) => openSettings('agent', navFromEvent(e))}
         >
           Open Settings
         </button>

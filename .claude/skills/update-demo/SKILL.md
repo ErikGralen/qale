@@ -12,11 +12,11 @@ description: >-
 
 Get the Tavla demo workspace into a crisp, current-dated state for a live demo. Three moving parts:
 
-- **`vault-dev/`** — the *canonical* demo source, frozen on a fictional "today" of **2026-07-17**.
+- **`vault-dev/`** — the _canonical_ demo source, frozen on a fictional "today" of **2026-07-17**.
   Edit demo content here. It should stay pristine — no harness-written session receipts, no leftover
   test captures.
-- **`.vault-dev/`** — the *runtime* copy the app actually opens (gitignored). Built from `vault-dev/`
-  by `scripts/refresh-demo.ts`, with all dates shifted so the scenario reads as *now*. Throwaway;
+- **`.vault-dev/`** — the _runtime_ copy the app actually opens (gitignored). Built from `vault-dev/`
+  by `scripts/refresh-demo.ts`, with all dates shifted so the scenario reads as _now_. Throwaway;
   rebuild it any time.
 - **`demo-samples/`** — committed, relative-dated material you drag into the running app to demo the
   two pain points. See `demo-samples/README.md`.
@@ -68,7 +68,7 @@ by (today − 2026-07-17), empties `sessions/`, and self-validates. Read its out
   missing a `type:`, something in step 1 broke — **stop and show the user the failure**, don't
   proceed as if it worked.
 
-**Demoing against the live Atlassian site?** The rebuild restores the *static* mirror ids
+**Demoing against the live Atlassian site?** The rebuild restores the _static_ mirror ids
 (`PAY-142`, fake `tavla.atlassian.net` URLs) — fine offline, wrong online. Run
 `pnpm reset-atlassian` afterwards (docs/jira-demo-setup.md): it resets the live site to the
 baseline AND reconciles `.vault-dev` to the live keys/ids. Always in that order: refresh first,

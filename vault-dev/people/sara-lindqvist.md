@@ -1,12 +1,12 @@
 ---
-type: "person"
-summary: "Sara Lindqvist: Head of IT at Nordkap, champion and economic buyer"
-tags: ["enterprise-auth"]
-role: "Head of IT, Nordkap Payments"
-email: "sara.lindqvist@nordkap.example"
-cares_about: ["security review", "provisioning", "audit trail"]
-last_told: "2026-07-14"
-customer: "[[customers/nordkap-payments]]"
+type: 'person'
+summary: 'Sara Lindqvist: Head of IT at Nordkap, champion and economic buyer'
+tags: ['enterprise-auth']
+role: 'Head of IT, Nordkap Payments'
+email: 'sara.lindqvist@nordkap.example'
+cares_about: ['security review', 'provisioning', 'audit trail']
+last_told: '2026-07-14'
+customer: '[[customers/nordkap-payments]]'
 ---
 
 Champion and economic buyer at [[customers/nordkap-payments]]. Owns the renewal internally and

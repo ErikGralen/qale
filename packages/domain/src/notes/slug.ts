@@ -94,7 +94,8 @@ export function runnableNameFromPath(path: string): string | null {
   if (inside) return isRunnableEntry(path) ? inside.name : null;
   const parts = path.split('/');
   const [dir, file] = parts;
-  if (parts.length !== 2 || !dir || !file || !(RUNNABLE_DIRS as readonly string[]).includes(dir)) return null;
+  if (parts.length !== 2 || !dir || !file || !(RUNNABLE_DIRS as readonly string[]).includes(dir))
+    return null;
   return file.toLowerCase().endsWith('.md') && !isReservedFile(path) ? slugFromPath(file) : null;
 }
 
@@ -153,10 +154,13 @@ export const OKF_VERSION = '0.2';
  * *face*; `sessions/.files/a1b2c3/` is its untracked *body* — the relationship is
  * legible from the filesystem alone.
  *
- * The leading dot is what keeps it out of the memory for free: `FsVault.walk`
- * skips any entry whose name starts with `.` at every level, so nothing under
- * here is indexed, searched, retrieved, linkable or counted in freshness
- * (invariant 1). It is also seeded into the vault's `.gitignore`.
+ * The leading dot is what keeps it out of the memory: both doors into the index
+ * skip any segment starting with `.` — the `FsVault.walk` that scans, and the
+ * watcher that reports live edits — so nothing under here is indexed, searched,
+ * retrieved, linkable or counted in freshness (invariant 1). `notIndexable` says
+ * the same thing again where rows are written, because when only the scan knew
+ * the rule, a drop left a phantom `input.md` note behind. It is also seeded into
+ * the vault's `.gitignore`.
  */
 export const SESSION_FILES_DIR = 'sessions/.files';
 
@@ -164,6 +168,23 @@ export const SESSION_FILES_DIR = 'sessions/.files';
 export function isSessionFile(path: string): boolean {
   const p = path.replace(/^\.?\//, '');
   return p === SESSION_FILES_DIR || p.startsWith(`${SESSION_FILES_DIR}/`);
+}
+
+/**
+ * Is this file a note — something the workspace indexes, lists, searches and
+ * lets a wikilink point at? Three kinds of file are not: orientation
+ * (`index.md`, `log.md`), a skill's own material beside its entry file, and a
+ * session's working files.
+ *
+ * The single sentence for the whole app, because it was being said in several
+ * places and only most of them were being asked. The scan skipped a session's
+ * `input.md` and the watcher skipped it, and it still turned up in the index as
+ * an unlinked note for the librarian to worry about, because SOMETHING wrote a
+ * row directly. So the rule now also sits on the index itself, where every
+ * write has to pass it whatever door it came through.
+ */
+export function isIndexableNote(path: string): boolean {
+  return !isReservedFile(path) && !isRunnableResource(path) && !isSessionFile(path);
 }
 
 /** The final path segment (basename without extension). */
@@ -223,8 +244,27 @@ const TITLE_CASE = /[-_]+/g;
  * how the PO wrote it down.
  */
 const SMALL_WORDS = new Set([
-  'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'from', 'in', 'into', 'nor',
-  'of', 'on', 'or', 'per', 'the', 'to', 'via', 'vs', 'with',
+  'a',
+  'an',
+  'and',
+  'as',
+  'at',
+  'but',
+  'by',
+  'for',
+  'from',
+  'in',
+  'into',
+  'nor',
+  'of',
+  'on',
+  'or',
+  'per',
+  'the',
+  'to',
+  'via',
+  'vs',
+  'with',
 ]);
 
 /**
@@ -234,12 +274,40 @@ const SMALL_WORDS = new Set([
  * general dictionary — an unknown token stays plain title case.
  */
 const WORDMARKS: Record<string, string> = {
-  api: 'API', arr: 'ARR', b2b: 'B2B', b2c: 'B2C', crm: 'CRM', csv: 'CSV',
-  eu: 'EU', gdpr: 'GDPR', ios: 'iOS', kpi: 'KPI', mrr: 'MRR', mvp: 'MVP',
-  nda: 'NDA', nps: 'NPS', oauth: 'OAuth', okr: 'OKR', pdf: 'PDF', pii: 'PII',
-  poc: 'PoC', qa: 'QA', qbr: 'QBR', rfc: 'RFC', roi: 'ROI', saas: 'SaaS',
-  saml: 'SAML', scim: 'SCIM', sdk: 'SDK', seo: 'SEO', sla: 'SLA', slo: 'SLO',
-  sso: 'SSO', ui: 'UI', url: 'URL', ux: 'UX',
+  api: 'API',
+  arr: 'ARR',
+  b2b: 'B2B',
+  b2c: 'B2C',
+  crm: 'CRM',
+  csv: 'CSV',
+  eu: 'EU',
+  gdpr: 'GDPR',
+  ios: 'iOS',
+  kpi: 'KPI',
+  mrr: 'MRR',
+  mvp: 'MVP',
+  nda: 'NDA',
+  nps: 'NPS',
+  oauth: 'OAuth',
+  okr: 'OKR',
+  pdf: 'PDF',
+  pii: 'PII',
+  poc: 'PoC',
+  qa: 'QA',
+  qbr: 'QBR',
+  rfc: 'RFC',
+  roi: 'ROI',
+  saas: 'SaaS',
+  saml: 'SAML',
+  scim: 'SCIM',
+  sdk: 'SDK',
+  seo: 'SEO',
+  sla: 'SLA',
+  slo: 'SLO',
+  sso: 'SSO',
+  ui: 'UI',
+  url: 'URL',
+  ux: 'UX',
 };
 
 /** Derive a human title from a slug's basename when no explicit title exists. */
@@ -258,7 +326,14 @@ export function titleFromSlug(slug: string): string {
 }
 
 const ASCII_FOLD: Record<string, string> = {
-  ß: 'ss', æ: 'ae', œ: 'oe', ø: 'o', ð: 'd', þ: 'th', đ: 'd', ł: 'l',
+  ß: 'ss',
+  æ: 'ae',
+  œ: 'oe',
+  ø: 'o',
+  ð: 'd',
+  þ: 'th',
+  đ: 'd',
+  ł: 'l',
 };
 
 /** Transliterate diacritics to plain ASCII ('möte med åsa' → 'mote med asa'). */
@@ -271,8 +346,58 @@ export function asciiFold(text: string): string {
   });
 }
 
-/** Lowercase-kebab, filename-safe slug of a title/summary line. */
-export function slugify(text: string): string {
+/**
+ * The DOS device names, which are still filenames Windows refuses in 2026.
+ * `CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9` and `LPT1`-`LPT9` are not names at
+ * all there: they address the console, the printer port and the serial ports, so
+ * `type CON` reads the keyboard. The rule is case-insensitive and survives an
+ * extension, so `con.md`, `NUL.md` and `Com3.md` all fail the same way, and they
+ * fail at `CreateFile`, so the write throws before a byte lands.
+ *
+ * Some of these are ordinary words a PM types without thinking. "Con" is half of
+ * "pros and cons" and a Swedish abbreviation; "aux" is what an audio input is
+ * called; "prn" is a real Jira project key somewhere. A title of exactly that one
+ * word is rare but it is not exotic, and the failure it causes is a note that
+ * cannot be saved with no explanation the user could act on.
+ */
+const DOS_DEVICE_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/**
+ * One path segment (a filename or a folder name) that Windows will actually
+ * accept. Two rules, both of which bite on Windows only and neither of which
+ * changes an ordinary name:
+ *
+ * 1. **A reserved device name gets a trailing underscore before its extension**
+ *    (`con.md` becomes `con_.md`). The underscore is inside `slugify`'s own
+ *    character class, so the result is still a legal slug and running this twice
+ *    changes nothing, which matters: slugs are compared against path
+ *    segments that were minted the same way (the wikipage sync matcher, link
+ *    repair), and a transform that moved on every pass would stop those matching.
+ *
+ * 2. **Trailing dots and spaces are removed.** Windows strips them silently when
+ *    it creates the file, so `notes/summary. .md` is written and then read back
+ *    as `notes/summary.md`: the file we think we wrote and the file on disk have
+ *    different names, the index keys a row nothing will ever resolve to, and the
+ *    note is invisible in the app while sitting in the folder. Doing the strip
+ *    ourselves means one name, everywhere, and it is the name we chose.
+ *
+ * Applied on every platform on purpose. A vault is a folder of markdown people
+ * carry between machines, put in a git repo and clone onto a laptop that is not
+ * the one that wrote it, so a name minted on a Mac has to be a name Windows can
+ * hold. The characters Windows forbids outright (`: ? * " < > |` and control
+ * characters) never reach here: `slugify` has already dropped everything outside
+ * `[\w\s-]`.
+ */
+export function windowsSafeName(name: string): string {
+  const trimmed = name.replace(/[. ]+$/, '');
+  const dot = trimmed.indexOf('.');
+  const stem = dot === -1 ? trimmed : trimmed.slice(0, dot);
+  if (!DOS_DEVICE_NAMES.test(stem)) return trimmed;
+  return `${stem}_${dot === -1 ? '' : trimmed.slice(dot)}`;
+}
+
+/** Lowercase-kebab of a title/summary line. Not a filename on its own: see {@link slugify}. */
+function kebab(text: string): string {
   return asciiFold(text.toLowerCase())
     .replace(/[^\w\s-]/g, '')
     .trim()
@@ -281,7 +406,28 @@ export function slugify(text: string): string {
     .replace(/-+$/, '');
 }
 
-/** A YYYY-MM-DD-slugified filename from a summary line, for capture. */
+/**
+ * Lowercase-kebab, filename-safe slug of a title/summary line.
+ *
+ * This is where a bare filename or folder name is minted: a person page
+ * (`people/<slug>.md`), a skill folder (`skills/<slug>/SKILL.md`), a mirrored
+ * wiki page (`wikipages/<slug>.md`), a retitled note that never carried a date.
+ * The Windows name rules go HERE rather than at each of those call sites, where
+ * the next one added would forget them.
+ */
+export function slugify(text: string): string {
+  return windowsSafeName(kebab(text));
+}
+
+/**
+ * A YYYY-MM-DD-slugified filename from a summary line, for capture.
+ *
+ * Deliberately built on the raw kebab rather than on {@link slugify}: the date
+ * prefix already makes a reserved device name impossible (`2026-08-12-con` is
+ * just a name), so running the guard again could only add an underscore to a
+ * filename that was never in danger, and every note captured on a Mac would
+ * differ from the same note before this rule existed for no reason at all.
+ */
 export function fileSlug(text: string, date: string): string {
-  return `${date}-${slugify(text) || 'note'}`;
+  return `${date}-${kebab(text) || 'note'}`;
 }

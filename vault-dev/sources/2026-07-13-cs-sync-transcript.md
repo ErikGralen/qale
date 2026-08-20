@@ -5,7 +5,7 @@ processing: processed
 source:
   system: transcript
 captured: 2026-07-13
-meeting: "[[meetings/2026-07-13-cs-sync]]"
+meeting: '[[meetings/2026-07-13-cs-sync]]'
 ---
 
 Johanna: I did the exit call with Rondo on Friday. Do you want the honest version?

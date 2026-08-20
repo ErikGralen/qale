@@ -28,6 +28,26 @@ export interface ExternalContainer {
 }
 
 /**
+ * How much of a container the connected person has actually touched lately
+ * (docs/product-understanding.md FL-1). This is what turns an alphabetical list
+ * of forty spaces into a recommendation: a count somebody can check, and a date
+ * that says whether they still work there.
+ *
+ * `count` is the provider's own total for the query, never the size of the page
+ * we happened to fetch. A survey that says "12 pages" when it means "the first
+ * 12 of 300" is worse than no number at all.
+ */
+export interface ContainerFootprint {
+  kind: ContainerKind;
+  /** Matches {@link ExternalContainer.id} — project key, space key. */
+  id: string;
+  /** Items in this container the person created or changed inside the window. */
+  count: number;
+  /** ISO timestamp of the most recent one, when the provider said. */
+  lastTouched?: string;
+}
+
+/**
  * A shallow item record from an incremental pull — exactly the mirror-note
  * frontmatter fields (Area A `zTicket`/`zWikipage`), no body. Bodies are
  * deep-track only, fetched via {@link Connector.fetchFull}.
@@ -146,6 +166,13 @@ export interface Connector {
   verifyAuth(): Promise<VerifyResult>;
   /** Followable containers for the settings picker. */
   listContainers(): Promise<ExternalContainer[]>;
+  /**
+   * Where the connected person actually works, for ranking that list. Optional:
+   * a provider with no forty-container problem (a calendar list) simply omits
+   * it, and every caller treats a missing method and a failed survey the same
+   * way — fall back to the unranked catalogue, which is where we started.
+   */
+  surveyFootprint?(opts?: { now?: number }): Promise<ContainerFootprint[]>;
   /**
    * Incremental shallow pull: items changed since the high-water mark (null =
    * first sync, pull everything oldest-first up to the page cap; repeated calls

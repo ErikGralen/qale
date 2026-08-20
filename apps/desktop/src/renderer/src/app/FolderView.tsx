@@ -1,20 +1,29 @@
 import { useMemo, useRef, useState } from 'react';
-import { isFolderIndex, lifecycleValueLabel } from '@qale/domain';
+import {
+  isFolderIndex,
+  isHandCreatable,
+  lifecycleValueLabel,
+  noteTypeLabel,
+  type HandCreatableType,
+} from '@qale/domain';
 import { Button } from '@qale/ui';
-import { AlertTriangle, Folder, Search, X } from 'lucide-react';
+import { AlertTriangle, Folder, Plus, Search, X } from 'lucide-react';
 import type { NoteRefDTO, NoteType } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { useAimedDrop } from '../lib/aimed-drop';
 import { navFromEvent } from '../lib/nav';
+import { useNewNote } from '../lib/new-note';
 import { PageHeader } from '../components/PageHeader';
 import { NoteList } from './NoteList';
 import { MeetingWeek } from './MeetingWeek';
 import { TicketBoard } from './TicketBoard';
 import { ScopedAskComposer } from '../components/ScopedAskComposer';
+import { SelectionBar } from '../components/SelectionBar';
 import { TagChip } from '../components/TagChip';
 import { monthBucket, refDate } from '../lib/contexts';
+import { selectionKeyDown, useSelection } from '../lib/selection';
 
-type GroupBy = 'context' | 'date' | 'none';
+type GroupBy = 'date' | 'none';
 /** The spatial layout a folder offers besides the flat list, if any. */
 type AltLayout = 'week' | 'board';
 type FolderView = AltLayout | 'list';
@@ -38,14 +47,14 @@ function storedView(dir: string, alt: AltLayout | null): FolderView {
 const EMPTY_TEACH: Partial<Record<NoteType, string>> = {
   source:
     'No sources yet. Dumped raw material (article links, screenshots, pasted threads) lands here, never edited, only analyzed.',
-  meeting:
-    'No meetings yet. Drop a transcript (or paste one with ⇧⌘N) and it gets filed here.',
+  meeting: 'No meetings yet. Drop a transcript (or paste one with ⇧⌘N) and it gets filed here.',
   decision:
     'No decisions yet. Approve a decision card from a meeting and the spine starts here, and superseded ones keep their place in the chain.',
   insight:
     'No insights yet. Claims the agent extracts from meetings land here, each citing its evidence.',
   customer: 'No customers yet. They appear as meetings and insights start naming them.',
-  theme: 'No themes yet. Run Synthesis over a few interviews and the patterns worth solving land here.',
+  theme:
+    'No themes yet. Run Synthesis over a few interviews and the patterns worth solving land here.',
   person:
     'No people yet. Stakeholders appear here with what they care about and what they were last told.',
   skill: 'No skills yet. Session playbooks, the written instructions the agent follows, live here.',
@@ -121,12 +130,14 @@ function FacetChip({
 /**
  * A folder browse page — built for *finding*, not inventory (the PO's recall
  * cue is a topic, a status, or "a few weeks ago"; never "row 7 of a list").
- * Instant filter, facet chips, and grouping by context by default, so the
- * page reads the way the PO thinks: pricing things together, auth things
- * together. Docked Ask composer stays scoped to the folder.
+ * Instant filter, facet chips, and month grouping. Every note appears once:
+ * a topic is a chip you filter by, never a section, because a note carrying
+ * two tags would otherwise show up twice. Docked Ask composer stays scoped
+ * to the folder.
  */
 export function FolderView({ dir }: { dir: string }) {
   const { tree, openMemory } = useApp();
+  const { create, busy: creating } = useNewNote();
   // Some folders default to a spatial layout (week calendar, ticket board),
   // with the flat list one click away.
   const altLayout = altLayoutFor(dir);
@@ -141,7 +152,7 @@ export function FolderView({ dir }: { dir: string }) {
   const [lifecycleFacet, setLifecycleFacet] = useState<string | null>(
     dir === 'decisions' ? 'active' : null,
   );
-  const [chosenGroupBy, setChosenGroupBy] = useState<GroupBy | null>(null);
+  const [groupBy, setGroupBy] = useState<GroupBy>('date');
   const filterRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -161,9 +172,6 @@ export function FolderView({ dir }: { dir: string }) {
     return LIFECYCLE_ORDER.filter((v) => present.has(v));
   }, [notes]);
 
-  // Group by context when the folder has any; meetings and untagged folders read by date.
-  const groupBy: GroupBy = chosenGroupBy ?? (allTags.length > 0 ? 'context' : 'date');
-
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return notes
@@ -179,41 +187,29 @@ export function FolderView({ dir }: { dir: string }) {
 
   const sections = useMemo((): {
     key: string;
-    heading?: { tag?: string; label: string };
+    heading?: { label: string };
     rows: NoteRefDTO[];
   }[] => {
-    if (groupBy === 'none' || (groupBy === 'context' && contextFacet)) {
-      return [{ key: 'all', rows: filtered }];
+    if (groupBy === 'none') return [{ key: 'all', rows: filtered }];
+    const buckets = new Map<string, NoteRefDTO[]>();
+    for (const n of filtered) {
+      const b = monthBucket(n);
+      buckets.set(b, [...(buckets.get(b) ?? []), n]);
     }
-    if (groupBy === 'date') {
-      const buckets = new Map<string, NoteRefDTO[]>();
-      for (const n of filtered) {
-        const b = monthBucket(n);
-        buckets.set(b, [...(buckets.get(b) ?? []), n]);
-      }
-      return [...buckets.entries()].map(([label, rows]) => ({
-        key: label,
-        heading: { label },
-        rows,
-      }));
-    }
-    // context: a note under every context it carries — this is a browse surface, not an inventory.
-    const out: { key: string; heading?: { tag?: string; label: string }; rows: NoteRefDTO[] }[] =
-      [];
-    for (const tag of allTags) {
-      const rows = filtered.filter((n) => n.tags?.includes(tag));
-      if (rows.length > 0) out.push({ key: tag, heading: { tag, label: tag }, rows });
-    }
-    const untagged = filtered.filter((n) => !n.tags || n.tags.length === 0);
-    if (untagged.length > 0)
-      out.push({ key: '·untagged', heading: { label: 'untagged' }, rows: untagged });
-    return out;
-  }, [groupBy, contextFacet, filtered, allTags]);
+    return [...buckets.entries()].map(([label, rows]) => ({
+      key: label,
+      heading: { label },
+      rows,
+    }));
+  }, [groupBy, filtered]);
+
+  // Selection follows the filter: what is on screen is what can be acted on,
+  // so narrowing the page (or emptying it) takes the hidden rows with it.
+  const ordered = useMemo(() => filtered.map((n) => n.path), [filtered]);
+  const selection = useSelection(ordered);
 
   const filtersActive = filter.trim() !== '' || contextFacet !== null || lifecycleFacet !== null;
-  const emptyTeach = group
-    ? (EMPTY_TEACH[group.type] ?? 'Nothing here yet.')
-    : 'Nothing here yet.';
+  const emptyTeach = group ? (EMPTY_TEACH[group.type] ?? 'Nothing here yet.') : 'Nothing here yet.';
 
   const clearFilters = () => {
     setFilter('');
@@ -226,6 +222,23 @@ export function FolderView({ dir }: { dir: string }) {
 
   // Dropping on a shelf says where it goes, so the agent never has to ask.
   const aimed = useAimedDrop({ kind: 'folder', dir });
+
+  // The same "+" the Memory shelf offers, on the page the shelf opens: someone
+  // browsing themes who wants one more should not have to walk back up to
+  // Memory to start it. Only the four types a person authors get it — the rest
+  // arrive as material or as a card to approve (see HAND_CREATABLE_TYPES).
+  const startable = group && isHandCreatable(group.type) ? (group.type as HandCreatableType) : null;
+  const newLabel = startable ? `New ${noteTypeLabel(startable).toLowerCase()}` : '';
+  const newAction = startable && (
+    <Button
+      size="sm"
+      disabled={creating}
+      onClick={(e) => void create(startable, navFromEvent(e))}
+      title={`${newLabel}: a blank page, named as you type`}
+    >
+      <Plus className="size-3.5" /> {newLabel}
+    </Button>
+  );
 
   const viewToggle = altLayout && notes.length > 0 && (
     <div
@@ -255,6 +268,8 @@ export function FolderView({ dir }: { dir: string }) {
       className={`flex h-full flex-col ${aimed.over ? 'bg-brand/5 ring-1 ring-brand/40 ring-inset' : ''}`}
       {...aimed.handlers}
       onKeyDown={(e) => {
+        // Esc drops the selection, ⌘A takes the whole filtered list.
+        if (!altMode && selectionKeyDown(e, selection)) return;
         // `/` focuses the filter from anywhere on the page (not while typing).
         const t = e.target as HTMLElement;
         if (!altMode && e.key === '/' && t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA') {
@@ -269,7 +284,9 @@ export function FolderView({ dir }: { dir: string }) {
         label={dir}
         labelClassName="capitalize"
         meta={!altMode && filtersActive ? `${filtered.length} of ${notes.length}` : notes.length}
-      />
+      >
+        {newAction}
+      </PageHeader>
 
       {altMode && altLayout === 'week' && (
         <MeetingWeek
@@ -302,8 +319,13 @@ export function FolderView({ dir }: { dir: string }) {
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Escape') setFilter('');
-                  else if (e.key === 'ArrowDown') {
+                  // Escape clears the innermost thing that has anything to
+                  // clear: the filter first, and only then the selection (which
+                  // the page handles once this stops swallowing the key).
+                  if (e.key === 'Escape' && filter) {
+                    e.stopPropagation();
+                    setFilter('');
+                  } else if (e.key === 'ArrowDown') {
                     e.preventDefault();
                     listRef.current?.querySelector<HTMLButtonElement>('[data-note-row]')?.focus();
                   }
@@ -353,7 +375,7 @@ export function FolderView({ dir }: { dir: string }) {
               role="group"
               aria-label="Group by"
             >
-              {(['context', 'date', 'none'] as const).map((g) => (
+              {(['date', 'none'] as const).map((g) => (
                 <button
                   key={g}
                   className={`rounded-md px-2 py-0.5 text-xs font-medium capitalize transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
@@ -361,7 +383,7 @@ export function FolderView({ dir }: { dir: string }) {
                       ? 'bg-card text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
-                  onClick={() => setChosenGroupBy(g)}
+                  onClick={() => setGroupBy(g)}
                   aria-pressed={groupBy === g}
                 >
                   {g === 'none' ? 'flat' : g}
@@ -372,11 +394,28 @@ export function FolderView({ dir }: { dir: string }) {
         </div>
       )}
 
+      {!altMode && <SelectionBar selection={selection} total={filtered.length} />}
+
       {!altMode && (
         <div ref={listRef} className="flex-1 overflow-y-auto px-8 py-3">
           <div className="mx-auto w-full max-w-2xl">
             {notes.length === 0 ? (
-              <p className="px-1 py-2 text-sm text-muted-foreground">{emptyTeach}</p>
+              <div className="px-1 py-2">
+                <p className="text-sm text-muted-foreground">{emptyTeach}</p>
+                {/* The empty page is where the offer matters most, so it repeats
+                    the header's action instead of pointing at it. */}
+                {startable && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    disabled={creating}
+                    onClick={(e) => void create(startable, navFromEvent(e))}
+                  >
+                    <Plus className="size-3.5" /> {newLabel}
+                  </Button>
+                )}
+              </div>
             ) : filtered.length === 0 ? (
               <div className="px-1 py-4 text-sm text-muted-foreground">
                 <p>
@@ -393,13 +432,9 @@ export function FolderView({ dir }: { dir: string }) {
                   <section key={s.key}>
                     {s.heading && (
                       <div className="mb-0.5 flex items-baseline gap-2 px-2">
-                        {s.heading.tag ? (
-                          <TagChip tag={s.heading.tag} />
-                        ) : (
-                          <span className="text-xs font-medium text-muted-foreground">
-                            {s.heading.label}
-                          </span>
-                        )}
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {s.heading.label}
+                        </span>
                         <span className="text-xs text-muted-foreground tabular-nums">
                           {s.rows.length}
                         </span>
@@ -408,7 +443,8 @@ export function FolderView({ dir }: { dir: string }) {
                     <NoteList
                       rows={s.rows}
                       empty=""
-                      omitTag={s.heading?.tag ?? contextFacet ?? undefined}
+                      omitTag={contextFacet ?? undefined}
+                      selection={selection}
                     />
                   </section>
                 ))}

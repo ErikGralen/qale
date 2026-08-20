@@ -1,10 +1,15 @@
 ---
-type: "insight"
-summary: "Per-seat pricing chafes in mid-market accounts where headcount is seasonal"
-tags: ["pricing"]
-evidence: ["[[meetings/2026-06-12-kranelund-checkin]]", "[[meetings/2026-07-13-cs-sync]]", "[[meetings/2026-07-14-nordkap-checkin]]"]
-confidence: "med"
-customer: "[[customers/kranelund-logistics]]"
+type: 'insight'
+summary: 'Per-seat pricing chafes in mid-market accounts where headcount is seasonal'
+tags: ['pricing']
+evidence:
+  [
+    '[[meetings/2026-06-12-kranelund-checkin]]',
+    '[[meetings/2026-07-13-cs-sync]]',
+    '[[meetings/2026-07-14-nordkap-checkin]]',
+  ]
+confidence: 'med'
+customer: '[[customers/kranelund-logistics]]'
 ---
 
 Kranelund take on around 40 seasonal drivers every summer, and Mikkel won't pay a full seat

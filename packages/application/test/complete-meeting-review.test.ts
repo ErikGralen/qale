@@ -194,7 +194,10 @@ test('answering the ask marks the meeting reviewed, and answering twice is a no-
 
 test('marking a note that is not a meeting reviewed is refused', async () => {
   const { ctx } = fakeContext({
-    'notes/scratch.md': { frontmatter: { type: 'note', processing: 'new' } as Frontmatter, body: '' },
+    'notes/scratch.md': {
+      frontmatter: { type: 'note', processing: 'new' } as Frontmatter,
+      body: '',
+    },
   });
   assert.deepEqual(await markMeetingReviewed(ctx, 'notes/scratch.md'), { ok: false });
   assert.deepEqual(await markMeetingReviewed(ctx, 'meetings/gone.md'), { ok: false });

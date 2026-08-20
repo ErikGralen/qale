@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Button, Spinner } from '@qale/ui';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  Button,
+  Spinner,
+} from '@qale/ui';
 import { History, GitCommitHorizontal, Undo2 } from 'lucide-react';
 import type { NoteCommitDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
@@ -7,7 +15,6 @@ import { invoke } from '../lib/ipc';
 import { stripFrontmatter } from '../lib/frontmatter';
 import { Markdown } from './Markdown';
 import { useToast } from './toast';
-
 
 function shortDate(iso: string): string {
   const d = new Date(iso);
@@ -126,10 +133,14 @@ export function NoteHistory({
           <div className="flex flex-col items-start gap-3 py-4">
             {vault?.gitAvailable ? (
               <>
+                {/* "Nothing leaves your machine" was true of us and silent
+                    about the folder (OW10): git never pushes on its own, but a
+                    synced folder carries the whole history with it. */}
                 <p className="text-sm text-muted-foreground">
                   This workspace doesn't track version history yet. Enabling it creates a git
-                  repository in the folder and records a first snapshot of every note. Nothing
-                  leaves your machine.
+                  repository in the folder and records a first snapshot of every note. It stays in
+                  that folder and is never pushed anywhere. Anything syncing the folder, like iCloud
+                  or Dropbox, syncs the history too.
                 </p>
                 <Button
                   size="sm"
@@ -161,7 +172,8 @@ export function NoteHistory({
                 </div>
               ) : commits.length === 0 ? (
                 <p className="p-3 text-sm text-muted-foreground">
-                  No earlier versions of this note yet. One appears here after its next saved change.
+                  No earlier versions of this note yet. One appears here after its next saved
+                  change.
                 </p>
               ) : (
                 <ul className="flex flex-col gap-0.5">
@@ -174,10 +186,15 @@ export function NoteHistory({
                         onClick={() => setSelected(c)}
                       >
                         <span className="flex items-center gap-1.5">
-                          <GitCommitHorizontal className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                          <GitCommitHorizontal
+                            className="size-3.5 shrink-0 text-muted-foreground"
+                            aria-hidden
+                          />
                           <span className="truncate">{c.message}</span>
                         </span>
-                        <span className="pl-5 text-xs text-muted-foreground">{shortDate(c.date)}</span>
+                        <span className="pl-5 text-xs text-muted-foreground">
+                          {shortDate(c.date)}
+                        </span>
                       </button>
                     </li>
                   ))}
@@ -192,7 +209,9 @@ export function NoteHistory({
               {typeof body === 'string' && current?.bodyEditable && (
                 <div className="mb-2 flex min-h-8 items-center gap-2 border-b border-border pb-2">
                   {!canRestore ? (
-                    <span className="text-xs text-muted-foreground">This is what the note says now.</span>
+                    <span className="text-xs text-muted-foreground">
+                      This is what the note says now.
+                    </span>
                   ) : confirming ? (
                     <>
                       <span className="min-w-0 flex-1 text-xs text-muted-foreground">
@@ -201,7 +220,12 @@ export function NoteHistory({
                       <Button size="sm" disabled={restoring} onClick={() => void restore()}>
                         {restoring ? 'Restoring…' : 'Restore'}
                       </Button>
-                      <Button size="sm" variant="ghost" disabled={restoring} onClick={() => setConfirming(false)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={restoring}
+                        onClick={() => setConfirming(false)}
+                      >
                         Cancel
                       </Button>
                     </>
@@ -225,7 +249,9 @@ export function NoteHistory({
                     <Spinner className="size-3.5" /> Loading…
                   </div>
                 ) : body === null ? (
-                  <p className="p-3 text-sm text-muted-foreground">This note didn't exist in that version.</p>
+                  <p className="p-3 text-sm text-muted-foreground">
+                    This note didn't exist in that version.
+                  </p>
                 ) : (
                   <div className="prose-sm max-w-none">
                     <Markdown content={body} />

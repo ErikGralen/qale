@@ -161,12 +161,22 @@ export class GitAdapter implements GitPort {
     if (!(await this.available()) || !(await this.isRepo())) return [];
     try {
       // --follow tracks the file across renames; the file may be uncommitted.
-      const log = await this.git.log<{ hash: string; date: string; message: string; author_name: string }>({
+      const log = await this.git.log<{
+        hash: string;
+        date: string;
+        message: string;
+        author_name: string;
+      }>({
         file: relPath,
         format: { hash: '%H', date: '%aI', message: '%s', author_name: '%an' },
         '--follow': null,
       });
-      return log.all.map((c) => ({ hash: c.hash, date: c.date, message: c.message, author: c.author_name }));
+      return log.all.map((c) => ({
+        hash: c.hash,
+        date: c.date,
+        message: c.message,
+        author: c.author_name,
+      }));
     } catch (err) {
       console.error('[git] history failed:', err instanceof Error ? err.message : err);
       return [];

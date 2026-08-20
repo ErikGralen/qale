@@ -77,8 +77,9 @@ export function SpawnCard({ request }: { request: SpawnRequestDTO }) {
       )}
       {request.brief === null && (
         <p className="mt-2 text-xs text-warning">
-          No brief.md yet. Each child will read its item with no idea what you already believe, so none
-          of them can flag a contradiction. Cancel and ask for a brief first if that matters here.
+          No brief.md yet. Each child will read its item with no idea what you already believe, so
+          none of them can flag a contradiction. Cancel and ask for a brief first if that matters
+          here.
         </p>
       )}
 

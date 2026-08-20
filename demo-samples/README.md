@@ -19,12 +19,12 @@ pnpm desktop             # then open the .vault-dev workspace
 
 ## The pack
 
-| File | Ingest as | Demos |
-|------|-----------|-------|
-| `nordkap-post-sso-checkin-transcript.txt` | Meeting transcript (you were in it) | Pain point 1, after-meeting follow-up |
-| `kranelund-exports-discovery-transcript.txt` | Meeting transcript (you were in it) | Pain point 2, insights from customer meetings |
-| `messy-standup-capture.md` | Quick note / paste | Intake and librarian (sloppy links get repaired) |
-| `chat-prompts.md` | n/a | Prompts to paste into a Session |
+| File                                         | Ingest as                           | Demos                                            |
+| -------------------------------------------- | ----------------------------------- | ------------------------------------------------ |
+| `nordkap-post-sso-checkin-transcript.txt`    | Meeting transcript (you were in it) | Pain point 1, after-meeting follow-up            |
+| `kranelund-exports-discovery-transcript.txt` | Meeting transcript (you were in it) | Pain point 2, insights from customer meetings    |
+| `messy-standup-capture.md`                   | Quick note / paste                  | Intake and librarian (sloppy links get repaired) |
+| `chat-prompts.md`                            | n/a                                 | Prompts to paste into a Session                  |
 
 ### Pain point 1: after-meeting follow-up
 

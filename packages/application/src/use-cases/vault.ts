@@ -3,6 +3,7 @@ import {
   byHeat,
   computeHeat,
   isFolderIndex,
+  isReservedFile,
   refToSlug,
   SESSION_FILES_DIR,
   type NoteType,
@@ -19,6 +20,8 @@ export interface VaultInfo {
   gitAvailable: boolean;
   /** Name of the sync service whose folder this vault sits in, or null. */
   syncedBy: string | null;
+  /** Windows only: the folder is deep enough that files inside it break MAX_PATH. */
+  pathTooDeep: boolean;
   noteCount: number;
 }
 
@@ -38,10 +41,20 @@ const SYNC_ROOTS: { match: string; suffixed?: boolean; name: string }[] = [
   { match: 'mobile documents', name: 'iCloud Drive' },
   { match: 'com~apple~clouddocs', name: 'iCloud Drive' },
   { match: 'icloud drive', name: 'iCloud Drive' },
+  // iCloud for Windows writes one word, no space: C:\Users\ada\iCloudDrive.
+  { match: 'iclouddrive', name: 'iCloud Drive' },
   { match: 'dropbox', suffixed: true, name: 'Dropbox' },
   { match: 'google drive', suffixed: true, name: 'Google Drive' },
   // macOS files-provider layout: ~/Library/CloudStorage/GoogleDrive-me@acme.com
   { match: 'googledrive', suffixed: true, name: 'Google Drive' },
+  // Google Drive for desktop on Windows is the one sync root that is not a
+  // folder under the user profile: it mounts a virtual DRIVE (G: by default,
+  // and the letter is the user's to change), so the give-away is not a folder
+  // named after the service at all. Every file on that drive sits under either
+  // "My Drive" or "Shared drives", so those two segments are the check.
+  // `G:\My Drive\qale` has nothing else in it that says Google.
+  { match: 'my drive', name: 'Google Drive' },
+  { match: 'shared drives', name: 'Google Drive' },
   { match: 'onedrive', suffixed: true, name: 'OneDrive' },
   { match: 'sync.com', name: 'Sync.com' },
   { match: 'pcloud drive', name: 'pCloud' },
@@ -78,16 +91,104 @@ export function detectSyncedFolder(path: string): string | null {
   return null;
 }
 
+/**
+ * The name we call a workspace: the last segment of its folder path.
+ *
+ * The argument is an ABSOLUTE OS path, not a vault path, so it is the one place
+ * in this layer where a backslash is a separator and not a character. Splitting
+ * on `/` alone turned `C:\Users\erik\Qale` into its own whole self, and the
+ * workspace switcher, the root `index.md` and the window title all read back a
+ * full disk path where a name belongs. Not `basename()`: this package is
+ * deliberately free of `node:` imports (its tsconfig sets `types: []`), and the
+ * same both-separators split already sits a few lines up in
+ * {@link detectSyncedFolder}.
+ *
+ * `filter(Boolean)` drops the empty leading segment and any trailing slash, so a
+ * path written with one still names the folder rather than nothing.
+ */
+export function workspaceNameOf(root: string): string | null {
+  return root.split(/[/\\]/).filter(Boolean).pop() ?? null;
+}
+
+/**
+ * How much room every file INSIDE a workspace needs, in characters, and where
+ * the number comes from. The longest paths the app mints, measured:
+ *
+ * - **Dropped material**, which is the worst case. A session's folder is
+ *   `sessions/.files/<uuid>/`: 16 + 36 + 1 = 53 characters before the session has
+ *   written anything, because the id is a `randomUUID`. Arriving material goes in
+ *   `material/` (9) under a name taken from the file the PM dropped, capped at 72
+ *   (`MATERIAL_NAME_CAP` in the arrival handler, which points back here). Total:
+ *   **134**.
+ * - A session's own working files: the same 53, plus the conventional
+ *   `per-item/<name>.md` (9 + a model-chosen name of roughly a slug's length + 3)
+ *   = about 113.
+ * - A session receipt: `sessions/` 9 + `YYYY-MM-DD-` 11 + a 48-character slug +
+ *   `-` + 8 characters of session id + `.md` = 80.
+ * - Any ordinary note: the longest folder is `attachments/` at 12, plus the same
+ *   `YYYY-MM-DD-` 11 and a 48-character slug and `.md` = 74.
+ * - Git's own store, which lives in the same folder: a pack file is
+ *   `.git/objects/pack/pack-<40 hex>.pack`, 68.
+ *
+ * Two caps do the real work here and both exist partly for this: `slugify`'s
+ * 48 characters and the arrival handler's 72. Without them a note named after a
+ * long meeting title, or a file dropped with a 200-character name, would have no
+ * upper bound at all and no budget could be honest.
+ *
+ * 140 covers every line above with a little room, and is what
+ * {@link WINDOWS_ROOT_LIMIT} is derived from.
+ */
+const VAULT_PATH_BUDGET = 140;
+
+/**
+ * The longest fully-qualified path Windows accepts without long-path support
+ * turned on. `MAX_PATH` is 260 INCLUDING the terminating NUL, so 259 characters
+ * of actual path. Long-path support exists (a registry key plus a manifest
+ * opt-in) but we cannot count on it: it is off by default on most machines, it
+ * is a machine-wide setting the user may not be able to change, and plenty of
+ * other software on the same folder still breaks with it on.
+ */
+const WINDOWS_MAX_PATH = 259;
+
+/**
+ * The longest workspace root that still leaves every file inside it reachable on
+ * Windows: 259 minus the budget above, minus the separator between them.
+ */
+export const WINDOWS_ROOT_LIMIT = WINDOWS_MAX_PATH - VAULT_PATH_BUDGET - 1;
+
+/**
+ * Is this workspace root so deep that ordinary notes inside it would break the
+ * Windows path limit?
+ *
+ * Worth catching where the folder is CHOSEN, because it is unfixable afterwards
+ * in the only way that matters: the failure does not arrive as "this path is too
+ * long", it arrives months later as one session that cannot write its working
+ * file, or a note that saves in one folder and not another, and no error message
+ * would point at the workspace being three folders too deep.
+ *
+ * Decided by the shape of the path rather than by the platform, so it is one
+ * pure function with no `process` in it, testable from any machine, and correct
+ * for the case that actually matters: only a Windows path can hit a Windows
+ * limit. A drive-letter root (`C:\…`) or a UNC share (`\\server\share\…`) is a
+ * Windows path; anything starting at `/` is not, and no length of posix path is
+ * a problem worth a warning.
+ */
+export function isWindowsPathTooDeep(root: string): boolean {
+  const windows = /^[a-z]:[/\\]/i.test(root) || root.startsWith('\\\\');
+  return windows && root.replace(/[/\\]+$/, '').length > WINDOWS_ROOT_LIMIT;
+}
+
 async function vaultInfo(ctx: UseCaseContext): Promise<VaultInfo> {
   const available = await ctx.git.available();
   const isRepo = available && (await ctx.git.isRepo());
   const root = ctx.vault.root();
   return {
     path: root,
-    name: root.split('/').filter(Boolean).pop() ?? root,
+    name: workspaceNameOf(root) ?? root,
     git: isRepo,
     gitAvailable: available,
     syncedBy: detectSyncedFolder(root),
+    pathTooDeep: isWindowsPathTooDeep(root),
     noteCount: ctx.index.count(),
   };
 }
@@ -201,7 +302,9 @@ export function getThemesByHeat(ctx: UseCaseContext): ThemeHeatRow[] {
     const heat = computeHeat(dates);
     return { note, count: heat.count, newest: heat.newest };
   });
-  rows.sort((a, b) => byHeat({ count: a.count, newest: a.newest }, { count: b.count, newest: b.newest }));
+  rows.sort((a, b) =>
+    byHeat({ count: a.count, newest: a.newest }, { count: b.count, newest: b.newest }),
+  );
   return rows;
 }
 
@@ -300,7 +403,28 @@ function isMirror(n: IndexedNote): boolean {
   return MIRROR_TYPES.has(n.type) || (typeof provider === 'string' && provider.trim().length > 0);
 }
 
-/** Librarian maintenance scan (PLAN-V2 §3.5): orphans + dangling links. */
+/**
+ * A link pointing at an orientation map (`notes/index`, the root `index`). The
+ * maps are real files the app generates and tells agents to read, and they are
+ * deliberately never indexed, so nothing can ever resolve one. A scan that did
+ * not know that reported every mention of one as a broken link, forever, with
+ * no repair that would have fixed it.
+ */
+function isOrientationTarget(target: string): boolean {
+  return isReservedFile(`${target.replace(/\.md$/, '')}.md`);
+}
+
+/**
+ * Librarian maintenance scan (PLAN-V2 §3.5): orphans + dangling links.
+ *
+ * Machinery is out of both halves. It was already exempt from "nothing links
+ * it"; leaving its OUTBOUND links in was what let the workspace feed on its own
+ * exhaust. A session receipt lists what the run read, as wikilinks, and a run
+ * reads orientation maps — so every session filed four or five broken links for
+ * the next librarian pass to look at, and each of those passes filed a receipt
+ * of its own. The scan is for what the team wrote, not for what the app leaves
+ * behind.
+ */
 export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
   const all = ctx.index.all().filter((n) => !isFolderIndex(n.path));
   const orphans: OrphanCandidate[] = [];
@@ -311,11 +435,12 @@ export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
     if (!hasOut && !hasIn && !NEVER_ORPHAN.has(n.type) && !isMirror(n)) {
       orphans.push({ path: n.path, title: n.title });
     }
+    if (isWorkspaceMachinery(n.type)) continue;
     for (const link of n.links) {
-      if (!ctx.index.resolve(link.target)) danglingLinks.push({ from: n.path, target: link.target });
+      if (isOrientationTarget(link.target)) continue;
+      if (!ctx.index.resolve(link.target))
+        danglingLinks.push({ from: n.path, target: link.target });
     }
   }
   return { orphans, danglingLinks };
 }
-
-

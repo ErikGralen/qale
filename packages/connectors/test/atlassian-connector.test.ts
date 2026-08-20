@@ -42,10 +42,22 @@ test('verifyAuth: scoped token falls back to the api.atlassian.com gateway via t
     { url: `${SITE}/rest/api/3/myself`, status: 401 },
     { url: `${SITE}/wiki/rest/api/space`, status: 401 },
     { url: `${SITE}/_edge/tenant_info`, json: misc['tenantInfo'] },
-    { url: `https://api.atlassian.com/ex/jira/${CLOUD_ID}/rest/api/3/myself`, json: misc['myself'] },
-    { url: `https://api.atlassian.com/ex/confluence/${CLOUD_ID}/wiki/rest/api/space`, json: { results: [] } },
-    { url: `https://api.atlassian.com/ex/jira/${CLOUD_ID}/rest/api/3/project/search`, json: misc['projects'] },
-    { url: `https://api.atlassian.com/ex/confluence/${CLOUD_ID}/wiki/api/v2/spaces`, json: misc['spaces'] },
+    {
+      url: `https://api.atlassian.com/ex/jira/${CLOUD_ID}/rest/api/3/myself`,
+      json: misc['myself'],
+    },
+    {
+      url: `https://api.atlassian.com/ex/confluence/${CLOUD_ID}/wiki/rest/api/space`,
+      json: { results: [] },
+    },
+    {
+      url: `https://api.atlassian.com/ex/jira/${CLOUD_ID}/rest/api/3/project/search`,
+      json: misc['projects'],
+    },
+    {
+      url: `https://api.atlassian.com/ex/confluence/${CLOUD_ID}/wiki/api/v2/spaces`,
+      json: misc['spaces'],
+    },
   ]);
   const c = atlassianConnector.create(AUTH, { fetchImpl });
   const r = await c.verifyAuth();
@@ -61,9 +73,12 @@ test('verifyAuth: scoped token falls back to the api.atlassian.com gateway via t
     { kind: 'ticket', id: 'CORE', name: 'Core Platform' },
     { kind: 'wikipage', id: 'PROD', name: 'Product' },
   ]);
-  const dataCalls = calls.filter((x) => x.url.includes('project/search') || x.url.includes('/wiki/api/v2/spaces'));
+  const dataCalls = calls.filter(
+    (x) => x.url.includes('project/search') || x.url.includes('/wiki/api/v2/spaces'),
+  );
   assert.equal(dataCalls.length, 2);
-  for (const call of dataCalls) assert.ok(call.url.startsWith('https://api.atlassian.com/'), call.url);
+  for (const call of dataCalls)
+    assert.ok(call.url.startsWith('https://api.atlassian.com/'), call.url);
 });
 
 test('verifyAuth: token valid for ONE product only → overall ok with per-product detail', async () => {
@@ -135,11 +150,18 @@ test('pullChanges(ticket): incremental JQL is EXACT (clauses ANDed), mapping + h
   ]);
   const c = atlassianConnector.create(AUTH, { fetchImpl });
   const now = Date.parse('2026-07-22T08:00:00Z');
-  const r = await c.pullChanges({ kind: 'ticket', id: 'PAY', name: 'Payments' }, '2026-07-22T07:27:00Z', { now });
+  const r = await c.pullChanges(
+    { kind: 'ticket', id: 'PAY', name: 'Payments' },
+    '2026-07-22T07:27:00Z',
+    { now },
+  );
 
   const search = calls.find((x) => x.url.includes('/search/jql'))!;
   // 33 minutes since the mark + 5 slack — relative window, timezone-proof.
-  assert.equal((search.body as { jql: string }).jql, 'project = "PAY" AND updated >= "-38m" ORDER BY updated ASC');
+  assert.equal(
+    (search.body as { jql: string }).jql,
+    'project = "PAY" AND updated >= "-38m" ORDER BY updated ASC',
+  );
 
   assert.equal(r.changes.length, 4);
   const byKey = Object.fromEntries(r.changes.map((ch) => [ch.external_id, ch]));
@@ -194,7 +216,11 @@ test('pullChanges(wikipage): EXACT CQL by space with version + last-modified map
   ]);
   const c = atlassianConnector.create(AUTH, { fetchImpl });
   const now = Date.parse('2026-07-22T08:00:00Z');
-  const r = await c.pullChanges({ kind: 'wikipage', id: 'PROD', name: 'Product' }, '2026-07-22T06:00:00Z', { now });
+  const r = await c.pullChanges(
+    { kind: 'wikipage', id: 'PROD', name: 'Product' },
+    '2026-07-22T06:00:00Z',
+    { now },
+  );
 
   const url = new URL(calls.find((x) => x.url.includes('/wiki/rest/api/search'))!.url);
   assert.equal(
@@ -252,7 +278,10 @@ test('fetchFull(ticket): a long thread discloses how many earlier comments are n
 });
 
 test('fetchFull(wikipage): storage XHTML → markdown with version + remote_updated', async () => {
-  const { fetchImpl } = makeFetch([...unscopedProbe, { url: '/wiki/api/v2/pages/98342', json: fx('confluence-page') }]);
+  const { fetchImpl } = makeFetch([
+    ...unscopedProbe,
+    { url: '/wiki/api/v2/pages/98342', json: fx('confluence-page') },
+  ]);
   const c = atlassianConnector.create(AUTH, { fetchImpl });
   const full = await c.fetchFull('wikipage', '98342');
 
@@ -379,7 +408,10 @@ test('execute(update_page, patch): replaces the passage IN the storage XHTML —
     action: 'update_page',
     pageId: '98342',
     body: 'SCIM ships in Q3 (deferred Apr 15).',
-    patch: { search: 'SCIM ships in Q2 together with SSO.', replace: 'SCIM ships in Q3 (deferred Apr 15).' },
+    patch: {
+      search: 'SCIM ships in Q2 together with SSO.',
+      replace: 'SCIM ships in Q3 (deferred Apr 15).',
+    },
     provenance: 'Source: Decision — SCIM deferral, Apr 15',
     rationale: 'page contradicts the SCIM deferral decision',
   });
@@ -447,10 +479,20 @@ test('execute: actions this connector cannot perform are refused loudly', async 
   const { fetchImpl } = makeFetch(unscopedProbe);
   const c = atlassianConnector.create(AUTH, { fetchImpl });
   await assert.rejects(
-    () => c.execute({ provider: 'message', action: 'send_message', audience: 'cs', body: 'b', rationale: 'r' }),
+    () =>
+      c.execute({
+        provider: 'message',
+        action: 'send_message',
+        audience: 'cs',
+        body: 'b',
+        rationale: 'r',
+      }),
     /unsupported outbound action/,
   );
-  await assert.rejects(() => c.execute({ provider: 'jira', action: 'create_ticket', body: 'b', rationale: 'r' }), /projectKey/);
+  await assert.rejects(
+    () => c.execute({ provider: 'jira', action: 'create_ticket', body: 'b', rationale: 'r' }),
+    /projectKey/,
+  );
 });
 
 test('data calls surface a failed probe as an error, and a later probe can recover', async () => {
@@ -583,4 +625,119 @@ test('pullByKeys: no ids and calendar kind never touch the network', async () =>
   assert.deepEqual(await c.pullByKeys!('ticket', []), []);
   assert.deepEqual(await c.pullByKeys!('calendar', ['whatever']), []);
   assert.equal(calls.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// surveyFootprint (docs/product-understanding.md FL-1) — where the person works
+// ---------------------------------------------------------------------------
+
+/** A sampled Jira page: only the key and the update stamp matter to a survey. */
+const surveyIssues = (rows: [key: string, updated: string][]): unknown => ({
+  issues: rows.map(([key, updated]) => ({
+    key,
+    fields: { summary: key, status: { name: 'Open', statusCategory: { key: 'new' } }, updated },
+  })),
+  isLast: true,
+});
+
+/** A sampled Confluence page, with the space expand the survey asks for. */
+const surveyPages = (rows: [space: string, when: string][], totalSize: number): unknown => ({
+  totalSize,
+  results: rows.map(([space, when], i) => ({
+    content: {
+      id: `p${i}`,
+      title: `Page ${i}`,
+      space: { key: space },
+      version: { number: 1, when },
+    },
+  })),
+});
+
+test('surveyFootprint: EXACT currentUser() queries, and counts are the provider totals', async () => {
+  const { fetchImpl, calls } = makeFetch([
+    ...unscopedProbe,
+    {
+      url: '/rest/api/3/search/approximate-count',
+      method: 'POST',
+      seq: [{ json: { count: 41 } }, { json: { count: 3 } }],
+    },
+    {
+      url: '/rest/api/3/search/jql',
+      method: 'POST',
+      json: surveyIssues([
+        ['PAY-1', '2026-07-20T10:00:00.000+0200'],
+        ['PAY-2', '2026-07-21T10:00:00.000+0200'],
+        ['OPS-9', '2026-06-01T10:00:00.000+0200'],
+      ]),
+    },
+    // The sample carries the space expand; the bare search URL is the count query.
+    {
+      url: 'expand=content.space',
+      json: surveyPages([['DESIGN', '2026-07-19T09:00:00.000+0200']], 12),
+    },
+    { url: '/wiki/rest/api/search', json: { totalSize: 12 } },
+  ]);
+  const c = atlassianConnector.create(AUTH, { fetchImpl });
+  const footprint = await c.surveyFootprint!();
+
+  const sample = calls.find((x) => x.url.includes('/search/jql'))!;
+  assert.equal(
+    (sample.body as { jql: string }).jql,
+    '(assignee = currentUser() OR reporter = currentUser()) AND updated >= "-90d" ORDER BY updated DESC',
+  );
+  const count = calls.find((x) => x.url.includes('approximate-count'))!;
+  assert.equal(
+    (count.body as { jql: string }).jql,
+    'project = "PAY" AND (assignee = currentUser() OR reporter = currentUser()) AND updated >= "-90d"',
+  );
+  const cql = new URL(calls.find((x) => x.url.includes('/wiki/rest/api/search'))!.url);
+  assert.equal(
+    cql.searchParams.get('cql'),
+    'contributor = currentUser() AND type = page AND lastmodified > now("-90d") ORDER BY lastmodified DESC',
+  );
+  assert.equal(cql.searchParams.get('expand'), 'content.space,content.version');
+
+  // Busiest first. PAY's 41 is the API's real total, NOT the 2 rows we sampled —
+  // the whole point of the second query.
+  assert.deepEqual(footprint, [
+    { kind: 'ticket', id: 'PAY', count: 41, lastTouched: '2026-07-21T10:00:00.000+0200' },
+    { kind: 'wikipage', id: 'DESIGN', count: 12, lastTouched: '2026-07-19T09:00:00.000+0200' },
+    { kind: 'ticket', id: 'OPS', count: 3, lastTouched: '2026-06-01T10:00:00.000+0200' },
+  ]);
+});
+
+test('surveyFootprint: one product failing leaves the other product standing', async () => {
+  const { fetchImpl } = makeFetch([
+    ...unscopedProbe,
+    { url: '/rest/api/3/search/jql', method: 'POST', status: 503 },
+    {
+      url: 'expand=content.space',
+      json: surveyPages([['DESIGN', '2026-07-19T09:00:00.000+0200']], 4),
+    },
+    { url: '/wiki/rest/api/search', json: { totalSize: 4 } },
+  ]);
+  const c = atlassianConnector.create(AUTH, { fetchImpl });
+  assert.deepEqual(await c.surveyFootprint!(), [
+    { kind: 'wikipage', id: 'DESIGN', count: 4, lastTouched: '2026-07-19T09:00:00.000+0200' },
+  ]);
+});
+
+test('surveyFootprint: a failed count query falls back to what was sampled', async () => {
+  const { fetchImpl } = makeFetch([
+    ...unscopedProbe,
+    { url: '/rest/api/3/search/approximate-count', method: 'POST', status: 503 },
+    {
+      url: '/rest/api/3/search/jql',
+      method: 'POST',
+      json: surveyIssues([
+        ['PAY-1', '2026-07-20T10:00:00.000+0200'],
+        ['PAY-2', '2026-07-21T10:00:00.000+0200'],
+      ]),
+    },
+    { url: '/wiki/rest/api/search', json: { results: [] } },
+  ]);
+  const c = atlassianConnector.create(AUTH, { fetchImpl });
+  assert.deepEqual(await c.surveyFootprint!(), [
+    { kind: 'ticket', id: 'PAY', count: 2, lastTouched: '2026-07-21T10:00:00.000+0200' },
+  ]);
 });

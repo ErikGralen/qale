@@ -22,8 +22,7 @@ export class CheckLedgerStore implements CheckLedgerPort {
 
   get(key: string): string | null {
     const row = this.db.prepare('SELECT value FROM sweep_checks WHERE key = ?').get(key) as
-      | { value: string }
-      | undefined;
+      { value: string } | undefined;
     return row?.value ?? null;
   }
 

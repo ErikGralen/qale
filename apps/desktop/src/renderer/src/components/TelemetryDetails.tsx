@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import {
+  TELEMETRY_CONTEXT,
   TELEMETRY_EVENTS,
   TELEMETRY_IDENTITY,
+  TELEMETRY_LIMIT,
   TELEMETRY_NEVER,
 } from '@qale/ipc';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger, cn } from '@qale/ui';
@@ -24,7 +26,10 @@ export function TelemetryDetails() {
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger className="flex items-center gap-1 rounded text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none">
         <ChevronRight
-          className={cn('size-3.5 transition-transform motion-reduce:transition-none', open && 'rotate-90')}
+          className={cn(
+            'size-3.5 transition-transform motion-reduce:transition-none',
+            open && 'rotate-90',
+          )}
           aria-hidden
         />
         {open ? 'Hide the exact list' : 'See the exact list'}
@@ -45,6 +50,9 @@ export function TelemetryDetails() {
                   {e.says}
                 </li>
               ))}
+              {/* The stamps every report carries, promised in the same list the
+                  sender reads, so adding context could never outrun the screen. */}
+              <li className="text-dense text-muted-foreground">{TELEMETRY_CONTEXT}</li>
             </ul>
           </div>
           <div>
@@ -61,6 +69,11 @@ export function TelemetryDetails() {
           </div>
         </div>
       </CollapsibleContent>
+      {/* What the switch does not reach (OW10). Outside the fold on purpose:
+          this is the correction to what the heading above it promises, and a
+          correction behind a disclosure triangle is not one. Lives here rather
+          than on each screen so the setup screen and Settings cannot drift. */}
+      <p className="mt-2 text-dense text-muted-foreground">{TELEMETRY_LIMIT}</p>
     </Collapsible>
   );
 }

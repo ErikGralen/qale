@@ -1,6 +1,6 @@
 ---
 type: customer
-summary: "Kranelund Logistics: 85-seat Danish 3PL, design partner for scheduled exports"
+summary: 'Kranelund Logistics: 85-seat Danish 3PL, design partner for scheduled exports'
 tags:
   - reporting
 relationship: active
@@ -19,11 +19,13 @@ of the fact that their Monday ops report is still assembled by hand from dashboa
 ([[meetings/2026-06-12-kranelund-checkin]]).
 
 ## Commercial
+
 - Pushed back on per-seat pricing for the ~40 seasonal drivers they add each summer. We offered
   the 15% annual prepay discount ([[decisions/2026-06-26-annual-prepay-discount]]). No answer
   either way yet.
 
 ## Watch
+
 - Secondhand via CS: someone in their ops team sat through an Insikt demo in June. Not
   confirmed, and not raised with Mikkel ([[insights/kranelund-evaluating-insikt]]).
 - Pilot kickoff being scheduled for w/c 2026-07-20 ([[meetings/2026-07-13-cs-sync]]).

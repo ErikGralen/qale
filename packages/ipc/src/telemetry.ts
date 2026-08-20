@@ -164,7 +164,7 @@ export const ONBOARDING_ACTIONS = ['done', 'skipped', 'finished'] as const;
 export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
   {
     id: 'app.launched',
-    says: 'The app started, and which version it is',
+    says: 'The app started, which version it is, and roughly how big the workspace is',
     props: {
       firstRun: { kind: 'flag' },
       onboardingFinished: { kind: 'flag' },
@@ -172,6 +172,14 @@ export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
       google: { kind: 'flag' },
       atlassian: { kind: 'flag' },
       notes: { kind: 'word', values: COUNT_BANDS },
+      // The shape of the workspace, in bands: enough to answer "is this thing
+      // being lived in", never enough to say what is in it.
+      meetings: { kind: 'word', values: COUNT_BANDS },
+      people: { kind: 'word', values: COUNT_BANDS },
+      todos: { kind: 'word', values: COUNT_BANDS },
+      // Skills the PM wrote themselves, counted, never named. The count is the
+      // one fact worth having: are people building on this or only using ours.
+      customSkills: { kind: 'word', values: COUNT_BANDS },
     },
   },
   {
@@ -193,6 +201,9 @@ export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
       duration: { kind: 'word', values: DURATION_BANDS },
       failed: { kind: 'flag' },
       cards: { kind: 'word', values: COUNT_BANDS },
+      // Whether the run parked a question for the PM. The flag only; the
+      // question itself is the agent talking about their work and never leaves.
+      asked: { kind: 'flag' },
     },
   },
   {
@@ -232,9 +243,10 @@ export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
   },
   {
     id: 'view.opened',
-    says: 'Which parts of the app you open, never what is in them',
+    says: 'Which parts of the app you open and roughly how many tabs sit open, never what is in them',
     props: {
       view: { kind: 'word', values: VIEW_KINDS },
+      tabs: { kind: 'word', values: COUNT_BANDS },
     },
   },
 ] as const;
@@ -248,8 +260,27 @@ export const TELEMETRY_IDENTITY =
   'Your name and work email, so we know which beta user hit which bug';
 
 /** Where it goes. "Anonymous, to somebody" is a weaker promise than it looks. */
-export const TELEMETRY_PROCESSOR =
-  'It goes to PostHog, on servers in Europe, and nowhere else.';
+export const TELEMETRY_PROCESSOR = 'It goes to PostHog, on servers in Europe, and nowhere else.';
+
+/**
+ * The context every report carries besides its own properties: the build facts,
+ * which part of the app was open at the time (a word from {@link VIEW_KINDS},
+ * the same closed set `view.opened` uses), and a random id minted fresh each
+ * time the app starts. The screen renders this line so the promise covers the
+ * stamps as well as the events. None of it can carry the PM's material: the
+ * view is a word we wrote, the run id is random.
+ */
+export const TELEMETRY_CONTEXT =
+  'Every report also says which part of the app was open at the time, and which sitting it belongs to, so one session of use reads together.';
+
+/**
+ * What this switch does NOT cover (OW10). A heading reading "What leaves your
+ * machine" over a switch reads like the complete answer, and it is only the
+ * usage reports. So the two channels it does not close are named in the open,
+ * never behind the fold: a limit nobody sees is a limit nobody was told.
+ */
+export const TELEMETRY_LIMIT =
+  'This covers these reports only. When the agent works, the notes it reads still go to the model provider you chose, and anything you connect keeps talking to its own service.';
 
 /** The other half of the promise, said as plainly as the list above. */
 export const TELEMETRY_NEVER: readonly string[] = [

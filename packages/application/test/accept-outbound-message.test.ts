@@ -67,7 +67,13 @@ function fakeContext(files: Record<string, Stored>) {
     clock: { now: () => '2026-07-22T00:00:00.000Z' },
     proposals: {
       create: (input, created) => {
-        const rec = { ...input, id: 'p1', status: 'pending', created, resolved: null } as ProposalRecord;
+        const rec = {
+          ...input,
+          id: 'p1',
+          status: 'pending',
+          created,
+          resolved: null,
+        } as ProposalRecord;
         proposals.set(rec.id, rec);
         return rec;
       },
@@ -106,7 +112,11 @@ test('an accepted message draft lands in the link-back note', async () => {
       body: 'Nordkap notes\n',
     },
   });
-  const rec = messageCard(ctx, { body: 'Hello Nordkap', audience: 'CS', linkBackPath: 'customers/nordkap.md' });
+  const rec = messageCard(ctx, {
+    body: 'Hello Nordkap',
+    audience: 'CS',
+    linkBackPath: 'customers/nordkap.md',
+  });
 
   const result = await acceptProposal(ctx, rec.id);
   assert.equal(result.ok, true);

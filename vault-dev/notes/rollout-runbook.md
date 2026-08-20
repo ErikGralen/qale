@@ -1,7 +1,7 @@
 ---
 type: note
 title: Rollout runbook
-summary: "SSO rollout runbook: staged flag rollout, comms, and rollback steps"
+summary: 'SSO rollout runbook: staged flag rollout, comms, and rollback steps'
 sources: []
 ---
 

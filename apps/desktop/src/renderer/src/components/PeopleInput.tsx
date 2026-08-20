@@ -53,7 +53,10 @@ export function PeopleInput({
   // Offer to file a stranger only once the typed name isn't an existing person.
   const canCreate =
     query.length > 1 && !matches.some((p) => p.name.toLowerCase() === query) && !taken.has(query);
-  const options: (PersonCardDTO | 'create')[] = [...matches, ...(canCreate ? (['create'] as const) : [])];
+  const options: (PersonCardDTO | 'create')[] = [
+    ...matches,
+    ...(canCreate ? (['create'] as const) : []),
+  ];
   const showList = open && options.length > 0;
 
   const commit = (next: string): void => {
@@ -175,7 +178,9 @@ export function PeopleInput({
                   <PersonAvatar person={option} />
                   <span className="min-w-0 flex-1 truncate">{option.name}</span>
                   {option.role && (
-                    <span className="max-w-40 truncate text-xs text-muted-foreground">{option.role}</span>
+                    <span className="max-w-40 truncate text-xs text-muted-foreground">
+                      {option.role}
+                    </span>
                   )}
                 </>
               )}

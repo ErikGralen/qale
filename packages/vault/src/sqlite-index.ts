@@ -1,8 +1,22 @@
 import Database from 'better-sqlite3';
-import { basename as slugBasename, lifecycleValue, refToSlug, type Note, type NoteType, type SearchHit } from '@qale/domain';
+import {
+  basename as slugBasename,
+  isIndexableNote,
+  lifecycleValue,
+  refToSlug,
+  type Note,
+  type NoteType,
+  type SearchHit,
+} from '@qale/domain';
 import { noteTitle } from '@qale/domain';
 import { extractLinks } from '@qale/markdown';
-import type { BacklinkRow, IndexedNote, IndexPort, LinkRecord } from '@qale/application';
+import type {
+  BacklinkRow,
+  IndexedNote,
+  IndexPort,
+  LinkRecord,
+  SchemaMiss,
+} from '@qale/application';
 
 /**
  * The derived index (PLAN §3.5): a fully-rebuildable SQLite store with files +
@@ -12,7 +26,7 @@ import type { BacklinkRow, IndexedNote, IndexPort, LinkRecord } from '@qale/appl
  */
 
 /** Bump when the table shapes change — migrate() drops and lets reconcile rebuild. */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 /** Frontmatter ref key → canonical edge type (+ reversed for inverse keys). */
 const FRONTMATTER_EDGE_KEYS: [key: string, type: string, reversed: boolean][] = [
@@ -42,6 +56,8 @@ interface FileRow {
   has_body: number;
   mtime: number;
   frontmatter_json: string;
+  /** JSON {type, error} when the file did not fit the type it claims; else null. */
+  schema_miss_json: string | null;
 }
 
 export class SqliteIndex implements IndexPort {
@@ -62,7 +78,9 @@ export class SqliteIndex implements IndexPort {
     // next reconcile repopulates everything (files emptied = no mtime skips).
     const version = this.db.pragma('user_version', { simple: true }) as number;
     if (version < SCHEMA_VERSION) {
-      this.db.exec('DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS files; DROP TABLE IF EXISTS notes_fts;');
+      this.db.exec(
+        'DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS files; DROP TABLE IF EXISTS notes_fts;',
+      );
       this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
     }
     this.db.exec(`
@@ -77,7 +95,8 @@ export class SqliteIndex implements IndexPort {
         lifecycle TEXT,
         has_body INTEGER NOT NULL DEFAULT 0,
         mtime INTEGER NOT NULL,
-        frontmatter_json TEXT NOT NULL
+        frontmatter_json TEXT NOT NULL,
+        schema_miss_json TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_files_type ON files(type);
       CREATE INDEX IF NOT EXISTS idx_files_name ON files(name);
@@ -117,6 +136,17 @@ export class SqliteIndex implements IndexPort {
   }
 
   reindex(note: Note): void {
+    // The floor under every caller. Orientation files, a skill's own material
+    // and a session's scratch are not notes, and a row for one of them is a
+    // phantom: it lists, it searches, and the librarian reports it as an
+    // unlinked note nobody can do anything about. The scan and the watcher both
+    // check this before they call, and one of them was still getting past it —
+    // so the rule lives where the row is written, and a row that got in under an
+    // older build is dropped on the way past rather than left to rot.
+    if (!isIndexableNote(note.path)) {
+      this.removeByPath(note.path);
+      return;
+    }
     const tx = this.db.transaction((n: Note) => {
       const name = slugBasename(n.slug);
       const row: FileRow = {
@@ -134,15 +164,19 @@ export class SqliteIndex implements IndexPort {
         has_body: n.body.trim().length > 0 ? 1 : 0,
         mtime: n.mtime,
         frontmatter_json: JSON.stringify(n.frontmatter),
+        // Carried so the librarian's scan can see it: the scan is synchronous
+        // and reads only the index, so a fact that stays in the reading layer
+        // is a fact nothing can ever act on.
+        schema_miss_json: n.schemaMiss ? JSON.stringify(n.schemaMiss) : null,
       };
       this.db
         .prepare(
-          `INSERT INTO files (path, slug, name, type, layer, title, summary, lifecycle, has_body, mtime, frontmatter_json)
-           VALUES (@path, @slug, @name, @type, @layer, @title, @summary, @lifecycle, @has_body, @mtime, @frontmatter_json)
+          `INSERT INTO files (path, slug, name, type, layer, title, summary, lifecycle, has_body, mtime, frontmatter_json, schema_miss_json)
+           VALUES (@path, @slug, @name, @type, @layer, @title, @summary, @lifecycle, @has_body, @mtime, @frontmatter_json, @schema_miss_json)
            ON CONFLICT(path) DO UPDATE SET
              slug=@slug, name=@name, type=@type, layer=@layer, title=@title,
              summary=@summary, lifecycle=@lifecycle, has_body=@has_body, mtime=@mtime,
-             frontmatter_json=@frontmatter_json`,
+             frontmatter_json=@frontmatter_json, schema_miss_json=@schema_miss_json`,
         )
         .run(row);
 
@@ -220,7 +254,12 @@ export class SqliteIndex implements IndexPort {
       for (const entry of Array.isArray(provider) ? provider : []) {
         const e = entry as { type?: unknown; key?: unknown; reversed?: unknown };
         if (typeof e.type !== 'string' || typeof e.key !== 'string' || !e.key) continue;
-        links.push({ target: e.key, type: e.type, reversed: e.reversed === true, origin: 'synced' });
+        links.push({
+          target: e.key,
+          type: e.type,
+          reversed: e.reversed === true,
+          origin: 'synced',
+        });
       }
     }
     return links;
@@ -237,7 +276,8 @@ export class SqliteIndex implements IndexPort {
   }
 
   get(path: string): IndexedNote | null {
-    const row = this.db.prepare('SELECT * FROM files WHERE path = ?').get(path) as FileRow | undefined;
+    const row = this.db.prepare('SELECT * FROM files WHERE path = ?').get(path) as
+      FileRow | undefined;
     return row ? this.toIndexed(row) : null;
   }
 
@@ -306,13 +346,12 @@ export class SqliteIndex implements IndexPort {
   resolve(target: string): string | null {
     const clean = target.replace(/\.md$/, '');
     const exact = this.db.prepare('SELECT path FROM files WHERE slug = ?').get(clean) as
-      | { path: string }
-      | undefined;
+      { path: string } | undefined;
     if (exact) return exact.path;
     const name = slugBasename(clean);
-    const byName = this.db
-      .prepare('SELECT path FROM files WHERE name = ?')
-      .all(name) as { path: string }[];
+    const byName = this.db.prepare('SELECT path FROM files WHERE name = ?').all(name) as {
+      path: string;
+    }[];
     return byName.length === 1 ? byName[0]!.path : null;
   }
 
@@ -331,7 +370,9 @@ export class SqliteIndex implements IndexPort {
 
   private toIndexed(row: FileRow): IndexedNote {
     const links = this.db
-      .prepare('SELECT target_slug, anchor, alias, type, reversed, origin, line FROM links WHERE source_path = ?')
+      .prepare(
+        'SELECT target_slug, anchor, alias, type, reversed, origin, line FROM links WHERE source_path = ?',
+      )
       .all(row.path) as {
       target_slug: string;
       anchor: string | null;
@@ -352,6 +393,9 @@ export class SqliteIndex implements IndexPort {
       hasBody: row.has_body === 1,
       mtime: row.mtime,
       frontmatter: JSON.parse(row.frontmatter_json) as Record<string, unknown>,
+      ...(row.schema_miss_json
+        ? { schemaMiss: JSON.parse(row.schema_miss_json) as SchemaMiss }
+        : {}),
       links: links.map((l) => ({
         target: l.target_slug,
         anchor: l.anchor ?? undefined,

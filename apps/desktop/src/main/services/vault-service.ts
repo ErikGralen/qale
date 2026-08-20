@@ -1,9 +1,15 @@
 import { app } from 'electron';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { FsVault, SqliteIndex, VaultWatcher, GitAdapter, AppDb, type VaultChange } from '@qale/vault';
-import { openVault, type UseCaseContext, type VaultInfo } from '@qale/application';
-import { isReservedFile, isRunnableResource } from '@qale/domain';
+import {
+  FsVault,
+  SqliteIndex,
+  VaultWatcher,
+  GitAdapter,
+  AppDb,
+  type VaultChange,
+} from '@qale/vault';
+import { notIndexable, openVault, type UseCaseContext, type VaultInfo } from '@qale/application';
 
 /**
  * Owns the live vault: fs + index + git + watcher for the currently-open vault.
@@ -100,11 +106,10 @@ export class VaultService {
       onBatch: async (changes: VaultChange[]) => {
         if (!this.ctx || !this.index) return;
         for (const change of changes) {
-          // Reserved files (index.md/log.md) are orientation, not notes — never
-          // index them, so the librarian regenerating index.md can't loop back
-          // in as a phantom note here. Same for a skill's own material: a file
-          // beside SKILL.md is read when its skill says so, and is not a note.
-          if (isReservedFile(change.path) || isRunnableResource(change.path)) continue;
+          // The same rule the scan uses (`notIndexable`), because a file the scan
+          // skips must not sneak in here: orientation files, a skill's own
+          // material, and a session's working folder are all not notes.
+          if (notIndexable(change.path)) continue;
           if (change.kind === 'remove') {
             this.index.removeByPath(change.path);
           } else {

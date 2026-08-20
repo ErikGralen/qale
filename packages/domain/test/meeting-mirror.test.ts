@@ -5,6 +5,7 @@ import {
   eventDateParts,
   eventParticipants,
   eventQualifies,
+  hasOtherAttendee,
   meetingPathForEvent,
   parseFrontmatter,
   planMeetingMirror,
@@ -41,15 +42,15 @@ const PLAN_INPUT = {
   seriesSlug: 'nordkap-checkin',
 } as const;
 
-test('qualifying: needs another human, rooms and self do not count, declined never qualifies', () => {
+test('qualifying: everything on the calendar earns a note except declined and cancelled', () => {
   assert.equal(eventQualifies(EVENT), true);
-  // Solo block: only self + a room.
+  // Solo block (only self + a room) and a bare focus block both get notes now:
+  // hiding them made a real calendar look half-synced.
   assert.equal(
     eventQualifies({ ...EVENT, attendees: EVENT.attendees.filter((a) => a.self || a.resource) }),
-    false,
+    true,
   );
-  // No attendees at all (focus block).
-  assert.equal(eventQualifies({ ...EVENT, attendees: [] }), false);
+  assert.equal(eventQualifies({ ...EVENT, attendees: [] }), true);
   // Declined by the PM.
   assert.equal(
     eventQualifies({
@@ -59,6 +60,16 @@ test('qualifying: needs another human, rooms and self do not count, declined nev
     false,
   );
   assert.equal(eventQualifies({ ...EVENT, event_status: 'cancelled' }), false);
+});
+
+test('hasOtherAttendee: the meeting/block line the prep sweep gates on', () => {
+  assert.equal(hasOtherAttendee(EVENT), true);
+  // Self plus a room is still just you.
+  assert.equal(
+    hasOtherAttendee({ ...EVENT, attendees: EVENT.attendees.filter((a) => a.self || a.resource) }),
+    false,
+  );
+  assert.equal(hasOtherAttendee({ ...EVENT, attendees: [] }), false);
 });
 
 test('participants: humans minus self minus rooms, names preferred, emails kept as fallback', () => {
@@ -75,9 +86,12 @@ test('date parts: timed events get local date/time/duration; all-day gets date o
   assert.equal(parts.date.length, 10);
   assert.match(parts.time ?? '', /^\d{2}:\d{2}$/);
   assert.equal(parts.duration_minutes, 60);
-  assert.deepEqual(eventDateParts({ ...EVENT, allDay: true, start: '2026-08-01', end: '2026-08-02' }), {
-    date: '2026-08-01',
-  });
+  assert.deepEqual(
+    eventDateParts({ ...EVENT, allDay: true, start: '2026-08-01', end: '2026-08-02' }),
+    {
+      date: '2026-08-01',
+    },
+  );
 });
 
 test('create: qualifying event yields a valid meeting frontmatter with the sync fields', () => {
@@ -125,9 +139,19 @@ test('participants override: a newly-resolved link patches an existing note in p
   assert.deepEqual(plan.frontmatter['participants'], ['[[people/sara-lindqvist]]']);
 });
 
-test('create: non-qualifying events are skipped, never materialized', () => {
+test('create: a solo block materializes, a declined one never does', () => {
   const solo = { ...EVENT, attendees: [] };
-  assert.deepEqual(planMeetingMirror({ ...PLAN_INPUT, event: solo, existing: null }), {
+  const created = planMeetingMirror({ ...PLAN_INPUT, event: solo, existing: null });
+  assert.equal(created.action, 'create');
+  if (created.action !== 'create') return;
+  // Nobody to list — the field is absent rather than empty.
+  assert.equal(created.frontmatter['participants'], undefined);
+
+  const declined = {
+    ...EVENT,
+    attendees: EVENT.attendees.map((a) => (a.self ? { ...a, response: 'declined' as const } : a)),
+  };
+  assert.deepEqual(planMeetingMirror({ ...PLAN_INPUT, event: declined, existing: null }), {
     action: 'skip',
   });
 });

@@ -67,8 +67,9 @@ export function SkillPicker({
     // Alphabetical, except a skill that needs fixing sinks — it stays offered
     // (hiding it would be the silent failure the Skills view exists to prevent)
     // but it never gets to be the second thing you read.
-    .sort((a, b) =>
-      Number(a.errors.length > 0) - Number(b.errors.length > 0) || a.title.localeCompare(b.title),
+    .sort(
+      (a, b) =>
+        Number(a.errors.length > 0) - Number(b.errors.length > 0) || a.title.localeCompare(b.title),
     );
 
   useEffect(() => {

@@ -53,7 +53,10 @@ export function PageHeader({
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4">
       <nav aria-label="Location" className="flex min-w-0 items-center gap-1 text-xs">
         {Icon && (
-          <Icon className={cn('size-3.5 shrink-0 text-muted-foreground', iconClassName)} aria-hidden />
+          <Icon
+            className={cn('size-3.5 shrink-0 text-muted-foreground', iconClassName)}
+            aria-hidden
+          />
         )}
         {crumbs?.map((crumb) =>
           crumb.onClick ? (
@@ -74,7 +77,10 @@ export function PageHeader({
             </span>
           ),
         )}
-        <span className={cn('truncate font-medium text-foreground/80', labelClassName)} title={labelTitle}>
+        <span
+          className={cn('truncate font-medium text-foreground/80', labelClassName)}
+          title={labelTitle}
+        >
           {label}
         </span>
         {meta !== undefined && meta !== null && meta !== false && (
@@ -85,7 +91,9 @@ export function PageHeader({
           a header that shortens "Inbox" to "In…" to fit a hint has its
           priorities backwards. Anything long in here (a keyboard hint) caps
           its own width and hides at narrow viewports. */}
-      {children && <div className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">{children}</div>}
+      {children && (
+        <div className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">{children}</div>
+      )}
     </div>
   );
 }
@@ -143,7 +151,13 @@ export interface HeaderMenuItem {
  * header's resting state. Fixed-positioned to escape the header's flow (same
  * approach as the tab strip's context menu).
  */
-export function HeaderMenu({ items, label = 'More actions' }: { items: HeaderMenuItem[]; label?: string }) {
+export function HeaderMenu({
+  items,
+  label = 'More actions',
+}: {
+  items: HeaderMenuItem[];
+  label?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);

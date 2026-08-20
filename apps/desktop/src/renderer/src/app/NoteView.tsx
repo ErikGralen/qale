@@ -8,12 +8,24 @@ import {
   transcriptRefs,
 } from '@qale/domain';
 import type { BacklinkDTO } from '@qale/ipc';
-import { Badge, Button, Separator } from '@qale/ui';
-import { CalendarDays, CheckCheck, Link2, Lock, MessageSquare, Mic, Pin, Sparkles, Trash2, History } from 'lucide-react';
+import { Badge, Button } from '@qale/ui';
+import {
+  CalendarDays,
+  CheckCheck,
+  ChevronRight,
+  Link2,
+  Lock,
+  MessageSquare,
+  Mic,
+  Pin,
+  Sparkles,
+  Trash2,
+  History,
+} from 'lucide-react';
 import { useApp, type SessionOverview } from '../state/app-state';
 import { useAimedDrop } from '../lib/aimed-drop';
 import { requestCapture } from '../lib/capture-event';
-import { navFromEvent } from '../lib/nav';
+import { navFromEvent, type NavOpts } from '../lib/nav';
 import { noteTypeIcon } from '../lib/note-icons';
 import { Markdown } from '../components/Markdown';
 import { HeaderAction, HeaderActions, HeaderMenu, PageHeader } from '../components/PageHeader';
@@ -23,7 +35,13 @@ import { NoteHistory } from '../components/NoteHistory';
 import { PropertiesBlock } from '../components/PropertiesBlock';
 import { TitleEditor } from '../components/TitleEditor';
 import { SkillAgentPage } from './SkillAgentPage';
-import { askSelectionSeed, beforeMeetingSeed, handleTodoSeed, processNoteSeed, readMeetingSeed } from '../lib/agent-nudges';
+import {
+  askSelectionSeed,
+  beforeMeetingSeed,
+  handleTodoSeed,
+  processNoteSeed,
+  readMeetingSeed,
+} from '../lib/agent-nudges';
 import { localDateStr } from '../lib/dates';
 
 /** "today 14:00" / "tomorrow" / "in 3d" — when the meeting starts, or null if past. */
@@ -34,10 +52,13 @@ function upcomingLabel(frontmatter: Record<string, unknown>): string | null {
   const iso = time && !date.includes('T') ? `${date}T${time}` : date;
   const t = Date.parse(iso);
   if (Number.isNaN(t) || t <= Date.now()) return null;
-  if (new Date(t).toDateString() === new Date().toDateString()) return time ? `today ${time}` : 'today';
+  if (new Date(t).toDateString() === new Date().toDateString())
+    return time ? `today ${time}` : 'today';
   const days = Math.ceil((t - Date.now()) / 86_400_000);
   return days === 1 ? 'tomorrow' : `in ${days} days`;
 }
+
+const LINKS_OPEN_KEY = 'qale.note.links.open';
 
 /** Typed groups first, alphabetical; untyped mentions last as "Linked from". */
 function groupBacklinks(backlinks: BacklinkDTO[]): { label: string; items: BacklinkDTO[] }[] {
@@ -51,8 +72,107 @@ function groupBacklinks(backlinks: BacklinkDTO[]): { label: string; items: Backl
   return [...groups.entries()]
     .map(([label, items]) => ({ label, items }))
     .sort((a, b) =>
-      a.label === 'Linked from' ? 1 : b.label === 'Linked from' ? -1 : a.label.localeCompare(b.label),
+      a.label === 'Linked from'
+        ? 1
+        : b.label === 'Linked from'
+          ? -1
+          : a.label.localeCompare(b.label),
     );
+}
+
+/**
+ * Inbound edges as a quiet footer: one folded row under the note, titles only.
+ * What links here is context for the page, not part of it, so it stays out of
+ * the way until asked for — and the preference sticks once you open it.
+ */
+function LinksSection({
+  backlinks,
+  onOpen,
+}: {
+  backlinks: BacklinkDTO[];
+  onOpen: (path: string, opts?: NavOpts) => void;
+}) {
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(LINKS_OPEN_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () => {
+    setOpen((was) => {
+      try {
+        localStorage.setItem(LINKS_OPEN_KEY, was ? '0' : '1');
+      } catch {
+        /* private-mode / file:// builds just lose the preference */
+      }
+      return !was;
+    });
+  };
+  const groups = groupBacklinks(backlinks);
+
+  return (
+    <section className="mt-8 border-t border-border/60 pt-3">
+      <button
+        className="flex items-center gap-1.5 rounded-md py-0.5 text-xs text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:hover:text-muted-foreground/80"
+        onClick={toggle}
+        aria-expanded={backlinks.length > 0 ? open : undefined}
+        disabled={backlinks.length === 0}
+      >
+        <ChevronRight
+          className={`size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none ${
+            open ? 'rotate-90' : ''
+          } ${backlinks.length === 0 ? 'opacity-0' : ''}`}
+          aria-hidden
+        />
+        <Link2 className="size-3.5 shrink-0" aria-hidden />
+        {backlinks.length === 0 ? 'Nothing links here yet' : `Links (${backlinks.length})`}
+      </button>
+
+      {backlinks.length > 0 && (
+        <div
+          className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${
+            open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+          }`}
+        >
+          <div className="overflow-hidden">
+            <div className="flex flex-col gap-3 pt-2 pb-1">
+              {groups.map(({ label, items }) => (
+                <div key={label}>
+                  <div className="px-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
+                    {label}
+                  </div>
+                  <ul className="mt-0.5">
+                    {items.map((b) => {
+                      const Icon = noteTypeIcon(b.from.type);
+                      return (
+                        <li key={`${b.from.path}:${b.type ?? ''}`}>
+                          <button
+                            className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                            onClick={(e) => onOpen(b.from.path, navFromEvent(e))}
+                            onAuxClick={(e) =>
+                              e.button === 1 && onOpen(b.from.path, navFromEvent(e))
+                            }
+                            tabIndex={open ? undefined : -1}
+                          >
+                            <Icon
+                              className="size-3.5 shrink-0 text-muted-foreground/70"
+                              aria-hidden
+                            />
+                            <span className="truncate">{b.from.title}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
 }
 
 /**
@@ -73,8 +193,22 @@ function chatForReceipt(
 }
 
 export function NoteView({ path }: { path: string }) {
-  const { docData, openDoc, openFolder, loadDoc, saveNote, renameNote, deleteNote, openSession, openChat, sessions, favorites, toggleFavorite, search, markMeetingReviewed } =
-    useApp();
+  const {
+    docData,
+    openDoc,
+    openFolder,
+    loadDoc,
+    saveNote,
+    renameNote,
+    deleteNote,
+    openSession,
+    openChat,
+    sessions,
+    favorites,
+    toggleFavorite,
+    search,
+    markMeetingReviewed,
+  } = useApp();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   // The live editor's "save what's typed, now". Restoring a version replaces
@@ -165,7 +299,9 @@ export function NoteView({ path }: { path: string }) {
       ? currentNote.frontmatter['url']
       : null;
   const upcoming =
-    currentNote.type === 'meeting' && !eventCancelled ? upcomingLabel(currentNote.frontmatter) : null;
+    currentNote.type === 'meeting' && !eventCancelled
+      ? upcomingLabel(currentNote.frontmatter)
+      : null;
   const offerBrief = upcoming !== null && !/^## Prep\b/m.test(currentNote.body);
   // A meeting the calendar made, that has already happened, and that holds
   // nothing at all. Without this the page is machine frontmatter over a blank
@@ -186,7 +322,8 @@ export function NoteView({ path }: { path: string }) {
    * holds, because a review that failed to start had no way to be started again.
    */
   const pastMeeting = currentNote.type === 'meeting' && !eventCancelled && upcoming === null;
-  const meetingTranscripts = currentNote.type === 'meeting' ? transcriptRefs(currentNote.frontmatter) : [];
+  const meetingTranscripts =
+    currentNote.type === 'meeting' ? transcriptRefs(currentNote.frontmatter) : [];
   const unreadMeeting = pastMeeting && meetingTranscripts.length > 0;
   /** The material's own door back into the tray, with the meeting preset. */
   const addTranscript = () =>
@@ -203,7 +340,9 @@ export function NoteView({ path }: { path: string }) {
   // carry in their filename. Null when the session is gone, and then the receipt
   // is the whole record.
   const receiptChat =
-    currentNote.type === 'session' ? chatForReceipt(currentNote.path, currentNote.frontmatter, sessions) : null;
+    currentNote.type === 'session'
+      ? chatForReceipt(currentNote.path, currentNote.frontmatter, sessions)
+      : null;
   // Where you are, in the words the app uses everywhere else: type glyph →
   // the shelf this note sits on (opens it) → the note's own name. Never the
   // file path: where a note is stored is not something the reader has to know,
@@ -246,20 +385,25 @@ export function NoteView({ path }: { path: string }) {
               onClick={() =>
                 openSession('process-note', {
                   initialPrompt: processNoteSeed(currentNote.path),
-                  title: `Process: ${currentNote.title}`,
+                  title: `Go through: ${currentNote.title}`,
                   fresh: true,
                 })
               }
               title="Work this note into the memory: clean it up, update the pages it touches, file what it implies, all as approval cards. Re-run anytime after adding more."
             >
-              <Sparkles className="size-3.5" /> Process
+              <Sparkles className="size-3.5" /> Go through this note
             </Button>
           )}
           {/* Every past meeting can take another recording, not only the empty
               ones: a second half, a colleague's copy, a transcript that arrived
               a week late all used to have nowhere to go (AR-4). */}
           {pastMeeting && (
-            <Button size="sm" variant="secondary" onClick={addTranscript} title="Add a recording to this meeting">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={addTranscript}
+              title="Add a recording to this meeting"
+            >
               <Mic className="size-3.5" /> Add transcript
             </Button>
           )}
@@ -269,13 +413,16 @@ export function NoteView({ path }: { path: string }) {
               onClick={() =>
                 openSession('arrival', {
                   initialPrompt: readMeetingSeed(currentNote.path),
-                  title: `Read: ${currentNote.title}`,
+                  title: `Go through: ${currentNote.title}`,
                   fresh: true,
                 })
               }
-              title="Read this meeting's transcripts and propose what they change, as approval cards."
+              title="Go through this meeting's transcripts and propose what they change, as approval cards."
             >
-              <Sparkles className="size-3.5" /> Read this meeting
+              <Sparkles className="size-3.5" />{' '}
+              {meetingTranscripts.length > 1
+                ? 'Go through the transcripts'
+                : 'Go through the transcript'}
             </Button>
           )}
           {todoOpen && (
@@ -287,8 +434,14 @@ export function NoteView({ path }: { path: string }) {
                     {
                       path: currentNote.path,
                       title: currentNote.title,
-                      due: typeof currentNote.frontmatter['due'] === 'string' ? currentNote.frontmatter['due'] : null,
-                      owner: typeof currentNote.frontmatter['owner'] === 'string' ? currentNote.frontmatter['owner'] : null,
+                      due:
+                        typeof currentNote.frontmatter['due'] === 'string'
+                          ? currentNote.frontmatter['due']
+                          : null,
+                      owner:
+                        typeof currentNote.frontmatter['owner'] === 'string'
+                          ? currentNote.frontmatter['owner']
+                          : null,
                     },
                     localDateStr(),
                   ),
@@ -304,7 +457,11 @@ export function NoteView({ path }: { path: string }) {
           {confirmDelete ? (
             <div className="flex items-center gap-1.5 pl-1">
               <span className="text-xs text-muted-foreground">Delete this note?</span>
-              <Button size="sm" variant="destructive" onClick={() => void deleteNote(currentNote.path)}>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => void deleteNote(currentNote.path)}
+              >
                 Delete
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>
@@ -316,12 +473,12 @@ export function NoteView({ path }: { path: string }) {
               <HeaderAction
                 icon={Pin}
                 label={favorites.includes(currentNote.path) ? 'Unpin' : 'Pin'}
-                title={
-                  favorites.includes(currentNote.path) ? 'Unpin' : 'Pin: keep on the sidebar'
-                }
+                title={favorites.includes(currentNote.path) ? 'Unpin' : 'Pin: keep on the sidebar'}
                 onClick={() => toggleFavorite(currentNote.path)}
                 pressed={favorites.includes(currentNote.path)}
-                iconClassName={favorites.includes(currentNote.path) ? 'fill-brand text-brand' : undefined}
+                iconClassName={
+                  favorites.includes(currentNote.path) ? 'fill-brand text-brand' : undefined
+                }
               />
               <HeaderMenu
                 items={[
@@ -337,7 +494,12 @@ export function NoteView({ path }: { path: string }) {
                       ]
                     : []),
                   { label: 'Version history', icon: History, action: () => setShowHistory(true) },
-                  { label: 'Delete note', icon: Trash2, action: () => setConfirmDelete(true), danger: true },
+                  {
+                    label: 'Delete note',
+                    icon: Trash2,
+                    action: () => setConfirmDelete(true),
+                    danger: true,
+                  },
                 ]}
               />
             </HeaderActions>
@@ -371,13 +533,18 @@ export function NoteView({ path }: { path: string }) {
                   <CalendarDays className="size-3.5" aria-hidden /> Google Calendar
                 </a>
               ) : (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Synced from Google Calendar">
+                <span
+                  className="flex items-center gap-1 text-xs text-muted-foreground"
+                  title="Synced from Google Calendar"
+                >
                   <CalendarDays className="size-3.5" aria-hidden /> Google Calendar
                 </span>
               ))}
           </div>
           {currentNote.type === 'session' ? (
-            <h1 className="mb-1 font-serif text-2xl font-semibold tracking-tight">{currentNote.title}</h1>
+            <h1 className="mb-1 font-serif text-2xl font-semibold tracking-tight">
+              {currentNote.title}
+            </h1>
           ) : (
             <TitleEditor
               key={`${currentNote.path}:${currentNote.title}`}
@@ -483,41 +650,15 @@ export function NoteView({ path }: { path: string }) {
             <Markdown content={currentNote.body} onOpenNote={openDoc} />
           )}
 
-          <Separator className="my-6" />
-
-          {/* Inbound edges grouped by relationship:
-              typed groups first ("Blocked by", "Evidence for"), the untyped
-              mentions last under the familiar "Linked from". */}
-          {backlinks.length === 0 ? (
-            <>
-              <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <Link2 className="size-3.5" /> Linked from (0)
-              </div>
-              <p className="text-sm text-muted-foreground">No backlinks yet.</p>
-            </>
-          ) : (
-            groupBacklinks(backlinks).map(({ label, items }) => (
-              <div key={label} className="mb-3">
-                <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <Link2 className="size-3.5" /> {label} ({items.length})
-                </div>
-                <ul className="flex flex-col gap-1">
-                  {items.map((b) => (
-                    <li key={`${b.from.path}:${b.type ?? ''}`}>
-                      <button
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
-                        onClick={(e) => openDoc(b.from.path, navFromEvent(e))}
-                        onAuxClick={(e) => e.button === 1 && void openDoc(b.from.path, navFromEvent(e))}
-                      >
-                        <span className="font-medium">{b.from.title}</span>
-                        <span className="truncate text-xs text-muted-foreground">{b.from.summary}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))
-          )}
+          {/* Inbound edges grouped by relationship: typed groups first
+              ("Blocked by", "Evidence for"), untyped mentions last under the
+              familiar "Linked from". */}
+          <LinksSection
+            backlinks={backlinks}
+            onOpen={(p, opts) => {
+              void openDoc(p, opts);
+            }}
+          />
         </div>
       </div>
       <NoteHistory

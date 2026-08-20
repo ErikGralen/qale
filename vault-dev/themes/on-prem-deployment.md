@@ -1,9 +1,14 @@
 ---
-type: "theme"
-summary: "On-prem and self-hosted deployment: asked for twice, declined both times"
-tags: ["compliance"]
-stance: "wont-do"
-evidence: ["[[insights/on-prem-asks-are-security-asks]]", "[[meetings/2026-06-16-fenno-energi-intro]]", "[[meetings/2026-07-02-bergman-falk-security-review]]"]
+type: 'theme'
+summary: 'On-prem and self-hosted deployment: asked for twice, declined both times'
+tags: ['compliance']
+stance: 'wont-do'
+evidence:
+  [
+    '[[insights/on-prem-asks-are-security-asks]]',
+    '[[meetings/2026-06-16-fenno-energi-intro]]',
+    '[[meetings/2026-07-02-bergman-falk-security-review]]',
+  ]
 ---
 
 # On-prem deployment

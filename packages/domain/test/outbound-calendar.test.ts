@@ -8,7 +8,12 @@ import { zOutboundPayload } from '../src/index.js';
  * react, not at approval. These pin the per-action superRefine.
  */
 
-const base = { provider: 'google-calendar' as const, system: 'google-calendar' as const, body: 'x', rationale: 'r' };
+const base = {
+  provider: 'google-calendar' as const,
+  system: 'google-calendar' as const,
+  body: 'x',
+  rationale: 'r',
+};
 
 test('create_event: needs a title and a start', () => {
   assert.equal(zOutboundPayload.safeParse({ ...base, action: 'create_event' }).success, false);
@@ -17,14 +22,22 @@ test('create_event: needs a title and a start', () => {
     false,
   );
   assert.equal(
-    zOutboundPayload.safeParse({ ...base, action: 'create_event', title: 'Follow-up', start: '2026-08-04T15:00:00+02:00' }).success,
+    zOutboundPayload.safeParse({
+      ...base,
+      action: 'create_event',
+      title: 'Follow-up',
+      start: '2026-08-04T15:00:00+02:00',
+    }).success,
     true,
   );
 });
 
 test('update_event: needs an eventId', () => {
   assert.equal(zOutboundPayload.safeParse({ ...base, action: 'update_event' }).success, false);
-  assert.equal(zOutboundPayload.safeParse({ ...base, action: 'update_event', eventId: 'evt-1' }).success, true);
+  assert.equal(
+    zOutboundPayload.safeParse({ ...base, action: 'update_event', eventId: 'evt-1' }).success,
+    true,
+  );
 });
 
 test('respond_to_event: needs eventId, attendeeEmail and responseStatus', () => {
@@ -33,7 +46,12 @@ test('respond_to_event: needs eventId, attendeeEmail and responseStatus', () => 
     false,
   );
   assert.equal(
-    zOutboundPayload.safeParse({ ...base, action: 'respond_to_event', eventId: 'evt-1', attendeeEmail: 'erik@tavla.example' }).success,
+    zOutboundPayload.safeParse({
+      ...base,
+      action: 'respond_to_event',
+      eventId: 'evt-1',
+      attendeeEmail: 'erik@tavla.example',
+    }).success,
     false,
   );
   assert.equal(

@@ -82,7 +82,14 @@ test('linkTypeOptions offers only relationships that fit the target', () => {
 
 test('linkTypeOptions writes the token for the direction it offers', () => {
   const blockedBy = linkTypeOptions('ticket').find((o) => o.label === 'blocked by');
-  assert.deepEqual(blockedBy, { type: 'blocks', reversed: true, token: 'blocked-by', label: 'blocked by' });
+  assert.deepEqual(blockedBy, {
+    type: 'blocks',
+    reversed: true,
+    token: 'blocked-by',
+    label: 'blocked by',
+  });
   // Symmetric / backlink-only inverses are never offered as an authoring choice.
-  assert.ok(!linkTypeOptions(null).some((o) => o.label === 'related to' || o.label === 'mentioned in'));
+  assert.ok(
+    !linkTypeOptions(null).some((o) => o.label === 'related to' || o.label === 'mentioned in'),
+  );
 });

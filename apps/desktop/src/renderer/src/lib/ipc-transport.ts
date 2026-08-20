@@ -11,13 +11,23 @@ import { invoke, onEvent } from './ipc';
  */
 export class IpcChatTransport implements ChatTransport<UIMessage> {
   private sessionId: string | undefined;
+  /**
+   * The skill the last attempt ran with. A retry (`regenerate-message`) is the
+   * same turn a second time, so it must run the same way: the opening skill is
+   * spent on the first send and a picked one is consumed by the caller as it
+   * goes, which would leave a kickoff that failed before the session existed
+   * retrying as a plain message with "Run the meeting-prep skill on …" as its
+   * text. Re-invoking a skill already in force is a no-op in the runtime, so
+   * passing it again costs nothing in the ordinary case.
+   */
+  private lastSkill: string | undefined;
 
   constructor(
     /**
      * The skill this conversation opens on, when it was started from a tile or
-     * an entry-point button. Spent on the first send: it is an instruction for
-     * the first turn, not a property of the conversation. A picked skill on that
-     * same turn overrides it — the PM's later choice wins.
+     * an entry-point button. Spent on the first turn that starts: it is an
+     * instruction for that turn, not a property of the conversation. A picked
+     * skill on that same turn overrides it — the PM's later choice wins.
      */
     private openingSkill?: string,
     initialSessionId?: string,
@@ -42,9 +52,10 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
   async sendMessages(
     options: Parameters<ChatTransport<UIMessage>['sendMessages']>[0],
   ): Promise<ReadableStream<UIMessageChunk>> {
-    const { messages, abortSignal } = options;
+    const { messages, abortSignal, trigger } = options;
     const last = messages[messages.length - 1];
     const prompt = last ? extractText(last) : '';
+    const retry = trigger === 'regenerate-message';
 
     let streamId: string | null = null;
     const buffer: UIMessageChunk[] = [];
@@ -72,8 +83,8 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
         });
 
         try {
-          const skill = this.takePickedSkill?.() ?? this.openingSkill;
-          this.openingSkill = undefined;
+          const skill = retry ? this.lastSkill : (this.takePickedSkill?.() ?? this.openingSkill);
+          this.lastSkill = skill;
           const modelId = this.pickedModel?.();
           const handle = await invoke['agent:run']({
             sessionId: this.sessionId,
@@ -81,6 +92,10 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
             ...(skill ? { skill } : {}),
             ...(modelId ? { modelId } : {}),
           });
+          // Spent once the run has actually started, not once it has been asked
+          // for: a first turn refused before there was a session (no key yet)
+          // keeps its skill so the retry opens on it.
+          this.openingSkill = undefined;
           this.sessionId = handle.sessionId;
           // Reported on every run, not just id changes — the shell also uses
           // this as the "conversation has real content" signal for tabs.

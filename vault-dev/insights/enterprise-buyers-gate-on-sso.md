@@ -1,10 +1,11 @@
 ---
-type: "insight"
-summary: "Enterprise security reviews treat missing SAML SSO as an automatic fail"
-tags: ["enterprise-auth"]
-evidence: ["[[meetings/2026-05-18-nordkap-qbr]]", "[[meetings/2026-07-02-bergman-falk-security-review]]"]
-confidence: "high"
-theme: "[[themes/enterprise-onboarding]]"
+type: 'insight'
+summary: 'Enterprise security reviews treat missing SAML SSO as an automatic fail'
+tags: ['enterprise-auth']
+evidence:
+  ['[[meetings/2026-05-18-nordkap-qbr]]', '[[meetings/2026-07-02-bergman-falk-security-review]]']
+confidence: 'high'
+theme: '[[themes/enterprise-onboarding]]'
 ---
 
 Every enterprise evaluation since autumn 2025 has had SSO on the pass/fail list. Two of the

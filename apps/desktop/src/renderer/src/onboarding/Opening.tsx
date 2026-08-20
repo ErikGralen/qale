@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { OPENING_STEPS, type OpeningStepId } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { Hello } from './screens/Hello';
@@ -7,15 +8,15 @@ import { Files } from './screens/Files';
 import { ApiKey } from './screens/ApiKey';
 import { Connections } from './screens/Connections';
 import { Telemetry } from './screens/Telemetry';
-import { FirstLight } from './screens/FirstLight';
 
 /**
  * The opening (docs/onboarding.md ONB-2) — the app's first two minutes.
  *
  * A takeover, not a dialog: it owns the whole viewport, it renders before any
  * workspace exists, and Escape does not close it. Only the explicit skips move
- * anyone past a screen they didn't answer, which is the difference between a
- * flow that respects people and one that traps them.
+ * anyone past a screen they didn't answer, and every screen after the first can
+ * be walked back — a flow you can only go forward in is a trap, whatever it says
+ * about respecting people.
  *
  * Every completed screen is written to settings as it happens, so quitting
  * halfway resumes exactly here (ONB-1). The frame holds no answers of its own;
@@ -23,10 +24,17 @@ import { FirstLight } from './screens/FirstLight';
  * of the app uses, and hands back only "done" or "skipped".
  */
 
+/**
+ * The way back, handed down the tree rather than passed screen by screen. The
+ * frame is the only thing that knows what came before, so no screen can forget
+ * to offer it, and none can offer it where there is nothing behind (screen one).
+ */
+const BackContext = createContext<(() => void) | null>(null);
+
 /** Which screen a resume lands on: the first one still unanswered. */
 function resumeAt(done: OpeningStepId[], skipped: string[]): OpeningStepId {
   const settled = new Set<string>([...done, ...skipped]);
-  return OPENING_STEPS.find((s) => !settled.has(s)) ?? 'first-light';
+  return OPENING_STEPS.find((s) => !settled.has(s)) ?? 'telemetry';
 }
 
 export function Opening() {
@@ -44,6 +52,7 @@ export function Opening() {
 
   const index = OPENING_STEPS.indexOf(step);
   const nextStep = OPENING_STEPS[index + 1];
+  const prevStep = OPENING_STEPS[index - 1];
 
   const advance = useCallback(
     async (how: 'done' | 'skipped') => {
@@ -57,26 +66,39 @@ export function Opening() {
 
   const next = useCallback(() => void advance('done'), [advance]);
   const skip = useCallback(() => void advance('skipped'), [advance]);
-  /** The last screen's doors both end the opening; the shell is behind it. */
-  const finish = useCallback(() => {
-    void patchOnboarding({ done: 'first-light', finished: true });
-  }, [patchOnboarding]);
 
   /**
-   * Enter advances, everywhere — one listener rather than seven, so no screen
-   * can quietly forget it. It clicks the screen's own primary button, which
-   * means the disabled rules each screen sets are obeyed for free. A textarea
-   * (only First light has one within reach) keeps its own Enter.
+   * Back only moves the marker. What a screen already wrote stays written — the
+   * key is still saved, the folder is still open — so going back is a chance to
+   * look at an answer again, never a quiet undo of it. The screens that took
+   * something show what they have when you land on them a second time.
+   */
+  const back = useMemo(
+    () => (prevStep ? () => void patchOnboarding({ step: prevStep }) : null),
+    [patchOnboarding, prevStep],
+  );
+
+  /**
+   * Enter advances, everywhere — one listener rather than one per screen, so no
+   * screen can quietly forget it. It clicks the screen's own primary button,
+   * which means the disabled rules each screen sets are obeyed for free. A
+   * textarea keeps its own Enter.
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       const target = e.target;
-      if (target instanceof HTMLElement && (target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'TEXTAREA' || target.isContentEditable)
+      )
+        return;
       // A focused button is already Enter's business — let the browser do it,
       // or a skip link would fire the primary action instead of itself.
-      if (target instanceof HTMLElement && (target.tagName === 'BUTTON' || target.tagName === 'A')) return;
-      const primary = surfaceRef.current?.querySelector<HTMLButtonElement>('[data-opening-primary]');
+      if (target instanceof HTMLElement && (target.tagName === 'BUTTON' || target.tagName === 'A'))
+        return;
+      const primary =
+        surfaceRef.current?.querySelector<HTMLButtonElement>('[data-opening-primary]');
       if (!primary || primary.disabled) return;
       e.preventDefault();
       primary.click();
@@ -113,21 +135,23 @@ export function Opening() {
       <div className="h-9 shrink-0" />
       <div className="flex min-h-0 flex-1 items-center justify-center px-8 pb-16">
         {/* Keyed by step so each screen mounts fresh: its entrance runs, its
-            fields start empty, and no state leaks across a boundary. */}
+            fields read what is stored rather than what the last screen left
+            behind, and no state leaks across a boundary. */}
         <div
           key={step}
           className="w-full max-w-[34rem] animate-in duration-300 ease-out fade-in slide-in-from-bottom-2 motion-reduce:animate-none"
         >
-          {step === 'hello' && <Hello onNext={next} />}
-          {step === 'you' && <You onNext={next} />}
-          {step === 'files' && <Files onNext={next} />}
-          {step === 'key' && <ApiKey onNext={next} onSkip={skip} />}
-          {step === 'connections' && <Connections onNext={next} onSkip={skip} />}
-          {step === 'telemetry' && <Telemetry onNext={next} />}
-          {step === 'first-light' && <FirstLight onFinish={finish} />}
+          <BackContext.Provider value={back}>
+            {step === 'hello' && <Hello onNext={next} />}
+            {step === 'you' && <You onNext={next} />}
+            {step === 'files' && <Files onNext={next} />}
+            {step === 'key' && <ApiKey onNext={next} onSkip={skip} />}
+            {step === 'connections' && <Connections onNext={next} onSkip={skip} />}
+            {step === 'telemetry' && <Telemetry onNext={next} />}
+          </BackContext.Provider>
         </div>
       </div>
-      {/* Quiet, and quiet on purpose: knowing there are seven is worth one
+      {/* Quiet, and quiet on purpose: knowing how many there are is worth one
           line, and a progress bar would make a two-minute flow feel like a
           form to get through. */}
       <div className="pointer-events-none absolute inset-x-0 bottom-6 text-center text-xs text-muted-foreground/70 tabular-nums">
@@ -153,8 +177,22 @@ export function Screen({
   children?: React.ReactNode;
   footer: React.ReactNode;
 }) {
+  const back = useContext(BackContext);
   return (
     <div className="flex flex-col gap-6">
+      {/* Above the title, where the thing you came from was: the way back reads
+          as part of the flow rather than as another choice competing with the
+          primary button at the bottom. */}
+      {back && (
+        <button
+          type="button"
+          onClick={back}
+          className="-mb-2 -ml-1 flex w-fit items-center gap-1 rounded px-1 py-0.5 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none"
+        >
+          <ChevronLeft className="size-4" aria-hidden />
+          Back
+        </button>
+      )}
       <div className="space-y-2">
         {lead}
         <h1 className="font-serif text-greeting leading-tight font-semibold tracking-tight text-balance">

@@ -2,6 +2,7 @@ export type {
   Connector,
   ConnectorProvider,
   ConnectorHealth,
+  ContainerFootprint,
   ContainerKind,
   EventChange,
   ExternalContainer,

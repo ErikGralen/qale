@@ -63,10 +63,15 @@ export function decodeArgs<T>(value: T): T {
  */
 export function withDecodedArgs(tools: ToolDefinition[]): ToolDefinition[] {
   return tools.map((tool) => {
-    const inner = tool.execute.bind(tool) as (id: string, params: unknown, signal?: AbortSignal) => unknown;
+    const inner = tool.execute.bind(tool) as (
+      id: string,
+      params: unknown,
+      signal?: AbortSignal,
+    ) => unknown;
     return {
       ...tool,
-      execute: (id: string, params: unknown, signal?: AbortSignal) => inner(id, decodeArgs(params), signal),
+      execute: (id: string, params: unknown, signal?: AbortSignal) =>
+        inner(id, decodeArgs(params), signal),
     } as ToolDefinition;
   });
 }

@@ -112,9 +112,14 @@ export class McpService {
         const ctx = this.getContext();
         if (!ctx) return textResult('No workspace is open.');
         const hits = searchNotes(ctx, question, 6);
-        if (hits.length === 0) return textResult('vet inte — no supporting evidence in the memory.');
-        const body = hits.map((h) => `- ${h.path} (${h.type}) — ${h.summary}\n    ${h.snippet}`).join('\n');
-        return textResult(`Evidence from the product memory:\n${body}\n\nCite these paths in your answer.`);
+        if (hits.length === 0)
+          return textResult('vet inte — no supporting evidence in the memory.');
+        const body = hits
+          .map((h) => `- ${h.path} (${h.type}) — ${h.summary}\n    ${h.snippet}`)
+          .join('\n');
+        return textResult(
+          `Evidence from the product memory:\n${body}\n\nCite these paths in your answer.`,
+        );
       },
     );
 
@@ -130,7 +135,13 @@ export class McpService {
       async ({ summary, body, sources, supersedes }) => {
         const ctx = this.getContext();
         if (!ctx) return textResult('No workspace is open.');
-        const slug = summary.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').slice(0, 48) || 'decision';
+        const slug =
+          summary
+            .toLowerCase()
+            .replace(/[^\w\s-]/g, '')
+            .trim()
+            .replace(/\s+/g, '-')
+            .slice(0, 48) || 'decision';
         const path = `decisions/${ctx.clock.now().slice(0, 10)}-${slug}.md`;
         const rec = createProposal(ctx, {
           kind: 'decision',
@@ -138,7 +149,13 @@ export class McpService {
           skill: 'mcp',
           targetPath: path,
           baseHash: null,
-          payload: { path, frontmatter: { type: 'decision', summary, sources }, body, rationale: `Logged via MCP: ${summary}`, ...(supersedes ? { supersedes } : {}) },
+          payload: {
+            path,
+            frontmatter: { type: 'decision', summary, sources },
+            body,
+            rationale: `Logged via MCP: ${summary}`,
+            ...(supersedes ? { supersedes } : {}),
+          },
           rationale: `Logged via MCP: ${summary}`,
           evidence: sources.map((s) => ({ ref: s, resolved: true })),
           inference: sources.length === 0,
@@ -176,7 +193,9 @@ export class McpService {
           rationale: `Drafted via MCP for ${provider ?? 'unknown'}`,
         });
         if (!parsed.success) {
-          return textResult(`Rejected: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+          return textResult(
+            `Rejected: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+          );
         }
         const rec = createProposal(ctx, {
           kind: 'outbound',
@@ -190,7 +209,9 @@ export class McpService {
           inference: false,
         });
         this.onChanged();
-        return textResult(`Outbound draft card ${rec.id} filed to the Inbox for approval (${parsed.data.provider}).`);
+        return textResult(
+          `Outbound draft card ${rec.id} filed to the Inbox for approval (${parsed.data.provider}).`,
+        );
       },
     );
 

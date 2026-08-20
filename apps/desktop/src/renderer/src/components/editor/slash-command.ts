@@ -31,8 +31,21 @@ const BLOCK_ALIASES: Record<string, string[]> = {
 
 const SLASH_ITEMS: SlashItem[] = [
   ...BLOCK_TYPES.map((b) => ({ ...b, group: 'Blocks' as const, aliases: BLOCK_ALIASES[b.key] })),
-  { key: 'divider', label: 'Divider', icon: Minus, group: 'Insert', aliases: ['hr', 'rule', 'separator'], run: (e) => e.chain().focus().setHorizontalRule().run() },
-  { key: 'table', label: 'Table', icon: Table, group: 'Insert', run: (e) => e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+  {
+    key: 'divider',
+    label: 'Divider',
+    icon: Minus,
+    group: 'Insert',
+    aliases: ['hr', 'rule', 'separator'],
+    run: (e) => e.chain().focus().setHorizontalRule().run(),
+  },
+  {
+    key: 'table',
+    label: 'Table',
+    icon: Table,
+    group: 'Insert',
+    run: (e) => e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+  },
   {
     key: 'wikilink',
     label: 'Link to note',
@@ -61,8 +74,7 @@ export const SlashCommand = Extension.create({
           if (!q) return SLASH_ITEMS;
           return SLASH_ITEMS.filter(
             (item) =>
-              item.label.toLowerCase().includes(q) ||
-              item.aliases?.some((a) => a.includes(q)),
+              item.label.toLowerCase().includes(q) || item.aliases?.some((a) => a.includes(q)),
           );
         },
         command: ({ editor, range, props: item }) => {

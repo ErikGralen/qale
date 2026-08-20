@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { shell } from 'electron';
 import { CalendarAuthError } from '@qale/connectors';
 import { googleClientId, googleClientSecret } from '../build-env.js';
+import { registerSecretValue } from '../log.js';
 import type { SettingsService } from './settings-service.js';
 
 /**
@@ -113,6 +114,11 @@ export class GoogleOAuthService {
         `Google sign-in didn't complete: ${tokens.error_description ?? tokens.error ?? `HTTP ${res.status}`}`,
       );
     }
+    // An access token is never persisted, so nothing else will ever tell the log
+    // scrubber about it. The refresh token rides along through setGoogle, but
+    // register it here too: it exists before the write does.
+    registerSecretValue(tokens.access_token);
+    registerSecretValue(tokens.refresh_token);
     // Persist the granted scopes (Google echoes what the user actually approved)
     // so a later write knows whether it still needs incremental consent.
     await this.settings.setGoogle(
@@ -187,6 +193,9 @@ export class GoogleOAuthService {
         `Google token refresh failed: ${tokens.error_description ?? tokens.error ?? `HTTP ${res.status}`}`,
       );
     }
+    // A refresh rotates the access token; the one it replaces stays registered,
+    // because a line already in the buffer still carries it.
+    registerSecretValue(tokens.access_token);
     this.accessToken = {
       token: tokens.access_token,
       expiresAt: Date.now() + (tokens.expires_in ?? 3600) * 1000,
@@ -223,13 +232,25 @@ export class GoogleOAuthService {
         const finishPage = (line: string): void => {
           res
             .writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-            .end(`<html><body style="font-family:system-ui;margin:3rem"><p>${line}</p></body></html>`);
+            .end(
+              `<html><body style="font-family:system-ui;margin:3rem"><p>${line}</p></body></html>`,
+            );
         };
         const err = url.searchParams.get('error');
         const code = url.searchParams.get('code');
         if (err || !code || url.searchParams.get('state') !== state) {
-          finishPage('Sign-in didn’t complete — you can close this tab and try again from the app.');
-          settle(() => reject(new Error(err === 'access_denied' ? 'Google access was declined.' : 'Google sign-in didn’t complete.')));
+          finishPage(
+            'Sign-in didn’t complete — you can close this tab and try again from the app.',
+          );
+          settle(() =>
+            reject(
+              new Error(
+                err === 'access_denied'
+                  ? 'Google access was declined.'
+                  : 'Google sign-in didn’t complete.',
+              ),
+            ),
+          );
           return;
         }
         finishPage('Connected — you can close this tab and return to the app.');

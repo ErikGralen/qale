@@ -10,9 +10,9 @@ duration_minutes: 30
 participants:
   - me
   - Sara Lindqvist
-customer: "[[customers/nordkap-payments]]"
+customer: '[[customers/nordkap-payments]]'
 series: nordkap-checkin
-transcript: "[[sources/2026-07-14-nordkap-checkin-transcript]]"
+transcript: '[[sources/2026-07-14-nordkap-checkin-transcript]]'
 ---
 
 ## Summary

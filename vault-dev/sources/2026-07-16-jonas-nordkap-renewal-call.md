@@ -6,7 +6,7 @@ source:
   system: transcript
 captured: 2026-07-16
 origin: Jonas Palm
-customer: "[[customers/nordkap-payments]]"
+customer: '[[customers/nordkap-payments]]'
 ---
 
 Jonas (sales): So, renewal. Where's your head at?

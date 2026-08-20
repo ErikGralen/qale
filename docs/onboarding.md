@@ -19,10 +19,10 @@ workspace is a dev script pointed at a gitignored folder.
 
 Two halves, deliberately different in character:
 
-1. **The opening.** A full-screen flow on first launch. Seven short screens, one question each, a
+1. **The opening.** A full-screen flow on first launch. Six short screens, one question each, a
    couple of minutes total (less if you skip the connections). It collects the things the app
    genuinely needs (who you are, where your files live, the key, what it may read, consent) and
-   ends not on a form but on the first thing worth looking at.
+   then gets out of the way.
 2. **First steps.** A short list of real tasks on Home that teach the product by having it do its
    job: drop a transcript, decide on a proposal, prep for a meeting. Each checks itself off when the
    real thing happens, not when you click "next". This is also where skipped setup steps wait, so
@@ -37,10 +37,10 @@ Two halves, deliberately different in character:
 - **Skippable means silent.** Anything the app can live without (the key, the connections,
   consent) has a visible skip. Skipping is recorded and the item reappears once in First steps. It
   never nags, no badge, no red dot.
-- **Build toward a payoff.** The screens get shorter as you go, and the last one is not a form: it
-  is your own transcript being read, or your own week arriving from the calendar you just
-  connected. Nothing in the workspace is ever fake, so the suspense is real: the thing being
-  revealed is the product working on your material.
+- **Build toward a payoff.** The screens get shorter as you go, and the payoff is not inside the
+  opening at all: it is your own transcript being read, or your own week arriving from the calendar
+  you just connected, once the app is in front of you. Nothing in the workspace is ever fake, so
+  the suspense is real: the thing being revealed is the product working on your material.
 - **Respect over confetti.** No "Awesome!", no fireworks, no mascot. A completed First step gets a
   quiet check and one line about what just happened. The reward is the product doing something
   real with your material.
@@ -48,6 +48,10 @@ Two halves, deliberately different in character:
   no jargon. This is the first text a user ever reads from us.
 - **Interruptible.** Quitting mid-flow resumes at the same step next launch. Every completed step
   is saved as it happens.
+- **Reversible.** Every screen after the first has a quiet Back above the title. It only moves the
+  marker: what a screen already wrote stays written, and the three screens that took something (your
+  name, the folder, the key) show what they hold when you land on them again, so going back is how a
+  typo in your own address gets fixed rather than a way to lose an answer.
 
 ### The opening, screen by screen
 
@@ -87,8 +91,10 @@ the existing Settings → Connections machinery, in a first-run frame).
 Connecting is not the finish line. Nothing is followed by default, so a connection with no
 projects, spaces or calendars picked does nothing at all. The moment a connection verifies, the
 row expands into its container list and asks the second question: which of these should it watch?
-Keep that list short and honest, preselect nothing, and let one tick be enough to move on. The
-same list lives in Settings afterwards, so a hasty choice here is cheap to change.
+Keep that list short and honest: the ones this person actually works in on top, ticked, each with
+the reason it is being recommended, and everything else folded away behind one line. Nothing is
+followed until they confirm. The same list lives in Settings afterwards, so a hasty choice here is
+cheap to change.
 
 The reading is one-way at this point. Nothing is written back to Jira, Confluence or the calendar
 without an approval, and the screen says so plainly, because "connect your Jira" reads as scary
@@ -100,34 +106,28 @@ prompts). One switch, defaulted to on but genuinely a choice, and the same switc
 Settings afterwards. (Schema and transport are beta-launch ticket 5; this screen is just the
 consent surface.)
 
-**7. First light.** No example week, no sample vault, no fake meetings: the workspace starts empty
-and everything in it will be the user's own (ONB-7). So this screen has one job, which is to get
-one piece of real material in. **Drop something in** is the main door, a transcript, a set of
-notes, whatever they have from a meeting this week, straight into the real capture flow with the
-receipt strip doing its job. **Start empty** is the quiet way out, and if they connected a
-calendar on screen 5 it is not really empty, because their week is already there.
-
-That makes the payoff the user's own first meeting rather than a demo, which is slower but the
-only version that is actually convincing. It also means the moment after the drop has to be
-excellent, so ONB-9 stops being a nicety and becomes the thing this screen leans on.
-
 Then the shell appears, with the First steps card on Home.
+
+There is no seventh screen. Getting the first piece of material in used to be one (First light,
+ONB-7), and it is a First steps row instead: the workspace still starts empty, the ask is still
+made, but it is made by the app once someone is in it rather than as the last gate of a setup
+flow. Same words, better moment.
 
 ### First steps
 
 A card on Home, present until finished or dismissed. Six or so items, each a real action with
 detection wired to the real event, each row a button that takes you to the right place:
 
-| Step | What it teaches | Done when |
-|---|---|---|
-| Add your key | (only if skipped in the opening) | `hasAnthropicKey` flips true |
-| Drop a meeting transcript | capture, arrival, the receipt | an arrival session completes on a transcript |
-| Decide on a proposal | the approval loop, the Inbox | first accept or reject |
-| Prep for a meeting | sessions working for you | a meeting-prep session completes |
-| Ask your memory a question | chat over your own notes | a chat session with a user prompt completes |
-| Tell it about your product | skills are files you edit | the about-us skill is edited (beta-launch ticket 29) |
-| Connect your calendar | (only if skipped in the opening) | a Google account is connected and one calendar is followed |
-| Connect Jira or Confluence | (only if skipped in the opening) | an Atlassian site is connected and one project or space is followed |
+| Step                       | What it teaches                  | Done when                                                                    |
+| -------------------------- | -------------------------------- | ---------------------------------------------------------------------------- |
+| Add your key               | (only if skipped in the opening) | `hasAnthropicKey` flips true                                                 |
+| Drop a meeting transcript  | capture, arrival, the receipt    | an arrival session completes on a transcript                                 |
+| Decide on a proposal       | the approval loop, the Inbox     | first accept or reject                                                       |
+| Prep for a meeting         | sessions working for you         | a meeting-prep session completes                                             |
+| Ask your memory a question | chat over your own notes         | a chat session with a user prompt completes                                  |
+| Tell it about your product | you talk, it drafts, you approve | the first understanding card is accepted (docs/product-understanding.md U-4) |
+| Connect your calendar      | (only if skipped in the opening) | a Google account is connected and one calendar is followed                   |
+| Connect Jira or Confluence | (only if skipped in the opening) | an Atlassian site is connected and one project or space is followed          |
 
 The two connection rows are the main reason First steps exists as a second chance rather than a
 nag. Most people will skip them in the opening, because on day one they have no reason to trust
@@ -182,9 +182,9 @@ so a First step ticks the moment the thing happens.
 **Today:** nothing to build on beyond the `@qale/ui` Dialog pattern, which is wrong for this; the
 opening is a takeover, not a dialog.
 
-**Proposal:** one component owning the seven screens: full-viewport layer inside the Shell root,
+**Proposal:** one component owning the opening's screens: full-viewport layer inside the Shell root,
 step transitions (slide or crossfade, fast, no bounce), Enter advances, Escape never exits (only
-explicit skips do), progress shown as a quiet "2 of 7". Serif display type for screen titles, the
+explicit skips do), progress shown as a quiet "2 of 6". Serif display type for screen titles, the
 existing warm-clay palette, light and dark both. This is the ticket where the "top notch" bar
 lives: it should be run through the Impeccable pass once functional. Build the frame with
 placeholder screens first so ONB-3 through ONB-6 and ONB-11 slot in independently. One wrinkle for
@@ -200,6 +200,11 @@ screen's `[data-opening-primary]`, which means each screen's disabled rules are 
 Escape is swallowed. Shared `Screen` shell (serif title, one-line why, footer) and `SkipLink`.
 Resume lands on the stored step, falling back to the first unanswered one. Impeccable pass not
 run yet.
+
+Back added later: the frame hands a `back` down through a context, so the shared `Screen` shell
+draws the link and no screen can forget it (and none can draw it on screen one). It patches `step`
+only — nothing written is taken back — and You, Files and the key screen each read what is stored
+when they mount, so a second visit shows the answer instead of an empty field.
 
 ---
 
@@ -218,7 +223,7 @@ yes
 **Notes:**
 Built. Two fields into the existing identity setter (email goes in as an alias). Not
 skippable, both fields optional. A failed settings write still advances: nobody gets stranded on
-screen two of seven.
+screen two of the opening.
 
 ---
 
@@ -283,7 +288,7 @@ Consent defaults to on for invited beta users (we ask at invite time too, per ti
 switch is real and off means nothing is sent.
 
 **Decision:**
-yes, but we dont currently have a way to track files so this will just be mocked in the beginning. 
+yes, but we dont currently have a way to track files so this will just be mocked in the beginning.
 **Notes:**
 Built as the consent surface over a no-op sink, per the decision. The event list lives
 in `@qale/ipc` (`telemetry.ts`) and both the opening screen and Settings render FROM it, so the
@@ -319,12 +324,17 @@ and never ships. And an empty Home is now a first-run surface a real user sees, 
 state has to be written for that moment rather than treated as an edge case.
 
 **Decision:**
-No let's keep their workspace empty in the beginnig. 
+No let's keep their workspace empty in the beginnig.
 **Notes:**
 Built as decided: no example week, no bundle, nothing in `resources`. Two doors, "Add
 something now" (into the real capture tray) and "Start empty", and the screen says outright that
 the workspace starts empty. `vault-dev` stays a dev fixture. Home's day-one invitation now stands
 down while First steps is on the page, since both taught the same move.
+
+**2026-08-07: the screen is gone.** The decision above stands (empty workspace, no bundle), but
+it does not need a screen of its own. The ask was already a First steps row saying the same thing,
+so the opening now ends on telemetry and the transcript ask waits on Home. `FirstLight.tsx` is
+deleted and `first-light` is out of `OPENING_STEPS`, which makes the opening six screens.
 
 ---
 
@@ -350,7 +360,8 @@ yes
 Built. `onboarding/FirstSteps.tsx` on Home. Detection is main-side, off the events
 that already fire: `arrival:ingest` / `capture:ingest` for the transcript, accept/reject for the
 card, `agent.onStatus` (which now carries `skill`) for the prep and the question, `note:save`
-under `skills/_about-us/` for the last. Three rows are DERIVED from live state rather than
+under `skills/_about-us/` for the last (repointed 2026-08-07 to the first accepted understanding
+card; see docs/product-understanding.md U-4). Three rows are DERIVED from live state rather than
 stamped — the key and the two connections — which is what makes "only if skipped in the opening"
 need no bookkeeping and lets a connection made from Settings months later still tick. Half-done
 connections stay unticked and say why.
@@ -415,8 +426,13 @@ place so the follow choice happens in the same breath as the connect. Requiremen
 
 - **The screen is skippable as a whole, and each provider is skippable on its own.** Skip records
   per provider, so First steps can ask about Jira without asking about Google again.
-- **Preselect nothing to follow.** Show the list, let one tick be enough. Do not "helpfully" follow
-  everything; a PM with forty Jira projects will not thank us.
+- **Recommend, with the reason, and confirm before following anything.** Amended 2026-08-07 by
+  docs/product-understanding.md FL-2. The rule used to read "preselect nothing", and it was written
+  against silently following everything; a PM with forty Jira projects will not thank us for a
+  helpful "all". A ticked box with a stated reason beside it ("you edited 12 pages here, the last
+  one 3 days ago") and one explicit confirm is a different thing: they can check it, and nothing is
+  followed until they press the button. Where there is no footprint to rank by, or the survey
+  fails, it falls back to the flat unticked list this rule originally described.
 - **Say the read-only part out loud.** One line: it reads, and anything written back goes through
   an approval first. This is the sentence that decides whether people connect at all.
 - **The OAuth round trip has to survive the app losing focus** and the user cancelling in the
@@ -433,10 +449,13 @@ yes
 **Notes:**
 Built. `onboarding/screens/Connections.tsx`, over the existing `connections` client
 and provider descriptors. Per-provider skips recorded as `connections:<providerId>`; the container
-list unfolds in place with nothing preselected and says "Pick at least one" while nothing is; the
+list unfolds in place and says "Pick at least one" while nothing is ticked; the
 read-only line is on the screen; `cancelOAuth` is wired to "Stop waiting". A failed verify is
 inline and never blocks. The follow list after a live connect is unverified — it needs real
 credentials.
+
+2026-08-07: the list is now the shared `components/FollowPicker.tsx` recommendation card (see
+docs/product-understanding.md FL-2), used by this screen and by Settings.
 
 ---
 

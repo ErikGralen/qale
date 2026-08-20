@@ -18,8 +18,10 @@ import { readSessionBinary, readSessionFile } from './session-files.js';
  * already theirs; putting it on a shelf carries out their instruction rather
  * than proposing anything, and the two failure modes of a filing (wrong shelf,
  * wrong meeting) are both fixed by moving it, which is what the second tool is
- * for. Nothing DERIVED from the material comes through here: a summary, a
- * commitment, a decision is still a card.
+ * for. Nothing DERIVED from the material comes through here: a commitment, a
+ * decision, and the meeting page itself are all cards. Filing a transcript used
+ * to mint that page as a side effect, which is exactly the line this comment
+ * claims it does not cross; `propose_meeting` took the job back.
  *
  * Both are gated on `can: [file-material]`, so only a skill that says it files
  * material gets them. An ordinary chat cannot write a note by asking nicely.
@@ -68,12 +70,14 @@ export function createFilingTools(
     description:
       'Put one thing from your session folder into the memory, where it will stay. Use it once per THING, ' +
       'not once per file: a recording delivered as two files is one meeting, so name both files in one call. ' +
-      '`as: "meeting"` is a meeting the PM was in and gets its own page under meetings/, with each file kept ' +
-      'as an immutable transcript under sources/. `as: "source"` is everything else (a colleague\'s call, an ' +
-      'article, a spec, a pasted thread, a screenshot) and lands under sources/. Set `attach_to` when the ' +
-      'calendar already holds this meeting, or you will create a second page for one conversation. Set ' +
-      '`origin` on a transcript of a meeting the PM was not in, naming whose it was. Filing is not a ' +
-      'proposal and needs no approval; everything you go on to DERIVE from the material is still a card.',
+      '`as: "meeting"` is a recording of a meeting the PM was in: each file is kept as an immutable transcript ' +
+      'under sources/. It does NOT create a meeting page — propose that with propose_meeting, summary and all, ' +
+      'unless the calendar already holds the meeting, in which case pass `attach_to` with its path and the ' +
+      'transcript is linked onto the page that exists. `as: "source"` is everything else (a colleague\'s call, ' +
+      'an article, a spec, a pasted thread, a screenshot) and lands under sources/. Set `origin` on a ' +
+      'transcript of a meeting the PM was not in, naming whose it was. Filing the material is not a proposal ' +
+      "and needs no approval — it is the PM's own material going on a shelf. Every page you WRITE about it, " +
+      'the meeting page included, is a card.',
     parameters: Type.Object({
       files: Type.Array(Type.String(), {
         description:
@@ -83,18 +87,28 @@ export function createFilingTools(
       as: Type.Union([Type.Literal('meeting'), Type.Literal('source')], {
         description: 'meeting = the PM was in it. source = everything else.',
       }),
-      title: Type.String({ description: 'What to call the page, in the words a person would use.' }),
+      title: Type.String({
+        description: 'What to call the page, in the words a person would use.',
+      }),
       date: Type.Optional(
-        Type.String({ description: 'YYYY-MM-DD, the day the material is about, when it says so itself.' }),
+        Type.String({
+          description: 'YYYY-MM-DD, the day the material is about, when it says so itself.',
+        }),
       ),
       attach_to: Type.Optional(
-        Type.String({ description: 'Path of a meeting page that already exists, to attach this recording to.' }),
+        Type.String({
+          description: 'Path of a meeting page that already exists, to attach this recording to.',
+        }),
       ),
       origin: Type.Optional(
-        Type.String({ description: "Whose meeting it was, on a transcript the PM was not in (\"Jonas Palm\")." }),
+        Type.String({
+          description: 'Whose meeting it was, on a transcript the PM was not in ("Jonas Palm").',
+        }),
       ),
       caption: Type.Optional(
-        Type.String({ description: 'A screenshot only: what the picture shows and why it matters.' }),
+        Type.String({
+          description: 'A screenshot only: what the picture shows and why it matters.',
+        }),
       ),
     }),
     async execute(
@@ -123,6 +137,17 @@ export function createFilingTools(
         ...(params.caption ? { caption: params.caption } : {}),
       });
       for (const path of result.wrote) harness.recordRead(path);
+      // A recording with no page to belong to: say what is missing and what
+      // makes it, or the next call is an update card against a note that was
+      // never written.
+      if (result.needsMeeting) {
+        return text(
+          `Filed the recording to ${result.wrote.join(', ')}. There is no meeting page for it: propose one with ` +
+            `propose_meeting, naming ${result.wrote.length > 1 ? 'these transcripts' : 'this transcript'} and ` +
+            `writing the summary into the same card. Do that BEFORE the todos and decisions from this meeting, ` +
+            `so they can cite the meeting page — a card may cite one that is still waiting for approval.`,
+        );
+      }
       return text(
         `Filed to ${result.path}${
           result.wrote.length > 1 ? ` (also wrote ${result.wrote.slice(1).join(', ')})` : ''
@@ -136,12 +161,14 @@ export function createFilingTools(
     label: 'Refile material',
     description:
       'Correct a filing you (or an earlier run) got wrong. Three moves: point a transcript at the meeting it ' +
-      'really belongs to (`meeting` = that page\'s path), say it was never the PM\'s meeting at all ' +
+      "really belongs to (`meeting` = that page's path), say it was never the PM's meeting at all " +
       '(`meeting: "none"`, with `origin` naming whose it was), or rename the page (`title`). A meeting page ' +
       'left holding nothing is removed with it. A page somebody has written notes or a summary on is never ' +
       'emptied out from under them: refile its transcripts one at a time instead.',
     parameters: Type.Object({
-      path: Type.String({ description: 'The page that was filed wrong, e.g. "meetings/2026-08-04-qbr.md".' }),
+      path: Type.String({
+        description: 'The page that was filed wrong, e.g. "meetings/2026-08-04-qbr.md".',
+      }),
       meeting: Type.Optional(
         Type.String({
           description:
@@ -153,7 +180,10 @@ export function createFilingTools(
       ),
       title: Type.Optional(Type.String({ description: 'A better name for the page.' })),
     }),
-    async execute(_id, params: { path: string; meeting?: string; origin?: string; title?: string }) {
+    async execute(
+      _id,
+      params: { path: string; meeting?: string; origin?: string; title?: string },
+    ) {
       if (!harness.fileMaterial) {
         return text('Refused: this session may not refile material. Nothing was changed.');
       }

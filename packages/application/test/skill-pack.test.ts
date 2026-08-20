@@ -9,7 +9,13 @@ import {
   ensureDefaultSkills,
   reviewSkillPack,
 } from '../src/index.js';
-import type { CheckLedgerPort, IndexedNote, IndexPort, UseCaseContext, VaultPort } from '../src/ports.js';
+import type {
+  CheckLedgerPort,
+  IndexedNote,
+  IndexPort,
+  UseCaseContext,
+  VaultPort,
+} from '../src/ports.js';
 
 /**
  * The upgrade path. A workspace is seeded once and then kept for good, so what
@@ -34,7 +40,8 @@ const GONE: RetiredSkill[] = [{ file: 'skills/old-way.md', shipped: [shippedHash
 function world(files: Record<string, string> = {}) {
   const disk = new Map(Object.entries(files));
   const indexed = new Map<string, IndexedNote>();
-  for (const path of disk.keys()) indexed.set(path, { path, slug: slugFromPath(path) } as IndexedNote);
+  for (const path of disk.keys())
+    indexed.set(path, { path, slug: slugFromPath(path) } as IndexedNote);
   const committed: string[] = [];
   const ledger = new Map<string, string>();
 
@@ -56,7 +63,12 @@ function world(files: Record<string, string> = {}) {
     get: (k) => ledger.get(k) ?? null,
     set: (k, v) => void ledger.set(k, v),
   };
-  return { disk, indexed, committed, ctx: { vault, index, git, checks } as unknown as UseCaseContext };
+  return {
+    disk,
+    indexed,
+    committed,
+    ctx: { vault, index, git, checks } as unknown as UseCaseContext,
+  };
 }
 
 test('absent: the file is seeded', async () => {

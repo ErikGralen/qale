@@ -1,8 +1,8 @@
 ---
 type: meeting
-summary: "Sprint 14 planning: SSO on track for 2026-07-28, exports v1 pilot with Kranelund greenlit, no mobile work in Q3"
+summary: 'Sprint 14 planning: SSO on track for 2026-07-28, exports v1 pilot with Kranelund greenlit, no mobile work in Q3'
 date: 2026-07-08
-time: "09:30"
+time: '09:30'
 duration_minutes: 60
 participants:
   - me
@@ -10,6 +10,7 @@ participants:
 ---
 
 ## Summary
+
 SSO rollout holds for 2026-07-28, behind a flag, Nordkap as first tenant. Greenlit scheduled
 exports v1 with Kranelund as design partner: existing dashboard rendered to PDF and emailed on
 a schedule, no report builder, CSV as a fast follow, target end of August
@@ -17,6 +18,7 @@ a schedule, no report builder, CSV as a fast follow, target end of August
 quarter ([[decisions/2026-07-08-hold-mobile-until-q4]]).
 
 ## Notes
+
 - SSO: staging complete, production rollout 2026-07-28 behind a feature flag. Nordkap first,
   general availability in August. Full status at Friday's auth review.
 - Exports v1 scope agreed: schedule plus recipient list on an existing dashboard, rendered to

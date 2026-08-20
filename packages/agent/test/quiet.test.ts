@@ -81,12 +81,23 @@ test('a run that produced a card is never silent, however it signed off', () => 
   );
 });
 
-test('only a scheduled run can be silent, and only one that did not break', () => {
+test('only a run nobody started can be silent', () => {
   assert.equal(ranSilent(outcome({ scheduled: false, ended: true })), false);
   assert.equal(ranSilent(outcome({ scheduled: false, finalText: 'Nothing to report.' })), false);
-  // A scheduled run that broke stays visible: it is exactly the one to look at.
-  assert.equal(ranSilent(outcome({ failed: true, ended: true })), false);
-  assert.equal(ranSilent(outcome({ failed: true, finalText: 'Nothing changed.' })), false);
+  // Their own turn that broke keeps its row and its error: they are sitting in
+  // front of it, and the error is the answer they are waiting for.
+  assert.equal(ranSilent(outcome({ scheduled: false, failed: true })), false);
+});
+
+test('a run nobody was watching that broke leaves nothing behind either', () => {
+  // What an empty account produces is one message and no reply, every tick. The
+  // failure is worth saying once, as a fault; it is not worth a session each
+  // time (see `providerFault` and the notification main hangs off it).
+  assert.equal(ranSilent(outcome({ failed: true })), true);
+  assert.equal(ranSilent(outcome({ failed: true, ended: true })), true);
+  assert.equal(ranSilent(outcome({ failed: true, finalText: 'Nothing changed.' })), true);
+  // Unless it got something in front of the PM before it died.
+  assert.equal(ranSilent(outcome({ failed: true, produced: true })), false);
 });
 
 test('either the tool or the backstop is enough on a scheduled run', () => {
@@ -105,10 +116,9 @@ test('a run stopped for want of a decision leaves nothing, whatever it said on t
     ranSilent(outcome({ blocked: true, finalText: 'I need to know which reading to follow.' })),
     true,
   );
-  // The floors still hold: a person's turn is never silent, a break is never
-  // silent, and cards it managed to propose first are still cards.
+  // The floors still hold: a person's turn is never silent, and cards it
+  // managed to propose first are still cards.
   assert.equal(ranSilent(outcome({ blocked: true, scheduled: false })), false);
-  assert.equal(ranSilent(outcome({ blocked: true, failed: true })), false);
   assert.equal(ranSilent(outcome({ blocked: true, produced: true })), false);
 });
 

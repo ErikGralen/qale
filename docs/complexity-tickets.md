@@ -10,7 +10,7 @@ notes** gets filled in as each one lands.
 
 **What:** "Sessions" means four things (Chats list header, sidebar section, the `session` note
 type, the `sessions/` shelf); prose says "conversation", buttons say "chat", and "Ask" points both
-directions (sidebar row, skill, send button, docked composer, and the agent asking *you*).
+directions (sidebar row, skill, send button, docked composer, and the agent asking _you_).
 
 **Proposal:** Pick one noun — recommend **Chat** — and sweep all copy. Rename the agent-asks-you
 card vocabulary to "Question" so "Ask" only ever points memory-ward.
@@ -141,11 +141,11 @@ types.
 Yes good, but really think about how to present this in an intuitive way that is cleean. And dont use llm-isms like em dashes
 
 **Implementation notes:**
-Done. The single mapping is `packages/domain/src/notes/edit-layer.ts` (exported from `@qale/domain`), which *derives* one ownership layer per type from the rules that already exist (`TYPE_RULES` + `NOTE_TYPE_META`) instead of keeping a second list: `open` (body editable), `mirror` (type is bound to a provider enum), `spine` (`appendOnly`), `raw` (frozen body, raw layer), `receipt` (frozen body, derived layer). `readOnlyReason(type, frontmatter?)` returns the one sentence, null when the note takes a cursor.
+Done. The single mapping is `packages/domain/src/notes/edit-layer.ts` (exported from `@qale/domain`), which _derives_ one ownership layer per type from the rules that already exist (`TYPE_RULES` + `NOTE_TYPE_META`) instead of keeping a second list: `open` (body editable), `mirror` (type is bound to a provider enum), `spine` (`appendOnly`), `raw` (frozen body, raw layer), `receipt` (frozen body, derived layer). `readOnlyReason(type, frontmatter?)` returns the one sentence, null when the note takes a cursor.
 The sentences: mirror = "Mirrored from Jira. Edits happen there." (source read from the note's own `provider`, so Linear/Notion need no new copy); raw = "Raw material. Never rewritten."; receipt = "A record of what happened. Kept exactly as it was filed."; spine = "Superseded, never edited. Write a new one to change course."
 It renders as one quiet muted line with a small lock glyph directly above the read-only body in `NoteView.tsx` (the old bordered `bg-muted/40` callout is gone), plus a trailing "Open the original" link on mirrors since the URL row is a collapse away. Same sentence reused in the Memory shelf subtitles for the two mirror shelves.
 `ticket`/`wikipage` now label as **"Jira mirror" / "Confluence mirror"** via `noteTypeLabel(type, frontmatter?)`, used by the NoteView type badge (the `capitalize` class is gone, labels are sentence case at source), `NoteList`, `QuickSwitcher` hits, and the ContextView section headings ("Jira mirrors"). FolderView empty states for both folders now open with "No mirrors yet."
-Covered by `packages/domain/test/edit-layer.test.ts`, including an invariant test that a sentence exists for exactly the types `isBodyEditable` says are frozen, and a copy test (no em dashes, no semicolons, ≤70 chars). Ticket 8 is unblocked: this module is about editability only and says nothing about what a type *is*.
+Covered by `packages/domain/test/edit-layer.test.ts`, including an invariant test that a sentence exists for exactly the types `isBodyEditable` says are frozen, and a copy test (no em dashes, no semicolons, ≤70 chars). Ticket 8 is unblocked: this module is about editability only and says nothing about what a type _is_.
 
 ---
 
@@ -159,7 +159,7 @@ change, approve something leaving, tap/skip an FYI.
 marked special case inside "needs you". Internal species stay.
 
 **Decision:**
-Skip for now. 
+Skip for now.
 
 **Implementation notes:**
 
@@ -175,7 +175,7 @@ Pure concept tax today.
 `blocks` / `evidence` and leave the rest untyped.
 
 **Decision:**
-Skip for now. 
+Skip for now.
 
 **Implementation notes:**
 
@@ -186,7 +186,7 @@ Skip for now.
 **What:** The 5×3×3 lattice (kind × binding × tier) shows display names in SkillsView but the raw
 enum in the Properties panel. Voice skills are injected into every session invisibly.
 
-**Proposal:** Present skills as exactly two dimensions — *when it runs* / *what it may do*. Fix
+**Proposal:** Present skills as exactly two dimensions — _when it runs_ / _what it may do_. Fix
 the raw-enum select. Stamp voice provenance on outbound cards ("Written in CS voice").
 
 **Decision:**
@@ -210,24 +210,24 @@ watchers + file agents, legacy keys (`skill_kind`/`bindings`/`tier`) parse as pi
 **What:** `status` is polymorphic — `active` alone means three things (note, decision, customer).
 Themes already broke ranks correctly with `stance`.
 
-**Proposal:** Give each lifecycle its own name (decisions: *standing*, customers: *relationship*,
+**Proposal:** Give each lifecycle its own name (decisions: _standing_, customers: _relationship_,
 …) or at least never render two lifecycles under the same "Status" label.
 
 **Decision:**
-Yes i like this, i think each type of note should have different shapes. We should use hard coded enums for now. 
+Yes i like this, i think each type of note should have different shapes. We should use hard coded enums for now.
 
 **Implementation notes:**
 
 Built. `packages/domain/src/notes/lifecycle.ts` is the new table (field name + enum + human label per lifecycle); `frontmatter.ts` declares the keys, `edit-layer.ts` is untouched and still owns the ownership axis.
 
-| type | field | values |
-| --- | --- | --- |
-| source, meeting, insight, note, ticket, wikipage | `processing` | new, processed, stale |
-| decision | `standing` | active, superseded |
-| customer | `relationship` | prospect, active, churned |
-| todo | `commitment` | open, done, dropped |
-| theme | `stance` | exploring, watching, committed, wont-do (unchanged) |
-| person, session, skill | none | a type that never moves shouldn't look like it does |
+| type                                             | field          | values                                              |
+| ------------------------------------------------ | -------------- | --------------------------------------------------- |
+| source, meeting, insight, note, ticket, wikipage | `processing`   | new, processed, stale                               |
+| decision                                         | `standing`     | active, superseded                                  |
+| customer                                         | `relationship` | prospect, active, churned                           |
+| todo                                             | `commitment`   | open, done, dropped                                 |
+| theme                                            | `stance`       | exploring, watching, committed, wont-do (unchanged) |
+| person, session, skill                           | none           | a type that never moves shouldn't look like it does |
 
 Six types share `processing` because it is genuinely one lifecycle (has the workspace worked this material, and does that still hold), not six under one label. Its old fourth value `active` is gone: it only ever meant "done and relied upon", which is `processed`.
 
@@ -251,7 +251,7 @@ key.
 against your decisions") with an off switch.
 
 **Decision:**
-Yes sounds good, but we should have an "Agent" section similar to skills. where librarian will be the first entry. 
+Yes sounds good, but we should have an "Agent" section similar to skills. where librarian will be the first entry.
 
 **Implementation notes:**
 Agents is a view of its own (`AgentsView.tsx`, tab kind `agents`), Skills' sibling: the
@@ -315,7 +315,7 @@ deletion of user-visible content; only trace is a git commit.
 into a receipt.
 
 **Decision:**
-If a meeting is cancelled, we shouldn't delete it. But change it status to cancelled or something like that. 
+If a meeting is cancelled, we shouldn't delete it. But change it status to cancelled or something like that.
 
 **Implementation notes:**
 Done. `planMeetingMirror` lost its `delete` action (`packages/domain/src/notes/event-mirror.ts`): a cancelled
@@ -345,7 +345,7 @@ learn the rule.
 it in Pricing v2"). Make cap truncation visible.
 
 **Decision:**
-When do we trigger this? we should perhaps prompt the user in a super clean way. 
+When do we trigger this? we should perhaps prompt the user in a super clean way.
 **Implementation notes:**
 
 **What actually fires, and when.** Nothing happens when you type. `syncTracked`
@@ -402,7 +402,7 @@ a permanent cap row on the Atlassian connection card. No confirmation dialog any
 
 ## 13. Fix: discarding all cards marks the meeting reviewed
 
-**What:** Resolving the *last* card of a session flips the meeting to `processed` on accept
+**What:** Resolving the _last_ card of a session flips the meeting to `processed` on accept
 **and reject** — discard-all currently means "reviewed". Wrong statement about the user's
 attention; treat as a bug.
 
@@ -419,7 +419,7 @@ writes nothing and returns `{ ask: { path, title } }` instead. Cancelled and alr
 never asked about, so the `needsReview` cancelled rule is not regressed. The write itself moved into a new
 `markMeetingReviewed(ctx, path)`, shared by the silent close and the new `meeting:markReviewed` IPC.
 The ask rides back on the `proposals:accept` / `proposals:reject` result and the Inbox renders it as one quiet
-strip where the cards just were: "Nothing kept from *Roadmap sync*. Mark it reviewed?" with a **Mark reviewed**
+strip where the cards just were: "Nothing kept from _Roadmap sync_. Mark it reviewed?" with a **Mark reviewed**
 button and a **Not yet** dismiss. "Not yet" leaves the meeting in needs review and is remembered per workspace
 in `localStorage` under `qale.reviewAskDismissed.v1:<vaultPath>` (view-only state, like the pin set), so the same
 meeting is never asked about twice. Covered by `packages/application/test/complete-meeting-review.test.ts`.
@@ -531,7 +531,7 @@ auto-apply exists anywhere (by design).
 
 **Proposal:** Correct the comment. Trivial.
 
-**Decision:** yes remove this and clean up the code, remove the dead code. 
+**Decision:** yes remove this and clean up the code, remove the dead code.
 
 **Implementation notes:** The class docblock no longer claims an auto-apply pass; it now
 says the tick fires due schedules and drives the two per-tick sweeps, and states plainly

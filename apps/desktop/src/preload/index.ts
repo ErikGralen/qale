@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
-import { INVOKE_CHANNELS, PUSH_CHANNELS, type IpcApi, type QaleBridge, type PushEvent } from '@qale/ipc';
+import {
+  INVOKE_CHANNELS,
+  PUSH_CHANNELS,
+  type IpcApi,
+  type QaleBridge,
+  type PushEvent,
+} from '@qale/ipc';
 
 /**
  * Build concrete per-channel invoke functions from the contract's channel list.

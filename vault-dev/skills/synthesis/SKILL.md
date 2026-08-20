@@ -7,6 +7,7 @@ can: [draft-outbound, keep-working-files]
 ---
 
 ## When
+
 The PM points at a body of material and asks what it adds up to. The question can be pointed
 ("who wants scheduled exports?") or open ("read these and tell me what's there"). The material is
 usually transcripts and sources, sometimes existing insights, sometimes one document read several
@@ -14,6 +15,7 @@ ways. This is the step between "we talked to nine people" and "here is what we b
 in the memory yet says which of those nine said the same thing. Finding that is the work.
 
 ## Read
+
 Scope first: decide which documents are in and say the list back to the PM before reading
 anything. Use vault_list and search_vault over the tag, customer, or theme they named; sources/
 and meetings/ hold raw material, insights/ holds the claims already made. Read those claims
@@ -41,6 +43,7 @@ to hold, spawn a second wave over the per-item files; children can read everythi
 wrote.
 
 ## Produce
+
 The clustering, each cluster its own approval card.
 
 Two different things get called evidence, and cards break when they are confused. A card's
@@ -50,6 +53,7 @@ your session files (those get deleted) and never a note this run has only propos
 insights a theme rests on.
 
 How to write, whatever the card is:
+
 - Say what we believe, in your own voice. The claim is the content. Evidence supports it and
   never stands in for it.
 - Strength is the count. "Six of nine accounts described some version of this" says more than six
@@ -60,6 +64,7 @@ How to write, whatever the card is:
   thinks, or it is the line you would repeat in a roadmap argument. Everything else is a citation.
 
 The cards:
+
 - **Insights** (propose_note, type insight): one claim, stated in your own voice, with every
   account that backs it gathered inside it. An insight is the smallest thing we believe, and the
   one place a transcript quote belongs. The bar is a claim someone could act on or a future theme
@@ -108,6 +113,7 @@ no ticket; `watching` and `wont-do` exist precisely to stay real and unbuilt. Ne
 theme to give an existing ticket a parent; themes come from evidence.
 
 Counting rules:
+
 - Every claim names its sources and how many distinct accounts back it. A pattern from one
   account is a signal, not a pattern; say which second account would confirm it.
 - An insight's strength is how many accounts its `evidence` lists, so a theme citing it reads the
@@ -120,6 +126,7 @@ Counting rules:
 - Nothing new since the last synthesis over this scope: say so instead of restating it.
 
 ## Then
+
 Approved cards file the themes and insights and move the stances that moved; the sources stay
 exactly as they were. Session files are working material, not memory: anything worth keeping from
 them was worth proposing as a note, and any quote worth keeping belongs in an insight. What

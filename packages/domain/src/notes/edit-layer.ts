@@ -109,6 +109,43 @@ export function readOnlyReason(
 }
 
 /**
+ * The types a person may start from a blank page, in the order a "new …" menu
+ * should offer them. Being editable is not enough to be here, and the four that
+ * are missing are the point:
+ *
+ * - `meeting` and `source` arrive as material — a transcript, a calendar event —
+ *   and the memory proposes the page from it. A blank one has no provenance to
+ *   stand on, and its date and participants freeze at creation.
+ * - `decision` is the append-only spine: the body is final the moment it is
+ *   written, so a blank one could never be filled in. Decisions arrive as cards.
+ * - `insight` must cite evidence, which a blank page has none of.
+ * - `todo`, `skill` and `agent` are created where they live (quick-add, New skill).
+ * - `session` is a receipt and `ticket`/`wikipage` are mirrors: nobody authors them.
+ *
+ * What is left is the four pages the PM owns outright — the desk, and the three
+ * hubs that stand for a durable thing rather than a moment.
+ */
+export const HAND_CREATABLE_TYPES = ['note', 'theme', 'customer', 'person'] as const;
+export type HandCreatableType = (typeof HAND_CREATABLE_TYPES)[number];
+
+/** May a person create one of these from scratch? */
+export function isHandCreatable(type: NoteType): type is HandCreatableType {
+  return (HAND_CREATABLE_TYPES as readonly NoteType[]).includes(type);
+}
+
+/**
+ * What a fresh page of this type is for, in one clause — the subtitle on a
+ * "new …" menu row, so picking a type is a choice about the work rather than a
+ * guess at our vocabulary.
+ */
+export const NEW_NOTE_PURPOSE: Record<HandCreatableType, string> = {
+  note: 'A blank page for anything',
+  theme: 'A problem worth solving',
+  customer: 'An account to hang meetings on',
+  person: 'A stakeholder and what they care about',
+};
+
+/**
  * How a type names itself to the user. A mirror is named by the system it
  * mirrors ("Jira mirror"), never by our folder — calling it a "ticket" next to
  * meetings and decisions implies the workspace owns it, and it does not.

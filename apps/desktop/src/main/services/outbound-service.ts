@@ -40,7 +40,9 @@ export function makeOutbound(
       const provider = (payload as { provider?: string } | null)?.provider;
       if (provider === 'google-calendar') {
         if (!google || !googleAuth) {
-          throw new Error('Google Calendar isn’t connected. Connect it in Settings to push events.');
+          throw new Error(
+            'Google Calendar isn’t connected. Connect it in Settings to push events.',
+          );
         }
         // Incremental consent, right before the write Google is about to receive.
         await googleAuth.ensureWriteScope();

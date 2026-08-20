@@ -93,9 +93,24 @@ that, spawn plus the card.
 
 Product copy to be written properly, but the judgment it must cover:
 
-- **Filing.** Transcripts of meetings the PM was in go to `meetings/` (attached to the
-  calendar meeting when one matches). Everything else goes to `sources/`. Name the filing in
-  one line as you do it.
+- **Filing.** Transcripts go to `sources/`, whoever's meeting they record; the calendar
+  meeting they belong to gets them linked on when one matches. Everything else goes to
+  `sources/` too. Name the filing in one line as you do it.
+- **The meeting page is a card, not a filing** (changed 2026-08-07). Filing a transcript used
+  to mint the meeting page as a side effect: an empty scaffold reading "not read yet", which
+  the summary then arrived to patch. Two steps for one thing, and the first of them put a
+  page in the workspace nobody had approved. Now `file_material` writes only the recording and
+  `propose_meeting` proposes the page whole, summary in it, transcript cited. Approve and the
+  meeting exists finished; decline and only the recording is on the shelf. Nothing an agent
+  authors reaches the workspace without the PM saying yes — a meeting page included.
+- **A card may cite a card.** Evidence resolves against notes on disk _and_ against pages a
+  pending card would create, so the todos and decisions out of a meeting still cite the
+  meeting rather than the raw recording. The skill proposes the meeting first. The exposure
+  is one case: approve the todo, decline the meeting, and the todo cites a page that was
+  never written. That is a broken link, and broken links are already the librarian's job —
+  frontmatter refs index as edges, so it comes back as a `broken-link` finding with repair
+  hints on the next tick (5-minute settle, one session per 30 minutes at most). A link the
+  librarian will raise beats a citation that pointed at the wrong thing from the start.
 - **Matching.** Match a transcript to a meeting by its own date, title, and participants.
   The clock is a hint, never the decider. Two plausible meetings, or none: ask, offering the
   candidates and "new meeting" as cards.
@@ -129,22 +144,22 @@ Product copy to be written properly, but the judgment it must cover:
 What the agentic design does to each finding in `docs/arrival-flow-review.md`. "Dissolves"
 means no dedicated feature is built; the design removes the machinery that caused it.
 
-| Finding | Disposition |
-|---|---|
-| AR-1 wrong meeting / duplicate meeting | **Dissolves.** Matching is the agent reading the transcript, exactly what the decision asked for ("title, participants, maybe content, fine to ask"). The option card is the fast clarification UI. The clock-window matcher demotes to a hint. |
-| AR-2 "not my meeting" doesn't exist | **Dissolves, plus one tool.** The agent notices before filing, which is the decision's "catch it earlier", and writes `origin` frontmatter. The move/refile tool covers late corrections. The dead `external` plumbing gets used or deleted. |
-| AR-3 meeting page can't start a review | **Survives, smaller.** Still a missing button. "Read this meeting" on a meeting holding a transcript starts the arrival session scoped to it; "Mark as filed" goes in the ⋯ menu over the existing channel. |
-| AR-4 no door for a second transcript | **Survives.** "Add transcript" on every past meeting page, opening the tray with the aim preset (rung 2). Also AR-1's manual escape hatch, as the review noted. |
-| AR-5 pasted text becomes an instruction | **Dissolves via the tray change already decided.** Pasted text is an item row; the text field always means instruction. The fork and all three of its data-loss modes go with the planner. |
-| AR-6 duplicate drop is silent | **Dissolves into the skill.** The agent checks before filing. The tray may keep a cheap name-match hint, but nothing depends on it. |
-| AR-7 "together" sticks after the batch shrinks | **Dissolves.** The radio group is deleted; there is no handling state to go stale. |
-| AR-8 several reviews, dead pointer | **Dissolves.** No receipt, so no dead pointer; the sidebar sessions rail already shows running reads. The 21-day rule is gone, and "review it anyway" wins by instruction, per the decision. |
-| AR-9 "After-Meeting" naming | **Survives as a sweep.** Six user-visible strings name a retired skill; that cleanup is due regardless. Tabs get named after the material. |
-| AR-10 zombie `capture:ingest` pipeline | **Survives, grows.** The demolition list above includes it and most of the planner besides. |
-| AR-11 re-reads re-propose approved cards | **Dissolves into the skill.** The distinction is already on disk (`processing: processed`); the skill tells the agent to honour it. |
-| AR-12 second drop / ⇧⌘N wipes the tray | **Survives.** Merge incoming drafts while the tray is open; guard ⇧⌘N like ⌘↵. Small tray fix, still worth doing. |
-| AR-13 no receipt, no undo, no correction | **Dissolves by decision.** Receipts and undo are removed entirely (the decision: "if the user uploaded it, they will not regret it one second afterwards"). The session narration is the record, and corrections are conversation plus the refile tool. |
-| AR-14 folder drop fails and blames the format | **Survives.** The folder walk, `openDirectory` on the picker, and an honest empty-file message are mechanical and stay in the tray. It is the front door of the backlog story. |
+| Finding                                        | Disposition                                                                                                                                                                                                                                             |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AR-1 wrong meeting / duplicate meeting         | **Dissolves.** Matching is the agent reading the transcript, exactly what the decision asked for ("title, participants, maybe content, fine to ask"). The option card is the fast clarification UI. The clock-window matcher demotes to a hint.         |
+| AR-2 "not my meeting" doesn't exist            | **Dissolves, plus one tool.** The agent notices before filing, which is the decision's "catch it earlier", and writes `origin` frontmatter. The move/refile tool covers late corrections. The dead `external` plumbing gets used or deleted.            |
+| AR-3 meeting page can't start a review         | **Survives, smaller.** Still a missing button. "Read this meeting" on a meeting holding a transcript starts the arrival session scoped to it; "Mark as filed" goes in the ⋯ menu over the existing channel.                                             |
+| AR-4 no door for a second transcript           | **Survives.** "Add transcript" on every past meeting page, opening the tray with the aim preset (rung 2). Also AR-1's manual escape hatch, as the review noted.                                                                                         |
+| AR-5 pasted text becomes an instruction        | **Dissolves via the tray change already decided.** Pasted text is an item row; the text field always means instruction. The fork and all three of its data-loss modes go with the planner.                                                              |
+| AR-6 duplicate drop is silent                  | **Dissolves into the skill.** The agent checks before filing. The tray may keep a cheap name-match hint, but nothing depends on it.                                                                                                                     |
+| AR-7 "together" sticks after the batch shrinks | **Dissolves.** The radio group is deleted; there is no handling state to go stale.                                                                                                                                                                      |
+| AR-8 several reviews, dead pointer             | **Dissolves.** No receipt, so no dead pointer; the sidebar sessions rail already shows running reads. The 21-day rule is gone, and "review it anyway" wins by instruction, per the decision.                                                            |
+| AR-9 "After-Meeting" naming                    | **Survives as a sweep.** Six user-visible strings name a retired skill; that cleanup is due regardless. Tabs get named after the material.                                                                                                              |
+| AR-10 zombie `capture:ingest` pipeline         | **Survives, grows.** The demolition list above includes it and most of the planner besides.                                                                                                                                                             |
+| AR-11 re-reads re-propose approved cards       | **Dissolves into the skill.** The distinction is already on disk (`processing: processed`); the skill tells the agent to honour it.                                                                                                                     |
+| AR-12 second drop / ⇧⌘N wipes the tray         | **Survives.** Merge incoming drafts while the tray is open; guard ⇧⌘N like ⌘↵. Small tray fix, still worth doing.                                                                                                                                       |
+| AR-13 no receipt, no undo, no correction       | **Dissolves by decision.** Receipts and undo are removed entirely (the decision: "if the user uploaded it, they will not regret it one second afterwards"). The session narration is the record, and corrections are conversation plus the refile tool. |
+| AR-14 folder drop fails and blames the format  | **Survives.** The folder walk, `openDirectory` on the picker, and an honest empty-file message are mechanical and stay in the tray. It is the front door of the backlog story.                                                                          |
 
 Nothing in the review is left uncovered: eight findings dissolve, six survive as small,
 well-bounded pieces (two buttons, a tray merge fix, a string sweep, the folder walk, the

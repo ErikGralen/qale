@@ -13,13 +13,24 @@ import {
   markRunnableQuiet,
   markRunnableStopped,
   markRunnableUsed,
+  normalizeNoteFrontmatter,
+  sessionCards,
   type UseCaseContext,
 } from '@qale/application';
-import { runnableCandidates, runnableNameFromPath } from '@qale/domain';
+import {
+  DEFAULT_LANGUAGE,
+  DEFAULT_PROVIDER,
+  providerModels,
+  providerName,
+  runnableCandidates,
+  runnableNameFromPath,
+  type LlmProvider,
+} from '@qale/domain';
 import { AtlassianClient } from '@qale/atlassian';
 import {
   createVaultTools,
   createProposeTools,
+  createWithdrawTool,
   createDraftTools,
   createAtlassianTools,
   createUseSkillTool,
@@ -27,11 +38,22 @@ import {
   ATLASSIAN_TOOL_NAMES,
   VAULT_TOOL_NAMES,
   PROPOSE_TOOL_NAMES,
+  WITHDRAW_TOOL_NAME,
   DRAFT_TOOL_NAMES,
   USE_SKILL_TOOL_NAME,
+  type AnswerContainerOffer,
   type TrackExternal,
 } from './tools.js';
+import { providerFault, type ProviderFault } from './api-errors.js';
+import { withCardState } from './card-state.js';
 import { withDecodedArgs } from './tool-args.js';
+import {
+  cheapestModel,
+  cleanTitle,
+  namingSystemPrompt,
+  namingUserPrompt,
+  type SessionSubject,
+} from './naming.js';
 import {
   createChildFileTools,
   createSessionFileTools,
@@ -67,8 +89,17 @@ import {
   type StoredAsk,
 } from './ask.js';
 import { createFilingTools, FILING_TOOL_NAMES } from './filing.js';
+import { createDeferralTool, DEFER_TOOL_NAME } from './deferrals.js';
 import { createEndQuietlyTool, ranSilent, END_QUIETLY_TOOL_NAME } from './quiet.js';
-import { CHILD_PREAMBLE, SCHEDULED_PREAMBLE, UNATTENDED_PREAMBLE, SHARED_PREAMBLE } from './prompts.js';
+import {
+  CHILD_PREAMBLE,
+  SCHEDULED_PREAMBLE,
+  UNATTENDED_PREAMBLE,
+  SHARED_PREAMBLE,
+  datePreamble,
+  languagePreamble,
+  notePropertiesPreamble,
+} from './prompts.js';
 import {
   parseRunnable,
   buildSystemPrompt,
@@ -123,9 +154,23 @@ export interface AgentRuntimeConfig {
   vaultDir: string;
   /** Electron userData dir — pi auth/models/sessions live under here, off the vault. */
   userDataDir: string;
+  /**
+   * Whose API answers. One provider is configured at a time and there is no
+   * fallback to the other: the key below belongs to THIS provider, and a
+   * workspace with the wrong pair of them has no model at all.
+   */
+  provider?: LlmProvider;
   modelId: string;
   apiKey: string | null;
   atlassian?: { baseUrl: string; email: string; token: string } | null;
+  /**
+   * What this workspace is written in (OW5), as a bare language tag ("sv"). A
+   * setting rather than something each run infers from what it happens to read,
+   * which is what kept producing a Swedish summary next to an English one.
+   * Absent means English. Part of {@link sameConfig}: it is baked into the
+   * system prompt, so changing it has to rebuild the sessions that carry it.
+   */
+  language?: string;
   /**
    * Host callback behind the `track_external` tool — it reaches the sync engine,
    * which lives in the desktop main process, not here. Identity-stable, so it is
@@ -133,6 +178,9 @@ export interface AgentRuntimeConfig {
    * sessions the way a credential or model change does.
    */
   trackExternal?: TrackExternal;
+  /** Host callback behind `follow_container` (FL-3), for the same reason as
+   *  {@link trackExternal}: it is sync state, not an Atlassian call. */
+  answerContainerOffer?: AnswerContainerOffer;
 }
 
 export interface RunInput {
@@ -247,6 +295,13 @@ export interface SessionStatus {
    * notification is exactly the cost silence is supposed to save.
    */
   quiet?: boolean;
+  /**
+   * The provider refused this turn, and why (api-errors.ts). Set on the settle
+   * only. The chat renders its own copy from the error chunk; this is here for
+   * the runs with nobody in front of them, where a settle signal is the only
+   * thing that leaves the runtime at all.
+   */
+  fault?: ProviderFault;
 }
 
 /** A session with a turn in flight right now. */
@@ -329,8 +384,25 @@ interface SessionState {
   unsubscribe: () => void;
   bridge: PiUiBridge | null;
   activeStreamId: string | null;
-  /** First user prompt, truncated — the session's display title everywhere. */
+  /** What this conversation is called everywhere it appears. */
   title: string;
+  /**
+   * The name above is the conversation's own, not the first-message heuristic:
+   * either a model wrote it (see ./naming.ts) or it was read back off the
+   * transcript at open. Naming happens once per session, so this is also what
+   * stops a second turn spending a second call.
+   */
+  named: boolean;
+  /**
+   * The name currently in the transcript, whatever wrote it. A run nobody
+   * started never spends a call on naming itself and keeps the deterministic
+   * one, and that name only lived in memory: every list read off disk fell back
+   * to the first message, so the app's own kickoff prose ("Run the librarian
+   * skill: The scan found 12 things that may…") became the row, the tab and the
+   * notification. Storing it costs nothing and it is the name the session
+   * already answers to.
+   */
+  titleStored: boolean;
   runStartedAt: number;
   /**
    * What is true of the turn in flight (QM ticket 2). Reset field by field at
@@ -377,13 +449,20 @@ export class AgentRuntime {
   /** sessionId → the model the PM pinned to it; only pinned sessions are stored. */
   private sessionModels: Record<string, string> = {};
   /**
-   * listChats() re-reads every transcript in full — cache the result keyed by a
-   * cheap stat signature of the sessions dir so the frequent sidebar refresh
-   * with nothing changed costs a readdir + stats, not N file reads.
+   * listChats() re-reads and replays every transcript in full — cache the result
+   * keyed by a cheap stat signature of the sessions dir so the frequent sidebar
+   * refresh with nothing changed costs a readdir + stats, not N file reads.
    */
   private chatListCache: { sig: string; chats: ChatRef[] } | null = null;
   /** Lifecycle hook — main pushes these to the renderer as `session:status`. */
   onStatus: ((status: SessionStatus) => void) | null = null;
+  /**
+   * A session took its own name (see ./naming.ts) — main pushes it on as
+   * `session:renamed`. Its own event rather than another `session:status`:
+   * status says a run started or settled, and both of those move rails, badges,
+   * telemetry and the librarian's ledger. A rename moves a word.
+   */
+  onRename: ((rename: { sessionId: string; title: string }) => void) | null = null;
   /** Fired when a session writes a working file — main pushes `session:files`. */
   onFilesChanged: ((sessionId: string) => void) | null = null;
   /**
@@ -422,17 +501,21 @@ export class AgentRuntime {
       authPath: join(config.userDataDir, 'pi', 'auth.json'),
       modelsPath: join(config.userDataDir, 'pi', 'models.json'),
     }).then(async (runtime) => {
-      // In-memory only — never written to disk (PLAN §2). `allowNetwork: false`
+      // In-memory only, never written to disk (PLAN §2). `allowNetwork: false`
       // because the catalogue we ship with is the one we mean: a refresh over
       // the wire here would stall the first turn behind an HTTP round trip.
+      //
+      // Only the chosen provider is given a key. The other one is left
+      // unconfigured on purpose, so `getAvailableSnapshot` cannot offer its
+      // models and `resolveModel` cannot quietly step down onto one.
       if (config.apiKey) {
-        await runtime.setRuntimeApiKey('anthropic', config.apiKey, { allowNetwork: false });
+        await runtime.setRuntimeApiKey(providerFor(config), config.apiKey, {
+          allowNetwork: false,
+        });
       }
       return runtime;
     });
-    this.atlassian = config.atlassian
-      ? new AtlassianClient(config.atlassian)
-      : null;
+    this.atlassian = config.atlassian ? new AtlassianClient(config.atlassian) : null;
     // A config change invalidates existing sessions (built with the old model/tools).
     this.disposeSessions();
   }
@@ -448,77 +531,108 @@ export class AgentRuntime {
     return !!this.config?.apiKey && (await this.listModels()).length > 0;
   }
 
+  /**
+   * What the app offers: the shortlist for the chosen provider, and nothing
+   * else. pi carries dozens of models per provider and most of them are dated
+   * snapshots, retired families or preview builds for jobs this product never
+   * does. The full catalogue is still reachable underneath (`resolveModel` will
+   * honour a session pinned to an older id, and the namer still shops the whole
+   * list for the cheapest model); it is only what we PUT IN FRONT of somebody
+   * that is cut down.
+   *
+   * Not gated on a key, so Settings can say what is on offer before one is
+   * pasted. An id pi cannot route is dropped and named on the console: this
+   * table follows pi's catalogue, and a pi upgrade is where it goes stale.
+   */
   async listModels(): Promise<ModelInfo[]> {
+    const provider = providerFor(this.config);
+    const shortlist = providerModels(provider);
     try {
       const runtime = await this.models();
-      return runtime.getAvailableSnapshot().map((m) => ({ id: m.id, label: m.name }));
+      const routable = new Set(runtime.getModels(provider).map((m) => m.id));
+      const offered = shortlist.filter((m) => routable.has(m.id));
+      for (const model of shortlist) {
+        if (!routable.has(model.id))
+          console.error(`[qale] pi no longer carries "${model.id}", dropped from the picker`);
+      }
+      // Everything gone means the catalogue moved under us, and an empty picker
+      // helps nobody: offer the list and let the run report the real failure.
+      if (offered.length > 0) return offered.map((m) => ({ id: m.id, label: m.label }));
     } catch {
-      return [];
+      // No runtime yet (no workspace open). The shortlist is static, so it can
+      // still be shown.
     }
+    return shortlist.map((m) => ({ id: m.id, label: m.label }));
   }
 
   /**
-   * Which model this run uses. Three steps down, in order: the model the PM
-   * pinned to this session, the workspace default, then whatever is available
-   * at all. That last step is what makes a settings file (or a session sidecar)
-   * naming a model pi has since dropped degrade into a working session instead
-   * of a broken one, and it says so on the console rather than silently.
+   * Which model this run uses. Four steps down, in order: the model the PM
+   * pinned to this session, the workspace default, the provider's default, then
+   * whatever that provider has at all. The later steps are what makes a
+   * settings file (or a session sidecar) naming a model pi has since dropped
+   * degrade into a working session instead of a broken one, and it says so on
+   * the console rather than silently.
+   *
+   * Every step stays inside the CHOSEN provider. pi treats an API key in the
+   * environment as a configured provider, so a machine with `ANTHROPIC_API_KEY`
+   * exported would otherwise let a workspace set to Gemini answer on Claude
+   * with a credential nobody in the app pasted.
    */
   private async resolveModel(pinned?: string | null) {
     const runtime = await this.models();
     if (!this.config) throw new Error('agent runtime not configured');
-    const available = runtime.getAvailableSnapshot();
-    if (available.length === 0) throw new Error('No model available — set an Anthropic API key in Settings.');
-    for (const wanted of [pinned, this.config.modelId]) {
-      if (!wanted) continue;
+    const provider = providerFor(this.config);
+    const available = runtime.getAvailableSnapshot().filter((m) => m.provider === provider);
+    if (available.length === 0)
+      throw new Error(`No model available. Set a ${providerName(provider)} API key in Settings.`);
+    // The provider's own default is the last named step, ahead of "anything
+    // that answers": one configured provider still offers dozens of models, and
+    // the first of those is as likely to be a robotics preview as a chat model.
+    const tried = new Set<string>();
+    for (const wanted of [pinned, this.config.modelId, providerModels(provider)[0]?.id]) {
+      if (!wanted || tried.has(wanted)) continue;
+      tried.add(wanted);
       const found = available.find((m) => m.id === wanted);
       if (found) return found;
-      console.error(`[qale] model "${wanted}" is not available — falling back`);
+      console.error(`[qale] model "${wanted}" is not available, falling back`);
     }
     return available[0]!;
   }
 
   /**
-   * A short, human title for a titleless capture (a dropped transcript) — so it
-   * files as `meetings/2026-07-20-nordkap-sso-checkin.md`, not a slug of its
-   * first spoken line. One cheap non-streaming completion; strictly best-effort:
-   * no key, no model, or any error returns null and the caller keeps its
-   * heuristic title. Never throws into the capture path.
+   * One short non-streaming completion on the cheapest model this workspace can
+   * reach — for the small jobs that are not the conversation: naming it, so far.
+   * Strictly best-effort: no key, no model or any error returns null and the
+   * caller keeps what it had. Never throws into a run.
    */
-  async generateTitle(text: string): Promise<string | null> {
-    let runtime: ModelRuntime;
-    let model;
+  private async completeCheaply(systemPrompt: string, prompt: string): Promise<string | null> {
     try {
-      runtime = await this.models();
-      model = await this.resolveModel();
-    } catch {
-      return null;
-    }
-    const excerpt = text.replace(/\s+/g, ' ').trim().slice(0, 3000);
-    if (excerpt.length < 40) return null;
-    const context = {
-      systemPrompt:
-        'You title meeting notes. Reply with ONLY a short, specific title in Title Case ' +
-        '(3–8 words) — the customer or topic, no quotes, no trailing punctuation, no preamble. ' +
-        'Example: Nordkap SSO Go-Live Check-in',
-      messages: [{ role: 'user' as const, content: `Transcript excerpt:\n\n${excerpt}`, timestamp: 0 }],
-    };
-    try {
+      const runtime = await this.models();
+      // The chosen provider's catalogue, not the shortlist: the cheapest thing
+      // that can write four words is rarely a model worth putting in a picker,
+      // and this job never touches the workspace. Bounded by the provider for
+      // the same reason `resolveModel` is: the key we hold is theirs alone.
+      const provider = providerFor(this.config);
+      const catalogue = runtime.getAvailableSnapshot().filter((m) => m.provider === provider);
+      // Falls back to the session's own model rather than giving up: an
+      // expensive name beats no name, and this is one sentence in either case.
+      const model = cheapestModel(catalogue) ?? (await this.resolveModel());
       // Through the runtime rather than the bare pi-ai helper: the helper falls
       // back to env vars, and a packaged build has no ANTHROPIC_API_KEY. The
       // runtime holds the key the PM pasted into Settings.
-      const msg = await runtime.completeSimple(model, context);
+      const msg = await runtime.completeSimple(model, {
+        systemPrompt,
+        messages: [{ role: 'user' as const, content: prompt, timestamp: 0 }],
+      });
       const out = (msg.content ?? [])
-        .filter((c): c is { type: 'text'; text: string } => (c as { type?: string }).type === 'text')
+        .filter(
+          (c): c is { type: 'text'; text: string } => (c as { type?: string }).type === 'text',
+        )
         .map((c) => c.text)
         .join(' ');
-      const title = out
-        .replace(/^["'`\s]+|["'`.\s]+$/g, '')
-        .replace(/\s+/g, ' ')
-        .slice(0, 80)
-        .trim();
-      return title.length >= 2 ? title : null;
-    } catch {
+      return out.trim() || null;
+    } catch (err) {
+      console.error('[qale] a cheap completion failed:', err instanceof Error ? err.message : err);
       return null;
     }
   }
@@ -594,7 +708,23 @@ export class AgentRuntime {
     // `end_quietly` is on everywhere too, and deliberately: it is a no-op on an
     // interactive turn, and a tool that appeared and disappeared between kinds
     // of session would only teach the model to guess which kind it is in.
-    const names = [...VAULT_TOOL_NAMES, ASK_TOOL_NAME, END_QUIETLY_TOOL_NAME, ...PROPOSE_TOOL_NAMES];
+    // Taking a card back rides with proposing, and for the same reason: it
+    // writes nothing and decides nothing. A session that may put a card in front
+    // of the PM must be able to say "ignore that one" without leaving a second
+    // card beside the first for them to sort out.
+    // Recording a deferral is on everywhere for the same reason `end_quietly`
+    // is: it writes nothing, decides nothing, and grants no permission the
+    // session did not already have. It only makes the "I looked at this and
+    // chose not to act" that every run already performs silently into something
+    // the next run can read (OW6).
+    const names = [
+      ...VAULT_TOOL_NAMES,
+      ASK_TOOL_NAME,
+      END_QUIETLY_TOOL_NAME,
+      DEFER_TOOL_NAME,
+      ...PROPOSE_TOOL_NAMES,
+      WITHDRAW_TOOL_NAME,
+    ];
     // Outbound is two permissions in series and a file only holds the first:
     // `can: [draft-outbound]` says this session may draft, the workspace's
     // connectors say whether a draft can reach anything. With nothing connected
@@ -628,7 +758,10 @@ export class AgentRuntime {
    * no audience (how we file, what we call things, which language we write in)
    * applies to it exactly as much as to the parent.
    */
-  private async alwaysOnGuides(ctx: UseCaseContext, opts: { forDrafting?: boolean } = {}): Promise<string> {
+  private async alwaysOnGuides(
+    ctx: UseCaseContext,
+    opts: { forDrafting?: boolean } = {},
+  ): Promise<string> {
     const forDrafting = opts.forDrafting !== false;
     const skills = ctx.index.all().filter((n) => n.type === 'skill');
     const bodies: string[] = [];
@@ -648,7 +781,8 @@ export class AgentRuntime {
       const scope = cfg.audience ? ` (applies when drafting for ${cfg.audience})` : '';
       // The heading names the rule the way the Skills view does; the gloss
       // only earns a line when it says something the title doesn't.
-      const gloss = cfg.summary.trim() && cfg.summary.trim() !== cfg.name ? ` — ${cfg.summary.trim()}` : '';
+      const gloss =
+        cfg.summary.trim() && cfg.summary.trim() !== cfg.name ? ` — ${cfg.summary.trim()}` : '';
       bodies.push(`### ${cfg.title}${scope}${gloss}\n${note.body.trim()}`);
     }
     return bodies.length ? `\n\n## House rules (always in effect)\n${bodies.join('\n\n')}` : '';
@@ -674,7 +808,9 @@ export class AgentRuntime {
     if (playbooks.length > 0)
       parts.push(playbooks.map((s) => `- \`${s.config.name}\` — ${s.config.summary}`).join('\n'));
     if (reference.length > 0)
-      parts.push(`Reference (read-only):\n${reference.map((g) => `- \`${g.config.name}\` — ${g.config.summary}`).join('\n')}`);
+      parts.push(
+        `Reference (read-only):\n${reference.map((g) => `- \`${g.config.name}\` — ${g.config.summary}`).join('\n')}`,
+      );
     return parts.join('\n');
   }
 
@@ -706,7 +842,10 @@ export class AgentRuntime {
 
   private loadLifecycles(): Record<string, StoredLifecycle> {
     try {
-      const parsed = JSON.parse(readFileSync(this.lifecycleFile(), 'utf8')) as Record<string, unknown>;
+      const parsed = JSON.parse(readFileSync(this.lifecycleFile(), 'utf8')) as Record<
+        string,
+        unknown
+      >;
       const out: Record<string, StoredLifecycle> = {};
       for (const [id, v] of Object.entries(parsed)) {
         if (v === 'done' || v === 'dismissed' || v === 'quiet') out[id] = v;
@@ -747,7 +886,10 @@ export class AgentRuntime {
 
   private loadSessionModels(): Record<string, string> {
     try {
-      const parsed = JSON.parse(readFileSync(this.sessionModelFile(), 'utf8')) as Record<string, unknown>;
+      const parsed = JSON.parse(readFileSync(this.sessionModelFile(), 'utf8')) as Record<
+        string,
+        unknown
+      >;
       const out: Record<string, string> = {};
       for (const [id, v] of Object.entries(parsed)) if (typeof v === 'string' && v) out[id] = v;
       return out;
@@ -825,6 +967,9 @@ export class AgentRuntime {
     const scheduledNote = scheduled ? SCHEDULED_PREAMBLE : unattended ? UNATTENDED_PREAMBLE : '';
     const baseSystemPrompt =
       buildSystemPrompt(SHARED_PREAMBLE, skillConfig) +
+      languagePreamble(this.config.language ?? DEFAULT_LANGUAGE) +
+      datePreamble(ctx.clock.now()) +
+      notePropertiesPreamble() +
       voice +
       (skillIndex ?? '') +
       files +
@@ -859,7 +1004,9 @@ export class AgentRuntime {
       ...VAULT_TOOL_NAMES,
       ASK_TOOL_NAME,
       END_QUIETLY_TOOL_NAME,
+      DEFER_TOOL_NAME,
       ...PROPOSE_TOOL_NAMES,
+      WITHDRAW_TOOL_NAME,
       ...DRAFT_TOOL_NAMES,
       ...FILING_TOOL_NAMES,
       ...(canInvokeSkills ? [USE_SKILL_TOOL_NAME] : []),
@@ -868,7 +1015,7 @@ export class AgentRuntime {
       ...(atlassianActive ? ATLASSIAN_TOOL_NAMES : []),
     ];
     const customTools = withDecodedArgs([
-      ...createVaultTools(ctx, harness),
+      ...createVaultTools(ctx, harness, this.config.language ?? DEFAULT_LANGUAGE),
       createAskTool({ requestAnswer: (plan, signal) => this.askThePm(id, ctx, plan, signal) }),
       createEndQuietlyTool({
         // Both kinds of nobody-is-watching turn may end in silence; only the
@@ -878,7 +1025,9 @@ export class AgentRuntime {
           turn.ended = true;
         },
       }),
+      createDeferralTool(ctx),
       ...createProposeTools(ctx, id, harness),
+      createWithdrawTool(ctx, id, harness),
       ...createDraftTools(ctx, id, harness),
       ...createFilingTools(ctx, harness, filesRoot),
       ...(canInvokeSkills ? [createUseSkillTool(ctx, harness, () => applyActivation())] : []),
@@ -888,7 +1037,13 @@ export class AgentRuntime {
         requestApproval: (plan, brief) => this.askToSpawn(id, plan, brief),
         runChild: (child, opts) => this.runChild(id, child, opts, ctx, harness),
       }),
-      ...(atlassianActive ? createAtlassianTools(this.atlassian!, this.config.trackExternal) : []),
+      ...(atlassianActive
+        ? createAtlassianTools(
+            this.atlassian!,
+            this.config.trackExternal,
+            this.config.answerContainerOffer,
+          )
+        : []),
     ]);
 
     // Mutable so an arriving skill's instructions can join the system prompt and
@@ -916,6 +1071,7 @@ export class AgentRuntime {
     const manager = existingFile
       ? SessionManager.open(existingFile, this.sessionsDir(), this.config.vaultDir)
       : SessionManager.create(this.config.vaultDir, this.sessionsDir(), { id });
+    const storedName = manager.getSessionName();
 
     const { session } = await createAgentSession({
       cwd: this.config.vaultDir,
@@ -952,7 +1108,12 @@ export class AgentRuntime {
       manager,
       bridge: null,
       activeStreamId: null,
-      title: '',
+      // A conversation reopened after a restart keeps the name it took the first
+      // time: the transcript is where that name lives, and re-deriving one here
+      // would spend a call to arrive back at the same words.
+      title: storedName ?? '',
+      named: !!storedName,
+      titleStored: !!storedName,
       runStartedAt: 0,
       turn,
       unsubscribe: () => undefined,
@@ -978,7 +1139,11 @@ export class AgentRuntime {
   }
 
   /** File the session receipt to sessions/ — the human-auditable reads/writes ledger. */
-  private async fileReceipt(state: SessionState, ctx: UseCaseContext, quiet = false): Promise<void> {
+  private async fileReceipt(
+    state: SessionState,
+    ctx: UseCaseContext,
+    quiet = false,
+  ): Promise<void> {
     if (state.harness.turns.length === 0 && state.harness.writes.length === 0) return;
     this.markUsed(state, ctx, quiet);
     // A run with nothing to report leaves no receipt (QM ticket 2). Not written
@@ -999,13 +1164,6 @@ export class AgentRuntime {
   }
 
   /**
-   * What a conversation calls itself, from its first message. A message the PM
-   * typed IS the title; a kickoff the app composed ("Run the arrival skill on
-   * sources/2026-07-30-i-have-a-meeting…") is machine prose that makes a useless
-   * row in the sessions list, so those get named after what they are — the skill
-   * and the page it ran on.
-   */
-  /**
    * The first thing ever said into this conversation, off the transcript. A
    * session resumed after a restart has no title in memory, and naming it after
    * whatever reopened it would rename an old conversation after a new sentence —
@@ -1020,6 +1178,15 @@ export class AgentRuntime {
     return null;
   }
 
+  /**
+   * What a conversation calls itself the second it starts, before the namer has
+   * answered (see {@link nameSession}). A message the PM typed IS the title; a
+   * kickoff the app composed ("Run the arrival skill on
+   * sources/2026-07-30-i-have-a-meeting…") is machine prose that makes a useless
+   * row in the sessions list, so those get named after what they are — the skill
+   * and the page it ran on. It is also the name that stands for good on a run
+   * nobody started, which never spends a call on naming itself.
+   */
   private titleFor(prompt: string, state: SessionState, ctx: UseCaseContext): string {
     const kickoff = parseKickoff(prompt);
     if (!kickoff) return truncate(prompt, 60) ?? 'Session';
@@ -1039,6 +1206,64 @@ export class AgentRuntime {
   }
 
   /**
+   * Give the conversation its own name, off the first thing said into it, on the
+   * cheapest model available (see ./naming.ts). Runs beside the turn rather than
+   * before it: the heuristic name is already on screen, so this is a word
+   * changing under a session that is answering, never a session waiting.
+   */
+  private async nameSession(
+    state: SessionState,
+    prompt: string,
+    ctx: UseCaseContext,
+  ): Promise<void> {
+    const answer = await this.completeCheaply(
+      namingSystemPrompt(this.config?.language),
+      namingUserPrompt(this.subjectOf(prompt, state, ctx)),
+    );
+    const title = answer ? cleanTitle(answer) : null;
+    if (!title || title === state.title) return;
+    state.title = title;
+    this.storeTitle(state, title);
+    this.onRename?.({ sessionId: state.id, title });
+  }
+
+  /**
+   * Write the session's name into its transcript, which is the only place a name
+   * survives a restart — `listChats` reads it back ahead of the first message,
+   * and without it every list falls back to the opening prose. Appending mid-turn
+   * is what pi's own naming does: a session_info entry is metadata, invisible to
+   * the context the model sees and to the messages the chat replays.
+   */
+  private storeTitle(state: SessionState, title: string): void {
+    try {
+      state.manager.appendSessionInfo(title);
+      state.titleStored = true;
+      this.chatListCache = null;
+    } catch (err) {
+      console.error(
+        '[qale] could not store the session name:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  /**
+   * What the namer is told the session is about. A message a person typed IS the
+   * subject; a kickoff the app composed ("Run the arrival skill on
+   * sources/2026-07-30-…") is machine prose that would name the conversation
+   * after a path, so those hand over the facts underneath it instead — the skill
+   * in the PM's words, and the pages by title.
+   */
+  private subjectOf(prompt: string, state: SessionState, ctx: UseCaseContext): SessionSubject {
+    const kickoff = parseKickoff(prompt);
+    if (!kickoff) return { prompt };
+    return {
+      skill: state.harness.invoked.find((c) => c.name === kickoff.skill)?.title ?? kickoff.skill,
+      targets: (kickoff.targets ?? []).map((path) => ctx.index.get(path)?.title ?? path),
+    };
+  }
+
+  /**
    * Start a run. Returns immediately with {streamId, sessionId}; chunks stream via
    * `emit(streamId, chunk)` (main pumps them over IPC). The terminal `finish`
    * chunk always fires — on success, error, or abort.
@@ -1048,7 +1273,10 @@ export class AgentRuntime {
     ctx: UseCaseContext,
     emit: (streamId: string, chunk: Chunk) => void,
   ): Promise<RunHandle> {
-    if (!this.config?.apiKey) throw new Error('Set an Anthropic API key in Settings to start a session.');
+    if (!this.config?.apiKey)
+      throw new Error(
+        `Set a ${providerName(providerFor(this.config))} API key in Settings to start a session.`,
+      );
     const sessionId = input.sessionId ?? randomUUID();
     // Written down before the session is built, so a first turn that names a
     // model opens on it rather than switching a beat later. A run that names
@@ -1058,16 +1286,19 @@ export class AgentRuntime {
     if (!state) {
       let pending = this.creating.get(sessionId);
       if (!pending) {
-        pending = this.createSession(sessionId, ctx, !!input.scheduled, !!input.unattended).finally(() => {
-          this.creating.delete(sessionId);
-        });
+        pending = this.createSession(sessionId, ctx, !!input.scheduled, !!input.unattended).finally(
+          () => {
+            this.creating.delete(sessionId);
+          },
+        );
         this.creating.set(sessionId, pending);
       }
       state = await pending;
     }
     // One turn at a time per session: a second run would reroute the live
     // bridge mid-stream and interleave pi prompts on the same session.
-    if (state.activeStreamId) throw new Error('This session is still responding — wait or stop it first.');
+    if (state.activeStreamId)
+      throw new Error('This session is still responding — wait or stop it first.');
     // A new message on a done/dismissed session reopens it. A quiet run reopens
     // the same way: the moment anything is said into it, it has a reader.
     if (this.getLifecycle(sessionId) !== 'active') this.setLifecycle(sessionId, 'active');
@@ -1087,11 +1318,33 @@ export class AgentRuntime {
     // does. What already happened stays as it was: pi writes the switch into the
     // transcript, and the turns before it keep the model they ran on.
     await this.applyModel(state);
+    // Tidy the pages this run is ABOUT before the model opens one (OW4).
+    await this.normalizeTargets(input, ctx);
     // Invoking the same skill twice is a no-op, so a caller that keeps passing
     // one across turns stacks nothing.
     if (input.skill) await this.invokeSkillInto(state, input.skill, ctx, input.outbound);
     state.harness.beginTurn(input.prompt, ctx.clock.now());
-    if (!state.title) state.title = this.titleFor(this.openingPrompt(state) ?? input.prompt, state, ctx);
+    const opening = this.openingPrompt(state) ?? input.prompt;
+    if (!state.title) state.title = this.titleFor(opening, state, ctx);
+    // Then a cheap model gives it a real name, once, off that same first
+    // message. Not on a turn nobody started: a clock's tick and material
+    // arriving while the PM is away keep the deterministic name and spend
+    // nothing. The moment a person writes into one of those, it gets named like
+    // any other conversation, because now somebody is reading the row.
+    if (!state.named && !input.scheduled && !input.unattended) {
+      state.named = true;
+      void this.nameSession(state, opening, ctx).catch((err) => {
+        console.error(
+          '[qale] naming this session failed:',
+          err instanceof Error ? err.message : err,
+        );
+      });
+    } else if (!state.titleStored && state.title) {
+      // A run nobody started keeps the deterministic name, and now keeps it
+      // where it can be read back: "Librarian" rather than the first sixty
+      // characters of the worklist the app handed it.
+      this.storeTitle(state, state.title);
+    }
 
     const streamId = randomUUID();
     const bridge = new PiUiBridge((chunk) => emit(streamId, chunk));
@@ -1102,13 +1355,24 @@ export class AgentRuntime {
     bridge.start();
     this.emitStatus(state, 'running');
 
+    // What became of this session's cards, told to it fresh every turn (see
+    // ./card-state.ts). Only the model sees it: `beginTurn` above and the title
+    // took the prompt as the PM wrote it, and both display paths unwrap it, so
+    // the receipt and the chat keep the sentence they actually typed.
+    // Set by the catch below, read by the finally: a rejected prompt has no
+    // ended message for the bridge to have seen.
+    let thrownFault: ProviderFault | null = null;
     void state.session
-      .prompt(input.prompt)
+      .prompt(withCardState(input.prompt, sessionCards(ctx, sessionId)))
       .catch((err) => {
         // A scheduled run that broke has to stay visible, so the failure is
         // remembered here and read by `ranQuiet` below.
         state.turn.failed = true;
-        emit(streamId, { type: 'error', errorText: err instanceof Error ? err.message : String(err) });
+        // The other half of the refusal path: a throw rather than an ended
+        // message. Same sentence, same "is this the PM's to fix" answer, so a
+        // key rejected at connect time notifies exactly like one rejected mid-turn.
+        thrownFault = providerFault(err instanceof Error ? err.message : String(err));
+        emit(streamId, { type: 'error', errorText: thrownFault.text });
       })
       .finally(() => {
         bridge.finish();
@@ -1117,16 +1381,49 @@ export class AgentRuntime {
           state.bridge = null;
         }
         this.streamToSession.delete(streamId);
+        // A refusal reaches us two ways and only one of them threw. The common
+        // one does not: pi ends the turn with an assistant message carrying
+        // `stopReason: error` and nothing in it, which resolves the promise
+        // above and left `failed` reading false — so a run that never got a word
+        // out of the provider looked exactly like a run that had nothing to say.
+        const fault = bridge.fault ?? thrownFault;
+        if (fault) state.turn.failed = true;
         // Decided before the status goes out: main suppresses the "finished"
         // notification on a quiet run, and the renderer must not draw a row it
         // is about to lose on the next refresh.
         const quiet = this.settleQuietly(state, bridge.finalText);
-        this.emitStatus(state, 'settled', quiet);
+        this.emitStatus(state, 'settled', quiet, fault);
         // File/refresh the session receipt after each settled turn.
         void this.fileReceipt(state, ctx, quiet);
       });
 
     return { streamId, sessionId };
+  }
+
+  /**
+   * Put the run's own pages in shape before the turn starts (OW4). A kickoff
+   * names the notes it is about, and those are the ones the model opens first,
+   * so a missing `type` or an absent summary is fixed by rule here rather than
+   * costing the run a turn to notice. Whatever could not be derived is left as a
+   * marked placeholder for the same run to replace through a card.
+   *
+   * The vault-wide pass runs in the maintenance tick, which is what covers a
+   * background run whose worklist names no targets at all.
+   *
+   * Never fatal: a tidy that failed leaves the notes exactly as they were, and
+   * the PM's message still gets an answer.
+   */
+  private async normalizeTargets(input: RunInput, ctx: UseCaseContext): Promise<void> {
+    const targets = parseKickoff(input.prompt)?.targets;
+    if (!targets?.length) return;
+    try {
+      await normalizeNoteFrontmatter(ctx, targets);
+    } catch (err) {
+      console.error(
+        '[qale] frontmatter normalize failed:',
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 
   /**
@@ -1144,7 +1441,12 @@ export class AgentRuntime {
     }
   }
 
-  private emitStatus(state: SessionState, status: SessionStatus['status'], quiet = false): void {
+  private emitStatus(
+    state: SessionState,
+    status: SessionStatus['status'],
+    quiet = false,
+    fault: ProviderFault | null = null,
+  ): void {
     this.onStatus?.({
       sessionId: state.id,
       title: state.title,
@@ -1152,6 +1454,7 @@ export class AgentRuntime {
       updated: Date.now(),
       skill: state.harness.primarySkillName,
       ...(quiet ? { quiet } : {}),
+      ...(fault ? { fault } : {}),
     });
   }
 
@@ -1215,7 +1518,11 @@ export class AgentRuntime {
    * run, and every one of those settles the promise. `cancelSpawns` covers abort,
    * delete and reconfigure.
    */
-  private async askToSpawn(sessionId: string, plan: SpawnPlan, brief: string | null): Promise<SpawnDecision> {
+  private async askToSpawn(
+    sessionId: string,
+    plan: SpawnPlan,
+    brief: string | null,
+  ): Promise<SpawnDecision> {
     const state = this.sessions.get(sessionId);
     const request: SpawnRequestInfo = {
       id: spawnRequestId(),
@@ -1377,13 +1684,20 @@ export class AgentRuntime {
     const model = await this.resolveModel(opts.modelId ?? this.getSessionModel(parentId));
     const filesRoot = sessionFilesRoot(this.config.vaultDir, parentId);
 
-    const parts = [CHILD_PREAMBLE, ''];
+    // The language setting reaches the children for the same reason the house
+    // rules below do: a fan-out over Swedish transcripts must not hand back
+    // Swedish working files that the parent then files as they are.
+    const parts = [
+      CHILD_PREAMBLE,
+      languagePreamble(this.config.language ?? DEFAULT_LANGUAGE).trim(),
+    ];
     // House rules reach the children too. A rule that is "always in effect"
     // cannot stop at the parent: a fan-out over Swedish transcripts would hand
     // back Swedish working files, and the parent files what it was handed.
     const houseRules = (await this.alwaysOnGuides(ctx, { forDrafting: false })).trim();
     if (houseRules) parts.push(houseRules);
-    if (opts.brief) parts.push(`## The brief (what everyone working on this was told)\n${opts.brief.trim()}`);
+    if (opts.brief)
+      parts.push(`## The brief (what everyone working on this was told)\n${opts.brief.trim()}`);
     parts.push(`## Your output\nWrite exactly one file with write_result: \`${child.writeTo}\`.`);
     if (child.read.length > 0) {
       parts.push(`## Read first\n${child.read.map((p) => `- ${p}`).join('\n')}`);
@@ -1413,7 +1727,7 @@ export class AgentRuntime {
       customTools: withDecodedArgs([
         // Reads land in the parent's receipt: the ledger must be honest about
         // what the session as a whole read, children included.
-        ...createVaultTools(ctx, harness),
+        ...createVaultTools(ctx, harness, this.config.language ?? DEFAULT_LANGUAGE),
         ...createChildFileTools(filesRoot, child.writeTo, () => {
           wrote = true;
           this.onFilesChanged?.(parentId);
@@ -1449,7 +1763,8 @@ export class AgentRuntime {
    * waiting. Without this the card would exist only in the push that announced it.
    */
   pendingSpawn(sessionId: string): SpawnRequestInfo | null {
-    for (const p of this.pendingSpawns.values()) if (p.request.sessionId === sessionId) return p.request;
+    for (const p of this.pendingSpawns.values())
+      if (p.request.sessionId === sessionId) return p.request;
     return null;
   }
 
@@ -1520,6 +1835,23 @@ export class AgentRuntime {
     }
   }
 
+  /**
+   * The number the Sessions row prints: grouped the way the transcript renders,
+   * so a tool-calling turn counts once. Falls back to pi's raw entry count only
+   * if the file can't be replayed — a number that's too big beats no row.
+   */
+  private uiMessageCount(sessionId: string, file: string, fallback: number): number {
+    try {
+      const live = this.sessions.get(sessionId);
+      const messages = live
+        ? entriesToUiMessages(live.manager.buildContextEntries())
+        : this.storedUiMessages(file);
+      return messages.length;
+    } catch {
+      return fallback;
+    }
+  }
+
   /** All stored conversations for this vault, newest first. */
   async listChats(): Promise<ChatRef[]> {
     if (!this.config) return [];
@@ -1538,7 +1870,10 @@ export class AgentRuntime {
         title: info.name ?? truncate(info.firstMessage, 64) ?? 'Untitled session',
         created: info.created.getTime(),
         updated: info.modified.getTime(),
-        messageCount: info.messageCount,
+        // Not info.messageCount: pi counts raw transcript entries, so one agent
+        // turn with 13 tool calls reads as 41 "messages". The row has to match
+        // what opening the session shows, which is what chatHistory() builds.
+        messageCount: this.uiMessageCount(info.id, info.path, info.messageCount),
         preview: truncate(info.allMessagesText, 140) ?? '',
         lifecycle: this.getLifecycle(info.id),
         modelId: this.getSessionModel(info.id),
@@ -1557,6 +1892,11 @@ export class AgentRuntime {
     if (live) return entriesToUiMessages(live.manager.buildContextEntries());
     const file = this.findSessionFile(sessionId);
     if (!file || !this.config) return [];
+    return this.storedUiMessages(file);
+  }
+
+  private storedUiMessages(file: string): UiMessage[] {
+    if (!this.config) return [];
     const manager = SessionManager.open(file, this.sessionsDir(), this.config.vaultDir);
     return entriesToUiMessages(manager.buildContextEntries());
   }
@@ -1613,12 +1953,24 @@ export class AgentRuntime {
   }
 }
 
+/**
+ * Whose API this config talks to. pi's provider ids and ours are the same two
+ * words (`anthropic`, `google`), so this is a default, not a translation.
+ */
+function providerFor(config: AgentRuntimeConfig | null): LlmProvider {
+  return config?.provider ?? DEFAULT_PROVIDER;
+}
+
 function sameConfig(a: AgentRuntimeConfig, b: AgentRuntimeConfig): boolean {
   return (
     a.vaultDir === b.vaultDir &&
     a.userDataDir === b.userDataDir &&
+    // Changing provider changes the credential, so it tears sessions down for
+    // the same reason a new key does.
+    providerFor(a) === providerFor(b) &&
     a.modelId === b.modelId &&
     a.apiKey === b.apiKey &&
+    (a.language ?? DEFAULT_LANGUAGE) === (b.language ?? DEFAULT_LANGUAGE) &&
     (a.atlassian?.baseUrl ?? null) === (b.atlassian?.baseUrl ?? null) &&
     (a.atlassian?.email ?? null) === (b.atlassian?.email ?? null) &&
     (a.atlassian?.token ?? null) === (b.atlassian?.token ?? null)

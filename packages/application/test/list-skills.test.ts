@@ -49,7 +49,10 @@ function ctxWith(files: Record<string, string>): UseCaseContext {
     }) as IndexedNote[];
   const vault = {
     readRaw: async (p: string) => files[p] ?? null,
-    listDir: async (dir: string) => Object.keys(files).filter((p) => p.startsWith(`${dir}/`)).sort(),
+    listDir: async (dir: string) =>
+      Object.keys(files)
+        .filter((p) => p.startsWith(`${dir}/`))
+        .sort(),
   } as unknown as VaultPort;
   const index = { all: () => notes } as unknown as IndexPort;
   return { vault, index } as unknown as UseCaseContext;
@@ -114,7 +117,9 @@ test('the switch is a floor: a skill file carries it too, and either folder can 
   );
   assert.equal(
     await runnableEnabled(
-      ctxWith({ 'skills/synthesis.md': SYNTHESIS.replace('type: skill', 'type: skill\nenabled: false') }),
+      ctxWith({
+        'skills/synthesis.md': SYNTHESIS.replace('type: skill', 'type: skill\nenabled: false'),
+      }),
       'synthesis',
     ),
     false,

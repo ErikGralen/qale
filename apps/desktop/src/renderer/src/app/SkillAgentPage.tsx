@@ -23,7 +23,13 @@ import { askSelectionSeed } from '../lib/agent-nudges';
  */
 
 /** One-line summary under the title — what every list shows for this file. */
-function SummaryEditor({ value, onCommit }: { value: string; onCommit: (summary: string) => void }) {
+function SummaryEditor({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (summary: string) => void;
+}) {
   const [draft, setDraft] = useState(value);
   return (
     <input
@@ -82,7 +88,8 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
   // the parsed row rather than sliced off the path again, since `skills/x/SKILL.md`
   // and legacy `skills/x.md` are the same skill under different filenames. The
   // button exists only where the file says the PM is one of the ways in.
-  const name = (isAgent ? agent?.id : skill?.name) ?? note.path.split('/').pop()!.replace(/\.md$/, '');
+  const name =
+    (isAgent ? agent?.id : skill?.name) ?? note.path.split('/').pop()!.replace(/\.md$/, '');
   const runnable = !isAgent && starts.some((x) => x.kind === 'you-run-it');
   // The material beside it. Listed, never loaded — the whole point of the folder.
   const files = (isAgent ? agent?.files : skill?.files) ?? [];
@@ -132,7 +139,9 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
           )}
           {confirmDelete ? (
             <div className="flex items-center gap-1.5 pl-1">
-              <span className="text-xs text-muted-foreground">Delete this {isAgent ? 'agent' : 'skill'}?</span>
+              <span className="text-xs text-muted-foreground">
+                Delete this {isAgent ? 'agent' : 'skill'}?
+              </span>
               <Button size="sm" variant="destructive" onClick={() => void deleteNote(note.path)}>
                 Delete
               </Button>

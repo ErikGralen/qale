@@ -1,6 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { X, Plus, PanelLeft, PanelRight, House, Inbox, History, MessageSquare, FileCode, FileText, Folder, Hash, Settings, Wand2, Bot, ListTodo, Library, ArrowLeft, ArrowRight } from 'lucide-react';
+import {
+  X,
+  Plus,
+  PanelLeft,
+  PanelRight,
+  House,
+  Inbox,
+  History,
+  MessageSquare,
+  FileCode,
+  FileText,
+  Folder,
+  Hash,
+  Settings,
+  Wand2,
+  Bot,
+  ListTodo,
+  Library,
+  ArrowLeft,
+  ArrowRight,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Spinner } from '@qale/ui';
 import { ToolbarButton } from '../components/ToolbarButton';
@@ -44,6 +64,19 @@ function iconFor(tab: Tab): LucideIcon {
 // Clear the macOS traffic lights when the collapsed sidebar no longer does.
 const isMac = navigator.userAgent.includes('Macintosh');
 
+/**
+ * The mirror image of that on Windows. The window there is frameless with a
+ * title bar overlay (see WINDOWS_TITLE_BAR_OVERLAY in src/main/index.ts), which
+ * means Windows paints minimise, maximise and close on top of the top-right
+ * corner of this page. Those pixels are not ours: a click there hits the OS
+ * button, so anything of ours underneath is not just half-covered, it is dead.
+ * Holding the lane open here is what keeps the new-tab and right-rail buttons
+ * clickable. 138px is the three Windows 11 caption buttons at 46 CSS px each,
+ * which is what they measure at every display scale.
+ */
+const isWindows = navigator.userAgent.includes('Windows');
+const CAPTION_LANE = 'pr-[138px]';
+
 const MENU_WIDTH = 208;
 /**
  * Gap between tabs — twice the 6px bottom flare (see `.qale-tab`), so neighbouring
@@ -55,8 +88,26 @@ const DRAG_THRESHOLD = 4;
 /** Dragging within this distance of the strip edge auto-scrolls. */
 const EDGE_SCROLL_ZONE = 36;
 
-function TabMenu({ tabId, x, y, onClose }: { tabId: string; x: number; y: number; onClose: () => void }) {
-  const { tabs, closeTab, closeOtherTabs, closeAllTabs, closeTabsBefore, closeTabsAfter, reopenClosedTab } = useApp();
+function TabMenu({
+  tabId,
+  x,
+  y,
+  onClose,
+}: {
+  tabId: string;
+  x: number;
+  y: number;
+  onClose: () => void;
+}) {
+  const {
+    tabs,
+    closeTab,
+    closeOtherTabs,
+    closeAllTabs,
+    closeTabsBefore,
+    closeTabsAfter,
+    reopenClosedTab,
+  } = useApp();
   const idx = tabs.findIndex((t) => t.id === tabId);
   const tab = tabs[idx];
 
@@ -75,12 +126,22 @@ function TabMenu({ tabId, x, y, onClose }: { tabId: string; x: number; y: number
     onClose();
   };
 
-  const items: { label: string; action: () => void; disabled?: boolean; hint?: string; icon?: LucideIcon }[] = [
+  const items: {
+    label: string;
+    action: () => void;
+    disabled?: boolean;
+    hint?: string;
+    icon?: LucideIcon;
+  }[] = [
     { label: 'Close', action: () => closeTab(tab.id), hint: '⌘W' },
     { label: 'Close Other Tabs', action: () => closeOtherTabs(tab.id), disabled: tabs.length <= 1 },
     { label: 'Close All Tabs', action: closeAllTabs },
     { label: 'Close Tabs to the Left', action: () => closeTabsBefore(tab.id), disabled: idx === 0 },
-    { label: 'Close Tabs to the Right', action: () => closeTabsAfter(tab.id), disabled: idx === tabs.length - 1 },
+    {
+      label: 'Close Tabs to the Right',
+      action: () => closeTabsAfter(tab.id),
+      disabled: idx === tabs.length - 1,
+    },
     { label: 'Reopen Closed Tab', action: reopenClosedTab, hint: '⇧⌘T' },
   ];
 
@@ -114,7 +175,9 @@ function TabMenu({ tabId, x, y, onClose }: { tabId: string; x: number; y: number
           >
             {item.icon && <item.icon className="size-3.5 text-muted-foreground" aria-hidden />}
             {item.label}
-            {item.hint && <span className="ml-auto text-xs text-muted-foreground">{item.hint}</span>}
+            {item.hint && (
+              <span className="ml-auto text-xs text-muted-foreground">{item.hint}</span>
+            )}
           </button>
         ))}
       </div>
@@ -145,7 +208,11 @@ function TabTitle({ title }: { title: string }) {
   }, [title]);
 
   return (
-    <span ref={ref} className="qale-tab-title min-w-0 flex-1 overflow-hidden whitespace-nowrap" data-clipped={clipped || undefined}>
+    <span
+      ref={ref}
+      className="qale-tab-title min-w-0 flex-1 overflow-hidden whitespace-nowrap"
+      data-clipped={clipped || undefined}
+    >
       {title}
     </span>
   );
@@ -206,7 +273,19 @@ export function TabStrip({
   onToggleSidebar: () => void;
   rightPanel: RightPanelToggle;
 }) {
-  const { tabs, activeTabId, setActiveTab, closeTab, moveTab, openHome, sessions, goBack, goForward, canGoBack, canGoForward } = useApp();
+  const {
+    tabs,
+    activeTabId,
+    setActiveTab,
+    closeTab,
+    moveTab,
+    openHome,
+    sessions,
+    goBack,
+    goForward,
+    canGoBack,
+    canGoForward,
+  } = useApp();
   const [menu, setMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [fades, setFades] = useState({ left: false, right: false });
@@ -250,7 +329,11 @@ export function TabStrip({
     const el = document.getElementById(`tab-${activeTabId}`);
     if (!el) return;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    el.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
+    el.scrollIntoView({
+      inline: 'nearest',
+      block: 'nearest',
+      behavior: reduced ? 'auto' : 'smooth',
+    });
   }, [activeTabId, tabs.length]);
 
   /** Recompute drag position/target from the last pointer x and current scroll. */
@@ -267,9 +350,11 @@ export function TabStrip({
     const draggedCenter = own.left + own.width / 2 + dx;
     let target = d.index;
     if (dx > 0) {
-      for (let j = d.index + 1; j < centers.length; j++) if (draggedCenter > (centers[j] ?? Infinity)) target = j;
+      for (let j = d.index + 1; j < centers.length; j++)
+        if (draggedCenter > (centers[j] ?? Infinity)) target = j;
     } else {
-      for (let j = d.index - 1; j >= 0; j--) if (draggedCenter < (centers[j] ?? -Infinity)) target = j;
+      for (let j = d.index - 1; j >= 0; j--)
+        if (draggedCenter < (centers[j] ?? -Infinity)) target = j;
     }
     d.lastTarget = target;
     setDrag({ id: d.id, index: d.index, dx, target, width: own.width });
@@ -282,8 +367,10 @@ export function TabStrip({
     if (!d || !d.moved || !scroller) return;
     const sRect = scroller.getBoundingClientRect();
     let delta = 0;
-    if (d.lastClientX < sRect.left + EDGE_SCROLL_ZONE) delta = -Math.ceil((sRect.left + EDGE_SCROLL_ZONE - d.lastClientX) / 4);
-    else if (d.lastClientX > sRect.right - EDGE_SCROLL_ZONE) delta = Math.ceil((d.lastClientX - (sRect.right - EDGE_SCROLL_ZONE)) / 4);
+    if (d.lastClientX < sRect.left + EDGE_SCROLL_ZONE)
+      delta = -Math.ceil((sRect.left + EDGE_SCROLL_ZONE - d.lastClientX) / 4);
+    else if (d.lastClientX > sRect.right - EDGE_SCROLL_ZONE)
+      delta = Math.ceil((d.lastClientX - (sRect.right - EDGE_SCROLL_ZONE)) / 4);
     if (delta !== 0) {
       const before = scroller.scrollLeft;
       scroller.scrollLeft += delta;
@@ -352,12 +439,15 @@ export function TabStrip({
 
   return (
     <div
-      className={`relative flex h-10 items-stretch bg-sidebar ${!sidebarOpen && isMac ? 'pl-[70px]' : ''}`}
+      className={`relative flex h-10 items-stretch bg-sidebar ${!sidebarOpen && isMac ? 'pl-[70px]' : ''} ${isWindows ? CAPTION_LANE : ''}`}
       style={{ WebkitAppRegion: 'drag' } as never}
     >
       {/* Sidebar toggle sits apart from the paired nav arrows so the two read as
           distinct jobs — no divider needed. */}
-      <div className="flex shrink-0 items-center gap-0.5 pr-1 pl-1.5" style={{ WebkitAppRegion: 'no-drag' } as never}>
+      <div
+        className="flex shrink-0 items-center gap-0.5 pr-1 pl-1.5"
+        style={{ WebkitAppRegion: 'no-drag' } as never}
+      >
         <ToolbarButton
           icon={PanelLeft}
           label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
@@ -367,8 +457,20 @@ export function TabStrip({
         />
         {/* Browser-style history for the ACTIVE tab. Disabled ≠ hidden: the
             cluster keeps its place so the strip never reflows on navigation. */}
-        <ToolbarButton icon={ArrowLeft} label="Back" keys={['⌘', '←']} onClick={goBack} disabled={!canGoBack} />
-        <ToolbarButton icon={ArrowRight} label="Forward" keys={['⌘', '→']} onClick={goForward} disabled={!canGoForward} />
+        <ToolbarButton
+          icon={ArrowLeft}
+          label="Back"
+          keys={['⌘', '←']}
+          onClick={goBack}
+          disabled={!canGoBack}
+        />
+        <ToolbarButton
+          icon={ArrowRight}
+          label="Forward"
+          keys={['⌘', '→']}
+          onClick={goForward}
+          disabled={!canGoForward}
+        />
       </div>
       <div className="relative min-w-0 flex-1">
         <div
@@ -391,8 +493,10 @@ export function TabStrip({
                 style = { transform: `translateX(${drag.dx}px)` };
               } else {
                 const shiftWidth = drag.width + TAB_GAP;
-                if (drag.index < drag.target && i > drag.index && i <= drag.target) style = { transform: `translateX(${-shiftWidth}px)` };
-                else if (drag.target < drag.index && i >= drag.target && i < drag.index) style = { transform: `translateX(${shiftWidth}px)` };
+                if (drag.index < drag.target && i > drag.index && i <= drag.target)
+                  style = { transform: `translateX(${-shiftWidth}px)` };
+                else if (drag.target < drag.index && i >= drag.target && i < drag.index)
+                  style = { transform: `translateX(${shiftWidth}px)` };
               }
             }
             return (
@@ -403,7 +507,9 @@ export function TabStrip({
                 // X is painted: the label always stops short of it, so nothing
                 // shifts on hover and the X never lands on top of the title.
                 className={`qale-tab group relative flex h-full min-w-[56px] max-w-[208px] flex-1 basis-0 items-center gap-1.5 pr-6 pl-2.5 text-dense outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset ${
-                  active ? 'z-10 font-medium text-foreground' : 'text-foreground/75 hover:text-foreground'
+                  active
+                    ? 'z-10 font-medium text-foreground'
+                    : 'text-foreground/75 hover:text-foreground'
                 } ${
                   dragged
                     ? 'cursor-grabbing shadow-sm'
@@ -450,8 +556,17 @@ export function TabStrip({
                 {(() => {
                   // Session tabs carry their live status: spinning while the
                   // agent works, an ink-blue dot once it needs the PO.
-                  const s = tab.kind === 'session' && tab.sessionId ? sessions.find((x) => x.id === tab.sessionId) : undefined;
-                  if (s?.running) return <Spinner className="size-3.5 shrink-0 text-muted-foreground" aria-label="running" />;
+                  const s =
+                    tab.kind === 'session' && tab.sessionId
+                      ? sessions.find((x) => x.id === tab.sessionId)
+                      : undefined;
+                  if (s?.running)
+                    return (
+                      <Spinner
+                        className="size-3.5 shrink-0 text-muted-foreground"
+                        aria-label="running"
+                      />
+                    );
                   return <Icon className="size-3.5 shrink-0 opacity-70" aria-hidden />;
                 })()}
                 <TabTitle title={tab.title} />
@@ -460,7 +575,10 @@ export function TabStrip({
                   (() => {
                     const s = sessions.find((x) => x.id === tab.sessionId);
                     return s && !s.running && (s.pendingCards > 0 || s.unread) ? (
-                      <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-label="needs you" />
+                      <span
+                        className="size-1.5 shrink-0 rounded-full bg-brand"
+                        aria-label="needs you"
+                      />
                     ) : null;
                   })()}
                 {/* Close button sits in the reserved lane rather than in flow,
@@ -469,7 +587,9 @@ export function TabStrip({
                     and it fades in over dead space, never over the title. */}
                 <button
                   className={`absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-0.5 text-foreground/70 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
-                    active ? 'opacity-100' : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'
+                    active
+                      ? 'opacity-100'
+                      : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'
                   }`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -486,13 +606,22 @@ export function TabStrip({
           })}
         </div>
         {fades.left && (
-          <div aria-hidden className="pointer-events-none absolute top-0 bottom-px left-0 z-20 w-8 bg-gradient-to-r from-sidebar to-transparent" />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute top-0 bottom-px left-0 z-20 w-8 bg-gradient-to-r from-sidebar to-transparent"
+          />
         )}
         {fades.right && (
-          <div aria-hidden className="pointer-events-none absolute top-0 right-0 bottom-px z-20 w-8 bg-gradient-to-l from-sidebar to-transparent" />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute top-0 right-0 bottom-px z-20 w-8 bg-gradient-to-l from-sidebar to-transparent"
+          />
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-0.5 px-1.5" style={{ WebkitAppRegion: 'no-drag' } as never}>
+      <div
+        className="flex shrink-0 items-center gap-0.5 px-1.5"
+        style={{ WebkitAppRegion: 'no-drag' } as never}
+      >
         {/* Mirrors the sidebar toggle at the far end of the strip: same button
             vocabulary, the same key with ⇧. Hidden with files behind it, the
             button carries the workspace's "there's something here" dot, so a

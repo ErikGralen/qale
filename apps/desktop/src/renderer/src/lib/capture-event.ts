@@ -23,6 +23,20 @@ export interface CaptureRequest {
   aim?: MaterialAim;
 }
 
+/**
+ * Long enough that it is material, not something someone typed — a pasted
+ * transcript is a file, wherever it was pasted. Home's bar uses this to send a
+ * wall of text to the tray instead of asking the agent about it, and the tray
+ * uses it to keep one out of its instruction field (AR-5).
+ */
+const BULK_PASTE_CHARS = 800;
+const BULK_PASTE_LINES = 10;
+
+export const isBulkPaste = (text: string): boolean =>
+  text.length > BULK_PASTE_CHARS || text.split('\n').length > BULK_PASTE_LINES;
+
 export const requestCapture = (draft?: CaptureRequest): void => {
-  window.dispatchEvent(new CustomEvent<CaptureRequest | undefined>(CAPTURE_EVENT, { detail: draft }));
+  window.dispatchEvent(
+    new CustomEvent<CaptureRequest | undefined>(CAPTURE_EVENT, { detail: draft }),
+  );
 };

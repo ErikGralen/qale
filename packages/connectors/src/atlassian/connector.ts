@@ -1,13 +1,10 @@
 import { z } from 'zod';
-import {
-  AtlassianClient,
-  type ConfluencePageMeta,
-  type JiraIssueMeta,
-} from '@qale/atlassian';
+import { AtlassianClient, type ConfluencePageMeta, type JiraIssueMeta } from '@qale/atlassian';
 import { kebabLinkType, zOutboundPayload, type StateCategory } from '@qale/domain';
 import type {
   Connector,
   ConnectorProvider,
+  ContainerFootprint,
   ContainerKind,
   ExternalContainer,
   ExecuteResult,
@@ -29,10 +26,7 @@ import { mapJiraStateCategory } from './state-map.js';
  */
 
 export const atlassianAuthSchema = z.object({
-  siteUrl: z
-    .string()
-    .url()
-    .describe('Site URL — e.g. https://your-team.atlassian.net'),
+  siteUrl: z.string().url().describe('Site URL — e.g. https://your-team.atlassian.net'),
   email: z.string().email().describe('Atlassian account email'),
   apiToken: z
     .string()
@@ -91,6 +85,25 @@ function mapJiraLink(typeName: string, key: string, outward: boolean): TicketLin
   const type = JIRA_LINK_TYPES[token] ?? token;
   return { type, key, ...(outward ? {} : { reversed: true }) };
 }
+
+/**
+ * How far back the footprint survey looks (docs/product-understanding.md).
+ * Ninety days is wide enough that somebody back from ordinary leave still looks
+ * like themselves, and narrow enough that a project they left last year does
+ * not come back recommended.
+ */
+const FOOTPRINT_WINDOW_DAYS = 90;
+
+/** The person's own recent work, in each product's query language. */
+const MINE_JQL = `(assignee = currentUser() OR reporter = currentUser()) AND updated >= "-${FOOTPRINT_WINDOW_DAYS}d"`;
+const MINE_CQL = `contributor = currentUser() AND type = page AND lastmodified > now("-${FOOTPRINT_WINDOW_DAYS}d")`;
+
+/** The survey samples to learn WHICH containers, then counts each one properly. */
+const FOOTPRINT_PAGE_SIZE = 100;
+const FOOTPRINT_MAX_PAGES = 2;
+/** Containers worth spending a count request on. Nothing below this rank is
+ *  ever the recommendation, so an exact number there buys nothing. */
+const FOOTPRINT_COUNT_QUERIES = 8;
 
 /**
  * Ids per `key in (…)` / `id in (…)` query. Well under any URL or JQL length
@@ -181,6 +194,113 @@ class AtlassianConnector implements Connector {
       ...projects.map((p): ExternalContainer => ({ kind: 'ticket', id: p.key, name: p.name })),
       ...spaces.map((s): ExternalContainer => ({ kind: 'wikipage', id: s.key, name: s.name })),
     ];
+  }
+
+  /**
+   * Where this person actually works (docs/product-understanding.md FL-1).
+   *
+   * `currentUser()` is the whole trick: the credentials are the PM's own API
+   * token, so the provider resolves "me" and no identity plumbing is needed.
+   * Two bounded queries, one per product, each in two steps:
+   *
+   * 1. A sample page, newest first, to learn WHICH containers are in play and
+   *    when each was last touched. Capped hard — the survey does not need the
+   *    900th ticket to know the project is yours.
+   * 2. One count query per container found, for the number a person will read
+   *    on the card. The sample's size is not that number, and a reason line
+   *    that quietly means "the first 100 we fetched" is a reason line that
+   *    lies.
+   *
+   * Failure is never fatal, at any level: one product being unreachable (a
+   * Jira-only token is a real, working connection) leaves the other's rows
+   * standing, and a count query that fails falls back to the sample count.
+   */
+  async surveyFootprint(): Promise<ContainerFootprint[]> {
+    const client = await this.getClient();
+    const [tickets, pages] = await Promise.all([
+      this.surveyJira(client).catch(() => []),
+      this.surveyConfluence(client).catch(() => []),
+    ]);
+    // Busiest first, then most recently touched: the order the card renders in.
+    return [...tickets, ...pages].sort(
+      (a, b) => b.count - a.count || (b.lastTouched ?? '').localeCompare(a.lastTouched ?? ''),
+    );
+  }
+
+  private async surveyJira(client: AtlassianClient): Promise<ContainerFootprint[]> {
+    const issues = await client.searchIssuesMeta(
+      `${MINE_JQL} ORDER BY updated DESC`,
+      FOOTPRINT_PAGE_SIZE,
+      FOOTPRINT_MAX_PAGES,
+    );
+    const sampled = new Map<string, { count: number; lastTouched?: string }>();
+    for (const issue of issues) {
+      const project = projectKeyOf(issue.key);
+      if (!project) continue;
+      const row = sampled.get(project) ?? { count: 0 };
+      row.count += 1;
+      if (issue.updated && (!row.lastTouched || issue.updated > row.lastTouched)) {
+        row.lastTouched = issue.updated;
+      }
+      sampled.set(project, row);
+    }
+    return this.withTrueCounts(sampled, 'ticket', (id) =>
+      client.countIssues(`project = ${quoteJql(id)} AND ${MINE_JQL}`),
+    );
+  }
+
+  private async surveyConfluence(client: AtlassianClient): Promise<ContainerFootprint[]> {
+    const { hits } = await client.searchPageSpaces(`${MINE_CQL} ORDER BY lastmodified DESC`, {
+      limit: FOOTPRINT_PAGE_SIZE,
+      maxPages: FOOTPRINT_MAX_PAGES,
+    });
+    const sampled = new Map<string, { count: number; lastTouched?: string }>();
+    for (const hit of hits) {
+      const row = sampled.get(hit.spaceKey) ?? { count: 0 };
+      row.count += 1;
+      if (hit.lastModified && (!row.lastTouched || hit.lastModified > row.lastTouched)) {
+        row.lastTouched = hit.lastModified;
+      }
+      sampled.set(hit.spaceKey, row);
+    }
+    return this.withTrueCounts(
+      sampled,
+      'wikipage',
+      async (id) => (await client.countPages(`space = ${quoteJql(id)} AND ${MINE_CQL}`)) ?? 0,
+    );
+  }
+
+  /**
+   * Swap each sampled count for the provider's real total. Only the busiest
+   * handful get a count query: past that the container is not going to be
+   * recommended anyway, and every extra request is spent on the PM's rate limit
+   * while they wait at a connect screen.
+   */
+  private async withTrueCounts(
+    sampled: Map<string, { count: number; lastTouched?: string }>,
+    kind: ContainerKind,
+    countOf: (id: string) => Promise<number>,
+  ): Promise<ContainerFootprint[]> {
+    const ranked = [...sampled.entries()].sort((a, b) => b[1].count - a[1].count);
+    const out: ContainerFootprint[] = [];
+    for (const [id, row] of ranked.slice(0, FOOTPRINT_COUNT_QUERIES)) {
+      const count = await countOf(id).catch(() => row.count);
+      out.push({
+        kind,
+        id,
+        count: Math.max(count, row.count),
+        ...(row.lastTouched ? { lastTouched: row.lastTouched } : {}),
+      });
+    }
+    for (const [id, row] of ranked.slice(FOOTPRINT_COUNT_QUERIES)) {
+      out.push({
+        kind,
+        id,
+        count: row.count,
+        ...(row.lastTouched ? { lastTouched: row.lastTouched } : {}),
+      });
+    }
+    return out;
   }
 
   async pullChanges(
@@ -316,7 +436,9 @@ class AtlassianConnector implements Connector {
           : '';
       const commentBlock = chronological.length
         ? `\n\n## Recent comments\n\n${truncationNote}${chronological
-            .map((c) => `**${c.author ?? 'Unknown'}** — ${c.created?.slice(0, 10) ?? ''}\n\n${c.body}`.trim())
+            .map((c) =>
+              `**${c.author ?? 'Unknown'}** — ${c.created?.slice(0, 10) ?? ''}\n\n${c.body}`.trim(),
+            )
             .join('\n\n---\n\n')}`
         : '';
       const links = issue.links.map((l): TicketLink => mapJiraLink(l.typeName, l.key, l.outward));
@@ -355,7 +477,9 @@ class AtlassianConnector implements Connector {
     // generic vocabulary in the same parse.
     const parsed = zOutboundPayload.safeParse(payload);
     if (!parsed.success) {
-      throw new Error(`invalid outbound payload: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
+      throw new Error(
+        `invalid outbound payload: ${parsed.error.issues.map((i) => i.message).join('; ')}`,
+      );
     }
     const p = parsed.data;
     const client = await this.getClient();
@@ -383,7 +507,12 @@ class AtlassianConnector implements Connector {
       const out = await client.updatePage(
         p.pageId,
         p.patch
-          ? { mode: 'replace', search: p.patch.search, replace: p.patch.replace, provenance: p.provenance }
+          ? {
+              mode: 'replace',
+              search: p.patch.search,
+              replace: p.patch.replace,
+              provenance: p.provenance,
+            }
           : { mode: 'append', markdown: p.body, provenance: p.provenance },
       );
       return { externalId: out.id, url: out.url };

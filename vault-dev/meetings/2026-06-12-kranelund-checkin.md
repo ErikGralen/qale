@@ -1,16 +1,17 @@
 ---
-type: "meeting"
-summary: "Kranelund monthly check-in: the Monday ops report is assembled by hand, plus pushback on per-seat pricing for seasonal drivers"
-tags: ["reporting", "pricing"]
-date: "2026-06-12"
-time: "10:00"
+type: 'meeting'
+summary: 'Kranelund monthly check-in: the Monday ops report is assembled by hand, plus pushback on per-seat pricing for seasonal drivers'
+tags: ['reporting', 'pricing']
+date: '2026-06-12'
+time: '10:00'
 duration_minutes: 30
-participants: ["me", "Mikkel Sørensen", "Johanna Berg"]
-customer: "[[customers/kranelund-logistics]]"
-transcript: "[[sources/2026-06-12-kranelund-checkin-transcript]]"
+participants: ['me', 'Mikkel Sørensen', 'Johanna Berg']
+customer: '[[customers/kranelund-logistics]]'
+transcript: '[[sources/2026-06-12-kranelund-checkin-transcript]]'
 ---
 
 ## Summary
+
 Mikkel likes the dashboards and said so first. The problem is what happens around them. Every
 Monday, Lise on their ops team screenshots dashboards into a PDF for the depot managers. Same
 six numbers every week. What he wants is that report delivered automatically: PDF for the

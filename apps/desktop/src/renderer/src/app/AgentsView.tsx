@@ -73,8 +73,8 @@ export function AgentsView() {
             </div>
             <h2 className="text-lg font-semibold">No agents yet</h2>
             <p className="max-w-sm text-sm text-muted-foreground">
-              The built-in agents are seeded when a workspace opens, and the app starts them
-              itself, on a clock, or when something happens in the workspace.
+              The built-in agents are seeded when a workspace opens, and the app starts them itself,
+              on a clock, or when something happens in the workspace.
             </p>
           </div>
         ) : (

@@ -2,6 +2,7 @@ import type {
   AtRiskLinkDTO,
   ConnectionDTO,
   ConnectResultDTO,
+  ContainerRecommendationDTO,
   DeliveryDeltaDTO,
   ExternalRefMetaDTO,
   ProviderDescriptorDTO,
@@ -25,6 +26,7 @@ export type {
   ConnectionDTO,
   ConnectionHealth,
   ConnectResultDTO,
+  ContainerRecommendationDTO,
   DeliveryDeltaDTO,
   ExternalRefMetaDTO,
   ProviderDescriptorDTO,
@@ -43,9 +45,7 @@ const TICKET_KEY_RE = /^[A-Z][A-Z0-9]{1,9}-\d+$/;
  *  the ordinary vault resolve when the reference's meta comes back empty. */
 export function isExternalRef(target: string): boolean {
   const bare = target.split('#')[0]!.trim();
-  return (
-    bare.startsWith('tickets/') || bare.startsWith('wikipages/') || TICKET_KEY_RE.test(bare)
-  );
+  return bare.startsWith('tickets/') || bare.startsWith('wikipages/') || TICKET_KEY_RE.test(bare);
 }
 
 /** Normalize a target to the mirror slug ("PAY-142" → "tickets/PAY-142"). */
@@ -93,6 +93,20 @@ export const connections = {
   async setFollow(connectionId: string, containerId: string, followed: boolean): Promise<void> {
     await invoke['connections:setFollow'](connectionId, containerId, followed);
     metaCache.clear();
+  },
+
+  /**
+   * What this connection should read, busiest first. Hits the provider, so it
+   * is asked for once when the picker opens; an empty answer is normal (no
+   * footprint, no survey, or a failed one) and the picker falls back to the
+   * flat list without comment.
+   */
+  async recommend(connectionId: string): Promise<ContainerRecommendationDTO[]> {
+    try {
+      return await invoke['connections:recommend'](connectionId);
+    } catch {
+      return [];
+    }
   },
 
   /** One manual pull across every connection — Settings' "Sync now". */
@@ -199,7 +213,8 @@ async function metaFromVaultNote(slug: string): Promise<ExternalRefMetaDTO | nul
     const note = await invoke['note:get'](path);
     if (!note || (note.type !== 'ticket' && note.type !== 'wikipage')) return null;
     const fm = note.frontmatter;
-    const str = (k: string): string | undefined => (typeof fm[k] === 'string' ? (fm[k] as string) : undefined);
+    const str = (k: string): string | undefined =>
+      typeof fm[k] === 'string' ? (fm[k] as string) : undefined;
     return {
       kind: note.type,
       externalId: str('external_id') ?? note.title,

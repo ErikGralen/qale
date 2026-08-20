@@ -249,7 +249,10 @@ export function NoteEditor({
     <div className="relative">
       <EditorContent editor={editor} />
       {editor && (
-        <SelectionToolbar editor={editor} onAsk={onAsk ? (text) => callbacks.current.onAsk?.(text) : undefined} />
+        <SelectionToolbar
+          editor={editor}
+          onAsk={onAsk ? (text) => callbacks.current.onAsk?.(text) : undefined}
+        />
       )}
     </div>
   );

@@ -11,7 +11,9 @@ test('vtt/srt files and WEBVTT bodies are transcripts', () => {
 });
 
 test('cue arrows alone mark a transcript', () => {
-  const r = classifyCapture('1\n00:00:01,000 --> 00:00:04,000\nhej\n2\n00:00:05,000 --> 00:00:08,000\nhej igen');
+  const r = classifyCapture(
+    '1\n00:00:01,000 --> 00:00:04,000\nhej\n2\n00:00:05,000 --> 00:00:08,000\nhej igen',
+  );
   assert.equal(r.kind, 'transcript');
 });
 
@@ -32,7 +34,9 @@ test('a URL with a comment line uses the comment as title', () => {
 
 test('repeated speaker turns read as a transcript', () => {
   const turns = Array.from({ length: 12 }, (_, i) =>
-    i % 2 ? `Anna: jag håller med, punkt ${i} behöver mer data från kunderna innan beslut.` : `Erik: vi borde titta på punkt ${i} igen, den känns inte klar för release ännu.`,
+    i % 2
+      ? `Anna: jag håller med, punkt ${i} behöver mer data från kunderna innan beslut.`
+      : `Erik: vi borde titta på punkt ${i} igen, den känns inte klar för release ännu.`,
   ).join('\n');
   const r = classifyCapture(turns);
   assert.equal(r.kind, 'transcript');

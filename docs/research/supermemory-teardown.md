@@ -14,7 +14,7 @@ The local binary is not a workaround either. An agent downloaded and inspected v
 
 Their benchmark claims also do not hold up. Two of the three "#1" claims have no published result at all, and the one report that exists compares against eighteen-month-old competitor numbers under a protocol they changed in the easier direction. Section 11a.
 
-**But the design is worth studying, because they have solved a problem we have not started on.** We have documents. They have documents *and* facts, and the facts are versioned, dated, scored, expired, and reviewed. Our entire retrieval story is one SQLite full-text table returning eight whole files. Theirs returns roughly ten tokens per fact.
+**But the design is worth studying, because they have solved a problem we have not started on.** We have documents. They have documents _and_ facts, and the facts are versioned, dated, scored, expired, and reviewed. Our entire retrieval story is one SQLite full-text table returning eight whole files. Theirs returns roughly ten tokens per fact.
 
 The five ideas I would actually take, in order of value for the effort:
 
@@ -58,16 +58,16 @@ From `packages/validation/schemas.ts`. Three layers, and the third is the one we
 
 **Documents** are what you send in. They carry `contentHash`, `customId`, `summary`, a `status` running `queued → extracting → chunking → embedding → indexing → done | failed`, and per-step timings.
 
-**Chunks** are the retrieval unit for classic RAG. Two fields worth noticing. `content` and `embeddedContent` are separate columns, which means the string they embed is not the string they return: that is contextual retrieval, where each chunk gets surrounding context prepended before embedding. And there are *three* parallel embedding slots per row, each with its own model name, one of them called `matryokshaEmbedding` (their spelling). That is a live embedding-model migration plus Matryoshka vectors, which can be truncated for cheap coarse ranking and then refined. You do not get that detail from any blog post. It leaks out of the schema mirror.
+**Chunks** are the retrieval unit for classic RAG. Two fields worth noticing. `content` and `embeddedContent` are separate columns, which means the string they embed is not the string they return: that is contextual retrieval, where each chunk gets surrounding context prepended before embedding. And there are _three_ parallel embedding slots per row, each with its own model name, one of them called `matryokshaEmbedding` (their spelling). That is a live embedding-model migration plus Matryoshka vectors, which can be truncated for cheap coarse ranking and then refined. You do not get that detail from any blog post. It leaks out of the schema mirror.
 
 **Memories** are extracted facts, and this is the layer that makes their product different from RAG:
 
 ```ts
-version, isLatest, parentMemoryId, rootMemoryId   // version chain
-memoryRelations: Record<targetId, "updates"|"extends"|"derives">
-sourceCount
-isInference, isForgotten, isStatic
-forgetAfter, forgetReason
+(version, isLatest, parentMemoryId, rootMemoryId); // version chain
+memoryRelations: Record<targetId, 'updates' | 'extends' | 'derives'>;
+sourceCount;
+(isInference, isForgotten, isStatic);
+(forgetAfter, forgetReason);
 ```
 
 Read that list next to ours. Our note frontmatter has `verified`, a per-type lifecycle, and `supersedes`/`superseded_by` on decisions only. Theirs applies supersession, provenance count, confidence, and expiry to every single fact.
@@ -100,7 +100,7 @@ The steerable part is the interesting bit. Three user-editable strings get splic
 
 So the customer never sees the prompt, but gets three well-scoped holes to write into. That is a good pattern for shipping a prompt you want to keep changing.
 
-**What I would do:** we have the equivalent already and it is better, because our version is a markdown file the user can read and edit. Always-on skills are our `filterPrompt`. The thing we lack is the *scoped* one. `entityContext` per container has no analogue: we have no way to say "in this folder, material means X". If the import room ever lands, a per-folder steering line is a small feature with real leverage.
+**What I would do:** we have the equivalent already and it is better, because our version is a markdown file the user can read and edit. Always-on skills are our `filterPrompt`. The thing we lack is the _scoped_ one. `entityContext` per container has no analogue: we have no way to say "in this folder, material means X". If the import room ever lands, a per-folder steering line is a small feature with real leverage.
 
 **What I would not do:** copy their temporal model. From their own docs, in the rules page: ingest documents sequentially within a container tag "since that's how supermemory determines what came first". Their temporal reasoning is grounded in arrival order. Ours is grounded in calendar events, meeting dates, and git commits, which are actual timestamps. We should not give that up.
 
@@ -193,7 +193,7 @@ That is a person-page feature, not a memory-engine feature, and it would land be
 
 ## 8. Craft details worth copying from the parts that are open
 
-The MCP server (`apps/mcp`) and `packages/tools` are the best-written code in the repo, and both are about *talking to a model*. Four things.
+The MCP server (`apps/mcp`) and `packages/tools` are the best-written code in the repo, and both are about _talking to a model_. Four things.
 
 **Tool descriptions written as trigger conditions, not capability blurbs.** From `packages/tools/src/tools-shared.ts`, where all descriptions live in one shared constant reused across every framework adapter:
 
@@ -209,7 +209,7 @@ We have shared parameter shapes across our tools and could do the same.
 
 **Sibling tools that name each other.** `guided-save` says "If the user provides the exact content and asks to save it immediately, use `add_memory` instead." `select-space` says "Do not use it merely because the user names a space for a search." Their `upload-file` pre-empts the host's filesystem reflex: "Do not ask for a file path, folder, filename, or filesystem access; the picker handles file selection." That is prompt engineering aimed at a specific known misfire, and it reads like it was written after watching the misfire happen.
 
-**Repeating the instruction in the tool result.** Their `memory-graph` tool says "do not create another graph, file, or artifact" in its description, and then says it *again* in the text it returns. The description is far away by the time the model acts; the result is right there.
+**Repeating the instruction in the tool result.** Their `memory-graph` tool says "do not create another graph, file, or artifact" in its description, and then says it _again_ in the text it returns. The description is far away by the time the model acts; the result is right there.
 
 **A four-name annotation vocabulary** rather than a boolean: `READ_ONLY`, `MEMORY` (marked destructive, because the same tool can forget), `ADDITIVE_MEMORY`, `SETTINGS`. Our approval cards could use the same distinction between "adds something" and "changes something that exists".
 

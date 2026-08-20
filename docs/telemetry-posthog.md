@@ -18,15 +18,15 @@ below is how things stood when the plan was written, kept because the tickets re
 
 The consent half is built and shipping. The sending half does not exist at all.
 
-| Piece | Where | State |
-|---|---|---|
-| The event allowlist, in plain words | `packages/ipc/src/telemetry.ts` | Built. Seven events, each with the sentence the screen shows. `TELEMETRY_NEVER` is the other half of the promise. |
-| `telemetryAllows(consented, event)` | same file | Built, and nothing calls it. |
-| The consent screen (ONB-6) | `apps/desktop/src/renderer/src/onboarding/screens/Telemetry.tsx` | Built. Renders the allowlist, so it can never promise less than we send. |
-| The Settings mirror | `SettingsView.tsx`, "What leaves your machine" | Built, same list, same words. |
-| The switch, persisted | `onboarding.telemetry` in `settings.json` (`SettingsService`) | Built. Defaults to true. |
-| A sender | nowhere | Missing. |
-| An install id | nowhere | Missing. |
+| Piece                               | Where                                                            | State                                                                                                             |
+| ----------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| The event allowlist, in plain words | `packages/ipc/src/telemetry.ts`                                  | Built. Seven events, each with the sentence the screen shows. `TELEMETRY_NEVER` is the other half of the promise. |
+| `telemetryAllows(consented, event)` | same file                                                        | Built, and nothing calls it.                                                                                      |
+| The consent screen (ONB-6)          | `apps/desktop/src/renderer/src/onboarding/screens/Telemetry.tsx` | Built. Renders the allowlist, so it can never promise less than we send.                                          |
+| The Settings mirror                 | `SettingsView.tsx`, "What leaves your machine"                   | Built, same list, same words.                                                                                     |
+| The switch, persisted               | `onboarding.telemetry` in `settings.json` (`SettingsService`)    | Built. Defaults to true.                                                                                          |
+| A sender                            | nowhere                                                          | Missing.                                                                                                          |
+| An install id                       | nowhere                                                          | Missing.                                                                                                          |
 
 There is also a precedent worth copying rather than reinventing: `src/main/log.ts` scrubs every log
 line on the way into the ring buffer (paths, hosts, note slugs, addresses, anything key-shaped), and
@@ -92,7 +92,7 @@ This one is yours, and it blocks everything else. None of it is code.
    `phc_nuZqzoKWu4gCTrY5gET7e9JghV72K9rcvF5HDUw7z7Lp`. Never a **personal** API key, which is a
    different thing and reads everything.
 3. **Add an internal-users filter rule: `env = dev`.** `Settings -> Project -> Filter out internal
-   and test users`. With one project this is the thing that keeps my clicking out of your numbers,
+and test users`. With one project this is the thing that keeps my clicking out of your numbers,
    and it applies to insights without throwing the events away, so a broken dev run is still
    debuggable.
 4. **Turn the web-facing products off.** No session replay (decided above), no web analytics, no
@@ -303,15 +303,15 @@ count arrived as the band `21-100` rather than 89. Diagnostics gained an `Instal
 **Proposal:** hang each event off the signal that already fires, never off a second ledger that
 could disagree with it (the rule the First steps work landed on, and it held up).
 
-| Event | Fires at | Properties |
-|---|---|---|
-| `app.launched` | `index.ts`, after `onReady()` | first run, opening finished, has key, connectors connected, note-count bucket |
-| `app.crashed` | `uncaughtException`, `unhandledRejection`, `render-process-gone`, `child-process-gone` | error name, message, scrubbed stack, which process |
-| `session.finished` | `handlers.ts` `agent.onStatus`, `status === 'settled'` (~line 610) | skill (known names, else `custom`), trigger (manual, scheduled, arrival), duration bucket, failed, cards proposed bucket |
-| `card.decided` | `proposals:accept` / `proposals:reject` (~1343, ~1352) | decision, card kind, edited, age bucket |
-| `material.added` | the capture handlers (~1046 single, ~1255 batch) | kind, count bucket, started a session |
-| `connection.added` | Google connect success, Atlassian verify success | provider, followed-container count bucket |
-| `onboarding.step` | `settings:setOnboarding` | step id, done or skipped or finished |
+| Event              | Fires at                                                                               | Properties                                                                                                               |
+| ------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `app.launched`     | `index.ts`, after `onReady()`                                                          | first run, opening finished, has key, connectors connected, note-count bucket                                            |
+| `app.crashed`      | `uncaughtException`, `unhandledRejection`, `render-process-gone`, `child-process-gone` | error name, message, scrubbed stack, which process                                                                       |
+| `session.finished` | `handlers.ts` `agent.onStatus`, `status === 'settled'` (~line 610)                     | skill (known names, else `custom`), trigger (manual, scheduled, arrival), duration bucket, failed, cards proposed bucket |
+| `card.decided`     | `proposals:accept` / `proposals:reject` (~1343, ~1352)                                 | decision, card kind, edited, age bucket                                                                                  |
+| `material.added`   | the capture handlers (~1046 single, ~1255 batch)                                       | kind, count bucket, started a session                                                                                    |
+| `connection.added` | Google connect success, Atlassian verify success                                       | provider, followed-container count bucket                                                                                |
+| `onboarding.step`  | `settings:setOnboarding`                                                               | step id, done or skipped or finished                                                                                     |
 
 Two things to settle inside this ticket:
 
@@ -333,13 +333,14 @@ screen renders the list ("Which parts of the app you open, never what is in them
 **Notes:**
 Built 2026-08-03. All eight events wired at the call sites that already existed. Two honest gaps,
 both left visible rather than faked:
+
 - **`failed` is always false.** `SessionStatus` in `packages/agent/src/runtime.ts` carries no
   outcome, so there is nothing to read on the settle path. Making it real means the runtime
   carrying the outcome; until then the accept-versus-reject rate is the only quality signal we get.
 - **`duration` is omitted, not guessed,** when a session has no recorded start (one that spanned a
   relaunch). The trigger is threaded through `fireSession`'s options.
-`view.opened` verified end to end: a fresh profile opens on `home`, navigating to the Inbox sends
-one `inbox`, and a re-render sends nothing.
+  `view.opened` verified end to end: a fresh profile opens on `home`, navigating to the Inbox sends
+  one `inbox`, and a re-render sends nothing.
 
 ---
 
@@ -434,6 +435,55 @@ The live check ran against a local stand-in for PostHog rather than the real pro
 payloads could be read rather than trusted, and so nothing reached your project before TEL-1 exists.
 What still needs doing once TEL-1 is done: point a dev run at the real EU project and confirm the
 events land and that the internal-users filter hides them.
+
+---
+
+## TEL-9. Context on every event, for product analytics
+
+Added 2026-08-14, after asking what questions the stream as built could not answer. Three gaps, none
+of them new events:
+
+- **Where it happened.** `card.decided` said accepted or rejected, but never whether the PM was in
+  the Inbox, a session review or Home when they decided. Main already learns the open view through
+  `telemetry:view` (TEL-5), so the sender now remembers the last reported view and stamps it on
+  every event as `view`, from the same closed union `view.opened` uses. The stamp is read when the
+  event happens, not when the consent backlog drains, so a held event keeps the screen it happened
+  on. A string outside the union is dropped, never remembered.
+- **Which sitting it belongs to.** Events had nothing tying a launch-to-quit run together, so
+  funnels like "material in, session finished, card decided, all in one sitting" had no join key.
+  The sender mints one UUIDv7 per process and sends it as `$session_id`, the property PostHog's
+  session analytics read. One run of the app is one session, which is the honest unit for a desktop
+  app. The id is random plus its own mint time and is never stored.
+- **Whether a session parked a question.** `session.finished` gained `asked`, a flag read off
+  `ctx.asks` the same way the librarian ledger already reads it. The flag only, never the question.
+- **How the app is lived in.** Same day, second pass. `view.opened` gained `tabs` (how many tabs sit
+  open when a view opens; the renderer sends the number over `telemetry:view`, main folds it to a
+  band). And `app.launched` gained the workspace's shape, all bands: `meetings`, `people`, open
+  `todos`, and `customSkills`, the count of skills or agents whose name is not one of ours, which
+  answers "are people building on this" without ever carrying a name. The same four ride the person
+  record through `telemetryFacts`, so the PostHog person list can be filtered by workspace size.
+
+The consent list grew one line for the stamps (`TELEMETRY_CONTEXT` in `packages/ipc/src/telemetry.ts`),
+and both surfaces render it because they render that list. Nothing new can carry the PM's material:
+the view is a word we wrote, the run id is random.
+
+Considered and not done here: a `source` on `view.opened` (sidebar, palette, tab) needs the renderer
+to know why a view changed, which it currently does not track; new events for palette use, todo
+decisions or chat turns are real questions but new promises, each deserving its own line on the
+screen when wanted.
+
+**Decision:**
+Built as described.
+
+**Notes:**
+Built 2026-08-14. Sender changes in `apps/desktop/src/main/telemetry.ts` (`setView`, `mintRunId`,
+stamps in `emit`), call sites in `handlers.ts`. Five new tests pin: the stamp appears once a view is
+reported, a stray string never does, a held event keeps its view, the run id is a UUIDv7 stable
+within a run and fresh across runs, and `asked` passes the filter while the question text does not.
+The second pass widened `telemetry:view` to `(view, tabs)`, read the workspace shape off
+`index.listByType` in `telemetryFacts`, and pinned in a sixth test that every count leaves as a band
+and a raw number is refused. `app.launched` and `view.opened` both updated their `says` lines, so
+the consent screen names the new facts on its own.
 
 ---
 

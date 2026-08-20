@@ -9,6 +9,7 @@ import {
   TELEMETRY_EVENTS,
   TELEMETRY_EVENT_IDS,
   TELEMETRY_IDENTITY,
+  TELEMETRY_LIMIT,
   TELEMETRY_NEVER,
   TELEMETRY_PROCESSOR,
   ageBand,
@@ -208,6 +209,16 @@ test('the screen says who we are, where it goes, and what never leaves', () => {
   for (const line of TELEMETRY_NEVER) assert.ok(line.trim().length > 0);
 });
 
+test('and what the switch does NOT cover, in the same breath (OW10)', () => {
+  // A heading saying "What leaves your machine" over a switch that only governs
+  // usage reports has to name the two channels it leaves open, or it reads as
+  // the complete answer.
+  // Not "Anthropic": the workspace can be on Gemini instead, and a promise that
+  // names the wrong company is worse than one that names the role.
+  assert.match(TELEMETRY_LIMIT, /model provider/i);
+  assert.match(TELEMETRY_LIMIT, /connect/i);
+});
+
 // ---------------------------------------------------------------------------
 // The sender
 // ---------------------------------------------------------------------------
@@ -344,6 +355,101 @@ test('the sender filters properties too, not just the caller', async () => {
   assert.equal(JSON.stringify(p).includes('Kranelund'), false);
 });
 
+test('workspace shape and tab count leave as bands, never as raw numbers', () => {
+  assert.deepEqual(
+    filterTelemetryProps('app.launched', {
+      firstRun: false,
+      notes: countBand(89),
+      meetings: countBand(34),
+      people: countBand(12),
+      todos: countBand(3),
+      customSkills: countBand(1),
+      // A careless caller sending the raw number loses the property, not the event.
+      ...({ vaultNotes: 89 } as Record<string, never>),
+    }),
+    {
+      firstRun: false,
+      notes: '21-100',
+      meetings: '21-100',
+      people: '6-20',
+      todos: '2-5',
+      customSkills: '1',
+    },
+  );
+  // The tab count the same way: the raw number is refused, the band passes.
+  assert.deepEqual(filterTelemetryProps('view.opened', { view: 'home', tabs: 7 }), {
+    view: 'home',
+  });
+  assert.deepEqual(filterTelemetryProps('view.opened', { view: 'home', tabs: countBand(7) }), {
+    view: 'home',
+    tabs: '6-20',
+  });
+});
+
+test('a session that parked a question says so, and only as a flag', () => {
+  assert.deepEqual(
+    filterTelemetryProps('session.finished', {
+      asked: true,
+      question: 'Should the Kranelund note supersede the old pricing page?',
+    }),
+    { asked: true },
+  );
+});
+
+test('once the renderer reports a view, every event carries it as context', async () => {
+  const { telemetry, sent } = live();
+  // Before any report there is nothing to stamp, and nothing is guessed.
+  telemetry.send('material.added', { kind: 'file', count: '1', startedSession: true });
+  telemetry.setView('inbox');
+  telemetry.send('card.decided', { decision: 'accepted', kind: 'note', edited: false });
+  await settle();
+  assert.equal(sent.length, 2);
+  assert.equal('view' in props(sent[0]), false);
+  assert.equal(props(sent[1])['view'], 'inbox');
+});
+
+test('a view that is not one of ours is never remembered, let alone sent', async () => {
+  const { telemetry, sent } = live();
+  telemetry.setView('meetings/2026-07-17-nordkap.md');
+  telemetry.send('app.launched', { firstRun: false });
+  await settle();
+  const p = props(sent[0]);
+  assert.equal('view' in p, false);
+  assert.equal(JSON.stringify(p).includes('nordkap'), false);
+});
+
+test('an event held for consent keeps the view it happened on', async () => {
+  const { sink, sent } = recorder();
+  const telemetry = new Telemetry(FACTS, sink);
+  telemetry.bind(INSTALL_ID);
+  telemetry.setConsent(true, false);
+  telemetry.setView('home');
+  telemetry.send('material.added', { kind: 'text', count: '1', startedSession: true });
+  telemetry.setView('settings');
+  telemetry.setConsent(true, true);
+  await settle();
+  assert.equal(props(sent[0])['view'], 'home');
+});
+
+test("every event carries this run's id, and two runs are two sessions", async () => {
+  const { telemetry, sent } = live();
+  telemetry.send('view.opened', { view: 'home' });
+  telemetry.send('view.opened', { view: 'inbox' });
+  await settle();
+  const first = props(sent[0])['$session_id'];
+  // The shape PostHog's session tools expect: a UUIDv7.
+  assert.match(
+    String(first),
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
+  assert.equal(props(sent[1])['$session_id'], first);
+
+  const second = live();
+  second.telemetry.send('view.opened', { view: 'home' });
+  await settle();
+  assert.notEqual(props(second.sent[0])['$session_id'], first);
+});
+
 test('the distinct id is the install id', async () => {
   const { telemetry, sent } = live();
   telemetry.send('view.opened', { view: 'home' });
@@ -357,7 +463,8 @@ test('a dev build stamps itself, in the id as well as in the event', async () =>
   const before = process.env['QALE_POSTHOG_DEV'];
   process.env['QALE_POSTHOG_DEV'] = '1';
   try {
-    const dev = (await import('../src/main/telemetry.js?dev=1')) as typeof import('../src/main/telemetry.js');
+    const dev =
+      (await import('../src/main/telemetry.js?dev=1')) as typeof import('../src/main/telemetry.js');
     assert.equal(dev.TELEMETRY_ENV, 'dev');
     assert.equal(dev.TELEMETRY_ENV_IS_KNOWN, true);
     const { sink, sent } = recorder();
@@ -453,7 +560,10 @@ test('a crash stack is cut to the length the list declares', async () => {
   const shape = spec?.props['stack'];
   const max = shape?.kind === 'scrubbedText' ? shape.max : 0;
   const error = new Error('deep');
-  error.stack = ['Error: deep', ...Array.from({ length: 300 }, (_, i) => `    at step${i} (bundle:1:1)`)].join('\n');
+  error.stack = [
+    'Error: deep',
+    ...Array.from({ length: 300 }, (_, i) => `    at step${i} (bundle:1:1)`),
+  ].join('\n');
   assert.ok(error.stack.length > max, 'fixture is not long enough to be cut');
   telemetry.crash('renderer', error);
   await settle();

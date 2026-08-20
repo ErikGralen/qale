@@ -5,14 +5,24 @@ export {
   type RunHandle,
   type ModelInfo,
   type ChatRef,
+  type SessionStatus,
   type SpawnRequestInfo,
   type SpawnEntryInfo,
 } from './runtime.js';
 export { entriesToUiMessages, type UiMessage } from './history.js';
 export { decodeUnicodeEscapes, decodeArgs, withDecodedArgs } from './tool-args.js';
 export { PiUiBridge, type Chunk } from './bridge.js';
-export { SHARED_PREAMBLE, CHILD_PREAMBLE, SCHEDULED_PREAMBLE, UNATTENDED_PREAMBLE } from './prompts.js';
+export { apiErrorText, providerFault, type ProviderFault } from './api-errors.js';
+export {
+  SHARED_PREAMBLE,
+  CHILD_PREAMBLE,
+  SCHEDULED_PREAMBLE,
+  UNATTENDED_PREAMBLE,
+  datePreamble,
+  languagePreamble,
+} from './prompts.js';
 export { createFilingTools, FILING_TOOL_NAMES } from './filing.js';
+export { createDeferralTool, DEFER_TOOL_NAME } from './deferrals.js';
 export {
   createEndQuietlyTool,
   ranSilent,

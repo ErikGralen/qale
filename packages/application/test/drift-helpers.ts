@@ -22,6 +22,7 @@ export function inote(args: {
   title?: string;
   summary?: string;
   mtime?: number;
+  schemaMiss?: { type: NoteType; error: string };
 }): IndexedNote {
   const slug = args.path.replace(/\.md$/, '');
   return {
@@ -34,8 +35,13 @@ export function inote(args: {
     lifecycle: null,
     hasBody: true,
     mtime: args.mtime ?? 100,
-    frontmatter: { type: args.type, summary: args.summary ?? `summary of ${slug}`, ...args.frontmatter },
+    frontmatter: {
+      type: args.type,
+      summary: args.summary ?? `summary of ${slug}`,
+      ...args.frontmatter,
+    },
     links: (args.links ?? []).map((target) => ({ target })),
+    ...(args.schemaMiss ? { schemaMiss: args.schemaMiss } : {}),
   };
 }
 
@@ -81,13 +87,23 @@ export function fakeDriftWorld(args: {
         const n = notes.find((x) => x.path === p);
         const body = bodies[p];
         if (!n || body === undefined) return null;
-        return makeNote({ path: p, frontmatter: n.frontmatter as unknown as Frontmatter, body, mtime: n.mtime });
+        return makeNote({
+          path: p,
+          frontmatter: n.frontmatter as unknown as Frontmatter,
+          body,
+          mtime: n.mtime,
+        });
       },
       readRaw: async () => null,
       writeNote: async (p: string, frontmatter: Frontmatter, body: string) =>
         makeNote({ path: p, frontmatter, body, mtime: 1 }),
       writeBody: async (p: string, body: string) =>
-        makeNote({ path: p, frontmatter: { type: 'note', summary: 's' } as Frontmatter, body, mtime: 1 }),
+        makeNote({
+          path: p,
+          frontmatter: { type: 'note', summary: 's' } as Frontmatter,
+          body,
+          mtime: 1,
+        }),
       writeRaw: async () => {},
       writeBinary: async () => {},
       remove: async () => {},

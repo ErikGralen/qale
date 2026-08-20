@@ -30,13 +30,22 @@ test('searchIssuesMeta: follows nextPageToken until isLast', async () => {
       url: '/rest/api/3/search/jql',
       method: 'POST',
       seq: [
-        { json: { issues: [rawIssue('PAY-1'), rawIssue('PAY-2')], nextPageToken: 'tok-2', isLast: false } },
+        {
+          json: {
+            issues: [rawIssue('PAY-1'), rawIssue('PAY-2')],
+            nextPageToken: 'tok-2',
+            isLast: false,
+          },
+        },
         { json: { issues: [rawIssue('PAY-3')], isLast: true } },
       ],
     },
   ]);
   const issues = await client(fetchImpl).searchIssuesMeta('project = "PAY" ORDER BY updated ASC');
-  assert.deepEqual(issues.map((i) => i.key), ['PAY-1', 'PAY-2', 'PAY-3']);
+  assert.deepEqual(
+    issues.map((i) => i.key),
+    ['PAY-1', 'PAY-2', 'PAY-3'],
+  );
   assert.equal(calls.length, 2);
   assert.equal((calls[0]!.body as { nextPageToken?: string }).nextPageToken, undefined);
   assert.equal((calls[1]!.body as { nextPageToken?: string }).nextPageToken, 'tok-2');
@@ -60,7 +69,12 @@ test('searchIssuesMeta: the page budget stops a server that never says isLast', 
 
 test('searchPagesMeta: pages the v1 start/limit window until a short page', async () => {
   const page = (id: string): unknown => ({
-    content: { id, title: id, version: { number: 1, when: '2026-07-01T00:00:00Z' }, _links: { webui: `/x/${id}` } },
+    content: {
+      id,
+      title: id,
+      version: { number: 1, when: '2026-07-01T00:00:00Z' },
+      _links: { webui: `/x/${id}` },
+    },
   });
   const { fetchImpl, calls } = makeFetch([
     {
@@ -69,7 +83,10 @@ test('searchPagesMeta: pages the v1 start/limit window until a short page', asyn
     },
   ]);
   const pages = await client(fetchImpl).searchPagesMeta('space = "PROD"', 2);
-  assert.deepEqual(pages.map((p) => p.id), ['1', '2', '3']);
+  assert.deepEqual(
+    pages.map((p) => p.id),
+    ['1', '2', '3'],
+  );
   assert.equal(calls.length, 2);
   assert.equal(new URL(calls[0]!.url).searchParams.get('start'), '0');
   assert.equal(new URL(calls[1]!.url).searchParams.get('start'), '2');
@@ -86,7 +103,10 @@ test('listProjects: follows isLast/startAt — >1 page of projects must not trun
     },
   ]);
   const projects = await client(fetchImpl).listProjects();
-  assert.deepEqual(projects.map((p) => p.key), ['PAY', 'CORE']);
+  assert.deepEqual(
+    projects.map((p) => p.key),
+    ['PAY', 'CORE'],
+  );
   assert.equal(new URL(calls[1]!.url).searchParams.get('startAt'), '1');
 });
 
@@ -95,20 +115,32 @@ test('listSpaces: follows the v2 _links.next cursor', async () => {
     {
       url: '/wiki/api/v2/spaces',
       seq: [
-        { json: { results: [{ key: 'PROD', name: 'Product' }], _links: { next: '/wiki/api/v2/spaces?cursor=abc' } } },
+        {
+          json: {
+            results: [{ key: 'PROD', name: 'Product' }],
+            _links: { next: '/wiki/api/v2/spaces?cursor=abc' },
+          },
+        },
         { json: { results: [{ key: 'ENG', name: 'Engineering' }] } },
       ],
     },
   ]);
   const spaces = await client(fetchImpl).listSpaces();
-  assert.deepEqual(spaces.map((s) => s.key), ['PROD', 'ENG']);
+  assert.deepEqual(
+    spaces.map((s) => s.key),
+    ['PROD', 'ENG'],
+  );
   assert.equal(calls.length, 2);
   assert.equal(calls[1]!.url, `${SITE}/wiki/api/v2/spaces?cursor=abc`);
 });
 
 test('updatePage(replace): tolerates whitespace runs and XML entities in the stored passage', async () => {
   const { fetchImpl, calls } = makeFetch([
-    { url: '/wiki/api/v2/pages/9', method: 'PUT', json: { id: '9', title: 'T', _links: { webui: '/x' } } },
+    {
+      url: '/wiki/api/v2/pages/9',
+      method: 'PUT',
+      json: { id: '9', title: 'T', _links: { webui: '/x' } },
+    },
     {
       url: '/wiki/api/v2/pages/9',
       json: {
@@ -121,8 +153,15 @@ test('updatePage(replace): tolerates whitespace runs and XML entities in the sto
       },
     },
   ]);
-  await client(fetchImpl).updatePage('9', { mode: 'replace', search: 'Q2 & Q3 rollout plan', replace: 'Q3 & Q4 rollout plan' });
-  const put = calls.find((x) => x.method === 'PUT')!.body as { body: { value: string }; version: { number: number } };
+  await client(fetchImpl).updatePage('9', {
+    mode: 'replace',
+    search: 'Q2 & Q3 rollout plan',
+    replace: 'Q3 & Q4 rollout plan',
+  });
+  const put = calls.find((x) => x.method === 'PUT')!.body as {
+    body: { value: string };
+    version: { number: number };
+  };
   assert.equal(put.body.value, '<p>Q3 &amp; Q4 rollout plan</p>'); // replacement re-escaped for XML
   assert.equal(put.version.number, 5);
 });
@@ -130,7 +169,8 @@ test('updatePage(replace): tolerates whitespace runs and XML entities in the sto
 test('request: REST failures cross the boundary in plain language, raw detail only in cause', async () => {
   const at401 = client(makeFetch([{ url: '/rest/api/3/issue/PAY-1', status: 401 }]).fetchImpl);
   await assert.rejects(() => at401.getIssue('PAY-1'), {
-    message: 'Your Atlassian token was rejected — it may have expired. Paste a new one in Settings → Connections.',
+    message:
+      'Your Atlassian token was rejected — it may have expired. Paste a new one in Settings → Connections.',
   });
 
   const at404 = client(makeFetch([{ url: '/wiki/api/v2/pages/404404', status: 404 }]).fetchImpl);
@@ -138,12 +178,18 @@ test('request: REST failures cross the boundary in plain language, raw detail on
     message: "That item no longer exists on your Atlassian site (or the token can't see it).",
   });
 
-  const at500 = client(makeFetch([{ url: '/rest/api/3/issue/PAY-1', status: 500, json: { stack: 'secret' } }]).fetchImpl);
-  await assert.rejects(() => at500.getIssue('PAY-1'), (err: Error) => {
-    assert.equal(err.message, 'Your Atlassian site returned an error (HTTP 500).');
-    assert.ok(String(err.cause).includes('500')); // plumbing rides in cause, not the message
-    return true;
-  });
+  const at500 = client(
+    makeFetch([{ url: '/rest/api/3/issue/PAY-1', status: 500, json: { stack: 'secret' } }])
+      .fetchImpl,
+  );
+  await assert.rejects(
+    () => at500.getIssue('PAY-1'),
+    (err: Error) => {
+      assert.equal(err.message, 'Your Atlassian site returned an error (HTTP 500).');
+      assert.ok(String(err.cause).includes('500')); // plumbing rides in cause, not the message
+      return true;
+    },
+  );
 
   const offline = client(makeFetch([{ url: SITE, throws: true }]).fetchImpl);
   await assert.rejects(() => offline.getIssue('PAY-1'), {
@@ -155,7 +201,10 @@ test('getComments: returns the true thread total alongside the fetched window', 
   const { fetchImpl } = makeFetch([
     {
       url: '/rest/api/3/issue/PAY-1/comment',
-      json: { comments: [{ author: { displayName: 'Mika' }, created: '2026-07-01T00:00:00Z' }], total: 41 },
+      json: {
+        comments: [{ author: { displayName: 'Mika' }, created: '2026-07-01T00:00:00Z' }],
+        total: 41,
+      },
     },
   ]);
   const { comments, total } = await client(fetchImpl).getComments('PAY-1', 1);

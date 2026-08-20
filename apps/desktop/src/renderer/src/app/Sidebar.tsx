@@ -1,5 +1,12 @@
-import { Children, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isFolderIndex, dirForType, layerForType } from '@qale/domain';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  isFolderIndex,
+  dirForType,
+  layerForType,
+  noteTypeLabel,
+  HAND_CREATABLE_TYPES,
+  NEW_NOTE_PURPOSE,
+} from '@qale/domain';
 import {
   Button,
   DropdownMenu,
@@ -24,11 +31,13 @@ import {
   Inbox,
   ChevronRight,
   ListTodo,
+  Plus,
   type LucideIcon,
 } from 'lucide-react';
 import { useApp, type SessionOverview } from '../state/app-state';
 import { countOf } from '../lib/attention';
 import { navFromEvent } from '../lib/nav';
+import { useNewNote } from '../lib/new-note';
 import { noteTypeIcon } from '../lib/note-icons';
 import { timeAgo } from '../lib/session-meta';
 import { ToolbarButton } from '../components/ToolbarButton';
@@ -44,6 +53,9 @@ import type { NoteRefDTO, NoteType, VaultTreeGroupDTO } from '@qale/ipc';
 // Clear the macOS traffic lights in the frameless window (hiddenInset).
 const isMac = navigator.userAgent.includes('Macintosh');
 
+/** One cleared row, and the way back: what the Undo strip at the foot of the rail shows. */
+type UndoOffer = { label: string; title: string; undo: () => void };
+
 /**
  * `asking` is the set of sessions parked on a question card. It counts as
  * needing the PO even though the run is technically still going: a turn that
@@ -57,7 +69,9 @@ const needsYou = (s: SessionOverview, asking?: ReadonlySet<string>): boolean =>
 function sessionRows(sessions: SessionOverview[], asking: ReadonlySet<string>): SessionOverview[] {
   const cutoff = Date.now() - 60 * 60 * 1000;
   return sessions
-    .filter((s) => s.running || (s.lifecycle === 'active' && (needsYou(s, asking) || s.updated > cutoff)))
+    .filter(
+      (s) => s.running || (s.lifecycle === 'active' && (needsYou(s, asking) || s.updated > cutoff)),
+    )
     .sort((a, b) => {
       // A question outranks a running row: it is the only one that can't finish
       // on its own.
@@ -68,7 +82,7 @@ function sessionRows(sessions: SessionOverview[], asking: ReadonlySet<string>): 
     });
 }
 
-/** Sidebar disclosure state, remembered across launches (per section, app-wide). */
+/** Disclosure state for one type's pins, remembered across launches. */
 function useSection(id: string, defaultOpen: boolean): [boolean, () => void] {
   const key = `qale.sidebar.${id}`;
   const [open, setOpen] = useState(() => {
@@ -93,96 +107,39 @@ function useSection(id: string, defaultOpen: boolean): [boolean, () => void] {
   return [open, toggle];
 }
 
-/** The "All" escape hatch on a section header — browse everything this rail samples. */
-function SectionAction({
-  label,
-  title,
-  onClick,
-}: {
-  label: string;
-  title: string;
-  onClick: (e: React.MouseEvent) => void;
-}) {
-  return (
-    <button
-      className="rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-      onClick={onClick}
-      title={title}
-    >
-      {label}
-    </button>
-  );
-}
-
 /**
- * A collapsible sidebar group: a quiet header row (label · count · chevron) over
- * an animated body. `locked` forces it open and hides the chevron — used when the
- * section holds something that needs the PO (nothing that needs you should hide).
- * A section with no body loses its chevron too: a disclosure that reveals nothing
- * is a promise the rail can't keep. The count only appears while the body is
- * folded away — collapsing a section may cost you the rows, never the number.
+ * A sidebar group: a quiet header row over its rows. The header never folds the
+ * body away — these two sections carry the live work, and a rail that can hide
+ * it is a rail you have to remember to unhide. The header is the way into the
+ * full page instead, so the label does the job the old "All" button did.
  */
 function Section({
   label,
-  count,
-  countTone = 'muted',
-  open,
-  onToggle,
-  locked,
+  title,
+  onOpen,
   action,
   children,
 }: {
   label: string;
-  count?: number;
-  countTone?: 'muted' | 'brand';
-  open: boolean;
-  onToggle: () => void;
-  locked?: boolean;
+  title: string;
+  onOpen: (e: React.MouseEvent) => void;
+  /** The one thing this section can start, sat at the end of its header row. */
   action?: React.ReactNode;
   children?: React.ReactNode;
 }) {
-  const hasBody = Children.toArray(children).length > 0;
-  const expanded = hasBody && (open || !!locked);
-  const inert = locked || !hasBody;
   return (
     <div className="px-2 pt-1">
-      <div className="group/head flex items-center gap-1 pr-1">
+      <div className="flex items-center pr-1">
         <button
-          className="flex flex-1 items-center gap-1 rounded-md px-1 py-0.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-          onClick={inert ? undefined : onToggle}
-          aria-expanded={hasBody ? expanded : undefined}
-          disabled={inert}
+          className="flex flex-1 items-center rounded-md px-1 py-0.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={onOpen}
+          title={title}
         >
-          <ChevronRight
-            className={`size-3 shrink-0 text-muted-foreground/80 transition-transform duration-150 motion-reduce:transition-none ${
-              expanded ? 'rotate-90' : ''
-            } ${inert ? 'opacity-0' : ''}`}
-            aria-hidden
-          />
           <span className="uppercase tracking-wide">{label}</span>
-          {count != null && count > 0 && !expanded && (
-            <span
-              className={`ml-1 rounded-full px-1.5 text-xs font-semibold tabular-nums ${
-                countTone === 'brand' ? 'bg-brand/15 text-brand' : 'text-muted-foreground'
-              }`}
-            >
-              {count}
-            </span>
-          )}
         </button>
         {action}
       </div>
-      {hasBody && (
-        <div
-          className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${
-            expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
-          }`}
-        >
-          <div className="overflow-hidden" inert={!expanded ? true : undefined}>
-            <div className="pt-0.5 pb-0.5">{children}</div>
-          </div>
-        </div>
-      )}
+      <div className="pt-0.5 pb-0.5">{children}</div>
     </div>
   );
 }
@@ -191,31 +148,19 @@ function Section({
  * The live session monitor — a kicked-off agent stays visible here until the PO
  * has dealt with it. Running rows spin quietly; rows needing a decision carry the
  * ink-blue dot (the one accent = "action lives here"); finished-and-seen rows
- * keep a check for an hour, then decay off the rail.
+ * keep a check for an hour, then decay off the rail — or leave the moment you
+ * mark them done, which is the sessions' answer to unpinning a note.
  */
-function SessionsSection() {
-  const { sessions, openChat, openChats, askRequests } = useApp();
+function SessionsSection({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
+  const { sessions, openChat, openChats, askRequests, setSessionLifecycle } = useApp();
   const asking = useMemo(() => new Set(Object.keys(askRequests)), [askRequests]);
   const rows = sessionRows(sessions, asking);
-  const attention = rows.filter((s) => needsYou(s, asking)).length;
-  const [open, toggle] = useSection('sessions', true);
-  // Nothing that needs the PO is ever allowed to hide.
-  const locked = attention > 0;
 
   return (
     <Section
       label="Sessions"
-      count={rows.length}
-      open={open}
-      onToggle={toggle}
-      locked={locked}
-      action={
-        <SectionAction
-          label="All"
-          title="All sessions: running, waiting on you, and finished"
-          onClick={(e) => openChats(navFromEvent(e))}
-        />
-      }
+      title="All sessions: running, waiting on you, and finished"
+      onOpen={(e) => openChats(navFromEvent(e))}
     >
       {/* Nothing live is its own answer: the header alone stands in, rather than a
           row of prose saying so. */}
@@ -236,12 +181,18 @@ function SessionsSection() {
                       // ago it landed, so a stale check reads as stale.
                       timeAgo(s.updated);
             return (
-              <li key={s.id}>
+              <li key={s.id} className="group/session relative">
                 <button
                   className="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 pl-2 text-left text-dense transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                   onClick={(e) => openChat({ id: s.id, title: s.title }, navFromEvent(e))}
                   title={`${s.title}: ${
-                    waitingOnAnswer ? 'waiting on your answer' : s.running ? 'running' : wants ? 'needs you' : 'done'
+                    waitingOnAnswer
+                      ? 'waiting on your answer'
+                      : s.running
+                        ? 'running'
+                        : wants
+                          ? 'needs you'
+                          : 'done'
                   }`}
                 >
                   <span className="flex size-3.5 shrink-0 items-center justify-center" aria-hidden>
@@ -255,14 +206,20 @@ function SessionsSection() {
                       <Check className="size-3 text-muted-foreground/80" />
                     )}
                   </span>
-                  <span className={`truncate ${wants ? 'text-sidebar-foreground' : 'text-muted-foreground'}`}>
+                  <span
+                    className={`truncate ${wants ? 'text-sidebar-foreground' : 'text-muted-foreground'}`}
+                  >
                     {s.title}
                   </span>
                   {reason && (
                     <span
                       className={`ml-auto shrink-0 text-xs tabular-nums ${
-                        wants ? 'font-medium text-brand' : 'text-muted-foreground'
-                      }`}
+                        // The done button takes this corner on hover, so the
+                        // status label steps aside rather than sitting under it.
+                        s.running
+                          ? ''
+                          : 'transition-opacity group-hover/session:opacity-0 group-focus-within/session:opacity-0'
+                      } ${wants ? 'font-medium text-brand' : 'text-muted-foreground'}`}
                     >
                       {reason}
                     </span>
@@ -277,6 +234,30 @@ function SessionsSection() {
                           : ', done'}
                   </span>
                 </button>
+                {/* Same gesture as unpinning a note: the row you are done with
+                    leaves the rail on one click. A running row has no button —
+                    it would keep spinning here either way, so answering it or
+                    letting it finish is the only honest next step. */}
+                {!s.running && (
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-md bg-gradient-to-l from-sidebar-accent from-65% to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover/session:opacity-100 group-focus-within/session:opacity-100">
+                    <button
+                      className="pointer-events-auto rounded p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void setSessionLifecycle(s.id, 'done');
+                        onUndo({
+                          label: 'Marked done',
+                          title: s.title,
+                          undo: () => void setSessionLifecycle(s.id, 'active'),
+                        });
+                      }}
+                      aria-label={`Mark ${s.title} done`}
+                      title="Mark done: remove from the sidebar (a new message reopens it)"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                )}
               </li>
             );
           })}
@@ -326,8 +307,7 @@ function TypeSection({
   onNewNote?: () => void;
   onIngest?: () => void;
 }) {
-  const { openFolder, openDoc, activeTab, favorites, revealNew, markRevealSeen, autoPinNew, markPinSeen } =
-    useApp();
+  const { openFolder, openDoc, activeTab, favorites, autoPinNew, markPinSeen } = useApp();
   const [open, toggle] = useSection(`type.${group.type}`, true);
   const notes = useMemo(() => {
     const pinned = new Set(favorites);
@@ -343,10 +323,6 @@ function TypeSection({
     group.type === 'meeting' && !group.notes.some((n) => !isFolderIndex(n.path));
   const Icon = noteTypeIcon(group.type);
   const folderActive = activeTab?.kind === 'folder' && activeTab.dir === group.dir;
-  // A section the memory just earned: it announces itself once, quietly, and
-  // any interaction with it counts as "seen".
-  const isNew = revealNew.has(group.type);
-  const acknowledge = () => isNew && markRevealSeen(group.type);
   // A section with nothing under it keeps its label (the browse affordance) but
   // drops the chevron: no disclosure that discloses nothing.
   const hasBody = notes.length > 0 || isNote || inviteTranscript;
@@ -357,10 +333,7 @@ function TypeSection({
       <div className="group/row flex items-center gap-0.5 pr-1">
         <button
           className="shrink-0 rounded p-0.5 text-muted-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-          onClick={() => {
-            acknowledge();
-            toggle();
-          }}
+          onClick={toggle}
           aria-expanded={hasBody ? expanded : undefined}
           aria-label={`${expanded ? 'Collapse' : 'Expand'} ${group.dir}`}
           disabled={!hasBody}
@@ -375,29 +348,18 @@ function TypeSection({
             so the eye chunks the tree by section instead of reading one flat list. */}
         <button
           className={`flex flex-1 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-xs font-medium capitalize transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
-            folderActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-muted-foreground'
+            folderActive
+              ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+              : 'text-muted-foreground'
           }`}
-          onClick={(e) => {
-            acknowledge();
-            openFolder(group.dir, navFromEvent(e));
-          }}
-          title={
-            isNew
-              ? `Browse all ${group.dir}: the memory just filed its first`
-              : `Browse all ${group.dir}`
-          }
+          onClick={(e) => openFolder(group.dir, navFromEvent(e))}
+          title={`Browse all ${group.dir}`}
         >
           <Icon className="size-3.5 shrink-0 text-muted-foreground/80" aria-hidden />
           <span className="flex-1 truncate">{group.dir}</span>
           {/* Folding a section costs you the rows, never the count. */}
           {!expanded && notes.length > 0 && (
             <span className="shrink-0 tabular-nums text-muted-foreground">{notes.length}</span>
-          )}
-          {isNew && (
-            <>
-              <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-hidden />
-              <span className="sr-only">, new in the memory</span>
-            </>
           )}
         </button>
       </div>
@@ -454,7 +416,9 @@ function TypeSection({
                   <li key={n.path} className="group/note relative">
                     <button
                       className={`flex w-full items-center gap-2 rounded-md py-1 pr-2 pl-[30px] text-left text-dense transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
-                        activeNote ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground' : 'text-sidebar-foreground'
+                        activeNote
+                          ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+                          : 'text-sidebar-foreground'
                       }`}
                       onClick={openRow}
                       onAuxClick={(e) => e.button === 1 && openRow(e)}
@@ -484,7 +448,9 @@ function TypeSection({
                       {group.type === 'meeting' && (
                         <span
                           className={`ml-auto shrink-0 text-xs tabular-nums transition-opacity group-hover/note:opacity-0 group-focus-within/note:opacity-0 ${
-                            isUpcomingMeeting(n) ? 'font-medium text-brand' : 'text-muted-foreground'
+                            isUpcomingMeeting(n)
+                              ? 'font-medium text-brand'
+                              : 'text-muted-foreground'
                           }`}
                         >
                           {meetingMeta(n)}
@@ -528,6 +494,56 @@ const CORE_RAIL: readonly NoteType[] = ['meeting', 'note'];
 const RAIL_ORDER: readonly NoteType[] = ['meeting', 'note', 'ticket', 'decision', 'theme'];
 
 /**
+ * The "+" on the Memory header: start a page of any type the PM authors,
+ * without first finding the shelf it belongs on.
+ *
+ * A menu rather than four rows, because only one of the four (a note) is a
+ * daily thing — and ⌘N already covers that one. The rail stays the working set;
+ * this is the door to the rest of the ceiling, one click deep. Each row says
+ * what the type is for, so the choice is about the work rather than about our
+ * vocabulary.
+ */
+function NewNoteMenu() {
+  const { create, busy } = useNewNote();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="inline-grid size-5 place-items-center rounded text-muted-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none aria-expanded:bg-sidebar-accent aria-expanded:text-foreground disabled:opacity-50"
+          title="Start a new page: note, theme, customer, person"
+          aria-label="New page"
+          disabled={busy}
+        >
+          <Plus className="size-3.5" aria-hidden />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={6} className="w-72 motion-reduce:animate-none">
+        {HAND_CREATABLE_TYPES.map((type) => {
+          const Icon = noteTypeIcon(type);
+          return (
+            <DropdownMenuItem
+              key={type}
+              className="gap-2 px-2 py-1.5"
+              onClick={() => void create(type)}
+            >
+              <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0">
+                <span className="block">New {noteTypeLabel(type).toLowerCase()}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {NEW_NOTE_PURPOSE[type]}
+                </span>
+              </span>
+              {type === 'note' && <span className="ml-auto pl-3 text-xs text-muted-foreground">⌘N</span>}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
  * The rail: the two core sections always, plus a section for any type that
  * currently holds a pin — which vanishes with its last pin. No placeholders:
  * anything in the sidebar IS pinned, so an unpinned category has no row here
@@ -543,7 +559,6 @@ function MemoryTree({
   onIngest: () => void;
 }) {
   const { tree, favorites, openMemory } = useApp();
-  const [open, toggle] = useSection('memory', true);
   const groups = useMemo(() => {
     const byType = new Map<NoteType, VaultTreeGroupDTO>();
     for (const g of tree?.groups ?? []) byType.set(g.type, g);
@@ -570,19 +585,19 @@ function MemoryTree({
   return (
     <Section
       label="Memory"
-      open={open}
-      onToggle={toggle}
-      action={
-        <SectionAction
-          label="All"
-          title="The whole memory: sources, insights, customers, people, notes"
-          onClick={(e) => openMemory(navFromEvent(e))}
-        />
-      }
+      title="The whole memory: sources, insights, customers, people, notes"
+      onOpen={(e) => openMemory(navFromEvent(e))}
+      action={<NewNoteMenu />}
     >
       <ul className="flex flex-col gap-1">
         {groups.map((g) => (
-          <TypeSection key={g.dir} group={g} onUnpin={onUnpin} onNewNote={onNewNote} onIngest={onIngest} />
+          <TypeSection
+            key={g.dir}
+            group={g}
+            onUnpin={onUnpin}
+            onNewNote={onNewNote}
+            onIngest={onIngest}
+          />
         ))}
       </ul>
     </Section>
@@ -686,7 +701,13 @@ function SetupMenu() {
           icon={Wand2}
           label="Skills"
           title="Skills: how work you hand over gets done, from playbooks to always-on rules to reference"
-          meta={skillsToFix > 0 ? `${skillsToFix} to fix` : skills.length > 0 ? `${skills.length}` : undefined}
+          meta={
+            skillsToFix > 0
+              ? `${skillsToFix} to fix`
+              : skills.length > 0
+                ? `${skills.length}`
+                : undefined
+          }
           metaTone={skillsToFix > 0 ? 'destructive' : 'muted'}
           onClick={(e) => openSkills(navFromEvent(e))}
         />
@@ -695,7 +716,11 @@ function SetupMenu() {
           label="Agents"
           title="Agents: what runs on its own while the app is open, and how to switch it off"
           meta={
-            agentsBlocked > 0 ? `${agentsBlocked} blocked` : agents.length > 0 ? `${agents.length}` : undefined
+            agentsBlocked > 0
+              ? `${agentsBlocked} blocked`
+              : agents.length > 0
+                ? `${agents.length}`
+                : undefined
           }
           metaTone={agentsBlocked > 0 ? (agentsBroken ? 'destructive' : 'warning') : 'muted'}
           onClick={(e) => openAgents(navFromEvent(e))}
@@ -706,7 +731,7 @@ function SetupMenu() {
           label="Settings"
           title="Settings: workspace, connections, and who you are"
           meta="⌘,"
-          onClick={(e) => openSettings(navFromEvent(e))}
+          onClick={(e) => openSettings(undefined, navFromEvent(e))}
         />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -748,25 +773,30 @@ export function Sidebar({
     toggleFavorite,
   } = useApp();
 
-  // Unpinning a note is reversible: it leaves a one-tap Undo strip for a few
+  // Every way of clearing a row off the rail — unpinning a note, marking a
+  // session done — is reversible: it leaves a one-tap Undo strip for a few
   // seconds, then quietly settles. (The red toast is errors-only.)
-  const [unpinned, setUnpinned] = useState<{ path: string; title: string } | null>(null);
-  const unpinTimer = useRef<number | null>(null);
-  useEffect(() => () => void (unpinTimer.current && window.clearTimeout(unpinTimer.current)), []);
+  const [undoable, setUndoable] = useState<UndoOffer | null>(null);
+  const undoTimer = useRef<number | null>(null);
+  useEffect(() => () => void (undoTimer.current && window.clearTimeout(undoTimer.current)), []);
+  const offerUndo = useCallback((offer: UndoOffer) => {
+    setUndoable(offer);
+    if (undoTimer.current) window.clearTimeout(undoTimer.current);
+    undoTimer.current = window.setTimeout(() => setUndoable(null), 6000);
+  }, []);
   const unpinNote = useCallback(
     (n: NoteRefDTO) => {
       toggleFavorite(n.path);
-      setUnpinned({ path: n.path, title: n.title });
-      if (unpinTimer.current) window.clearTimeout(unpinTimer.current);
-      unpinTimer.current = window.setTimeout(() => setUnpinned(null), 6000);
+      // Re-pinning is the exact inverse of the unpin.
+      offerUndo({ label: 'Unpinned', title: n.title, undo: () => toggleFavorite(n.path) });
     },
-    [toggleFavorite],
+    [toggleFavorite, offerUndo],
   );
-  const undoUnpin = useCallback(() => {
-    if (unpinned) toggleFavorite(unpinned.path); // re-pin: the exact inverse of the unpin
-    setUnpinned(null);
-    if (unpinTimer.current) window.clearTimeout(unpinTimer.current);
-  }, [unpinned, toggleFavorite]);
+  const runUndo = useCallback(() => {
+    undoable?.undo();
+    setUndoable(null);
+    if (undoTimer.current) window.clearTimeout(undoTimer.current);
+  }, [undoable]);
 
   // Both badges are filters over the one attention list — never their own sums.
   const todosDue = countOf(attention, 'todo');
@@ -779,8 +809,18 @@ export function Sidebar({
       >
         {vault && (
           <>
-            <ToolbarButton label="New note" keys={['⌘', 'N']} icon={SquarePen} onClick={onNewNote} />
-            <ToolbarButton label="Add material" keys={['⇧', '⌘', 'N']} icon={FileUp} onClick={onIngest} />
+            <ToolbarButton
+              label="New note"
+              keys={['⌘', 'N']}
+              icon={SquarePen}
+              onClick={onNewNote}
+            />
+            <ToolbarButton
+              label="Add material"
+              keys={['⇧', '⌘', 'N']}
+              icon={FileUp}
+              onClick={onIngest}
+            />
           </>
         )}
         {/* The one door to how the app is set up — skills, agents, settings. */}
@@ -873,24 +913,24 @@ export function Sidebar({
       ) : (
         <>
           <div className="flex-1 overflow-y-auto pb-2">
-            <SessionsSection />
+            <SessionsSection onUndo={offerUndo} />
             {/* Day one teaches itself: the Meetings and Notes sections carry their
                 own invitations, so no extra empty-workspace paragraph. */}
             <MemoryTree onUnpin={unpinNote} onNewNote={onNewNote} onIngest={onIngest} />
           </div>
 
-          {unpinned && (
+          {undoable && (
             <div
               role="status"
               className="mx-2 mb-1.5 flex items-center gap-2 rounded-lg border border-sidebar-border bg-card/70 px-2.5 py-1.5 text-xs text-muted-foreground"
             >
               <Check className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
               <span className="min-w-0 flex-1 truncate">
-                Unpinned <span className="text-foreground">{unpinned.title}</span>
+                {undoable.label} <span className="text-foreground">{undoable.title}</span>
               </span>
               <button
                 className="shrink-0 rounded px-1 font-medium text-brand transition-colors hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                onClick={undoUnpin}
+                onClick={runUndo}
               >
                 Undo
               </button>

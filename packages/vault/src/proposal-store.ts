@@ -17,6 +17,7 @@ interface Row {
   rationale: string;
   evidence_json: string;
   inference: number;
+  asked: number;
   status: string;
   created: number;
   resolved: number | null;
@@ -35,6 +36,7 @@ export class ProposalStore implements ProposalPort {
         rationale TEXT NOT NULL,
         evidence_json TEXT NOT NULL,
         inference INTEGER NOT NULL DEFAULT 0,
+        asked INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'pending',
         created INTEGER NOT NULL,
         resolved INTEGER
@@ -49,6 +51,12 @@ export class ProposalStore implements ProposalPort {
       if (cols.some((c) => c.name === 'session_type')) {
         this.db.exec('UPDATE proposals SET skill = session_type');
       }
+    }
+    // A card that rests on the PM's own words rather than on a note. Older rows
+    // predate the distinction and default to 0, which is right: nothing back
+    // then could tell "you asked for this" from "the agent worked it out".
+    if (!cols.some((c) => c.name === 'asked')) {
+      this.db.exec('ALTER TABLE proposals ADD COLUMN asked INTEGER NOT NULL DEFAULT 0');
     }
   }
 
@@ -65,6 +73,7 @@ export class ProposalStore implements ProposalPort {
       rationale: input.rationale,
       evidence_json: JSON.stringify(input.evidence),
       inference: input.inference ? 1 : 0,
+      asked: input.asked ? 1 : 0,
       status: 'pending',
       created: now,
       resolved: null,
@@ -72,9 +81,9 @@ export class ProposalStore implements ProposalPort {
     this.db
       .prepare(
         `INSERT INTO proposals (id, kind, session_id, skill, target_path, base_hash, payload_json,
-           rationale, evidence_json, inference, status, created, resolved)
+           rationale, evidence_json, inference, asked, status, created, resolved)
          VALUES (@id, @kind, @session_id, @skill, @target_path, @base_hash, @payload_json,
-           @rationale, @evidence_json, @inference, @status, @created, @resolved)`,
+           @rationale, @evidence_json, @inference, @asked, @status, @created, @resolved)`,
       )
       .run(row);
     return this.toRecord(row);
@@ -82,7 +91,9 @@ export class ProposalStore implements ProposalPort {
 
   list(status?: string): ProposalRecord[] {
     const rows = status
-      ? (this.db.prepare('SELECT * FROM proposals WHERE status = ? ORDER BY created DESC').all(status) as Row[])
+      ? (this.db
+          .prepare('SELECT * FROM proposals WHERE status = ? ORDER BY created DESC')
+          .all(status) as Row[])
       : (this.db.prepare('SELECT * FROM proposals ORDER BY created DESC').all() as Row[]);
     return rows.map((r) => this.toRecord(r));
   }
@@ -93,11 +104,15 @@ export class ProposalStore implements ProposalPort {
   }
 
   setStatus(id: string, status: string, resolved: number | null): void {
-    this.db.prepare('UPDATE proposals SET status = ?, resolved = ? WHERE id = ?').run(status, resolved, id);
+    this.db
+      .prepare('UPDATE proposals SET status = ?, resolved = ? WHERE id = ?')
+      .run(status, resolved, id);
   }
 
   pendingCount(): number {
-    const row = this.db.prepare("SELECT COUNT(*) AS c FROM proposals WHERE status = 'pending'").get() as {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS c FROM proposals WHERE status = 'pending'")
+      .get() as {
       c: number;
     };
     return row.c;
@@ -115,6 +130,7 @@ export class ProposalStore implements ProposalPort {
       rationale: row.rationale,
       evidence: JSON.parse(row.evidence_json),
       inference: row.inference === 1,
+      asked: row.asked === 1,
       status: row.status,
       created: row.created,
       resolved: row.resolved,

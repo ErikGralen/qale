@@ -1,0 +1,124 @@
+name: Build installers
+
+# Manual, plus every version tag. Deliberately not on every push to main: a run
+# is two runners for about ten minutes each and produces a ~140 MB artifact, and
+# nobody looks at an installer that was not cut for a reason. check-types and
+# test still run here before packaging, because a build that ships a broken app
+# is worse than no build, but they are not the reason this workflow exists.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+# A second tag push while the first is still building would race for the same
+# artifact names. Newest wins.
+concurrency:
+  group: build-installers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing should not hide whether the other one works.
+      fail-fast: false
+      matrix:
+        include:
+          # Windows is the reason this workflow exists. better-sqlite3 is a
+          # native module and has to be loaded by Electron's own V8, so it needs
+          # a binary built against Electron's ABI for win32-x64. That binary
+          # cannot be produced on a Mac: electron-builder runs @electron/rebuild
+          # before packaging, and asking it for x64 from an arm64 Mac stops at
+          # "node-gyp does not support cross-compiling native modules from
+          # source". Worse is what happens when the arch happens to match. A
+          # `--win --dir` build on an arm64 Mac completes and looks fine, and the
+          # better_sqlite3.node inside the Windows app is a Mach-O bundle. The
+          # app installs, launches, and dies the moment it opens the database.
+          # So: build Windows on Windows.
+          - os: windows-latest
+            name: Windows installer
+            script: win
+            artifact: qale-windows-installer
+            path: apps/desktop/dist/*.exe
+          # macOS rides along because it is four lines and the same lockfile,
+          # types and tests. macos-latest is Apple Silicon, which is what we
+          # want: electron-builder.yml targets arm64 only, so the runner arch
+          # matches the target arch and the same native rebuild argument holds.
+          # If an Intel dmg is ever added, it needs its own runner or a
+          # universal build, for exactly the reason spelled out above.
+          - os: macos-latest
+            name: macOS dmg
+            script: dmg
+            artifact: qale-macos-dmg
+            path: apps/desktop/dist/*.dmg
+
+    steps:
+      # Windows still enforces the 260-character path limit unless git is told
+      # otherwise, and pnpm's store plus Electron's node_modules go well past it.
+      # This has to run before checkout or the checkout itself is what fails.
+      - name: Allow long paths on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@v4
+
+      # Order matters: pnpm has to be on PATH before setup-node, because
+      # `cache: pnpm` below works by running `pnpm store path`. Swap these two
+      # steps and setup-node fails with "Unable to locate executable file: pnpm".
+      # No version pinned here on purpose: the action reads `packageManager`
+      # from the root package.json, so the version lives in one place.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # engines.node in the root package.json says >= 22.19; 24 is what the
+          # app is developed against. Keep these two moving together.
+          node-version: 24
+          cache: pnpm
+
+      # Not --ignore-scripts. pnpm blocks postinstall scripts by default, and
+      # the ones we need are approved by name in pnpm-workspace.yaml
+      # (onlyBuiltDependencies: electron, better-sqlite3, esbuild). Without them
+      # Electron never downloads its binary and there is nothing to package.
+      # That list is honoured non-interactively, so no `pnpm approve-builds`
+      # step is needed here; if a new native dependency ever appears, it gets
+      # added there rather than worked around in this file.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Check types
+        run: pnpm check-types
+
+      - name: Test
+        run: pnpm test
+
+      # This runs electron-vite build and then electron-builder. electron-builder
+      # rebuilds better-sqlite3 against Electron's ABI on the way (npmRebuild is
+      # on by default), which on this runner is a native, same-platform rebuild.
+      # It will normally pull a prebuilt binary; if better-sqlite3 has no prebuild
+      # for this Electron ABI it compiles from source instead, which is slower but
+      # works, because the GitHub runners ship the MSVC and Xcode toolchains.
+      - name: Package
+        env:
+          # Neither platform is signed yet (see the comments in
+          # electron-builder.yml). On macOS this stops electron-builder from
+          # hunting the runner keychain for an identity it will not find and
+          # failing on the way; mac.identity is already null, this is the belt to
+          # that pair of braces. When a certificate lands, this line goes and the
+          # credentials arrive as secrets.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: pnpm --filter @qale/desktop run ${{ matrix.script }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.path }}
+          # A glob that matches nothing means the packaging step changed its
+          # output name and nobody noticed. Fail instead of uploading an empty
+          # artifact that only looks like a successful build.
+          if-no-files-found: error
+          # These are ~140 MB each and are rebuildable from the tag. Ninety days
+          # of them is storage nobody asked for.
+          retention-days: 14

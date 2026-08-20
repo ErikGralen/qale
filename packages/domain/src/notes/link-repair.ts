@@ -35,7 +35,11 @@ function levenshtein(a: string, b: string): number {
   for (let i = 1; i <= m; i++) {
     const row = [i];
     for (let j = 1; j <= n; j++) {
-      row[j] = Math.min(prev[j]! + 1, row[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+      row[j] = Math.min(
+        prev[j]! + 1,
+        row[j - 1]! + 1,
+        prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
     }
     prev = row;
   }
@@ -70,7 +74,9 @@ function tierHits(target: string, candidates: LinkRepairCandidate[]): LinkRepair
     if (hits.length > 0) {
       return hits
         .slice()
-        .sort((a, b) => levenshtein(norm(basename(a.slug)), t) - levenshtein(norm(basename(b.slug)), t));
+        .sort(
+          (a, b) => levenshtein(norm(basename(a.slug)), t) - levenshtein(norm(basename(b.slug)), t),
+        );
     }
   }
   return [];

@@ -1,11 +1,19 @@
 import { watch, type FSWatcher } from 'chokidar';
-import { relative, sep } from 'node:path';
+import { relative } from 'node:path';
+import { toPosixPath } from './paths.js';
 
 /**
  * Vault watcher (PLAN §3.5): chokidar v5 (ESM, no globs — we filter `.md`
- * ourselves), ignoring `.obsidian/` and `.git/`. Events funnel through a
+ * ourselves), ignoring dot-folders and `node_modules/`. Events funnel through a
  * debounced serial queue so a git-pull / Obsidian-Sync burst re-indexes in a
  * batch and can't starve the IPC/agent loop.
+ *
+ * The ignore rule is deliberately the same one `FsVault.walk` uses — any segment
+ * starting with `.` is invisible — and not a list of known folders. When the two
+ * disagreed, a session's own working files under `sessions/.files/<id>/` were
+ * skipped by the scan but upserted live by the watcher, so a dropped transcript
+ * put a phantom "Input — What arrived" note in the notes list and in search
+ * until the next reconcile quietly evicted it.
  */
 
 export type ChangeKind = 'upsert' | 'remove';
@@ -18,6 +26,16 @@ export interface VaultWatcherOptions {
   /** Process a settled batch of changes. Awaited before the next batch drains. */
   onBatch: (changes: VaultChange[]) => Promise<void>;
   debounceMs?: number;
+}
+
+/**
+ * Is this absolute path inside a folder the watcher must not report? Pure, so
+ * the rule can be checked without waiting on a filesystem event.
+ */
+export function isWatchIgnored(root: string, path: string): boolean {
+  const rel = toPosixPath(relative(root, path));
+  if (!rel) return false;
+  return rel.split('/').some((p) => p.startsWith('.') || p === 'node_modules');
 }
 
 export class VaultWatcher {
@@ -35,17 +53,17 @@ export class VaultWatcher {
     this.watcher = watch(this.root, {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
-      ignored: (path: string) => {
-        const rel = relative(this.root, path);
-        if (!rel) return false;
-        const parts = rel.split(sep);
-        return parts.some((p) => p === '.git' || p === '.obsidian' || p === 'node_modules');
-      },
+      ignored: (path: string) => isWatchIgnored(this.root, path),
     });
 
     const enqueue = (kind: ChangeKind) => (abs: string) => {
       if (!abs.toLowerCase().endsWith('.md')) return;
-      const rel = relative(this.root, abs);
+      // The other door a note id comes in through, and it has to agree with the
+      // walk in `FsVault` exactly: chokidar reports OS-shaped absolute paths, so
+      // without this a Windows edit would upsert `meetings\weekly.md` beside the
+      // `meetings/weekly.md` the scan already indexed, and the note the PM is
+      // looking at would never refresh.
+      const rel = toPosixPath(relative(this.root, abs));
       this.pending.set(rel, kind);
       this.schedule();
     };
@@ -70,7 +88,10 @@ export class VaultWatcher {
     this.draining = true;
     try {
       while (this.pending.size > 0) {
-        const batch: VaultChange[] = [...this.pending.entries()].map(([path, kind]) => ({ path, kind }));
+        const batch: VaultChange[] = [...this.pending.entries()].map(([path, kind]) => ({
+          path,
+          kind,
+        }));
         this.pending.clear();
         try {
           await this.opts.onBatch(batch);
@@ -80,7 +101,10 @@ export class VaultWatcher {
           for (const { path, kind } of batch) {
             if (!this.pending.has(path)) this.pending.set(path, kind);
           }
-          console.error('[watcher] batch failed, retrying:', err instanceof Error ? err.message : err);
+          console.error(
+            '[watcher] batch failed, retrying:',
+            err instanceof Error ? err.message : err,
+          );
           this.timer = setTimeout(() => void this.drain(), 2000);
           return;
         }

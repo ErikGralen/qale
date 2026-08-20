@@ -7,6 +7,7 @@ can: [file-material, keep-working-files, draft-outbound]
 ---
 
 ## When
+
 Someone handed material over and it is sitting in your session folder, unfiled: files, pasted
 text, screenshots, one thing or forty. Work out what each one is, put it where it belongs, and
 read the ones that still have something live in them.
@@ -19,13 +20,15 @@ Also used on material that is already filed, when the PM asks for a meeting to b
 own page. Then skip the filing and go straight to the reading.
 
 ## What the PM asked for wins
+
 Whatever they typed when they handed the material over beats every rule below, in both directions.
 "Just file these, no reviews" files them without reading. "Review them anyway" reads month-old
 material without argument. If they aimed the drop at a folder or a meeting, that is the same kind
 of instruction and it settles the question: do not ask it again.
 
 ## Read
-Start with `files_list` and `arrival.md`, which lists what arrived. Then skim each piece: enough
+
+Start with `files_list` and `input.md`, which lists what arrived. Then skim each piece: enough
 to know what it is, who is in it, when it happened, and whether anything in it is still live. A
 transcript's first few hundred lines say far more than its file name does.
 
@@ -37,17 +40,23 @@ For a link, work from the URL and whatever the PM pasted with it; do not guess w
 For a screenshot, work from what you can see and say so in the caption.
 
 ## File
+
 Use `file_material`, once per THING rather than once per file, and say in one line where each one
 went and why as you go. A filing nobody can see is a filing nobody can correct.
 
-- **A transcript of a meeting the PM was in** goes to `meetings/` (`as: "meeting"`). If the
-  calendar already holds that meeting, pass `attach_to` with its path instead of making a second
-  page for one conversation.
+- **A recording of a meeting the PM was in** goes in as `as: "meeting"`: the transcript is kept in
+  `sources/`, and no meeting page is made. If the calendar already holds that meeting, pass
+  `attach_to` with its path and the transcript is linked onto the page that exists. If nothing
+  holds it, the page is yours to propose once you have read it (see Produce).
 - **Everything else** goes to `sources/` (`as: "source"`): a colleague's call, an article, a
   spec, a pasted thread, a screenshot.
 - A recording that arrived in two files is ONE meeting. Name both files in one call, in order.
 - Got it wrong, or the PM says you did? `refile_material` moves it. Correcting a filing is as
   much your job as making it.
+
+Only the material files itself. Every page you write is a card, the meeting page included. A card
+may cite a page another card would create, so propose the meeting first and let the todos and
+decisions from it cite the meeting, the way they always have.
 
 **Matching a meeting.** Match on what the transcript itself says: its own date, its title, who
 speaks in it. The clock is a hint and never the decider. If two meetings could plausibly be it, or
@@ -63,6 +72,7 @@ date and content (`search_vault`, `vault_list`). If it is, say so and stop, and 
 anyway. Two copies of one meeting is two sets of cards for one conversation.
 
 ## Read what is worth reading
+
 Fresh material about live work earns a full read. A backlog earns filing plus a skim. Material
 that has already been through this does not earn a second pass: a source carrying
 `processing: processed` had its commitments proposed once, so do not propose them again, and when
@@ -70,6 +80,7 @@ a meeting already holds transcripts read only the ones that are new.
 
 **Up to five pieces: read them yourself.** More than five, or names that say the material is old,
 treat it as a backlog:
+
 - Write `brief.md` first: what the workspace currently believes, the themes in play, what a good
   reading looks like. Every child reads it, and without it a reader handed one document in
   isolation cannot tell a new fact from a contradiction.
@@ -79,10 +90,12 @@ treat it as a backlog:
   you skipped and why.
 
 ## Produce
+
 The smallest set of approval cards the material actually forces. Filing is not a card; everything
 you write ABOUT the material is. One finding, one card, however many documents it spans.
 
 **A meeting the PM was in:**
+
 - **Decisions** made in the meeting, with the decider and the reason (propose_decision). Set
   `supersedes` when it reverses an earlier decision. If there is no clear decider or date, ask
   before drafting; a line someone said out loud is not a decision record yet.
@@ -90,9 +103,22 @@ you write ABOUT the material is. One finding, one card, however many documents i
   verbatim quote. The PM's own commitments get no `owner`; for anyone else's, set `owner` to that
   person. Set `due` only if a date was named or clearly implied. Check existing todos first
   (vault_list type "todo") so you do not file a duplicate.
-- **A meeting summary** on the meeting page (propose_update), plus the hub updates it implies:
-  actions, open questions, things explicitly not being done, and `last_told` entries on the people
-  pages.
+- **The meeting page itself** (propose_meeting), when nothing already holds this meeting: one card
+  carrying the whole page, with the write-up in it — what was decided, what is still open, what
+  happens next — and the transcript named. Propose it before the cards that cite it. Where the
+  calendar already holds the page, the write-up goes onto it instead (propose_update). Either way
+  it is one card: never a blank page followed by an edit to it.
+- **Who was in it**: set `participants` on that card, from whoever speaks in the transcript plus
+  anyone it says was in the room. Use a `[[people/…]]` ref where that person already has a page,
+  and their plain name where they do not. A plain name is enough: it lands on the page as a chip
+  the PM turns into a page in one click, so do not propose a person page per name. A meeting with
+  nobody on it never reaches the people it was about, so the card is refused without them. If the
+  material genuinely names nobody, only "Speaker 1" and the like, set `participants_unknown` and
+  say so in your closing line; ask (`ask_user`) as well where it matters and somebody is there to
+  answer. On a page the calendar already holds, leave `participants` alone: it comes from the
+  invite, and the next sync overwrites anything else.
+- **The hub updates the meeting implies**: actions, open questions, things explicitly not being
+  done, and `last_told` entries on the people pages.
 - **External consequences**, only where the meeting forces one: a comment on a linked ticket the
   meeting settles or dates (draft_jira_comment), a ticket for agreed work nothing covers
   (draft_jira_issue), a follow-up that was actually booked with a real time (draft_calendar_event).
@@ -102,6 +128,7 @@ you write ABOUT the material is. One finding, one card, however many documents i
   Outbound is always draft-and-approve; nothing sends itself.
 
 **A meeting the PM was not in**, such as a colleague's sales call:
+
 - Commitments anyone made, as todos with `owner` set and the verbatim quote.
 - Customer signals worth keeping, onto the customer hub (propose_update).
 - Who was told what, onto the `last_told` ledger, attributing the speaker.
@@ -112,6 +139,7 @@ you write ABOUT the material is. One finding, one card, however many documents i
 
 **A link, screenshot, or pasted thread**: the source body is immutable, so never propose edits to
 it. Instead:
+
 - Add links to it from the hubs it concerns (propose_update), where it genuinely adds signal.
 - File any commitment or date hiding in it as a todo.
 - If it names a person or customer with no page yet, ask before creating one.
@@ -121,6 +149,7 @@ Tag every proposed note with 1-2 contexts (`tags`) drawn from tags already in us
 brand-new tag in the card's rationale.
 
 For every card, in every branch:
+
 - Every claim is grounded: it quotes the material or cites existing memory. Nothing uncited.
 - Grounded is not the same as pasted. Say the thing in your own voice and cite what it rests on;
   the verbatim text stays in sources/ where anyone can open it. Quote inline only where the exact
@@ -136,8 +165,9 @@ documents up against each other is a guess; that comparison is the synthesis ski
 reads many documents against a question.
 
 ## Then
-The material is filed and stays filed. Approved cards land everything else: the decision spine, the
-commitment ledger, the hubs, the meeting page. Approved outbound executes upstream and files its
+
+The material is filed and stays filed. Approved cards land everything else: the meeting page, the
+decision spine, the commitment ledger, the hubs. Approved outbound executes upstream and files its
 link back. Each source flips new → processed when an approved card cites it.
 
 Nobody may be watching. If the job turned out to be pure filing, with nothing to review, nothing to

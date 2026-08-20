@@ -103,7 +103,13 @@ export function suggestionMenuRender<Item>(config: {
         selectedIndex = 0;
         renderer = new ReactRenderer(SuggestionMenu, {
           editor: props.editor,
-          props: { items: [], selectedIndex: 0, emptyLabel: config.emptyLabel, onSelect: select, onHover: hover },
+          props: {
+            items: [],
+            selectedIndex: 0,
+            emptyLabel: config.emptyLabel,
+            onSelect: select,
+            onHover: hover,
+          },
         });
         const element = renderer.element;
         element.className =

@@ -67,7 +67,13 @@ function fakeContext(files: Record<string, Stored>, opts?: { backlinked?: boolea
     clock: { now: () => '2026-07-22T00:00:00.000Z' },
     proposals: {
       create: (input, created) => {
-        const rec = { ...input, id: 'p1', status: 'pending', created, resolved: null } as ProposalRecord;
+        const rec = {
+          ...input,
+          id: 'p1',
+          status: 'pending',
+          created,
+          resolved: null,
+        } as ProposalRecord;
         proposals.set(rec.id, rec);
         return rec;
       },
@@ -82,7 +88,11 @@ function fakeContext(files: Record<string, Stored>, opts?: { backlinked?: boolea
   return { ctx, store, statuses };
 }
 
-function updateCard(ctx: UseCaseContext, body: string, payload: Record<string, unknown>): ProposalRecord {
+function updateCard(
+  ctx: UseCaseContext,
+  body: string,
+  payload: Record<string, unknown>,
+): ProposalRecord {
   return ctx.proposals.create(
     {
       kind: 'update',
@@ -109,7 +119,9 @@ test('accepting an update with a title patches the body and retitles the note', 
   });
   const rec = updateCard(ctx, body, {
     path: 'notes/2026-07-17-friday-scratch.md',
-    patch: [{ search: 'sara called re sso', replace: '[[people/sara-lindqvist]] called about SSO' }],
+    patch: [
+      { search: 'sara called re sso', replace: '[[people/sara-lindqvist]] called about SSO' },
+    ],
     rationale: 'tidy',
     title: 'Nordkap SSO rollout notes',
   });
@@ -122,7 +134,10 @@ test('accepting an update with a title patches the body and retitles the note', 
   assert.equal(store.has('notes/2026-07-17-friday-scratch.md'), false);
   const moved = store.get('notes/2026-07-17-nordkap-sso-rollout-notes.md');
   assert.ok(moved, `expected renamed file, have: ${[...store.keys()].join(', ')}`);
-  assert.equal((moved.frontmatter as Record<string, unknown>)['title'], 'Nordkap SSO rollout notes');
+  assert.equal(
+    (moved.frontmatter as Record<string, unknown>)['title'],
+    'Nordkap SSO rollout notes',
+  );
   assert.match(moved.body, /\[\[people\/sara-lindqvist\]\] called about SSO/);
 });
 

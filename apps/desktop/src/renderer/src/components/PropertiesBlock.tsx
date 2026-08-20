@@ -33,7 +33,13 @@ import { invoke } from '../lib/ipc';
 import { webUrl } from '../lib/urls';
 import { isExternalRef } from '../lib/connections';
 import { collectContexts } from '../lib/contexts';
-import { FIELDS, REF_FIELDS, SYSTEM_KEYS, type FieldSpec, type Widget } from '../state/properties-schema';
+import {
+  FIELDS,
+  REF_FIELDS,
+  SYSTEM_KEYS,
+  type FieldSpec,
+  type Widget,
+} from '../state/properties-schema';
 import { TagInput } from './TagInput';
 import { PeopleInput } from './PeopleInput';
 import { PersonChip } from './PersonChip';
@@ -121,7 +127,12 @@ function ticketRelationRows(fm: Record<string, unknown>): { label: string; targe
 function coerceVerified(value: unknown): Verification[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((v) => {
-    if (v && typeof v === 'object' && typeof (v as Verification).by === 'string' && typeof (v as Verification).at === 'string') {
+    if (
+      v &&
+      typeof v === 'object' &&
+      typeof (v as Verification).by === 'string' &&
+      typeof (v as Verification).at === 'string'
+    ) {
       return [{ by: (v as Verification).by, at: (v as Verification).at }];
     }
     return [];
@@ -179,7 +190,8 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
 
   const commit = (key: string, value: unknown) => {
     const next = { ...fmRef.current };
-    if (value === '' || value === undefined || (Array.isArray(value) && value.length === 0)) delete next[key];
+    if (value === '' || value === undefined || (Array.isArray(value) && value.length === 0))
+      delete next[key];
     else next[key] = value;
     fmRef.current = next;
     onDirty?.();
@@ -207,8 +219,7 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
   // Ticket relationships written by sync: `parent` reads
   // as "Part of"; `links` entries group under their relationship label. They
   // render as the same ref chips — synced, so no remove affordance.
-  const relationRows =
-    note.type === 'ticket' ? ticketRelationRows(note.frontmatter) : [];
+  const relationRows = note.type === 'ticket' ? ticketRelationRows(note.frontmatter) : [];
   // `verified` renders as the derived Trust row below, not as a raw-JSON custom
   // row — so it's "known" for the purpose of custom-key detection.
   const verifications = coerceVerified(note.frontmatter['verified']);
@@ -272,7 +283,11 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
         <CollapsibleContent>
           <div className="mt-1 flex flex-col">
             {specs.map((spec) => (
-              <PropertyRow key={spec.key} icon={spec.key === 'tags' ? Hash : WIDGET_ICON[spec.widget]} label={spec.label}>
+              <PropertyRow
+                key={spec.key}
+                icon={spec.key === 'tags' ? Hash : WIDGET_ICON[spec.widget]}
+                label={spec.label}
+              >
                 <PropertyValue
                   spec={spec}
                   value={note.frontmatter[spec.key]}
@@ -511,7 +526,8 @@ function SummaryEditor({
       onBlur={() => {
         // Baseline is what editing started from — a click into the echo state
         // then away must not silently rewrite the mirrored summary.
-        if (!cancelled.current && draft.trim() !== (echo ? '' : value)) onCommit(draft.trim() || undefined);
+        if (!cancelled.current && draft.trim() !== (echo ? '' : value))
+          onCommit(draft.trim() || undefined);
         cancelled.current = false;
         setDraft(null);
       }}
@@ -543,7 +559,9 @@ function PropertyValue({
   onTagClick?: (tag: string) => void;
 }) {
   if (spec.widget === 'people') {
-    const arr = Array.isArray(value) ? (value as unknown[]).filter((t): t is string => typeof t === 'string') : [];
+    const arr = Array.isArray(value)
+      ? (value as unknown[]).filter((t): t is string => typeof t === 'string')
+      : [];
     // Who was in the room is provenance — readable, clickable, not editable.
     if (readOnly) {
       return (
@@ -576,7 +594,9 @@ function PropertyValue({
           ? value.join(', ')
           : (spec.options?.find((o) => o.value === value)?.label ?? String(value));
     const asDate =
-      typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && !Number.isNaN(Date.parse(value))
+      typeof value === 'string' &&
+      /^\d{4}-\d{2}-\d{2}T/.test(value) &&
+      !Number.isNaN(Date.parse(value))
         ? new Date(value).toLocaleString()
         : null;
     return (
@@ -614,21 +634,15 @@ function PropertyValue({
     );
   }
   if (spec.widget === 'tags') {
-    const arr = Array.isArray(value) ? (value as unknown[]).filter((t): t is string => typeof t === 'string') : [];
+    const arr = Array.isArray(value)
+      ? (value as unknown[]).filter((t): t is string => typeof t === 'string')
+      : [];
     return (
       <TagInput
         value={arr}
         onChange={(next) => onCommit(next.length > 0 ? next : undefined)}
         suggestions={tagSuggestions}
-        normalize={
-          onTagClick
-            ? (raw) =>
-                raw
-                  .trim()
-                  .toLowerCase()
-                  .replace(/\s+/g, '-')
-            : undefined
-        }
+        normalize={onTagClick ? (raw) => raw.trim().toLowerCase().replace(/\s+/g, '-') : undefined}
         onTagClick={onTagClick}
         placeholder="Empty"
       />
@@ -650,7 +664,8 @@ function TextValue({ value, onCommit }: { value: string; onCommit: (v: unknown) 
       onFocus={() => setDraft(value)}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
-        if (!cancelled.current && draft !== null && draft.trim() !== value) onCommit(draft.trim() || undefined);
+        if (!cancelled.current && draft !== null && draft.trim() !== value)
+          onCommit(draft.trim() || undefined);
         cancelled.current = false;
         setDraft(null);
       }}
@@ -831,7 +846,11 @@ function AddPropertyRow({
           }}
           onBlur={(e) => {
             // Moving between the two draft inputs isn't leaving the row.
-            if (e.relatedTarget && e.currentTarget.parentElement?.parentElement?.contains(e.relatedTarget as Node)) return;
+            if (
+              e.relatedTarget &&
+              e.currentTarget.parentElement?.parentElement?.contains(e.relatedTarget as Node)
+            )
+              return;
             if (draft.key.trim() || draft.value.trim()) commit();
             else cancel();
           }}

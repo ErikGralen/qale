@@ -1,4 +1,10 @@
-import { dirForType, isFolderIndex, refToSlug, slugify, type PersonFrontmatter } from '@qale/domain';
+import {
+  dirForType,
+  isFolderIndex,
+  refToSlug,
+  slugify,
+  type PersonFrontmatter,
+} from '@qale/domain';
 import type { IndexedNote, UseCaseContext } from '../ports.js';
 
 /**
@@ -126,7 +132,8 @@ function attachMeetings(ctx: UseCaseContext, people: PersonCard[]): void {
     for (const entry of raw) {
       if (typeof entry !== 'string') continue;
       const key = (refToSlug(entry) ?? entry).trim().toLowerCase();
-      for (const card of byKey.get(key) ?? byKey.get(key.split('/').pop() ?? key) ?? []) seen.add(card);
+      for (const card of byKey.get(key) ?? byKey.get(key.split('/').pop() ?? key) ?? [])
+        seen.add(card);
     }
     for (const card of seen) {
       const ref: PersonMeeting = { path: meeting.path, title: meeting.title, date };
@@ -149,7 +156,10 @@ export interface CreatePersonInput {
  * calendar sync uses, so the next invite resolves to this page instead of
  * landing as a raw address again.
  */
-export async function createPerson(ctx: UseCaseContext, input: CreatePersonInput): Promise<PersonCard> {
+export async function createPerson(
+  ctx: UseCaseContext,
+  input: CreatePersonInput,
+): Promise<PersonCard> {
   const email = input.email?.trim();
   const name = input.name?.trim() || nameFromEmail(email) || '';
   if (!name) throw new Error('a person needs a name or an email');
@@ -158,7 +168,8 @@ export async function createPerson(ctx: UseCaseContext, input: CreatePersonInput
 
   const desired = `${dirForType('person')}/${slug}.md`;
   let path = desired;
-  for (let n = 2; await ctx.vault.exists(path); n += 1) path = `${dirForType('person')}/${slug}-${n}.md`;
+  for (let n = 2; await ctx.vault.exists(path); n += 1)
+    path = `${dirForType('person')}/${slug}-${n}.md`;
 
   const frontmatter: PersonFrontmatter = {
     type: 'person',
@@ -172,7 +183,13 @@ export async function createPerson(ctx: UseCaseContext, input: CreatePersonInput
   const indexed = ctx.index.get(note.path);
   const card: PersonCard = indexed
     ? toCard(ctx, indexed)
-    : { path: note.path, slug: note.slug, name, summary: frontmatter.summary, ...(email ? { email } : {}) };
+    : {
+        path: note.path,
+        slug: note.slug,
+        name,
+        summary: frontmatter.summary,
+        ...(email ? { email } : {}),
+      };
   attachMeetings(ctx, [card]);
   return card;
 }

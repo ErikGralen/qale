@@ -3,6 +3,7 @@ import type {
   LinkOrigin,
   Note,
   NoteType,
+  SchemaMiss,
   SearchHit,
   ThemeStance,
 } from '@qale/domain';
@@ -13,6 +14,16 @@ import type {
  * instances. Nothing here imports infra (PLAN §3.1).
  */
 
+/**
+ * Every `relPath` crossing these ports is a VAULT path, and a vault path is
+ * always posix: segments joined with `/`, on macOS, Linux and Windows alike. It
+ * is the app's note id, not a filesystem path that happens to be relative, and
+ * everything downstream depends on that one spelling: the index keys rows by it,
+ * wikilinks target it, git is handed it verbatim, `slugFromPath` /
+ * `isFolderIndex` / `isReservedFile` and the type-from-folder inference all split
+ * it on `/`. The adapter (`@qale/vault`) converts at the boundary, in
+ * `toPosixPath`, so nothing above this line ever asks what platform it is on.
+ */
 export interface FileListing {
   path: string;
   mtime: number;
@@ -49,6 +60,8 @@ export interface IndexedNote {
   mtime: number;
   frontmatter: Record<string, unknown>;
   links: LinkRecord[];
+  /** Set when the file did not fit the type it claims — see {@link SchemaMiss}. */
+  schemaMiss?: SchemaMiss;
 }
 
 export interface BacklinkRow {
@@ -58,6 +71,35 @@ export interface BacklinkRow {
   reversed?: boolean;
   origin?: LinkOrigin;
   line?: number;
+}
+
+/**
+ * What a write throws when the containment guard refuses it. Its own type,
+ * because a refusal is not a failure of the same kind as everything else a write
+ * can hit: a network blip or a locked file is bad luck and worth retrying, while
+ * a refusal means OUR OWN path construction produced something outside the
+ * workspace and will produce it again on every tick. Machinery that treats the
+ * two alike — logs, moves on, advances a cursor — turns a bug into coverage that
+ * quietly rots, which is the whole shape of the failure this type exists to stop.
+ */
+export class VaultBoundaryError extends Error {
+  /** The path that was refused, as the caller asked for it. */
+  readonly relPath: string;
+
+  constructor(relPath: string) {
+    super(`path escapes the workspace: ${relPath}`);
+    this.name = 'VaultBoundaryError';
+    this.relPath = relPath;
+  }
+}
+
+/**
+ * Whether an error is a containment refusal. Matched on `name` rather than
+ * `instanceof`: the class crosses package and bundle chunk boundaries, and a
+ * duplicated class object must not make a refusal look ordinary.
+ */
+export function isVaultBoundaryError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'VaultBoundaryError';
 }
 
 /** Filesystem vault — raw + parsed reads/writes, hard path containment. */
@@ -79,6 +121,7 @@ export interface VaultPort {
   writeRaw(relPath: string, content: string): Promise<void>;
   /** Write a non-markdown asset (dropped image, etc.), creating parent dirs. */
   writeBinary(relPath: string, data: Uint8Array): Promise<void>;
+  /** Delete a file. Throws {@link VaultBoundaryError} if the path escapes. */
   remove(relPath: string): Promise<void>;
   exists(relPath: string): Promise<boolean>;
   /** Every `.md` file under the vault. */
@@ -144,12 +187,17 @@ export interface ProposalRecord {
   sessionId: string;
   skill: string | null;
   targetPath: string | null;
-  /** Content hash of the target at proposal time — for staleness detection. */
+  /** Content hash of the target's body at proposal time. Not a gate on applying
+   *  the card (anchoring decides that) — it is how the review can say the note
+   *  moved underneath a card that still fits. */
   baseHash: string | null;
   payload: unknown;
   rationale: string;
   evidence: { ref: string; label?: string; resolved: boolean }[];
   inference: boolean;
+  /** The PM asked for this in the conversation, so there is no note to cite.
+   *  Optional: added after v1, and rows written before it carry nothing. */
+  asked?: boolean;
   status: string;
   created: number;
   resolved: number | null;
@@ -166,6 +214,8 @@ export interface CreateProposalInput {
   rationale: string;
   evidence: { ref: string; label?: string; resolved: boolean }[];
   inference: boolean;
+  /** The PM asked for this in the conversation (see `EvidenceBasis` in @qale/domain). */
+  asked?: boolean;
 }
 
 /** Proposal store (app.db) — the durable proposal queue + accept/reject log. */
@@ -278,4 +328,4 @@ export interface UseCaseContext {
   checks?: CheckLedgerPort;
 }
 
-export type { Note, SearchHit, ThemeStance, NoteType, Frontmatter };
+export type { Note, SchemaMiss, SearchHit, ThemeStance, NoteType, Frontmatter };

@@ -5,8 +5,8 @@ processing: processed
 source:
   system: transcript
 captured: 2026-06-16
-customer: "[[customers/fenno-energi]]"
-meeting: "[[meetings/2026-06-16-fenno-energi-intro]]"
+customer: '[[customers/fenno-energi]]'
+meeting: '[[meetings/2026-06-16-fenno-energi-intro]]'
 ---
 
 Antti: I should say this up front so we don't waste an hour. Our policy is that operational

@@ -24,13 +24,19 @@
             {
               "type": "listItem",
               "content": [
-                { "type": "paragraph", "content": [{ "type": "text", "text": "IdP-initiated flow" }] }
+                {
+                  "type": "paragraph",
+                  "content": [{ "type": "text", "text": "IdP-initiated flow" }]
+                }
               ]
             },
             {
               "type": "listItem",
               "content": [
-                { "type": "paragraph", "content": [{ "type": "text", "text": "SCIM follows in Q3" }] }
+                {
+                  "type": "paragraph",
+                  "content": [{ "type": "text", "text": "SCIM follows in Q3" }]
+                }
               ]
             }
           ]

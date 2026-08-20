@@ -1,11 +1,11 @@
 ---
-type: "insight"
+type: 'insight'
 summary: "Rondo churned over their hand-built weekly report. Price was the stated reason, not the real one, on Johanna's read"
-tags: ["reporting"]
-evidence: ["[[meetings/2026-07-13-cs-sync]]"]
-confidence: "low"
-customer: "[[customers/rondo-retail]]"
-theme: "[[themes/scheduled-reporting]]"
+tags: ['reporting']
+evidence: ['[[meetings/2026-07-13-cs-sync]]']
+confidence: 'low'
+customer: '[[customers/rondo-retail]]'
+theme: '[[themes/scheduled-reporting]]'
 ---
 
 From Johanna's exit interview. Rondo's ops coordinator rebuilt the weekly report by hand every

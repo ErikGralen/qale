@@ -46,9 +46,9 @@ because there is nowhere else for a quote to live.
 A note says what we believe, in its own voice. A quote can play two roles and
 the system currently confuses them:
 
-- As *evidence* it answers "why should I believe this?". For that job a
+- As _evidence_ it answers "why should I believe this?". For that job a
   pointer is enough; the verbatim text already sits untouched in `sources/`.
-- As *content* it is the finding itself: the customer's exact wording reveals
+- As _content_ it is the finding itself: the customer's exact wording reveals
   their mental model, or the phrase is the one you will repeat in a roadmap
   discussion.
 
@@ -64,7 +64,7 @@ accumulated inside it: each backing account contributes a quote, `customer`
 and `evidence` list the accounts, `confidence` and the `theme` backlink do
 what they already do. A second account confirming the claim extends that
 insight's evidence. Only a genuinely new claim files a new insight.
-Convergence across *different* claims stays the theme's job.
+Convergence across _different_ claims stays the theme's job.
 
 Why accumulate instead of one-insight-per-account: "how many distinct accounts
 back this claim" becomes a countable frontmatter fact, not a clustering
@@ -129,15 +129,15 @@ Trigger for v2: synthesis-born insights turn out too sparse to matter.
 
 ## Why this also performs better
 
-- *Model behavior.* Give the model a citable unit and the hard form rule
+- _Model behavior._ Give the model a citable unit and the hard form rule
   "a theme never quotes a transcript directly; if a quote is worth using, it
   is worth keeping as an insight first", and the safe path becomes the path
   we want. Grounding stays fully intact; "cite" stops defaulting to "paste".
-- *Reuse.* Three themes lean on the same insight without three copies of the
+- _Reuse._ Three themes lean on the same insight without three copies of the
   quote.
-- *Contradiction tripwires.* Arrival already flags claims that contradict a
+- _Contradiction tripwires._ Arrival already flags claims that contradict a
   live insight (`arrival/SKILL.md:76`). Every insight filed is a new tripwire.
-- *Scale and cost, eventually.* To be honest about v1: synthesis keeps its
+- _Scale and cost, eventually._ To be honest about v1: synthesis keeps its
   per-document pass, because the counting rules require every document in
   scope to get a pass and the silent ones to be named, and silence and
   contradictions are the session's best findings. So the first runs cost the
@@ -219,7 +219,7 @@ code actually does:
   have `standing: superseded`. So a contradicted insight is corrected by a new
   insight carrying `[[supersedes::insights/<slug>]]`, which is a real link type
   against an insight target and renders as a "Superseded by" backlink on the
-  old note. Note what this does *not* do: nothing renders on a theme citing the
+  old note. Note what this does _not_ do: nothing renders on a theme citing the
   old insight, so "a theme visibly rests on disputed evidence" is not true yet.
   Making it true means a lifecycle field on insights, which is more than copy.
 - **`sources` and `evidence` are two different channels, and the copy now says

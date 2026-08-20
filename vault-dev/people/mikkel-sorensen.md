@@ -1,12 +1,12 @@
 ---
-type: "person"
-summary: "Mikkel Sørensen: Head of Operations at Kranelund, sponsors the exports pilot"
-tags: ["reporting"]
-role: "Head of Operations, Kranelund Logistics"
-email: "mikkel.sorensen@kranelund.example"
-cares_about: ["Monday ops report", "seasonal seat cost", "depot managers"]
-last_told: "2026-07-09"
-customer: "[[customers/kranelund-logistics]]"
+type: 'person'
+summary: 'Mikkel Sørensen: Head of Operations at Kranelund, sponsors the exports pilot'
+tags: ['reporting']
+role: 'Head of Operations, Kranelund Logistics'
+email: 'mikkel.sorensen@kranelund.example'
+cares_about: ['Monday ops report', 'seasonal seat cost', 'depot managers']
+last_told: '2026-07-09'
+customer: '[[customers/kranelund-logistics]]'
 ---
 
 Owns the Kranelund account day to day on their side. Practical and direct. He brought us the

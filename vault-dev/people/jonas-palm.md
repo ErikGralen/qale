@@ -1,10 +1,10 @@
 ---
-type: "person"
-summary: "Jonas Palm: CEO, cares about the enterprise motion and the Nordkap renewal"
-role: "CEO"
-email: "jonas@tavla.example"
-cares_about: ["Nordkap renewal", "enterprise pipeline", "ARR"]
-last_told: "2026-07-10"
+type: 'person'
+summary: 'Jonas Palm: CEO, cares about the enterprise motion and the Nordkap renewal'
+role: 'CEO'
+email: 'jonas@tavla.example'
+cares_about: ['Nordkap renewal', 'enterprise pipeline', 'ARR']
+last_told: '2026-07-10'
 ---
 
 CEO. Reads the Friday update on [[wikipages/product-weekly-update|the Product weekly update

@@ -29,9 +29,18 @@ export function appVersion(): string {
 /** What only the handlers can answer. Booleans and counts by design. */
 export interface DiagnosticsFacts {
   workspace: { noteCount: number; git: boolean; gitAvailable: boolean; synced: boolean } | null;
-  keychainAvailable: boolean;
+  /**
+   * Whether the OS gave us real at-rest encryption for stored keys. Not named
+   * after a keychain: it is the login keychain on macOS, DPAPI on Windows and
+   * whatever secret service is installed (or nothing at all) on Linux, and a bug
+   * report that says "Keychain: unavailable" on a Windows machine reads as a
+   * broken app rather than as the fact it is.
+   */
+  secretStore: boolean;
   secretsUnreadable: boolean;
   hasApiKey: boolean;
+  /** Whose API answers. Without it, "Model: gemini-3.6-flash" is the only clue. */
+  provider: string;
   modelId: string;
   /** Provider labels only. A site URL or account address would identify them. */
   connectors: { label: string; health: string }[];
@@ -76,8 +85,9 @@ export function buildDiagnostics(facts: DiagnosticsFacts): string {
           }${ws.synced ? ', inside a synced folder' : ''}`
         : 'none open',
     ),
-    row('Keychain', facts.keychainAvailable ? 'available' : 'unavailable (keys only obfuscated)'),
+    row('Secret store', facts.secretStore ? 'available' : 'unavailable (keys only obfuscated)'),
     row('Stored keys', facts.secretsUnreadable ? 'FAILED to decrypt' : 'readable'),
+    row('Provider', facts.provider),
     row('API key', facts.hasApiKey ? 'set' : 'not set'),
     row('Model', facts.modelId),
     row(
@@ -88,7 +98,9 @@ export function buildDiagnostics(facts: DiagnosticsFacts): string {
     ),
     row(
       'MCP server',
-      facts.mcp.enabled ? `on, port ${facts.mcp.port}, ${facts.mcp.running ? 'running' : 'not running'}` : 'off',
+      facts.mcp.enabled
+        ? `on, port ${facts.mcp.port}, ${facts.mcp.running ? 'running' : 'not running'}`
+        : 'off',
     ),
     '',
     `Log (last ${lines.length} of ${total} lines, paths and addresses removed)`,

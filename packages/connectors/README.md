@@ -55,20 +55,20 @@ API tokens come in two kinds; the user never has to know which they created:
 
 ### REST endpoints used
 
-| Purpose | Endpoint |
-| --- | --- |
-| Auth probe (identity) | `GET /rest/api/3/myself` |
-| Cloud id resolution | `GET /_edge/tenant_info` |
-| List Jira projects | `GET /rest/api/3/project/search?maxResults=50` |
-| List Confluence spaces | `GET /wiki/api/v2/spaces?limit=50` |
-| Incremental ticket pull | `POST /rest/api/3/search/jql` — fields `summary,status,assignee,updated`; JQL `project = "X" [AND updated >= "-Nm"] ORDER BY updated ASC` |
-| Incremental page pull | `GET /wiki/rest/api/search?cql=...&expand=content.version` — CQL `space = "X" AND type = page [AND lastmodified > now("-Nm")] ORDER BY lastmodified ASC` |
-| Full ticket | `GET /rest/api/3/issue/{key}?fields=summary,status,assignee,updated,description` |
-| Ticket comments | `GET /rest/api/3/issue/{key}/comment?maxResults=10&orderBy=-created` |
-| Full page | `GET /wiki/api/v2/pages/{id}?body-format=storage` |
-| `create_ticket` | `POST /rest/api/3/issue` (markdown → ADF) |
-| `comment_ticket` | `POST /rest/api/3/issue/{key}/comment` (markdown → ADF) |
-| `update_page` | `GET` page then `PUT /wiki/api/v2/pages/{id}` (version bump, markdown → storage XHTML) |
+| Purpose                 | Endpoint                                                                                                                                                 |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth probe (identity)   | `GET /rest/api/3/myself`                                                                                                                                 |
+| Cloud id resolution     | `GET /_edge/tenant_info`                                                                                                                                 |
+| List Jira projects      | `GET /rest/api/3/project/search?maxResults=50`                                                                                                           |
+| List Confluence spaces  | `GET /wiki/api/v2/spaces?limit=50`                                                                                                                       |
+| Incremental ticket pull | `POST /rest/api/3/search/jql` — fields `summary,status,assignee,updated`; JQL `project = "X" [AND updated >= "-Nm"] ORDER BY updated ASC`                |
+| Incremental page pull   | `GET /wiki/rest/api/search?cql=...&expand=content.version` — CQL `space = "X" AND type = page [AND lastmodified > now("-Nm")] ORDER BY lastmodified ASC` |
+| Full ticket             | `GET /rest/api/3/issue/{key}?fields=summary,status,assignee,updated,description`                                                                         |
+| Ticket comments         | `GET /rest/api/3/issue/{key}/comment?maxResults=10&orderBy=-created`                                                                                     |
+| Full page               | `GET /wiki/api/v2/pages/{id}?body-format=storage`                                                                                                        |
+| `create_ticket`         | `POST /rest/api/3/issue` (markdown → ADF)                                                                                                                |
+| `comment_ticket`        | `POST /rest/api/3/issue/{key}/comment` (markdown → ADF)                                                                                                  |
+| `update_page`           | `GET` page then `PUT /wiki/api/v2/pages/{id}` (version bump, markdown → storage XHTML)                                                                   |
 
 ### Incremental pulls use relative windows
 

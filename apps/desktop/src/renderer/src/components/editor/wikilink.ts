@@ -147,7 +147,8 @@ export const WikiLink = Node.create({
         // as the ticket state pill, never louder than the link itself.
         dom.classList.add('inline-flex', 'items-baseline', 'gap-1');
         const typeChip = document.createElement('span');
-        typeChip.className = 'self-center rounded bg-muted px-1 text-2xs font-medium text-muted-foreground';
+        typeChip.className =
+          'self-center rounded bg-muted px-1 text-2xs font-medium text-muted-foreground';
         typeChip.textContent = linkTypeLabel(attrs.linkType, attrs.reversed);
         dom.appendChild(typeChip);
       }
@@ -168,7 +169,9 @@ export const WikiLink = Node.create({
         chevron.textContent = '▾';
         chevron.setAttribute(
           'aria-label',
-          attrs.linkType ? `Relationship: ${linkTypeLabel(attrs.linkType, attrs.reversed)}` : 'Add a relationship',
+          attrs.linkType
+            ? `Relationship: ${linkTypeLabel(attrs.linkType, attrs.reversed)}`
+            : 'Add a relationship',
         );
         chevron.title = 'Relationship';
         // mousedown, not click: ProseMirror sets its own selection on mousedown

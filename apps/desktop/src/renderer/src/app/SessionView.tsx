@@ -15,13 +15,15 @@ import {
   RotateCcw,
   Wand2,
 } from 'lucide-react';
-import type { NoteRefDTO } from '@qale/ipc';
+import type { NoteRefDTO, SessionFileDTO } from '@qale/ipc';
 import { titleFromSlug } from '@qale/domain';
 import { parseKickoff, type Kickoff } from '@qale/sessions';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { navFromEvent, type NavOpts } from '../lib/nav';
 import { noteTypeIcon } from '../lib/note-icons';
+import { fileIconFor } from '../lib/session-files';
 import { HeaderAction, HeaderActions, PageHeader } from '../components/PageHeader';
+import { InkWriting } from '../components/InkWriting';
 import { Markdown } from '../components/Markdown';
 import { SessionReview } from '../components/inbox/SessionReview';
 import { SpawnCard } from '../components/inbox/SpawnCard';
@@ -65,9 +67,7 @@ function outsideCode(text: string, rewrite: (chunk: string) => string): string {
  * made explicit first.
  */
 function messageMarkdown(text: string): string {
-  return outsideCode(text, (chunk) =>
-    linkifyNotePaths(chunk).replace(/(?<=\S)\n(?!\n)/g, '  \n'),
-  );
+  return outsideCode(text, (chunk) => linkifyNotePaths(chunk).replace(/(?<=\S)\n(?!\n)/g, '  \n'));
 }
 
 interface AnyPart {
@@ -89,11 +89,13 @@ function isToolPart(part: AnyPart): boolean {
 }
 
 function toolNameOf(part: AnyPart): string {
-  return part.type.startsWith('tool-') ? part.type.slice(5) : part.toolName ?? 'tool';
+  return part.type.startsWith('tool-') ? part.type.slice(5) : (part.toolName ?? 'tool');
 }
 
 function toolInputOf(part: AnyPart): Record<string, unknown> {
-  return typeof part.input === 'object' && part.input !== null ? (part.input as Record<string, unknown>) : {};
+  return typeof part.input === 'object' && part.input !== null
+    ? (part.input as Record<string, unknown>)
+    : {};
 }
 
 /**
@@ -124,7 +126,8 @@ const GERUNDS: Record<string, string> = {
  */
 function triedVerb(verb: string): string {
   const [head = '', ...rest] = verb.split(' ');
-  const gerund = GERUNDS[head] ?? (head.endsWith('ed') ? `${head.slice(0, -2)}ing` : head).toLowerCase();
+  const gerund =
+    GERUNDS[head] ?? (head.endsWith('ed') ? `${head.slice(0, -2)}ing` : head).toLowerCase();
   return ['Tried', gerund, ...rest].join(' ');
 }
 
@@ -149,7 +152,10 @@ function doneLabel(part: AnyPart): { verb: string; detail?: string } {
     case 'vault_grep':
       return { verb: 'Scanned for', detail: str('pattern') && `“${str('pattern')}”` };
     case 'vault_list':
-      return { verb: 'Listed notes', detail: [str('type'), str('lifecycle')].filter(Boolean).join('/') || undefined };
+      return {
+        verb: 'Listed notes',
+        detail: [str('type'), str('lifecycle')].filter(Boolean).join('/') || undefined,
+      };
     case 'jira_search':
       return { verb: 'Searched Jira', detail: str('jql') ?? str('query') };
     case 'jira_get_issue':
@@ -163,8 +169,17 @@ function doneLabel(part: AnyPart): { verb: string; detail?: string } {
     case 'spawn':
       return { verb: 'Ran subagents' };
     case 'ask_user': {
-      const questions = Array.isArray(input.questions) ? (input.questions as { header?: string }[]) : [];
-      return { verb: 'Raised a question', detail: questions.map((q) => q.header).filter(Boolean).join(', ') || undefined };
+      const questions = Array.isArray(input.questions)
+        ? (input.questions as { header?: string }[])
+        : [];
+      return {
+        verb: 'Raised a question',
+        detail:
+          questions
+            .map((q) => q.header)
+            .filter(Boolean)
+            .join(', ') || undefined,
+      };
     }
     // Only ever visible on a session a person started, where the tool is a
     // no-op: a scheduled run that ends quietly leaves no session to open.
@@ -191,7 +206,10 @@ function doneLabel(part: AnyPart): { verb: string; detail?: string } {
           detail: str('title') ?? (str('path') && titleFromSlug(str('path')!)),
         };
       if (name.startsWith('draft_'))
-        return { verb: `Drafted a ${name.slice(6).replace(/_/g, ' ')}`, detail: str('title') ?? str('summary') };
+        return {
+          verb: `Drafted a ${name.slice(6).replace(/_/g, ' ')}`,
+          detail: str('title') ?? str('summary'),
+        };
       // A tool shipped without an entry above. Vague beats wrong: the PM should
       // never be shown a raw tool name (`draft_calendar_rsvp`), and a machine
       // name in the detail slot would be the same leak by another door.
@@ -260,7 +278,8 @@ function useElapsed(live: boolean): number | null {
     // that dips out of the working phase to narrate and then picks up another
     // tool keeps counting the one run rather than restarting.
     if (!live) {
-      if (startedAt.current !== null) setElapsed(Math.round((Date.now() - startedAt.current) / 1000));
+      if (startedAt.current !== null)
+        setElapsed(Math.round((Date.now() - startedAt.current) / 1000));
       return;
     }
     const started = (startedAt.current ??= Date.now());
@@ -272,11 +291,30 @@ function useElapsed(live: boolean): number | null {
   return elapsed;
 }
 
+/**
+ * A ticking reading off a known start time — the background banner's clock.
+ * Unlike useElapsed (which measures from its own mount, all it can do for a
+ * stream with no timestamps), this one gets the real start from main, so a run
+ * kicked off before this tab existed still reads "working for 3m", not "3s".
+ */
+function useClock(since: number | undefined): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!since) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [since]);
+  if (!since) return null;
+  const seconds = Math.round((now - since) / 1000);
+  return seconds >= 1 ? humanSeconds(seconds) : null;
+}
+
 /** One tool step inside the expanded trail — raw receipt stays one click away. */
 function ToolStep({ part }: { part: AnyPart }) {
   const [open, setOpen] = useState(false);
   const { verb, detail } = stepLabel(part);
-  const done = part.state === 'output-available' || part.state === 'output-error' || part.output !== undefined;
+  const done =
+    part.state === 'output-available' || part.state === 'output-error' || part.output !== undefined;
   const hasOutput = typeof part.output === 'string' && part.output.length > 0;
   const failed = isFailedStep(part);
   return (
@@ -332,8 +370,14 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
     const name = toolNameOf(part);
     const input = toolInputOf(part);
     if (name === 'vault_read' && typeof input.path === 'string') sources.add(input.path);
-    else if (name === 'jira_get_issue' || name === 'confluence_get_page') sources.add(`${name}:${JSON.stringify(input)}`);
-    else if (['search_vault', 'vault_grep', 'vault_list', 'jira_search', 'confluence_search'].includes(name)) searches++;
+    else if (name === 'jira_get_issue' || name === 'confluence_get_page')
+      sources.add(`${name}:${JSON.stringify(input)}`);
+    else if (
+      ['search_vault', 'vault_grep', 'vault_list', 'jira_search', 'confluence_search'].includes(
+        name,
+      )
+    )
+      searches++;
     else actions++;
     if (isFailedStep(part)) failed++;
   }
@@ -356,15 +400,17 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
       >
-        {live ? <Spinner className="size-3.5 shrink-0" /> : <Brain className="size-3.5 shrink-0" />}
+        {live ? (
+          <InkWriting small className="shrink-0 text-brand" />
+        ) : (
+          <Brain className="size-3.5 shrink-0" />
+        )}
         <span className="truncate font-medium">{live ? running : 'Reasoning'}</span>
         {/* The running row's own clock ("Working for 12s"), so a step that is
             taking a while reads as slow rather than as stuck. */}
         {live && clock && <span className="shrink-0">for {clock}</span>}
         {!live && bits.length > 0 && <span className="shrink-0">· {bits.join(' · ')}</span>}
-        {failed > 0 && (
-          <span className="shrink-0 text-destructive">· {failed} failed</span>
-        )}
+        {failed > 0 && <span className="shrink-0 text-destructive">· {failed} failed</span>}
         <ChevronDown
           className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
         />
@@ -374,7 +420,10 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
           {parts.map((part, i) => {
             if (part.type === 'reasoning' || part.type === 'text')
               return (
-                <div key={i} className="px-1.5 py-1 leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                <div
+                  key={i}
+                  className="px-1.5 py-1 leading-relaxed whitespace-pre-wrap text-muted-foreground"
+                >
                   {part.text}
                 </div>
               );
@@ -388,72 +437,134 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
 
 /**
  * A turn the app composed rather than the PM typed: a skill invoked on a page,
- * from Process on a note, Brief me on a meeting, or the receipt after material
+ * from "Go through this note", the meeting brief, or the receipt after material
  * lands. Printing the instruction verbatim ("Run the arrival skill on
  * sources/…: read the capture, search the memory…") put a paragraph of machine
  * prose in a bubble the PM never wrote, and buried the two things they wanted:
  * WHICH skill is working, and on WHAT. So the row says exactly that — the skill
  * by its human title, the page as a link that opens it — and keeps the wording
  * one click away, for when the question is what it was actually asked to do.
+ *
+ * The row is a sentence, and the verb carries the state: "Running Handle new
+ * material on <the files>" while the turn is in flight, "Ran …" once it
+ * settled. Material handed over with the run (the arrival drop) shows as file
+ * chips exactly like vault targets show as page links — a run is never "on"
+ * nothing when there was a something. The skill's own one-line summary sits
+ * beneath, because a title like "Handle new material" names the skill without
+ * saying what it does.
  */
 function RunRow({
   kickoff,
   notes,
   skillTitle,
+  skillSummary,
+  live,
+  materials = [],
   onOpen,
+  onOpenFile,
 }: {
   kickoff: Kickoff;
   /** Each target's tree entry, keyed by path, for the ones the workspace knows. */
   notes: Map<string, NoteRefDTO>;
   skillTitle: string;
+  /** The skill's plain one-liner, when the roster knows it. */
+  skillSummary?: string;
+  /** True while this kickoff's turn is the one in flight. */
+  live?: boolean;
+  /** Session files handed over with this run (`material/…`) — what an arrival ran on. */
+  materials?: SessionFileDTO[];
   onOpen: (path: string, opts?: NavOpts) => void;
+  /** Opens a material chip in the session-file reader. */
+  onOpenFile?: (path: string, opts?: NavOpts) => void;
 }) {
   const [open, setOpen] = useState(false);
   const instruction = kickoff.instruction
     ? kickoff.instruction.charAt(0).toUpperCase() + kickoff.instruction.slice(1)
     : '';
   const targets = kickoff.targets ?? [];
+  const hasObjects = targets.length > 0 || materials.length > 0;
   return (
-    <div className="rounded-xl border border-border bg-secondary/40 px-3 py-2 text-sm">
-      <div className="flex items-center gap-1.5">
-        <Wand2 className="size-3.5 shrink-0 text-brand" aria-hidden />
-        <span className="shrink-0 font-medium">{skillTitle}</span>
-        {targets.length > 0 && <span className="shrink-0 text-muted-foreground">on</span>}
-        {/* Every page, each its own link. A run over three documents that named
-            only the first would read as a run over only the first, which is the
-            confusion this whole row exists to prevent. */}
-        {targets.map((target, i) => {
-          const note = notes.get(target);
-          const TargetIcon = note ? noteTypeIcon(note.type) : FileText;
-          return (
-            <span key={target} className="flex min-w-0 items-center gap-1.5">
-              {i > 0 && <span className="shrink-0 text-muted-foreground">·</span>}
-              <a
-                href="#"
-                className="flex min-w-0 items-center gap-1 text-brand underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                title={`Open ${note?.title ?? titleFromSlug(target)}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onOpen(target, navFromEvent(e));
-                }}
-                onAuxClick={(e) => {
-                  if (e.button !== 1) return;
-                  e.preventDefault();
-                  onOpen(target, navFromEvent(e));
-                }}
-              >
-                <TargetIcon className="size-3.5 shrink-0" aria-hidden />
-                {/* The page by its name. A target the tree hasn't caught up with
-                    (just written, or since deleted) reads as its name too, never
-                    as the path it was filed at. */}
-                <span className="truncate">{note?.title ?? titleFromSlug(target)}</span>
-              </a>
-            </span>
-          );
-        })}
+    <div className="rounded-xl border border-border bg-secondary/40 px-3 py-2.5 text-sm">
+      <div className="flex items-start gap-2.5">
+        <div
+          className="mt-px flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand/8 text-brand"
+          aria-hidden
+        >
+          <Wand2 className="size-3.5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 leading-6">
+            <span className="text-muted-foreground">{live ? 'Running' : 'Ran'}</span>
+            <span className="font-medium">{skillTitle}</span>
+            {hasObjects && <span className="text-muted-foreground">on</span>}
+            {/* Every page, each its own link. A run over three documents that
+                named only the first would read as a run over only the first,
+                which is the confusion this whole row exists to prevent. */}
+            {targets.map((target) => {
+              const note = notes.get(target);
+              const TargetIcon = note ? noteTypeIcon(note.type) : FileText;
+              return (
+                <a
+                  key={target}
+                  href="#"
+                  className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-brand/8 px-1.5 py-0.5 font-medium text-brand transition-colors hover:bg-brand/15 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  title={`Open ${note?.title ?? titleFromSlug(target)}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onOpen(target, navFromEvent(e));
+                  }}
+                  onAuxClick={(e) => {
+                    if (e.button !== 1) return;
+                    e.preventDefault();
+                    onOpen(target, navFromEvent(e));
+                  }}
+                >
+                  <TargetIcon className="size-3.5 shrink-0" aria-hidden />
+                  {/* The page by its name. A target the tree hasn't caught up
+                      with (just written, or since deleted) reads as its name
+                      too, never as the path it was filed at. */}
+                  <span className="truncate">{note?.title ?? titleFromSlug(target)}</span>
+                </a>
+              );
+            })}
+            {/* Working material, not memory: these chips stay neutral — the
+                ink-blue wash belongs to pages in the vault, and a session file
+                is deliberately not one. */}
+            {materials.map((file) => {
+              const FileIcon = fileIconFor(file.path);
+              const name = file.path.slice(file.path.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '');
+              return (
+                <button
+                  key={file.path}
+                  className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-medium text-foreground/75 transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  title={`Read ${name}`}
+                  onClick={(e) => onOpenFile?.(file.path, navFromEvent(e))}
+                  onAuxClick={(e) => {
+                    if (e.button !== 1) return;
+                    e.preventDefault();
+                    onOpenFile?.(file.path, navFromEvent(e));
+                  }}
+                >
+                  <FileIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="truncate">{name}</span>
+                </button>
+              );
+            })}
+          </div>
+          {skillSummary && <p className="mt-0.5 text-xs text-muted-foreground">{skillSummary}</p>}
+          {open && instruction && (
+            // Kept as it was written. These instructions are composed as lines —
+            // a sentence, then one bullet per thing the run was handed — and a
+            // plain paragraph collapsed all of it into a single grey wall that
+            // nobody could find anything in.
+            <p className="mt-2 border-t border-border pt-2 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
+              {instruction}
+            </p>
+          )}
+        </div>
         {instruction && (
           <button
-            className="ml-auto flex shrink-0 items-center gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            className="mt-1 flex shrink-0 items-center gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
             onClick={() => setOpen((o) => !o)}
             aria-expanded={open}
           >
@@ -464,11 +575,6 @@ function RunRow({
           </button>
         )}
       </div>
-      {open && instruction && (
-        <p className="mt-2 border-t border-border pt-2 text-xs leading-relaxed text-muted-foreground">
-          {instruction}
-        </p>
-      )}
     </div>
   );
 }
@@ -608,6 +714,10 @@ function SessionThread({
     spawnRequests,
     askRequests,
     skills,
+    sessionFiles,
+    openSessionFile,
+    sessionSeeds,
+    takeSessionSeed,
   } = useApp();
   const [needsKey, setNeedsKey] = useState(false);
   const onSessionIdRef = useRef(onSessionId);
@@ -653,7 +763,10 @@ function SessionThread({
       ),
     [skill, initialSessionId],
   );
-  const { messages, sendMessage, status, stop, error } = useChat({ transport, messages: initialMessages });
+  const { messages, sendMessage, regenerate, status, stop, error } = useChat({
+    transport,
+    messages: initialMessages,
+  });
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -680,6 +793,44 @@ function SessionThread({
   const askPending = !!boundSessionId && !!askRequests[boundSessionId];
   // The stored row for this session (once it exists) — drives Mark done/Reopen.
   const overview = boundSessionId ? sessions.find((s) => s.id === boundSessionId) : undefined;
+
+  // Material handed over with the drop (`material/…`) — the files an arrival
+  // run is ON. Only the opening kickoff wears them: they landed with it.
+  const materials = useMemo(
+    () =>
+      boundSessionId
+        ? (sessionFiles[boundSessionId] ?? []).filter((f) => f.path.startsWith('material/'))
+        : [],
+    [sessionFiles, boundSessionId],
+  );
+
+  // The turn in flight belongs to the last user message; every kickoff before
+  // it has settled by definition, so only this one may read "Running".
+  let lastUserIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]!.role === 'user') {
+      lastUserIdx = i;
+      break;
+    }
+  }
+
+  // What the background banner calls the work: the skill the in-flight turn
+  // was kicked off with, when it was a kickoff at all.
+  const runningSkill = useMemo(() => {
+    if (lastUserIdx < 0) return undefined;
+    const parts = messages[lastUserIdx]!.parts as AnyPart[];
+    const text = parts
+      .filter((p) => p.type === 'text')
+      .map((p) => p.text)
+      .join('\n');
+    const kickoff = parseKickoff(text);
+    if (!kickoff) return undefined;
+    return skills.find((s) => s.name === kickoff.skill)?.title ?? kickoff.skill;
+  }, [messages, lastUserIdx, skills]);
+
+  // How long the background run has been at it — from main's clock, so a tab
+  // opened mid-run still tells the truth.
+  const backgroundClock = useClock(backgroundBusy ? overview?.startedAt : undefined);
 
   // Tell the wrapper when this view's own composer drives the stream, so the
   // background-settle refresh doesn't remount a live session.
@@ -715,6 +866,18 @@ function SessionThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt]);
 
+  // A turn handed to this conversation from somewhere else — the Inbox asking
+  // the session that proposed a card to fix one that can no longer be applied.
+  // It waits for a run in flight rather than being dropped into it, and it is
+  // claimed before sending so two open views of one session send it once.
+  const seeded = boundSessionId ? sessionSeeds[boundSessionId] : undefined;
+  useEffect(() => {
+    if (!seeded || !boundSessionId || busy || backgroundBusy || askPending) return;
+    const prompt = takeSessionSeed(boundSessionId);
+    if (prompt) send(prompt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seeded, boundSessionId, busy, backgroundBusy, askPending]);
+
   // After a settled turn, refresh the Inbox — any session may now have proposed.
   useEffect(() => {
     if (status === 'ready') void refreshProposals();
@@ -723,7 +886,7 @@ function SessionThread({
   // Surface the missing-key state BEFORE the first send, not as a failed turn.
   useEffect(() => {
     void invoke['settings:get']()
-      .then((s) => setNeedsKey(!s.hasAnthropicKey))
+      .then((s) => setNeedsKey(!s.hasApiKey))
       .catch(() => setNeedsKey(false));
   }, []);
   useEffect(() => {
@@ -790,25 +953,35 @@ function SessionThread({
       >
         <div className="mx-auto flex max-w-2xl flex-col gap-4 py-4">
           {messages.length === 0 && !busy && (
-            <p className="mt-16 text-center text-sm text-muted-foreground">
-              {EMPTY_HINT}
-            </p>
+            <p className="mt-16 text-center text-sm text-muted-foreground">{EMPTY_HINT}</p>
           )}
           {messages.map((message, mi) => {
             const parts = message.parts as AnyPart[];
             if (message.role === 'user') {
-              const text = parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+              const text = parts
+                .filter((p) => p.type === 'text')
+                .map((p) => p.text)
+                .join('\n');
               // A skill the PM invoked from a button reads as a run, not as
               // something they said. Anything they actually typed stays a message.
               const kickoff = parseKickoff(text);
               if (kickoff) {
+                const skillMeta = skills.find((s) => s.name === kickoff.skill);
                 return (
                   <RunRow
                     key={message.id}
                     kickoff={kickoff}
                     notes={noteByPath}
-                    skillTitle={skills.find((s) => s.name === kickoff.skill)?.title ?? kickoff.skill}
+                    skillTitle={skillMeta?.title ?? kickoff.skill}
+                    skillSummary={skillMeta?.summary}
+                    live={mi === lastUserIdx && (busy || backgroundBusy)}
+                    // The opening kickoff of a drop ran on the handed-over
+                    // files; naming them here is the row's whole point.
+                    materials={mi === 0 && !kickoff.targets?.length ? materials : []}
                     onOpen={openDoc}
+                    onOpenFile={(path, opts) =>
+                      boundSessionId && openSessionFile(boundSessionId, path, opts)
+                    }
                   />
                 );
               }
@@ -831,16 +1004,35 @@ function SessionThread({
                 break;
               }
             }
+            // With one exception: a fenced block mid-work is not narration, it
+            // is something the PM is meant to copy and run somewhere else. The
+            // interview hands over a prompt for Claude Code that way, and folded
+            // into the trace it read as "you never gave me anything". Anything
+            // carrying a fence comes back out and renders in place.
+            const handover = (p: AnyPart, i: number) =>
+              p.type === 'text' && i !== lastTextIdx && (p.text ?? '').includes('```');
             const activity = parts.filter(
-              (p, i) => isActivityPart(p) || (p.type === 'text' && i !== lastTextIdx),
+              (p, i) =>
+                isActivityPart(p) || (p.type === 'text' && i !== lastTextIdx && !handover(p, i)),
             );
+            const handovers = parts.filter(handover);
             const answer = lastTextIdx >= 0 ? parts[lastTextIdx]! : undefined;
             const isLastMessage = mi === messages.length - 1;
             const live =
-              busy && isLastMessage && activity.length > 0 && isActivityPart(parts[parts.length - 1]!);
+              busy &&
+              isLastMessage &&
+              activity.length > 0 &&
+              isActivityPart(parts[parts.length - 1]!);
             return (
               <div key={message.id} className="w-full">
                 {activity.length > 0 && <ActivityBlock parts={activity} live={live} />}
+                {handovers.map((p, i) => (
+                  <Markdown
+                    key={`handover-${i}`}
+                    content={outsideCode(p.text ?? '', linkifyNotePaths)}
+                    onOpenNote={openDoc}
+                  />
+                ))}
                 {answer && (
                   <Markdown
                     content={outsideCode(answer.text ?? '', linkifyNotePaths)}
@@ -851,28 +1043,56 @@ function SessionThread({
             );
           })}
           {waitingFirstToken && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner className="size-3.5" /> Reading the memory…
+            <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+              <InkWriting className="shrink-0 text-brand" /> Reading the memory…
             </div>
           )}
+          {/* A turn running somewhere this view can't see into. It can't narrate
+              steps the way a live stream does, so it says the three things it
+              does know: whose work this is, how long it has been at it, and
+              that nothing here needs watching. */}
           {backgroundBusy && (
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-              <Spinner className="size-3.5 shrink-0" />
-              <span className="flex-1">
-                The agent is still working on this. The session updates when it finishes.
-              </span>
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+              <InkWriting className="shrink-0 text-brand" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">
+                  {runningSkill ? `${runningSkill} is working` : 'Still working on this'}
+                  {backgroundClock && (
+                    <span className="font-normal text-muted-foreground"> · {backgroundClock}</span>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  This page updates by itself when it finishes.
+                </p>
+              </div>
               <Button
                 size="sm"
                 variant="outline"
+                className="shrink-0"
                 onClick={() => backgroundStreamId && void invoke['agent:abort'](backgroundStreamId)}
               >
                 <Square className="size-3" /> Stop
               </Button>
             </div>
           )}
+          {/* The provider's refusal, said in one sentence with what to do about
+              it (api-errors.ts), not wrapped in a second sentence of ours. Most
+              of these clear on their own (overloaded, rate limited), so the one
+              thing the PM needs is the same turn again without retyping it —
+              and a kickoff they never typed at all can only be retried here. */}
           {error && (
             <div className="rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-              The session hit an error: {error.message}. Your messages are still here, send again to retry.
+              {error.message}
+              <span className="block text-destructive/80">Nothing was lost.</span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                disabled={busy || backgroundBusy}
+                onClick={() => void regenerate()}
+              >
+                <RotateCcw className="size-3" /> Try again
+              </Button>
             </div>
           )}
 
@@ -899,10 +1119,10 @@ function SessionThread({
         <div className="mx-6 mb-2">
           <div className="mx-auto flex max-w-2xl items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
             <AlertTriangle className="size-4 shrink-0" aria-hidden />
-            <span>No Anthropic API key yet, so sessions can’t answer until one is set.</span>
+            <span>No API key yet, so sessions can’t answer until one is set.</span>
             <button
               className="ml-auto shrink-0 font-medium underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-              onClick={() => openSettings()}
+              onClick={() => openSettings('agent')}
             >
               Open Settings
             </button>

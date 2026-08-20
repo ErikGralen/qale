@@ -305,7 +305,9 @@ class Api {
     let res = await this.raw(`${this.jiraBase}/rest/api/3/myself`);
     if (res.status === 401 || res.status === 403) {
       const tenant = await this.raw(`${this.creds.siteUrl}/_edge/tenant_info`);
-      const cloudId = tenant.ok ? ((await tenant.json()) as { cloudId?: string }).cloudId : undefined;
+      const cloudId = tenant.ok
+        ? ((await tenant.json()) as { cloudId?: string }).cloudId
+        : undefined;
       if (cloudId) {
         this.jiraBase = `https://api.atlassian.com/ex/jira/${cloudId}`;
         this.wikiBase = `https://api.atlassian.com/ex/confluence/${cloudId}`;
@@ -325,10 +327,15 @@ class Api {
 
   private async raw(url: string, init?: RequestInit): Promise<Response> {
     for (let attempt = 0; attempt < 4; attempt++) {
-      const res = await fetch(url, { ...init, headers: { ...this.headers(), ...(init?.headers ?? {}) } });
+      const res = await fetch(url, {
+        ...init,
+        headers: { ...this.headers(), ...(init?.headers ?? {}) },
+      });
       if (res.status !== 429) return res;
       const seconds = Number(res.headers.get('Retry-After'));
-      await new Promise((r) => setTimeout(r, Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 1000));
+      await new Promise((r) =>
+        setTimeout(r, Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 1000),
+      );
     }
     throw new Error('Atlassian is rate-limiting — try again in a minute.');
   }
@@ -340,7 +347,9 @@ class Api {
     if (res.status === 204) return undefined as T;
     const text = await res.text();
     if (!res.ok) {
-      const err = new Error(`${init?.method ?? 'GET'} ${path} → HTTP ${res.status}: ${text.slice(0, 400)}`);
+      const err = new Error(
+        `${init?.method ?? 'GET'} ${path} → HTTP ${res.status}: ${text.slice(0, 400)}`,
+      );
       (err as Error & { status: number; body: string }).status = res.status;
       (err as Error & { status: number; body: string }).body = text;
       throw err;
@@ -494,7 +503,12 @@ async function listProjectIssues(api: Api): Promise<LiveIssue[]> {
 /** Some company-managed templates still require the legacy "Epic Name" custom
  *  field; on that exact failure, retry with every complained-about customfield
  *  set to the summary (Epic Name is a string field, so this converges). */
-async function createIssue(api: Api, member: CastIssue, description: string, epicKey: string | null): Promise<string> {
+async function createIssue(
+  api: Api,
+  member: CastIssue,
+  description: string,
+  epicKey: string | null,
+): Promise<string> {
   const fields: Record<string, unknown> = {
     project: { key: PROJECT_KEY },
     issuetype: { name: member.issueType },
@@ -539,13 +553,21 @@ async function transitionTo(api: Api, key: string, targetStatus: string): Promis
 /** Rewrite the thread only when it deviates from the seeds — an unnecessary
  *  delete/re-post bumps the issue's `updated`, which re-syncs the mirror and
  *  makes every pending card drafted against it refuse once. */
-async function resetComments(api: Api, key: string, seeds: string[], offset: number): Promise<boolean> {
+async function resetComments(
+  api: Api,
+  key: string,
+  seeds: string[],
+  offset: number,
+): Promise<boolean> {
   const expected = seeds.map((s) => shiftDates(s, offset));
   const data = await api.request<{ comments?: { id: string; body?: unknown }[] }>(
     `/rest/api/3/issue/${key}/comment?maxResults=100`,
   );
   const live = data.comments ?? [];
-  if (live.length === expected.length && live.every((c, i) => sameText(adfToText(c.body), expected[i]))) {
+  if (
+    live.length === expected.length &&
+    live.every((c, i) => sameText(adfToText(c.body), expected[i]))
+  ) {
     return false;
   }
   for (const c of live) {
@@ -596,14 +618,18 @@ async function convergeJira(
   // so a renamed cast member is recreated cleanly below.
   const extras = live.filter((i) => !castSummaries.has(i.summary));
   for (const extra of extras) {
-    console.log(`  − delete ${extra.key} "${extra.summary}"${opts.keepExtras ? ' (skipped: --keep-extras)' : ''}`);
+    console.log(
+      `  − delete ${extra.key} "${extra.summary}"${opts.keepExtras ? ' (skipped: --keep-extras)' : ''}`,
+    );
     if (!opts.dry && !opts.keepExtras) {
       await api.request(`/rest/api/3/issue/${extra.key}?deleteSubtasks=true`, { method: 'DELETE' });
     }
   }
 
   // Epic first so children can point at it.
-  const ordered = [...CAST].sort((a, b) => Number(b.issueType === 'Epic') - Number(a.issueType === 'Epic'));
+  const ordered = [...CAST].sort(
+    (a, b) => Number(b.issueType === 'Epic') - Number(a.issueType === 'Epic'),
+  );
   let epicKey: string | null = bySummary.get(CAST[0].summary)?.key ?? null;
   for (const member of ordered) {
     const description = shiftDates(member.description, offset);
@@ -654,7 +680,9 @@ async function convergeJira(
         );
       }
     } else if (existing) {
-      console.log(`  = keep ${existing.key} "${member.summary}" (status ${existing.status} → ${member.status})`);
+      console.log(
+        `  = keep ${existing.key} "${member.summary}" (status ${existing.status} → ${member.status})`,
+      );
     }
   }
 
@@ -683,7 +711,12 @@ async function convergeJira(
  * unless it already exists — the reset must be idempotent. Returns true when a
  * link was created.
  */
-async function ensureIssueLink(api: Api, typeName: string, inwardKey: string, outwardKey: string): Promise<boolean> {
+async function ensureIssueLink(
+  api: Api,
+  typeName: string,
+  inwardKey: string,
+  outwardKey: string,
+): Promise<boolean> {
   const issue = await api.request<{
     fields?: { issuelinks?: { type?: { name?: string }; outwardIssue?: { key?: string } }[] };
   }>(`/rest/api/3/issue/${inwardKey}?fields=issuelinks`);
@@ -713,7 +746,11 @@ interface PageLive {
   remoteUpdated?: string;
 }
 
-async function convergeConfluence(api: Api, offset: number, dry: boolean): Promise<Map<string, PageLive>> {
+async function convergeConfluence(
+  api: Api,
+  offset: number,
+  dry: boolean,
+): Promise<Map<string, PageLive>> {
   const metaByTitle = new Map<string, PageLive>();
   const spaces = await api.request<{ results?: { id: string; key?: string; name?: string }[] }>(
     '/wiki/api/v2/spaces?limit=250',
@@ -743,18 +780,18 @@ async function convergeConfluence(api: Api, offset: number, dry: boolean): Promi
     if (!existing) {
       console.log(`  + create page "${pageDef.title}"`);
       if (!dry) {
-        const created = await api.request<{ id?: string; version?: { number?: number; createdAt?: string } }>(
-          '/wiki/api/v2/pages',
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              spaceId: space.id,
-              status: 'current',
-              title: pageDef.title,
-              body: { representation: 'storage', value: body },
-            }),
-          },
-        );
+        const created = await api.request<{
+          id?: string;
+          version?: { number?: number; createdAt?: string };
+        }>('/wiki/api/v2/pages', {
+          method: 'POST',
+          body: JSON.stringify({
+            spaceId: space.id,
+            status: 'current',
+            title: pageDef.title,
+            body: { representation: 'storage', value: body },
+          }),
+        });
         if (created.id) {
           metaByTitle.set(pageDef.title, {
             id: String(created.id),
@@ -773,7 +810,9 @@ async function convergeConfluence(api: Api, offset: number, dry: boolean): Promi
       body?: { storage?: { value?: string } };
     }>(`/wiki/api/v2/pages/${existing.id}?body-format=storage`);
     if (sameStorage(current.body?.storage?.value ?? '', body)) {
-      console.log(`  = page "${pageDef.title}" already canonical (v${current.version?.number ?? '?'})`);
+      console.log(
+        `  = page "${pageDef.title}" already canonical (v${current.version?.number ?? '?'})`,
+      );
       metaByTitle.set(pageDef.title, {
         id: String(existing.id),
         ...(current.version?.number ? { version: current.version.number } : {}),
@@ -810,7 +849,9 @@ async function convergeConfluence(api: Api, offset: number, dry: boolean): Promi
   const canonical = new Set(PAGES.map((p) => p.title));
   const extras = (livePages.results ?? []).filter((p) => p.title && !canonical.has(p.title));
   if (extras.length) {
-    console.log(`  · ${extras.length} other page(s) left untouched: ${extras.map((p) => `"${p.title}"`).join(', ')}`);
+    console.log(
+      `  · ${extras.length} other page(s) left untouched: ${extras.map((p) => `"${p.title}"`).join(', ')}`,
+    );
   }
   return metaByTitle;
 }
@@ -843,7 +884,9 @@ function reconcileVault(
   dry: boolean,
 ): void {
   if (!existsSync(join(vaultRoot, 'notes'))) {
-    console.log(`  · ${vaultRoot} not found (or not a vault) — run \`pnpm refresh-demo\` first, then re-run this.`);
+    console.log(
+      `  · ${vaultRoot} not found (or not a vault) — run \`pnpm refresh-demo\` first, then re-run this.`,
+    );
     return;
   }
 
@@ -853,7 +896,10 @@ function reconcileVault(
     const live = ticketKeys.get(summary);
     if (!live || live === staticKey) continue;
     replacements.push([new RegExp(`\\b${staticKey}\\b`, 'g'), live]);
-    renames.push([join(vaultRoot, 'tickets', `${staticKey}.md`), join(vaultRoot, 'tickets', `${live}.md`)]);
+    renames.push([
+      join(vaultRoot, 'tickets', `${staticKey}.md`),
+      join(vaultRoot, 'tickets', `${live}.md`),
+    ]);
   }
   for (const [staticId, title] of Object.entries(STATIC_PAGE_IDS)) {
     const live = pages.get(title);
@@ -874,10 +920,14 @@ function reconcileVault(
   for (const [from, to] of renames) {
     if (!existsSync(from)) continue;
     if (existsSync(to)) {
-      console.log(`  − drop stale static mirror ${from.split(sep).slice(-2).join('/')} (live mirror exists)`);
+      console.log(
+        `  − drop stale static mirror ${from.split(sep).slice(-2).join('/')} (live mirror exists)`,
+      );
       if (!dry) rmSync(from);
     } else {
-      console.log(`  ~ rename ${from.split(sep).slice(-2).join('/')} → ${to.split(sep).slice(-2).join('/')}`);
+      console.log(
+        `  ~ rename ${from.split(sep).slice(-2).join('/')} → ${to.split(sep).slice(-2).join('/')}`,
+      );
       if (!dry) renameSync(from, to);
     }
   }
@@ -916,7 +966,10 @@ function reconcileVault(
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  for (const [label, v] of [['--anchor', args.anchor], ['--today', args.today]] as const) {
+  for (const [label, v] of [
+    ['--anchor', args.anchor],
+    ['--today', args.today],
+  ] as const) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error(`${label} must be YYYY-MM-DD, got "${v}"`);
   }
   const credsPath = resolve(join(import.meta.dirname, '..', CREDS_FILE));
@@ -937,7 +990,10 @@ async function main(): Promise<void> {
   console.log(`Connected to ${creds.siteUrl} as ${me.displayName}\n`);
 
   console.log(`Jira · project ${PROJECT_KEY}`);
-  const keys = await convergeJira(api, me.accountId, offset, { dry: args.dry, keepExtras: args.keepExtras });
+  const keys = await convergeJira(api, me.accountId, offset, {
+    dry: args.dry,
+    keepExtras: args.keepExtras,
+  });
 
   console.log(`\nConfluence · space ${SPACE_NAME}`);
   const pageIds = await convergeConfluence(api, offset, args.dry);

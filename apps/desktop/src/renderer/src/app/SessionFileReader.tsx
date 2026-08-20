@@ -89,7 +89,12 @@ export function SessionFileBody({
   const { openDoc } = useApp();
   const text = useSessionFileText(sessionId, path, version);
 
-  if (text === undefined) return <div className={className}><ReadingSkeleton /></div>;
+  if (text === undefined)
+    return (
+      <div className={className}>
+        <ReadingSkeleton />
+      </div>
+    );
 
   if (text === null) {
     return (
@@ -104,7 +109,9 @@ export function SessionFileBody({
 
   if (!isMarkdownFile(path)) {
     return (
-      <pre className={`overflow-x-auto font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-foreground/90 ${className}`}>
+      <pre
+        className={`overflow-x-auto font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-foreground/90 ${className}`}
+      >
         {text}
       </pre>
     );

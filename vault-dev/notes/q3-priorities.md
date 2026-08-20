@@ -1,8 +1,8 @@
 ---
-type: "note"
-summary: "Q3 priorities: enterprise onboarding, scheduled exports, and holding the line on everything else"
-tags: ["enterprise-auth", "reporting"]
-sources: ["[[meetings/2026-07-08-sprint-planning]]"]
+type: 'note'
+summary: 'Q3 priorities: enterprise onboarding, scheduled exports, and holding the line on everything else'
+tags: ['enterprise-auth', 'reporting']
+sources: ['[[meetings/2026-07-08-sprint-planning]]']
 ---
 
 # Q3 priorities

@@ -34,9 +34,24 @@ test('renderFolderIndex groups by lifecycle, projects summary to description, so
     label: 'Insights',
     purpose: 'analyses over the raw layer',
     entries: [
-      { path: 'insights/zeta.md', title: 'Zeta', description: 'Zeta wants SSO.', lifecycle: 'processed' },
-      { path: 'insights/acme.md', title: 'Acme', description: 'Acme wants SCIM.', lifecycle: 'processed' },
-      { path: 'insights/old.md', title: 'Old finding', description: 'No longer holds.', lifecycle: 'stale' },
+      {
+        path: 'insights/zeta.md',
+        title: 'Zeta',
+        description: 'Zeta wants SSO.',
+        lifecycle: 'processed',
+      },
+      {
+        path: 'insights/acme.md',
+        title: 'Acme',
+        description: 'Acme wants SCIM.',
+        lifecycle: 'processed',
+      },
+      {
+        path: 'insights/old.md',
+        title: 'Old finding',
+        description: 'No longer holds.',
+        lifecycle: 'stale',
+      },
     ],
   };
   const out = renderFolderIndex(folder);
@@ -82,7 +97,10 @@ test('renderRootIndex stamps okf_version, links non-empty folders with counts', 
   const out = renderRootIndex(folders, 'vault-dev');
   assert.match(out, new RegExp(`okf_version: "${OKF_VERSION}"`));
   assert.match(out, /# vault-dev/);
-  assert.match(out, /\* \[Decisions\]\(decisions\/index\.md\) — the append-only decision spine \(2\)/);
+  assert.match(
+    out,
+    /\* \[Decisions\]\(decisions\/index\.md\) — the append-only decision spine \(2\)/,
+  );
   assert.doesNotMatch(out, /Notes/, 'empty folders are omitted from the root map');
 });
 

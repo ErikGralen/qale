@@ -16,13 +16,23 @@ export interface ParsedTodo {
 }
 
 const WEEKDAYS: Record<string, number> = {
-  sunday: 0, sun: 0,
-  monday: 1, mon: 1,
-  tuesday: 2, tue: 2, tues: 2,
-  wednesday: 3, wed: 3,
-  thursday: 4, thu: 4, thur: 4, thurs: 4,
-  friday: 5, fri: 5,
-  saturday: 6, sat: 6,
+  sunday: 0,
+  sun: 0,
+  monday: 1,
+  mon: 1,
+  tuesday: 2,
+  tue: 2,
+  tues: 2,
+  wednesday: 3,
+  wed: 3,
+  thursday: 4,
+  thu: 4,
+  thur: 4,
+  thurs: 4,
+  friday: 5,
+  fri: 5,
+  saturday: 6,
+  sat: 6,
 };
 
 function addDays(now: Date, n: number): string {
@@ -44,7 +54,7 @@ const DUE_RULES: DueRule[] = [
     resolve: (_m, now) => localDateStr(now),
   },
   { re: /(?:\b(?:by|due)\s+)?\b(?:tomorrow|tmrw|tmr)\b/i, resolve: (_m, now) => addDays(now, 1) },
-  { re: /\bnext\s+week\b/i, resolve: (_m, now) => addDays(now, ((8 - now.getDay()) % 7) || 7) },
+  { re: /\bnext\s+week\b/i, resolve: (_m, now) => addDays(now, (8 - now.getDay()) % 7 || 7) },
   {
     re: /\bin\s+(a|\d+)\s+(day|days|week|weeks)\b/i,
     resolve: (m, now) => {

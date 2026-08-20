@@ -5,8 +5,8 @@ processing: processed
 source:
   system: transcript
 captured: 2026-06-12
-customer: "[[customers/kranelund-logistics]]"
-meeting: "[[meetings/2026-06-12-kranelund-checkin]]"
+customer: '[[customers/kranelund-logistics]]'
+meeting: '[[meetings/2026-06-12-kranelund-checkin]]'
 ---
 
 Mikkel: The team likes the dashboards. I want to say that first, because that isn't the issue.

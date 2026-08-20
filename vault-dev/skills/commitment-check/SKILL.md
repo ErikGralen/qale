@@ -7,13 +7,16 @@ can: [draft-outbound]
 ---
 
 ## When
+
 The PM points at one commitment (todo) and asks for help with it, usually because it slipped or
 they are unsure what to do. Work only on that one todo.
 
 ## Read
+
 The todo (title, due date, owner, the `sources` it cites), the meeting or note where the
 commitment was made, and the related customer, theme, and decision pages (search_vault,
 vault_read). Three checks change the answer, so make all three:
+
 - **The linked ticket**, if any: read its mirror note (tickets/). Its `state`, `state_category`,
   and `remote_updated` are how delivery actually stands.
 - **Whether it already happened**: search recent memory for evidence the thing quietly landed.
@@ -23,8 +26,10 @@ vault_read). Three checks change the answer, so make all three:
   wikilinks). A conversation already on the calendar changes the best move.
 
 ## Produce
+
 The right handling for this one commitment, each option as its own approval card. Pick what fits;
 do not produce all of them.
+
 - **A plan**, the default when it is live and just needs doing: a short `## Plan` section on the
   todo (propose_update, body patch) with 2-4 concrete next steps grounded in the memory. A
   blocked or stalled ticket is plan context, not a reschedule trigger: name it ("epic blocked
@@ -48,6 +53,7 @@ do not produce all of them.
 Every card cites the memory it rests on.
 
 ## Then
+
 Approved cards update this one commitment: the plan lands on the todo, a close flips
 `commitment`, a reschedule moves `due`. Nothing changes silently, and nothing else in the memory
 is touched.

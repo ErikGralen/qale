@@ -1,16 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-  Button,
-  Spinner,
-} from '@qale/ui';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Dialog, DialogContent, DialogTitle, DialogDescription, Button, Spinner } from '@qale/ui';
 import { FileText, Image as ImageIcon, Plus, TriangleAlert, Upload, X } from 'lucide-react';
 import type { ArrivalCheckDTO, ArrivalHandoffDTO, ArrivalItemInputDTO } from '@qale/ipc';
 import { readableAs } from '@qale/domain';
 import { pathForFile } from '../lib/ipc';
+import { isBulkPaste } from '../lib/capture-event';
 import { aimLabel, aimSentence, type MaterialAim } from '../lib/material-aim';
 import { useApp } from '../state/app-state';
 import { useToast } from '../components/toast';
@@ -46,7 +40,35 @@ function countWords(s: string): number {
 
 /** A row's own name, for the list and for the remove button's label. */
 function rowName(item: ArrivalItemInputDTO): string {
-  return item.name ?? 'Pasted text';
+  return item.name ?? PASTED;
+}
+
+const PASTED = 'Pasted text.md';
+
+/**
+ * What a paste is called. It is a file like any other once it is in the tray —
+ * it has a name and a size and it can be taken back out — so it is named like
+ * one, and two pastes in the same tray are told apart by a number. What the
+ * material actually IS stays the agent's to say once it has read it.
+ */
+function pastedName(items: ArrivalItemInputDTO[]): string {
+  const taken = items.filter(
+    (i) => i.name === PASTED || /^Pasted text \d+\.md$/.test(i.name ?? ''),
+  ).length;
+  return taken === 0 ? PASTED : `Pasted text ${taken + 1}.md`;
+}
+
+/**
+ * The first line with something in it. A wall of text has no business being
+ * shown in full — it is material, not a message — but one line of it is what
+ * lets the PM see they pasted the right thing.
+ */
+function firstLine(text: string): string {
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (t) return t.length > 200 ? `${t.slice(0, 200)}…` : t;
+  }
+  return '';
 }
 
 /**
@@ -72,22 +94,13 @@ export function AddMaterial({
   open,
   onOpenChange,
   draft,
-  onSubmitting,
   onHandoff,
-  onFailed,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   draft?: MaterialDraft | null;
-  /**
-   * The batch was just submitted — nothing has landed yet. This raises the
-   * handoff line, because the wait is exactly the moment that used to be silent.
-   */
-  onSubmitting?: () => void;
-  /** The material is in a session and (usually) being read. */
+  /** The material is in a session and (usually) being read — go and see it. */
   onHandoff: (result: ArrivalHandoffDTO) => void;
-  /** The write was rejected: the tray stays open, and the handoff stands down. */
-  onFailed?: () => void;
 }) {
   const { vault, pickMaterial, checkArrival, ingestArrival } = useApp();
   const toast = useToast();
@@ -96,7 +109,27 @@ export function AddMaterial({
   const [check, setCheck] = useState<ArrivalCheckDTO | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const instructionRef = useRef<HTMLTextAreaElement>(null);
+  /** Whether the caret has been put somewhere sensible for this opening. */
+  const settled = useRef(false);
   const aim = draft?.aim;
+
+  /**
+   * Once there are rows there is no drop zone left to hold the focus, and the
+   * dialog hands it to the first row's remove button — where Enter throws the
+   * material away. The instruction field is the only thing here anyone types
+   * into, so the caret goes there the moment the first material lands, and
+   * stays wherever it is put after that.
+   */
+  useEffect(() => {
+    if (!open) {
+      settled.current = false;
+      return;
+    }
+    if (items.length === 0 || settled.current) return;
+    settled.current = true;
+    instructionRef.current?.focus();
+  }, [open, items.length]);
 
   /**
    * Anything the tray was handed, as rows. A pasted transcript from Home is
@@ -114,11 +147,12 @@ export function AddMaterial({
     }
     // Merged, not replaced: a second drop while the tray is open used to throw
     // away everything already gathered (AR-12).
-    setItems((prev) => [
-      ...prev,
-      ...(draft?.files ?? []),
-      ...(draft?.text?.trim() ? [{ name: draft.fileName ?? 'Pasted text', text: draft.text }] : []),
-    ]);
+    setItems((prev) => {
+      const next = [...prev, ...(draft?.files ?? [])];
+      if (draft?.text?.trim())
+        next.push({ name: draft.fileName ?? pastedName(next), text: draft.text });
+      return next;
+    });
   }, [open, draft]);
 
   // The one guess left, made by the code that will do the reading.
@@ -161,7 +195,11 @@ export function AddMaterial({
           r.onerror = () => reject(r.error);
           r.readAsDataURL(file);
         });
-        next.push({ name: file.name, dataBase64: dataUrl.split(',')[1] ?? '', lastModified: file.lastModified });
+        next.push({
+          name: file.name,
+          dataBase64: dataUrl.split(',')[1] ?? '',
+          lastModified: file.lastModified,
+        });
       } else {
         next.push({ name: file.name, text: await file.text(), lastModified: file.lastModified });
       }
@@ -177,33 +215,37 @@ export function AddMaterial({
   const submit = async () => {
     if (items.length === 0 || busy || !vault) return;
     setBusy(true);
-    // Said before the await: writing forty files and starting a session takes a
-    // moment, and that gap is the whole point.
-    onSubmitting?.();
     try {
       // The aim goes first and the PM's own sentence last, because where they
       // disagree the sentence they typed wins.
       const said = [aim ? aimSentence(aim) : '', instruction.trim()].filter(Boolean).join(' ');
       const result = await ingestArrival(items, said || undefined);
+      // The material landed but nothing is reading it (no API key, or the skill
+      // is switched off). The session tab will look idle and say nothing about
+      // why, so the reason is the one thing that still has to be spoken.
+      if (!result.started) {
+        toast(
+          result.reason
+            ? `Your material is safe, but nothing is reading it: ${result.reason}`
+            : 'Your material is safe, but nothing is reading it.',
+        );
+      }
       onHandoff(result);
       onOpenChange(false);
     } catch (err) {
       // The front door must never fail silently — the tray stays open with the
       // material intact so nothing the PM gathered is lost.
-      onFailed?.();
-      toast(`Could not add material: ${err instanceof Error ? err.message : 'the workspace rejected the write.'}`);
+      toast(
+        `Could not add material: ${err instanceof Error ? err.message : 'the workspace rejected the write.'}`,
+      );
     } finally {
       setBusy(false);
     }
   };
 
-  const words = useMemo(() => items.reduce((n, i) => n + countWords(i.text ?? ''), 0), [items]);
-  const meta = [
-    items.length > 0 ? `${items.length} file${items.length === 1 ? '' : 's'}` : null,
-    words >= 25 ? `${words.toLocaleString()} words` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  // Just the count: how much there is now sits on the rows themselves, where it
+  // says which piece is the big one rather than only that something is.
+  const meta = items.length > 0 ? `${items.length} file${items.length === 1 ? '' : 's'}` : '';
 
   const refused = check?.items.filter((i) => i.error) ?? [];
   const nothingReadable = !!check?.empty;
@@ -223,11 +265,11 @@ export function AddMaterial({
           }
         }}
         onPaste={(e) => {
-          // Pasted material is a row like any file. Never the instruction field:
-          // a transcript pasted into it used to be sent as a prompt and the
-          // material itself thrown away (AR-5), so that field is left alone here
-          // and everything else in the tray adds a row.
-          if (e.target instanceof HTMLTextAreaElement) return;
+          // Pasted material is a row like any file, wherever in the tray it was
+          // pasted. An image has nowhere else to go, and a wall of text pasted
+          // into the instruction field is a transcript that would have been sent
+          // as a prompt and the material itself thrown away (AR-5). Only a
+          // sentence is left to the field it was aimed at.
           const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'));
           if (file) {
             e.preventDefault();
@@ -235,10 +277,10 @@ export function AddMaterial({
             return;
           }
           const text = e.clipboardData.getData('text/plain');
-          if (text.trim()) {
-            e.preventDefault();
-            setItems((prev) => [...prev, { name: 'Pasted text', text }]);
-          }
+          if (!text.trim()) return;
+          if (e.target instanceof HTMLTextAreaElement && !isBulkPaste(text)) return;
+          e.preventDefault();
+          setItems((prev) => [...prev, { name: pastedName(prev), text }]);
         }}
         onDragOver={(e) => {
           e.preventDefault();
@@ -294,6 +336,12 @@ export function AddMaterial({
                 const name = rowName(item);
                 const failed = check?.items[i]?.error;
                 const Icon = readableAs(name) === 'image' ? ImageIcon : FileText;
+                // What the tray holds in its own hands it can describe: the
+                // opening line and how much there is. A paste is a wall of text
+                // nobody wants read back to them, but one line of it is how the
+                // PM knows they pasted the right thing.
+                const preview = item.text ? firstLine(item.text) : '';
+                const size = item.text ? countWords(item.text) : 0;
                 return (
                   <div
                     key={`${name}-${i}`}
@@ -303,12 +351,29 @@ export function AddMaterial({
                       className={`size-3.5 shrink-0 ${failed ? 'text-destructive' : 'text-muted-foreground'}`}
                       aria-hidden
                     />
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground/80">
+                    <span
+                      className={`truncate font-mono text-xs text-foreground/80 ${
+                        preview ? 'max-w-[45%] shrink-0' : 'min-w-0 flex-1'
+                      }`}
+                    >
                       {name}
                     </span>
+                    {preview && (
+                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground/70">
+                        {preview}
+                      </span>
+                    )}
                     {/* Only a refusal earns text here. Where a file lands is the
                         agent's to work out and to say once it has read it. */}
-                    {failed && <span className="shrink-0 text-xs text-destructive">{failed}</span>}
+                    {failed ? (
+                      <span className="shrink-0 text-xs text-destructive">{failed}</span>
+                    ) : (
+                      size >= 25 && (
+                        <span className="shrink-0 font-mono text-xs text-muted-foreground/70 tabular-nums">
+                          {size.toLocaleString()} words
+                        </span>
+                      )
+                    )}
                     <button
                       type="button"
                       onClick={() => setItems((prev) => prev.filter((_, n) => n !== i))}
@@ -339,6 +404,7 @@ export function AddMaterial({
 
           <textarea
             value={instruction}
+            ref={instructionRef}
             onChange={(e) => setInstruction(e.target.value)}
             placeholder="Anything I should know, or want done with these? (optional)"
             rows={1}
@@ -353,8 +419,7 @@ export function AddMaterial({
               The agent is told the same sentence. */}
           {aim && (
             <p className="truncate text-xs text-foreground/80">
-              Goes to{' '}
-              <span className="font-medium">{aimLabel(aim)}</span>
+              Goes to <span className="font-medium">{aimLabel(aim)}</span>
             </p>
           )}
           <div className="flex items-center gap-3">
@@ -369,7 +434,9 @@ export function AddMaterial({
               <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
                 <TriangleAlert className="size-3 shrink-0 text-warning" aria-hidden />
                 <span className="truncate">
-                  {refused.length === 1 ? '1 file can’t be read' : `${refused.length} files can’t be read`}
+                  {refused.length === 1
+                    ? '1 file can’t be read'
+                    : `${refused.length} files can’t be read`}
                   , the rest will be added
                 </span>
               </p>

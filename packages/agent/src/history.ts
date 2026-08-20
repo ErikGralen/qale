@@ -1,5 +1,7 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
+import { apiErrorText } from './api-errors.js';
 import { stripExternalMarkers } from './external.js';
+import { stripCardState } from './card-state.js';
 
 /**
  * pi session entries → AI SDK UIMessage JSON (the replay side of the bridge).
@@ -40,6 +42,8 @@ interface PiMessage {
   content: string | PiContentBlock[];
   toolCallId?: string;
   isError?: boolean;
+  stopReason?: string;
+  errorMessage?: string;
 }
 
 export function entriesToUiMessages(entries: SessionEntry[]): UiMessage[] {
@@ -60,13 +64,17 @@ export function entriesToUiMessages(entries: SessionEntry[]): UiMessage[] {
 
     if (msg.role === 'user') {
       assistant = null;
-      const text =
+      // The card-state block the runtime prepends is model-facing plumbing: the
+      // PM wrote one sentence and has to read one sentence back, here and in
+      // `openingPrompt`, which names the conversation off this same text.
+      const text = stripCardState(
         typeof msg.content === 'string'
           ? msg.content
           : msg.content
               .filter((c) => c.type === 'text')
               .map((c) => c.text ?? '')
-              .join('\n');
+              .join('\n'),
+      );
       if (text.trim()) push('user', [{ type: 'text', text }]);
       continue;
     }
@@ -75,6 +83,16 @@ export function entriesToUiMessages(entries: SessionEntry[]): UiMessage[] {
       // Tool-calling turns span several pi messages; render them as one
       // assistant UIMessage, matching what the live stream produced.
       if (!assistant) assistant = push('assistant', []);
+      // A turn the provider refused is an assistant message with no content at
+      // all, so replay used to drop it and a reopened session showed the PM's
+      // question with nothing under it. Say what happened instead: they are
+      // looking at this screen precisely because they got no answer.
+      if (msg.stopReason === 'error') {
+        assistant.parts.push({
+          type: 'text',
+          text: `**Qale could not reach the model.** ${apiErrorText(msg.errorMessage ?? '')}`,
+        });
+      }
       for (const block of msg.content) {
         if (block.type === 'text' && block.text?.trim()) {
           assistant.parts.push({ type: 'text', text: block.text });
@@ -103,7 +121,7 @@ export function entriesToUiMessages(entries: SessionEntry[]): UiMessage[] {
       // text in the expanded tool step.
       const text = stripExternalMarkers(
         Array.isArray(msg.content)
-          ? msg.content.map((c) => (c.type === 'text' ? c.text ?? '' : `[${c.type}]`)).join('\n')
+          ? msg.content.map((c) => (c.type === 'text' ? (c.text ?? '') : `[${c.type}]`)).join('\n')
           : String(msg.content ?? ''),
       );
       if (msg.isError) {

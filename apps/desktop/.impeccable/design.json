@@ -111,21 +111,56 @@
       }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display (Fraunces)", "purpose": "Document titles inside note bodies and landing moments. Content only — never UI chrome (The Serif Boundary Rule)." },
+      "display": {
+        "displayName": "Display (Fraunces)",
+        "purpose": "Document titles inside note bodies and landing moments. Content only — never UI chrome (The Serif Boundary Rule)."
+      },
       "title": { "displayName": "Title", "purpose": "Panel headings, card titles, view headers." },
-      "body": { "displayName": "Body", "purpose": "Note and document prose at 15px/1.625, capped at 65–75ch." },
-      "ui": { "displayName": "UI", "purpose": "Buttons, menus, list rows — the default 14px instrument size." },
-      "dense": { "displayName": "Dense", "purpose": "13px chrome rows only — sidebar tree, view rows, tab labels. Never prose." },
-      "label": { "displayName": "Label", "purpose": "Uppercase tracked section labels inside documents and metadata group headers. Sparingly." }
+      "body": {
+        "displayName": "Body",
+        "purpose": "Note and document prose at 15px/1.625, capped at 65–75ch."
+      },
+      "ui": {
+        "displayName": "UI",
+        "purpose": "Buttons, menus, list rows — the default 14px instrument size."
+      },
+      "dense": {
+        "displayName": "Dense",
+        "purpose": "13px chrome rows only — sidebar tree, view rows, tab labels. Never prose."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase tracked section labels inside documents and metadata group headers. Sparingly."
+      }
     },
     "shadows": [
-      { "name": "resting-hint", "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)", "purpose": "Maximum for in-flow surfaces (composer bars, pinned headers). Rare." },
-      { "name": "floating", "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)", "purpose": "Dropdowns and menus — layers that detach from the page." },
-      { "name": "floating-high", "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)", "purpose": "Command palette and dialogs." }
+      {
+        "name": "resting-hint",
+        "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        "purpose": "Maximum for in-flow surfaces (composer bars, pinned headers). Rare."
+      },
+      {
+        "name": "floating",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        "purpose": "Dropdowns and menus — layers that detach from the page."
+      },
+      {
+        "name": "floating-high",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Command palette and dialogs."
+      }
     ],
     "motion": [
-      { "name": "state-transition", "value": "150ms ease-out", "purpose": "Default for hover, focus, press, selection. Never decorative; always a reduced-motion alternative." },
-      { "name": "collapse", "value": "200ms ease-out", "purpose": "Sidebar section fold/unfold via grid-template-rows. Suppressed under prefers-reduced-motion." }
+      {
+        "name": "state-transition",
+        "value": "150ms ease-out",
+        "purpose": "Default for hover, focus, press, selection. Never decorative; always a reduced-motion alternative."
+      },
+      {
+        "name": "collapse",
+        "value": "200ms ease-out",
+        "purpose": "Sidebar section fold/unfold via grid-template-rows. Suppressed under prefers-reduced-motion."
+      }
     ],
     "breakpoints": []
   },
@@ -222,12 +257,36 @@
       "Provenance-forward: sources, dates, and pending writes are first-class visual citizens"
     ],
     "rules": [
-      { "name": "The One Voice Rule", "body": "Ink Blue is the only accent and it means something: action, selection, provenance. It never decorates. If ink blue covers more than ~10% of a screen, something is wrong.", "section": "colors" },
-      { "name": "The Same-Hue Rule", "body": "Every neutral sits at hue 255–260, cool and barely tinted. Never introduce a warm grey or a cream-tinted near-white; a warm neutral reads as the AI default this system replaced.", "section": "colors" },
-      { "name": "The Ink-Stays-Ink Rule", "body": "The accent never brightens or saturates past its tokens. A lighter, louder blue stops being ink and starts being the default SaaS accent; depth and restraint are the identity.", "section": "colors" },
-      { "name": "The Amber Flag Rule", "body": "\"Don't trust this yet\" is never grey and never color-alone: staleness and inference always render in Amber Flag with an icon and a word. The quietest claim on screen must never be the one that needs verification.", "section": "colors" },
-      { "name": "The Serif Boundary Rule", "body": "Fraunces never appears in UI chrome — no serif buttons, labels, menus, or empty states. If it's interactive or part of the instrument, it's Inter.", "section": "typography" },
-      { "name": "The Floating-Only Rule", "body": "If it doesn't detach from the page, it doesn't cast a shadow. Cards rest on rings, not shadows.", "section": "elevation" }
+      {
+        "name": "The One Voice Rule",
+        "body": "Ink Blue is the only accent and it means something: action, selection, provenance. It never decorates. If ink blue covers more than ~10% of a screen, something is wrong.",
+        "section": "colors"
+      },
+      {
+        "name": "The Same-Hue Rule",
+        "body": "Every neutral sits at hue 255–260, cool and barely tinted. Never introduce a warm grey or a cream-tinted near-white; a warm neutral reads as the AI default this system replaced.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink-Stays-Ink Rule",
+        "body": "The accent never brightens or saturates past its tokens. A lighter, louder blue stops being ink and starts being the default SaaS accent; depth and restraint are the identity.",
+        "section": "colors"
+      },
+      {
+        "name": "The Amber Flag Rule",
+        "body": "\"Don't trust this yet\" is never grey and never color-alone: staleness and inference always render in Amber Flag with an icon and a word. The quietest claim on screen must never be the one that needs verification.",
+        "section": "colors"
+      },
+      {
+        "name": "The Serif Boundary Rule",
+        "body": "Fraunces never appears in UI chrome — no serif buttons, labels, menus, or empty states. If it's interactive or part of the instrument, it's Inter.",
+        "section": "typography"
+      },
+      {
+        "name": "The Floating-Only Rule",
+        "body": "If it doesn't detach from the page, it doesn't cast a shadow. Cards rest on rings, not shadows.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do keep every neutral at hue 255–260 (The Same-Hue Rule) and every accent moment ink blue (The One Voice Rule).",

@@ -23,8 +23,17 @@ const EVENT = {
   end: { dateTime: '2026-07-30T15:00:00+02:00' },
   attendees: [
     { email: 'erik@tavla.example', self: true, responseStatus: 'accepted' },
-    { email: 'sara.lindqvist@nordkap.example', displayName: 'Sara Lindqvist', responseStatus: 'accepted' },
-    { email: 'room-oslo@resource.calendar.google.com', displayName: 'Oslo', resource: true, responseStatus: 'accepted' },
+    {
+      email: 'sara.lindqvist@nordkap.example',
+      displayName: 'Sara Lindqvist',
+      responseStatus: 'accepted',
+    },
+    {
+      email: 'room-oslo@resource.calendar.google.com',
+      displayName: 'Oslo',
+      resource: true,
+      responseStatus: 'accepted',
+    },
   ],
   recurringEventId: 'rec-nordkap',
   updated: '2026-07-27T09:00:00.000Z',
@@ -53,7 +62,11 @@ test('verifyAuth: 401 → auth-expired; network failure → unreachable (never c
   assert.equal((await expired.verifyAuth()).health, 'auth-expired');
 
   const revoked = googleCalendarConnector.create(
-    { getAccessToken: async () => { throw new CalendarAuthError(); } },
+    {
+      getAccessToken: async () => {
+        throw new CalendarAuthError();
+      },
+    },
     { fetchImpl: makeFetch([]).fetchImpl },
   );
   assert.equal((await revoked.verifyAuth()).health, 'auth-expired');
@@ -75,7 +88,11 @@ test('listContainers: calendarList pages concatenate, primary sorts first', asyn
             nextPageToken: 'p2',
           },
         },
-        { json: { items: [{ id: 'erik@tavla.example', summary: 'erik@tavla.example', primary: true }] } },
+        {
+          json: {
+            items: [{ id: 'erik@tavla.example', summary: 'erik@tavla.example', primary: true }],
+          },
+        },
       ],
     },
   ]);
@@ -93,8 +110,23 @@ test('initial pull: windowed (timeMin/timeMax, singleEvents), maps events, keeps
       json: {
         items: [
           EVENT,
-          { id: 'evt-lunch', status: 'confirmed', summary: 'Lunch hold', start: { dateTime: '2026-07-28T12:00:00+02:00' }, end: { dateTime: '2026-07-28T13:00:00+02:00' }, updated: '2026-07-20T10:00:00.000Z', htmlLink: 'https://cal/l' },
-          { id: 'evt-wl', eventType: 'workingLocation', status: 'confirmed', summary: 'Office', start: { date: '2026-07-28' }, updated: '2026-07-20T10:00:00.000Z' },
+          {
+            id: 'evt-lunch',
+            status: 'confirmed',
+            summary: 'Lunch hold',
+            start: { dateTime: '2026-07-28T12:00:00+02:00' },
+            end: { dateTime: '2026-07-28T13:00:00+02:00' },
+            updated: '2026-07-20T10:00:00.000Z',
+            htmlLink: 'https://cal/l',
+          },
+          {
+            id: 'evt-wl',
+            eventType: 'workingLocation',
+            status: 'confirmed',
+            summary: 'Office',
+            start: { date: '2026-07-28' },
+            updated: '2026-07-20T10:00:00.000Z',
+          },
         ],
         nextSyncToken: 'sync-token-1',
       },
@@ -105,11 +137,12 @@ test('initial pull: windowed (timeMin/timeMax, singleEvents), maps events, keeps
 
   const url = new URL(calls[0]!.url);
   assert.equal(url.searchParams.get('singleEvents'), 'true');
-  assert.equal(url.searchParams.get('timeMin'), '2026-07-20T12:00:00.000Z'); // 7 days back
+  assert.equal(url.searchParams.get('timeMin'), '2026-06-27T12:00:00.000Z'); // 30 days back
   assert.equal(url.searchParams.get('timeMax'), '2026-09-25T12:00:00.000Z'); // 60 days forward
   assert.equal(url.searchParams.get('syncToken'), null);
 
-  assert.equal(r.highWaterMark, 'sync-token-1');
+  // The mark carries the window's anchor, not the bare token — see MARK_VERSION.
+  assert.equal(r.highWaterMark, `v2|${NOW}|sync-token-1`);
   // workingLocation noise filtered; the hold and the meeting both index shallow.
   assert.equal(r.changes.length, 2);
   const meeting = r.changes.find((ch) => ch.external_id === 'evt-nordkap-1');
@@ -136,19 +169,27 @@ test('incremental pull: syncToken on the wire, cancellation stubs map with empty
     {
       url: `${API}/calendars/erik%40tavla.example/events`,
       json: {
-        items: [{ id: 'evt-nordkap-1', status: 'cancelled', recurringEventId: 'rec-nordkap', originalStartTime: { dateTime: '2026-07-30T14:00:00+02:00' } }],
+        items: [
+          {
+            id: 'evt-nordkap-1',
+            status: 'cancelled',
+            recurringEventId: 'rec-nordkap',
+            originalStartTime: { dateTime: '2026-07-30T14:00:00+02:00' },
+          },
+        ],
         nextSyncToken: 'sync-token-2',
       },
     },
   ]);
   const c = googleCalendarConnector.create(AUTH, { fetchImpl });
-  const r = await c.pullChanges(PRIMARY, 'sync-token-1', { now: NOW });
+  const r = await c.pullChanges(PRIMARY, `v2|${NOW}|sync-token-1`, { now: NOW });
 
   const url = new URL(calls[0]!.url);
   assert.equal(url.searchParams.get('syncToken'), 'sync-token-1');
   assert.equal(url.searchParams.get('timeMin'), null); // bounds live in the token
 
-  assert.equal(r.highWaterMark, 'sync-token-2');
+  // Fresh token: the anchor rides along unchanged.
+  assert.equal(r.highWaterMark, `v2|${NOW}|sync-token-2`);
   assert.equal(r.changes.length, 1);
   const stub = r.changes[0]!;
   assert.ok(stub.kind === 'event');
@@ -168,14 +209,50 @@ test('410 GONE: expired sync token silently re-lists the window', async () => {
     },
   ]);
   const c = googleCalendarConnector.create(AUTH, { fetchImpl });
-  const r = await c.pullChanges(PRIMARY, 'sync-token-stale', { now: NOW });
+  const r = await c.pullChanges(PRIMARY, `v2|${NOW}|sync-token-stale`, { now: NOW });
 
   assert.equal(calls.length, 2);
   const second = new URL(calls[1]!.url);
   assert.equal(second.searchParams.get('syncToken'), null);
   assert.ok(second.searchParams.get('timeMin'));
-  assert.equal(r.highWaterMark, 'sync-token-3');
+  assert.equal(r.highWaterMark, `v2|${NOW}|sync-token-3`);
   assert.equal(r.changes.length, 1);
+});
+
+test('worn-out window: a token whose forward edge is running out re-lists and re-anchors', async () => {
+  // Anchored 40 days ago, so only 20 days of forward window are left — under
+  // the 30-day floor. Google would keep answering, just never with anything
+  // past the frozen edge, which is the silent half-sync this guards against.
+  const anchor = NOW - 40 * 86_400_000;
+  const { fetchImpl, calls } = makeFetch([
+    {
+      url: `${API}/calendars/erik%40tavla.example/events`,
+      json: { items: [EVENT], nextSyncToken: 'sync-token-5' },
+    },
+  ]);
+  const c = googleCalendarConnector.create(AUTH, { fetchImpl });
+  const r = await c.pullChanges(PRIMARY, `v2|${anchor}|sync-token-old`, { now: NOW });
+
+  assert.equal(calls.length, 1); // no wasted token attempt first
+  const url = new URL(calls[0]!.url);
+  assert.equal(url.searchParams.get('syncToken'), null);
+  assert.equal(url.searchParams.get('timeMax'), '2026-09-25T12:00:00.000Z'); // moved forward
+  assert.equal(r.highWaterMark, `v2|${NOW}|sync-token-5`); // re-anchored to now
+});
+
+test('legacy mark: a pre-anchor bare token re-lists once, which is how a widened horizon lands', async () => {
+  const { fetchImpl, calls } = makeFetch([
+    {
+      url: `${API}/calendars/erik%40tavla.example/events`,
+      json: { items: [EVENT], nextSyncToken: 'sync-token-6' },
+    },
+  ]);
+  const c = googleCalendarConnector.create(AUTH, { fetchImpl });
+  const r = await c.pullChanges(PRIMARY, 'sync-token-from-an-older-build', { now: NOW });
+
+  assert.equal(new URL(calls[0]!.url).searchParams.get('syncToken'), null);
+  assert.equal(new URL(calls[0]!.url).searchParams.get('timeMin'), '2026-06-27T12:00:00.000Z');
+  assert.equal(r.highWaterMark, `v2|${NOW}|sync-token-6`);
 });
 
 test('pagination: pageToken loop concatenates and the final page yields the token', async () => {
@@ -192,13 +269,20 @@ test('pagination: pageToken loop concatenates and the final page yields the toke
   const r = await c.pullChanges(PRIMARY, null, { now: NOW });
   assert.equal(new URL(calls[1]!.url).searchParams.get('pageToken'), 'page-2');
   assert.equal(r.changes.length, 2);
-  assert.equal(r.highWaterMark, 'sync-token-4');
+  assert.equal(r.highWaterMark, `v2|${NOW}|sync-token-4`);
 });
 
 test('execute rejects a payload that fails validation (missing title/start)', async () => {
   const c = googleCalendarConnector.create(AUTH, { fetchImpl: makeFetch([]).fetchImpl });
   await assert.rejects(
-    () => c.execute({ provider: 'google-calendar', system: 'google-calendar', action: 'create_event', body: 'x', rationale: 'r' }),
+    () =>
+      c.execute({
+        provider: 'google-calendar',
+        system: 'google-calendar',
+        action: 'create_event',
+        body: 'x',
+        rationale: 'r',
+      }),
     /invalid google-calendar payload/,
   );
 });
@@ -223,7 +307,12 @@ test('execute create_event: POSTs summary/start, defaults end to +30 min, return
     rationale: 'the meeting named a follow-up',
   });
   assert.deepEqual(out, { externalId: 'evt-new', url: 'https://cal.google/evt-new' });
-  const body = calls[0]!.body as { summary: string; start: { dateTime: string }; end: { dateTime: string }; attendees: { email: string }[] };
+  const body = calls[0]!.body as {
+    summary: string;
+    start: { dateTime: string };
+    end: { dateTime: string };
+    attendees: { email: string }[];
+  };
   assert.equal(calls[0]!.method, 'POST');
   assert.equal(body.summary, 'Follow-up with Sara');
   assert.equal(body.start.dateTime, '2026-08-04T15:00:00+02:00');
@@ -260,7 +349,11 @@ test('execute update_event: PATCHes only the changed fields', async () => {
 test('execute respond_to_event: reads the event, flips only the self attendee, keeps the rest', async () => {
   const { fetchImpl, calls } = makeFetch([
     { url: `${API}/calendars/primary/events/evt-nordkap-1`, method: 'GET', json: EVENT },
-    { url: `${API}/calendars/primary/events/evt-nordkap-1`, method: 'PATCH', json: { id: 'evt-nordkap-1', htmlLink: 'https://cal.google/evt' } },
+    {
+      url: `${API}/calendars/primary/events/evt-nordkap-1`,
+      method: 'PATCH',
+      json: { id: 'evt-nordkap-1', htmlLink: 'https://cal.google/evt' },
+    },
   ]);
   const c = googleCalendarConnector.create(AUTH, { fetchImpl });
   await c.execute({

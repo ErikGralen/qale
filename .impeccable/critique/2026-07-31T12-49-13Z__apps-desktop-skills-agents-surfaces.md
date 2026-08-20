@@ -6,25 +6,26 @@ p1_count: 3
 timestamp: 2026-07-31T12-49-13Z
 slug: apps-desktop-skills-agents-surfaces
 ---
+
 # Critique: how Produktminnet presents Skills & Agents
 
 Method: dual-agent (A: design review + live screenshots · B: detector + independent screenshots)
 
 ## Design Health Score
 
-| # | Heuristic | Score | Key Issue |
-|---|-----------|-------|-----------|
-| 1 | Visibility of System Status | 3 | Agent life-signs excellent; Instructions editor autosaves with zero feedback |
-| 2 | Match System / Real World | 2 | Skill titles are plain outcomes; connective tissue is jargon ("drafts outbound", "the model", unnamed "it") |
-| 3 | User Control and Freedom | 3 | Picker has Esc/×/swap; Version history (the edit safety net) buried in ⋯ |
-| 4 | Consistency and Standards | 2 | Skills rows are whole-row buttons with chevrons; Agents rows only open via a title link |
-| 5 | Error Prevention | 3 | Rename can't break the invocation address; nothing stops deleting a load-bearing `## Produce` heading |
-| 6 | Recognition Rather Than Recall | 3 | Every icon carries a word; picker summaries are hover-tooltip-only |
-| 7 | Flexibility and Efficiency | 3 | `/` opens picker, cmdk nav, ⌘-click; no keyboard path to Skills/Agents views |
-| 8 | Aesthetic and Minimalist Design | 4 | Genuinely restrained; nothing decorates |
-| 9 | Error Recovery | 3 | Parse errors pinned in plain words with the fix; "Add one in Settings." is dead text |
-| 10 | Help and Documentation | 3 | Empty states/footers teach in context; "Ask the librarian" help path dead without API key |
-| **Total** | | **29/40** | **Good — solid foundation, address weak areas** |
+| #         | Heuristic                       | Score     | Key Issue                                                                                                   |
+| --------- | ------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------- |
+| 1         | Visibility of System Status     | 3         | Agent life-signs excellent; Instructions editor autosaves with zero feedback                                |
+| 2         | Match System / Real World       | 2         | Skill titles are plain outcomes; connective tissue is jargon ("drafts outbound", "the model", unnamed "it") |
+| 3         | User Control and Freedom        | 3         | Picker has Esc/×/swap; Version history (the edit safety net) buried in ⋯                                    |
+| 4         | Consistency and Standards       | 2         | Skills rows are whole-row buttons with chevrons; Agents rows only open via a title link                     |
+| 5         | Error Prevention                | 3         | Rename can't break the invocation address; nothing stops deleting a load-bearing `## Produce` heading       |
+| 6         | Recognition Rather Than Recall  | 3         | Every icon carries a word; picker summaries are hover-tooltip-only                                          |
+| 7         | Flexibility and Efficiency      | 3         | `/` opens picker, cmdk nav, ⌘-click; no keyboard path to Skills/Agents views                                |
+| 8         | Aesthetic and Minimalist Design | 4         | Genuinely restrained; nothing decorates                                                                     |
+| 9         | Error Recovery                  | 3         | Parse errors pinned in plain words with the fix; "Add one in Settings." is dead text                        |
+| 10        | Help and Documentation          | 3         | Empty states/footers teach in context; "Ask the librarian" help path dead without API key                   |
+| **Total** |                                 | **29/40** | **Good — solid foundation, address weak areas**                                                             |
 
 ## Anti-Patterns Verdict
 

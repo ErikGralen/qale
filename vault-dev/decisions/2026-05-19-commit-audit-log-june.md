@@ -1,12 +1,12 @@
 ---
-type: "decision"
-summary: "Commit to shipping the audit log in June"
-tags: ["compliance"]
-standing: "active"
-date: "2026-05-19"
-deciders: ["me", "Tom Devlin"]
-sources: ["[[meetings/2026-05-18-nordkap-qbr]]"]
-theme: "[[themes/enterprise-onboarding]]"
+type: 'decision'
+summary: 'Commit to shipping the audit log in June'
+tags: ['compliance']
+standing: 'active'
+date: '2026-05-19'
+deciders: ['me', 'Tom Devlin']
+sources: ['[[meetings/2026-05-18-nordkap-qbr]]']
+theme: '[[themes/enterprise-onboarding]]'
 ---
 
 Nordkap's compliance team asked for an audit trail at the QBR and Tom judged it close enough to

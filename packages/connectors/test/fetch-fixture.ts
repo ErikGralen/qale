@@ -33,7 +33,11 @@ export function makeFetch(routes: Route[]): { fetchImpl: FetchLike; calls: Recor
   const hits = new Map<Route, number>();
   const fetchImpl: FetchLike = async (url, init) => {
     const method = init?.method ?? 'GET';
-    calls.push({ url, method, body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined });
+    calls.push({
+      url,
+      method,
+      body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+    });
     const route = routes.find((r) => url.includes(r.url) && (!r.method || r.method === method));
     if (!route) throw new Error(`no fixture route for ${method} ${url}`);
     if (route.throws) throw new TypeError('fetch failed');

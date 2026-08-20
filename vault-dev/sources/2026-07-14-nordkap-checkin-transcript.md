@@ -5,8 +5,8 @@ processing: processed
 source:
   system: transcript
 captured: 2026-07-14
-customer: "[[customers/nordkap-payments]]"
-meeting: "[[meetings/2026-07-14-nordkap-checkin]]"
+customer: '[[customers/nordkap-payments]]'
+meeting: '[[meetings/2026-07-14-nordkap-checkin]]'
 ---
 
 Sara: Give me the SSO date first and then we can do pleasantries.

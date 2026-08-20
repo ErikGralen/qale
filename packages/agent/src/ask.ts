@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
-import type { AskPort, AskRecord } from '@qale/application';
+import { oneLine, type AskPort, type AskRecord } from '@qale/application';
 import { MAINTENANCE_AGENTS } from '@qale/sessions';
 
 /**
@@ -46,6 +46,28 @@ export const ASK_MAX_OPTIONS = 4;
 
 /** Headers are chips in the UI, not sentences. */
 export const ASK_HEADER_MAX = 12;
+
+/**
+ * Ceilings on the text a question card carries, and the reason is OW9 rather
+ * than layout.
+ *
+ * A parked question OUTLIVES the turn that asked it. It is written to `app.db`,
+ * survives quitting the app, and when the PM finally answers it comes back
+ * through {@link askReplayPrompt} as a USER message in a later run — the one
+ * role in the conversation the model is meant to take instructions from. So the
+ * model's own words move up a privilege level on their way through storage, and
+ * a question written under the influence of something injected would arrive
+ * looking like the PM asking for it.
+ *
+ * Nothing here can stop the model asking a leading question, and nothing should:
+ * asking is the point. What these do is keep a question the SIZE of a question.
+ * Flattened, capped and stripped of envelope markers, it can hold a sentence
+ * somebody has to read and not a page of instructions dressed as one — and the
+ * card renders the same text, so the PM sees exactly what will be replayed.
+ */
+export const ASK_QUESTION_MAX = 400;
+export const ASK_LABEL_MAX = 100;
+export const ASK_DESCRIPTION_MAX = 200;
 
 /** One choice on the card. The description is where the trade-off goes. */
 export interface AskOption {
@@ -135,7 +157,7 @@ export function isOffered(skill: string | null | undefined, unattended: boolean)
  * "Whose framin".
  */
 function chip(header: string): string {
-  const flat = header.replace(/\s+/g, ' ').trim();
+  const flat = oneLine(header, Number.MAX_SAFE_INTEGER);
   if (flat.length <= ASK_HEADER_MAX) return flat;
   const cut = flat.slice(0, ASK_HEADER_MAX);
   const lastSpace = cut.lastIndexOf(' ');
@@ -163,30 +185,42 @@ export function planAsk(input: unknown): { plan: AskPlan } | { error: string } {
   const out: AskQuestion[] = [];
   for (const [i, raw] of questions.entries()) {
     const at = `questions[${i}]`;
-    const q = raw as { header?: string; question?: string; options?: unknown; multiSelect?: boolean };
+    const q = raw as {
+      header?: string;
+      question?: string;
+      options?: unknown;
+      multiSelect?: boolean;
+    };
     if (!q?.question?.trim()) return { error: `${at}: question is required.` };
-    if (!q.header?.trim()) return { error: `${at}: header is required (a short chip label like "Scope").` };
+    if (!q.header?.trim())
+      return { error: `${at}: header is required (a short chip label like "Scope").` };
     if (!Array.isArray(q.options) || q.options.length < 2) {
       return {
         error: `${at}: give at least 2 concrete options. A question with no options is just a question — end your turn and ask it in prose instead.`,
       };
     }
     if (q.options.length > ASK_MAX_OPTIONS) {
-      return { error: `${at}: at most ${ASK_MAX_OPTIONS} options (the PM can always write their own answer).` };
+      return {
+        error: `${at}: at most ${ASK_MAX_OPTIONS} options (the PM can always write their own answer).`,
+      };
     }
     const options: AskOption[] = [];
     const seen = new Set<string>();
     for (const [j, rawOpt] of q.options.entries()) {
       const opt = rawOpt as { label?: string; description?: string };
-      const label = opt?.label?.trim();
+      const label = oneLine(opt?.label ?? '', ASK_LABEL_MAX);
       if (!label) return { error: `${at}.options[${j}]: label is required.` };
-      if (seen.has(label.toLowerCase())) return { error: `${at}: two options are labelled "${label}".` };
+      if (seen.has(label.toLowerCase()))
+        return { error: `${at}: two options are labelled "${label}".` };
       seen.add(label.toLowerCase());
-      options.push({ label, ...(opt.description?.trim() ? { description: opt.description.trim() } : {}) });
+      const description = oneLine(opt.description ?? '', ASK_DESCRIPTION_MAX);
+      options.push({ label, ...(description ? { description } : {}) });
     }
     out.push({
       header: chip(q.header),
-      question: q.question.trim(),
+      // Flattened and capped on the way IN, so the card, the row in `app.db` and
+      // the replayed message a later run reads are all the same bounded line.
+      question: oneLine(q.question, ASK_QUESTION_MAX),
       options,
       multiSelect: q.multiSelect === true,
     });
@@ -260,13 +294,16 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
             description: `Short chip label for this question, max ${ASK_HEADER_MAX} characters, e.g. "Scope" or "Which theme".`,
           }),
           question: Type.String({
-            description: 'The question, in full. State what is unclear and why it changes what you would do.',
+            description:
+              'The question, in full. State what is unclear and why it changes what you would do.',
           }),
           options: Type.Array(
             Type.Object({
               label: Type.String({ description: 'The choice, in a few words.' }),
               description: Type.Optional(
-                Type.String({ description: 'What picking this means or leads to. One short sentence.' }),
+                Type.String({
+                  description: 'What picking this means or leads to. One short sentence.',
+                }),
               ),
             }),
             {
@@ -280,7 +317,9 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
             }),
           ),
         }),
-        { description: `The questions, at most ${ASK_MAX_QUESTIONS}. One card, answered in one go.` },
+        {
+          description: `The questions, at most ${ASK_MAX_QUESTIONS}. One card, answered in one go.`,
+        },
       ),
     }),
     // The PM is answering this card; nothing else in the turn should be running
@@ -288,7 +327,7 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
     // with one composer.
     executionMode: 'sequential',
     promptGuidelines: [
-      'When a decision is genuinely the PM\'s and you cannot proceed sensibly without it, call ask_user with concrete options rather than guessing or ending your turn.',
+      "When a decision is genuinely the PM's and you cannot proceed sensibly without it, call ask_user with concrete options rather than guessing or ending your turn.",
       'Do everything that does not depend on the answer BEFORE asking.',
     ],
     async execute(_id, params, signal) {
@@ -412,7 +451,10 @@ export interface AskParkingDeps {
  */
 export class AskParking {
   /** requestId → the card in flight and the promise `ask_user` is parked on. */
-  private readonly live = new Map<string, { request: AskRequestInfo; resolve: (d: AskDecision) => void }>();
+  private readonly live = new Map<
+    string,
+    { request: AskRequestInfo; resolve: (d: AskDecision) => void }
+  >();
 
   constructor(private readonly deps: AskParkingDeps) {}
 
@@ -431,7 +473,12 @@ export class AskParking {
   park(
     store: AskPort | undefined,
     request: AskRequestDraft,
-    context: { scheduled?: boolean; unattended?: boolean; skill?: string | null; outbound?: boolean },
+    context: {
+      scheduled?: boolean;
+      unattended?: boolean;
+      skill?: string | null;
+      outbound?: boolean;
+    },
     signal?: AbortSignal,
   ): Promise<AskDecision> {
     if (context.scheduled) return Promise.resolve({ answers: null, unattended: true });

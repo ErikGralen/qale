@@ -78,13 +78,95 @@ export const zVerification = z.object({
 });
 export type Verification = z.infer<typeof zVerification>;
 
+/**
+ * Every list field as written, and as it keeps arriving: with the dash left off
+ * when there is only one of something. `tags: pricing`, a single `sources:`
+ * wikilink, a lone `verified:` mapping with `by:`/`at:` under it — that is what
+ * YAML by hand reaches for, and what a model writing frontmatter reaches for
+ * too. It is read as the one-entry list it plainly means, the same tolerance
+ * {@link transcriptRefs} already gives a meeting with one recording. An empty
+ * value (`tags:` and nothing after it) is read as the field being absent, which
+ * is what it looks like and what it was meant to be.
+ *
+ * The leniency earns its place because strictness here is not strict, it is
+ * silent: one unreadable field fails the note's WHOLE schema, and a note that
+ * fails its schema is re-read as an untyped `note` — a meeting that quietly
+ * stops being a meeting over a missing dash, with nothing said to anybody.
+ */
+function looseList(v: unknown): unknown {
+  if (v === null || v === '') return undefined;
+  if (v === undefined || Array.isArray(v)) return v;
+  return [v];
+}
+
+const optionalList = <T extends z.ZodType>(item: T) =>
+  z.preprocess(looseList, z.array(item).optional());
+const listOrEmpty = <T extends z.ZodType>(item: T) =>
+  z.preprocess(looseList, z.array(item).default([]));
+
+/**
+ * The fields that mean one DAY, and are compared as plain strings everywhere
+ * they matter: `due < today` is the whole of what "overdue" means.
+ *
+ * Which is why a value that is not "YYYY-MM-DD" is worse than an error. It
+ * never throws, it sorts: "next Friday" is greater than every real date, so a
+ * todo written that way is never overdue, never chased, and nobody finds out.
+ * The schemas keep these as plain strings, because an old vault with a loose
+ * date must still read as the note it is; the shape is checked where a value is
+ * WRITTEN instead, by {@link badDayField}.
+ */
+export const DAY_FIELDS = ['date', 'due', 'resolved', 'last_told'] as const;
+
+const DAY_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The first day-field this write would set to something that is not a day.
+ * `prev` is the note as it stands: a value that did not change is not this
+ * write's doing, and refusing it would make an existing loose date impossible
+ * to edit around.
+ */
+export function badDayField(
+  next: Record<string, unknown>,
+  prev?: Record<string, unknown>,
+): { field: string; value: unknown } | null {
+  for (const field of DAY_FIELDS) {
+    const value = next[field];
+    if (value === undefined || value === null || value === '') continue;
+    if (prev && JSON.stringify(prev[field]) === JSON.stringify(value)) continue;
+    if (typeof value !== 'string' || !DAY_SHAPE.test(value)) return { field, value };
+  }
+  return null;
+}
+
+/**
+ * The two fields the deterministic frontmatter pass writes when it had to invent
+ * something (OW4, see {@link ./normalize.ts}). They are the pass's own handwriting:
+ * nothing else sets them, and each says "a session still owes this note something".
+ *
+ * - `needs_summary` — the summary below was derived from the file, not written
+ *   about it. The session replaces it with a real one and clears the flag.
+ * - `broken_frontmatter` — the frontmatter block would not parse, so it is kept
+ *   here verbatim rather than guessed at or thrown away.
+ *
+ * Booleans and strings rather than sentinel values inside `summary`, because
+ * every consumer of `summary` (the index.md maps, search, `vault_list`, the note
+ * rows in the app) prints it: a `__needs_summary__` in there would make retrieval
+ * worse than the thin frontmatter it replaced, and the PM would read it.
+ */
+export const NEEDS_SUMMARY_FIELD = 'needs_summary';
+export const BROKEN_FRONTMATTER_FIELD = 'broken_frontmatter';
+export const NORMALIZER_MARKERS = [NEEDS_SUMMARY_FIELD, BROKEN_FRONTMATTER_FIELD] as const;
+
 /** Every note carries a one-line summary — the token-cheap retrieval index. */
 const base = {
   summary: z.string().min(1, 'summary is mandatory — it is the retrieval index'),
   title: z.string().optional(),
-  tags: z.array(z.string()).optional(),
+  tags: optionalList(z.string()),
   /** OKF trust family (§5.2): who confirmed this note is still true, and when. */
-  verified: z.array(zVerification).optional(),
+  verified: optionalList(zVerification),
+  /** See {@link NORMALIZER_MARKERS} — set by the deterministic pass, cleared by a session. */
+  [NEEDS_SUMMARY_FIELD]: z.boolean().optional(),
+  [BROKEN_FRONTMATTER_FIELD]: z.string().optional(),
 };
 
 /**
@@ -132,7 +214,7 @@ export const zMeeting = z.object({
   time: z.string().optional(),
   /** Meeting length in minutes. */
   duration_minutes: z.number().optional(),
-  participants: z.array(z.string()).optional(),
+  participants: optionalList(z.string()),
   source: zSource.optional(),
   customer: zRef.optional(),
   /**
@@ -196,7 +278,8 @@ export type MeetingSyncField = (typeof MEETING_SYNC_FIELDS)[number];
 export function transcriptRefs(frontmatter: Record<string, unknown>): string[] {
   const value = frontmatter['transcript'];
   if (typeof value === 'string') return value.trim() ? [value] : [];
-  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string' && !!v.trim());
+  if (Array.isArray(value))
+    return value.filter((v): v is string => typeof v === 'string' && !!v.trim());
   return [];
 }
 
@@ -224,8 +307,8 @@ export const zDecision = z.object({
   ...base,
   standing: z.enum(DECISION_STANDINGS).default('active'),
   date: z.string().optional(),
-  deciders: z.array(z.string()).optional(),
-  sources: z.array(zRef).default([]),
+  deciders: optionalList(z.string()),
+  sources: listOrEmpty(zRef),
   /** The decision this one replaces (back-pointer forms the supersedes-chain). */
   supersedes: zRef.optional(),
   /** Set when a newer decision replaces this one; body is never edited. */
@@ -237,7 +320,7 @@ export const zInsight = z.object({
   type: z.literal('insight'),
   ...base,
   processing: z.enum(PROCESSING_STATES).optional(),
-  evidence: z.array(zRef).min(1, 'insights must cite evidence'),
+  evidence: z.preprocess(looseList, z.array(zRef).min(1, 'insights must cite evidence')),
   confidence: z.enum(CONFIDENCE_LEVELS).default('med'),
   customer: zRef.optional(),
   /** Optional roll-up. An insight is never required to belong to a theme — a
@@ -262,7 +345,7 @@ export const zTheme = z.object({
   type: z.literal('theme'),
   ...base,
   stance: z.enum(THEME_STANCES).default('exploring'),
-  evidence: z.array(zRef).default([]),
+  evidence: listOrEmpty(zRef),
   customer: zRef.optional(),
 });
 
@@ -274,7 +357,7 @@ export const zPerson = z.object({
    *. Optional: unmatched attendees
    *  stay plain emails until someone makes a person note. */
   email: z.string().optional(),
-  cares_about: z.array(z.string()).optional(),
+  cares_about: optionalList(z.string()),
   /** The what-they-were-told ledger clock: when this person was last updated. */
   last_told: z.string().optional(),
   customer: zRef.optional(),
@@ -291,13 +374,13 @@ export const zSession = z.object({
    * session is not one mode, so the single `skill` above only names the one it
    * turned out to be about.
    */
-  skills: z.array(z.string()).optional(),
+  skills: optionalList(z.string()),
   /** Full pi session id — resolves this receipt back to the stored chat. */
   session_id: z.string().optional(),
   started: z.string().optional(),
   ended: z.string().optional(),
-  reads: z.array(zRef).default([]),
-  writes: z.array(zRef).default([]),
+  reads: listOrEmpty(zRef),
+  writes: listOrEmpty(zRef),
   source_meeting: zRef.optional(),
 });
 
@@ -337,7 +420,7 @@ export const zTodo = z.object({
   due: z.string().optional(),
   /** Who committed: omitted = the PO; else "[[people/…]]" ref or a plain name. */
   owner: zRef.optional(),
-  sources: z.array(zRef).default([]),
+  sources: listOrEmpty(zRef),
   /** Stamped "YYYY-MM-DD" when `commitment` flips to done/dropped; cleared on reopen. */
   resolved: z.string().optional(),
   customer: zRef.optional(),
@@ -348,7 +431,7 @@ export const zNote = z.object({
   type: z.literal('note'),
   ...base,
   processing: z.enum(PROCESSING_STATES).optional(),
-  sources: z.array(zRef).default([]),
+  sources: listOrEmpty(zRef),
 });
 
 /**
@@ -446,6 +529,33 @@ export const zFrontmatter = z.discriminatedUnion('type', [
 ]);
 
 export type Frontmatter = z.infer<typeof zFrontmatter>;
+
+/**
+ * One type's schema, by name. The union above is what validates a note; this is
+ * for the things that need to ask ABOUT a type — the generated shape reference
+ * ({@link ./reference.ts}) is the one caller today. Kept next to the union so a
+ * new note type cannot be added to one and forgotten in the other.
+ */
+export const SCHEMA_BY_TYPE = {
+  source: zSourceNote,
+  meeting: zMeeting,
+  decision: zDecision,
+  insight: zInsight,
+  customer: zCustomer,
+  theme: zTheme,
+  person: zPerson,
+  session: zSession,
+  skill: zSkill,
+  agent: zAgentNote,
+  todo: zTodo,
+  note: zNote,
+  ticket: zTicket,
+  wikipage: zWikipage,
+} as const satisfies Record<NoteType, z.ZodObject>;
+
+export function zFrontmatterFor(type: NoteType): (typeof SCHEMA_BY_TYPE)[NoteType] {
+  return SCHEMA_BY_TYPE[type];
+}
 export type SourceNoteFrontmatter = z.infer<typeof zSourceNote>;
 export type MeetingFrontmatter = z.infer<typeof zMeeting>;
 export type DecisionFrontmatter = z.infer<typeof zDecision>;

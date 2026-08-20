@@ -20,6 +20,16 @@ export interface ParsedNote {
   frontmatter: Record<string, unknown>;
   /** Body markdown with frontmatter stripped. */
   body: string;
+  /** The block's YAML text, verbatim. Absent when the file had no block at all. */
+  rawFrontmatter?: string;
+  /**
+   * The block was there and yielded no object: broken YAML, or a bare scalar.
+   * `frontmatter` is `{}` in that case, which reads identically to "no
+   * frontmatter" and is why this flag exists — the normalizer (OW4) has to tell
+   * a file with nothing to say from one whose fields it could not read, so it
+   * can preserve the second rather than write over it.
+   */
+  malformed?: boolean;
 }
 
 const linkProcessor = unified().use(remarkParse).use(remarkGfm).use(remarkWikiLink);
@@ -27,21 +37,23 @@ const linkProcessor = unified().use(remarkParse).use(remarkGfm).use(remarkWikiLi
 /** Parse a full note file (frontmatter + body). */
 export function parseNote(raw: string): ParsedNote {
   const match = raw.match(FRONTMATTER_RE);
-  let frontmatter: Record<string, unknown> = {};
-  let body = raw;
+  if (!match) return { frontmatter: {}, body: raw };
 
-  if (match) {
-    try {
-      const parsed = parseYaml(match[1] ?? '');
-      if (parsed && typeof parsed === 'object') frontmatter = parsed as Record<string, unknown>;
-    } catch {
-      // Malformed YAML → treat as empty frontmatter; caller's zod validation reports it.
-      frontmatter = {};
-    }
-    body = raw.slice(match[0].length);
+  const block = match[1] ?? '';
+  const body = raw.slice(match[0].length);
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(block);
+  } catch {
+    // Malformed YAML → treat as empty frontmatter; caller's zod validation reports it.
+    parsed = null;
   }
-
-  return { frontmatter, body };
+  const object = !!parsed && typeof parsed === 'object';
+  const frontmatter = object ? (parsed as Record<string, unknown>) : {};
+  // An empty block (`---\n---`) is fine and says nothing; a block with text in it
+  // that yielded no object is frontmatter somebody meant and we could not read.
+  const malformed = block.trim().length > 0 && !object;
+  return { frontmatter, body, rawFrontmatter: block, ...(malformed ? { malformed: true } : {}) };
 }
 
 /** Extract wikilinks (with line numbers) from a body string. */

@@ -93,6 +93,13 @@ export interface ConfluencePageMeta {
   url: string;
 }
 
+/** One page hit reduced to what a footprint survey needs: which space it is in
+ *  and when it last moved. Ordinary page search doesn't say either. */
+export interface ConfluenceSpaceHit {
+  spaceKey: string;
+  lastModified: string | null;
+}
+
 /**
  * Page budget for every pagination loop: a misbehaving API that keeps promising
  * more pages must not spin the sync forever. If the budget ever truncates a
@@ -147,7 +154,9 @@ export class AtlassianClient {
             },
           });
         } catch (err) {
-          throw new Error("Couldn't reach your Atlassian site — check your connection.", { cause: err });
+          throw new Error("Couldn't reach your Atlassian site — check your connection.", {
+            cause: err,
+          });
         }
         if (res.status === 429) {
           await sleep(retryAfterMs(res.headers.get('Retry-After')));
@@ -160,9 +169,13 @@ export class AtlassianClient {
           );
         }
         if (res.status === 404) {
-          throw await httpError(res, "That item no longer exists on your Atlassian site (or the token can't see it).");
+          throw await httpError(
+            res,
+            "That item no longer exists on your Atlassian site (or the token can't see it).",
+          );
         }
-        if (!res.ok) throw await httpError(res, `Your Atlassian site returned an error (HTTP ${res.status}).`);
+        if (!res.ok)
+          throw await httpError(res, `Your Atlassian site returned an error (HTTP ${res.status}).`);
         return (await res.json()) as T;
       }
       throw new Error('Your Atlassian site is rate-limiting requests — try again in a minute.');
@@ -193,30 +206,55 @@ export class AtlassianClient {
    * descriptions. Follows `nextPageToken` until `isLast` (the new /search/jql
    * endpoint has no `total`; the token is the only cursor), within MAX_PAGES.
    */
-  async searchIssuesMeta(jql: string, pageSize = 100): Promise<JiraIssueMeta[]> {
+  async searchIssuesMeta(
+    jql: string,
+    pageSize = 100,
+    maxPages = MAX_PAGES,
+  ): Promise<JiraIssueMeta[]> {
     const out: JiraIssueMeta[] = [];
     let nextPageToken: string | undefined;
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const data = await this.request<{ issues?: RawIssue[]; nextPageToken?: string; isLast?: boolean }>(
-        '/rest/api/3/search/jql',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            jql,
-            maxResults: pageSize,
-            fields: ['summary', 'status', 'assignee', 'updated'],
-            ...(nextPageToken ? { nextPageToken } : {}),
-          }),
-        },
-      );
+    for (let page = 0; page < maxPages; page++) {
+      const data = await this.request<{
+        issues?: RawIssue[];
+        nextPageToken?: string;
+        isLast?: boolean;
+      }>('/rest/api/3/search/jql', {
+        method: 'POST',
+        body: JSON.stringify({
+          jql,
+          maxResults: pageSize,
+          fields: ['summary', 'status', 'assignee', 'updated'],
+          ...(nextPageToken ? { nextPageToken } : {}),
+        }),
+      });
       for (const raw of data.issues ?? []) {
-        const { description: _description, parentKey: _parentKey, links: _links, ...meta } = this.toIssue(raw);
+        const {
+          description: _description,
+          parentKey: _parentKey,
+          links: _links,
+          ...meta
+        } = this.toIssue(raw);
         out.push(meta);
       }
       if (data.isLast || !data.nextPageToken) break;
       nextPageToken = data.nextPageToken;
     }
     return out;
+  }
+
+  /**
+   * How many issues a JQL really matches. The paging endpoint cannot answer
+   * this — `/search/jql` returns no total, only a cursor — so a caller that
+   * counted the page it fetched would report "100 tickets" for a project with
+   * nine hundred. This endpoint exists for exactly that question and costs one
+   * request.
+   */
+  async countIssues(jql: string): Promise<number> {
+    const data = await this.request<{ count?: number }>('/rest/api/3/search/approximate-count', {
+      method: 'POST',
+      body: JSON.stringify({ jql }),
+    });
+    return data.count ?? 0;
   }
 
   async getIssue(key: string): Promise<JiraIssue> {
@@ -249,11 +287,14 @@ export class AtlassianClient {
     const out: JiraProject[] = [];
     let startAt = 0;
     for (let page = 0; page < MAX_PAGES; page++) {
-      const data = await this.request<{ values?: { key?: string; name?: string }[]; isLast?: boolean }>(
-        `/rest/api/3/project/search?maxResults=${pageSize}&startAt=${startAt}`,
-      );
+      const data = await this.request<{
+        values?: { key?: string; name?: string }[];
+        isLast?: boolean;
+      }>(`/rest/api/3/project/search?maxResults=${pageSize}&startAt=${startAt}`);
       const values = data.values ?? [];
-      out.push(...values.filter((p) => !!p.key).map((p) => ({ key: p.key!, name: p.name ?? p.key! })));
+      out.push(
+        ...values.filter((p) => !!p.key).map((p) => ({ key: p.key!, name: p.name ?? p.key! })),
+      );
       // Missing isLast reads as last: never loop on a shape we don't recognize.
       if (data.isLast !== false || values.length === 0) break;
       startAt += values.length;
@@ -271,7 +312,9 @@ export class AtlassianClient {
         _links?: { next?: string };
       }>(path);
       out.push(
-        ...(data.results ?? []).filter((s) => !!s.key).map((s) => ({ key: s.key!, name: s.name ?? s.key! })),
+        ...(data.results ?? [])
+          .filter((s) => !!s.key)
+          .map((s) => ({ key: s.key!, name: s.name ?? s.key! })),
       );
       const next = data._links?.next;
       if (!next) break;
@@ -322,10 +365,62 @@ export class AtlassianClient {
     return out;
   }
 
+  /**
+   * Which SPACE each hit lives in, plus the search's true total. Page search
+   * normally drops the space (nothing downstream needed it), and a footprint
+   * survey needs nothing else: it groups by space and never opens a page.
+   *
+   * `maxPages` is low by design. The survey wants "which spaces, roughly how
+   * busy", and `totalSize` carries the real count regardless of how little was
+   * fetched, so paging further would only buy a longer list of the same spaces.
+   */
+  async searchPageSpaces(
+    cql: string,
+    opts: { limit?: number; maxPages?: number } = {},
+  ): Promise<{ hits: ConfluenceSpaceHit[]; total: number | null }> {
+    const limit = opts.limit ?? 50;
+    const maxPages = opts.maxPages ?? 2;
+    const hits: ConfluenceSpaceHit[] = [];
+    let total: number | null = null;
+    let start = 0;
+    for (let page = 0; page < maxPages; page++) {
+      const data = await this.request<{ results?: RawCqlResult[]; totalSize?: number }>(
+        `/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&start=${start}&limit=${limit}&expand=content.space,content.version`,
+      );
+      if (typeof data.totalSize === 'number') total = data.totalSize;
+      const results = data.results ?? [];
+      for (const r of results) {
+        const spaceKey = spaceKeyOf(r);
+        if (!spaceKey) continue;
+        hits.push({ spaceKey, lastModified: r.content?.version?.when ?? r.lastModified ?? null });
+      }
+      if (results.length < limit) break;
+      start += results.length;
+    }
+    return { hits, total };
+  }
+
+  /** The true number of pages a CQL matches, read off `totalSize`. One request. */
+  async countPages(cql: string): Promise<number | null> {
+    const data = await this.request<{ totalSize?: number }>(
+      `/wiki/rest/api/search?cql=${encodeURIComponent(cql)}&limit=1`,
+    );
+    return typeof data.totalSize === 'number' ? data.totalSize : null;
+  }
+
   async getPage(
     id: string,
-  ): Promise<{ id: string; title: string; url: string; body: string; version: number | null; lastModified: string | null }> {
-    const data = await this.request<RawPage>(`/wiki/api/v2/pages/${encodeURIComponent(id)}?body-format=storage`);
+  ): Promise<{
+    id: string;
+    title: string;
+    url: string;
+    body: string;
+    version: number | null;
+    lastModified: string | null;
+  }> {
+    const data = await this.request<RawPage>(
+      `/wiki/api/v2/pages/${encodeURIComponent(id)}?body-format=storage`,
+    );
     return {
       id: data.id,
       title: data.title,
@@ -465,9 +560,26 @@ interface RawCqlResult {
   content?: {
     id?: string;
     title?: string;
+    space?: { key?: string };
     version?: { number?: number; when?: string };
     _links?: { webui?: string };
   };
+  resultGlobalContainer?: { title?: string; displayUrl?: string };
+}
+
+/**
+ * The space a CQL hit belongs to. `content.space` is there when the expand took
+ * (the documented path), and `resultGlobalContainer.displayUrl` is the fallback
+ * every search result carries: "/spaces/DESIGN" or the older "/display/DESIGN".
+ * A hit we cannot place is skipped rather than guessed at — a footprint counted
+ * against the wrong space is worse than one not counted at all.
+ */
+function spaceKeyOf(r: RawCqlResult): string | null {
+  const expanded = r.content?.space?.key;
+  if (expanded) return expanded;
+  const url = r.resultGlobalContainer?.displayUrl ?? '';
+  const match = /\/(?:spaces|display)\/([^/?#]+)/.exec(url);
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
 }
 interface RawPage {
   id: string;
@@ -515,7 +627,8 @@ function replaceInStorage(storage: string, search: string, replace: string): str
 
   // Exact match first: cheap, and unambiguous when unique.
   const exact = storage.indexOf(search);
-  if (exact !== -1 && storage.indexOf(search, exact + 1) === -1) return splice(exact, search.length);
+  if (exact !== -1 && storage.indexOf(search, exact + 1) === -1)
+    return splice(exact, search.length);
   if (exact === -1) {
     const matches = [...storage.matchAll(tolerantPattern(search))];
     if (matches.length === 1) return splice(matches[0]!.index, matches[0]![0].length);
@@ -580,7 +693,12 @@ export function markdownToAdf(md: string): AdfDoc {
       while (i < lines.length && /^[-*]\s+/.test(lines[i]!)) {
         items.push({
           type: 'listItem',
-          content: [{ type: 'paragraph', content: [{ type: 'text', text: lines[i]!.replace(/^[-*]\s+/, '') }] }],
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: lines[i]!.replace(/^[-*]\s+/, '') }],
+            },
+          ],
         });
         i++;
       }
@@ -644,7 +762,10 @@ function escapeXml(s: string): string {
 }
 
 function stripTags(html: string): string {
-  return html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+  return html
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .trim();
 }
 
 /**
@@ -662,7 +783,10 @@ function liftCodeMacros(xhtml: string): string {
       /<ac:structured-macro[^>]*\bac:name="code"[^>]*>([\s\S]*?)<\/ac:structured-macro>/g,
       (_m, inner: string) => `<pre><code>${escapeXml(cdata.exec(inner)?.[1] ?? '')}</code></pre>`,
     )
-    .replace(new RegExp(cdata.source, 'g'), (_m, body: string) => `<pre><code>${escapeXml(body)}</code></pre>`);
+    .replace(
+      new RegExp(cdata.source, 'g'),
+      (_m, body: string) => `<pre><code>${escapeXml(body)}</code></pre>`,
+    );
 }
 
 /**

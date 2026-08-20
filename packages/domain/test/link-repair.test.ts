@@ -8,7 +8,10 @@ const slugs = (target: string, cands: LinkRepairCandidate[], max?: number): stri
   suggestLinkCandidates(target, cands, max).map((x) => x.slug);
 
 test('candidates survive case, space and punctuation drift', () => {
-  const cands = [c('people/tom-devlin', 'Tom Devlin'), c('customers/nordkap-shipping', 'Nordkap Shipping')];
+  const cands = [
+    c('people/tom-devlin', 'Tom Devlin'),
+    c('customers/nordkap-shipping', 'Nordkap Shipping'),
+  ];
   assert.deepEqual(slugs('Tom Devlin', cands), ['people/tom-devlin']);
   assert.deepEqual(slugs('Tom_Devlin', cands), ['people/tom-devlin']);
   assert.deepEqual(slugs('people/Tom-Devlin', cands), ['people/tom-devlin']);
@@ -51,7 +54,12 @@ test('an ambiguous target offers both, ranked, and the hint never resolves it', 
 });
 
 test('candidates cap at max, and a hopeless target gets none', () => {
-  const cands = [c('people/anna-nord'), c('people/anna-lund'), c('people/anna-berg'), c('people/anna-falk')];
+  const cands = [
+    c('people/anna-nord'),
+    c('people/anna-lund'),
+    c('people/anna-berg'),
+    c('people/anna-falk'),
+  ];
   assert.equal(suggestLinkCandidates('anna', cands, 3).length, 3);
   assert.deepEqual(slugs('totally-unrelated', cands), []);
 });

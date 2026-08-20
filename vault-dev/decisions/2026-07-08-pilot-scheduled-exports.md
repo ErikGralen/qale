@@ -1,12 +1,12 @@
 ---
-type: "decision"
-summary: "Build scheduled exports v1 with Kranelund as design partner: email PDF first, target end of August"
-tags: ["reporting"]
-standing: "active"
-date: "2026-07-08"
-deciders: ["me", "Tom Devlin"]
-sources: ["[[meetings/2026-07-08-sprint-planning]]", "[[meetings/2026-06-12-kranelund-checkin]]"]
-theme: "[[themes/scheduled-reporting]]"
+type: 'decision'
+summary: 'Build scheduled exports v1 with Kranelund as design partner: email PDF first, target end of August'
+tags: ['reporting']
+standing: 'active'
+date: '2026-07-08'
+deciders: ['me', 'Tom Devlin']
+sources: ['[[meetings/2026-07-08-sprint-planning]]', '[[meetings/2026-06-12-kranelund-checkin]]']
+theme: '[[themes/scheduled-reporting]]'
 ---
 
 v1 is deliberately narrow: take an existing dashboard, render it to PDF, send it to an email

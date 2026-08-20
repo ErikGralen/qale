@@ -25,7 +25,8 @@ export function diffLines(before: string, after: string): DiffRow[] {
   const lcs: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
   for (let i = m - 1; i >= 0; i--) {
     for (let j = n - 1; j >= 0; j--) {
-      lcs[i]![j] = b[i] === a[j] ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
+      lcs[i]![j] =
+        b[i] === a[j] ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
     }
   }
   const rows: DiffRow[] = [];
@@ -61,7 +62,8 @@ export function withContext(rows: DiffRow[], ctx: number): DiffView[] {
   // The marker carries its own count: "⋯" alone left the PO unable to tell a
   // one-line skip from half the page, in the view they use to judge a write.
   const flush = () => {
-    if (hidden > 0) out.push({ kind: 'gap', text: `${hidden} unchanged line${hidden === 1 ? '' : 's'}` });
+    if (hidden > 0)
+      out.push({ kind: 'gap', text: `${hidden} unchanged line${hidden === 1 ? '' : 's'}` });
     hidden = 0;
   };
   rows.forEach((r, i) => {

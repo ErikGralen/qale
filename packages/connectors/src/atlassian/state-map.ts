@@ -13,7 +13,10 @@ import type { StateCategory } from '@qale/domain';
  */
 const BLOCKED_LABEL = /\b(blocked|blocker|blockerad|impediment|impeded|on[ -]hold|stalled)\b/i;
 
-export function mapJiraStateCategory(rawState: string, categoryHint?: string | null): StateCategory {
+export function mapJiraStateCategory(
+  rawState: string,
+  categoryHint?: string | null,
+): StateCategory {
   // Done wins over the label heuristic: "Closed — Blocked" is a RESOLVED ticket
   // whose name remembers why it once stalled; done is Jira's own verdict and a
   // finished ticket must never surface as a live blocker.

@@ -31,7 +31,10 @@ const run = (tool: { execute: (...a: never[]) => unknown }, params: unknown) =>
 
 test('the session folder lives under sessions/.files — invisible to the indexer', () => {
   assert.equal(sessionFilesRelRoot('abc123'), 'sessions/.files/abc123');
-  assert.ok(sessionFilesRoot('/vault', 'abc123').endsWith('/vault/sessions/.files/abc123'));
+  // join(), so the expectation carries the platform's separator. The relative
+  // form above stays forward-slashed on purpose: it is a vault path, not a
+  // filesystem one.
+  assert.ok(sessionFilesRoot('/vault', 'abc123').endsWith(join('/vault', 'sessions/.files/abc123')));
 });
 
 test('a session writes, lists and reads back its own files', async () => {

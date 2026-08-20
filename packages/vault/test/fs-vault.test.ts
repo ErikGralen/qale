@@ -11,6 +11,25 @@ async function vaultDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'pm-vault-'));
 }
 
+/**
+ * Windows needs SeCreateSymbolicLinkPrivilege to make a symlink, which an
+ * ordinary account does not hold. The two tests below are about what `contain()`
+ * does with a link that escapes the vault, so with no link there is nothing to
+ * assert — the honest outcome is a skip, not a pass and not a failure. Anywhere
+ * that can make the link, this returns true and the test runs as written.
+ */
+async function trySymlink(target: string, path: string): Promise<boolean> {
+  try {
+    await symlink(target, path);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EPERM') return false;
+    throw err;
+  }
+}
+
+const NO_SYMLINKS = 'this account cannot create symlinks (Windows without the privilege)';
+
 test('body-only save preserves invalid frontmatter byte-for-byte (regression: coerced fallback erased real fields)', async () => {
   const dir = await vaultDir();
   await mkdir(join(dir, 'notes'));
@@ -78,11 +97,14 @@ test('a note that fits its type carries no miss', async () => {
   assert.equal(note?.schemaMiss, undefined);
 });
 
-test('contain() rejects lexical and symlink escapes', async () => {
+test('contain() rejects lexical and symlink escapes', async (t) => {
   const dir = await vaultDir();
   const outside = await vaultDir();
   await writeFile(join(outside, 'secret.md'), 'secret\n');
-  await symlink(join(outside, 'secret.md'), join(dir, 'leak.md'));
+  if (!(await trySymlink(join(outside, 'secret.md'), join(dir, 'leak.md')))) {
+    t.skip(NO_SYMLINKS);
+    return;
+  }
 
   const vault = new FsVault(dir);
   assert.equal(vault.contain('../etc/passwd'), null);
@@ -104,10 +126,12 @@ test('a refused write is loud — every write path throws, and the file outside 
   const dir = await vaultDir();
   const outside = await vaultDir();
   await writeFile(join(outside, 'secret.md'), 'the memory\n');
-  await symlink(join(outside, 'secret.md'), join(dir, 'leak.md'));
+  // The lexical escapes below need no symlink, so where one cannot be made this
+  // test still earns its keep. Only the link case drops out.
+  const linked = await trySymlink(join(outside, 'secret.md'), join(dir, 'leak.md'));
 
   const vault = new FsVault(dir);
-  const escapes = ['../escape.md', 'notes/../../escape.md', 'leak.md'];
+  const escapes = ['../escape.md', 'notes/../../escape.md', ...(linked ? ['leak.md'] : [])];
   for (const path of escapes) {
     await assert.rejects(
       () => vault.writeRaw(path, 'x'),

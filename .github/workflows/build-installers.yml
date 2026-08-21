@@ -1,10 +1,10 @@
 name: Build installers
 
 # Manual, plus every version tag. Deliberately not on every push to main: a run
-# is two runners for about ten minutes each and produces a ~140 MB artifact, and
-# nobody looks at an installer that was not cut for a reason. check-types and
-# test still run here before packaging, because a build that ships a broken app
-# is worse than no build, but they are not the reason this workflow exists.
+# is about ten minutes on a runner and produces a ~140 MB artifact, and nobody
+# looks at an installer that was not cut for a reason. check-types and test still
+# run here before packaging, because a build that ships a broken app is worse
+# than no build, but they are not the reason this workflow exists.
 on:
   workflow_dispatch:
   push:
@@ -12,54 +12,43 @@ on:
       - 'v*'
 
 # A second tag push while the first is still building would race for the same
-# artifact names. Newest wins.
+# artifact name. Newest wins.
 concurrency:
   group: build-installers-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      # One platform failing should not hide whether the other one works.
-      fail-fast: false
-      matrix:
-        include:
-          # Windows is the reason this workflow exists. better-sqlite3 is a
-          # native module and has to be loaded by Electron's own V8, so it needs
-          # a binary built against Electron's ABI for win32-x64. That binary
-          # cannot be produced on a Mac: electron-builder runs @electron/rebuild
-          # before packaging, and asking it for x64 from an arm64 Mac stops at
-          # "node-gyp does not support cross-compiling native modules from
-          # source". Worse is what happens when the arch happens to match. A
-          # `--win --dir` build on an arm64 Mac completes and looks fine, and the
-          # better_sqlite3.node inside the Windows app is a Mach-O bundle. The
-          # app installs, launches, and dies the moment it opens the database.
-          # So: build Windows on Windows.
-          - os: windows-latest
-            name: Windows installer
-            script: win
-            artifact: qale-windows-installer
-            path: apps/desktop/dist/*.exe
-          # macOS rides along because it is four lines and the same lockfile,
-          # types and tests. macos-latest is Apple Silicon, which is what we
-          # want: electron-builder.yml targets arm64 only, so the runner arch
-          # matches the target arch and the same native rebuild argument holds.
-          # If an Intel dmg is ever added, it needs its own runner or a
-          # universal build, for exactly the reason spelled out above.
-          - os: macos-latest
-            name: macOS dmg
-            script: dmg
-            artifact: qale-macos-dmg
-            path: apps/desktop/dist/*.dmg
+  # Windows only, and Windows is the whole reason this workflow exists.
+  # better-sqlite3 is a native module and has to be loaded by Electron's own V8,
+  # so it needs a binary built against Electron's ABI for win32-x64. That binary
+  # cannot be produced on a Mac: electron-builder runs @electron/rebuild before
+  # packaging, and asking it for x64 from an arm64 Mac stops at "node-gyp does
+  # not support cross-compiling native modules from source". Worse is what
+  # happens when the arch happens to match. A `--win --dir` build on an arm64 Mac
+  # completes and looks fine, and the better_sqlite3.node inside the Windows app
+  # is a Mach-O bundle. The app installs, launches, and dies the moment it opens
+  # the database. So: build Windows on Windows.
+  #
+  # The dmg used to ride along here on a macos-latest runner. It went because we
+  # develop on an arm64 Mac and `pnpm --filter @qale/desktop run dmg` produces
+  # the same artifact locally in less time than pushing and waiting. Nothing
+  # about the Mac build needs CI. If that changes, the day a release has to be
+  # cut from a machine that is not Erik's, or the day an Intel or universal build
+  # arrives, put a matrix back: the job below is already shaped for it and git
+  # history has the exact block that was deleted.
+  #
+  # Note what this costs. `pnpm test` and `pnpm check-types` now run on Windows
+  # and nowhere else in CI, so a change that only breaks macOS gets caught by
+  # whoever runs the tests locally, not here.
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
 
     steps:
       # Windows still enforces the 260-character path limit unless git is told
       # otherwise, and pnpm's store plus Electron's node_modules go well past it.
       # This has to run before checkout or the checkout itself is what fails.
-      - name: Allow long paths on Windows
-        if: runner.os == 'Windows'
+      - name: Allow long paths
         run: git config --global core.longpaths true
 
       - uses: actions/checkout@v4
@@ -99,26 +88,23 @@ jobs:
       # on by default), which on this runner is a native, same-platform rebuild.
       # It will normally pull a prebuilt binary; if better-sqlite3 has no prebuild
       # for this Electron ABI it compiles from source instead, which is slower but
-      # works, because the GitHub runners ship the MSVC and Xcode toolchains.
+      # works, because the GitHub runners ship the MSVC toolchain.
+      #
+      # Unsigned, and nothing here has to say so. electron-builder runs its
+      # signing step, finds no credential, logs that it skipped, and carries on.
+      # What a tester sees because of that, and the two ways to fix it, are in
+      # the `win:` block of electron-builder.yml.
       - name: Package
-        env:
-          # Neither platform is signed yet (see the comments in
-          # electron-builder.yml). On macOS this stops electron-builder from
-          # hunting the runner keychain for an identity it will not find and
-          # failing on the way; mac.identity is already null, this is the belt to
-          # that pair of braces. When a certificate lands, this line goes and the
-          # credentials arrive as secrets.
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: pnpm --filter @qale/desktop run ${{ matrix.script }}
+        run: pnpm --filter @qale/desktop run win
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.path }}
+          name: qale-windows-installer
+          path: apps/desktop/dist/*.exe
           # A glob that matches nothing means the packaging step changed its
           # output name and nobody noticed. Fail instead of uploading an empty
           # artifact that only looks like a successful build.
           if-no-files-found: error
-          # These are ~140 MB each and are rebuildable from the tag. Ninety days
-          # of them is storage nobody asked for.
+          # This is ~140 MB and rebuildable from the tag. Ninety days of them is
+          # storage nobody asked for.
           retention-days: 14

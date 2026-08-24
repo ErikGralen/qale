@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { UseCaseContext } from '@qale/application';
+import { HOUSE_RULES, parseRunnable } from '@qale/sessions';
 import { createProposeTools } from '../src/tools.js';
 
 /**
@@ -79,7 +80,10 @@ const tool = (ctx: UseCaseContext) =>
 const RULE = 'When filing material that mentions a person, create their person note too.';
 
 const ARRIVAL = 'skills/arrival/SKILL.md';
-const RULES = 'skills/_your-rules/SKILL.md';
+const RULES = 'skills/house-rules/SKILL.md';
+
+/** The house-rules body as it ships: Your rules is the last section of it. */
+const HOUSE = parseRunnable(HOUSE_RULES, 'house-rules').body.trim();
 
 test('a rule joins the Standing instructions the target already ends with', async () => {
   const ctx = rulesCtx({
@@ -132,46 +136,54 @@ test('a Standing instructions section that is not last gets a fresh one at the e
   assert.equal(ctx.filed[0]!.payload.append, `\n\n## Standing instructions\n\n- ${RULE}`);
 });
 
-test('with no target and no rules file, the card creates one', async () => {
+test('with no target and no house-rules file, the card writes the whole document', async () => {
   const ctx = rulesCtx({});
   const said = await out(tool(ctx), { rule: RULE });
 
-  assert.match(said, /-> _your-rules\./);
+  assert.match(said, /-> house-rules\./);
   const card = ctx.filed[0]!;
   assert.equal(card.kind, 'note');
   assert.equal(card.targetPath, RULES);
   assert.equal(card.baseHash, null);
   const fm = (card.payload as unknown as { frontmatter: Record<string, unknown> }).frontmatter;
   assert.equal(fm['type'], 'skill');
-  assert.equal(fm['title'], 'Your rules');
-  assert.equal(fm['summary'], 'Things you have told Qale to always do.');
-  // Always-on is the whole point: without it the file is one nobody ever reads.
-  assert.deepEqual(fm['starts'], ['always']);
-  assert.equal(card.payload.body, `## Standing instructions\n\n- ${RULE}`);
-  assert.match(card.rationale, /Goes into Your rules, which every session reads\./);
+  assert.equal(fm['title'], 'House rules');
+  // Nothing declares itself always-on any more: the runtime loads this file by
+  // name, so a `starts` key here would be a setting nothing reads.
+  assert.equal(fm['starts'], undefined);
+  // The shipped document, with the rule at the end of it. The runtime falls
+  // back to that same text while the file is missing, so a card that wrote the
+  // bullet alone would drop the language, writing and filing rules with it.
+  assert.equal(card.payload.body, `${HOUSE}\n\n- ${RULE}`);
+  assert.match(card.rationale, /Goes into Your rules, in the house rules every session reads\./);
 });
 
-test('a rules file that already exists is updated, never created a second time', async () => {
-  const ctx = rulesCtx({
-    [RULES]: {
-      title: 'Your rules',
-      body: '## Standing instructions\n\n- Ask before mailing anyone.\n',
-    },
-  });
+test('a rule with no owner joins Your rules in the house rules', async () => {
+  const ctx = rulesCtx({ [RULES]: { title: 'House rules', body: `${HOUSE}\n` } });
   await out(tool(ctx), { rule: RULE });
 
   const card = ctx.filed[0]!;
   assert.equal(card.kind, 'update');
   assert.equal(card.targetPath, RULES);
+  // Your rules is the last heading in the document, so the bullet lands inside
+  // it — no second heading, and never under Filing.
   assert.equal(card.payload.append, `\n- ${RULE}`);
 });
 
-test('a name nothing answers to falls back to the rules file, and says so', async () => {
-  const ctx = rulesCtx({ [RULES]: { body: '## Standing instructions\n\n- Ask first.\n' } });
+test('a rule already under Your rules is refused, not filed twice', async () => {
+  const ctx = rulesCtx({ [RULES]: { body: `${HOUSE}\n\n- ${RULE}\n` } });
+  const said = await out(tool(ctx), { rule: RULE });
+
+  assert.match(said, /already a standing instruction there/);
+  assert.equal(ctx.filed.length, 0);
+});
+
+test('a name nothing answers to falls back to the house rules, and says so', async () => {
+  const ctx = rulesCtx({ [RULES]: { body: `${HOUSE}\n` } });
   const said = await out(tool(ctx), { rule: RULE, target: 'meeting-prep' });
 
   assert.equal(ctx.filed[0]!.targetPath, RULES);
-  assert.match(said, /-> _your-rules\./);
+  assert.match(said, /-> house-rules\./);
   assert.match(said, /Nothing is called "meeting-prep" here/);
 });
 

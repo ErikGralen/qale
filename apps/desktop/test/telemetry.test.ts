@@ -2,12 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AGE_BANDS,
+  CODEBASE_MODEL_WORDS,
   COUNT_BANDS,
   DURATION_BANDS,
   KNOWN_SKILLS,
   TELEMETRY_ENVS,
   TELEMETRY_EVENTS,
   TELEMETRY_EVENT_IDS,
+  TELEMETRY_ID_RE,
   TELEMETRY_IDENTITY,
   TELEMETRY_LIMIT,
   TELEMETRY_NEVER,
@@ -16,10 +18,14 @@ import {
   countBand,
   durationBand,
   filterTelemetryProps,
+  providerWord,
   skillWord,
   telemetryAllows,
   telemetryEvent,
 } from '@qale/ipc';
+import { CODEBASE_MODELS } from '@qale/agent';
+import { CONNECTOR_PROVIDERS } from '@qale/connectors';
+import { DEFAULT_AGENTS, DEFAULT_SKILLS } from '@qale/sessions';
 import {
   TELEMETRY_ENV,
   TELEMETRY_ENV_IS_KNOWN,
@@ -133,6 +139,35 @@ test('a word outside its list is dropped, and so is a flag that is not a boolean
   assert.deepEqual(filterTelemetryProps('view.opened', undefined), {});
 });
 
+test('a connector reports its own id, and the two that already ship keep their words', () => {
+  // The value shipped for the Google connector has always been `google`, and a
+  // rename would fork the dashboards it feeds (PD-6).
+  assert.equal(providerWord('google-calendar'), 'google');
+  assert.equal(providerWord('atlassian'), 'atlassian');
+  // Anything else is its own id, with no edit to the allowlist.
+  assert.equal(providerWord('linear'), 'linear');
+  assert.deepEqual(filterTelemetryProps('connection.added', { provider: 'linear' }), {
+    provider: 'linear',
+  });
+});
+
+test('every registered connector has an id telemetry can report', () => {
+  for (const provider of CONNECTOR_PROVIDERS) {
+    assert.match(providerWord(provider.id), TELEMETRY_ID_RE, provider.id);
+  }
+});
+
+test('an id that is not registry-shaped is dropped, whatever it is', () => {
+  for (const value of [
+    'tavla.atlassian.net',
+    'Nordkap pricing call',
+    'ada.lovelace@northwind.example',
+    '/Users/ada/Product Notes',
+  ]) {
+    assert.deepEqual(filterTelemetryProps('connection.added', { provider: value }), {}, value);
+  }
+});
+
 test('the one free-text property is truncated to the length the list declares', () => {
   const spec = telemetryEvent('app.crashed');
   const stack = spec?.props['stack'];
@@ -185,6 +220,17 @@ test('a band answers "a few or hundreds" and never says how many', () => {
   for (const ms of [0, 61_000, 10 ** 10]) assert.ok(AGE_BANDS.includes(ageBand(ms) as never));
 });
 
+test('every skill we ship has a word of its own', () => {
+  // Otherwise a shipped skill counts as one the PM wrote, and "are people
+  // writing their own" reads high for a reason nobody can see.
+  for (const s of [...DEFAULT_SKILLS, ...DEFAULT_AGENTS]) {
+    const name = s.file.split('/')[1] ?? s.file;
+    assert.equal(skillWord(name), name, `${name} folds to custom`);
+  }
+  // A skill is a folder, so the caller often holds the slug instead.
+  assert.equal(skillWord('skills/arrival'), 'arrival');
+});
+
 test('a skill we did not write folds to custom', () => {
   assert.equal(skillWord('librarian'), 'librarian');
   assert.equal(skillWord('nordkap-weekly'), 'custom');
@@ -198,6 +244,35 @@ test('a skill we did not write folds to custom', () => {
     });
     assert.ok(KNOWN_SKILLS.includes(skillWord(name) as never));
   }
+});
+
+test('a codebase question reports the model and the answer, never the repo or the question', () => {
+  assert.deepEqual(
+    filterTelemetryProps('codebase.asked', {
+      model: 'opus',
+      resumed: false,
+      approved: true,
+      // What a careless caller might add, and what would be the PM's material.
+      repo: 'northwind-billing',
+      question: 'How does the billing service decide a proration date?',
+    }),
+    { model: 'opus', resumed: false, approved: true },
+  );
+  // A card passed on is reported too, and a model outside the catalogue loses
+  // itself rather than losing the event.
+  assert.deepEqual(
+    filterTelemetryProps('codebase.asked', { model: 'gpt-5', resumed: true, approved: false }),
+    { resumed: true, approved: false },
+  );
+});
+
+test('every model the codebase card offers has a word telemetry can report', () => {
+  // The card's catalogue is the aliases the `claude` tool takes; the allowlist
+  // repeats them because the consent screen renders them. They must not drift.
+  for (const model of CODEBASE_MODELS) {
+    assert.ok(CODEBASE_MODEL_WORDS.includes(model.id as never), model.id);
+  }
+  assert.equal(CODEBASE_MODEL_WORDS.length, CODEBASE_MODELS.length);
 });
 
 test('the screen says who we are, where it goes, and what never leaves', () => {

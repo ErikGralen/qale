@@ -56,6 +56,30 @@ export const RUNNABLE_DIRS = ['skills', 'agents'] as const;
 /** The entry file each folder WRITES. Reads tolerate either (see {@link isRunnableEntry}). */
 export const RUNNABLE_ENTRY: Record<string, string> = { skills: 'SKILL.md', agents: 'AGENT.md' };
 
+/**
+ * Where the voices live (SK-6): `voices/exec.md`, one flat file per voice.
+ *
+ * Deliberately NOT a runnable folder. A voice is not work the model may reach
+ * for — it is tone and language a draft is written in, applied by the drafting
+ * tools and by nothing else. Keeping `voices/` out of {@link RUNNABLE_DIRS}
+ * means `use_skill exec` cannot resolve a voice, and a voice named like a skill
+ * cannot shadow it: the two names live in different address spaces. Flat files
+ * for the same reason skills are folders — a voice is a short brief with
+ * nothing beside it, and a folder would only buy an entry-file convention
+ * nothing needs.
+ */
+export const VOICES_DIR = 'voices';
+
+/** Is this file one of the voices? Path only: the folder says it. */
+export function isVoicePath(path: string): boolean {
+  return path.startsWith(`${VOICES_DIR}/`) && path.toLowerCase().endsWith('.md');
+}
+
+/** Where a voice of this name is written: `exec` → `voices/exec.md`. */
+export function voicePath(name: string): string {
+  return `${VOICES_DIR}/${name}.md`;
+}
+
 const ENTRY_BASENAMES = Object.values(RUNNABLE_ENTRY).map((f) => f.toLowerCase());
 
 /** `skills/spec-review/checklist.md` → dir `skills`, name `spec-review`. Null when not inside one. */
@@ -102,17 +126,6 @@ export function runnableNameFromPath(path: string): string | null {
 /** Where a runnable of this name is WRITTEN: `skills` + `spec-review` → `skills/spec-review/SKILL.md`. */
 export function runnableEntryPath(dir: string, name: string): string {
   return `${dir}/${name}/${RUNNABLE_ENTRY[dir] ?? RUNNABLE_ENTRY['skills']}`;
-}
-
-/**
- * Where a retired runnable's own copy is KEPT: `skills/ask/SKILL.md` becomes
- * `skills/ask/RETIRED-SKILL.md`. Same folder, one rename, and it is out of
- * force — the name no longer matches an entry basename, so nothing indexes it,
- * lists it or resolves an invocation to it. Deliberately not a delete: what the
- * PM wrote in there is theirs.
- */
-export function retiredEntryPath(dir: string, name: string): string {
-  return `${dir}/${name}/RETIRED-${RUNNABLE_ENTRY[dir] ?? RUNNABLE_ENTRY['skills']}`;
 }
 
 /**
@@ -234,6 +247,44 @@ export function normalizeLinkTarget(raw: string): {
     }
   }
   return { target: slugFromPath(rest), anchor, alias, linkType, reversed };
+}
+
+/** Wikilink inner text, split into the parts a rewrite must not touch. */
+function splitLinkInner(inner: string): { head: string; target: string; tail: string } {
+  let head = '';
+  let rest = inner;
+  const sep = rest.indexOf('::');
+  const pipe = rest.indexOf('|');
+  const hash = rest.indexOf('#');
+  // `::` is a type prefix only ahead of the anchor and the alias; inside either
+  // it is somebody's text.
+  if (sep !== -1 && (pipe === -1 || sep < pipe) && (hash === -1 || sep < hash)) {
+    head = rest.slice(0, sep + 2);
+    rest = rest.slice(sep + 2);
+  }
+  const cut = [rest.indexOf('#'), rest.indexOf('|')]
+    .filter((i) => i !== -1)
+    .reduce((a, b) => Math.min(a, b), rest.length);
+  return { head, target: rest.slice(0, cut), tail: rest.slice(cut) };
+}
+
+/**
+ * Rewrite the TARGET of every `[[wikilink]]` in a file's raw text, leaving the
+ * rest of it byte for byte: the type prefix keeps its spelling, the anchor and
+ * the alias keep theirs, and text that merely looks like a path is not a link
+ * and is not touched. `rename` returns the new target, or null to leave one
+ * alone. Runs over the whole file, so frontmatter refs move with the body.
+ *
+ * The one caller is the mirror-path migration (docs/provider-decoupling.md
+ * PD-10). Renaming a note does NOT use this: a note that has been cited keeps
+ * its slug (see `renameNote`), which is why nothing needed it before.
+ */
+export function retargetWikilinks(text: string, rename: (target: string) => string | null): string {
+  return text.replace(/\[\[([^\]\n]+)\]\]/g, (whole, inner: string) => {
+    const { head, target, tail } = splitLinkInner(inner);
+    const next = rename(target.trim());
+    return next === null ? whole : `[[${head}${next}${tail}]]`;
+  });
 }
 
 const TITLE_CASE = /[-_]+/g;

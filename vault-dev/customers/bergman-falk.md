@@ -18,7 +18,7 @@ decides whether any of this happens.
 - Vendor security review started 2026-07-02. About six weeks: questionnaire, then evidence,
   then the board ([[meetings/2026-07-02-bergman-falk-security-review]]).
 - SSO through their IdP is required for a firm-wide rollout, no exceptions. Our 2026-07-28 date
-  lands inside their window with very little room ([[tickets/PAY-142]]).
+  lands inside their window with very little room ([[tickets/jira/PAY-142]]).
 
 ## We owe them
 

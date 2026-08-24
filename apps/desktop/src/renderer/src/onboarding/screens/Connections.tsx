@@ -7,6 +7,7 @@ import {
   type ConnectionDTO,
   type ProviderDescriptorDTO,
 } from '../../lib/connections';
+import { AtlassianTokenHelp } from '../../components/AtlassianTokenHelp';
 import { FollowPicker } from '../../components/FollowPicker';
 import { useApp } from '../../state/app-state';
 import { Screen, SkipLink } from '../Opening';
@@ -260,6 +261,7 @@ function ProviderRow({
               onEnter={() => ready && !busy && void submit()}
             />
           ))}
+          {provider.id === 'atlassian' && <AtlassianTokenHelp />}
           <div className="flex items-center gap-2">
             <Button size="sm" disabled={busy || !ready} onClick={() => void submit()}>
               {busy ? (
@@ -280,6 +282,18 @@ function ProviderRow({
             </SkipLink>
           </div>
         </div>
+      )}
+
+      {/* What the browser is about to show, said before it shows it (clarity
+          review area 6): the unverified-app warning is expected during the
+          beta, and "admin approval required" is a dead end the user cannot
+          fix today — both read as "something is wrong" without this line. */}
+      {oauth && busy && (
+        <p className="mt-2 text-sm text-muted-foreground">
+          Google opens in your browser and will warn that this app is not verified yet; that is
+          expected during the beta. If it asks an administrator to approve the app, skip this and
+          ask them later.
+        </p>
       )}
 
       {error && <p className="mt-2 text-sm text-destructive">{error}</p>}

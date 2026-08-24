@@ -8,13 +8,19 @@ import {
   MessageSquare,
   MessageSquarePlus,
   SquareArrowOutUpRight,
+  SquarePen,
 } from 'lucide-react';
 import type { ChatRefDTO, SessionFileDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { relativeTime } from '../lib/dates';
 import { navFromEvent, type NavOpts } from '../lib/nav';
-import { fileIconFor, formatBytes } from '../lib/session-files';
+import {
+  fileIconFor,
+  formatBytes,
+  usePendingComments,
+  usePendingCommentsPath,
+} from '../lib/session-files';
 import { PageHeader } from '../components/PageHeader';
 import { ToolbarButton } from '../components/ToolbarButton';
 import { SessionView } from './SessionView';
@@ -199,6 +205,8 @@ interface RowProps {
   onRead: (path: string) => void;
   /** ⌘click / middle-click — the full-width tab. */
   onOpenTab: (path: string, opts: NavOpts) => void;
+  /** The file the session is parked on, waiting to be written in. */
+  pendingPath: string | null;
   returnFocus: React.RefObject<string | null>;
 }
 
@@ -264,10 +272,20 @@ function DirRowItem({ dir, ...props }: RowProps & { dir: Dir }) {
 }
 
 /** A file row: name, size, and — on hover — the chevron that says it opens here. */
-function FileRowItem({ row, depth, onRead, onOpenTab, returnFocus }: RowProps & { row: FileRow }) {
+function FileRowItem({
+  row,
+  depth,
+  onRead,
+  onOpenTab,
+  pendingPath,
+  returnFocus,
+}: RowProps & { row: FileRow }) {
   const { file, name } = row;
   const Icon = fileIconFor(file.path);
-  const warm = Date.now() - file.mtime < WARM_MS;
+  const waiting = file.path === pendingPath;
+  // A file the session is parked on is never merely "just written" — the
+  // waiting mark says the same thing and says what to do about it.
+  const warm = !waiting && Date.now() - file.mtime < WARM_MS;
   return (
     <li className="group/file relative px-1.5">
       <button
@@ -292,8 +310,17 @@ function FileRowItem({ row, depth, onRead, onOpenTab, returnFocus }: RowProps & 
         }}
         title={name}
       >
-        <Icon className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
-        <span className="truncate">{name}</span>
+        <Icon
+          className={`size-3.5 shrink-0 ${waiting ? 'text-brand' : 'text-muted-foreground/70'}`}
+          aria-hidden
+        />
+        <span className={`truncate ${waiting ? 'font-medium text-foreground' : ''}`}>{name}</span>
+        {waiting && (
+          <>
+            <SquarePen className="size-3.5 shrink-0 text-brand" aria-hidden />
+            <span className="sr-only">, waiting for your comments</span>
+          </>
+        )}
         {warm && (
           <>
             <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-hidden />
@@ -371,10 +398,20 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [previewPath, closePreview]);
 
+  // A round the session is parked on, waiting to be written in. The rail says
+  // so and points at the tab; it never draws the boxes. This column is a third
+  // of the window, and a round is prose with the questions set into it. It is
+  // the one shape that cannot be answered in a strip.
+  const answering = usePendingComments(sessionId, previewPath ?? '');
+  const pendingPath = usePendingCommentsPath(sessionId);
+
   if (previewPath) {
     const meta = files.find((f) => f.path === previewPath);
     const Icon = fileIconFor(previewPath);
     const name = previewPath.slice(previewPath.lastIndexOf('/') + 1);
+    const openTab = (): void =>
+      openSessionFile(sessionId, previewPath, { newTab: true, foreground: true });
+    const places = answering?.comments?.slots.length ?? 0;
     return (
       <div className="flex h-full flex-col bg-card/40">
         <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-1.5">
@@ -395,11 +432,31 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
             className="ml-auto"
             icon={SquareArrowOutUpRight}
             label="Open in a tab"
-            onClick={() =>
-              openSessionFile(sessionId, previewPath, { newTab: true, foreground: true })
-            }
+            onClick={openTab}
           />
         </div>
+        {/* A parked round is the loudest thing about this file, so it says so
+            above the prose rather than in the strip at the foot of it. The whole
+            banner is the button: the only move from here is the tab. */}
+        {answering && (
+          <button
+            className="flex shrink-0 items-center gap-2.5 border-b border-brand/25 bg-brand/8 px-3 py-2.5 text-left transition-colors hover:bg-brand/12 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            onClick={openTab}
+          >
+            <SquarePen className="size-4 shrink-0 text-brand" aria-hidden />
+            <span className="min-w-0">
+              <span className="block text-dense font-medium text-foreground">
+                Open in a tab to write
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                {places > 0
+                  ? `${places} place${places === 1 ? '' : 's'} to write in. The session is paused until you send it back.`
+                  : 'The session is paused until you send this back.'}
+              </span>
+            </span>
+            <SquareArrowOutUpRight className="ml-auto size-3.5 shrink-0 text-brand" aria-hidden />
+          </button>
+        )}
         <div
           key={previewPath}
           className="min-h-0 flex-1 animate-in overflow-y-auto px-4 py-4 duration-150 fade-in-0 slide-in-from-right-1 motion-reduce:animate-none"
@@ -408,6 +465,8 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
             sessionId={sessionId}
             path={previewPath}
             version={meta?.mtime}
+            answering={answering}
+            writeInTab={openTab}
             onGone={
               <button
                 className="rounded-md px-2 py-1 text-dense font-medium text-brand transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
@@ -424,6 +483,8 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
               ? `${formatBytes(meta.bytes)} · written ${relativeTime(meta.mtime)}`
               : 'no longer on disk'}
           </span>
+          {/* The banner at the head of the pane carries the round; down here the
+              strip says the same plain thing it says for every other file. */}
           <span className="ml-auto shrink-0">not part of your memory</span>
         </div>
       </div>
@@ -453,6 +514,7 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
             onToggle={toggleDir}
             onRead={setPreviewPath}
             onOpenTab={(path, opts) => openSessionFile(sessionId, path, opts)}
+            pendingPath={pendingPath}
             returnFocus={returnFocus}
           />
         </div>

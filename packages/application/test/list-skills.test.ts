@@ -13,7 +13,6 @@ import type { IndexedNote, IndexPort, UseCaseContext, VaultPort } from '../src/p
 
 const SYNTHESIS = `---
 type: skill
-starts: [you-run-it, model-picks-it-up]
 title: Find the pattern
 summary: Reads a stack of interviews and says what they add up to.
 can: [draft-outbound]
@@ -65,9 +64,8 @@ test('a listed skill carries its bare invocation name and its human title', asyn
   // What `use_skill` / the picker sends — never folder-qualified.
   assert.equal(skill.name, 'synthesis');
   assert.equal(skill.title, 'Find the pattern');
-  assert.deepEqual(skill.starts, ['you-run-it', 'model-picks-it-up']);
   assert.deepEqual(skill.can, ['draft-outbound']);
-  assert.equal(skill.enabled, true);
+  assert.deepEqual(skill.errors, []);
 });
 
 test('a skill with no title falls back to a readable filename, not a path', async () => {
@@ -94,8 +92,6 @@ test('listAgentFiles carries name, title, the switch and what it may do', async 
   assert.equal(agent.title, 'Librarian');
   assert.equal(agent.enabled, true);
   assert.deepEqual(agent.can, ['draft-outbound']);
-  // The file declares no clock — main merges those on.
-  assert.deepEqual(agent.starts, ['you-run-it', 'model-picks-it-up']);
   assert.deepEqual(agent.errors, []);
 });
 
@@ -109,46 +105,24 @@ test('runnableEnabled reads the file switch; a missing file reads as on', async 
   assert.equal(await runnableEnabled(ctxWith({}), 'librarian'), true);
 });
 
-test('the switch is a floor: a skill file carries it too, and either folder can veto', async () => {
-  // Skills have the same switch as agents, and the runtime fires both by name.
-  assert.equal(
-    await runnableEnabled(ctxWith({ 'skills/synthesis.md': SYNTHESIS }), 'synthesis'),
-    true,
-  );
-  assert.equal(
-    await runnableEnabled(
-      ctxWith({
-        'skills/synthesis.md': SYNTHESIS.replace('type: skill', 'type: skill\nenabled: false'),
-      }),
-      'synthesis',
+test('the switch is an agent switch: a skill file cannot veto anything', () => {
+  // A skill runs when you ask for it, and deleting it is how you stop asking,
+  // so `enabled` says nothing on one (SK-2) and its page flags the key.
+  const off = SYNTHESIS.replace('type: skill', 'type: skill\nenabled: false');
+  return Promise.all([
+    runnableEnabled(ctxWith({ 'skills/synthesis.md': off }), 'synthesis').then((on) =>
+      assert.equal(on, true),
     ),
-    false,
-  );
-  // A name in BOTH folders: off anywhere is off. `skills/x` shadows `agents/x`
-  // when a session starts, so a floor that let the shadowed file decide would
-  // hand a switched-off agent a way back in. True in both layouts, and in a
-  // half-migrated vault where the two names are in different ones.
-  assert.equal(
-    await runnableEnabled(
-      ctxWith({ 'agents/librarian.md': OFF, 'skills/librarian.md': SYNTHESIS }),
-      'librarian',
+    // The agent file still decides, in either layout.
+    runnableEnabled(ctxWith({ 'agents/librarian/AGENT.md': OFF }), 'librarian').then((on) =>
+      assert.equal(on, false),
     ),
-    false,
-  );
-  assert.equal(
-    await runnableEnabled(
+    // And a skill of the same name cannot switch the agent back on.
+    runnableEnabled(
       ctxWith({ 'agents/librarian/AGENT.md': OFF, 'skills/librarian/SKILL.md': SYNTHESIS }),
       'librarian',
-    ),
-    false,
-  );
-  assert.equal(
-    await runnableEnabled(
-      ctxWith({ 'agents/librarian/AGENT.md': OFF, 'skills/librarian.md': SYNTHESIS }),
-      'librarian',
-    ),
-    false,
-  );
+    ).then((on) => assert.equal(on, false)),
+  ]);
 });
 
 test('a folder skill lists under its folder name, not "SKILL"', async () => {
@@ -184,4 +158,21 @@ test('a legacy flat skill still lists, and simply has nowhere to attach anything
   const [skill] = await listSkills(ctxWith({ 'skills/synthesis.md': SYNTHESIS }));
   assert.equal(skill?.name, 'synthesis');
   assert.deepEqual(skill?.files, []);
+});
+
+/**
+ * SK-6: a voice is filed as a skill note in `voices/`, so the row has to say
+ * which it is. Without that mark the picker would offer a voice as work to run,
+ * and the Skills page would count it as a skill.
+ */
+test('a voice comes back on the same list, marked as a voice', async () => {
+  const VOICE = `---\ntype: skill\ntitle: Exec voice\nsummary: Short, decided, quantified.\n---\n\nSay it flat.\n`;
+  const rows = await listSkills(
+    ctxWith({ 'skills/synthesis/SKILL.md': SYNTHESIS, 'voices/exec.md': VOICE }),
+  );
+  const voice = rows.find((r) => r.name === 'exec');
+  const skill = rows.find((r) => r.name === 'synthesis');
+  assert.equal(voice?.kind, 'voice');
+  assert.equal(voice?.title, 'Exec voice');
+  assert.equal(skill?.kind, 'skill');
 });

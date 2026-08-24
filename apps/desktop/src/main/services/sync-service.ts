@@ -1,25 +1,35 @@
 import {
+  basename,
   deriveSeriesSlug,
+  flatMirrorPath,
   hasOtherAttendee,
   meetingPathForEvent,
+  mirrorPath,
+  mirrorSlug,
+  parseMirrorRef,
   planMeetingMirror,
+  retargetWikilinks,
+  slugFromPath,
   slugify,
   STATE_CATEGORIES,
   type Frontmatter,
+  type MirrorKind,
   type StateCategory,
   type SyncedCalendarEvent,
 } from '@qale/domain';
 import {
-  atlassianConnector,
-  atlassianAuthSchema,
-  googleCalendarConnector,
+  collectFields,
+  CONNECTOR_PROVIDERS,
+  URL_FIELD_RE,
   type Connector,
+  type ConnectorProvider,
   type ContainerFootprint,
   type EventChange,
   type ExternalContainer,
   type ShallowChange,
 } from '@qale/connectors';
 import { isVaultBoundaryError, type IndexedNote, type UseCaseContext } from '@qale/application';
+import type { OutboundContainer } from '@qale/agent';
 import type { SyncItemRow, SyncStore } from '@qale/vault';
 import type {
   AtRiskLinkDTO,
@@ -45,10 +55,17 @@ import type { GoogleOAuthService } from './google-oauth-service.js';
  *
  * Hard rules (integration plan): reads are silent — no Inbox cards, no dialogs;
  * health is a quiet DTO field. Offline/expired keeps serving the mirror.
- * Two connections (Atlassian, Google Calendar); state is per-connection.
+ *
+ * Every connection comes from the connector registry: one per registered
+ * provider, keyed by its id, and all state is per-connection. Nothing here
+ * names a provider except the OAuth exception in `credentialFor`.
  */
 
-/** Bare ticket key, e.g. "PAY-142" — the shape POs type and providers mint. */
+/**
+ * Might this token be a ticket key at all ("PAY-142")? A cheap syntactic gate,
+ * never an address (PD-11): Linear keys are Jira-shaped, so which tracker holds
+ * a key is a lookup by id, and the shape only says the lookup is worth making.
+ */
 const TICKET_KEY_RE = /^[A-Z][A-Z0-9]{1,9}-\d+$/;
 
 /** Local data older than this shows the quiet stale indicator on chips. */
@@ -61,17 +78,22 @@ const BLOCKER_TRACK_CAP = 100;
 
 const GOOGLE_PROVIDER = 'google-calendar';
 
+/** Stamped in the store once the flat mirrors have moved under their provider
+ *  folder (PD-10). Set only after a clean pass, so a crash halfway resumes. */
+const MIRROR_PATHS_MIGRATED = 'mirror-paths-migrated';
+
 /**
  * How often the drift check looks for new containers worth offering
  * (docs/product-understanding.md FL-3). Weekly: the survey costs real requests,
  * and a space that appeared this morning is not urgent by lunchtime.
  */
 const DRIFT_CHECK_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
-/** When the drift check last ran, in the connector store beside the follows. */
-const DRIFT_CHECK_KEY = 'drift-check:atlassian';
+/** When one connection's drift check last ran, in the store beside the follows. */
+const driftCheckKey = (connectionId: string): string => `drift-check:${connectionId}`;
 
 /** A container the drift check thinks is worth one quiet question. */
 export interface ContainerOffer {
+  connectionId: string;
   containerId: string;
   kind: 'ticket' | 'wikipage' | 'calendar';
   name: string;
@@ -81,38 +103,23 @@ export interface ContainerOffer {
 
 /** Where a pending offer's reason line is kept, so the question can be raised
  *  weeks later without re-running the survey to remember why. */
-const offerReasonKey = (containerId: string): string => `offer-reason:atlassian:${containerId}`;
+const offerReasonKey = (connectionId: string, containerId: string): string =>
+  `offer-reason:${connectionId}:${containerId}`;
 
-/** Registered provider descriptors (Atlassian fields mirror atlassianAuthSchema;
- *  Google has no fields — its auth is a browser flow, rendered as a button). */
-const ATLASSIAN_DESCRIPTOR: ProviderDescriptorDTO = {
-  id: 'atlassian',
-  label: 'Jira + Confluence',
-  fields: [
-    { key: 'siteUrl', label: 'Site URL', placeholder: 'your-team.atlassian.net' },
-    { key: 'email', label: 'Account email', placeholder: 'you@company.com' },
-    {
-      key: 'apiToken',
-      label: 'API token',
-      secret: true,
-      hint: 'Create one at id.atlassian.com → Security → API tokens (≈60 seconds).',
-    },
-  ],
-  renewFieldKeys: ['apiToken'],
-};
+/** Changes whenever any stored field changes, which is when a connector has to
+ *  be rebuilt. Held in memory only, like the credentials it is built from. */
+function fingerprintOf(fields: Record<string, string>): string {
+  return Object.keys(fields)
+    .sort()
+    .map((key) => `${key}=${fields[key]}`)
+    .join('|');
+}
 
-const GOOGLE_DESCRIPTOR: ProviderDescriptorDTO = {
-  id: GOOGLE_PROVIDER,
-  label: 'Google Calendar',
-  fields: [],
-  renewFieldKeys: [],
-  authKind: 'oauth',
-};
-
-/** A bare host is what people paste; the client needs a scheme. */
-function withScheme(siteUrl: string): string {
-  const trimmed = siteUrl.trim().replace(/\/+$/, '');
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+/** The site handle a Settings row shows: the address the person pasted, without
+ *  its scheme. A provider with no address field has only its own name to show. */
+function siteLabelFor(fields: Record<string, string>, fallback: string): string {
+  const url = Object.entries(fields).find(([key]) => URL_FIELD_RE.test(key))?.[1];
+  return url ? url.replace(/^https?:\/\//, '') : fallback;
 }
 
 /** Provider timestamps arrive in several ISO dialects; the domain schema wants
@@ -124,6 +131,39 @@ function normalizeIso(value: string | undefined, nowMs: number): string {
 
 function isStateCategory(v: unknown): v is StateCategory {
   return typeof v === 'string' && (STATE_CATEGORIES as readonly string[]).includes(v);
+}
+
+/** The tracker a mirror note names in its own frontmatter. */
+function noteProvider(note: IndexedNote): string | null {
+  const provider = (note.frontmatter as Record<string, unknown>)['provider'];
+  return typeof provider === 'string' && provider ? provider : null;
+}
+
+/**
+ * One id, two trackers: the reference names no item, so the chip says which
+ * trackers hold it and the click goes nowhere (PD-11). Opening one of them
+ * would be a guess, and the wrong ticket reads exactly like the right one.
+ * Every field below the flag is a placeholder no ambiguous surface reads.
+ */
+function ambiguousMeta(
+  key: string,
+  kind: MirrorKind,
+  providers: readonly string[],
+): ExternalRefMetaDTO {
+  return {
+    kind,
+    externalId: key,
+    slug: key,
+    title: key,
+    containerName: '',
+    url: '',
+    remoteUpdated: new Date(0).toISOString(),
+    syncedAt: 0,
+    stale: false,
+    health: 'ok',
+    notePath: null,
+    ambiguousProviders: [...providers].sort(),
+  };
 }
 
 /** A synced meeting note surfaced from the shallow event index (agenda reads). */
@@ -138,27 +178,45 @@ export interface AgendaMeeting {
   withOthers: boolean;
 }
 
+/** What the vault links, per tick — the deep-sync and harvest work list. */
+interface DeepTargets {
+  /** Every ticket key the vault names, however it is addressed. The deep test:
+   *  a mirror is worth writing when the vault mentions its key at all. */
+  ticketKeys: Set<string>;
+  /** Keys written without a tracker: `[[PAY-142]]`, or a flat pre-PD-10 slug. */
+  bareTicketKeys: Set<string>;
+  /** Keys written against one tracker, by the provider they name. */
+  keysByProvider: Map<string, Set<string>>;
+  pageSlugs: Set<string>;
+}
+
 /** Per-connection runtime state; credentials live in settings, data in the store. */
 interface ConnectionState {
+  /** The registry entry this connection belongs to. */
+  provider: ConnectorProvider<unknown>;
   connector: Connector | null;
   fingerprint: string | null;
   health: ConnectionHealth;
   identity: string | undefined;
+  /** What the connection points at, as the Settings row shows it. */
+  siteLabel: string;
 }
 
-const freshState = (): ConnectionState => ({
+const freshState = (provider: ConnectorProvider<unknown>): ConnectionState => ({
+  provider,
   connector: null,
   fingerprint: null,
   health: 'ok',
   identity: undefined,
+  siteLabel: provider.label,
 });
 
 export class SyncService {
-  private readonly conns: Record<'atlassian' | typeof GOOGLE_PROVIDER, ConnectionState> = {
-    atlassian: freshState(),
-    [GOOGLE_PROVIDER]: freshState(),
-  };
+  /** One connection per registered provider, keyed by the provider id. */
+  private readonly conns = new Map<string, ConnectionState>();
   private inFlight: Promise<void> | null = null;
+  /** Bare keys already reported as unclaimable, so the tick stays quiet. */
+  private readonly warnedKeys = new Set<string>();
 
   constructor(
     private readonly getContext: () => UseCaseContext | null,
@@ -168,78 +226,89 @@ export class SyncService {
     /** Fired after a tick that changed anything (mirror paths, or [] for
      *  connection-state-only changes) — pushes vault + connections events. */
     private readonly onChanged: (mirrorPaths: string[]) => void,
-  ) {}
+    /** The connector registry. A parameter so a test can register its own. */
+    private readonly registry: readonly ConnectorProvider<unknown>[] = CONNECTOR_PROVIDERS,
+  ) {
+    for (const provider of registry) this.conns.set(provider.id, freshState(provider));
+  }
 
   /** Rebuild connectors when credentials change; cheap to call every time. */
   reconfigure(): void {
-    const atl = this.settings.getAtlassian();
-    const atlFingerprint = atl ? `${atl.baseUrl}|${atl.email}|${atl.token}` : null;
-    if (atlFingerprint !== this.conns.atlassian.fingerprint) {
-      this.conns.atlassian = {
-        ...freshState(),
-        fingerprint: atlFingerprint,
-        connector: atl
-          ? atlassianConnector.create({
-              siteUrl: withScheme(atl.baseUrl),
-              email: atl.email,
-              apiToken: atl.token,
-            })
-          : null,
-      };
-    }
-
-    const google = this.settings.getGoogle();
-    const googleFingerprint = google ? `grant|${google.refreshToken.slice(0, 12)}` : null;
-    if (googleFingerprint !== this.conns[GOOGLE_PROVIDER].fingerprint) {
-      this.conns[GOOGLE_PROVIDER] = {
-        ...freshState(),
-        fingerprint: googleFingerprint,
-        identity: google?.email ?? undefined,
-        connector: google
-          ? googleCalendarConnector.create({ getAccessToken: () => this.oauth.getAccessToken() })
-          : null,
-      };
+    for (const state of [...this.conns.values()]) {
+      const credential = this.credentialFor(state.provider);
+      if (credential.fingerprint === state.fingerprint) continue;
+      const { create, ...rest } = credential;
+      this.conns.set(state.provider.id, {
+        ...freshState(state.provider),
+        ...rest,
+        connector: create(),
+      });
     }
   }
 
+  /**
+   * What is stored for one provider, as the connection is built from it. The
+   * fingerprint is compared before `create` is called, so a reconfigure that
+   * changes nothing costs one settings read and no connector.
+   *
+   * Google is the exception, and the only one: its credential is a browser
+   * grant in its own settings slot, and its connector takes a live-token
+   * callback rather than pasted fields. Every other provider builds from the
+   * credential map, and this method is the single place that knows the
+   * difference.
+   */
+  private credentialFor(provider: ConnectorProvider<unknown>): {
+    fingerprint: string | null;
+    identity: string | undefined;
+    siteLabel: string;
+    create: () => Connector | null;
+  } {
+    if (provider.id === GOOGLE_PROVIDER) {
+      const google = this.settings.getGoogle();
+      return {
+        fingerprint: google ? `grant|${google.refreshToken.slice(0, 12)}` : null,
+        identity: google?.email ?? undefined,
+        siteLabel: google?.email ?? 'Google account',
+        create: () =>
+          google ? provider.create({ getAccessToken: () => this.oauth.getAccessToken() }) : null,
+      };
+    }
+    const stored = this.settings.getConnection(provider.id);
+    const fields = stored ? collectFields(provider, stored.fields) : null;
+    const parsed = fields ? provider.authSchema.safeParse(fields) : null;
+    return {
+      fingerprint: fields ? fingerprintOf(fields) : null,
+      identity: undefined,
+      siteLabel: fields ? siteLabelFor(fields, provider.label) : provider.label,
+      create: () => (parsed?.success ? provider.create(parsed.data) : null),
+    };
+  }
+
+  /** The settings form renders from this. Every entry comes from the connector
+   *  registry, so a new connector needs no edit here. */
   providers(): ProviderDescriptorDTO[] {
-    return [ATLASSIAN_DESCRIPTOR, GOOGLE_DESCRIPTOR];
+    return this.registry.map((p) => ({
+      id: p.id,
+      label: p.label,
+      fields: p.authFields.map((f) => ({ ...f })),
+      renewFieldKeys: [...p.renewFieldKeys],
+      ...(p.authKind ? { authKind: p.authKind } : {}),
+    }));
   }
 
   /** Connection list for Settings — store-backed, never hits the network. */
   list(): ConnectionDTO[] {
     this.reconfigure();
     const out: ConnectionDTO[] = [];
-    const atl = this.settings.getAtlassian();
-    if (atl && this.conns.atlassian.connector) {
-      out.push(
-        this.connectionDto(
-          'atlassian',
-          ATLASSIAN_DESCRIPTOR.label,
-          withScheme(atl.baseUrl).replace(/^https?:\/\//, ''),
-        ),
-      );
-    }
-    const google = this.settings.getGoogle();
-    if (google && this.conns[GOOGLE_PROVIDER].connector) {
-      out.push(
-        this.connectionDto(
-          GOOGLE_PROVIDER,
-          GOOGLE_DESCRIPTOR.label,
-          google.email ?? 'Google account',
-        ),
-      );
+    for (const state of this.conns.values()) {
+      if (state.connector) out.push(this.connectionDto(state));
     }
     return out;
   }
 
-  private connectionDto(
-    id: 'atlassian' | typeof GOOGLE_PROVIDER,
-    providerLabel: string,
-    siteLabel: string,
-  ): ConnectionDTO {
+  private connectionDto(state: ConnectionState): ConnectionDTO {
     const store = this.getStore();
-    const state = this.conns[id];
+    const id = state.provider.id;
     const containers: ConnectionContainerDTO[] = (store?.listContainers(id) ?? []).map((c) => ({
       id: c.containerId,
       kind: c.kind,
@@ -255,8 +324,8 @@ export class SyncService {
     return {
       id,
       providerId: id,
-      providerLabel,
-      siteLabel,
+      providerLabel: state.provider.label,
+      siteLabel: state.siteLabel,
       ...(state.identity ? { identity: state.identity } : {}),
       health: state.health,
       lastSync,
@@ -265,23 +334,24 @@ export class SyncService {
   }
 
   /** Validate + verify + persist credentials, then refresh containers. */
-  async connect(providerId: string, values: Record<string, string>): Promise<ConnectResultDTO> {
-    if (providerId === GOOGLE_PROVIDER) return this.connectGoogle();
-    if (providerId !== 'atlassian') {
+  async connect(connectionId: string, values: Record<string, string>): Promise<ConnectResultDTO> {
+    // The OAuth exception: there is no form to validate, the browser flow is
+    // the credential. See credentialFor.
+    if (connectionId === GOOGLE_PROVIDER) return this.connectGoogle();
+    const state = this.conns.get(connectionId);
+    if (!state) {
       return { ok: false, health: 'unreachable', error: 'Unknown provider.' };
     }
-    const parsed = atlassianAuthSchema.safeParse({
-      ...values,
-      siteUrl: withScheme(values['siteUrl'] ?? ''),
-    });
+    const fields = collectFields(state.provider, values);
+    const parsed = state.provider.authSchema.safeParse(fields);
     if (!parsed.success) {
       return {
         ok: false,
         health: 'auth-expired',
-        error: 'Check the site URL, email and API token — one of them is missing or malformed.',
+        error: 'Check the site URL, email and API token. One of them is missing or malformed.',
       };
     }
-    const probe = atlassianConnector.create(parsed.data);
+    const probe = state.provider.create(parsed.data);
     const verify = await probe.verifyAuth();
     if (!verify.ok) {
       return {
@@ -290,30 +360,31 @@ export class SyncService {
         error:
           verify.error ??
           (verify.health === 'auth-expired'
-            ? 'The token was rejected — paste a fresh one from id.atlassian.com.'
-            : "Couldn't reach the site — check the URL and your connection."),
+            ? 'The credentials were rejected. Paste a fresh token and try again.'
+            : "Couldn't reach the site. Check the URL and your connection."),
       };
     }
-    await this.settings.setAtlassian(parsed.data.siteUrl, parsed.data.email, parsed.data.apiToken);
-    this.conns.atlassian.fingerprint = null; // force rebuild on next call
+    await this.settings.setConnection(connectionId, state.provider.id, fields);
+    state.fingerprint = null; // force rebuild on next call
     this.reconfigure();
-    this.conns.atlassian.health = 'ok';
-    this.conns.atlassian.identity = verify.identity?.displayName;
-    await this.refreshContainers('atlassian').catch(() => {});
+    const built = this.conns.get(connectionId)!;
+    built.health = 'ok';
+    built.identity = verify.identity?.displayName;
+    await this.refreshContainers(connectionId).catch(() => {});
     this.onChanged([]);
     return {
       ok: true,
       health: 'ok',
-      ...(this.conns.atlassian.identity ? { identity: this.conns.atlassian.identity } : {}),
-      siteLabel: parsed.data.siteUrl.replace(/^https?:\/\//, ''),
-      connection: this.list().find((c) => c.id === 'atlassian'),
+      ...(built.identity ? { identity: built.identity } : {}),
+      siteLabel: built.siteLabel,
+      connection: this.list().find((c) => c.id === connectionId),
     };
   }
 
   /**
    * Google connect: the browser round-trip (loopback + PKCE), then the same
-   * verify-and-persist shape as Atlassian. No calendar is followed by default —
-   * the PM chooses which calendars to mirror from the Connections list.
+   * verify-and-persist shape a pasted credential gets. No calendar is followed
+   * by default — the PM picks which ones to mirror from the Connections list.
    */
   private async connectGoogle(): Promise<ConnectResultDTO> {
     try {
@@ -325,9 +396,9 @@ export class SyncService {
         error: err instanceof Error ? err.message : 'Google sign-in didn’t complete.',
       };
     }
-    this.conns[GOOGLE_PROVIDER].fingerprint = null;
+    this.conns.get(GOOGLE_PROVIDER)!.fingerprint = null;
     this.reconfigure();
-    const state = this.conns[GOOGLE_PROVIDER];
+    const state = this.conns.get(GOOGLE_PROVIDER)!;
     const verify = await state.connector!.verifyAuth();
     if (!verify.ok) {
       state.health = verify.health;
@@ -355,20 +426,15 @@ export class SyncService {
     };
   }
 
-  /** The calm expired path. Atlassian: merge the re-pasted secret over stored
-   *  creds. Google: re-run the browser flow. Follows and marks are untouched. */
+  /** The calm expired path. Field auth: merge the re-pasted secret over the
+   *  stored creds. Google: re-run the browser flow. Follows and marks survive. */
   async renewAuth(connectionId: string, values: Record<string, string>): Promise<ConnectResultDTO> {
     if (connectionId === GOOGLE_PROVIDER) return this.connectGoogle();
-    const creds = this.settings.getAtlassian();
-    if (connectionId !== 'atlassian' || !creds) {
+    const stored = this.conns.has(connectionId) ? this.settings.getConnection(connectionId) : null;
+    if (!stored) {
       return { ok: false, health: 'unreachable', error: 'Nothing is connected yet.' };
     }
-    return this.connect('atlassian', {
-      siteUrl: creds.baseUrl,
-      email: creds.email,
-      apiToken: creds.token,
-      ...values,
-    });
+    return this.connect(connectionId, { ...stored.fields, ...values });
   }
 
   /** A pending Google browser flow the PM gave up on. */
@@ -379,19 +445,17 @@ export class SyncService {
   /** Disconnect clears the CREDENTIAL (the part that lies if it stays), keeps
    *  local data: mirrors, meeting notes and follows survive a reconnect. */
   async disconnect(connectionId: string): Promise<void> {
-    if (connectionId === 'atlassian') {
-      await this.settings.clearAtlassian();
-    } else if (connectionId === GOOGLE_PROVIDER) {
-      await this.oauth.disconnect();
-    } else {
-      return;
-    }
-    this.conns[connectionId] = freshState();
+    const state = this.conns.get(connectionId);
+    if (!state) return;
+    // The OAuth exception: revoking a browser grant is the OAuth service's job.
+    if (connectionId === GOOGLE_PROVIDER) await this.oauth.disconnect();
+    else await this.settings.clearConnection(connectionId);
+    this.conns.set(connectionId, freshState(state.provider));
     this.onChanged([]);
   }
 
   async setFollow(connectionId: string, containerId: string, followed: boolean): Promise<void> {
-    if (connectionId !== 'atlassian' && connectionId !== GOOGLE_PROVIDER) return;
+    if (!this.conns.has(connectionId)) return;
     this.getStore()?.setFollow(connectionId, containerId, followed);
     this.onChanged([]);
     // A newly-followed container syncs right away — the picker feels live.
@@ -410,8 +474,7 @@ export class SyncService {
    */
   async recommend(connectionId: string): Promise<ContainerRecommendationDTO[]> {
     this.reconfigure();
-    if (connectionId !== 'atlassian' && connectionId !== GOOGLE_PROVIDER) return [];
-    const connector = this.conns[connectionId].connector;
+    const connector = this.conns.get(connectionId)?.connector;
     if (!connector?.surveyFootprint) return [];
     let footprint: ContainerFootprint[];
     try {
@@ -459,51 +522,72 @@ export class SyncService {
   async containerOffers(now = Date.now()): Promise<ContainerOffer[]> {
     const store = this.getStore();
     if (!store) return [];
-    const last = Number(store.getMeta(DRIFT_CHECK_KEY));
-    if (!Number.isFinite(last) || last === 0) {
-      // First look: everything currently listed is the baseline, not news.
-      store.setMeta(DRIFT_CHECK_KEY, String(now));
-      return [];
+    this.reconfigure();
+    const out: ContainerOffer[] = [];
+    for (const [connectionId, state] of this.conns) {
+      // The check IS the footprint survey. A connector without one can never
+      // mark anything pending, so there is nothing to run and nothing to
+      // baseline — a calendar list is not a forty-space instance.
+      if (!state.connector?.surveyFootprint) continue;
+      const key = driftCheckKey(connectionId);
+      const last = Number(store.getMeta(key));
+      if (!Number.isFinite(last) || last === 0) {
+        // First look: everything currently listed is the baseline, not news.
+        store.setMeta(key, String(now));
+        continue;
+      }
+      if (now - last >= DRIFT_CHECK_INTERVAL_MS) {
+        store.setMeta(key, String(now));
+        await this.markNewContainersPending(store, connectionId, last).catch((err) => {
+          console.error(
+            '[qale] sync: drift check failed:',
+            err instanceof Error ? err.message : err,
+          );
+        });
+      }
+      for (const row of store.pendingOffers(connectionId)) {
+        const reason = store.getMeta(offerReasonKey(connectionId, row.containerId));
+        out.push({
+          connectionId,
+          containerId: row.containerId,
+          kind: row.kind,
+          name: row.name,
+          ...(reason ? { reason } : {}),
+        });
+      }
     }
-    if (now - last >= DRIFT_CHECK_INTERVAL_MS) {
-      store.setMeta(DRIFT_CHECK_KEY, String(now));
-      await this.markNewContainersPending(store, last).catch((err) => {
-        console.error('[qale] sync: drift check failed:', err instanceof Error ? err.message : err);
-      });
-    }
-    return store.pendingOffers('atlassian').map((row) => {
-      const reason = store.getMeta(offerReasonKey(row.containerId));
-      return {
-        containerId: row.containerId,
-        kind: row.kind,
-        name: row.name,
-        ...(reason ? { reason } : {}),
-      };
-    });
+    return out;
   }
 
   /** The survey half of the drift check, run at most weekly. */
-  private async markNewContainersPending(store: SyncStore, since: number): Promise<void> {
+  private async markNewContainersPending(
+    store: SyncStore,
+    connectionId: string,
+    since: number,
+  ): Promise<void> {
     const fresh = store
-      .listContainers('atlassian')
+      .listContainers(connectionId)
       .filter((c) => !c.followed && c.offerState === null && (c.firstSeen ?? 0) > since);
     if (fresh.length === 0) return;
-    const connector = this.conns.atlassian.connector;
+    const connector = this.conns.get(connectionId)?.connector;
     if (!connector?.surveyFootprint) return;
     const footprint = await connector.surveyFootprint();
     const worked = new Map(footprint.filter((f) => f.count > 0).map((f) => [f.id, f]));
     for (const container of fresh) {
       const found = worked.get(container.containerId);
       if (!found) continue;
-      store.setMeta(offerReasonKey(container.containerId), footprintReason(found));
-      store.setOfferState('atlassian', container.containerId, 'pending');
+      store.setMeta(offerReasonKey(connectionId, container.containerId), footprintReason(found));
+      store.setOfferState(connectionId, container.containerId, 'pending');
     }
   }
 
   /** The question has been put to the PM; it is never raised again from here. */
   markContainersOffered(containerIds: string[]): void {
     const store = this.getStore();
-    for (const id of containerIds) store?.setOfferState('atlassian', id, 'offered');
+    for (const id of containerIds) {
+      const connectionId = this.connectionForContainer(id);
+      if (connectionId) store?.setOfferState(connectionId, id, 'offered');
+    }
   }
 
   /**
@@ -513,28 +597,36 @@ export class SyncService {
    */
   async answerContainerOffer(containerId: string, follow: boolean): Promise<boolean> {
     const store = this.getStore();
-    if (!store) return false;
-    const known = store.listContainers('atlassian').some((c) => c.containerId === containerId);
-    if (!known) return false;
+    const connectionId = this.connectionForContainer(containerId);
+    if (!store || !connectionId) return false;
     if (follow) {
-      store.setOfferState('atlassian', containerId, null);
-      await this.setFollow('atlassian', containerId, true);
+      store.setOfferState(connectionId, containerId, null);
+      await this.setFollow(connectionId, containerId, true);
     } else {
-      store.setOfferState('atlassian', containerId, 'declined');
+      store.setOfferState(connectionId, containerId, 'declined');
     }
     return true;
   }
 
-  /** Pull a provider's container catalogue into the store (names refresh, follows kept). */
-  async refreshContainers(
-    providerId: 'atlassian' | typeof GOOGLE_PROVIDER = 'atlassian',
-  ): Promise<ExternalContainer[]> {
+  /** Which connection lists this container. An offer travels as a bare id (it
+   *  passes through a session), so the owner is looked up, not carried. */
+  private connectionForContainer(containerId: string): string | null {
+    const store = this.getStore();
+    for (const connectionId of this.conns.keys()) {
+      if (store?.listContainers(connectionId).some((c) => c.containerId === containerId))
+        return connectionId;
+    }
+    return null;
+  }
+
+  /** Pull a connection's container catalogue into the store (names refresh, follows kept). */
+  async refreshContainers(connectionId: string): Promise<ExternalContainer[]> {
     this.reconfigure();
     const store = this.getStore();
-    const connector = this.conns[providerId].connector;
+    const connector = this.conns.get(connectionId)?.connector;
     if (!connector || !store) return [];
     const containers = await connector.listContainers();
-    for (const c of containers) store.upsertContainer(providerId, c.kind, c.id, c.name);
+    for (const c of containers) store.upsertContainer(connectionId, c.kind, c.id, c.name);
     return containers;
   }
 
@@ -563,41 +655,51 @@ export class SyncService {
     let anyChange = false;
     let anyFailed = false;
 
-    for (const providerId of ['atlassian', GOOGLE_PROVIDER] as const) {
-      const state = this.conns[providerId];
-      if (!state.connector) continue;
+    // Before anything is pulled: a vault written before PD-10 has its mirrors
+    // flat, and the writer below files new ones under a provider folder. Mixing
+    // the two layouts is what this avoids.
+    const migrated = await this.migrateMirrorPaths(ctx, store);
+
+    for (const [connectionId, state] of this.conns) {
+      const connector = state.connector;
+      if (!connector) continue;
 
       // Refresh the catalogue every tick so calendars added (or renamed) in
       // Google since connect surface on their own — not just when it's empty.
       // upsertContainer keeps existing follow flags, so this only ever adds new
       // rows (unfollowed) and freshens names.
-      await this.refreshContainers(providerId).catch(() => {});
-      const followed = store.followedContainers(providerId);
+      await this.refreshContainers(connectionId).catch(() => {});
+      const followed = store.followedContainers(connectionId);
       if (followed.length === 0) continue;
+
+      // Deep mirrors, promotion and tracking all hang off pulling an item by
+      // its id. A connector that can't do that (a calendar) has none of them:
+      // its items qualify by attendance, not by being linked.
+      const holdsByKey = connector.pullByKeys != null;
 
       let failed = false;
       for (const container of followed) {
         try {
-          const pulled = await state.connector.pullChanges(
+          const pulled = await connector.pullChanges(
             { kind: container.kind, id: container.containerId, name: container.name },
             container.highWater,
             { now },
           );
-          const deep = providerId === 'atlassian' ? this.deepTargets(ctx) : null;
+          const deep = holdsByKey ? this.deepTargets(ctx) : null;
           for (const change of pulled.changes) {
             anyChange = true;
             if (change.kind === 'event') {
               const path = await this.applyEvent(ctx, store, change);
               if (path) written.push(path);
             } else {
-              store.upsertItem(shallowToRow(change));
-              if (deep && this.isDeep(change, deep, store)) {
-                const path = await this.writeMirror(ctx, store, change, now);
+              store.upsertItem(shallowToRow(connectionId, change));
+              if (deep && this.isDeep(connectionId, change, deep, store)) {
+                const path = await this.writeMirror(ctx, store, connectionId, change, now);
                 if (path) written.push(path);
               }
             }
           }
-          store.setHighWater(providerId, container.containerId, pulled.highWaterMark, now);
+          store.setHighWater(connectionId, container.containerId, pulled.highWaterMark, now);
         } catch (err) {
           failed = true;
           console.error(
@@ -607,17 +709,18 @@ export class SyncService {
         }
       }
 
-      // Promotion sweep (Atlassian): items linked from the vault since the last
-      // tick but NOT changed upstream still deserve their mirror note (linking
-      // IS the gesture). Events have no promotion — qualifying is attendance.
-      if (providerId === 'atlassian') {
+      // Promotion sweep: items linked from the vault since the last tick but
+      // NOT changed upstream still deserve their mirror note (linking IS the
+      // gesture).
+      if (holdsByKey) {
         try {
           const deep = this.deepTargets(ctx);
           for (const kind of ['ticket', 'wikipage'] as const) {
             for (const row of store.itemsByKind(kind)) {
+              if (row.provider !== connectionId) continue;
               if (row.notePath) continue;
               if (!this.isDeepRow(row, deep)) continue;
-              const path = await this.writeMirror(ctx, store, rowToShallow(row), now);
+              const path = await this.writeMirror(ctx, store, connectionId, rowToShallow(row), now);
               if (path) written.push(path);
             }
           }
@@ -630,7 +733,7 @@ export class SyncService {
 
         // Tracked pass: everything we hold by id rather than by container.
         try {
-          const paths = await this.syncTracked(ctx, store, now);
+          const paths = await this.syncTracked(ctx, store, connectionId, now);
           if (paths.length > 0) {
             written.push(...paths);
             anyChange = true;
@@ -647,7 +750,7 @@ export class SyncService {
         anyFailed = true;
         // Classify quietly: one probe tells expired-token apart from network-down.
         try {
-          const verify = await state.connector.verifyAuth();
+          const verify = await connector.verifyAuth();
           state.health = verify.ok ? 'ok' : verify.health;
           state.identity = verify.identity?.displayName ?? state.identity;
         } catch {
@@ -663,7 +766,153 @@ export class SyncService {
         .commitPaths(written, `sync: ${written.length} mirror${written.length === 1 ? '' : 's'}`)
         .catch(() => {});
     }
-    if (anyChange || written.length > 0 || anyFailed) this.onChanged(written);
+    if (anyChange || written.length > 0 || anyFailed || migrated.length > 0) {
+      this.onChanged([...written, ...migrated]);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // The one-time mirror move (PD-10)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Move every flat mirror (`tickets/PAY-142.md`) under the folder of the
+   * provider that owns it (`tickets/jira/PAY-142.md`), rebind its sync row, and
+   * follow the wikilinks that named the old path. One pass, one commit, and a
+   * flag in the store when it is done.
+   *
+   * Three rules it shares with the rest of the engine:
+   *
+   * - **A file that is gone stays gone.** A bound path with no file means the PM
+   *   deleted that mirror; recreating it here would be the same mistake the
+   *   meeting patcher refuses to make.
+   * - **A file with no row still moves.** A vault copied between machines has
+   *   mirrors and no sync database, and the note's own `provider` field says
+   *   which system it came from.
+   * - **Resumable.** Moving an already-moved file is a no-op, and the flag is
+   *   stamped at the end, so a crash halfway costs a second pass and nothing else.
+   *
+   * Returns the paths it touched (both ends of every move, plus the notes whose
+   * links followed), so the tick can report them as changed.
+   */
+  private async migrateMirrorPaths(ctx: UseCaseContext, store: SyncStore): Promise<string[]> {
+    const touched: string[] = [];
+    try {
+      if (store.getMeta(MIRROR_PATHS_MIGRATED)) return [];
+      // Rows by the path they are bound to: that is how a moved file keeps its
+      // row without a lookup per note.
+      const rowByPath = new Map<string, SyncItemRow>();
+      for (const kind of ['ticket', 'wikipage'] as const) {
+        for (const row of store.itemsByKind(kind)) {
+          if (row.notePath) rowByPath.set(row.notePath, row);
+        }
+      }
+
+      const renamed = new Map<string, string>();
+      for (const note of ctx.index.all()) {
+        if (note.type !== 'ticket' && note.type !== 'wikipage') continue;
+        const flat = flatMirrorPath(note.path);
+        if (!flat) continue;
+        const row = rowByPath.get(note.path) ?? null;
+        const provider = this.mirrorProviderOf(note, row);
+        if (!provider) {
+          console.warn(`[qale] sync: ${note.path} names no provider — left where it is`);
+          continue;
+        }
+        const to = mirrorPath(flat.kind, provider, flat.name);
+        const externalId = String(note.frontmatter['external_id'] ?? '');
+        if (!(await this.moveMirror(ctx, note.path, to, externalId))) continue;
+        touched.push(note.path, to);
+        renamed.set(note.slug.toLowerCase(), slugFromPath(to));
+        if (row) store.setNotePath(row.provider, row.externalId, to);
+      }
+
+      touched.push(...(await this.retargetMirrorLinks(ctx, renamed)));
+      if (touched.length > 0) {
+        await ctx.git
+          .commitPaths([...new Set(touched)], 'sync: migrate mirror paths')
+          .catch(() => {});
+      }
+      store.setMeta(MIRROR_PATHS_MIGRATED, new Date().toISOString());
+    } catch (err) {
+      // No flag: the next tick picks up where this one stopped.
+      console.error(
+        '[qale] sync: mirror path migration failed:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+    return touched;
+  }
+
+  /**
+   * Which provider's folder a mirror belongs in. The connection that holds it
+   * answers first (its connector says which provider string it stamps); a
+   * connector nobody has credentials for cannot, so the note's own `provider`
+   * field answers instead. Every mirror carries one.
+   */
+  private mirrorProviderOf(note: IndexedNote, row: SyncItemRow | null): string | null {
+    const kind = note.type as MirrorKind;
+    const mapped = row ? this.conns.get(row.provider)?.connector?.providers[kind] : null;
+    if (mapped) return mapped;
+    const declared = note.frontmatter['provider'];
+    return typeof declared === 'string' && declared.trim() ? declared.trim() : null;
+  }
+
+  /** One move, through the vault so the watcher and the index stay coherent. */
+  private async moveMirror(
+    ctx: UseCaseContext,
+    from: string,
+    to: string,
+    externalId: string,
+  ): Promise<boolean> {
+    const raw = await ctx.vault.readRaw(from);
+    if (raw === null) return false;
+    if (await ctx.vault.exists(to)) {
+      // A crash between the write and the delete leaves both files; finishing
+      // the move is the resume. Anything else sitting there is not ours to
+      // overwrite, and a mirror we cannot place stays where it is.
+      const there = await ctx.vault.readNote(to);
+      const holder = String((there?.frontmatter as Record<string, unknown>)['external_id'] ?? '');
+      if (!externalId || holder !== externalId) {
+        console.warn(`[qale] sync: ${to} is taken — ${from} left where it is`);
+        return false;
+      }
+    } else {
+      await ctx.vault.writeRaw(to, raw);
+    }
+    await ctx.vault.remove(from);
+    ctx.index.removeByPath(from);
+    const moved = await ctx.vault.readNote(to);
+    if (moved) ctx.index.reindex(moved);
+    return true;
+  }
+
+  /**
+   * Point the vault's `[[tickets/PAY-142]]` links at the path the file now has.
+   * Only explicit path refs: a bare `[[PAY-142]]` names no folder, so nothing
+   * about it went stale (PD-11 owns how those resolve).
+   */
+  private async retargetMirrorLinks(
+    ctx: UseCaseContext,
+    renamed: Map<string, string>,
+  ): Promise<string[]> {
+    if (renamed.size === 0) return [];
+    const rewritten: string[] = [];
+    for (const note of ctx.index.all()) {
+      if (!note.links.some((l) => renamed.has(slugFromPath(l.target).toLowerCase()))) continue;
+      const raw = await ctx.vault.readRaw(note.path);
+      if (raw === null) continue;
+      const next = retargetWikilinks(
+        raw,
+        (target) => renamed.get(slugFromPath(target).toLowerCase()) ?? null,
+      );
+      if (next === raw) continue;
+      await ctx.vault.writeRaw(note.path, next);
+      const written = await ctx.vault.readNote(note.path);
+      if (written) ctx.index.reindex(written);
+      rewritten.push(note.path);
+    }
+    return rewritten;
   }
 
   // -------------------------------------------------------------------------
@@ -681,7 +930,7 @@ export class SyncService {
     try {
       // Cancellation arrives as a stub (id + status, little else) — merge over
       // the shallow row so the plan sees the event as we last knew it.
-      const prior = store.itemByExternalId(change.external_id);
+      const prior = store.itemByExternalId(GOOGLE_PROVIDER, change.external_id);
       const row = mergeEventRow(prior?.kind === 'event' ? prior : null, change);
       store.upsertItem(row);
       const event = rowToEvent(row);
@@ -771,20 +1020,39 @@ export class SyncService {
    * ticket keys (bare `[[PAY-142]]` or `tickets/…` slugs) and wikipage refs
    * (`wikipages/…` slugs, or a link target whose slug matches a known page
    * title). Case-insensitive; recomputed per tick from the index.
+   *
+   * Ticket keys are split by how the link addresses them, because that decides
+   * who may harvest them (PD-11). See {@link DeepTargets}.
    */
-  private deepTargets(ctx: UseCaseContext): { ticketKeys: Set<string>; pageSlugs: Set<string> } {
+  private deepTargets(ctx: UseCaseContext): DeepTargets {
     const ticketKeys = new Set<string>();
+    const bareTicketKeys = new Set<string>();
+    const keysByProvider = new Map<string, Set<string>>();
     const pageSlugs = new Set<string>();
+    const addKey = (key: string, provider: string | null): void => {
+      const upper = key.toUpperCase();
+      ticketKeys.add(upper);
+      if (!provider) {
+        bareTicketKeys.add(upper);
+        return;
+      }
+      const held = keysByProvider.get(provider) ?? new Set<string>();
+      held.add(upper);
+      keysByProvider.set(provider, held);
+    };
+
     for (const note of ctx.index.all()) {
       // Mirror notes themselves don't count as "linked from the vault".
       if (note.type === 'ticket' || note.type === 'wikipage') continue;
       for (const link of note.links) {
         const bare = link.target.split('#')[0]!.replace(/\.md$/, '').trim();
-        if (TICKET_KEY_RE.test(bare)) ticketKeys.add(bare.toUpperCase());
-        else if (bare.startsWith('tickets/'))
-          ticketKeys.add(bare.slice('tickets/'.length).toUpperCase());
-        else if (bare.startsWith('wikipages/'))
-          pageSlugs.add(bare.slice('wikipages/'.length).toLowerCase());
+        // The name is taken off the END of the path, so a link written before
+        // PD-10 (`tickets/PAY-142`) and one written after (`tickets/jira/PAY-142`)
+        // name the same ticket. Only the second one names a tracker.
+        const ref = parseMirrorRef(bare);
+        if (ref?.kind === 'ticket') addKey(ref.name, ref.provider);
+        else if (ref?.kind === 'wikipage') pageSlugs.add(ref.name.toLowerCase());
+        else if (TICKET_KEY_RE.test(bare)) addKey(bare, null);
         else pageSlugs.add(slugify(bare).toLowerCase());
       }
     }
@@ -792,27 +1060,69 @@ export class SyncService {
     // the last inbound link was removed (demotion is a human delete, not ours).
     for (const note of ctx.index.all()) {
       if (note.type === 'ticket') {
-        const id = (note.frontmatter as Record<string, unknown>)['external_id'];
-        if (typeof id === 'string') ticketKeys.add(id.toUpperCase());
+        const fm = note.frontmatter as Record<string, unknown>;
+        // The note names its own tracker, so a refresh never has to guess.
+        if (typeof fm['external_id'] === 'string')
+          addKey(fm['external_id'], typeof fm['provider'] === 'string' ? fm['provider'] : null);
       } else if (note.type === 'wikipage') {
-        pageSlugs.add(note.slug.replace(/^wikipages\//, '').toLowerCase());
+        pageSlugs.add(basename(note.slug).toLowerCase());
       }
     }
-    return { ticketKeys, pageSlugs };
+    return { ticketKeys, bareTicketKeys, keysByProvider, pageSlugs };
+  }
+
+  /**
+   * The linked keys one connection may pull. A link that names its tracker
+   * ("tickets/jira/PAY-142") harvests to that tracker and nowhere else. A bare
+   * key names none: one key-holding connection may claim it, two may not.
+   * Mirroring the wrong PAY-142 under the right name is worse than not
+   * mirroring it, and only the vault can say which one it means.
+   */
+  private harvestKeysFor(connectionId: string, deep: DeepTargets): Set<string> {
+    const provider = this.conns.get(connectionId)?.connector?.providers.ticket;
+    const keys = new Set(provider ? (deep.keysByProvider.get(provider) ?? []) : []);
+    const holders = this.ticketKeyHolders();
+    if (holders.length === 1 && holders[0] === connectionId) {
+      for (const key of deep.bareTicketKeys) keys.add(key);
+    } else if (holders.length > 1) {
+      for (const key of deep.bareTicketKeys) this.warnUntrackedKey(key, holders);
+    }
+    return keys;
+  }
+
+  /** Connections that can hold a ticket by its key. */
+  private ticketKeyHolders(): string[] {
+    const out: string[] = [];
+    for (const [connectionId, state] of this.conns) {
+      if (state.connector?.pullByKeys && state.connector.providers.ticket) out.push(connectionId);
+    }
+    return out;
+  }
+
+  /** Said once per key: the tick repeats every few minutes, and only an edit in
+   *  the vault can answer it. */
+  private warnUntrackedKey(key: string, holders: string[]): void {
+    if (this.warnedKeys.has(key)) return;
+    this.warnedKeys.add(key);
+    console.warn(
+      `[qale] sync: ${key} is linked without a tracker, and ${holders.join(' and ')} both hold keys. Not tracked — write the tracker into the link.`,
+    );
   }
 
   private isDeep(
+    connectionId: string,
     change: Exclude<ShallowChange, EventChange>,
-    deep: { ticketKeys: Set<string>; pageSlugs: Set<string> },
+    deep: DeepTargets,
     store: SyncStore,
   ): boolean {
-    return this.isDeepRow(store.itemByExternalId(change.external_id) ?? shallowToRow(change), deep);
+    return this.isDeepRow(
+      store.itemByExternalId(connectionId, change.external_id) ??
+        shallowToRow(connectionId, change),
+      deep,
+    );
   }
 
-  private isDeepRow(
-    row: SyncItemRow,
-    deep: { ticketKeys: Set<string>; pageSlugs: Set<string> },
-  ): boolean {
+  private isDeepRow(row: SyncItemRow, deep: DeepTargets): boolean {
     if (row.notePath) return true;
     if (row.kind === 'ticket') return deep.ticketKeys.has(row.externalId.toUpperCase());
     return deep.pageSlugs.has(slugify(row.title).toLowerCase());
@@ -836,22 +1146,23 @@ export class SyncService {
   private async syncTracked(
     ctx: UseCaseContext,
     store: SyncStore,
+    connectionId: string,
     nowMs: number,
   ): Promise<string[]> {
-    const connector = this.conns.atlassian.connector;
+    const connector = this.conns.get(connectionId)?.connector;
     if (!connector?.pullByKeys) return [];
 
     // Linking IS the tracking gesture — no separate "watch this" chore.
     // (Wikipages have no key a human would type; theirs arrive via the agent
     // tool or the followed-space pull, so only ticket keys register here.)
-    for (const key of this.deepTargets(ctx).ticketKeys) {
-      store.track('atlassian', 'ticket', key, 'link', nowMs);
+    for (const key of this.harvestKeysFor(connectionId, this.deepTargets(ctx))) {
+      store.track(connectionId, 'ticket', key, 'link', nowMs);
     }
 
-    const followed = new Set(store.followedContainers('atlassian').map((c) => c.containerId));
+    const followed = new Set(store.followedContainers(connectionId).map((c) => c.containerId));
     const byKind = new Map<'ticket' | 'wikipage', string[]>();
-    for (const tracked of store.listTracked('atlassian')) {
-      const prior = store.itemByExternalId(tracked.externalId);
+    for (const tracked of store.listTracked(connectionId)) {
+      const prior = store.itemByExternalId(connectionId, tracked.externalId);
       // Already covered by its container's own incremental pull this tick.
       if (prior && followed.has(prior.container)) continue;
       const ids = byKind.get(tracked.kind) ?? [];
@@ -866,10 +1177,10 @@ export class SyncService {
         // Pulled by id, so the provider never says which container it came from
         // (and for tickets we infer it from the key) — keep what we already knew
         // rather than blanking a container the chips display.
-        const prior = store.itemByExternalId(change.external_id);
+        const prior = store.itemByExternalId(connectionId, change.external_id);
         const merged = { ...change, container: change.container || prior?.container || '' };
-        store.upsertItem(shallowToRow(merged));
-        const path = await this.writeMirror(ctx, store, merged, nowMs);
+        store.upsertItem(shallowToRow(connectionId, merged));
+        const path = await this.writeMirror(ctx, store, connectionId, merged, nowMs);
         if (path) written.push(path);
       }
     }
@@ -889,24 +1200,48 @@ export class SyncService {
    */
   private trackBlockers(
     store: SyncStore,
+    connectionId: string,
     externalId: string,
     links: readonly { type: string; key: string }[],
     nowMs: number,
   ): void {
-    if (store.trackedSource('atlassian', externalId) === 'blocker') return;
+    if (store.trackedSource(connectionId, externalId) === 'blocker') return;
     for (const link of links) {
       if (link.type !== 'blocks') continue;
       const key = link.key.trim().toUpperCase();
       if (!TICKET_KEY_RE.test(key)) continue;
-      if (store.trackedSource('atlassian', key)) continue;
-      if (store.countTrackedBySource('atlassian', 'blocker') >= BLOCKER_TRACK_CAP) {
+      if (store.trackedSource(connectionId, key)) continue;
+      if (store.countTrackedBySource(connectionId, 'blocker') >= BLOCKER_TRACK_CAP) {
         console.warn(
           `[qale] sync: blocker tracking cap (${BLOCKER_TRACK_CAP}) reached — ${key} not tracked`,
         );
         return;
       }
-      store.track('atlassian', 'ticket', key, 'blocker', nowMs);
+      store.track(connectionId, 'ticket', key, 'blocker', nowMs);
     }
+  }
+
+  /**
+   * Where a draft may be addressed, with the provider that owns each container
+   * (PD-9). The write tools name no product: the model picks a project, and this
+   * answers which system holds it. Only followed containers are offered, because
+   * a project the workspace does not read is one it cannot check a draft against.
+   */
+  outboundContainers(): OutboundContainer[] {
+    this.reconfigure();
+    const store = this.getStore();
+    const out: OutboundContainer[] = [];
+    for (const [connectionId, state] of this.conns) {
+      const providers = state.connector?.providers;
+      if (!providers) continue;
+      for (const c of store?.followedContainers(connectionId) ?? []) {
+        if (c.kind === 'calendar') continue;
+        const provider = providers[c.kind];
+        if (!provider) continue;
+        out.push({ id: c.containerId, name: c.name, kind: c.kind, provider });
+      }
+    }
+    return out;
   }
 
   /**
@@ -917,8 +1252,9 @@ export class SyncService {
   async trackExternal(kind: 'ticket' | 'wikipage', externalId: string): Promise<boolean> {
     const store = this.getStore();
     const id = externalId.trim();
-    if (!store || !id) return false;
-    store.track('atlassian', kind, kind === 'ticket' ? id.toUpperCase() : id, 'agent', Date.now());
+    const connectionId = this.trackerFor(kind);
+    if (!store || !id || !connectionId) return false;
+    store.track(connectionId, kind, kind === 'ticket' ? id.toUpperCase() : id, 'agent', Date.now());
     await this.tick().catch(() => {});
     return true;
   }
@@ -926,7 +1262,22 @@ export class SyncService {
   /** Stop watching — the one place tracking is ever removed, and only on a
    *  human/agent gesture. Sync never un-tracks behind the user's back. */
   untrackExternal(externalId: string): void {
-    this.getStore()?.untrack('atlassian', externalId.trim());
+    const store = this.getStore();
+    const id = externalId.trim();
+    // Deleting a row no connection holds costs nothing, and the caller names an
+    // item, not a connection.
+    for (const connectionId of this.conns.keys()) store?.untrack(connectionId, id);
+  }
+
+  /** The connection that can hold this kind of item by id. One tracker per kind
+   *  today: the first connected one that mirrors the kind and pulls by key. */
+  private trackerFor(kind: 'ticket' | 'wikipage'): string | null {
+    this.reconfigure();
+    for (const [connectionId, state] of this.conns) {
+      const connector = state.connector;
+      if (connector?.pullByKeys && connector.providers[kind]) return connectionId;
+    }
+    return null;
   }
 
   /**
@@ -939,16 +1290,39 @@ export class SyncService {
   private async writeMirror(
     ctx: UseCaseContext,
     store: SyncStore,
+    connectionId: string,
     change: Exclude<ShallowChange, EventChange>,
     nowMs: number,
   ): Promise<string | null> {
     try {
-      const existingRow = store.itemByExternalId(change.external_id);
-      const path =
-        existingRow?.notePath ??
-        (change.kind === 'ticket'
-          ? `tickets/${change.external_id}.md`
-          : `wikipages/${slugify(change.title)}.md`);
+      const connector = this.conns.get(connectionId)!.connector!;
+      const provider = connector.providers[change.kind];
+      if (!provider) {
+        throw new Error(`connector ${connector.id} mirrors no ${change.kind} provider`);
+      }
+
+      const existingRow = store.itemByExternalId(connectionId, change.external_id);
+      // A bound path is where this mirror already lives, wherever that is: the
+      // one-time move (PD-10) is the only thing that ever relocates a mirror.
+      let path: string | null = existingRow?.notePath ?? null;
+      if (!path) {
+        const base = mirrorPath(
+          change.kind,
+          provider,
+          change.kind === 'ticket' ? change.external_id : slugify(change.title),
+        );
+        path = base;
+        // A wikipage path comes from its title, and two spaces can hold the same
+        // title. Step the suffix until the slot is free or already ours, the way
+        // meeting mirrors do. Ticket paths are the key itself, so they can't clash.
+        for (
+          let i = 2;
+          change.kind === 'wikipage' && i <= 9 && (await this.pathHoldsOther(ctx, path, change));
+          i += 1
+        ) {
+          path = base.replace(/\.md$/, `-${i}.md`);
+        }
+      }
 
       const remoteUpdated = normalizeIso(change.remote_updated, nowMs);
       const existing = await ctx.vault.readNote(path);
@@ -959,17 +1333,17 @@ export class SyncService {
             ? fm['version'] === change.version && fm['remote_updated'] === remoteUpdated
             : fm['remote_updated'] === remoteUpdated;
         if (unchanged) {
-          if (!existingRow?.notePath) store.setNotePath('atlassian', change.external_id, path);
+          if (!existingRow?.notePath) store.setNotePath(connectionId, change.external_id, path);
           return null;
         }
       }
 
-      const full = await this.conns.atlassian.connector!.fetchFull(change.kind, change.external_id);
+      const full = await connector.fetchFull(change.kind, change.external_id);
       // A dependency we can see is a dependency worth holding — the other
       // team's blocker becomes a live chip on the note that links it without the
       // PM ever having heard of their project.
       if (change.kind === 'ticket' && full.links?.length) {
-        this.trackBlockers(store, change.external_id, full.links, nowMs);
+        this.trackBlockers(store, connectionId, change.external_id, full.links, nowMs);
       }
       const frontmatter =
         change.kind === 'ticket'
@@ -978,7 +1352,7 @@ export class SyncService {
               title: `${change.external_id} · ${full.title}`,
               summary: `${change.external_id} — ${full.title} (${full.state ?? change.state})`,
               processing: 'new',
-              provider: 'jira',
+              provider,
               external_id: change.external_id,
               container: change.container,
               state: full.state ?? change.state,
@@ -998,7 +1372,7 @@ export class SyncService {
               title: full.title,
               summary: `${full.title} — mirrored page in ${change.container}`,
               processing: 'new',
-              provider: 'confluence',
+              provider,
               external_id: change.external_id,
               container: change.container,
               version: full.version ?? change.version ?? 0,
@@ -1008,7 +1382,7 @@ export class SyncService {
 
       const written = await ctx.vault.writeNote(path, frontmatter, full.bodyMarkdown || full.title);
       ctx.index.reindex(written);
-      store.setNotePath('atlassian', change.external_id, path);
+      store.setNotePath(connectionId, change.external_id, path);
       return path;
     } catch (err) {
       console.error(
@@ -1021,6 +1395,18 @@ export class SyncService {
       if (isVaultBoundaryError(err)) throw err;
       return null;
     }
+  }
+
+  /** True when a note already sits at `path` and mirrors a different item. A
+   *  note with no `external_id` counts as another item: it isn't ours to take. */
+  private async pathHoldsOther(
+    ctx: UseCaseContext,
+    path: string,
+    change: Exclude<ShallowChange, EventChange>,
+  ): Promise<boolean> {
+    const note = await ctx.vault.readNote(path);
+    if (!note) return false;
+    return (note.frontmatter as Record<string, unknown>)['external_id'] !== change.external_id;
   }
 
   // -------------------------------------------------------------------------
@@ -1038,12 +1424,9 @@ export class SyncService {
             {
               kind: row.kind,
               externalId: row.externalId,
-              slug:
-                row.kind === 'ticket'
-                  ? `tickets/${row.externalId}`
-                  : `wikipages/${slugify(row.title)}`,
+              slug: this.mirrorSlugFor(row, row.kind),
               container: row.container,
-              containerName: this.containerName(row.container) ?? row.container,
+              containerName: this.containerName(row.provider, row.container) ?? row.container,
               title: row.title,
               ...(row.state ? { state: row.state } : {}),
               ...(isStateCategory(row.stateCategory) ? { stateCategory: row.stateCategory } : {}),
@@ -1053,50 +1436,81 @@ export class SyncService {
     );
   }
 
-  /** Chip/hover metadata for one mirror slug ("tickets/PAY-142", a wikipage
-   *  slug, or a bare external id — L9: lookup by external id works too). */
+  /**
+   * Chip/hover metadata for one reference: a mirror slug that names its tracker
+   * ("tickets/jira/PAY-142"), a flat pre-PD-10 slug, or a bare external id.
+   *
+   * Resolution is a lookup by id, never a path this builds (PD-11). A reference
+   * that names no tracker is matched against every mirror and every shallow row
+   * that holds the id, and if two trackers hold it the reference names no one
+   * item: it comes back ambiguous, and the surfaces stop there.
+   */
   refMeta(slugOrId: string): ExternalRefMetaDTO | null {
     const ctx = this.getContext();
     const store = this.getStore();
     if (!ctx) return null;
 
     const bare = slugOrId.split('#')[0]!.replace(/\.md$/, '').trim();
-    const key = bare.startsWith('tickets/') ? bare.slice('tickets/'.length) : bare;
+    // Deep mirror at the exact path first — actual data beats the shallow row,
+    // and a path that names its tracker points at one file.
+    const exact = this.mirrorByPath(ctx, `${bare}.md`);
+    if (exact) return this.metaFromNote(exact);
 
-    // Deep mirror first — actual data beats the shallow row.
-    const note =
-      this.mirrorByPath(ctx, `${bare}.md`) ??
-      (TICKET_KEY_RE.test(key) ? this.mirrorByExternalId(ctx, 'ticket', key) : null) ??
-      this.mirrorByExternalId(ctx, 'wikipage', key) ??
-      this.wikipageBySlug(ctx, bare);
-    if (note) return this.metaFromNote(note);
+    // The name is the last segment either way, so a chip written against the
+    // flat layout still finds the mirror under its provider folder.
+    const key = basename(bare);
+    const wanted = parseMirrorRef(bare)?.provider ?? null;
+    let notes = this.mirrorsNamed(ctx, bare, key);
+    let rows = (store?.itemsByExternalId(key) ?? []).filter((r) => r.kind !== 'event');
+    if (wanted) {
+      notes = notes.filter((n) => noteProvider(n) === wanted);
+      rows = rows.filter((r) => this.rowProvider(r) === wanted);
+    } else {
+      const holders = new Set<string>();
+      for (const n of notes) {
+        const p = noteProvider(n);
+        if (p) holders.add(p);
+      }
+      for (const r of rows) {
+        const p = this.rowProvider(r);
+        if (p) holders.add(p);
+      }
+      if (holders.size > 1) {
+        const kind = (notes[0]?.type ?? rows[0]?.kind ?? 'ticket') as MirrorKind;
+        return ambiguousMeta(key, kind, [...holders]);
+      }
+    }
+    if (notes[0]) return this.metaFromNote(notes[0]);
 
     // Shallow index fallback (followed but not linked yet). Events never render
     // as reference chips — meetings are notes, not external refs.
     const found =
-      store?.itemByExternalId(key) ??
+      rows[0] ??
       (bare.startsWith('wikipages/')
         ? ((store?.itemsByKind('wikipage') ?? []).find(
-            (r) => slugify(r.title).toLowerCase() === bare.slice('wikipages/'.length).toLowerCase(),
+            (r) =>
+              slugify(r.title).toLowerCase() === key.toLowerCase() &&
+              (!wanted || this.rowProvider(r) === wanted),
           ) ?? null)
         : null);
     if (!found || found.kind === 'event') return null;
     const row = found;
-    const syncedAt = this.lastSyncFor(row.container) ?? Date.now();
+    const kind = row.kind as MirrorKind;
+    const syncedAt = this.lastSyncFor(row.provider, row.container) ?? Date.now();
     return {
-      kind: row.kind as 'ticket' | 'wikipage',
+      kind,
       externalId: row.externalId,
-      slug: row.kind === 'ticket' ? `tickets/${row.externalId}` : `wikipages/${slugify(row.title)}`,
+      slug: this.mirrorSlugFor(row, kind),
       title: row.title,
-      containerName: this.containerName(row.container) ?? row.container,
+      containerName: this.containerName(row.provider, row.container) ?? row.container,
       ...(row.state ? { state: row.state } : {}),
       ...(isStateCategory(row.stateCategory) ? { stateCategory: row.stateCategory } : {}),
       ...(row.assignee ? { assignee: row.assignee } : {}),
       url: row.url,
       remoteUpdated: row.remoteUpdated,
       syncedAt,
-      stale: this.isStale(syncedAt),
-      health: this.conns.atlassian.health,
+      stale: this.isStale(row.provider, syncedAt),
+      health: this.healthOf(row.provider),
       notePath: row.notePath,
     };
   }
@@ -1105,7 +1519,8 @@ export class SyncService {
     const ctx = this.getContext();
     if (!ctx) return null;
     const bare = externalIdOrSlug.replace(/\.md$/, '').trim();
-    const note = this.mirrorByExternalId(ctx, 'wikipage', bare) ?? this.wikipageBySlug(ctx, bare);
+    const note =
+      this.mirrorsByExternalId(ctx, 'wikipage', bare)[0] ?? this.wikipagesBySlug(ctx, bare)[0];
     if (!note) return null;
     // Bodies aren't in the index — read from disk synchronously? The vault port
     // is async; callers get the indexed summary path instead. Handled in the
@@ -1262,30 +1677,57 @@ export class SyncService {
     return n && (n.type === 'ticket' || n.type === 'wikipage') ? n : null;
   }
 
-  private mirrorByExternalId(
+  /**
+   * Every mirror note a reference that names no tracker could mean, best match
+   * first. Two answers is the ambiguous case: one id, two trackers.
+   */
+  private mirrorsNamed(ctx: UseCaseContext, bare: string, key: string): IndexedNote[] {
+    const out: IndexedNote[] = [];
+    // The regex only asks whether a ticket lookup is worth making at all.
+    if (TICKET_KEY_RE.test(key)) out.push(...this.mirrorsByExternalId(ctx, 'ticket', key));
+    out.push(...this.mirrorsByExternalId(ctx, 'wikipage', key));
+    for (const note of this.wikipagesBySlug(ctx, bare)) {
+      if (!out.includes(note)) out.push(note);
+    }
+    return out;
+  }
+
+  private mirrorsByExternalId(
     ctx: UseCaseContext,
     type: 'ticket' | 'wikipage',
     externalId: string,
-  ): IndexedNote | null {
-    return (
-      ctx.index
-        .listByType(type)
-        .find(
-          (n) =>
-            String(
-              (n.frontmatter as Record<string, unknown>)['external_id'] ?? '',
-            ).toLowerCase() === externalId.toLowerCase(),
-        ) ?? null
-    );
+  ): IndexedNote[] {
+    return ctx.index
+      .listByType(type)
+      .filter(
+        (n) =>
+          String((n.frontmatter as Record<string, unknown>)['external_id'] ?? '').toLowerCase() ===
+          externalId.toLowerCase(),
+      );
   }
 
-  private wikipageBySlug(ctx: UseCaseContext, slug: string): IndexedNote | null {
-    const bare = slug.replace(/^wikipages\//, '').toLowerCase();
-    return (
-      ctx.index
-        .listByType('wikipage')
-        .find((n) => n.slug.replace(/^wikipages\//, '').toLowerCase() === bare) ?? null
-    );
+  private wikipagesBySlug(ctx: UseCaseContext, slug: string): IndexedNote[] {
+    const bare = basename(slug).toLowerCase();
+    return ctx.index.listByType('wikipage').filter((n) => basename(n.slug).toLowerCase() === bare);
+  }
+
+  /** The domain provider a shallow row mirrors, via the connector its
+   *  connection is bound to. Null while the connection is unbound. */
+  private rowProvider(row: SyncItemRow): string | null {
+    if (row.kind === 'event') return null;
+    return this.conns.get(row.provider)?.connector?.providers[row.kind] ?? null;
+  }
+
+  /**
+   * The slug a link to this row should carry. The mirror note's own path when it
+   * has one; otherwise where the writer would put it, which needs the provider
+   * its connection stamps. An unbound connection leaves the flat form, and the
+   * index resolves that by basename anyway.
+   */
+  private mirrorSlugFor(row: SyncItemRow, kind: MirrorKind): string {
+    if (row.notePath) return slugFromPath(row.notePath);
+    const provider = this.conns.get(row.provider)?.connector?.providers[kind] ?? null;
+    return mirrorSlug(kind, provider, kind === 'ticket' ? row.externalId : slugify(row.title));
   }
 
   private metaFromNote(note: IndexedNote): ExternalRefMetaDTO {
@@ -1293,44 +1735,78 @@ export class SyncService {
     const str = (k: string): string | undefined =>
       typeof fm[k] === 'string' ? (fm[k] as string) : undefined;
     const container = str('container') ?? '';
-    const row = this.getStore()?.itemByExternalId(str('external_id') ?? '');
-    const syncedAt = this.lastSyncFor(container) ?? note.mtime;
+    // The note names its provider ("jira"); the rows are filed by connection.
+    // Two connections can hold one key, so prefer the row whose connector
+    // stamps the provider this note carries.
+    const declared = str('provider');
+    const rows = this.getStore()?.itemsByExternalId(str('external_id') ?? '') ?? [];
+    const row =
+      rows.find(
+        (r) =>
+          this.conns.get(r.provider)?.connector?.providers[note.type as MirrorKind] === declared,
+      ) ??
+      rows[0] ??
+      null;
+    const connectionId = row?.provider ?? this.connectionForProvider(declared);
+    const syncedAt = this.lastSyncFor(connectionId, container) ?? note.mtime;
     return {
       kind: note.type as 'ticket' | 'wikipage',
       externalId: str('external_id') ?? note.title,
       slug: note.slug,
       title: note.title,
-      containerName: this.containerName(container) ?? container,
+      containerName: this.containerName(connectionId, container) ?? container,
       ...(str('state') ? { state: str('state') } : {}),
       ...(isStateCategory(fm['state_category']) ? { stateCategory: fm['state_category'] } : {}),
       ...(str('assignee') ? { assignee: str('assignee') } : {}),
       url: str('url') ?? row?.url ?? '',
       remoteUpdated: str('remote_updated') ?? new Date(note.mtime).toISOString(),
       syncedAt,
-      stale: this.isStale(syncedAt),
-      health: this.conns.atlassian.health,
+      stale: this.isStale(connectionId, syncedAt),
+      health: this.healthOf(connectionId),
       notePath: note.path,
     };
   }
 
-  private containerName(containerId: string): string | null {
+  /**
+   * Which connection owns a mirror note. The sync row is the authority; this is
+   * the fallback for a note whose row is gone, and all it has is the domain
+   * provider its frontmatter names ("jira"). Only a bound connector can say
+   * which connection mirrors that provider.
+   */
+  private connectionForProvider(provider: string | undefined): string | null {
+    if (!provider) return null;
+    for (const [connectionId, state] of this.conns) {
+      if (Object.values(state.connector?.providers ?? {}).includes(provider)) return connectionId;
+    }
+    return null;
+  }
+
+  private containerName(connectionId: string | null, containerId: string): string | null {
+    if (!connectionId) return null;
     return (
       this.getStore()
-        ?.listContainers('atlassian')
+        ?.listContainers(connectionId)
         .find((c) => c.containerId === containerId)?.name ?? null
     );
   }
 
-  private lastSyncFor(containerId: string): number | null {
+  private lastSyncFor(connectionId: string | null, containerId: string): number | null {
+    if (!connectionId) return null;
     return (
       this.getStore()
-        ?.listContainers('atlassian')
+        ?.listContainers(connectionId)
         .find((c) => c.containerId === containerId)?.lastSync ?? null
     );
   }
 
-  private isStale(syncedAt: number): boolean {
-    return this.conns.atlassian.health !== 'ok' || Date.now() - syncedAt > STALE_AFTER_MS;
+  /** A connection we can't name reads as healthy: nothing is known to be wrong,
+   *  and a red chip on a mirror whose connection is gone helps nobody. */
+  private healthOf(connectionId: string | null): ConnectionHealth {
+    return (connectionId ? this.conns.get(connectionId)?.health : null) ?? 'ok';
+  }
+
+  private isStale(connectionId: string | null, syncedAt: number): boolean {
+    return this.healthOf(connectionId) !== 'ok' || Date.now() - syncedAt > STALE_AFTER_MS;
   }
 }
 
@@ -1361,9 +1837,12 @@ function whenLastTouched(iso: string): string | null {
   return `the last one ${Math.round(days / 30)} months ago`;
 }
 
-function shallowToRow(change: Exclude<ShallowChange, EventChange>): SyncItemRow {
+function shallowToRow(
+  connectionId: string,
+  change: Exclude<ShallowChange, EventChange>,
+): SyncItemRow {
   return {
-    provider: 'atlassian',
+    provider: connectionId,
     kind: change.kind,
     externalId: change.external_id,
     container: change.container,

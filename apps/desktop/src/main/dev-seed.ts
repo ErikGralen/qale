@@ -130,28 +130,6 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
       });
     }
 
-    // A demo outbound draft card (message tier — no external write needed).
-    createProposal(ctx, {
-      kind: 'outbound',
-      sessionId: 'seed',
-      skill: 'arrival',
-      targetPath: null,
-      baseHash: null,
-      payload: {
-        system: 'message',
-        action: 'message',
-        audience: 'exec',
-        title: 'Nordkap SSO on track',
-        body: 'WorkOS SSO is live in staging; SCIM lands in September. Nordkap renewal unblocked.',
-        linkBackPath: `${meeting.path}`,
-        rationale: 'Exec update drafted from the QBR.',
-        headline: 'Send the exec update: Nordkap SSO on track, SCIM in September.',
-      },
-      rationale: 'Drafted for the exec channel from the QBR — send only if it reads right.',
-      evidence: ev,
-      inference: false,
-    });
-
     // A ticket comment (Area D outbound upgrades): target line with the live
     // PAY-142 chip. Backdated 5h so the mock mirror's 2h-old "In Review →
     // Blocked" transition trips the drafted-against-stale banner.
@@ -166,7 +144,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
           provider: 'jira',
           system: 'jira',
           action: 'comment_ticket',
-          issueKey: 'PAY-142',
+          targetId: 'PAY-142',
           title: 'Nordkap confirms first-tenant go-live Jul 28',
           body: 'Nordkap confirms first-tenant go-live **Jul 28**. SCIM group-mapping is required before the September rollout — tracked separately.\n\n— from the Nordkap check-in, Jul 14',
           linkBackPath: meeting.path,
@@ -193,7 +171,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
         provider: 'confluence',
         system: 'confluence',
         action: 'update_page',
-        pageId: '910231',
+        targetId: '910231',
         title: 'Enterprise Onboarding',
         body: [
           '## Provisioning',

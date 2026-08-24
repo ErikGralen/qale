@@ -1,22 +1,33 @@
 import {
   parseRunnable,
-  describeStarts,
+  newSkillFile,
+  newVoiceFile,
   type Capability,
+  type DefaultSkill,
   type Runnable,
-  type Start,
 } from '@qale/sessions';
-import { isRunnableEntry, runnableEntryPath, runnableNameFromPath } from '@qale/domain';
+import {
+  isRunnableEntry,
+  isVoicePath,
+  runnableCandidates,
+  runnableEntryPath,
+  runnableForms,
+  runnableNameFromPath,
+  slugify,
+  voicePath,
+} from '@qale/domain';
 import type { UseCaseContext } from '../ports.js';
 
 /**
  * Skills + Agents — the read layer behind both views. They are the same kind of
- * file (see `@qale/sessions/runnable`): free-text instructions, a `starts` list
- * saying what puts them in force, and a `can` list saying what they may do. The
- * folder is filing — `skills/` is what you reach for, `agents/` is what reaches
- * for itself — so one parser serves both and neither view branches on a type.
+ * file (see `@qale/sessions/runnable`): free-text instructions plus a `can` list
+ * saying what they may do. The folder is filing — `skills/` is what you reach
+ * for, `agents/` is what reaches for itself — so one parser serves both and
+ * neither view branches on a type.
  *
- * WHEN a self-starting agent fires is not in the file at all: those clocks live
- * in code beside the sweep that runs them, and main merges them onto the row.
+ * WHAT puts either one in force is not in the file at all: a skill is work you
+ * hand over, and an agent's clocks live in code beside the sweep that runs them,
+ * which main merges onto the row.
  *
  * Each one is a FOLDER (`skills/spec-review/SKILL.md`), and the files beside the
  * entry are the skill's own material: not indexed, not listed here as skills of
@@ -24,25 +35,30 @@ import type { UseCaseContext } from '../ports.js';
  * moves a flat vault into that shape; until it has, both layouts resolve.
  */
 
+/**
+ * Which of the three files this row is. The note type cannot say it: a voice is
+ * filed as a skill note (one type for every instruction file the PM edits), and
+ * what makes it a voice is the folder it sits in. Rows carry the answer so no
+ * consumer has to re-derive it from the path — the picker offers skills only,
+ * and the Skills page lists voices apart from them (SK-6; SK-12 gives them a
+ * tab of their own).
+ */
+export type RunnableKind = 'skill' | 'voice' | 'agent';
+
 /** A parsed runnable as either view's row sees it. */
 export interface RunnableSummary {
   path: string;
   slug: string;
+  kind: RunnableKind;
   /** The invocation name — the bare filename, what `use_skill` resolves. */
   name: string;
   /** What a human calls it; never a path. */
   title: string;
   summary: string;
-  /** What puts it in force, as the file declares it. */
-  starts: Start[];
   /** What it may do beyond reading and proposing cards. */
   can: Capability[];
-  /** `always` only — the audience the rule is scoped to. */
-  audience?: string;
-  /** The off switch, from frontmatter. */
+  /** The off switch, from frontmatter. Agents only; a skill reads as on. */
   enabled: boolean;
-  /** Plain-language sentence: how this file applies. */
-  sentence: string;
   errors: string[];
   mtime: number;
   /**
@@ -145,14 +161,12 @@ async function listRunnables(
     out.push({
       path: n.path,
       slug: n.slug,
+      kind: type === 'agent' ? 'agent' : isVoicePath(n.path) ? 'voice' : 'skill',
       name: config.name,
       title: config.title,
       summary: config.summary,
-      starts: config.starts,
       can: config.can,
-      ...(config.audience ? { audience: config.audience } : {}),
       enabled: config.enabled,
-      sentence: describeStarts(config),
       errors: config.errors,
       mtime: n.mtime,
       files,
@@ -164,7 +178,12 @@ async function listRunnables(
   return out;
 }
 
-/** Every skill file, parsed for the Skills view. */
+/**
+ * Every skill file AND every voice, parsed for the Skills view — one read, each
+ * row saying which it is. They come back together because they are the same
+ * kind of file to the vault (a skill note the PM edits) and because the view
+ * shows both; a caller that wants only one filters on {@link RunnableSummary.kind}.
+ */
 export function listSkills(ctx: UseCaseContext): Promise<RunnableSummary[]> {
   return listRunnables(ctx, 'skill');
 }
@@ -219,30 +238,128 @@ export async function migrateRunnableFolders(
 }
 
 /**
- * The `enabled` switch on the file(s) a name resolves to, read as a FLOOR: off
- * means the runnable does not run, on any path, whatever else would grant it
+ * The `enabled` switch on the agent file a name resolves to, read as a FLOOR:
+ * off means the agent does not run, on any path, whatever else would grant it
  * (the layering rule is written out on `Capability` in @qale/sessions). Main's
  * `fireSession` asks this once for every session a trigger starts, so a new
  * trigger cannot forget; the sweeps ask again before they begin, because they
  * do judgment work before firing anything and off has to mean that work never
  * happens either.
  *
- * Every file of either kind under the name has a veto, rather than the resolver
- * order picking one: `skills/x` shadows `agents/x` when a session is started
- * (in either layout), but the Agents view writes the switch into the agent file,
- * and a floor that depends on getting that order right is not a floor.
+ * AGENTS ONLY (SK-2). An agent starts itself, so it needs a way to be told not
+ * to; a skill runs when you ask for it, and deleting it is how you stop asking.
+ * A skill file that still carries `enabled: false` says nothing, and its page
+ * flags the key.
  *
  * A name with no file reads as ON. The seed restores shipped files on next open,
  * and a sweep that silently died because a file was renamed would be a lie the
  * view can't show.
  */
 export async function runnableEnabled(ctx: UseCaseContext, name: string): Promise<boolean> {
-  const files = ctx.index
-    .all()
-    .filter((x) => (x.type === 'agent' || x.type === 'skill') && bareName(x.slug) === name);
+  const files = ctx.index.all().filter((x) => x.type === 'agent' && bareName(x.slug) === name);
   for (const f of files) {
     const raw = (await ctx.vault.readRaw(f.path)) ?? '';
     if (!parseRunnable(raw, name).enabled) return false;
   }
   return true;
+}
+
+/** Whichever layout a workspace is on, the same runnable counts as present. */
+async function present(ctx: UseCaseContext, file: string): Promise<boolean> {
+  for (const form of runnableForms(file)) if (await ctx.vault.exists(form)) return true;
+  return false;
+}
+
+/**
+ * Write the starter pack into a workspace that does not have it yet: the skill
+ * files, the agent files, and the notes the pack seeds into the memory (SK-5).
+ * One rule for all three, because "already there is the PM's" does not change
+ * with the folder.
+ *
+ * Seeding only. A file that is already there is left exactly as it is, whatever
+ * we ship today: once a workspace holds a skill, that skill is the PM's. There
+ * is no upgrade path and nothing compares a file to a version we shipped. When
+ * we want to offer a newer text, an agent will propose it as a card like any
+ * other change.
+ *
+ * Both layouts count as present, not just the folder one: a workspace whose
+ * migration has not run yet holds the PM's edits under the flat name, and
+ * seeding a pristine copy beside it would shadow their file with ours.
+ */
+export async function ensureDefaultSkills(
+  ctx: UseCaseContext,
+  skills: DefaultSkill[],
+): Promise<string[]> {
+  const seeded: string[] = [];
+  for (const skill of skills) {
+    if (await present(ctx, skill.file)) continue;
+    await ctx.vault.writeRaw(skill.file, skill.content);
+    const note = await ctx.vault.readNote(skill.file);
+    if (note) ctx.index.reindex(note);
+    seeded.push(skill.file);
+  }
+  if (seeded.length > 0) await ctx.git.commitPaths(seeded, 'workspace: seed the starter pack');
+  return seeded;
+}
+
+export interface CreatedSkill {
+  path: string;
+  /** The invocation name, which is the folder name and never changes after this. */
+  name: string;
+}
+
+/**
+ * Write a new skill and hand back where it landed, so the caller can open it.
+ *
+ * The name is taken from the title HERE and never again: a skill's folder is the
+ * address the runtime resolves and every stored session receipt cites, so the
+ * page that edits it deliberately cannot rename it. That is why the PM names it
+ * up front instead of getting an "Untitled skill" to rename later, which is the
+ * pattern a plain note follows: a note's filename is disposable, and this one is
+ * not.
+ */
+export async function createSkill(ctx: UseCaseContext, title: string): Promise<CreatedSkill> {
+  const clean = title.trim() || 'New skill';
+  const base = slugify(clean) || 'new-skill';
+  let name = base;
+  // A name already in use anywhere it could resolve from gets a number, rather
+  // than either failing or landing on top of somebody's file.
+  for (let n = 2; n < 100; n++) {
+    const taken = await Promise.all(runnableCandidates(name).map((p) => ctx.vault.exists(p)));
+    if (!taken.some(Boolean)) break;
+    name = `${base}-${n}`;
+  }
+  const path = runnableEntryPath('skills', name);
+  await ctx.vault.writeRaw(path, newSkillFile(clean));
+  const note = await ctx.vault.readNote(path);
+  if (note) ctx.index.reindex(note);
+  await ctx.git.commitPaths([path], `skills: add ${name}`);
+  return { path, name };
+}
+
+/**
+ * Write a new voice and hand back where it landed (SK-13). The twin of
+ * {@link createSkill}, and deliberately its own function rather than a flag on
+ * it: a voice is a flat file in `voices/`, not a folder in `skills/`, and the
+ * two address spaces are separate on purpose (see `VOICES_DIR` in @qale/domain)
+ * so a voice can never be invoked as a skill.
+ *
+ * The name is taken from the title once, for the same reason: the drafting
+ * tools resolve a voice by its filename, so renaming it later would break every
+ * draft that names it.
+ */
+export async function createVoice(ctx: UseCaseContext, title: string): Promise<CreatedSkill> {
+  const clean = title.trim() || 'New voice';
+  const base = slugify(clean) || 'new-voice';
+  let name = base;
+  for (let n = 2; n < 100; n++) {
+    if (!(await ctx.vault.exists(voicePath(name)))) break;
+    name = `${base}-${n}`;
+  }
+  const path = voicePath(name);
+  await ctx.vault.writeRaw(path, newVoiceFile(clean));
+  const note = await ctx.vault.readNote(path);
+  if (note) ctx.index.reindex(note);
+  await ctx.git.commitPaths([path], `voices: add ${name}`);
+  return { path, name };
 }

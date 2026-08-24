@@ -224,6 +224,14 @@ export interface ProposalPort {
   list(status?: string): ProposalRecord[];
   get(id: string): ProposalRecord | null;
   setStatus(id: string, status: string, resolved: number | null): void;
+  /**
+   * Replace what a card holds, leaving everything about the card itself alone:
+   * same id, same session, same place in the queue, same evidence. The one card
+   * that needs this is a message draft, which the session revises in place as
+   * the PM asks for another take (SK-7) — a second card beside the first would
+   * make them choose between two versions of the same message.
+   */
+  updatePayload(id: string, payload: unknown): void;
   pendingCount(): number;
 }
 
@@ -242,6 +250,12 @@ export interface AskRecord {
   id: string;
   sessionId: string;
   questions: unknown;
+  /**
+   * Set instead of `questions` when the session parked on a round file for the
+   * PM to write in rather than on a question card. Opaque for the same reason
+   * `questions` is: the shape belongs to the agent package.
+   */
+  comments?: unknown;
   /** The skill in force when it asked, so answering later resumes under it. */
   skill: string | null;
   /** Whether that skill was granted outbound by the trigger that fired it. */
@@ -259,6 +273,7 @@ export interface CreateAskInput {
   id: string;
   sessionId: string;
   questions: unknown;
+  comments?: unknown;
   skill?: string | null;
   outbound?: boolean;
   unattended?: boolean;
@@ -314,6 +329,85 @@ export interface OutboundPort {
   execute(payload: unknown): Promise<OutboundResult>;
 }
 
+/**
+ * As much of an `AbortSignal` as a long-running port needs. Spelled out rather
+ * than named, because this package compiles with no DOM and no Node types
+ * (`types: []` in its tsconfig): the host passes a real `AbortSignal`, which
+ * fits this.
+ */
+export interface RunSignal {
+  readonly aborted: boolean;
+  addEventListener(type: 'abort', listener: () => void, options?: { once?: boolean }): void;
+  removeEventListener(type: 'abort', listener: () => void): void;
+}
+
+/** One question put to Claude Code, in one repo. */
+export interface CodebaseRunRequest {
+  /** Absolute path of the repo root. The command runs with this as its cwd. */
+  repoDir: string;
+  /** The question, written for a reader who knows the repo and not this app. */
+  prompt: string;
+  /**
+   * A model id the `claude` command line tool accepts, e.g. "sonnet". Ignored
+   * on a resume: that session keeps the model it started with, which is why
+   * switching models means starting a new one.
+   */
+  modelId: string;
+  /** Continue an earlier Claude Code session instead of starting a new one. */
+  resumeSessionId?: string;
+  /**
+   * The turn's own abort signal. A run holds somebody else's machine for up to
+   * ten minutes, so the PM pressing Stop has to reach it: the runner kills the
+   * process and rejects, and nothing is filed.
+   */
+  signal?: RunSignal;
+}
+
+/**
+ * One answer, with the state of the code it was read from. The provenance
+ * travels with the result because the report is filed against it: an answer is
+ * only as good as the commit it was read at, and a run that could not pull says
+ * so rather than letting the reader assume the code was current.
+ */
+export interface CodebaseRunResult {
+  text: string;
+  /** Claude Code's own session id. A follow-up passes it back as `resumeSessionId`. */
+  sessionId: string;
+  commit: string;
+  branch: string;
+  freshened: boolean;
+  /** Set when the run did not pull: one plain line saying why. */
+  skippedWhy?: string;
+}
+
+/**
+ * One repo a session may ask about. `name` is the address: it is what the model
+ * writes and what the approval card shows, so two repos can never share one.
+ */
+export interface CodebaseRepoRef {
+  name: string;
+  /** Absolute path of the repo root. */
+  dir: string;
+}
+
+/**
+ * Codebase port (docs/claude-code-tickets.md CC-5): the seam the `ask_codebase`
+ * tool calls to put a question to Claude Code in one of the PM's repos. Reports
+ * only: the runner behind it can read the code and can never write it.
+ *
+ * Absent when no folder is configured or the `claude` tool is not on the
+ * machine, and that absence IS the gate: the tool is not offered at all.
+ */
+export interface CodebasePort {
+  /**
+   * The repos the PM pointed at, right now. On the port rather than snapshotted
+   * into the tool because the PM can add a folder while a session is open, and
+   * the list the model is offered has to be the list it can actually ask about.
+   */
+  repos(): Promise<CodebaseRepoRef[]>;
+  run(req: CodebaseRunRequest): Promise<CodebaseRunResult>;
+}
+
 export interface UseCaseContext {
   vault: VaultPort;
   index: IndexPort;
@@ -324,6 +418,8 @@ export interface UseCaseContext {
   asks?: AskPort;
   /** Present only when an outbound integration (Atlassian) is configured. */
   outbound?: OutboundPort;
+  /** Present only when a codebase is configured AND the `claude` probe passed. */
+  codebase?: CodebasePort;
   /** Sweep check ledger; absent in contexts that never run background sweeps. */
   checks?: CheckLedgerPort;
 }

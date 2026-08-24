@@ -406,7 +406,9 @@ function TodoRowItem({
                     <DropdownMenuSeparator />
                     <DropdownMenuItem className="gap-3 px-2 py-1.5" onClick={() => onSnooze(null)}>
                       <span className="min-w-0">No date</span>
-                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">someday</span>
+                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                        someday
+                      </span>
                     </DropdownMenuItem>
                   </>
                 )}

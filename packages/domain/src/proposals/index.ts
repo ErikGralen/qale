@@ -31,9 +31,12 @@ export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
  * Where an outbound draft is addressed. Provider-shaped ('jira', 'confluence')
  * because that's honest data — but every consumer branches on the generic
  * `action`, so a new provider is an entry here, never a new code path upstream.
- * 'message' is the human "provider": drafts saved to the workspace, not sent.
+ *
+ * 'message' was here for the deleted message card. It is gone with the action
+ * that targeted it: a stored row from that era names `send_message`, which no
+ * longer parses, so keeping the provider name would have rescued nothing.
  */
-export const OUTBOUND_PROVIDERS = ['jira', 'confluence', 'message', 'google-calendar'] as const;
+export const OUTBOUND_PROVIDERS = ['jira', 'confluence', 'google-calendar'] as const;
 export type OutboundProvider = (typeof OUTBOUND_PROVIDERS)[number];
 
 /** @deprecated legacy name for {@link OUTBOUND_PROVIDERS} (`system` era). */
@@ -51,7 +54,6 @@ export const OUTBOUND_ACTIONS = [
   'create_ticket',
   'comment_ticket',
   'update_page',
-  'send_message',
   // Calendar writes. Each has an
   // executor in the google-calendar connector — the "never advertise an action
   // without an executor" rule holds.
@@ -66,19 +68,26 @@ const LEGACY_OUTBOUND_ACTIONS: Record<string, OutboundAction> = {
   create_issue: 'create_ticket',
   add_comment: 'comment_ticket',
   update_page: 'update_page',
-  message: 'send_message',
 };
 
 /**
- * Outbound card (PLAN-V2 §3.4) — a draft addressed to an external system or a
- * human. This tier is draft-and-approve forever: there is no auto-apply path. The
+ * Pre-rename address fields, as they exist in persisted proposal rows. Both
+ * `issueKey` and `pageId` said "the provider's id for the thing this card is
+ * addressed to", one action apart, so they fold onto one generic field.
+ */
+const LEGACY_TARGET_FIELDS = ['issueKey', 'pageId'] as const;
+
+/**
+ * Outbound card (PLAN-V2 §3.4) — a draft addressed to an external system. This
+ * tier is draft-and-approve forever: there is no auto-apply path. The
  * exact payload is stored; the resulting link is built from the API response only.
  *
  * Legacy compat: proposal rows persist the payload as raw JSON and are only
  * validated here at read/accept time, so pre-genericization records
- * (`system: 'jira'`, `action: 'create_issue'`) are normalized by the preprocess
- * step — no data migration. The parsed output always carries BOTH `provider`
- * (canonical) and `system` (deprecated mirror) so existing readers keep working.
+ * (`system: 'jira'`, `action: 'create_issue'`, `issueKey`, `pageId`,
+ * `projectKey`) are normalized by the preprocess step. No data migration.
+ * The parsed output always carries BOTH `provider` (canonical) and `system`
+ * (deprecated mirror) so existing readers keep working.
  */
 export const zOutboundSearchReplace = z.object({ search: z.string().min(1), replace: z.string() });
 
@@ -94,6 +103,18 @@ export const zOutboundPayload = z.preprocess(
     if (typeof rec['action'] === 'string' && rec['action'] in LEGACY_OUTBOUND_ACTIONS) {
       rec['action'] = LEGACY_OUTBOUND_ACTIONS[rec['action']];
     }
+    // Address and destination lose their provider-shaped names. The old keys are
+    // not carried through: z.object strips them, so every reader sees one name.
+    if (rec['targetId'] == null) {
+      for (const field of LEGACY_TARGET_FIELDS) {
+        if (typeof rec[field] === 'string') {
+          rec['targetId'] = rec[field];
+          break;
+        }
+      }
+    }
+    if (rec['container'] == null && typeof rec['projectKey'] === 'string')
+      rec['container'] = rec['projectKey'];
     return rec;
   },
   z
@@ -102,11 +123,13 @@ export const zOutboundPayload = z.preprocess(
       /** @deprecated mirror of `provider`, kept so pre-genericization readers still resolve. */
       system: z.enum(OUTBOUND_PROVIDERS),
       action: z.enum(OUTBOUND_ACTIONS),
-      projectKey: z.string().optional(),
+      /** Where a create lands: a tracker project, a wiki space. Same word the
+       *  mirror frontmatter uses, so one term names one thing. */
+      container: z.string().optional(),
       issueType: z.string().optional(),
-      issueKey: z.string().optional(),
-      pageId: z.string().optional(),
-      /** Ticket summary / message subject. */
+      /** The provider's own id for the item addressed: a ticket key, a page id. */
+      targetId: z.string().optional(),
+      /** Ticket summary / page title / event summary. */
       title: z.string().optional(),
       /** The drafted body (markdown), shown verbatim in the card preview. */
       body: z.string().min(1),
@@ -125,7 +148,13 @@ export const zOutboundPayload = z.preprocess(
        */
       remote_updated: z.string().optional(),
       version: z.number().int().nonnegative().optional(),
-      audience: z.string().optional(),
+      /**
+       * How the draft was written to sound (SK-6): the name of a file in
+       * `voices/`. A record of what governed the writing, not an instruction to
+       * anything downstream — the text is already written by the time a card
+       * exists.
+       */
+      voice: z.string().optional(),
       // Calendar-event fields (provider 'google-calendar'). calendarId defaults
       // to 'primary' in the connector when omitted; times are RFC3339.
       calendarId: z.string().optional(),
@@ -146,8 +175,7 @@ export const zOutboundPayload = z.preprocess(
     // target must be rejected where the agent can react, not at approval.
     .superRefine((p, refCtx) => {
       const need = (
-        field:
-          'projectKey' | 'issueKey' | 'pageId' | 'eventId' | 'title' | 'start' | 'attendeeEmail',
+        field: 'container' | 'targetId' | 'eventId' | 'title' | 'start' | 'attendeeEmail',
       ): void => {
         if (!p[field]?.toString().trim()) {
           refCtx.addIssue({
@@ -157,9 +185,9 @@ export const zOutboundPayload = z.preprocess(
           });
         }
       };
-      if (p.action === 'create_ticket') need('projectKey');
-      if (p.action === 'comment_ticket') need('issueKey');
-      if (p.action === 'update_page') need('pageId');
+      if (p.action === 'create_ticket') need('container');
+      if (p.action === 'comment_ticket') need('targetId');
+      if (p.action === 'update_page') need('targetId');
       if (p.action === 'create_event') {
         need('title'); // the event summary
         need('start');

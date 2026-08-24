@@ -18,7 +18,6 @@ import type {
   VaultInfo,
   VaultTreeGroup,
 } from '@qale/application';
-import type { Start } from '@qale/sessions';
 import type {
   AgentDTO,
   BacklinkDTO,
@@ -29,7 +28,6 @@ import type {
   ProposalDTO,
   SearchHitDTO,
   SkillDTO,
-  StartDTO,
   VaultInfoDTO,
   VaultTreeDTO,
 } from '@qale/ipc';
@@ -120,21 +118,19 @@ export function treeToDTO(groups: VaultTreeGroup[]): VaultTreeDTO {
 }
 
 /**
- * A skill in the Skills view's row shape. `starts` and `can` cross the wire as
- * the file wrote them — no clocks merged in, because nothing in the app starts
- * a skill by itself; that is the whole difference between the two folders.
+ * A skill in the Skills view's row shape. `can` crosses the wire as the file
+ * wrote it, and nothing else does: no clocks, because nothing in the app starts
+ * a skill by itself, which is the whole difference between the two folders.
  */
 export function skillToDTO(s: RunnableSummary): SkillDTO {
   return {
     path: s.path,
     slug: s.slug,
+    kind: s.kind === 'voice' ? 'voice' : 'skill',
     name: s.name,
     title: s.title,
     summary: s.summary,
-    starts: s.starts.map((x) => fileStartToDTO(x, s.audience)),
     can: s.can,
-    enabled: s.enabled,
-    sentence: s.sentence,
     errors: s.errors,
     mtime: s.mtime,
     files: s.files,
@@ -143,16 +139,8 @@ export function skillToDTO(s: RunnableSummary): SkillDTO {
 }
 
 /**
- * A file-declared start, widened to the wire union. `always` carries its
- * audience so the chip can say who the rule applies to without a second field.
- */
-function fileStartToDTO(start: Start, audience?: string): StartDTO {
-  return start === 'always' && audience ? { kind: 'always', audience } : { kind: start };
-}
-
-/**
  * An agent in the Agents view's row shape: the file's own words (title,
- * summary, starts, can) plus the facts only main knows — its clocks, the key,
+ * summary, can) plus the facts only main knows — its clocks, the key,
  * when it last fired, when it last merely looked, pending cards. A file whose frontmatter has
  * errors reads as blocked, not quietly "on" — same doctrine as a missing key.
  */
@@ -183,9 +171,10 @@ export function agentFileToDTO(
     lastCheckedMs,
     lastQuietMs: a.lastQuietMs,
     lastStoppedMs: a.lastStoppedMs,
-    // The file's own starts, then the app's clocks. No facts entry means no
-    // clock at all: the app genuinely never begins this one on its own.
-    starts: [...a.starts.map((s) => fileStartToDTO(s, a.audience)), ...(facts?.starts ?? [])],
+    // The app's clocks, and nothing from the file: a trigger with no dispatch
+    // site behind it is a promise the file cannot keep. No facts entry means no
+    // clock at all — the app genuinely never begins this one on its own.
+    starts: facts?.starts ?? [],
     can: a.can,
     errors: a.errors,
     pendingCards,

@@ -3,13 +3,13 @@
 **Status: in force.** The rules live in four places and they have to move
 together. This file holds the reasoning; the four places hold the rules.
 
-| Where | What it binds |
-| --- | --- |
-| `CLAUDE.md` | Claude Code working in this repo: replies, comments, commits, docs |
-| `packages/agent/src/prompts.ts` (`SHARED_PREAMBLE`) | Every agent session in the product |
-| `packages/agent/src/prompts.ts` (`CHILD_PREAMBLE`) | Fan-out subagents and the files they write |
-| `packages/sessions/src/defaults.ts` (header comment) | The shipped skill and agent bodies |
-| `apps/desktop/PRODUCT.md` (Brand Commitments) | Product copy a PO can read |
+| Where                                                | What it binds                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------------ |
+| `CLAUDE.md`                                          | Claude Code working in this repo: replies, comments, commits, docs |
+| `packages/agent/src/prompts.ts` (`SHARED_PREAMBLE`)  | Every agent session in the product                                 |
+| `packages/agent/src/prompts.ts` (`CHILD_PREAMBLE`)   | Fan-out subagents and the files they write                         |
+| `packages/sessions/src/defaults.ts` (header comment) | The shipped skill and agent bodies                                 |
+| `apps/desktop/PRODUCT.md` (Brand Commitments)        | Product copy a PO can read                                         |
 
 ## The rule
 
@@ -71,6 +71,5 @@ robot, it fails the rule that matters most.
 
 Change all five places in the same commit, or the product and the repo start
 disagreeing about their own house style. The shipped skill bodies in
-`defaults.ts` have a second copy in `vault-dev/skills/<name>/SKILL.md`; if a copy
-change touches those strings, it is a shipped change and needs a fingerprint in
-`shipped-versions.ts`.
+`defaults.ts` have a second copy in `vault-dev/skills/<name>/SKILL.md`; a copy
+change has to be made in both, or the demo and a fresh install disagree.

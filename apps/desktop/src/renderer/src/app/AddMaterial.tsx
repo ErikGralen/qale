@@ -1,6 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Dialog, DialogContent, DialogTitle, DialogDescription, Button, Spinner } from '@qale/ui';
-import { FileText, Image as ImageIcon, Plus, TriangleAlert, Upload, X } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  Spinner,
+  cn,
+} from '@qale/ui';
+import {
+  ChevronRight,
+  FileText,
+  Image as ImageIcon,
+  Plus,
+  TriangleAlert,
+  Upload,
+  X,
+} from 'lucide-react';
 import type { ArrivalCheckDTO, ArrivalHandoffDTO, ArrivalItemInputDTO } from '@qale/ipc';
 import { readableAs } from '@qale/domain';
 import { pathForFile } from '../lib/ipc';
@@ -329,6 +348,7 @@ export function AddMaterial({
                 <span className="text-sm font-medium">Drop files or a folder here</span>
                 <span className="text-xs">or click to choose them, or paste</span>
               </button>
+              <TranscriptHelp />
             </div>
           ) : (
             <div className="flex max-h-56 flex-col gap-px overflow-y-auto px-2 pt-2">
@@ -468,5 +488,38 @@ export function AddMaterial({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Where a transcript even comes from, folded under the empty drop zone
+ * (clarity review area 9). "Drop a transcript" is the First step that unblocks
+ * most of the others, and it assumed everyone had exported one before. Paste
+ * leads: it is the one path that works no matter which tool ran the meeting.
+ */
+function TranscriptHelp() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="mt-2">
+      <CollapsibleTrigger className="flex items-center gap-1 rounded text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none">
+        <ChevronRight
+          className={cn(
+            'size-3.5 transition-transform motion-reduce:transition-none',
+            open && 'rotate-90',
+          )}
+          aria-hidden
+        />
+        Where do I find a meeting transcript?
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-1.5 space-y-1 rounded-lg bg-accent/40 px-3 py-2 text-xs text-muted-foreground">
+          <p>The simplest way: copy the text of any notes or transcript and paste it here.</p>
+          <p>
+            To export a file instead: Teams keeps the transcript on the meeting’s recap tab, Zoom
+            under Recordings on zoom.us, and Meet attaches a Doc to the calendar event in Drive.
+          </p>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

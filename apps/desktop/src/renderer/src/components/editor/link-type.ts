@@ -1,5 +1,5 @@
 import { typeForDir, type NoteType } from '@qale/domain';
-import { externalSlugOf } from '../../lib/connections';
+import { isTicketKey, refKeyOf } from '../../lib/connections';
 
 /**
  * Shared plumbing for authoring a link's relationship type.
@@ -12,12 +12,14 @@ export const EDIT_LINK_TYPE_EVENT = 'qale:edit-link-type';
 
 /**
  * Which KIND of thing a link points at, from the target alone — the folder is
- * the type (`people/asa-lindqvist` → person), and a bare ticket key normalizes
- * to its mirror folder first. `null` when the target has no folder (a
- * not-yet-created note), which the picker reads as "offer everything".
+ * the type (`people/asa-lindqvist` → person). A bare ticket key has no folder,
+ * but nothing else is ever written that way, so the shape answers the question
+ * without asking which tracker holds it. `null` when the target has no folder
+ * (a not-yet-created note), which the picker reads as "offer everything".
  */
 export function targetNoteType(target: string): NoteType | null {
-  const dir = externalSlugOf(target).split('/')[0];
+  if (isTicketKey(target)) return 'ticket';
+  const dir = refKeyOf(target).split('/')[0];
   return dir ? typeForDir(dir) : null;
 }
 

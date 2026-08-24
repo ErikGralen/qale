@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { NoteDTO } from '@qale/ipc';
+import { isVoicePath } from '@qale/domain';
 import { Badge, Button } from '@qale/ui';
 import { Bot, Pin, Play, Trash2, TriangleAlert, Wand2 } from 'lucide-react';
 import { useApp } from '../state/app-state';
@@ -9,8 +10,9 @@ import { NoteEditor } from '../components/NoteEditor';
 import { TitleEditor } from '../components/TitleEditor';
 import { AgentSwitch } from '../components/AgentSwitch';
 import { AgentLifeSigns, AgentBlockedNotice } from '../components/AgentLifeSigns';
-import { StartChips, CanChips } from '../components/RunnableConfig';
+import { CanChips } from '../components/RunnableConfig';
 import { askSelectionSeed } from '../lib/agent-nudges';
+import { momentFor, skillsTabItem, skillsTabLabel, tabForFile } from '../lib/skills-tabs';
 
 /**
  * The purpose-built page a skill or agent file opens as — stored as markdown,
@@ -64,9 +66,7 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
     saveFrontmatter,
     loadDoc,
     openDoc,
-    openFolder,
     openSkills,
-    openAgents,
     openSession,
     setAgentEnabled,
     search,
@@ -80,24 +80,36 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
   const skill = isAgent ? undefined : skills.find((s) => s.path === note.path);
   const agent = isAgent ? agents.find((a) => a.path === note.path) : undefined;
   const errors = (isAgent ? agent?.errors : skill?.errors) ?? [];
-  // What starts it and what it may do — config, read off the parsed file so the
-  // page shows exactly what the runtime will honour.
-  const starts = (isAgent ? agent?.starts : skill?.starts) ?? [];
+  // What it may do — config, read off the parsed file so the page shows exactly
+  // what the runtime will honour. What STARTS it is the app's, and only an
+  // agent has one: a skill runs when you ask for it.
   const can = (isAgent ? agent?.can : skill?.can) ?? [];
   // A skill IS its folder, so its invocation name is the folder name — read off
   // the parsed row rather than sliced off the path again, since `skills/x/SKILL.md`
-  // and legacy `skills/x.md` are the same skill under different filenames. The
-  // button exists only where the file says the PM is one of the ways in.
+  // and legacy `skills/x.md` are the same skill under different filenames.
   const name =
     (isAgent ? agent?.id : skill?.name) ?? note.path.split('/').pop()!.replace(/\.md$/, '');
-  const runnable = !isAgent && starts.some((x) => x.kind === 'you-run-it');
   // The material beside it. Listed, never loaded — the whole point of the folder.
   const files = (isAgent ? agent?.files : skill?.files) ?? [];
 
-  // The top folder is the crumb (Skills, Agents), and the leaf is this one's
-  // name. The file it is stored in used to sit there, which told the reader
-  // where it lives in a vocabulary they never asked for.
-  const folder = note.path.includes('/') ? (note.path.split('/')[0] ?? null) : null;
+  // The crumb is the tab this file is listed on, and the leaf is its name. It
+  // used to be the folder, which parted company with the page the moment one
+  // page held five tabs: house-rules and the moments all sit in `skills/` and
+  // none of them is on the Skills tab. `tabForFile` is the single derivation,
+  // so the crumb always goes back to the list the reader came from.
+  const tab = tabForFile({
+    kind: isAgent ? 'agent' : isVoicePath(note.path) ? 'voice' : 'skill',
+    name,
+  });
+  const noun = skillsTabItem(tab).toLowerCase();
+  // Only a file you can start gets a Start button. A voice is applied when
+  // something is drafted and the house rules are read before every session, so
+  // neither is work anyone runs, and `voices/` cannot even be resolved by name.
+  const runnable = tab === 'skills' || tab === 'moments';
+  // What puts this file in force, in one line. Every answer is code-owned: a
+  // clock for an agent, a hard-coded trigger for a moment, and for the rest a
+  // fact about where the file sits.
+  const moment = momentFor(name);
 
   // Full-map save (unknown keys survive parseFrontmatter); a rejected write
   // resyncs to file truth so the inputs never lie about what was saved.
@@ -111,23 +123,12 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
     <div className="flex h-full flex-col">
       <PageHeader
         icon={isAgent ? Bot : Wand2}
-        crumbs={
-          folder
-            ? [
-                {
-                  label: folder.charAt(0).toUpperCase() + folder.slice(1),
-                  // skills/ and agents/ have purpose-built list pages — the
-                  // crumb goes there, not to the raw memory folder view.
-                  onClick: (e) =>
-                    folder === 'skills'
-                      ? openSkills(navFromEvent(e))
-                      : folder === 'agents'
-                        ? openAgents(navFromEvent(e))
-                        : openFolder(folder, navFromEvent(e)),
-                },
-              ]
-            : undefined
-        }
+        crumbs={[
+          {
+            label: skillsTabLabel(tab),
+            onClick: (e) => openSkills(tab, navFromEvent(e)),
+          },
+        ]}
         label={note.title}
         labelTitle={note.title}
       >
@@ -139,9 +140,7 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
           )}
           {confirmDelete ? (
             <div className="flex items-center gap-1.5 pl-1">
-              <span className="text-xs text-muted-foreground">
-                Delete this {isAgent ? 'agent' : 'skill'}?
-              </span>
+              <span className="text-xs text-muted-foreground">Delete {noun}?</span>
               <Button size="sm" variant="destructive" onClick={() => void deleteNote(note.path)}>
                 Delete
               </Button>
@@ -162,7 +161,7 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
               <HeaderMenu
                 items={[
                   {
-                    label: isAgent ? 'Delete agent' : 'Delete skill',
+                    label: `Delete ${noun}`,
                     icon: Trash2,
                     action: () => setConfirmDelete(true),
                     danger: true,
@@ -179,7 +178,7 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
       <div className="flex-1 overflow-y-auto px-14 py-4">
         <div className="mx-auto max-w-2xl">
           <div className="mb-1 flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">{isAgent ? 'Agent' : 'Skill'}</Badge>
+            <Badge variant="secondary">{skillsTabItem(tab)}</Badge>
             {isAgent && agent && (
               <span className="ml-auto">
                 <AgentSwitch
@@ -203,18 +202,24 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
             onCommit={(summary) => commitFm({ summary })}
           />
 
-          {/* The life signs — the same component as the Agents list row. A
-              skill has no clock and nothing to report having done, so it shows
-              the same config chips and its one sentence instead. */}
+          {/* The life signs — the same component as the Agents list row. The
+              other four kinds have no clock and nothing to report having done,
+              so they show what the file may do and one line saying what puts it
+              in force. That line comes from code, never from the file. */}
           {isAgent && agent ? (
             <AgentLifeSigns agent={agent} className="mb-3" />
           ) : (
             <div className="mb-3 flex flex-col gap-1">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <StartChips starts={starts} />
-                <CanChips can={can} />
-              </div>
-              <p className="text-xs text-muted-foreground/80">{skill?.sentence}</p>
+              <CanChips can={can} />
+              <p className="text-xs text-muted-foreground/80">
+                {tab === 'house-rules'
+                  ? 'Every session reads this before it starts. There is nothing to switch on.'
+                  : moment
+                    ? `${moment.when}, Qale runs this. You can also run it yourself.`
+                    : tab === 'voices'
+                      ? 'Applied when something is drafted. It sets the tone, never what the draft says.'
+                      : 'You run it from the composer, or the agent picks it up when a session becomes this work.'}
+              </p>
             </div>
           )}
 

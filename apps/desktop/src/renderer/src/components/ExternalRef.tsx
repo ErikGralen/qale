@@ -6,6 +6,7 @@ import type { StateCategory } from '@qale/ipc';
 import {
   connections,
   openExternalRef,
+  providerLabelOf,
   refMetaCached,
   type AtRiskLinkDTO,
   type ExternalRefMetaDTO,
@@ -40,6 +41,11 @@ const PILL_TONE: Record<StateCategory, string> = {
 export function pillClass(category: StateCategory): string {
   return `inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-micro font-medium whitespace-nowrap ${PILL_TONE[category]}`;
 }
+
+/** The pill on an ambiguous reference: same geometry as a state pill, amber,
+ *  and it counts trackers rather than naming a state there isn't one of. */
+export const AMBIGUOUS_PILL_CLASS =
+  'self-center inline-flex items-center rounded-full bg-warning/15 px-1.5 py-px text-micro font-medium whitespace-nowrap text-warning';
 
 export function StatePill({
   state,
@@ -76,13 +82,20 @@ function KindPill({ label }: { label: string }) {
   return <span className={`${pillClass('open')} self-center font-normal`}>{label}</span>;
 }
 
+/** "Jira and Linear", "Jira, Linear and Asana" — a list a person reads aloud. */
+export function namedList(items: readonly string[]): string {
+  const names = items.map(providerLabelOf);
+  if (names.length < 2) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 export function ExternalRefChip({
   target,
   alias,
   onOpen,
   kind,
 }: {
-  /** Wikilink target — "tickets/PAY-142", "wikipages/…", or a bare key. */
+  /** Wikilink target — "tickets/jira/PAY-142", "wikipages/…", or a bare key. */
   target: string;
   alias?: string | null;
   /** Route to the mirror note when it exists (⌘click → new tab); absent chips open the provider URL. */
@@ -109,10 +122,28 @@ export function ExternalRefChip({
     };
   }, [target]);
 
+  // Two trackers hold this id, so there is no one item to open (PD-11). The
+  // chip stays a chip, says which trackers, and does nothing on click: the
+  // hover card explains it and only the author can say which one was meant.
+  if (meta?.ambiguousProviders) {
+    return (
+      <span
+        data-external-ref={target}
+        tabIndex={0}
+        className="inline-flex max-w-full items-baseline gap-1 rounded-sm bg-muted px-1 py-px font-medium text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
+        <span className="truncate">{meta.externalId}</span>
+        <span className={AMBIGUOUS_PILL_CLASS}>{meta.ambiguousProviders.length} trackers</span>
+      </span>
+    );
+  }
+
   const label =
     meta?.kind === 'ticket'
       ? meta.externalId
-      : (meta?.title ?? alias ?? target.replace(/^(tickets|wikipages)\//, ''));
+      : // The last segment, not the part after a fixed prefix: a mirror sits
+        // under its provider ("wikipages/confluence/…") once PD-10 has run.
+        (meta?.title ?? alias ?? target.split('/').pop() ?? target);
 
   return (
     <button
@@ -301,6 +332,32 @@ export function ExternalRefHoverLayer({ onOpen }: { onOpen: (path: string) => vo
 
   if (!state) return null;
   const m = state.meta;
+
+  // The ambiguous card has one job: say why the chip does nothing, and how to
+  // fix it. There is no item behind it, so it shows none of an item's fields.
+  if (m.ambiguousProviders) {
+    return createPortal(
+      <div
+        ref={cardRef}
+        role="tooltip"
+        className="fixed z-50 w-80 rounded-lg border border-border bg-popover p-3 text-popover-foreground opacity-0 shadow-md transition-opacity duration-150 motion-reduce:transition-none"
+        style={{ left: 0, top: 0 }}
+      >
+        <div className="text-sm leading-snug font-medium">{m.externalId}</div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {namedList(m.ambiguousProviders)} each hold this id, so the link names no one item. Write
+          the tracker into the link, like{' '}
+          <code className="text-foreground/75">
+            [[{m.kind === 'ticket' ? 'tickets' : 'wikipages'}/{m.ambiguousProviders[0]}/
+            {m.externalId}]]
+          </code>
+          .
+        </p>
+      </div>,
+      document.body,
+    );
+  }
+
   const host = (() => {
     try {
       return new URL(m.url).host;

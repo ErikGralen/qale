@@ -86,7 +86,10 @@ test('a theme starts on a stance, a note keeps its date prefix', async () => {
   const { ctx, store } = fakeContext();
   const theme = await createNote(ctx, { type: 'theme', title: 'On-prem deployment' });
   assert.equal(theme.path, 'themes/on-prem-deployment.md');
-  assert.equal((store.get(theme.path)!.frontmatter as Record<string, unknown>)['stance'], 'exploring');
+  assert.equal(
+    (store.get(theme.path)!.frontmatter as Record<string, unknown>)['stance'],
+    'exploring',
+  );
 
   const note = await createNote(ctx, { type: 'note' });
   assert.equal(note.path, 'notes/2026-08-14-untitled.md');

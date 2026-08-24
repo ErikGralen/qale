@@ -185,6 +185,29 @@ test('attention: a librarian session the PO started themselves is owed like any 
   assert.deepEqual(ids(homeRows(items, 4, NOW)), ['question:by-hand']);
 });
 
+test('attention: a round to write in waits exactly as a question waits', () => {
+  // A comment request parks the turn the same way ask_user does, so it ranks
+  // first, counts toward the badge and reaches Home. All it says differently is
+  // the word on the row (docs/brainstorm-skill.md).
+  const round: AskRequestDTO = {
+    ...ask('session-1'),
+    comments: { path: 'round-1.md', slots: [{ id: 'idea-3', prompt: 'Keep? Cut?' }] },
+  };
+  const items = buildAttention(
+    input({
+      askRequests: { 'session-1': round },
+      proposals: [card('p1')],
+      sessions: [session('session-1', { running: true })],
+    }),
+    NOW,
+  );
+  assert.deepEqual(ids(items), ['question:session-1', 'card:p1']);
+  assert.equal(items[0]!.meta, 'comments');
+  assert.equal(items[0]!.quiet, false);
+  assert.deepEqual(ids(waitingOnYou(items)), ['question:session-1', 'card:p1']);
+  assert.equal(homeRows(items, 4, NOW)[0]!.id, 'question:session-1');
+});
+
 test('attention: a resolved card and a shelved session leave the list', () => {
   const items = buildAttention(
     input({

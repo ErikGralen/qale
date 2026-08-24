@@ -408,9 +408,7 @@ export class AtlassianClient {
     return typeof data.totalSize === 'number' ? data.totalSize : null;
   }
 
-  async getPage(
-    id: string,
-  ): Promise<{
+  async getPage(id: string): Promise<{
     id: string;
     title: string;
     url: string;

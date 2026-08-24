@@ -15,4 +15,4 @@ tags:
 
 She asked for it the next day, before any rollout planning starts. The document is the
 [[notes/rollout-runbook|rollout runbook]], and rollout delivery is tracked on
-[[tickets/PAY-142|PAY-142]].
+[[tickets/jira/PAY-142|PAY-142]].

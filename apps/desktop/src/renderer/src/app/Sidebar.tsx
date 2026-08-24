@@ -40,6 +40,7 @@ import { navFromEvent } from '../lib/nav';
 import { useNewNote } from '../lib/new-note';
 import { noteTypeIcon } from '../lib/note-icons';
 import { timeAgo } from '../lib/session-meta';
+import { tabForFile } from '../lib/skills-tabs';
 import { ToolbarButton } from '../components/ToolbarButton';
 import {
   byRecent,
@@ -154,6 +155,17 @@ function Section({
 function SessionsSection({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
   const { sessions, openChat, openChats, askRequests, setSessionLifecycle } = useApp();
   const asking = useMemo(() => new Set(Object.keys(askRequests)), [askRequests]);
+  // Sessions parked on a round to write in rather than on a question. They wait
+  // the same way and sort the same way; only the word on the row changes.
+  const writingIn = useMemo(
+    () =>
+      new Set(
+        Object.entries(askRequests)
+          .filter(([, r]) => r.comments)
+          .map(([id]) => id),
+      ),
+    [askRequests],
+  );
   const rows = sessionRows(sessions, asking);
 
   return (
@@ -170,7 +182,9 @@ function SessionsSection({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
             const wants = needsYou(s, asking);
             const waitingOnAnswer = asking.has(s.id);
             const reason = waitingOnAnswer
-              ? 'question'
+              ? writingIn.has(s.id)
+                ? 'comments'
+                : 'question'
               : s.pendingCards > 0
                 ? `${s.pendingCards} card${s.pendingCards === 1 ? '' : 's'}`
                 : s.unread
@@ -187,7 +201,9 @@ function SessionsSection({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
                   onClick={(e) => openChat({ id: s.id, title: s.title }, navFromEvent(e))}
                   title={`${s.title}: ${
                     waitingOnAnswer
-                      ? 'waiting on your answer'
+                      ? writingIn.has(s.id)
+                        ? 'waiting on your comments'
+                        : 'waiting on your answer'
                       : s.running
                         ? 'running'
                         : wants
@@ -534,7 +550,9 @@ function NewNoteMenu() {
                   {NEW_NOTE_PURPOSE[type]}
                 </span>
               </span>
-              {type === 'note' && <span className="ml-auto pl-3 text-xs text-muted-foreground">⌘N</span>}
+              {type === 'note' && (
+                <span className="ml-auto pl-3 text-xs text-muted-foreground">⌘N</span>
+              )}
             </DropdownMenuItem>
           );
         })}
@@ -643,9 +661,11 @@ function SetupItem({
 
 /**
  * How the app itself is set up, behind the one glyph that has always meant
- * that. Skills and Agents are configuration — read once, edited rarely — so
- * they stop holding a permanent shelf at the foot of the rail (where they
- * competed with the working set) and join Settings under the cog.
+ * that. Skills are configuration: read once, edited rarely. So they stop
+ * holding a permanent shelf at the foot of the rail (where they competed with
+ * the working set) and join Settings under the cog. Agents are one of the
+ * Skills page's five tabs now (SK-12); the row stays because a blocked agent
+ * has to be one click away, and it aims at that tab.
  *
  * Filing them away costs nothing only if a broken one can still shout: a skill
  * with frontmatter errors or an agent that has quietly stopped puts a dot on
@@ -653,8 +673,11 @@ function SetupItem({
  * the most conventional of the three is still one keystroke, not two clicks.
  */
 function SetupMenu() {
-  const { skills, agents, openSkills, openAgents, openSettings } = useApp();
+  const { skills, agents, openSkills, openSettings } = useApp();
   const skillsToFix = skills.filter((s) => s.errors.length > 0).length;
+  // The row counts what is on the Skills tab: work you run. The house rules,
+  // the moments and the voices share the page but are not that (SK-12).
+  const skillCount = skills.filter((s) => tabForFile(s) === 'skills').length;
   const agentsBlocked = agents.filter((a) => a.status === 'blocked').length;
   // A file that won't parse is an error; an agent waiting on a key is a config
   // gap — the same two voices these states already use on their own pages, so
@@ -700,16 +723,12 @@ function SetupMenu() {
         <SetupItem
           icon={Wand2}
           label="Skills"
-          title="Skills: how work you hand over gets done, from playbooks to always-on rules to reference"
+          title="Skills: how work you hand over gets done"
           meta={
-            skillsToFix > 0
-              ? `${skillsToFix} to fix`
-              : skills.length > 0
-                ? `${skills.length}`
-                : undefined
+            skillsToFix > 0 ? `${skillsToFix} to fix` : skillCount > 0 ? `${skillCount}` : undefined
           }
           metaTone={skillsToFix > 0 ? 'destructive' : 'muted'}
-          onClick={(e) => openSkills(navFromEvent(e))}
+          onClick={(e) => openSkills(undefined, navFromEvent(e))}
         />
         <SetupItem
           icon={Bot}
@@ -723,7 +742,7 @@ function SetupMenu() {
                 : undefined
           }
           metaTone={agentsBlocked > 0 ? (agentsBroken ? 'destructive' : 'warning') : 'muted'}
-          onClick={(e) => openAgents(navFromEvent(e))}
+          onClick={(e) => openSkills('agents', navFromEvent(e))}
         />
         <DropdownMenuSeparator />
         <SetupItem

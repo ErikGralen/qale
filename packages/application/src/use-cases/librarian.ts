@@ -32,6 +32,12 @@ export interface LibrarianFinding {
   revision: string;
   /** The worklist line the agent reads. One finding, one line. */
   line: string;
+  /**
+   * The note this finding is about, when it is about one. Read by the deferral
+   * filter, which used to match on the line text — and stopped being able to the
+   * moment the lines started naming notes as wikilinks rather than as paths.
+   */
+  notePath?: string;
 }
 
 /** What the tick decided to do. */
@@ -90,6 +96,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Epoch ms of the last librarian session. Durable so a relaunch does not fire one. */
 const LAST_RUN_KEY = 'librarian:last-run';
 
+/** The agent whose questions pace this tick. */
+const LIBRARIAN = 'librarian';
+
 /**
  * How much of a quoted name a worklist line may carry (OW9). A title is a label,
  * not a paragraph, and this is far more than any real one needs.
@@ -114,6 +123,19 @@ const QUOTED_MAX = 120;
  */
 function quoted(raw: string | null | undefined, max = QUOTED_MAX): string {
   return oneLine(String(raw ?? ''), max);
+}
+
+/**
+ * A note named the way the workspace names notes: `[[slug]]`, never a bare path.
+ *
+ * The worklist is the run's whole picture of what it is looking at, and whatever
+ * words it uses for a note come back out in the run's cards, its closing line and
+ * its questions. Hand it `notes/2026-07-17-friday-scratch.md` and the PM gets a
+ * question about a file they cannot click. So the tick writes links, the way
+ * every other surface in the app does.
+ */
+function linked(path: string): string {
+  return `[[${quoted(path.replace(/\.md$/i, ''), 200)}]]`;
 }
 
 /**
@@ -226,8 +248,9 @@ function scan(ctx: UseCaseContext): LibrarianFinding[] {
       // and one that DID fix it takes the finding away with it.
       revision: String(note.mtime),
       kind: 'frontmatter-mismatch',
+      notePath: note.path,
       line:
-        `- Frontmatter mismatch in "${quoted(note.title)}" (${quoted(note.path, 200)}): the file says it is a ` +
+        `- Frontmatter mismatch in "${quoted(note.title)}" (${linked(note.path)}): the file says it is a ` +
         `${quoted(miss.type, 40)}, but its properties do not fit that type — ${quoted(miss.error, 200)}. ` +
         `Until that field is right the file is read as a plain note, so it is missing from everywhere a ` +
         `${quoted(miss.type, 40)} is listed.`,
@@ -272,7 +295,8 @@ function scan(ctx: UseCaseContext): LibrarianFinding[] {
         // The key already names the whole finding: same source, same target, same
         // problem, whatever else moved in the file around it.
         revision: '1',
-        line: `- Broken link in ${quoted(link.from, 200)}: [[${quoted(link.target, 200)}]] resolves to nothing.${similar}`,
+        notePath: link.from,
+        line: `- Broken link in ${linked(link.from)}: [[${quoted(link.target, 200)}]] resolves to nothing.${similar}`,
       });
     }
   }
@@ -284,7 +308,8 @@ function scan(ctx: UseCaseContext): LibrarianFinding[] {
       // writing it, and what it turned into deserves a fresh read.
       revision: String(ctx.index.get(orphan.path)?.mtime ?? 0),
       kind: 'unlinked-note',
-      line: `- Unlinked note: "${quoted(orphan.title)}" (${quoted(orphan.path, 200)}). Nothing links it and it links nothing.`,
+      notePath: orphan.path,
+      line: `- Unlinked note: "${quoted(orphan.title)}" (${linked(orphan.path)}). Nothing links it and it links nothing.`,
     });
   }
 
@@ -363,6 +388,32 @@ function buildWorklist(
 }
 
 /**
+ * What the librarian has already asked and not been answered, split by whether
+ * the question is still worth waiting on.
+ *
+ * A question this agent parks is OFFERED, not owed: nobody started the run, so
+ * the PM answers it when they feel like it and often never. That is fine for the
+ * question and fatal for the tick, because a parked question is a run that never
+ * settles, and a run that never settles never marks its findings handled. Quit
+ * the app with one on screen and the next pass rebuilds the same worklist and
+ * asks the same thing on a second card.
+ *
+ * So the rule is one open question at a time. While one waits, no new pass
+ * starts. Once it has waited out the quiet window it is stale rather than
+ * pending — the note behind it has had a week to change — so the caller drops it
+ * and passes resume.
+ */
+export function librarianAsks(
+  ctx: UseCaseContext,
+  now: number,
+  quietMs: number = DEFAULT_QUIET_MS,
+): { waiting: number; stale: string[] } {
+  const open = (ctx.asks?.list() ?? []).filter((a) => a.skill === LIBRARIAN);
+  const stale = open.filter((a) => now - a.created >= quietMs);
+  return { waiting: open.length - stale.length, stale: stale.map((a) => a.id) };
+}
+
+/**
  * Scan, diff against the ledger, apply the settle and quiet windows, the
  * interval and the cap.
  * Returns null when there is nothing to hand over. Always writes the "first
@@ -428,7 +479,18 @@ export async function planLibrarianSweep(
   const lastRun = Number(checks.get(LAST_RUN_KEY));
   if (Number.isFinite(lastRun) && now - lastRun < intervalMs) return null;
 
-  const pending = ctx.proposals.list('pending').filter((p) => p.skill === 'librarian').length;
+  // A question from an earlier pass is still on the screen. Adding a pass now is
+  // how the PM ends up with the same question on two cards, so the tick waits
+  // for the one it already asked (see {@link librarianAsks}).
+  const asked = librarianAsks(ctx, now, quietMs).waiting;
+  if (asked > 0) {
+    logSweepError(
+      `[qale] librarian: ${asked} question(s) still waiting on the PM, so no session this tick`,
+    );
+    return null;
+  }
+
+  const pending = ctx.proposals.list('pending').filter((p) => p.skill === LIBRARIAN).length;
   if (pending >= cardCap) {
     // Said out loud: a queue that stops draining stops the librarian entirely,
     // and "the tick does nothing" is otherwise indistinguishable from "tidy".
@@ -443,7 +505,7 @@ export async function planLibrarianSweep(
   // the run is about to read that note anyway, and saying it twice only makes
   // the shorter half look like a second job.
   const deferred = listDeferrals(ctx, now).filter(
-    (d) => !taken.some((f) => f.line.includes(d.notePath)),
+    (d) => !taken.some((f) => f.notePath === d.notePath),
   );
   return {
     findings: taken,

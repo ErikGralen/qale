@@ -167,7 +167,7 @@ export class McpService {
 
     mcp.tool(
       'draft_writeback',
-      'File an outbound draft (jira/confluence/message) as an approval card. Never sends; the PM approves. Actions: create_ticket (requires projectKey) | comment_ticket (requires issueKey) | update_page (requires pageId) | send_message.',
+      'File an outbound draft as an approval card. Never sends; the PM approves. Actions: create_ticket (requires container, the project it goes in) | comment_ticket (requires targetId, the ticket key) | update_page (requires targetId, the page id).',
       {
         provider: z.enum(OUTBOUND_PROVIDERS).optional().describe('Where the draft is addressed.'),
         /** Deprecated alias of `provider`, still accepted from older callers. */
@@ -175,10 +175,12 @@ export class McpService {
         action: z.string(),
         title: z.string().optional(),
         body: z.string(),
-        projectKey: z.string().optional(),
-        issueKey: z.string().optional(),
-        pageId: z.string().optional(),
-        audience: z.string().optional(),
+        container: z.string().optional().describe('create_ticket: the project it goes in.'),
+        targetId: z
+          .string()
+          .optional()
+          .describe("The addressed item's own id: a ticket key, a page id."),
+        voice: z.string().optional().describe('A voice name from the workspace, e.g. "exec".'),
         sources: z.array(z.string()).default([]),
       },
       async (args) => {

@@ -13,5 +13,5 @@ Nordkap's compliance team asked for an audit trail at the QBR and Tom judged it 
 commit to June in the room. Recording it here so it's a decision rather than a remark on a
 call: the audit log ships in June, ahead of other platform work.
 
-Delivered 2026-06-20 ([[tickets/PAY-156]]). Sara mentioned in July that their compliance team
+Delivered 2026-06-20 ([[tickets/jira/PAY-156]]). Sara mentioned in July that their compliance team
 actually likes it.

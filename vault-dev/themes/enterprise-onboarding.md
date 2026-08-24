@@ -33,14 +33,15 @@ Bergman & Falk's review board treats missing SSO as an automatic no.
 - [[decisions/2026-05-20-adopt-workos]] (supersedes [[decisions/2026-02-10-use-firebase-auth]])
 - [[decisions/2026-04-15-defer-scim-to-q3]]
 - [[decisions/2026-06-05-single-region-eu]]
-- [[decisions/2026-05-19-commit-audit-log-june]], shipped ([[tickets/PAY-156]])
+- [[decisions/2026-05-19-commit-audit-log-june]], shipped ([[tickets/jira/PAY-156]])
 
 ## Pages
 
-- [[wikipages/enterprise-onboarding]], the Confluence onboarding runbook in the Product space.
+- [[wikipages/confluence/enterprise-onboarding]], the Confluence onboarding runbook in the Product space.
   Last rewritten before the SCIM deferral, so it still describes the old plan.
 
 ## State
 
 SSO rolls out 2026-07-28 with Nordkap first. SCIM scoping starts in August for September
-delivery. Once both are in, what's left is mostly how fast we can turn paperwork around.
+delivery, and nothing is broken down yet ([[notes/scim-scope]]). Once both are in, what's left
+is mostly how fast we can turn paperwork around.

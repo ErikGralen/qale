@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect } from 'react';
+import { useMemo, useState, useRef, useEffect, type ReactNode } from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { Button, Spinner } from '@qale/ui';
@@ -20,13 +20,17 @@ import { titleFromSlug } from '@qale/domain';
 import { parseKickoff, type Kickoff } from '@qale/sessions';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { navFromEvent, type NavOpts } from '../lib/nav';
+import { draftTextShown } from '../lib/draft-text';
 import { noteTypeIcon } from '../lib/note-icons';
 import { fileIconFor } from '../lib/session-files';
 import { HeaderAction, HeaderActions, PageHeader } from '../components/PageHeader';
 import { InkWriting } from '../components/InkWriting';
 import { Markdown } from '../components/Markdown';
+import { DraftTextPanel } from '../components/DraftTextPanel';
 import { SessionReview } from '../components/inbox/SessionReview';
 import { SpawnCard } from '../components/inbox/SpawnCard';
+import { CodebaseCard } from '../components/inbox/CodebaseCard';
+import { CommentsCard } from '../components/inbox/CommentsCard';
 import { QuestionCard } from '../components/inbox/QuestionCard';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
@@ -147,6 +151,8 @@ function doneLabel(part: AnyPart): { verb: string; detail?: string } {
       // The note it read, by name. The trail is provenance the PM reads, so a
       // path here would be the one place in the app that still spells storage.
       return { verb: 'Read', detail: str('path') && titleFromSlug(str('path')!) };
+    case 'vault_outline':
+      return { verb: 'Skimmed', detail: str('path') && titleFromSlug(str('path')!) };
     case 'search_vault':
       return { verb: 'Searched', detail: str('query') && `“${str('query')}”` };
     case 'vault_grep':
@@ -181,6 +187,12 @@ function doneLabel(part: AnyPart): { verb: string; detail?: string } {
             .join(', ') || undefined,
       };
     }
+    case 'get_voice':
+      return { verb: 'Read a voice', detail: str('name') };
+    // Only ever seen here when the call had nothing to show (still streaming,
+    // or malformed) — a usable one renders as its own panel in the chat.
+    case 'draft_text':
+      return { verb: 'Wrote a draft', detail: str('title') };
     // Only ever visible on a session a person started, where the tool is a
     // no-op: a scheduled run that ends quietly leaves no session to open.
     case 'end_quietly':
@@ -194,6 +206,23 @@ function doneLabel(part: AnyPart): { verb: string; detail?: string } {
       return { verb: 'Read session file', detail: str('path') };
     case 'files_list':
       return { verb: 'Listed session files' };
+    // The write tools name no system: the handler resolves the provider from
+    // the container or the mirror (PD-9).
+    case 'draft_ticket':
+      return { verb: 'Drafted a ticket', detail: str('title') };
+    case 'draft_ticket_comment':
+      return { verb: 'Drafted a comment', detail: str('ticket') };
+    case 'draft_page_update':
+      return { verb: 'Drafted a page update', detail: str('page') };
+    // Retired tool names, kept for replay: sessions filed before the write tools
+    // went provider-blind still carry these calls, and the trail is what the PM
+    // reads back months later.
+    case 'draft_jira_issue':
+      return { verb: 'Drafted a ticket', detail: str('summary') };
+    case 'draft_jira_comment':
+      return { verb: 'Drafted a comment', detail: str('issueKey') };
+    case 'draft_confluence_update':
+      return { verb: 'Drafted a page update', detail: str('pageId') };
     // Retired tool. Kept for replay only: transcripts filed before checkpoints
     // were removed still contain these calls, and an old session must not
     // render a raw tool name.
@@ -208,7 +237,9 @@ function doneLabel(part: AnyPart): { verb: string; detail?: string } {
       if (name.startsWith('draft_'))
         return {
           verb: `Drafted a ${name.slice(6).replace(/_/g, ' ')}`,
-          detail: str('title') ?? str('summary'),
+          // A message draft carries a `subject` rather than a title (SK-7), and
+          // it may be revising a card it already made.
+          detail: str('title') ?? str('subject') ?? str('summary'),
         };
       // A tool shipped without an entry above. Vague beats wrong: the PM should
       // never be shown a raw tool name (`draft_calendar_rsvp`), and a machine
@@ -226,12 +257,16 @@ function liveLabel(part: AnyPart | undefined): string {
   switch (name) {
     case 'vault_read':
       return str('path') ? `Reading ${titleFromSlug(str('path')!)}` : 'Reading the memory…';
+    case 'vault_outline':
+      return str('path') ? `Skimming ${titleFromSlug(str('path')!)}` : 'Skimming the memory…';
     case 'search_vault':
       return str('query') ? `Searching “${str('query')}”` : 'Searching the memory…';
     case 'vault_grep':
       return str('pattern') ? `Scanning for “${str('pattern')}”` : 'Scanning the memory…';
     case 'vault_list':
       return 'Listing notes…';
+    case 'draft_text':
+      return 'Writing a draft…';
     case 'spawn':
       return 'Running subagents…';
     case 'ask_user':
@@ -373,9 +408,16 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
     else if (name === 'jira_get_issue' || name === 'confluence_get_page')
       sources.add(`${name}:${JSON.stringify(input)}`);
     else if (
-      ['search_vault', 'vault_grep', 'vault_list', 'jira_search', 'confluence_search'].includes(
-        name,
-      )
+      // An outline is orientation, not content: it hands back a heading tree, and
+      // the note itself only counts as a source once a vault_read returns some of it.
+      [
+        'search_vault',
+        'vault_grep',
+        'vault_list',
+        'vault_outline',
+        'jira_search',
+        'confluence_search',
+      ].includes(name)
     )
       searches++;
     else actions++;
@@ -712,6 +754,7 @@ function SessionThread({
     setSessionLifecycle,
     tree,
     spawnRequests,
+    codebaseRequests,
     askRequests,
     skills,
     sessionFiles,
@@ -827,6 +870,11 @@ function SessionThread({
     if (!kickoff) return undefined;
     return skills.find((s) => s.name === kickoff.skill)?.title ?? kickoff.skill;
   }, [messages, lastUserIdx, skills]);
+
+  // Voices ride the same roster as skills, told apart by the folder they sit in
+  // (SkillDTO.kind). A draft panel offers them so a take the PM does not like
+  // can be asked for again in another tone without typing the sentence out.
+  const voices = useMemo(() => skills.filter((s) => s.kind === 'voice'), [skills]);
 
   // How long the background run has been at it — from main's clock, so a tab
   // opened mid-run still tells the truth.
@@ -994,7 +1042,7 @@ function SessionThread({
               );
             }
             // The working phase (reasoning, tool calls, mid-work narration)
-            // folds into one ActivityBlock; only the final text renders as the
+            // folds into an ActivityBlock; only the final text renders as the
             // answer. While streaming, a trailing text is treated as the answer
             // until a later tool call proves it was narration.
             let lastTextIdx = -1;
@@ -1011,34 +1059,65 @@ function SessionThread({
             // carrying a fence comes back out and renders in place.
             const handover = (p: AnyPart, i: number) =>
               p.type === 'text' && i !== lastTextIdx && (p.text ?? '').includes('```');
-            const activity = parts.filter(
-              (p, i) =>
-                isActivityPart(p) || (p.type === 'text' && i !== lastTextIdx && !handover(p, i)),
-            );
-            const handovers = parts.filter(handover);
-            const answer = lastTextIdx >= 0 ? parts[lastTextIdx]! : undefined;
             const isLastMessage = mi === messages.length - 1;
-            const live =
-              busy &&
-              isLastMessage &&
-              activity.length > 0 &&
-              isActivityPart(parts[parts.length - 1]!);
+            // Only the trail at the very end of a turn can still be running.
+            const tail = parts[parts.length - 1];
+            const liveTail = busy && isLastMessage && !!tail && isActivityPart(tail);
+
+            // The turn in the order it happened. Work piles up until something
+            // the PM is meant to read interrupts it — a draft panel, a handover,
+            // the answer — and that flushes the pile into one folded block. One
+            // block for the whole turn lost the order, so "a panel, then a
+            // paragraph, then another panel" came out as neither.
+            const nodes: ReactNode[] = [];
+            let pending: AnyPart[] = [];
+            let pendingFrom = 0;
+            const flush = (live: boolean) => {
+              if (pending.length === 0) return;
+              nodes.push(
+                <ActivityBlock key={`activity-${pendingFrom}`} parts={pending} live={live} />,
+              );
+              pending = [];
+            };
+            parts.forEach((part, i) => {
+              // A call still running, refused, or with no usable variants reads
+              // as null and folds into the trail like any other step.
+              const draft =
+                isToolPart(part) && toolNameOf(part) === 'draft_text' ? draftTextShown(part) : null;
+              if (draft) {
+                flush(false);
+                nodes.push(
+                  <DraftTextPanel
+                    key={`draft-${i}`}
+                    draft={draft}
+                    voices={voices}
+                    onUse={send}
+                    onOpenNote={openDoc}
+                    disabled={busy || backgroundBusy || askPending}
+                  />,
+                );
+                return;
+              }
+              if (part.type === 'text' && (i === lastTextIdx || handover(part, i))) {
+                flush(false);
+                nodes.push(
+                  <Markdown
+                    key={`text-${i}`}
+                    content={outsideCode(part.text ?? '', linkifyNotePaths)}
+                    onOpenNote={openDoc}
+                  />,
+                );
+                return;
+              }
+              if (isActivityPart(part) || part.type === 'text') {
+                if (pending.length === 0) pendingFrom = i;
+                pending.push(part);
+              }
+            });
+            flush(liveTail);
             return (
               <div key={message.id} className="w-full">
-                {activity.length > 0 && <ActivityBlock parts={activity} live={live} />}
-                {handovers.map((p, i) => (
-                  <Markdown
-                    key={`handover-${i}`}
-                    content={outsideCode(p.text ?? '', linkifyNotePaths)}
-                    onOpenNote={openDoc}
-                  />
-                ))}
-                {answer && (
-                  <Markdown
-                    content={outsideCode(answer.text ?? '', linkifyNotePaths)}
-                    onOpenNote={openDoc}
-                  />
-                )}
+                {nodes}
               </div>
             );
           })}
@@ -1096,17 +1175,31 @@ function SessionThread({
             </div>
           )}
 
-          {/* The turn is parked on a question. First of everything below the
+          {/* The turn is parked on the PM. First of everything below the
               transcript: the agent is holding its whole reading open waiting
-              for this, and nothing else here can move until it settles. */}
-          {boundSessionId && askRequests[boundSessionId] && (
-            <QuestionCard request={askRequests[boundSessionId]!} />
-          )}
+              for this, and nothing else here can move until it settles.
+
+              Which card depends on what it parked on, and `comments` is read
+              first: a round carries no questions, so the question card drawn
+              from one would be an empty card. */}
+          {boundSessionId &&
+            askRequests[boundSessionId] &&
+            (askRequests[boundSessionId]!.comments ? (
+              <CommentsCard request={askRequests[boundSessionId]!} />
+            ) : (
+              <QuestionCard request={askRequests[boundSessionId]!} />
+            ))}
 
           {/* A fan-out waiting on approval. Above the proposal cards: nothing
               else in this session can move until it settles. */}
           {boundSessionId && spawnRequests[boundSessionId] && (
             <SpawnCard request={spawnRequests[boundSessionId]!} />
+          )}
+
+          {/* A codebase question waiting on approval, in the same place and for
+              the same reason: the turn is parked until it settles. */}
+          {boundSessionId && codebaseRequests[boundSessionId] && (
+            <CodebaseCard request={codebaseRequests[boundSessionId]!} />
           )}
 
           {/* The cards this session proposed — approvable right here, so the PO

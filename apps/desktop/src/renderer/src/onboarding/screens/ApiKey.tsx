@@ -1,6 +1,14 @@
 import { useState } from 'react';
-import { Button, Input, Spinner } from '@qale/ui';
-import { Check } from 'lucide-react';
+import {
+  Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  Input,
+  Spinner,
+  cn,
+} from '@qale/ui';
+import { Check, ChevronRight } from 'lucide-react';
 import { LLM_PROVIDERS, LLM_PROVIDER_INFO, type LlmProvider } from '@qale/domain';
 import { invoke } from '../../lib/ipc';
 import { useApp } from '../../state/app-state';
@@ -176,9 +184,10 @@ export function ApiKey({ onNext, onSkip }: { onNext: () => void; onSkip: () => v
                 >
                   {new URL(info.keyUrl).host}
                 </a>
-                . We check it here so a typo fails now, not in the middle of your first meeting.
+                . We make a quick check of the key here.
               </p>
             )}
+            <KeyExplainer />
           </div>
         )}
 
@@ -191,5 +200,44 @@ export function ApiKey({ onNext, onSkip }: { onNext: () => void; onSkip: () => v
         </p>
       </div>
     </Screen>
+  );
+}
+
+/**
+ * What an API key even is, folded away (clarity review area 4). The screen
+ * assumed everyone had held one; a first-timer is about to be sent through
+ * account creation and billing on an unfamiliar site with no warning. Three
+ * lines answer the questions they actually have, and stay provider-agnostic
+ * on purpose: we recommend neither seller.
+ */
+function KeyExplainer() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="flex items-center gap-1 rounded text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none">
+        <ChevronRight
+          className={cn(
+            'size-3.5 transition-transform motion-reduce:transition-none',
+            open && 'rotate-90',
+          )}
+          aria-hidden
+        />
+        What is an API key?
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-2 space-y-2 rounded-xl bg-card p-4 text-sm text-muted-foreground ring-1 ring-border">
+          <p>A pass to an AI service that the app uses on your behalf. It is not a password.</p>
+          <p>
+            To get one, you make an account at the link above and add a payment method. You pay the
+            provider for what the app uses, not a subscription. Normal use costs a few dollars a
+            month; heavy use costs more.
+          </p>
+          <p>
+            If your company already has an account with the provider, ask whoever runs it for a key
+            instead.
+          </p>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

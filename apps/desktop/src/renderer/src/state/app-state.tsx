@@ -34,8 +34,10 @@ import type {
   SessionFileDTO,
   SessionLifecycle,
   SpawnRequestDTO,
+  CodebaseRequestDTO,
   AskRequestDTO,
   AskAnswerDTO,
+  AskCommentAnswersDTO,
   SkillDTO,
   TodoCommitment,
   VaultInfoDTO,
@@ -49,6 +51,7 @@ import { meetingRailHorizon, qualifiesForRail } from '../lib/note-status';
 import { buildAttention, waitingOnYou, type AttentionItem } from '../lib/attention';
 import type { NavOpts } from '../lib/nav';
 import { isSettingsSection, type SettingsSection } from '../lib/settings-sections';
+import { isSkillsTab, type SkillsTab } from '../lib/skills-tabs';
 
 /**
  * One visitable place — a document, a session, or an app view. Tabs navigate
@@ -84,9 +87,10 @@ export type ViewBody = { title: string } &
     /** `section` is which tab is showing — carried on the view so a deep link
      *  can aim at one, and so switching tabs survives leaving and coming back. */
     | { kind: 'settings'; section?: SettingsSection }
-    | { kind: 'skills' }
-    /** The background watchers and their off switches — Skills' sibling. */
-    | { kind: 'agents' }
+    /** Skills, in five tabs (SK-12). `section` is which one is showing, carried
+     *  on the view for the same reasons Settings carries its own. The Agents
+     *  page folded in here and no longer exists. */
+    | { kind: 'skills'; section?: SkillsTab }
   );
 
 /**
@@ -132,6 +136,12 @@ function sameTarget(a: View, b: ViewBody): boolean {
       // section in mind (⌘, the cog, ⌘K) means "wherever it is already open",
       // so it lands you back where you left off instead of resetting the tab.
       const s = b as Extract<ViewBody, { kind: 'settings' }>;
+      return s.section === undefined || a.section === s.section;
+    }
+    case 'skills': {
+      // Same rule as Settings, for the same reason: the cog's Skills row means
+      // "the Skills page", and the Agents row means the Agents tab.
+      const s = b as Extract<ViewBody, { kind: 'skills' }>;
       return s.section === undefined || a.section === s.section;
     }
     case 'session': {
@@ -297,6 +307,12 @@ interface AppState {
     request: SpawnRequestDTO,
     decision: { approved: boolean; modelId?: string },
   ) => Promise<void>;
+  /** Codebase approval cards waiting on the PM, keyed by session id. */
+  codebaseRequests: Record<string, CodebaseRequestDTO>;
+  resolveCodebase: (
+    request: CodebaseRequestDTO,
+    decision: { approved: boolean; modelId?: string },
+  ) => Promise<void>;
   /**
    * The model provider is refusing everything for a reason only the PM can
    * clear: no credit, a key it will not accept. One sentence with the fix in it,
@@ -309,10 +325,21 @@ interface AppState {
    * otherwise just looks dead.
    */
   blockedBy: string | null;
-  /** Question cards a running turn is parked on, keyed by session id. */
+  /**
+   * Cards a running turn is parked on, keyed by session id. Two kinds ride on
+   * one shape: a question to answer, and a round file to write in (`comments`).
+   */
   askRequests: Record<string, AskRequestDTO>;
-  /** Answer one — `null` skips it, which un-parks the turn rather than stopping it. */
-  resolveAsk: (request: AskRequestDTO, answers: AskAnswerDTO[] | null) => Promise<void>;
+  /**
+   * Settle one. `answers: null` with no `comments` is a skip, for both kinds:
+   * the turn un-parks and the agent decides for itself. A sent round passes
+   * `answers: null` and what was typed in the document.
+   */
+  resolveAsk: (
+    request: AskRequestDTO,
+    answers: AskAnswerDTO[] | null,
+    comments?: AskCommentAnswersDTO,
+  ) => Promise<void>;
   /** Working files of a session, keyed by session id (Sessions v2 Part 1). */
   sessionFiles: Record<string, SessionFileDTO[]>;
   refreshSessionFiles: (sessionId: string) => Promise<void>;
@@ -332,10 +359,12 @@ interface AppState {
   openContext: (tag: string, opts?: NavOpts) => void;
   openSettings: (section?: SettingsSection, opts?: NavOpts) => void;
   setSettingsSection: (viewKey: string, section: SettingsSection) => void;
-  /** Open the Skills view — the parsed skill catalogue (Skills v2). */
-  openSkills: (opts?: NavOpts) => void;
-  /** Open the Agents view — the background watchers and their off switches. */
-  openAgents: (opts?: NavOpts) => void;
+  /**
+   * Open the Skills view, optionally aimed at one of its five tabs (SK-12).
+   * `openSkills('agents')` is what every door to the old Agents page became.
+   */
+  openSkills: (section?: SkillsTab, opts?: NavOpts) => void;
+  setSkillsTab: (viewKey: string, section: SkillsTab) => void;
   /** Per-tab history — back/forward act on the active tab (browser semantics). */
   goBack: () => void;
   goForward: () => void;
@@ -533,6 +562,12 @@ const RETIRED_KINDS = new Set(['meeting-drop', 'smartview']);
  *  must shed initialPrompt so a persisted kickoff doesn't re-fire. */
 function reviveView(v: View): View | null {
   if (RETIRED_KINDS.has((v as { kind: string }).kind)) return null;
+  // The Agents page folded into the Skills page's Agents tab (SK-12). A tab
+  // persisted before that has to land there, not close: closing it would lose
+  // the rest of that tab's history along with it.
+  if ((v as { kind: string }).kind === 'agents') {
+    return { kind: 'skills', section: 'agents', title: 'Skills', key: v.key ?? nextId() };
+  }
   const keyed = v.key ? v : { ...v, key: nextId() };
   return keyed.kind === 'session' ? { ...keyed, initialPrompt: undefined } : keyed;
 }
@@ -630,6 +665,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [sessionFiles, setSessionFiles] = useState<Record<string, SessionFileDTO[]>>({});
   /** Fan-outs waiting on the PM, by session id (Sessions v2 Part 2). */
   const [spawnRequests, setSpawnRequests] = useState<Record<string, SpawnRequestDTO>>({});
+  /** Codebase questions waiting on the PM, by session id (CC-7). */
+  const [codebaseRequests, setCodebaseRequests] = useState<Record<string, CodebaseRequestDTO>>({});
   /** Questions the agent is parked on, by session id. One per session at a time. */
   const [askRequests, setAskRequests] = useState<Record<string, AskRequestDTO>>({});
   /**
@@ -766,8 +803,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const view: View = { ...body, key: nextId() };
       const hasActiveTab = tabStates.some((t) => t.id === activeTabId);
       if (opts?.newTab || !hasActiveTab) {
+        const existing = tabStates.find((t) => sameTarget(currentView(t), body));
+        if (existing) {
+          setActiveTabId(existing.id);
+          return;
+        }
         const tab: TabState = { id: nextId(), history: [view], index: 0 };
-        setTabStates((prev) => [...prev, tab]);
+        setTabStates((prev) => {
+          const activeIdx = prev.findIndex((t) => t.id === activeTabId);
+          const insertAt = activeIdx === -1 ? prev.length : activeIdx + 1;
+          const next = [...prev];
+          next.splice(insertAt, 0, tab);
+          return next;
+        });
         if (!opts?.newTab || opts.foreground) setActiveTabId(tab.id);
         return;
       }
@@ -1020,26 +1068,31 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const setSettingsSection = useCallback(
     (viewKey: string, section: SettingsSection) => {
       mapViews((v) =>
-        v.key === viewKey && v.kind === 'settings' && v.section !== section
-          ? { ...v, section }
-          : v,
+        v.key === viewKey && v.kind === 'settings' && v.section !== section ? { ...v, section } : v,
       );
     },
     [mapViews],
   );
   const openSkills = useCallback(
-    (opts?: NavOpts) => {
+    (section?: SkillsTab, opts?: NavOpts) => {
+      // One page, five tabs, and the agents are one of them — so both rosters
+      // are refreshed whichever tab is being aimed at.
       void refreshSkills();
-      navigate({ kind: 'skills', title: 'Skills' }, opts);
-    },
-    [navigate, refreshSkills],
-  );
-  const openAgents = useCallback(
-    (opts?: NavOpts) => {
       void refreshAgents();
-      navigate({ kind: 'agents', title: 'Agents' }, opts);
+      navigate({ kind: 'skills', title: 'Skills', section }, opts);
     },
-    [navigate, refreshAgents],
+    [navigate, refreshSkills, refreshAgents],
+  );
+
+  /** Switching tabs replaces the current entry rather than pushing one, so back
+   *  leaves the page instead of walking the tabs you clicked (as Settings does). */
+  const setSkillsTab = useCallback(
+    (viewKey: string, section: SkillsTab) => {
+      mapViews((v) =>
+        v.key === viewKey && v.kind === 'skills' && v.section !== section ? { ...v, section } : v,
+      );
+    },
+    [mapViews],
   );
 
   /** Remember closed tabs (history intact) for ⇧⌘T — a dozen deep, like a
@@ -1326,18 +1379,41 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   /**
+   * Answer a codebase card. Cleared locally for the same reason as the fan-out:
+   * the run takes minutes to say anything, and Run has to feel instant.
+   */
+  const resolveCodebase = useCallback(
+    async (request: CodebaseRequestDTO, decision: { approved: boolean; modelId?: string }) => {
+      setCodebaseRequests((prev) => {
+        const next = { ...prev };
+        delete next[request.sessionId];
+        return next;
+      });
+      await invoke['sessions:resolveCodebase'](request.id, decision).catch(() => undefined);
+    },
+    [],
+  );
+
+  /**
    * Answer (or skip) a question card. Cleared locally on submit for the same
    * reason as the spawn card: the turn picks up where it left off and the next
    * thing on screen should be the agent working, not the question again.
    */
-  const resolveAsk = useCallback(async (request: AskRequestDTO, answers: AskAnswerDTO[] | null) => {
-    setAskRequests((prev) => {
-      const next = { ...prev };
-      delete next[request.sessionId];
-      return next;
-    });
-    await invoke['sessions:resolveAsk'](request.id, answers).catch(() => undefined);
-  }, []);
+  const resolveAsk = useCallback(
+    async (
+      request: AskRequestDTO,
+      answers: AskAnswerDTO[] | null,
+      comments?: AskCommentAnswersDTO,
+    ) => {
+      setAskRequests((prev) => {
+        const next = { ...prev };
+        delete next[request.sessionId];
+        return next;
+      });
+      await invoke['sessions:resolveAsk'](request.id, answers, comments).catch(() => undefined);
+    },
+    [],
+  );
 
   // Seen timestamps follow the open workspace (like favourites).
   useEffect(() => {
@@ -1797,8 +1873,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const section = open.split(':')[1];
         openSettings(isSettingsSection(section) ? section : undefined);
       }
-      else if (info && open === '__skills') openSkills();
-      else if (info && open === '__agents') openAgents();
+      // `__skills` opens the page; `__skills:agents` opens one of its tabs, the
+      // same shape `__settings:` takes. `__agents` is the old Agents page's
+      // deep link, kept pointing at the tab it became.
+      else if (info && open?.startsWith('__skills')) {
+        const tab = open.split(':')[1];
+        openSkills(isSkillsTab(tab) ? tab : undefined);
+      } else if (info && open === '__agents') openSkills('agents');
       else if (info && open === '__chat') openSession(undefined);
       else if (info && open === '__review') openInbox();
       else if (info && open === '__todos') openTodos();
@@ -1823,7 +1904,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (event.channel === 'vault:changed') {
         void refreshTree();
         void refreshThemes();
-        if (event.paths.some((p) => p.startsWith('skills/'))) void refreshSkills();
+        if (event.paths.some((p) => p.startsWith('skills/') || p.startsWith('voices/')))
+          void refreshSkills();
         if (event.paths.some((p) => p.startsWith('agents/'))) void refreshAgents();
         for (const path of event.paths) if (docData[path]) void loadDoc(path);
       } else if (event.channel === 'proposals:changed') {
@@ -1880,6 +1962,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           else delete next[event.sessionId];
           return next;
         });
+      } else if (event.channel === 'session:codebase') {
+        setCodebaseRequests((prev) => {
+          const next = { ...prev };
+          if (event.request) next[event.sessionId] = event.request;
+          else delete next[event.sessionId];
+          return next;
+        });
       } else if (event.channel === 'session:ask') {
         setAskRequests((prev) => {
           const next = { ...prev };
@@ -1922,6 +2011,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     void invoke['sessions:pendingSpawn'](activeSessionId)
       .then((request) => {
         if (request) setSpawnRequests((prev) => ({ ...prev, [request.sessionId]: request }));
+      })
+      .catch(() => undefined);
+    // Same for a codebase question waiting on approval.
+    void invoke['sessions:pendingCodebase'](activeSessionId)
+      .then((request) => {
+        if (request) setCodebaseRequests((prev) => ({ ...prev, [request.sessionId]: request }));
       })
       .catch(() => undefined);
     // Same for a question the agent is parked on: it outlives the tab that
@@ -2015,6 +2110,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openChats,
       spawnRequests,
       resolveSpawn,
+      codebaseRequests,
+      resolveCodebase,
       blockedBy,
       askRequests,
       resolveAsk,
@@ -2031,7 +2128,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openSettings,
       setSettingsSection,
       openSkills,
-      openAgents,
+      setSkillsTab,
       goBack,
       goForward,
       canGoBack,
@@ -2113,6 +2210,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openChats,
       spawnRequests,
       resolveSpawn,
+      codebaseRequests,
+      resolveCodebase,
       blockedBy,
       askRequests,
       resolveAsk,
@@ -2129,7 +2228,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openSettings,
       setSettingsSection,
       openSkills,
-      openAgents,
+      setSkillsTab,
       goBack,
       goForward,
       canGoBack,

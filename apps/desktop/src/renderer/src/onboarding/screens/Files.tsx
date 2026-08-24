@@ -13,15 +13,14 @@ import { Screen } from '../Opening';
  * Two doors: create one at a sensible place, or open a folder they already
  * have.
  *
- * What this screen deliberately does NOT invite is opening an existing Obsidian
- * vault as the workspace root. Structure here is folder-shaped: `typeForDir`
- * types a note by the folder it sits in, `ensureScaffold` writes fourteen of our
- * folders into whatever root is picked, and the librarian owns the root
- * `index.md`. Pointed at someone's vault, all of that lands on top of a tree we
- * did not design, their own folders stay invisible in navigation, and their root
- * `index.md` gets overwritten. So the Obsidian line offers the version that is
- * actually true: make the workspace a folder INSIDE the vault. Their notes are
- * untouched, ours are still plain markdown they can edit in Obsidian.
+ * The screen never names Obsidian or any other markdown tool (clarity review
+ * area 3): to the first-time user those are somebody else's jargon, and the tip
+ * they carried (make the workspace a folder inside your vault, never the vault
+ * root) matters to a tiny slice of users who can pick any folder through Open
+ * anyway. The underlying hazard is unchanged: `ensureScaffold` writes fourteen
+ * of our folders into whatever root is picked and the librarian owns the root
+ * `index.md`, so the copy under the Create path now says outright that Qale
+ * sets up its own folders inside.
  *
  * The sync check runs BEFORE the folder is created, not after. Telling someone
  * their workspace is inside iCloud once we have already scaffolded it is a
@@ -109,7 +108,7 @@ export function Files({ onNext }: { onNext: () => void }) {
   return (
     <Screen
       title={settled ? 'Your files live here' : 'Where should your files live?'}
-      why="A plain folder of markdown that you own. Everything the app writes goes here, readable and editable without it."
+      why="A plain folder of text files (markdown) that you own. Everything the app writes goes here, and you can open it with anything."
       footer={
         warned || tooDeep ? (
           <>
@@ -162,20 +161,19 @@ export function Files({ onNext }: { onNext: () => void }) {
           </div>
           {!settled && suggested?.hasNotes && (
             <p className="mt-1.5 text-sm text-muted-foreground">
-              This folder already has markdown in it. Opening it reads what is there and leaves it
+              This folder already has notes in it. Opening it reads what is there and leaves it
               alone.
             </p>
           )}
+          {/* What Create actually does, before it does it: fourteen folders
+              appear, and finding a tree you did not make is a surprise worth
+              one sentence here (clarity review area 3). */}
+          {!settled && (
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Qale makes this folder and sets up its own folders inside it.
+            </p>
+          )}
         </div>
-        {/* Advice for a folder not picked yet. Once one is open it is a
-            suggestion about a decision already made. */}
-        {!settled && (
-          <p className="text-sm text-muted-foreground">
-            Use Obsidian? Put this folder inside your vault. Qale sets up its own folders in here
-            and leaves the rest of your vault alone, and everything it writes is plain markdown you
-            can open and edit in Obsidian.
-          </p>
-        )}
         {warned && (
           <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
             <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />

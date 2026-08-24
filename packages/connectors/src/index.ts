@@ -1,5 +1,6 @@
 export type {
   Connector,
+  ConnectorAuthField,
   ConnectorProvider,
   ConnectorHealth,
   ContainerFootprint,
@@ -9,17 +10,27 @@ export type {
   ExecuteResult,
   FetchLike,
   FullItem,
+  ProviderReadTool,
   PullResult,
+  ReadToolResult,
   ShallowChange,
   TicketChange,
   WikipageChange,
   VerifyResult,
 } from './types.js';
 export {
+  collectFields,
+  connectorFrom,
+  readToolsFrom,
+  withScheme,
+  URL_FIELD_RE,
+} from './credentials.js';
+export {
   atlassianConnector,
   atlassianAuthSchema,
   type AtlassianAuthInput,
 } from './atlassian/connector.js';
+export { atlassianReadTools } from './atlassian/read-tools.js';
 export { mapJiraStateCategory } from './atlassian/state-map.js';
 export { probeAtlassian, type AtlassianAuth, type ProbeResult } from './atlassian/probe.js';
 export {

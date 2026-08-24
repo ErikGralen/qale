@@ -13,6 +13,7 @@
   "dependencies": {
     "@qale/atlassian": "workspace:*",
     "@qale/domain": "workspace:*",
+    "typebox": "1.3.7",
     "zod": "^4.4.3"
   },
   "devDependencies": {

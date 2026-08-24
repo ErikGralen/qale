@@ -16,6 +16,7 @@ import type {
   VerifyResult,
 } from '../types.js';
 import { probeAtlassian, type AtlassianAuth, type ProbeResult } from './probe.js';
+import { atlassianReadToolsFor } from './read-tools.js';
 import { mapJiraStateCategory } from './state-map.js';
 
 /**
@@ -485,9 +486,9 @@ class AtlassianConnector implements Connector {
     const client = await this.getClient();
 
     if (p.provider === 'jira' && p.action === 'create_ticket') {
-      if (!p.projectKey) throw new Error('create_ticket requires projectKey');
+      if (!p.container) throw new Error('create_ticket requires container');
       const out = await client.createIssue({
-        projectKey: p.projectKey,
+        projectKey: p.container,
         issueType: p.issueType,
         summary: p.title ?? '',
         descriptionMarkdown: p.body,
@@ -495,17 +496,17 @@ class AtlassianConnector implements Connector {
       return { externalId: out.key, url: out.url };
     }
     if (p.provider === 'jira' && p.action === 'comment_ticket') {
-      if (!p.issueKey) throw new Error('comment_ticket requires issueKey');
-      const out = await client.addComment(p.issueKey, p.body);
-      return { externalId: p.issueKey, url: out.url };
+      if (!p.targetId) throw new Error('comment_ticket requires targetId');
+      const out = await client.addComment(p.targetId, p.body);
+      return { externalId: p.targetId, url: out.url };
     }
     if (p.provider === 'confluence' && p.action === 'update_page') {
-      if (!p.pageId) throw new Error('update_page requires pageId');
+      if (!p.targetId) throw new Error('update_page requires targetId');
       // `patch` = a localized in-place edit on the page's live text (replace
       // semantics, no markdown round-trip); absent, the body is appended as a
       // new section. Provenance rides along as one trailing line in both modes.
       const out = await client.updatePage(
-        p.pageId,
+        p.targetId,
         p.patch
           ? {
               mode: 'replace',
@@ -525,5 +526,27 @@ export const atlassianConnector: ConnectorProvider<AtlassianAuthInput> = {
   id: 'atlassian',
   label: 'Jira + Confluence',
   authSchema: atlassianAuthSchema,
+  authFields: [
+    {
+      key: 'siteUrl',
+      label: 'Site URL',
+      placeholder: 'your-team.atlassian.net',
+      hint: 'The address in your browser when Jira or Confluence is open.',
+    },
+    {
+      key: 'email',
+      label: 'Account email',
+      placeholder: 'you@company.com',
+      hint: 'The email you sign in to Atlassian with.',
+    },
+    {
+      key: 'apiToken',
+      label: 'API token',
+      secret: true,
+      hint: 'Create one at id.atlassian.com under Security → API tokens.',
+    },
+  ],
+  renewFieldKeys: ['apiToken'],
   create: (creds, opts) => new AtlassianConnector(creds, opts?.fetchImpl),
+  readTools: (creds, opts) => atlassianReadToolsFor(creds, opts),
 };

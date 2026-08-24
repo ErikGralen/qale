@@ -139,7 +139,7 @@ test('the receipt forgets a withdrawn card — a session that undid its work did
   const ctx = world();
   const harness = new SessionHarness(
     's1',
-    { name: 'base', title: 'Base', summary: '', instructions: '', can: [], starts: [] } as never,
+    { name: 'base', title: 'Base', summary: '', instructions: '', can: [] } as never,
     '2026-08-07',
   );
   harness.beginTurn('write it up', '2026-08-07T09:00:00.000Z');

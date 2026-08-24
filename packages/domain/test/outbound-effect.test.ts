@@ -39,12 +39,12 @@ const facts: OutboundEffectFacts = {
 
 test('create_ticket: names the project, claims no audience', () => {
   assert.equal(
-    outboundEffect(payload({ ...jira, action: 'create_ticket', projectKey: 'PAY' }), facts),
+    outboundEffect(payload({ ...jira, action: 'create_ticket', container: 'PAY' }), facts),
     'Creates a ticket in PAY.',
   );
   assert.equal(
     outboundEffect(
-      payload({ ...jira, action: 'create_ticket', projectKey: 'PAY', issueType: 'Epic' }),
+      payload({ ...jira, action: 'create_ticket', container: 'PAY', issueType: 'Epic' }),
       facts,
     ),
     'Creates an epic in PAY.',
@@ -53,14 +53,14 @@ test('create_ticket: names the project, claims no audience', () => {
 
 test('comment_ticket: names the ticket and its watchers, without counting them', () => {
   assert.equal(
-    outboundEffect(payload({ ...jira, action: 'comment_ticket', issueKey: 'PAY-142' }), facts),
+    outboundEffect(payload({ ...jira, action: 'comment_ticket', targetId: 'PAY-142' }), facts),
     'Posts a comment on PAY-142. Anyone watching the ticket is notified.',
   );
 });
 
 test('update_page: the mirror title, and append vs in-place edit', () => {
   assert.equal(
-    outboundEffect(payload({ ...confluence, action: 'update_page', pageId: '12345' }), facts),
+    outboundEffect(payload({ ...confluence, action: 'update_page', targetId: '12345' }), facts),
     'Adds a section to “Rollout plan”. Anyone watching the page is notified.',
   );
   assert.equal(
@@ -68,7 +68,7 @@ test('update_page: the mirror title, and append vs in-place edit', () => {
       payload({
         ...confluence,
         action: 'update_page',
-        pageId: '12345',
+        targetId: '12345',
         patch: { search: 'a', replace: 'b' },
       }),
       facts,
@@ -79,34 +79,11 @@ test('update_page: the mirror title, and append vs in-place edit', () => {
 
 test('update_page: an unknown page is "the page", never the raw id', () => {
   const line = outboundEffect(
-    payload({ ...confluence, action: 'update_page', pageId: '99999' }),
+    payload({ ...confluence, action: 'update_page', targetId: '99999' }),
     facts,
   );
   assert.equal(line, 'Adds a section to the page. Anyone watching it is notified.');
   assert.ok(!line!.includes('99999'));
-});
-
-test('send_message: says the quiet part — nothing leaves the machine', () => {
-  assert.equal(
-    outboundEffect(
-      payload({
-        provider: 'message',
-        action: 'send_message',
-        audience: 'CS',
-        body: 'x',
-        rationale: 'r',
-      }),
-      facts,
-    ),
-    'Saves the draft for CS in your workspace. Nothing is sent.',
-  );
-  assert.equal(
-    outboundEffect(
-      payload({ provider: 'message', action: 'send_message', body: 'x', rationale: 'r' }),
-      facts,
-    ),
-    'Saves the draft in your workspace. Nothing is sent.',
-  );
 });
 
 test('create_event: first names for people we know, the address for those we do not', () => {
@@ -284,16 +261,9 @@ test('respond_to_event: the answer in the PO’s words', () => {
 
 test('every kind produces a line, with no facts at all and no em dashes', () => {
   const cards = [
-    payload({ ...jira, action: 'create_ticket', projectKey: 'PAY' }),
-    payload({ ...jira, action: 'comment_ticket', issueKey: 'PAY-142' }),
-    payload({ ...confluence, action: 'update_page', pageId: '12345' }),
-    payload({
-      provider: 'message',
-      action: 'send_message',
-      audience: 'CS',
-      body: 'x',
-      rationale: 'r',
-    }),
+    payload({ ...jira, action: 'create_ticket', container: 'PAY' }),
+    payload({ ...jira, action: 'comment_ticket', targetId: 'PAY-142' }),
+    payload({ ...confluence, action: 'update_page', targetId: '12345' }),
     payload({
       ...calendar,
       action: 'create_event',

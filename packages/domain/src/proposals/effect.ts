@@ -107,31 +107,24 @@ export function outboundEffect(
       // schemes are not something we can read cheaply, so the line stops here
       // rather than guessing at who hears about it.
       const kind = p.issueType?.trim().toLowerCase() || 'ticket';
-      return p.projectKey
-        ? `Creates ${article(kind)} ${kind} in ${p.projectKey}.`
+      return p.container
+        ? `Creates ${article(kind)} ${kind} in ${p.container}.`
         : `Creates ${article(kind)} ${kind}.`;
     }
 
     case 'comment_ticket':
-      return p.issueKey
-        ? `Posts a comment on ${p.issueKey}. Anyone watching the ticket is notified.`
+      return p.targetId
+        ? `Posts a comment on ${p.targetId}. Anyone watching the ticket is notified.`
         : 'Posts a comment on the ticket. Anyone watching it is notified.';
 
     case 'update_page': {
       // The mirror note's title beats the draft's own: it is what the page is
       // called upstream right now. Neither ⇒ "the page", never the raw id.
-      const title = facts.titles?.get(lower(p.pageId ?? '')) ?? p.title?.trim();
+      const title = facts.titles?.get(lower(p.targetId ?? '')) ?? p.title?.trim();
       const target = title ? quote(title) : 'the page';
       const lead = p.patch ? `Edits ${target} in place` : `Adds a section to ${target}`;
       return `${lead}. Anyone watching ${title ? 'the page' : 'it'} is notified.`;
     }
-
-    case 'send_message':
-      // The one outbound card that goes nowhere: message drafts are filed in
-      // the workspace (Slack/email are out of scope). Saying so is the point.
-      return p.audience?.trim()
-        ? `Saves the draft for ${p.audience.trim()} in your workspace. Nothing is sent.`
-        : 'Saves the draft in your workspace. Nothing is sent.';
 
     case 'create_event': {
       // Guests land on the event but are NOT mailed: the connector writes with

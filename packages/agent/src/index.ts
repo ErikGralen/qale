@@ -1,6 +1,7 @@
 export {
   AgentRuntime,
   type AgentRuntimeConfig,
+  type AgentConnection,
   type RunInput,
   type RunHandle,
   type ModelInfo,
@@ -8,6 +9,7 @@ export {
   type SessionStatus,
   type SpawnRequestInfo,
   type SpawnEntryInfo,
+  type CodebaseRequestInfo,
 } from './runtime.js';
 export { entriesToUiMessages, type UiMessage } from './history.js';
 export { decodeUnicodeEscapes, decodeArgs, withDecodedArgs } from './tool-args.js';
@@ -18,8 +20,11 @@ export {
   CHILD_PREAMBLE,
   SCHEDULED_PREAMBLE,
   UNATTENDED_PREAMBLE,
+  UNATTENDED_RULES,
+  unattendedNote,
   datePreamble,
   languagePreamble,
+  selfPreamble,
 } from './prompts.js';
 export { createFilingTools, FILING_TOOL_NAMES } from './filing.js';
 export { createDeferralTool, DEFER_TOOL_NAME } from './deferrals.js';
@@ -57,6 +62,26 @@ export {
   type SpawnEntryInput,
 } from './spawn.js';
 export {
+  createCodebaseTool,
+  planCodebaseAsk,
+  buildReport,
+  nextReportPath,
+  codebaseRequestId,
+  CODEBASE_TOOL_NAME,
+  CODEBASE_REPORTS_DIR,
+  type CodebaseAsk,
+  type CodebaseAskInput,
+  type IssuedSession,
+  type CodebaseDecision,
+  type CodebaseDeps,
+} from './codebase.js';
+export {
+  CODEBASE_MODELS,
+  DEFAULT_CODEBASE_MODEL,
+  isCodebaseModel,
+  type CodebaseModel,
+} from './codebase-models.js';
+export {
   createAskTool,
   planAsk,
   formatAnswers,
@@ -78,10 +103,31 @@ export {
   type StoredAsk,
 } from './ask.js';
 export {
+  parseSlots,
+  type Slot,
+  type CommentSlot,
+  type CommentPlan,
+  type CommentAnswers,
+} from './slots.js';
+export {
+  createCommentsTool,
+  planComments,
+  formatComments,
+  commentRequestId,
+  commentsReplayPrompt,
+  COMMENTS_TOOL_NAME,
+  COMMENTS_MAX_SLOTS,
+  SLOT_PROMPT_MAX,
+  type CommentsDeps,
+} from './comments.js';
+export {
   createVaultTools,
   createProposeTools,
   createDraftTools,
-  createAtlassianTools,
+  createTextTools,
+  createVoiceGate,
+  createReadTools,
+  createTrackTools,
   createUseSkillTool,
   listLoadableSkills,
   matchSkill,
@@ -89,6 +135,14 @@ export {
   VAULT_TOOL_NAMES,
   PROPOSE_TOOL_NAMES,
   DRAFT_TOOL_NAMES,
+  CALENDAR_TOOL_NAMES,
   USE_SKILL_TOOL_NAME,
-  ATLASSIAN_TOOL_NAMES,
+  GET_VOICE_TOOL_NAME,
+  DRAFT_TEXT_TOOL_NAME,
+  TRACK_TOOL_NAMES,
+  type ListOutboundContainers,
+  type OutboundContainer,
+  type VoiceCheck,
+  type VoiceGate,
 } from './tools.js';
+export { listVoices, resolveVoice, voiceBrief, voiceRoster, type Voice } from './voices.js';

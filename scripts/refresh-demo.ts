@@ -219,9 +219,32 @@ function buildSlugIndex(root: string, files: string[]): Set<string> {
   return slugs;
 }
 
+/**
+ * Blank out fenced code blocks, keeping the line count, so a link inside one is
+ * never read as a reference.
+ *
+ * This matches the app: the wikilink plugin walks mdast `text` nodes, and a
+ * fence is a `code` node, so `[[tickets/KEY]]` in a fence is never indexed and
+ * never shows as a backlink. The shape blocks in the spec and weekly-update
+ * skills are exactly that — a template shown to the model, in a fence.
+ */
+function stripFences(text: string): string {
+  let inFence = false;
+  return text
+    .split('\n')
+    .map((line) => {
+      if (/^\s*(```|~~~)/.test(line)) {
+        inFence = !inFence;
+        return '';
+      }
+      return inFence ? '' : line;
+    })
+    .join('\n');
+}
+
 function extractLinks(text: string): string[] {
   const out: string[] = [];
-  for (const m of text.matchAll(WIKILINK_RE)) {
+  for (const m of stripFences(text).matchAll(WIKILINK_RE)) {
     // strip alias `|...`, anchor `#...`, and a `type::` prefix (typed links)
     // — resolution only cares about the bare target.
     let target = (m[1] ?? '').split('|')[0].split('#')[0].trim();

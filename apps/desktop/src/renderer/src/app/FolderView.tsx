@@ -57,14 +57,14 @@ const EMPTY_TEACH: Partial<Record<NoteType, string>> = {
     'No themes yet. Run Synthesis over a few interviews and the patterns worth solving land here.',
   person:
     'No people yet. Stakeholders appear here with what they care about and what they were last told.',
-  skill: 'No skills yet. Session playbooks, the written instructions the agent follows, live here.',
+  skill: 'No skills yet. The written instructions the agent follows live here.',
   // Mirrors, in the mirror voice: the folder holds copies, the real items live
-  // in Jira and Confluence. The edit rule waits for the note page, where it
-  // answers a question the reader is actually asking.
+  // in the connected tracker or wiki. The edit rule waits for the note page,
+  // where it answers a question the reader is actually asking.
   ticket:
-    'No mirrors yet. Jira issues the agent tracks appear here, and the board fills as sessions link work to your meetings and decisions.',
+    'No mirrors yet. Tickets the agent tracks appear here, and the board fills as sessions link work to your meetings and decisions. Connect a tracker in Settings → Connections to start.',
   wikipage:
-    'No mirrors yet. Confluence pages the agent tracks appear here, ready for your updates to land on.',
+    'No mirrors yet. Wiki pages the agent tracks appear here, ready for your updates to land on. Connect a wiki in Settings → Connections to start.',
   note: 'No notes yet. Start one with ⌘N; captures that are not typed records land here too.',
 };
 

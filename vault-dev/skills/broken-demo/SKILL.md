@@ -1,11 +1,14 @@
 ---
 type: skill
-starts: [whenever]
-outbound: true
 title: Broken on purpose
-summary: A demo file with a bad setting, so you can see how that looks here.
+summary: A demo file with bad settings, so you can see how that looks here.
+starts: [whenever]
+can: [draft-outbund]
 ---
 
-Never runs. This file exists only to demonstrate how invalid settings surface on the Skills page,
-pinned in the flag voice, so a broken skill can never fail silently. Its `starts` names something
-the app has never heard of, and `outbound: true` is a setting that moved — both get flagged.
+Never runs. This file is here to show how a bad setting looks: pinned on the row and on this page,
+in the flag voice, so a broken skill can never fail silently.
+
+Two things are wrong with it. `starts` is a setting that no longer exists, and Qale says what
+replaced it. `can: [draft-outbund]` is a typo for `draft-outbound`, so the capability is dropped
+rather than guessed at, and Qale lists what it would have accepted.

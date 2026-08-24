@@ -16,7 +16,7 @@
     "dmg": "electron-vite build && electron-builder --mac",
     "win": "electron-vite build && electron-builder --win",
     "lint": "eslint src",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test --experimental-test-module-mocks --disable-warning=ExperimentalWarning test/*.test.ts"
   },
   "comment:deps": "electron-builder ships every `dependencies` entry into the asar verbatim. Only main-process deps belong here — the renderer is bundled by vite, so anything it imports (react, tiptap, lucide, ai) is already inside out/renderer and goes in devDependencies. Putting a renderer-only package here ships it twice and cost us ~45 MB.",
   "dependencies": {

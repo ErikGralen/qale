@@ -16,7 +16,7 @@ buyer is [[people/sara-lindqvist]], Head of IT.
 ## Commitments
 
 - SAML SSO live before their security review. Rollout 2026-07-28 with Nordkap as first tenant
-  ([[tickets/PAY-142]], [[decisions/2026-05-20-adopt-workos]])
+  ([[tickets/jira/PAY-142]], [[decisions/2026-05-20-adopt-workos]])
 - SCIM provisioning in September ([[decisions/2026-04-15-defer-scim-to-q3]])
 - All data stored and processed in the EU ([[decisions/2026-06-05-single-region-eu]])
 
@@ -24,7 +24,7 @@ buyer is [[people/sara-lindqvist]], Head of IT.
 
 - 2026-07-14: SSO date confirmed as 2026-07-28, SCIM reconfirmed for September
   ([[meetings/2026-07-14-nordkap-checkin]])
-- 2026-05-18: audit log in June, delivered 2026-06-20 ([[tickets/PAY-156]])
+- 2026-05-18: audit log in June, delivered 2026-06-20 ([[tickets/jira/PAY-156]])
 
 ## Watch
 

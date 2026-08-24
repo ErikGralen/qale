@@ -41,15 +41,18 @@ import type {
   SearchHitDTO,
   ChatRefDTO,
   ChatHistoryDTO,
+  CodebasePathDTO,
+  CodebaseRequestDTO,
+  CodebaseStatusDTO,
   SessionLifecycle,
   SessionFileDTO,
   SpawnRequestDTO,
   AskRequestDTO,
   AskAnswerDTO,
+  AskCommentAnswersDTO,
   LiveSessionDTO,
   SettingsDTO,
   SkillDTO,
-  SkillPackReviewDTO,
   TodoCommitment,
   VaultInfoDTO,
   VaultTreeDTO,
@@ -69,6 +72,13 @@ export * from './telemetry.js';
  */
 export interface InvokeMap {
   'app:ping': { args: [message: string]; result: string };
+  /**
+   * A native folder picker, and nothing else: it opens no folder and changes no
+   * setting, it only answers with the path the PM chose (null when they backed
+   * out). The caller supplies the dialog title, so one channel serves any panel
+   * that needs a folder from the machine.
+   */
+  'app:pickFolder': { args: [title: string]; result: string | null };
   /**
    * The plain-text block behind Settings → "Copy diagnostics": versions, flags,
    * counts and the scrubbed log tail. Built in main because main is the only
@@ -101,10 +111,6 @@ export interface InvokeMap {
     args: [provider: LlmProviderDTO, key: string];
     result: { ok: boolean; error?: string };
   };
-  'settings:setAtlassian': {
-    args: [creds: { baseUrl: string; email: string; token: string }];
-    result: SettingsDTO;
-  };
   'settings:setModel': { args: [modelId: string]; result: SettingsDTO };
   /**
    * What the workspace is written in, as a language tag. Only affects what gets
@@ -130,16 +136,8 @@ export interface InvokeMap {
   'skills:list': { args: []; result: SkillDTO[] };
   /** Write a starter skill and hand back where it landed, so the view opens it. */
   'skills:create': { args: [title: string]; result: { path: string } };
-  /**
-   * What the pack has to say for itself: built-ins the PM edited that we have
-   * since changed, and retired ones we moved out of force. The three below all
-   * answer with the refreshed review, so the page never has to ask twice.
-   */
-  'skills:review': { args: []; result: SkillPackReviewDTO };
-  /** Take our new version of one file, replacing theirs. */
-  'skills:applyUpdate': { args: [file: string]; result: SkillPackReviewDTO };
-  /** Keep theirs (or acknowledge a retirement): do not raise this one again. */
-  'skills:dismissUpdate': { args: [file: string]; result: SkillPackReviewDTO };
+  /** The same for a voice: a flat file in `voices/`, seeded with a tone brief. */
+  'voices:create': { args: [title: string]; result: { path: string } };
 
   // Agents — the background watchers behind the Agents view, and their off switches
   'agents:list': { args: []; result: AgentDTO[] };
@@ -263,6 +261,17 @@ export interface InvokeMap {
     args: [requestId: string, decision: { approved: boolean; modelId?: string }];
     result: { ok: boolean };
   };
+  /** The codebase card this session is parked on, for a tab that reopened. */
+  'sessions:pendingCodebase': { args: [sessionId: string]; result: CodebaseRequestDTO | null };
+  /**
+   * Answer a codebase card: run it (with the chosen model) or not. A run that
+   * resumes a Claude Code session carries no model: it keeps the one that
+   * session started with.
+   */
+  'sessions:resolveCodebase': {
+    args: [requestId: string, decision: { approved: boolean; modelId?: string }];
+    result: { ok: boolean };
+  };
   /** The question card this session is parked on, for a tab that reopened. */
   'sessions:pendingAsk': { args: [sessionId: string]; result: AskRequestDTO | null };
   /**
@@ -275,9 +284,18 @@ export interface InvokeMap {
   /**
    * Answer a question card. `answers: null` is a skip — the run continues and
    * the agent is told to decide for itself, rather than being left parked.
+   *
+   * A round to write in comes back through this same channel, as `answers:
+   * null` plus what was typed in the document. So a dismissal stays one shape
+   * for both kinds: no answers and no comments. Main writes the comments into
+   * the round file before it resolves; the model only ever sees the tool result.
    */
   'sessions:resolveAsk': {
-    args: [requestId: string, answers: AskAnswerDTO[] | null];
+    args: [
+      requestId: string,
+      answers: AskAnswerDTO[] | null,
+      comments?: AskCommentAnswersDTO | undefined,
+    ];
     result: { ok: boolean };
   };
 
@@ -329,6 +347,18 @@ export interface InvokeMap {
   'connections:deliveryDelta': { args: [meetingPath: string]; result: DeliveryDeltaDTO[] };
   /** Current mirrored body of a wikipage — the "before" of a redline preview. */
   'connections:pageBody': { args: [externalIdOrSlug: string]; result: string | null };
+
+  // Codebase (docs/claude-code-tickets.md). Nothing outside the settings panel
+  // asks for any of this: the capability is discovered there or not at all.
+  /** The configured folders. Empty means the capability is off. */
+  'codebase:get': { args: []; result: CodebasePathDTO[] };
+  /**
+   * Replace the folder list, and answer with what that list now discovers, so
+   * the panel repaints from one round trip. An empty list turns it all off.
+   */
+  'codebase:set': { args: [paths: CodebasePathDTO[]]; result: CodebaseStatusDTO };
+  /** The repos under the configured folders, plus the `claude` probe. */
+  'codebase:status': { args: []; result: CodebaseStatusDTO };
 }
 
 export type InvokeChannel = keyof InvokeMap;
@@ -340,12 +370,12 @@ export type InvokeChannel = keyof InvokeMap;
  */
 export const INVOKE_CHANNELS = [
   'app:ping',
+  'app:pickFolder',
   'diagnostics:report',
   'settings:get',
   'settings:setProviderKey',
   'settings:setProvider',
   'settings:verifyProviderKey',
-  'settings:setAtlassian',
   'settings:setModel',
   'settings:setLanguage',
   'settings:setSchedule',
@@ -356,9 +386,7 @@ export const INVOKE_CHANNELS = [
   'models:list',
   'skills:list',
   'skills:create',
-  'skills:review',
-  'skills:applyUpdate',
-  'skills:dismissUpdate',
+  'voices:create',
   'agents:list',
   'agents:setEnabled',
   'vault:pick',
@@ -433,6 +461,9 @@ export const INVOKE_CHANNELS = [
   'connections:atRisk',
   'connections:deliveryDelta',
   'connections:pageBody',
+  'codebase:get',
+  'codebase:set',
+  'codebase:status',
 ] as const satisfies readonly InvokeChannel[];
 
 // Compile-time completeness guard: every InvokeMap key must appear above.

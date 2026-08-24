@@ -66,7 +66,6 @@ export function QuickSwitcher({
     openSession,
     openSettings,
     openSkills,
-    openAgents,
     openContext,
     tree,
     tabs,
@@ -154,15 +153,18 @@ export function QuickSwitcher({
       },
       {
         id: 'skills',
-        label: 'Open Skills: playbooks, always-on rules, reference',
+        label: 'Open Skills: what the agent does when you hand work over',
         icon: Wand2,
-        run: openSkills,
+        run: () => openSkills(),
       },
+      // The Agents page folded into the Skills page (SK-12), so this row aims
+      // at that tab. Its own words stay: nobody looking for an off switch
+      // searches for "skills".
       {
         id: 'agents',
         label: 'Open Agents: what runs on its own, and its off switches',
         icon: Bot,
-        run: openAgents,
+        run: () => openSkills('agents'),
       },
       {
         id: 'settings',
@@ -180,7 +182,6 @@ export function QuickSwitcher({
       openMemory,
       openSession,
       openSkills,
-      openAgents,
       openSettings,
       onOpenCapture,
       onNewNote,

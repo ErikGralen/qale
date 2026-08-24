@@ -13,13 +13,13 @@ import {
   X,
 } from 'lucide-react';
 import type { OutboundPayloadDTO, ProposalDTO, UpdatePayloadDTO } from '@qale/ipc';
-import { describeEventWhen, normalizeLinkTarget, rsvpAnswer } from '@qale/domain';
+import { basename, describeEventWhen, normalizeLinkTarget, rsvpAnswer } from '@qale/domain';
 import { useApp } from '../../state/app-state';
 import { invoke } from '../../lib/ipc';
 import {
   connections,
-  externalSlugOf,
   isExternalRef,
+  providerLabelOf,
   refMetaCached,
   type ExternalRefMetaDTO,
 } from '../../lib/connections';
@@ -54,6 +54,16 @@ export interface CardItemProps {
   initialExpanded?: boolean;
   /** When set, collapsing the open detail returns to the caller's compact form instead. */
   onCollapse?: () => void;
+}
+
+/** What an external evidence chip is, said from its path. A mirror path names
+ *  its tracker ("tickets/jira/…" reads "Jira ticket"); a bare key or a flat
+ *  pre-migration path names none, so the chip claims none. */
+function evidenceChipKind(target: string): string {
+  const [dir, provider, name] = target.split('/');
+  const page = dir === 'wikipages';
+  if (provider && name) return `${providerLabelOf(provider)} ${page ? 'page' : 'ticket'}`;
+  return page ? 'Wiki page' : 'Ticket';
 }
 
 /** The note a card refers to, as a distinct, openable chip — so a note title
@@ -269,7 +279,10 @@ export function CardItem({
   const evidence = proposal.evidence.filter((e) => {
     if (!outbound) return true;
     const bare = bareRef(e.ref);
-    return bare !== target?.slug && bare !== externalSlugOf(outboundRef(outbound) ?? '');
+    const id = outboundRef(outbound);
+    // The same item can be linked bare or under its tracker; the id is the last
+    // segment either way.
+    return bare !== target?.slug && (!id || basename(bare) !== id);
   });
 
   // Fetch the preview lazily — only once the card is open, so a 24-card review
@@ -566,14 +579,14 @@ export function CardItem({
                 // An external source is the same object here as anywhere else,
                 // so it renders as the same chip: typed, hover-carded, and
                 // honest about being a local copy. Rolling our own button drew
-                // a Confluence page with a ticket's glyph.
+                // a wiki page with a ticket's glyph.
                 if (isExternalRef(evTarget))
                   return (
                     <ExternalRefChip
                       key={e.ref}
                       target={evTarget}
                       onOpen={onOpen}
-                      kind={evTarget.startsWith('wikipages/') ? 'Confluence page' : 'Jira ticket'}
+                      kind={evidenceChipKind(evTarget)}
                     />
                   );
                 const EvIcon = iconForRef(e.ref);
@@ -831,10 +844,10 @@ function EditFields({
 }
 
 /** The external item an outbound card touches, or null (new tickets, messages).
- *  The bare issue key / page id — refMeta resolves external ids directly, so a
- *  page reference never fabricates a slug real mirror notes won't match. */
+ *  The provider's bare id: refMeta resolves external ids directly, so a page
+ *  reference never fabricates a slug real mirror notes won't match. */
 function outboundRef(ob: OutboundPayloadDTO): string | null {
-  return ob.issueKey ?? ob.pageId ?? null;
+  return ob.targetId ?? null;
 }
 
 /**
@@ -902,17 +915,17 @@ function OutboundTargetLine({
       <div className={line}>
         <span>
           Create a{system ? ` ${system}` : ''} {payload.issueType?.toLowerCase() ?? 'ticket'}
-          {payload.projectKey && <span className={quiet}> in {payload.projectKey}</span>}
+          {payload.container && <span className={quiet}> in {payload.container}</span>}
         </span>
         {payload.title && <span className={quiet}>: {payload.title}</span>}
       </div>
     );
   }
 
-  // Calendar and message cards touch no mirrored record, so the sentence is
-  // the whole target: it must carry the name and the system on its own. The
-  // event's own name is quoted — a title with a colon in it ("Erik x Daniel:
-  // sync") otherwise runs straight into the words around it.
+  // A calendar card touches no mirrored record, so the sentence is the whole
+  // target: it must carry the name and the system on its own. The event's own
+  // name is quoted — a title with a colon in it ("Erik x Daniel: sync")
+  // otherwise runs straight into the words around it.
   if (!ref) {
     const event = payload.title ? `“${payload.title}”` : 'the event';
     const where = system ? ` in ${system}` : '';
@@ -936,12 +949,9 @@ function OutboundTargetLine({
           {where}
         </div>
       );
-    return (
-      <div className={line}>
-        <span>Send an update to {payload.audience ?? 'stakeholders'}</span>
-        {payload.title && <span className={quiet}>: {payload.title}</span>}
-      </div>
-    );
+    // Every card that reaches here names its own act above. A card with no
+    // reference and no case of its own says nothing rather than guess.
+    return null;
   }
 
   return (
@@ -1042,13 +1052,13 @@ function OutboundDetail({
   const [mirrorVersion, setMirrorVersion] = useState<number | null>(null);
 
   useEffect(() => {
-    if (payload.action !== 'update_page' || !payload.pageId) return;
+    if (payload.action !== 'update_page' || !payload.targetId) return;
     let alive = true;
-    void connections.pageBody(payload.pageId).then((b) => alive && setPageBefore(b));
+    void connections.pageBody(payload.targetId).then((b) => alive && setPageBefore(b));
     return () => {
       alive = false;
     };
-  }, [payload.action, payload.pageId]);
+  }, [payload.action, payload.targetId]);
 
   // The mirror's current page version lives on the mirror note — only needed
   // when the draft pinned one.

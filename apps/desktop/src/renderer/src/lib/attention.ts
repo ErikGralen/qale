@@ -188,7 +188,9 @@ export function buildAttention(input: AttentionInput, now: number = Date.now()):
       id: `question:${sessionId}`,
       kind: 'question',
       label: session.title,
-      meta: 'question',
+      // A round to write in waits exactly as a question waits, and ranks the
+      // same; the only difference the list carries is the word for it.
+      meta: request.comments ? 'comments' : 'question',
       tone: quiet ? 'muted' : 'brand',
       target: { open: 'session', sessionId, title: session.title },
       when: session.updated,

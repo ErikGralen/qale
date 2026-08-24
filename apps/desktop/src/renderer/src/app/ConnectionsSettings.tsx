@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input } from '@qale/ui';
 import { BookOpen, CalendarDays, Check, KeyRound, Plus, Ticket } from 'lucide-react';
+import { AtlassianTokenHelp } from '../components/AtlassianTokenHelp';
 import { FollowPicker } from '../components/FollowPicker';
 import { Setting } from '../components/Setting';
 import { relativeTime } from '../lib/dates';
@@ -449,6 +450,7 @@ function ConnectForm({
               />
             ))
           )}
+          {provider.id === 'atlassian' && !oauth && <AtlassianTokenHelp />}
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={() => void submit()} disabled={busy || !ready}>
               {busy

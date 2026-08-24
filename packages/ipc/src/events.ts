@@ -1,4 +1,4 @@
-import type { AskRequestDTO, SettingsDTO, SpawnRequestDTO } from './dtos.js';
+import type { AskRequestDTO, CodebaseRequestDTO, SettingsDTO, SpawnRequestDTO } from './dtos.js';
 
 /**
  * Push events from main → renderer (webContents.send). These are the flattened,
@@ -101,6 +101,17 @@ export interface SpawnRequestEvent {
 }
 
 /**
+ * A codebase question is waiting on the PM (`request`), or its card has settled
+ * (`request: null`). Same shape and same place as the fan-out card: inline in
+ * the chat, and nothing in that conversation moves until it settles.
+ */
+export interface CodebaseRequestEvent {
+  channel: 'session:codebase';
+  sessionId: string;
+  request: CodebaseRequestDTO | null;
+}
+
+/**
  * A session is asking the PM a question mid-turn (`request`), or its card has
  * settled (`request: null`). Inline in the chat, never a modal — but unlike the
  * other cards the turn is PARKED on this one: nothing else in that conversation
@@ -145,6 +156,7 @@ export type PushEvent =
   | SessionRenamedEvent
   | SessionFilesChangedEvent
   | SpawnRequestEvent
+  | CodebaseRequestEvent
   | AskRequestEvent
   | SessionFocusEvent
   | ConnectionsChangedEvent
@@ -165,6 +177,7 @@ export const PUSH_CHANNELS = [
   'session:renamed',
   'session:files',
   'session:spawn',
+  'session:codebase',
   'session:ask',
   'session:focus',
   'connections:changed',

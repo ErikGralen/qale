@@ -109,6 +109,12 @@ export class ProposalStore implements ProposalPort {
       .run(status, resolved, id);
   }
 
+  updatePayload(id: string, payload: unknown): void {
+    this.db
+      .prepare('UPDATE proposals SET payload_json = ? WHERE id = ?')
+      .run(JSON.stringify(payload), id);
+  }
+
   pendingCount(): number {
     const row = this.db
       .prepare("SELECT COUNT(*) AS c FROM proposals WHERE status = 'pending'")

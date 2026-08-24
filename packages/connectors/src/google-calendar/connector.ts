@@ -426,5 +426,9 @@ export const googleCalendarConnector: ConnectorProvider<GoogleCalendarAuth> = {
   id: 'google-calendar',
   label: 'Google Calendar',
   authSchema: googleCalendarAuthSchema,
+  // No fields: the grant comes from a browser round-trip, not a paste.
+  authFields: [],
+  renewFieldKeys: [],
+  authKind: 'oauth',
   create: (creds, opts) => new GoogleCalendarConnector(creds, opts?.fetchImpl),
 };

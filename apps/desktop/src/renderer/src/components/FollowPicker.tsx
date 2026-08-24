@@ -131,6 +131,13 @@ export function FollowPicker({ conn, onChanged, onDone }: FollowPickerProps) {
       <span className="text-dense font-medium text-muted-foreground">
         {hasRecommendations ? 'These look like where you work' : 'Which of these should it watch?'}
       </span>
+      {/* What "watch" means, said where the word is used (clarity review
+          area 7). The contract in two sentences; everything else about the
+          choice already sits on the rows and the confirm. */}
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        Watched things are read on a schedule and kept current as notes in your workspace. You can
+        change this list any time in Settings.
+      </p>
 
       {hasRecommendations && (
         <ul className="mt-1.5 flex flex-col">

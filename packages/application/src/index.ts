@@ -15,4 +15,3 @@ export * from './use-cases/capture-nudge.js';
 export * from './use-cases/wikipage-drift.js';
 export * from './use-cases/todos.js';
 export * from './use-cases/skills.js';
-export * from './use-cases/skill-pack.js';

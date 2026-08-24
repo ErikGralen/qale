@@ -1,9 +1,8 @@
 import {
-  BookOpen,
   CalendarClock,
+  Eye,
   FolderClosed,
   FolderInput,
-  Lock,
   RefreshCw,
   Send,
   Zap,
@@ -13,10 +12,11 @@ import type { CapabilityDTO, StartDTO, StartEvent } from '@qale/ipc';
 import { cn } from '@qale/ui';
 
 /**
- * The two configured facts every skill and agent shows: what starts it, and
- * what it may do. Both are data (see `@qale/sessions/runnable`) — the file's
- * instructions never describe them, and these chips are the only place the app
- * puts them into words, so the wiring and the wording cannot drift apart.
+ * The configured facts a skill or an agent shows: what it may do, and for an
+ * agent, what clock starts it. Both are data (see `@qale/sessions/runnable` and
+ * main's `agents.ts`) — the file's instructions never describe them, and these
+ * chips are the only place the app puts them into words, so the wiring and the
+ * wording cannot drift apart.
  */
 
 /** The phrase for each watched happening. Main names the event; the words are ours. */
@@ -29,7 +29,13 @@ const CAN_META: Record<CapabilityDTO, { icon: LucideIcon; text: string; title: s
     icon: Send,
     text: 'Drafts outgoing updates',
     title:
-      'May draft things that leave the workspace: Jira comments, pages, messages. Nothing is sent without your approval.',
+      'May draft things that leave the workspace: comments on tickets and edits to wiki pages. Nothing is sent without your approval.',
+  },
+  'draft-calendar': {
+    icon: CalendarClock,
+    text: 'Drafts calendar changes',
+    title:
+      'May draft a new meeting, a move of one, or a reply to an invitation. Nothing reaches your calendar or the guests without your approval.',
   },
   'keep-working-files': {
     icon: FolderClosed,
@@ -42,6 +48,12 @@ const CAN_META: Record<CapabilityDTO, { icon: LucideIcon; text: string; title: s
     text: 'Files what you hand over',
     title:
       'May put material you dropped in where it belongs, and move it when that turns out to be wrong. Filing needs no approval; everything it goes on to write about the material is still a card.',
+  },
+  'track-external': {
+    icon: Eye,
+    text: 'Watches your tracker and wiki',
+    title:
+      'May start watching a ticket or a wiki page, so the workspace keeps its own copy up to date, and may record your answer about a whole project or space. It writes nothing to the tracker or the wiki, so it needs no approval. Reading them needs no permission at all.',
   },
 };
 
@@ -58,36 +70,15 @@ function span(ms: number): string {
 }
 
 /**
- * Starts worth a chip. `you-run-it` and `model-picks-it-up` are left out
- * everywhere: they are true of almost every file, so a chip for either says
- * nothing the page doesn't already imply — and on an agent row they crowded out
- * the one start that IS news, the clock.
+ * Every start is a clock now, and every clock is worth a chip: it is the one
+ * thing about an agent a person cannot read off its page.
  */
-type ShownKind = 'always' | 'read-when-relevant' | 'interval' | 'before-meeting' | 'event';
-type ShownStart = Extract<StartDTO, { kind: ShownKind }>;
-
-const WORTH_SHOWING: ShownKind[] = [
-  'always',
-  'read-when-relevant',
-  'interval',
-  'before-meeting',
-  'event',
-];
-
-/** The starts that earn a chip, in the order given. */
-export function visibleStarts(starts: StartDTO[]): ShownStart[] {
-  return starts.filter((s): s is ShownStart => (WORTH_SHOWING as string[]).includes(s.kind));
+export function visibleStarts(starts: StartDTO[]): StartDTO[] {
+  return starts;
 }
 
-function startWords(s: ShownStart): { icon: LucideIcon; text: string } {
+function startWords(s: StartDTO): { icon: LucideIcon; text: string } {
   switch (s.kind) {
-    case 'always':
-      return {
-        icon: Lock,
-        text: s.audience ? `Always: drafting for ${s.audience}` : 'Always in effect',
-      };
-    case 'read-when-relevant':
-      return { icon: BookOpen, text: 'Read when relevant' };
     case 'interval':
       return { icon: RefreshCw, text: `Every ${span(s.everyMs)}` };
     case 'before-meeting':

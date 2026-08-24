@@ -20,6 +20,7 @@ import {
   fileSlug,
   isBodyEditable,
   isFolderIndex,
+  isVoicePath,
   languageName,
   layerForType,
   parseFrontmatter,
@@ -36,13 +37,15 @@ import {
 } from '@qale/domain';
 import {
   buildSkillBrief,
-  governs,
   parseRunnable,
+  HOUSE_RULES,
+  HOUSE_RULES_NAME,
   type Runnable,
   type SessionHarness,
 } from '@qale/sessions';
-import type { AtlassianClient } from '@qale/atlassian';
+import type { ProviderReadTool } from '@qale/connectors';
 import { wrapExternal } from './external.js';
+import { voiceBrief, voiceRoster, resolveVoice, type Voice } from './voices.js';
 
 /**
  * Vault-scoped custom tools — the core trust mechanic (PLAN §3.3). pi's built-in
@@ -121,7 +124,180 @@ function mirrorFields(n: { type: string; frontmatter: Record<string, unknown> })
   return parts.length ? ` (${parts.join(', ')})` : '';
 }
 
-export const VAULT_TOOL_NAMES = ['vault_read', 'vault_list', 'vault_grep', 'search_vault'];
+export const VAULT_TOOL_NAMES = [
+  'vault_read',
+  'vault_outline',
+  'vault_list',
+  'vault_grep',
+  'search_vault',
+];
+
+/**
+ * How much of a note one `vault_read` may hand back (M3, `docs/mvp-strategy.md`).
+ *
+ * The read used to return the whole file whatever its size. That is fine for a
+ * note somebody wrote and a context bomb for a two-hour transcript, and the
+ * whole file arrives before anything can decide it was too much. The caps sit
+ * well above every authored note in a real workspace (the longest runnable in
+ * the seeded vault is under 200 lines), so the only thing that meets them is
+ * dropped material, which is exactly what `vault_outline` plus a range is for.
+ *
+ * Two numbers, because one of them is always the wrong one: a transcript
+ * exported as one paragraph per speaker turn is short in lines and huge in
+ * characters, and a line cap alone waves it straight through.
+ */
+const READ_MAX_LINES = 600;
+const READ_MAX_CHARS = 40_000;
+
+/** One heading of a note, with the slice of the file it owns. */
+interface Heading {
+  level: number;
+  text: string;
+  /** 1-indexed line the heading itself is on. */
+  from: number;
+  /** 1-indexed last line of the section, its subsections included. */
+  to: number;
+}
+
+/**
+ * The heading tree of a note, in raw-file line numbers so an outline row goes
+ * straight back to `vault_read` as `from`/`to`.
+ *
+ * Two regions are skipped, and both would otherwise report headings that are not
+ * headings: the YAML frontmatter, where `#` starts a comment, and fenced code
+ * blocks, where a shell snippet is full of `#` lines. Setext headings (`===`
+ * under a line) are not read. Nothing here writes them, and the other setext
+ * form cannot be told apart from a horizontal rule without a full parser.
+ *
+ * A section runs to the line before the next heading at the same level or
+ * higher, so `## Pricing` carries its `###` subsections with it. That is what
+ * "read that section" has to mean. Close it at the next heading of any level
+ * and the model gets the first paragraph of the thing it asked for.
+ */
+function headings(raw: string): Heading[] {
+  const lines = raw.split('\n');
+  const out: Heading[] = [];
+  let start = 0;
+  if (lines[0]?.trim() === '---') {
+    const close = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
+    if (close > 0) start = close + 1;
+  }
+  let fence = '';
+  for (let i = start; i < lines.length; i++) {
+    const line = lines[i]!;
+    const fenced = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fence) {
+      // A fence closes on the same character, at least as long, and with
+      // nothing else on the line.
+      const closes =
+        fenced &&
+        fenced[1]![0] === fence[0] &&
+        fenced[1]!.length >= fence.length &&
+        !line.slice(fenced[0].length).trim();
+      if (closes) fence = '';
+      continue;
+    }
+    if (fenced) {
+      fence = fenced[1]!;
+      continue;
+    }
+    const head = /^ {0,3}(#{1,6})(?:\s+(.*))?$/.exec(line);
+    if (head)
+      out.push({
+        level: head[1]!.length,
+        text: (head[2] ?? '').trim(),
+        from: i + 1,
+        to: lines.length,
+      });
+  }
+  for (const [i, heading] of out.entries()) {
+    const next = out.slice(i + 1).find((h) => h.level <= heading.level);
+    if (next) heading.to = next.from - 1;
+  }
+  return out;
+}
+
+/** What a range asked for, once it has been checked against the note. */
+type Slice = { ok: true; body: string; note: string } | { ok: false; refusal: string };
+
+/**
+ * The lines a read returns, and the line it says about them (M3).
+ *
+ * Truncation is the last resort here, not the mechanism: the model is meant to
+ * call `vault_outline`, pick a section and ask for those lines. So the cap
+ * message says which lines it dropped AND names the two ways to get the rest,
+ * and every ranged read carries a "lines X-Y of N" line so the model always
+ * knows where in the note it is standing.
+ *
+ * A read with no range comes back exactly as it did before, with no extra line
+ * at all, unless it meets a cap. Every note anybody has written is under them.
+ */
+function readSlice(path: string, raw: string, from?: number, to?: number): Slice {
+  const lines = raw.split('\n');
+  const total = lines.length;
+  const ranged = from !== undefined || to !== undefined;
+  for (const [name, value] of [
+    ['from', from],
+    ['to', to],
+  ] as const) {
+    if (value !== undefined && (!Number.isInteger(value) || value < 1))
+      return {
+        ok: false,
+        refusal: `Refused: \`${name}\` must be a whole line number, 1 or more, and it is ${JSON.stringify(value)}. Line numbers come from vault_outline.`,
+      };
+  }
+  const start = from ?? 1;
+  const asked = Math.min(to ?? total, total);
+  if (start > total)
+    return {
+      ok: false,
+      refusal: `${path} has ${total} lines, so there is nothing at line ${start}. Call vault_outline for its heading tree, then read a range inside the note.`,
+    };
+  if (asked < start)
+    return {
+      ok: false,
+      refusal: `Refused: \`to\` (${to}) is before \`from\` (${start}). Give the first line, then the last.`,
+    };
+
+  // Line cap first, then the character cap over what survived it. Both cut on a
+  // line boundary, so the range the message reports is the range that came back.
+  let end = Math.min(asked, start + READ_MAX_LINES - 1);
+  let body = lines.slice(start - 1, end).join('\n');
+  let capped = end < asked;
+  if (body.length > READ_MAX_CHARS) {
+    // `last` is a line number, not an index: `start - 1` means nothing has fit.
+    let used = 0;
+    let last = start - 1;
+    for (let i = start - 1; i < end; i++) {
+      used += lines[i]!.length + 1;
+      if (used > READ_MAX_CHARS) break;
+      last = i + 1;
+    }
+    if (last < start) {
+      // One line on its own is over the cap, so this is the one cut that lands
+      // mid-line. Returning nothing would be worse than returning most of it.
+      body = lines[start - 1]!.slice(0, READ_MAX_CHARS);
+      end = start;
+    } else {
+      end = last;
+      body = lines.slice(start - 1, end).join('\n');
+    }
+    capped = true;
+  }
+
+  if (capped)
+    return {
+      ok: true,
+      body,
+      note:
+        `\n\n[Qale] Showing lines ${start}-${end} of ${total} in ${path}, which is as much as one read returns. ` +
+        'Call vault_outline on this note for its heading tree, then read the section you need with `from` and `to`. ' +
+        `To carry straight on from here, read it again with from: ${end + 1}.`,
+    };
+  if (ranged)
+    return { ok: true, body, note: `\n\n[Qale] Lines ${start}-${end} of ${total} in ${path}.` };
+  return { ok: true, body, note: '' };
+}
 
 /**
  * Paths inside the workspace folder that are not the memory: `.git`, `.obsidian`,
@@ -168,30 +344,109 @@ export function createVaultTools(
   /** The workspace language, as a bare tag ("sv"). Absent means don't check. */
   language?: string,
 ): ToolDefinition[] {
+  /**
+   * The two guards a read has to pass before anything is opened, shared so the
+   * outline cannot drift away from the read. `vault_outline` names a path the
+   * same way `vault_read` does, so it has to refuse the same paths, in the same
+   * words, for the same reason (OW10): a refusal that read differently from the
+   * other tool's would be an existence oracle over the paths neither may show.
+   */
+  const refusedPath = (path: string): string | null => {
+    if (!ctx.vault.contain(path)) return `Refused: "${path}" is outside the workspace.`;
+    if (isOffLimits(path))
+      return `Refused: "${path}" is not part of the memory. Hidden folders (.git, .obsidian, a session's own files) are never readable here, whether or not anything is at that path. Session files are reachable with files_read.`;
+    return null;
+  };
+
   const vaultRead = defineTool({
     name: 'vault_read',
     label: 'Read note',
     description:
-      'Read a note from the workspace by its relative path (e.g. "decisions/adopt-workos.md"). Read-only, confined to the workspace.',
+      'Read a note from the workspace by its relative path (e.g. "decisions/adopt-workos.md"). Read-only, confined to the workspace. ' +
+      'With no range it returns the whole note, which is what you want for anything a person wrote. For something long (a transcript, ' +
+      'a hub page that has grown), call vault_outline first and pass the `from`/`to` of the one section you need. A read that hits the ' +
+      'size cap costs you the same tool call and gives you the top of the note rather than the part you were after.',
     parameters: Type.Object({
       path: Type.String({ description: 'Workspace-relative path to the note.' }),
+      from: Type.Optional(
+        Type.Number({
+          description:
+            'First line to return, 1-indexed and inclusive. Take it from a vault_outline row. Omit to start at the top.',
+        }),
+      ),
+      to: Type.Optional(
+        Type.Number({
+          description: 'Last line to return, inclusive. Omit to read to the end of the note.',
+        }),
+      ),
     }),
-    async execute(_id, params: { path: string }) {
-      if (!ctx.vault.contain(params.path))
-        return text(`Refused: "${params.path}" is outside the workspace.`);
-      if (isOffLimits(params.path))
-        return text(
-          `Refused: "${params.path}" is not part of the memory. Hidden folders (.git, .obsidian, a session's own files) are never readable here, whether or not anything is at that path. Session files are reachable with files_read.`,
-        );
+    async execute(_id, params: { path: string; from?: number; to?: number }) {
+      const refused = refusedPath(params.path);
+      if (refused) return text(refused);
       const raw = await ctx.vault.readRaw(params.path);
       if (raw === null) return text(`Not found: ${params.path}`);
       harness?.recordRead(params.path);
+      const slice = readSlice(params.path, raw, params.from, params.to);
+      if (!slice.ok) return text(slice.refusal);
       // A raw-layer note is a copy of someone else's words; the note path is its
       // address, the same one the model cites it by. Nothing is ever edited into
       // one either, so it gets no language line: the rule for a transcript is
       // "quote it as it was said", which the preamble already says.
-      if (isExternalNote(ctx, params.path)) return text(wrapExternal(params.path, raw));
-      return text(raw + noteLanguageNote(params.path, raw, language));
+      //
+      // A range changes WHICH words, never whose, so a slice is fenced exactly
+      // as the whole note is. Our own line about the range goes AFTER the
+      // closing marker: inside it, it would read as one more line of the
+      // transcript, which is the one thing the envelope exists to prevent.
+      if (isExternalNote(ctx, params.path))
+        return text(wrapExternal(params.path, slice.body) + slice.note);
+      return text(slice.body + noteLanguageNote(params.path, slice.body, language) + slice.note);
+    },
+  });
+
+  /**
+   * The table of contents half of the drill-down pair (M3). A note is navigated
+   * rather than truncated: this returns the heading tree with the line range
+   * each section owns, and `vault_read` takes those numbers back.
+   *
+   * Heading text is flattened for the same reason `vault_grep`'s snippets are:
+   * every one of them is somebody's note body verbatim, a row here is an address
+   * plus a hint, and a `##` line in a dropped transcript is the cheapest place in
+   * the workspace to plant a forged envelope marker.
+   */
+  const vaultOutline = defineTool({
+    name: 'vault_outline',
+    label: 'Outline note',
+    description:
+      'Get the heading tree of a note: every heading, with the line range that section covers. Reach for this BEFORE reading anything ' +
+      'long (a meeting transcript, a dropped article, a hub page that has grown), and then vault_read only the section you need, ' +
+      'instead of pulling the whole note into the conversation to find one paragraph. Each row reads "from-to" and then the heading ' +
+      "as it is written; a section's range includes its subsections, so the two numbers go straight back to vault_read as `from` and " +
+      '`to`. A note with no headings says so and gives its length. Do not spend a call on this for a short note: read that one whole.',
+    parameters: Type.Object({
+      path: Type.String({ description: 'Workspace-relative path to the note.' }),
+    }),
+    async execute(_id, params: { path: string }) {
+      const refused = refusedPath(params.path);
+      if (refused) return text(refused);
+      const raw = await ctx.vault.readRaw(params.path);
+      if (raw === null) return text(`Not found: ${params.path}`);
+      harness?.recordRead(params.path);
+      const total = raw.split('\n').length;
+      const tree = headings(raw);
+      // A note under the cap can be read whole, and saying so is what stops the
+      // pair costing two calls where one always did.
+      const advice =
+        total > READ_MAX_LINES
+          ? 'One read returns at most ' +
+            `${READ_MAX_LINES} lines, so take it a section at a time with vault_read \`from\` and \`to\`.`
+          : 'Read a section with vault_read `from` and `to`, or read the whole note.';
+      if (tree.length === 0) return text(`${params.path}: ${total} lines, no headings. ${advice}`);
+      const rows = tree.map(
+        (h) => `- ${h.from}-${h.to} ${'#'.repeat(h.level)} ${fragment(h.text)}`,
+      );
+      return text(
+        `${params.path}: ${total} lines, ${tree.length} headings. ${advice}\n${rows.join('\n')}`,
+      );
     },
   });
 
@@ -279,7 +534,7 @@ export function createVaultTools(
     },
   });
 
-  return [vaultRead, vaultList, vaultGrep, searchVault];
+  return [vaultRead, vaultOutline, vaultList, vaultGrep, searchVault];
 }
 
 export const PROPOSE_TOOL_NAMES = [
@@ -303,23 +558,25 @@ export interface LoadableSkill {
 }
 
 /**
- * Every runnable a session may pull in mid-conversation (Sessions v2 Part 3.1).
- * A file is loadable when it says the model may reach it — `model-picks-it-up`
- * for a playbook, `read-when-relevant` for material. Always-on rules are
- * excluded even if they also declare one: they are already in the system
- * prompt, and loading one twice teaches the model that its instructions repeat.
+ * Every skill a session may pull in mid-conversation (Sessions v2 Part 3.1).
+ * That is all of them now: a skill IS work the model may reach for, so nothing
+ * in the file decides it any more (SK-2). The house rules are the one file left
+ * out, because they are already in the system prompt and loading them twice
+ * teaches the model that its instructions repeat.
  */
 export async function listLoadableSkills(ctx: UseCaseContext): Promise<LoadableSkill[]> {
   const out: LoadableSkill[] = [];
   for (const n of ctx.index.all()) {
     if (n.type !== 'skill') continue;
+    // A voice is filed as a skill note but is not work anyone reaches for: it
+    // is how a draft sounds, applied by the drafting tools (SK-6). Offering one
+    // through `use_skill` would put tone in force as if it were a workflow.
+    if (isVoicePath(n.path)) continue;
     const raw = await ctx.vault.readRaw(n.path);
     if (!raw) continue;
     const config = parseRunnable(raw, n.slug.split('/').pop() ?? n.slug);
-    if (config.starts.includes('always')) continue;
-    const reachable =
-      config.starts.includes('model-picks-it-up') || config.starts.includes('read-when-relevant');
-    if (reachable) out.push({ path: n.path, slug: n.slug, config });
+    if (config.name === HOUSE_RULES_NAME) continue;
+    out.push({ path: n.path, slug: n.slug, config });
   }
   return out;
 }
@@ -337,10 +594,10 @@ export function matchSkill(skills: LoadableSkill[], name: string): LoadableSkill
 
 /**
  * On-demand skill loader (Sessions v2): the skill index lists every loadable
- * runnable by name + summary in the system prompt; calling this pulls the
- * chosen one into context. Material is something you read. A file that GOVERNS
- * is more than that — it arrives with its capabilities, so loading one tells
- * the harness (and, via `onInvoke`, the runtime that re-activates the tool set).
+ * skill by name + summary in the system prompt; calling this pulls the chosen
+ * one into context. A skill is more than something you read — it arrives with
+ * its capabilities, so loading one tells the harness (and, via `onInvoke`, the
+ * runtime that re-activates the tool set).
  */
 export function createUseSkillTool(
   ctx: UseCaseContext,
@@ -352,9 +609,9 @@ export function createUseSkillTool(
     label: 'Use skill',
     description:
       'Load a skill into this conversation by name (see "Skills available on demand" in your instructions). ' +
-      'Some are material you read; a playbook takes over how you work from here — its instructions and the ' +
-      'cards it is allowed to produce. Call it the moment the conversation turns into work that skill ' +
-      'describes, rather than improvising the workflow yourself.',
+      'It takes over how you work from here — its instructions and the cards it is allowed to produce. ' +
+      'Call it the moment the conversation turns into work that skill describes, rather than improvising ' +
+      'the workflow yourself.',
     parameters: Type.Object({
       name: Type.String({
         description: 'The skill name, e.g. "synthesis" or "spec-review-checklist".',
@@ -369,10 +626,8 @@ export function createUseSkillTool(
           `No skill named "${params.name}" is available on demand. Available: ${names || 'none'}.`,
         );
       }
-      if (governs(hit.config)) {
-        harness?.invokeSkill(hit.config);
-        await onInvoke?.(hit);
-      }
+      harness?.invokeSkill(hit.config);
+      await onInvoke?.(hit);
       harness?.recordRead(hit.path);
       return text(buildSkillBrief(hit.config));
     },
@@ -429,11 +684,16 @@ function citations(ctx: UseCaseContext): {
 /** How long a standing instruction may be before it stops being one sentence. */
 const RULE_MAX = 300;
 
-/** The heading a standing instruction is filed under, in every runnable. */
+/** The heading a standing instruction is filed under, in a skill or an agent. */
 const RULES_HEADING = '## Standing instructions';
 
-/** The catch-all always-on skill, for a rule no single skill or agent owns. */
-const RULES_SKILL = '_your-rules';
+/**
+ * Where a rule goes when no single skill or agent owns it: the last section of
+ * the house rules, the one document every session reads (SK-3). It is the last
+ * heading in that file on purpose — an `append` lands at the end, and a section
+ * with prose after it would take a fresh heading instead of the bullet.
+ */
+const HOUSE_RULES_HEADING = '## Your rules';
 
 /** What a rule looks like once the differences that are not differences are gone. */
 function normalizeRule(rule: string): string {
@@ -444,17 +704,26 @@ function normalizeRule(rule: string): string {
     .replace(/[.!?,;:]+$/, '');
 }
 
-function isRulesHeading(line: string): boolean {
-  return /^#{1,6}\s+standing instructions\s*$/i.test(line.trim());
+/** The words of a heading, whatever its level: "## Your rules" → "your rules". */
+function headingWords(line: string): string {
+  return line
+    .trim()
+    .replace(/^#{1,6}\s+/, '')
+    .trim()
+    .toLowerCase();
 }
 
-/** The rules a body already carries, read off its Standing instructions sections. */
-function existingRules(body: string): string[] {
+function isRulesHeading(line: string, heading: string): boolean {
+  return /^#{1,6}\s/.test(line.trim()) && headingWords(line) === headingWords(heading);
+}
+
+/** The rules a body already carries, read off the section they are filed under. */
+function existingRules(body: string, heading: string): string[] {
   const out: string[] = [];
   let inside = false;
   for (const line of body.split('\n')) {
     if (/^#{1,6}\s/.test(line)) {
-      inside = isRulesHeading(line);
+      inside = isRulesHeading(line, heading);
       continue;
     }
     const bullet = /^\s*[-*]\s+(.+)$/.exec(line);
@@ -464,15 +733,15 @@ function existingRules(body: string): string[] {
 }
 
 /**
- * Is the Standing instructions section the last thing in the body? Only then can
- * a bare bullet join it: `append` lands at the end of the file and nowhere else,
- * so a section with prose after it needs a fresh heading rather than a bullet
- * that would attach itself to whatever the file happens to end with.
+ * Is the rules section the last thing in the body? Only then can a bare bullet
+ * join it: `append` lands at the end of the file and nowhere else, so a section
+ * with prose after it needs a fresh heading rather than a bullet that would
+ * attach itself to whatever the file happens to end with.
  */
-function rulesSectionIsLast(body: string): boolean {
+function rulesSectionIsLast(body: string, heading: string): boolean {
   const headings = body.split('\n').filter((line) => /^#{1,6}\s/.test(line));
   const last = headings.at(-1);
-  return !!last && isRulesHeading(last);
+  return !!last && isRulesHeading(last, heading);
 }
 
 /**
@@ -952,14 +1221,14 @@ export function createProposeTools(
           mutable === 'all' ? 'frontmatter' : `frontmatter (${[...mutable].join(', ') || 'none'})`;
         const upstream =
           note.type === 'ticket' || note.type === 'wikipage'
-            ? ' To change the upstream content, use draft_jira_comment / draft_confluence_update instead.'
+            ? ' To change the upstream content, use draft_ticket_comment / draft_page_update instead.'
             : '';
         return text(
           `Rejected: the body of a ${note.type} note is immutable — drop \`patch\`/\`append\`. Only ${allowed} may change here.${upstream}`,
         );
       }
       // The anchor has to be real, checked while the agent is still around to go
-      // and look again — the same contract draft_confluence_update keeps. A
+      // and look again — the same contract draft_page_update keeps. A
       // patch that cannot be located is not a card that applies badly, it is a
       // card that can never apply at all, and finding that out at review time
       // leaves the PM holding a dead red box with the work inside it.
@@ -1127,14 +1396,14 @@ export function createProposeTools(
    * "Remember to create person notes as well" used to get a yes in the chat and
    * change nothing: the next session started from the same prompt as the last
    * one, and the PM had to say it again. The rule belongs in a file the model
-   * reads, so it goes where the behavior lives — the skill or agent that owns
-   * it, or the always-on `_your-rules` skill when nothing else fits — as one
-   * bullet under `## Standing instructions`, through the same approval card as
+   * reads, so it goes where the behavior lives: the skill or agent that owns it,
+   * under `## Standing instructions`, or the house rules under `## Your rules`
+   * when nothing else fits. Either way it goes through the same approval card as
    * every other write.
    *
    * Nothing new is invented for it. An existing file takes an `update` card with
-   * the `append` lever, which cannot miss its anchor the way a patch can; the
-   * first rule with no home takes a `note` card that creates `_your-rules`.
+   * the `append` lever, which cannot miss its anchor the way a patch can; a
+   * workspace with no house-rules file yet takes a `note` card that creates one.
    */
   const proposeInstruction = defineTool({
     name: 'propose_instruction',
@@ -1144,9 +1413,9 @@ export function createProposeTools(
       'conversation ("remember to create person notes too", "articles with no project get the inspiration tag"). ' +
       'It lands as a bullet under "Standing instructions" in the skill or agent that owns the behavior, and every ' +
       'session that runs that file reads it from then on. Name `target` when one skill or agent clearly owns it ' +
-      '(arrival, librarian, meeting-prep) and leave it out otherwise: the rule then goes to your rules, the ' +
-      'always-on file every session reads. Keep `rule` to one short imperative sentence, and keep answering the ' +
-      'PM normally in the same turn. Never say you will remember something without this card.',
+      '(arrival, librarian, meeting-prep) and leave it out otherwise: the rule then goes under "Your rules" in the ' +
+      'house rules, the one document every session reads. Keep `rule` to one short imperative sentence, and keep ' +
+      'answering the PM normally in the same turn. Never say you will remember something without this card.',
     parameters: Type.Object({
       rule: Type.String({
         description:
@@ -1192,18 +1461,20 @@ export function createProposeTools(
         return null;
       };
       const owner = wanted ? await read(wanted) : null;
-      const home = owner ?? (await read(RULES_SKILL));
-      const name = owner ? wanted : RULES_SKILL;
+      const home = owner ?? (await read(HOUSE_RULES_NAME));
+      const name = owner ? wanted : HOUSE_RULES_NAME;
       const missed = wanted && !owner ? wanted : '';
+      // Each home files rules under its own heading: a skill or agent collects
+      // them as standing instructions, the house rules as the PM's own rules.
+      const heading = owner ? RULES_HEADING : HOUSE_RULES_HEADING;
 
       const label =
         home && typeof home.note.frontmatter['title'] === 'string' && home.note.frontmatter['title']
           ? (home.note.frontmatter['title'] as string)
           : name;
-      const lands =
-        name === RULES_SKILL
-          ? 'Goes into Your rules, which every session reads.'
-          : `Goes into ${label}'s standing instructions.`;
+      const lands = owner
+        ? `Goes into ${label}'s standing instructions.`
+        : 'Goes into Your rules, in the house rules every session reads.';
       const rationale = `${params.why?.trim() || 'You asked for this in chat.'} ${lands}`;
       const headline = `Remember this: ${rule}`;
       // The PM saying it in the chat IS the source, and a message is not a note,
@@ -1214,12 +1485,12 @@ export function createProposeTools(
         text(
           `Proposed instruction (${id}): "${rule}" -> ${name}. Awaiting review.` +
             (missed
-              ? ` Nothing is called "${missed}" here, so it goes to your rules instead of that file.`
+              ? ` Nothing is called "${missed}" here, so it goes to the house rules instead of that file.`
               : ''),
         );
 
       if (home) {
-        const already = existingRules(home.note.body).find(
+        const already = existingRules(home.note.body, heading).find(
           (bullet) => normalizeRule(bullet) === normalizeRule(rule),
         );
         if (already) {
@@ -1235,7 +1506,7 @@ export function createProposeTools(
         const waiting = ctx.proposals.list('pending').find((rec) => {
           if (rec.kind !== 'update' || rec.targetPath !== home.path) return false;
           const append = (rec.payload as { append?: string } | null)?.append ?? '';
-          return existingRules(`${RULES_HEADING}\n${append}`).some(
+          return existingRules(`${heading}\n${append}`, heading).some(
             (bullet) => normalizeRule(bullet) === normalizeRule(rule),
           );
         });
@@ -1249,9 +1520,9 @@ export function createProposeTools(
         if (dup) return dup;
         // Approval trims the append and re-joins it with a blank line, so the
         // leading newlines here are only what the text reads as on the card.
-        const append = rulesSectionIsLast(home.note.body)
+        const append = rulesSectionIsLast(home.note.body, heading)
           ? `\n- ${rule}`
-          : `\n\n${RULES_HEADING}\n\n- ${rule}`;
+          : `\n\n${heading}\n\n- ${rule}`;
         const rec = createProposal(ctx, {
           kind: 'update',
           sessionId,
@@ -1266,12 +1537,18 @@ export function createProposeTools(
         return receipt(rec.id);
       }
 
-      const path = runnableEntryPath('skills', RULES_SKILL);
+      // No house-rules file at all: the card writes the shipped document with
+      // the new rule at the end of it. The whole document, not just the rule —
+      // the runtime falls back to this same text while the file is missing, so
+      // a card that wrote the bullet alone would silently drop the language,
+      // writing and filing rules the session had a moment ago.
+      const shipped = parseRunnable(HOUSE_RULES, HOUSE_RULES_NAME);
+      const path = runnableEntryPath('skills', HOUSE_RULES_NAME);
       const dup = alreadyProposed({
         kind: 'note',
         targetPath: path,
         noteType: 'skill',
-        title: 'Your rules',
+        title: shipped.title,
       });
       if (dup) return dup;
       const rec = createProposal(ctx, {
@@ -1284,11 +1561,10 @@ export function createProposeTools(
           path,
           frontmatter: {
             type: 'skill',
-            title: 'Your rules',
-            summary: 'Things you have told Qale to always do.',
-            starts: ['always'],
+            title: shipped.title,
+            summary: shipped.summary,
           },
-          body: `${RULES_HEADING}\n\n- ${rule}`,
+          body: `${shipped.body.trim()}\n\n- ${rule}`,
           rationale,
           headline,
         },
@@ -1383,35 +1659,330 @@ export function createWithdrawTool(
   });
 }
 
-export const DRAFT_TOOL_NAMES = [
-  'draft_jira_issue',
-  'draft_jira_comment',
-  'draft_confluence_update',
-  'draft_message',
+/** One take on a piece of text: what its tab says, and the whole text under it. */
+interface Variant {
+  label: string;
+  body: string;
+}
+
+/** Drop the empties and trim; a tab with no body is not a variant. */
+function cleanVariants(raw: { label?: string; body?: string }[] | undefined): Variant[] {
+  return (raw ?? [])
+    .map((v, i) => ({
+      label: (v?.label ?? '').trim() || `Take ${i + 1}`,
+      body: (v?.body ?? '').trim(),
+    }))
+    .filter((v) => v.body.length > 0);
+}
+
+export const GET_VOICE_TOOL_NAME = 'get_voice';
+export const DRAFT_TEXT_TOOL_NAME = 'draft_text';
+
+/**
+ * The drafting tools that write into a tracker or a wiki. Two permissions in
+ * series: `can: [draft-outbound]` on the skill, and a connector on the
+ * workspace (see `toolNamesFor`).
+ *
+ * The names carry no product (PD-9). A tool name was how the model used to pick
+ * a provider, which made every skill file name Jira, and made a second tracker
+ * a second tool. The handler resolves the provider now, from the container or
+ * from the mirror the draft is addressed to.
+ */
+export const DRAFT_TOOL_NAMES = ['draft_ticket', 'draft_ticket_comment', 'draft_page_update'];
+
+/**
+ * The drafting tools that write into a calendar, gated apart on
+ * `can: [draft-calendar]` and the same connector floor.
+ *
+ * A ticket comment answers somebody who is already reading the ticket. An event
+ * puts a time in other people's days, and the guests see it whether or not they
+ * asked. One skill in the workspace books meetings, so the other outbound
+ * skills carried three tool schemas they never called.
+ *
+ * Disjoint from {@link DRAFT_TOOL_NAMES} by construction: one list per gate, and
+ * no tool nameable from two of them, or a session could be handed a tool by a
+ * capability it was not granted.
+ */
+export const CALENDAR_TOOL_NAMES = [
   'draft_calendar_event',
   'draft_calendar_reschedule',
   'draft_calendar_rsvp',
 ];
 
+/** What a voice asked for resolves to: the voice, or the refusal to hand back. */
+export type VoiceCheck = { ok: true; voice: Voice | null } | { ok: false; text: string };
+
 /**
- * Outbound draft tools (PLAN-V2 §3.4) — the agent DRAFTS, the human approves. These
- * only ever create outbound cards; the actual Jira/Confluence write happens in the
+ * One session's voice discipline, shared by every tool that writes text.
+ *
+ * It is built once per session because the "have you read this?" set is the
+ * whole mechanism: `get_voice` is one tool, and a second copy of it with a
+ * second set would let a voice count as read for one tool and unread for the
+ * next one in the same turn.
+ */
+export interface VoiceGate {
+  /** The names the model may pass, as a tool description says them. */
+  roster: string;
+  /** The one sentence about voice each drafting description ends with. */
+  voiceNote: string;
+  /** Resolve the voice a draft asks for, or refuse it. */
+  forVoice(name: string | undefined): Promise<VoiceCheck>;
+  /** The `get_voice` tool itself, handed to the session by `createTextTools`. */
+  getVoice: ToolDefinition;
+}
+
+/**
+ * Build the voice gate for a session (SK-6).
+ *
+ * @param voices The workspace's voices, read once when the session opens. They
+ * are only in the tool DESCRIPTIONS here, so the model knows which names exist;
+ * the brief itself is fetched at drafting time by `get_voice`.
+ */
+export function createVoiceGate(
+  ctx: UseCaseContext,
+  voices: Voice[] = [],
+  harness?: SessionHarness,
+): VoiceGate {
+  const roster = voiceRoster(voices);
+
+  /**
+   * The voices this session has actually read. A drafting tool is handed
+   * FINISHED text, so the only moment a brief can change how the draft sounds
+   * is before the text is written — which means the check has to be "have you
+   * read this?", asked when the draft arrives. A draft naming an unread voice
+   * is refused once, with the brief attached, and the model writes it again in
+   * that voice. Refusing twice would be theatre, so the brief handed over in
+   * the refusal counts as read.
+   */
+  const briefed = new Set<string>();
+
+  /**
+   * Resolve the voice a draft asks for. Three answers: no voice asked for
+   * (draft plain), a voice that does not exist (refuse, and never substitute
+   * one), and a voice whose brief this session has not seen yet (refuse once,
+   * with the brief).
+   *
+   * A draft that names no voice is never refused. Which voice fits, or whether
+   * one fits at all, is a judgement about who is going to read the text, and
+   * the roster in every drafting description is where that judgement is
+   * informed. A gate that refused plain drafts would answer a question of fit
+   * with a rule, and the wrong answer would be unappealable.
+   */
+  const forVoice = async (name: string | undefined): Promise<VoiceCheck> => {
+    const wanted = name?.trim();
+    if (!wanted) return { ok: true, voice: null };
+    const voice = await resolveVoice(ctx, wanted);
+    if (!voice) {
+      return {
+        ok: false,
+        text: `Rejected: there is no voice called "${wanted}". ${roster}`,
+      };
+    }
+    if (!briefed.has(voice.name)) {
+      briefed.add(voice.name);
+      return {
+        ok: false,
+        text:
+          `Rejected: this draft says it is in the ${voice.name} voice, but you have not read that brief yet. ` +
+          'Here it is. Write the draft again so it follows every line of it, then call this tool.\n\n' +
+          voiceBrief(voice),
+      };
+    }
+    return { ok: true, voice };
+  };
+
+  /**
+   * Read a voice before drafting in it. Deliberately a tool rather than a block
+   * in the system prompt: a session that never drafts never sees a word of
+   * tone guidance, and a session that drafts twice in two voices gets each one
+   * at the moment it applies.
+   */
+  const getVoice = defineTool({
+    name: GET_VOICE_TOOL_NAME,
+    label: 'Read a voice',
+    description:
+      'Read how a draft in a given voice should sound, before you write it. ' +
+      'A voice governs tone, register and wording, never what the draft says. ' +
+      `${roster} ` +
+      'Call this first whenever a draft is going out in a voice, then write the draft to the brief it hands back.',
+    parameters: Type.Object({
+      name: Type.String({ description: 'The voice name, e.g. "exec".' }),
+    }),
+    async execute(_id, params: { name: string }) {
+      const voice = await resolveVoice(ctx, params.name);
+      if (!voice) return text(`There is no voice called "${params.name}". ${roster}`);
+      briefed.add(voice.name);
+      harness?.recordRead(voice.path);
+      return text(voiceBrief(voice));
+    },
+  });
+
+  const voiceNote =
+    `\`voice\`: how it should sound. ${roster} ` +
+    'Read the one you pick with `get_voice` before you write, follow it, and name it here so the draft says which voice it is in. ' +
+    'A draft naming a voice you have not read is refused.';
+
+  return { roster, voiceNote, forVoice, getVoice };
+}
+
+/**
+ * The two tools every session gets, whatever it may write (see `toolNamesFor`).
+ *
+ * `draft_text` shows text in the chat and files nothing, and `get_voice` reads a
+ * file the workspace already holds. Neither needs a capability, and neither can
+ * fail for want of a connector, so gating them only ever meant a plain chat was
+ * told to draft with a tool it had not been handed.
+ *
+ * Deliberately apart from {@link createDraftTools}: every line of that factory
+ * is citation, staleness and card bookkeeping, and a panel in the chat has none
+ * of those. The one thing they share is the voice gate, which is passed in.
+ */
+export function createTextTools(gate: VoiceGate): ToolDefinition[] {
+  const draftText = defineTool({
+    name: DRAFT_TEXT_TOOL_NAME,
+    label: 'Draft text',
+    description:
+      'Write one or more takes on a piece of text and show them in the chat, as tabs the PM can compare and copy. ' +
+      'It may be a message they will send, but it may as well be a headline, a jingle, a paragraph for a deck. ' +
+      'Nothing is sent, nothing is filed and there is nothing to approve: this tool only puts the text in front of them. ' +
+      'Use it whenever the answer IS a piece of text to use somewhere, so it arrives with tabs and a Copy button instead of buried in the reply. ' +
+      'Give `variants` as a list of {label, body}: the label is what the tab says ("Short", "Warmer"), the body is the whole text in markdown, never a fragment. ' +
+      'Write two variants as a rule, so there is something to compare: two real takes on the same text, ' +
+      'apart in length or shape or warmth, and each one you would be happy to send. The same text reworded is not a second take. ' +
+      'One variant only when a second would be a copy of the first: a one-line answer, or a rewrite where they already said what to change. ' +
+      'Optional `title`: a heading for the panel, e.g. "Exec update". ' +
+      'Every call draws a new panel, so a revision is another call with the new text, not an edit of the last one. ' +
+      'Optional `action`: it renames the Use button and adds your own sentence to the message it sends, so ' +
+      '{ label: "Post on PAY-142", message: "Post it as a comment on PAY-142." } comes back to you as an ordinary turn asking for exactly that. ' +
+      'Leave it out and the button says "Use this" and sends only which version they picked. ' +
+      gate.voiceNote,
+    parameters: Type.Object({
+      title: Type.Optional(Type.String({ description: 'A heading for the panel.' })),
+      voice: Type.Optional(
+        Type.String({
+          description:
+            'A voice name from this workspace, e.g. "exec". Set it whenever you read a brief for this draft.',
+        }),
+      ),
+      variants: Type.Array(
+        Type.Object({
+          label: Type.String({ description: 'What the tab says. Two or three words.' }),
+          body: Type.String({ description: 'The whole text, in markdown.' }),
+        }),
+        {
+          description:
+            'Two as a rule, one when a second would say the same thing. Each is a complete piece of text, not a fragment.',
+        },
+      ),
+      action: Type.Optional(
+        Type.Object(
+          {
+            label: Type.String({ description: 'What the button says, e.g. "Post on PAY-142".' }),
+            message: Type.String({
+              description:
+                'The sentence sent with the pick, e.g. "Post it as a comment on PAY-142."',
+            }),
+          },
+          { description: 'Rename the Use button and say what clicking it asks you for.' },
+        ),
+      ),
+    }),
+    async execute(
+      _id,
+      params: {
+        title?: string;
+        voice?: string;
+        variants: { label: string; body: string }[];
+        action?: { label: string; message: string };
+      },
+    ) {
+      const variants = cleanVariants(params.variants);
+      if (variants.length === 0) {
+        return text(
+          'Rejected: give at least one variant, each with a label for its tab and the whole text as its body.',
+        );
+      }
+      const spoken = await gate.forVoice(params.voice);
+      if (!spoken.ok) return text(spoken.text);
+      // No card, no record, no receipt: the panel renders from this call's own
+      // input, so there is nothing to report but what the PM can now see.
+      return text(
+        `Showed ${variants.length === 1 ? '1 version' : `${variants.length} versions`} in the chat: ` +
+          `${variants.map((v) => v.label).join(', ')}. Nothing was filed and nothing was sent. ` +
+          'If they pick one they will say so.',
+      );
+    },
+  });
+
+  return [draftText, gate.getVoice];
+}
+
+/**
+ * One place a draft can be addressed: a tracker project, a wiki space. The
+ * provider comes with it, and that is what lets the write tools stay
+ * provider-blind. The model picks a container, the handler picks the provider.
+ */
+export interface OutboundContainer {
+  /** The key the model names, e.g. "PAY". */
+  id: string;
+  /** What the workspace calls it, for the retry message on an unknown key. */
+  name: string;
+  kind: 'ticket' | 'wikipage';
+  /** The provider string stamped on a card addressed here, e.g. 'jira'. */
+  provider: string;
+}
+
+/** Every container the workspace reads, injected by the host for the same
+ *  reason as {@link TrackExternal}: it is sync state, not a provider call. */
+export type ListOutboundContainers = () => OutboundContainer[];
+
+/**
+ * Outbound draft tools (PLAN-V2 §3.4): the agent DRAFTS, the human approves.
+ * These only ever create outbound cards; the write upstream happens in the
  * card-application layer on approval. There is no auto-apply path here, ever.
  *
- * Tool NAMES stay provider-flavored (skill files reference them verbatim); the
- * payloads they emit are the provider-generic shape (`provider` + generic action).
- * `system` is written alongside as a deprecated mirror of `provider` so payload
- * readers from the pre-genericization era keep working.
+ * No tool here names a product (PD-9). The payloads carry a `provider`, and the
+ * handler is what puts it there: from the container for a create, from the
+ * addressed mirror's frontmatter for a comment or a page edit. `system` is
+ * written alongside as a deprecated mirror of `provider` so payload readers from
+ * the pre-genericization era keep working.
+ *
+ * One factory for both {@link DRAFT_TOOL_NAMES} and {@link CALENDAR_TOOL_NAMES},
+ * though they are gated apart: they share the citation check, the voice check
+ * and the staleness snapshot, and splitting the factory would fork all three to
+ * express a permission the caller already decides. Which of them a session may
+ * ACTIVATE is `toolNamesFor`'s answer, not this one's.
  */
 export function createDraftTools(
   ctx: UseCaseContext,
   sessionId: string,
   harness?: SessionHarness,
+  /** The session's voice gate, shared with `draft_text` (see `createVoiceGate`). */
+  gate: VoiceGate = createVoiceGate(ctx, [], harness),
+  /** Where drafts may be addressed. Empty means nothing is followed yet, which
+   *  the tools report as such instead of filing a card that cannot land. */
+  listContainers: ListOutboundContainers = () => [],
 ): ToolDefinition[] {
   // Same rule as the propose tools: a draft may rest on a card still waiting.
   // Citing the meeting on a todo and being refused for it on the comment about
   // that same meeting would be arbitrary from where the model sits.
   const { resolves, evidenceRows } = citations(ctx);
+  const { forVoice, voiceNote } = gate;
+
+  /**
+   * The sentence that carries text the PM has already read into a real
+   * destination. "Post that as a comment on the ticket" is one move, not a
+   * rewrite: the version they have open is the text they liked, so it is copied
+   * here word for word rather than written again.
+   */
+  const fromDraftNote =
+    'When the PM points at a version you showed with `draft_text` ("post that as a comment"), take that body word for word and send it here. Do not rewrite it.';
+
+  const voiceParam = Type.Optional(
+    Type.String({
+      description: 'A voice name from this workspace, e.g. "exec". Leave it out to write plainly.',
+    }),
+  );
 
   /**
    * Drafted-against snapshot (the staleness baseline): when the target has a
@@ -1420,17 +1991,76 @@ export function createDraftTools(
    * mirror and refuses when the upstream item moved since drafting. No mirror
    * ⇒ no snapshot fields.
    */
-  const mirrorFor = (type: 'ticket' | 'wikipage' | 'meeting', externalId: string) => {
-    const wanted = externalId.trim().toLowerCase();
+  const mirrorFor = (type: 'ticket' | 'wikipage' | 'meeting', ref: string) => {
+    const wanted = ref.trim().toLowerCase();
+    const mirrors = ctx.index.listByType(type);
+    const byId = mirrors.find(
+      (n) =>
+        String(n.frontmatter['external_id'] ?? '')
+          .trim()
+          .toLowerCase() === wanted,
+    );
+    if (byId) return byId;
+    // The model may point at the note instead of the id: it reads
+    // `[[tickets/PAY-142]]` all over the workspace, so refusing that form would
+    // be refusing the address the model actually has.
+    const path = ctx.index.resolve(stripLink(ref));
+    return (path ? mirrors.find((n) => n.path === path) : null) ?? null;
+  };
+  type Mirror = ReturnType<typeof mirrorFor>;
+
+  /** The tracker container the model named, by key or by the name shown for it. */
+  const containerFor = (named: string): OutboundContainer | null => {
+    const wanted = named.trim().toLowerCase();
+    const known = listContainers().filter((c) => c.kind === 'ticket');
     return (
-      ctx.index.listByType(type).find(
-        (n) =>
-          String(n.frontmatter['external_id'] ?? '')
-            .trim()
-            .toLowerCase() === wanted,
-      ) ?? null
+      known.find((c) => c.id.toLowerCase() === wanted) ??
+      known.find((c) => c.name.toLowerCase() === wanted) ??
+      null
     );
   };
+
+  /** The refusal for a container nobody reads. Naming the ones the workspace
+   *  does read is the whole message: the model retries from it. */
+  const unknownContainer = (named: string): string => {
+    const known = listContainers().filter((c) => c.kind === 'ticket');
+    if (known.length === 0) {
+      return 'Rejected: this workspace follows no tracker project yet, so a new ticket has nowhere to go. Say so, and leave the work as a todo.';
+    }
+    const list = known.map((c) => `${c.id} (${c.name})`).join(', ');
+    return `Rejected: nothing here is called ${named}. This workspace files tickets in ${list}. Pick one of those.`;
+  };
+
+  /** The one provider that holds this kind of item, when only one does. Two of
+   *  them and an unmirrored id is genuinely ambiguous, so nobody guesses. */
+  const soleProvider = (kind: 'ticket' | 'wikipage'): string | null => {
+    const providers = [
+      ...new Set(
+        listContainers()
+          .filter((c) => c.kind === kind)
+          .map((c) => c.provider),
+      ),
+    ];
+    return providers.length === 1 ? (providers[0] ?? null) : null;
+  };
+
+  /**
+   * Who to stamp on a draft addressed to an existing item. The mirror note is
+   * the authority: its frontmatter names the provider that holds the item, so
+   * the model points at the thing and never types a product name. Nothing
+   * mirrored yet ⇒ the workspace's only provider for the kind, or nothing.
+   */
+  const providerFor = (kind: 'ticket' | 'wikipage', mirror: Mirror): string | null => {
+    const named = mirror ? String(mirror.frontmatter['provider'] ?? '').trim() : '';
+    return named || soleProvider(kind);
+  };
+
+  /** The refusal when no mirror and no single provider can say who holds it. */
+  const unknownTarget = (kind: 'ticket' | 'wikipage', ref: string): string =>
+    `Rejected: nothing here says which system holds ${ref}, so the draft has no address. ` +
+    (kind === 'ticket'
+      ? 'Watch it with `track_external` first, then draft against the mirror it makes.'
+      : 'Cite the page by the id on its mirror note in wikipages/.');
   const draftSnapshot = (
     type: 'ticket' | 'wikipage' | 'meeting',
     externalId: string,
@@ -1466,64 +2096,22 @@ export function createDraftTools(
     return rec;
   };
 
-  const draftJiraIssue = defineTool({
-    name: 'draft_jira_issue',
-    label: 'Draft Jira issue',
+  const draftTicket = defineTool({
+    name: 'draft_ticket',
+    label: 'Draft a tracker ticket',
     description:
-      'Draft a NEW tracker ticket (Jira) as an approval card (never created until approved). Give the projectKey (the container), a summary, and a markdown description ending with a provenance line ("Source: <meeting>, <date>"). Cite sources[] (the meeting/decision it came from). Optionally linkBack: a workspace note path to append the created ticket\'s link to on approval.',
+      'Draft a NEW ticket as an approval card (never created until approved). `container` is the project or team it goes in, named by its key; the card shows which tracker that is. Give a title and a markdown body ending with a provenance line ("Source: <meeting>, <date>"). Cite sources[] (the meeting or decision it came from). Optionally linkBack: a workspace note path to append the created ticket\'s link to on approval. ' +
+      voiceNote,
     parameters: Type.Object({
-      projectKey: Type.String(),
-      issueType: Type.Optional(Type.String()),
-      summary: Type.String(),
-      description: Type.String(),
-      sources: Type.Array(Type.String()),
-      linkBack: Type.Optional(Type.String()),
-      rationale: Type.String(),
-    }),
-    async execute(
-      _id,
-      params: {
-        projectKey: string;
-        issueType?: string;
-        summary: string;
-        description: string;
-        sources: string[];
-        linkBack?: string;
-        rationale: string;
-      },
-    ) {
-      const check = validateEvidence(params.sources ?? [], resolves);
-      if (!check.ok) return text(`Rejected: ${check.reason}`);
-      const rec = mkCard(
-        {
-          provider: 'jira',
-          system: 'jira',
-          action: 'create_ticket',
-          projectKey: params.projectKey,
-          issueType: params.issueType,
-          title: params.summary,
-          body: params.description,
-          linkBackPath: params.linkBack,
-          rationale: params.rationale,
-        },
-        params.rationale,
-        params.sources,
-        'jira-issue',
-      );
-      return text(
-        `Drafted Jira issue card (${rec.id}) in ${params.projectKey}. Awaiting approval.`,
-      );
-    },
-  });
-
-  const draftJiraComment = defineTool({
-    name: 'draft_jira_comment',
-    label: 'Draft Jira comment',
-    description:
-      'Draft a comment on an existing ticket as an approval card. issueKey is the ticket\'s key — take it from the ticket\'s mirror note (tickets/, frontmatter external_id) when one exists, and cite that mirror in sources[] alongside the meeting/decision. End the body with a provenance line ("Source: <meeting>, <date>").',
-    parameters: Type.Object({
-      issueKey: Type.String(),
+      container: Type.String({
+        description: 'The project or team the ticket goes in, by its key, e.g. "PAY".',
+      }),
+      kind: Type.Optional(
+        Type.String({ description: "bug, task, story: the tracker's own type names." }),
+      ),
+      title: Type.String(),
       body: Type.String(),
+      voice: voiceParam,
       sources: Type.Array(Type.String()),
       linkBack: Type.Optional(Type.String()),
       rationale: Type.String(),
@@ -1531,8 +2119,11 @@ export function createDraftTools(
     async execute(
       _id,
       params: {
-        issueKey: string;
+        container: string;
+        kind?: string;
+        title: string;
         body: string;
+        voice?: string;
         sources: string[];
         linkBack?: string;
         rationale: string;
@@ -1540,34 +2131,103 @@ export function createDraftTools(
     ) {
       const check = validateEvidence(params.sources ?? [], resolves);
       if (!check.ok) return text(`Rejected: ${check.reason}`);
+      // The container decides the provider, so an unknown one is not a detail
+      // to fix at approval: there is nothing to address the card to.
+      const container = containerFor(params.container);
+      if (!container) return text(unknownContainer(params.container));
+      const spoken = await forVoice(params.voice);
+      if (!spoken.ok) return text(spoken.text);
       const rec = mkCard(
         {
-          provider: 'jira',
-          system: 'jira',
-          action: 'comment_ticket',
-          issueKey: params.issueKey,
+          provider: container.provider,
+          system: container.provider,
+          action: 'create_ticket',
+          voice: spoken.voice?.name,
+          container: container.id,
+          issueType: params.kind,
+          title: params.title,
           body: params.body,
           linkBackPath: params.linkBack,
           rationale: params.rationale,
-          ...draftSnapshot('ticket', params.issueKey),
         },
         params.rationale,
         params.sources,
-        'jira-comment',
+        'ticket',
       );
-      return text(
-        `Drafted Jira comment card (${rec.id}) on ${params.issueKey}. Awaiting approval.`,
-      );
+      return text(`Drafted a ticket card (${rec.id}) in ${container.id}. Awaiting approval.`);
     },
   });
 
-  const draftConfluenceUpdate = defineTool({
-    name: 'draft_confluence_update',
-    label: 'Draft Confluence update',
+  const draftTicketComment = defineTool({
+    name: 'draft_ticket_comment',
+    label: 'Draft a ticket comment',
     description:
-      'Draft a change to a wikipage (Confluence) as an approval card. There are two ways to change a page; pick the one that fits. With `patch` (search + replace) that ONE passage is rewritten in place on the live page and the rest of it is left untouched, which is what you want when the page now says something wrong. The search text must be copied word for word from the page as it stands, with enough of it around the change that it appears only once. Anchor it on a plain run of prose, never on a line carrying markup (a **bold** span, a `- ` bullet, a `## ` heading, a [text](url) link): here it is checked against the page\'s mirror note, which is markdown, but on approval it is matched against the live page, where that markup is not written the same way, and the edit fails then with "the page\'s text changed". Give `provenance` with a patch: the redline is only the corrected sentence, so that one line ("Source: <origin>, <date>") is how the page says where the change came from. Without a patch, `body` is appended to the page as a new section, which is what you want when you are adding something the page does not say yet; end it with a provenance line of its own and leave the `provenance` field out, because the page gets that line as written and a second one would be added underneath. pageId is the page\'s id: take it from the wikipage\'s mirror note (wikipages/, frontmatter external_id) when one exists, and cite that mirror in sources[].',
+      'Draft a comment on an existing ticket as an approval card. `ticket` is the item itself: its key (PAY-142) or its mirror note (tickets/PAY-142). Take the key from the mirror note (tickets/, frontmatter external_id) when one exists, and cite that mirror in sources[] alongside the meeting or decision. The card shows which tracker it goes to. End the body with a provenance line ("Source: <meeting>, <date>"). ' +
+      voiceNote +
+      ' ' +
+      fromDraftNote,
     parameters: Type.Object({
-      pageId: Type.String(),
+      ticket: Type.String({ description: 'The ticket key, or the path of its mirror note.' }),
+      body: Type.String(),
+      voice: voiceParam,
+      sources: Type.Array(Type.String()),
+      linkBack: Type.Optional(Type.String()),
+      rationale: Type.String(),
+    }),
+    async execute(
+      _id,
+      params: {
+        ticket: string;
+        body: string;
+        voice?: string;
+        sources: string[];
+        linkBack?: string;
+        rationale: string;
+      },
+    ) {
+      const check = validateEvidence(params.sources ?? [], resolves);
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const mirror = mirrorFor('ticket', params.ticket);
+      const provider = providerFor('ticket', mirror);
+      if (!provider) return text(unknownTarget('ticket', params.ticket));
+      const spoken = await forVoice(params.voice);
+      if (!spoken.ok) return text(spoken.text);
+      // The key upstream, never the note path: the connector addresses the
+      // provider's own id, and a mirror is the one place that holds it.
+      const targetId = mirror
+        ? String(mirror.frontmatter['external_id'] ?? '').trim()
+        : params.ticket.trim();
+      const rec = mkCard(
+        {
+          provider,
+          system: provider,
+          action: 'comment_ticket',
+          voice: spoken.voice?.name,
+          targetId,
+          body: params.body,
+          linkBackPath: params.linkBack,
+          rationale: params.rationale,
+          ...draftSnapshot('ticket', targetId),
+        },
+        params.rationale,
+        params.sources,
+        'ticket-comment',
+      );
+      return text(`Drafted a comment card (${rec.id}) on ${targetId}. Awaiting approval.`);
+    },
+  });
+
+  const draftPageUpdate = defineTool({
+    name: 'draft_page_update',
+    label: 'Draft a page update',
+    description:
+      'Draft a change to a wikipage as an approval card. There are two ways to change a page; pick the one that fits. With `patch` (search + replace) that ONE passage is rewritten in place on the live page and the rest of it is left untouched, which is what you want when the page now says something wrong. The search text must be copied word for word from the page as it stands, with enough of it around the change that it appears only once. Anchor it on a plain run of prose, never on a line carrying markup (a **bold** span, a `- ` bullet, a `## ` heading, a [text](url) link): here it is checked against the page\'s mirror note, which is markdown, but on approval it is matched against the live page, where that markup is not written the same way, and the edit fails then with "the page\'s text changed". Give `provenance` with a patch: the redline is only the corrected sentence, so that one line ("Source: <origin>, <date>") is how the page says where the change came from. Without a patch, `body` is appended to the page as a new section, which is what you want when you are adding something the page does not say yet; end it with a provenance line of its own and leave the `provenance` field out, because the page gets that line as written and a second one would be added underneath. `page` is the page itself: its id, or its mirror note (wikipages/…). Cite that mirror in sources[] when one exists. The card shows which wiki it goes to. ' +
+      voiceNote +
+      ' ' +
+      fromDraftNote,
+    parameters: Type.Object({
+      page: Type.String({ description: 'The page id, or the path of its mirror note.' }),
+      voice: voiceParam,
       body: Type.Optional(
         Type.String({
           description: 'The new section to append. Leave it out when you are patching a passage.',
@@ -1598,7 +2258,8 @@ export function createDraftTools(
     async execute(
       _id,
       params: {
-        pageId: string;
+        page: string;
+        voice?: string;
         body?: string;
         patch?: { search: string; replace: string };
         provenance?: string;
@@ -1609,6 +2270,14 @@ export function createDraftTools(
     ) {
       const check = validateEvidence(params.sources ?? [], resolves);
       if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const mirror = mirrorFor('wikipage', params.page);
+      const provider = providerFor('wikipage', mirror);
+      if (!provider) return text(unknownTarget('wikipage', params.page));
+      const targetId = mirror
+        ? String(mirror.frontmatter['external_id'] ?? '').trim()
+        : params.page.trim();
+      const spoken = await forVoice(params.voice);
+      if (!spoken.ok) return text(spoken.text);
       // A redline has to produce both halves: the whole page as it will read,
       // which is what the card previews, and the localized edit, which is what
       // the push applies. Building the preview here instead of asking for it
@@ -1616,11 +2285,10 @@ export function createDraftTools(
       // around to go and look again.
       let body = params.body?.trim() ? params.body : null;
       if (params.patch) {
-        const mirror = mirrorFor('wikipage', params.pageId);
         const note = mirror ? await ctx.vault.readNote(mirror.path) : null;
         if (!mirror || !note) {
           return text(
-            `Rejected: there is no wikipage mirror for page ${params.pageId}, so the passage cannot be checked against what the page says. Append a section with \`body\` instead.`,
+            `Rejected: there is no wikipage mirror for ${params.page}, so the passage cannot be checked against what the page says. Append a section with \`body\` instead.`,
           );
         }
         const redlined = applyPatch(note.body, [params.patch]);
@@ -1638,68 +2306,24 @@ export function createDraftTools(
       }
       const rec = mkCard(
         {
-          provider: 'confluence',
-          system: 'confluence',
+          provider,
+          system: provider,
           action: 'update_page',
-          pageId: params.pageId,
+          voice: spoken.voice?.name,
+          targetId,
           body,
           ...(params.patch ? { patch: params.patch } : {}),
           ...(params.provenance?.trim() ? { provenance: params.provenance.trim() } : {}),
           linkBackPath: params.linkBack,
           rationale: params.rationale,
-          ...draftSnapshot('wikipage', params.pageId),
+          ...draftSnapshot('wikipage', targetId),
         },
         params.rationale,
         params.sources,
-        'confluence-update',
+        'page-update',
       );
-      const what = params.patch ? 'Confluence redline card' : 'Confluence update card';
-      return text(`Drafted ${what} (${rec.id}) on page ${params.pageId}. Awaiting approval.`);
-    },
-  });
-
-  const draftMessage = defineTool({
-    name: 'draft_message',
-    label: 'Draft message',
-    description:
-      'Draft a per-audience update (CS/sales/exec) as an approval card — saved to the workspace on approval (not sent; Slack/email are out of scope). Give the audience, a markdown body, and cite sources[]. linkBack is the person/customer note to file it under.',
-    parameters: Type.Object({
-      audience: Type.String(),
-      title: Type.Optional(Type.String()),
-      body: Type.String(),
-      sources: Type.Array(Type.String()),
-      linkBack: Type.Optional(Type.String()),
-      rationale: Type.String(),
-    }),
-    async execute(
-      _id,
-      params: {
-        audience: string;
-        title?: string;
-        body: string;
-        sources: string[];
-        linkBack?: string;
-        rationale: string;
-      },
-    ) {
-      const check = validateEvidence(params.sources ?? [], resolves);
-      if (!check.ok) return text(`Rejected: ${check.reason}`);
-      const rec = mkCard(
-        {
-          provider: 'message',
-          system: 'message',
-          action: 'send_message',
-          audience: params.audience,
-          title: params.title,
-          body: params.body,
-          linkBackPath: params.linkBack,
-          rationale: params.rationale,
-        },
-        params.rationale,
-        params.sources,
-        'message',
-      );
-      return text(`Drafted ${params.audience} update card (${rec.id}). Awaiting approval.`);
+      const what = params.patch ? 'a page redline card' : 'a page update card';
+      return text(`Drafted ${what} (${rec.id}) on page ${targetId}. Awaiting approval.`);
     },
   });
 
@@ -1707,7 +2331,8 @@ export function createDraftTools(
     name: 'draft_calendar_event',
     label: 'Draft calendar event',
     description:
-      'Draft a NEW Google Calendar event as an approval card (never created until approved) — a follow-up meeting, a booked slot. Give a title (the invite summary), a start as RFC3339 with offset (e.g. 2026-08-04T15:00:00+02:00), optionally an end (defaults to +30 min) and attendee emails, and a body used as the invite description ending with a provenance line ("Source: <meeting>, <date>"). calendarId defaults to the primary calendar. Cite sources[]. linkBack: the meeting/todo note to append the created event\'s link to on approval.',
+      'Draft a NEW Google Calendar event as an approval card (never created until approved) — a follow-up meeting, a booked slot. Give a title (the invite summary), a start as RFC3339 with offset (e.g. 2026-08-04T15:00:00+02:00), optionally an end (defaults to +30 min) and attendee emails, and a body used as the invite description ending with a provenance line ("Source: <meeting>, <date>"). calendarId defaults to the primary calendar. Cite sources[]. linkBack: the meeting/todo note to append the created event\'s link to on approval. ' +
+      voiceNote,
     parameters: Type.Object({
       title: Type.String(),
       start: Type.String(),
@@ -1715,6 +2340,7 @@ export function createDraftTools(
       attendees: Type.Optional(Type.Array(Type.String())),
       calendarId: Type.Optional(Type.String()),
       body: Type.String(),
+      voice: voiceParam,
       sources: Type.Array(Type.String()),
       linkBack: Type.Optional(Type.String()),
       rationale: Type.String(),
@@ -1728,6 +2354,7 @@ export function createDraftTools(
         attendees?: string[];
         calendarId?: string;
         body: string;
+        voice?: string;
         sources: string[];
         linkBack?: string;
         rationale: string;
@@ -1735,11 +2362,14 @@ export function createDraftTools(
     ) {
       const check = validateEvidence(params.sources ?? [], resolves);
       if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const spoken = await forVoice(params.voice);
+      if (!spoken.ok) return text(spoken.text);
       const rec = mkCard(
         {
           provider: 'google-calendar',
           system: 'google-calendar',
           action: 'create_event',
+          voice: spoken.voice?.name,
           title: params.title,
           start: params.start,
           end: params.end,
@@ -1871,27 +2501,52 @@ export function createDraftTools(
   });
 
   return [
-    draftJiraIssue,
-    draftJiraComment,
-    draftConfluenceUpdate,
-    draftMessage,
+    draftTicket,
+    draftTicketComment,
+    draftPageUpdate,
     draftCalendarEvent,
     draftCalendarReschedule,
     draftCalendarRsvp,
   ];
 }
 
-export const ATLASSIAN_TOOL_NAMES = [
-  'jira_search',
-  'jira_get_issue',
-  'confluence_search',
-  'confluence_get_page',
-  'track_external',
-  'follow_container',
-];
+/**
+ * The reads a connection brings, adapted onto the harness (PD-8). Each provider
+ * owns its own read tools because search speaks the provider's query language
+ * (JQL, CQL), so the names, descriptions and schemas come from the connectors
+ * package and this function changes none of them.
+ *
+ * The origin envelope is applied HERE, not there: the connector names where the
+ * text came from, and fencing it is a prompt concern this package owns on both
+ * sides (see ./external.ts, which the display paths unwrap with).
+ */
+export function createReadTools(tools: readonly ProviderReadTool[]): ToolDefinition[] {
+  return tools.map((tool) =>
+    defineTool({
+      name: tool.name,
+      label: tool.label,
+      description: tool.description,
+      parameters: tool.parameters,
+      async execute(_id, params) {
+        const result = await tool.execute((params ?? {}) as Record<string, unknown>);
+        return text(result.external ? wrapExternal(result.external, result.text) : result.text);
+      },
+    }),
+  );
+}
+
+/**
+ * The two that change what the workspace SYNCS, gated on `can: [track-external]`
+ * over the connection. Neither writes anything upstream, so neither takes an
+ * approval card, and that is exactly why they are not reads: `track_external`
+ * adds a mirrored note the app keeps up forever, and `follow_container` starts
+ * reading a whole project or remembers a "no" for good. Two files do that work.
+ * Disjoint from a provider's read tools: one list per gate.
+ */
+export const TRACK_TOOL_NAMES = ['track_external', 'follow_container'];
 
 /** Start watching an external item locally. Injected by the host because it
- *  touches the sync engine, not the Atlassian client. */
+ *  touches the sync engine, not a provider client. */
 export type TrackExternal = (kind: 'ticket' | 'wikipage', externalId: string) => Promise<boolean>;
 
 /** Record what the PM said about a whole project or space (FL-3). Injected for
@@ -1899,91 +2554,13 @@ export type TrackExternal = (kind: 'ticket' | 'wikipage', externalId: string) =>
 export type AnswerContainerOffer = (containerId: string, follow: boolean) => Promise<boolean>;
 
 /**
- * The tracker seam (PLAN §3.3): read-only references into Jira/Confluence. Jira
- * stays the system of execution — we point at the *what*, hold the *why*. Results
- * are normalized to markdown with deep links so ask-answers can cite them.
+ * The two sync-state tools. They belong to no provider: both call back into the
+ * host's sync engine, which decides which connection owns the id.
  */
-export function createAtlassianTools(
-  client: AtlassianClient,
+export function createTrackTools(
   track?: TrackExternal,
   answerOffer?: AnswerContainerOffer,
 ): ToolDefinition[] {
-  const jiraSearch = defineTool({
-    name: 'jira_search',
-    label: 'Search Jira',
-    description:
-      'Search Jira issues with a JQL query. Returns key, summary, status, assignee and a deep link.',
-    parameters: Type.Object({ jql: Type.String({ description: 'A JQL query.' }) }),
-    async execute(_id, params: { jql: string }) {
-      const issues = await client.searchIssues(params.jql);
-      if (issues.length === 0) return text('No matching Jira issues.');
-      // Every summary in the list was typed by whoever filed the issue, so the
-      // whole result set is external; the origin is the query, not one key.
-      return text(
-        wrapExternal(
-          'jira:search',
-          issues
-            .map(
-              (i) =>
-                `- ${i.key} [${i.status}] ${i.summary}${i.assignee ? ` (@${i.assignee})` : ''}\n    ${i.url}`,
-            )
-            .join('\n'),
-        ),
-      );
-    },
-  });
-
-  const jiraGetIssue = defineTool({
-    name: 'jira_get_issue',
-    label: 'Get Jira issue',
-    description:
-      'Fetch a single Jira issue by key (e.g. ENG-214), including its description as markdown.',
-    parameters: Type.Object({ key: Type.String() }),
-    async execute(_id, params: { key: string }) {
-      const i = await client.getIssue(params.key);
-      return text(
-        wrapExternal(
-          `jira:${i.key}`,
-          `# ${i.key}: ${i.summary}\nStatus: ${i.status}${i.assignee ? ` · @${i.assignee}` : ''}\n${i.url}\n\n${i.description}`,
-        ),
-      );
-    },
-  });
-
-  const confluenceSearch = defineTool({
-    name: 'confluence_search',
-    label: 'Search Confluence',
-    description:
-      'Search Confluence pages with a CQL query. Returns title, deep link and an excerpt.',
-    parameters: Type.Object({
-      cql: Type.String({ description: 'A CQL query, e.g. text ~ "SSO".' }),
-    }),
-    async execute(_id, params: { cql: string }) {
-      const results = await client.searchConfluence(params.cql);
-      if (results.length === 0) return text('No matching Confluence pages.');
-      // Excerpts are page text: same treatment as the pages themselves.
-      return text(
-        wrapExternal(
-          'confluence:search',
-          results.map((r) => `- [${r.id}] ${r.title}\n    ${r.url}\n    ${r.excerpt}`).join('\n'),
-        ),
-      );
-    },
-  });
-
-  const confluenceGetPage = defineTool({
-    name: 'confluence_get_page',
-    label: 'Get Confluence page',
-    description: 'Fetch a Confluence page by id, converted to markdown.',
-    parameters: Type.Object({ id: Type.String() }),
-    async execute(_id, params: { id: string }) {
-      const page = await client.getPage(params.id);
-      return text(
-        wrapExternal(`confluence:${page.id}`, `# ${page.title}\n${page.url}\n\n${page.body}`),
-      );
-    },
-  });
-
   /**
    * The one that makes a lookup stick. Searching Jira answers a question once;
    * this keeps the answer true — the item joins the local mirror, gets a status
@@ -2058,14 +2635,7 @@ export function createAtlassianTools(
     },
   });
 
-  return [
-    jiraSearch,
-    jiraGetIssue,
-    confluenceSearch,
-    confluenceGetPage,
-    trackExternal,
-    followContainer,
-  ];
+  return [trackExternal, followContainer];
 }
 
 /** Domain's ref parsing, with '' instead of null for plain-string call sites. */

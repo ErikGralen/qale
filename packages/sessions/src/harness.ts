@@ -134,8 +134,27 @@ export class SessionHarness {
     return this.grants('draft-outbound');
   }
 
+  /**
+   * Whether the session may draft calendar work: an event, a move, an RSVP.
+   * Its own answer, not a corner of {@link outbound}: putting a time in other
+   * people's days is a different act from answering a ticket, and only the
+   * skill that books meetings carries the tools for it.
+   */
+  get draftCalendar(): boolean {
+    return this.grants('draft-calendar');
+  }
+
   /** Whether the session may file arrived material into the vault, and refile it. */
   get fileMaterial(): boolean {
     return this.grants('file-material');
+  }
+
+  /**
+   * Whether the session may start watching an external item, or record an
+   * answer about a whole project or space. Reading Jira and Confluence is not
+   * this: reads ride on the connection, and every session has them.
+   */
+  get trackExternal(): boolean {
+    return this.grants('track-external');
   }
 }

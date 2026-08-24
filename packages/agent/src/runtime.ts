@@ -26,24 +26,32 @@ import {
   runnableNameFromPath,
   type LlmProvider,
 } from '@qale/domain';
-import { AtlassianClient } from '@qale/atlassian';
+import type { ProviderReadTool } from '@qale/connectors';
 import {
   createVaultTools,
   createProposeTools,
   createWithdrawTool,
   createDraftTools,
-  createAtlassianTools,
+  createTextTools,
+  createVoiceGate,
+  createReadTools,
+  createTrackTools,
   createUseSkillTool,
   listLoadableSkills,
-  ATLASSIAN_TOOL_NAMES,
+  TRACK_TOOL_NAMES,
   VAULT_TOOL_NAMES,
   PROPOSE_TOOL_NAMES,
   WITHDRAW_TOOL_NAME,
   DRAFT_TOOL_NAMES,
+  CALENDAR_TOOL_NAMES,
+  DRAFT_TEXT_TOOL_NAME,
+  GET_VOICE_TOOL_NAME,
   USE_SKILL_TOOL_NAME,
   type AnswerContainerOffer,
+  type ListOutboundContainers,
   type TrackExternal,
 } from './tools.js';
+import { listVoices } from './voices.js';
 import { providerFault, type ProviderFault } from './api-errors.js';
 import { withCardState } from './card-state.js';
 import { withDecodedArgs } from './tool-args.js';
@@ -88,28 +96,46 @@ import {
   type AskRequestInfo,
   type StoredAsk,
 } from './ask.js';
+import {
+  createCodebaseTool,
+  codebasePrompt,
+  codebaseRequestId,
+  CODEBASE_REPORTS_DIR,
+  CODEBASE_TOOL_NAME,
+  type CodebaseAsk,
+  type CodebaseDecision,
+} from './codebase.js';
+import { CODEBASE_MODELS, isCodebaseModel } from './codebase-models.js';
+import {
+  createCommentsTool,
+  commentRequestId,
+  commentsReplayPrompt,
+  COMMENTS_TOOL_NAME,
+} from './comments.js';
+import type { CommentPlan } from './slots.js';
 import { createFilingTools, FILING_TOOL_NAMES } from './filing.js';
 import { createDeferralTool, DEFER_TOOL_NAME } from './deferrals.js';
 import { createEndQuietlyTool, ranSilent, END_QUIETLY_TOOL_NAME } from './quiet.js';
 import {
   CHILD_PREAMBLE,
-  SCHEDULED_PREAMBLE,
-  UNATTENDED_PREAMBLE,
   SHARED_PREAMBLE,
   datePreamble,
   languagePreamble,
   notePropertiesPreamble,
+  selfPreamble,
+  unattendedNote,
 } from './prompts.js';
 import {
   parseRunnable,
   buildSystemPrompt,
   buildSkillBrief,
-  governs,
   buildSessionReceipt,
   parseKickoff,
   SessionHarness,
   DEFAULT_SKILL_BY_NAME,
   BASE_SKILL_NAME,
+  HOUSE_RULES,
+  HOUSE_RULES_NAME,
   type Runnable,
 } from '@qale/sessions';
 
@@ -118,14 +144,6 @@ import { entriesToUiMessages, type UiMessage } from './history.js';
 
 /** The file every child reads before starting. One write, N smarter readers. */
 const BRIEF_FILE = 'brief.md';
-
-/**
- * The draft tools a workspace with nothing connected may still offer. Only one:
- * an approved `draft_message` card is written into the memory, never sent, so
- * it needs no connector. Every other draft tool addresses a system outside the
- * workspace and is withheld until one exists (see `toolNamesFor`).
- */
-const needsNoConnector = (tool: string): boolean => tool === 'draft_message';
 
 /** Structural slice of a pi assistant message — enough to pull its closing text. */
 interface PiLikeMessage {
@@ -150,6 +168,30 @@ function lastAssistantText(messages: PiLikeMessage[]): string {
   return '';
 }
 
+/**
+ * One live connection, as the runtime sees it (PD-8). The runtime receives
+ * PREPARED capabilities: the host holds the credential and builds the tools,
+ * this package never learns what a provider's client needs. That is what keeps
+ * a second tracker from being a second field on this config.
+ */
+export interface AgentConnection {
+  /** The stored connection's id, e.g. 'atlassian'. */
+  connectionId: string;
+  /** Which provider it is, for {@link sameConfig} and nothing else here. */
+  providerId: string;
+  /** The provider's agent-facing reads, already bound to the credential. */
+  readTools: ProviderReadTool[];
+  /** Whether this connection can start watching one item by its key. Today the
+   *  connectors that implement `pullByKeys`; the sync engine does the work. */
+  canTrack: boolean;
+  /**
+   * Opaque fingerprint of the credential behind those tools. A new token
+   * rebuilds sessions the way a new API key does, and the runtime compares this
+   * instead of ever holding the secret itself.
+   */
+  fingerprint: string;
+}
+
 export interface AgentRuntimeConfig {
   vaultDir: string;
   /** Electron userData dir — pi auth/models/sessions live under here, off the vault. */
@@ -162,7 +204,22 @@ export interface AgentRuntimeConfig {
   provider?: LlmProvider;
   modelId: string;
   apiKey: string | null;
-  atlassian?: { baseUrl: string; email: string; token: string } | null;
+  /**
+   * The workspace's live connections. Tool exposure follows this list, not a
+   * named provider: a session gets every connection's reads, and the sync-state
+   * tools once any connection can track. Absent or empty means nothing is
+   * connected, which is a workspace with no external reads at all.
+   */
+  connections?: AgentConnection[];
+  /**
+   * Which repos a session may ask about, as one comparable string, or empty
+   * when there are none (the host builds it; see the codebase service's
+   * `fingerprint`). Part of {@link sameConfig} for the reason the connections
+   * list is: a session's tools are fixed when it is built, so pointing Qale at
+   * a folder while a chat is open has to rebuild that chat before the tool can
+   * appear in it.
+   */
+  codebase?: string;
   /**
    * What this workspace is written in (OW5), as a bare language tag ("sv"). A
    * setting rather than something each run infers from what it happens to read,
@@ -172,6 +229,13 @@ export interface AgentRuntimeConfig {
    */
   language?: string;
   /**
+   * The PM's own name, from Settings ("You"). Absent means they have not set
+   * one, which is a different instruction and not a missing one: an unsigned
+   * draft rather than an invented name. Part of {@link sameConfig} for the same
+   * reason the language is: it is baked into the system prompt.
+   */
+  selfName?: string | null;
+  /**
    * Host callback behind the `track_external` tool — it reaches the sync engine,
    * which lives in the desktop main process, not here. Identity-stable, so it is
    * deliberately absent from `sameConfig`: swapping it must not tear down live
@@ -179,8 +243,15 @@ export interface AgentRuntimeConfig {
    */
   trackExternal?: TrackExternal;
   /** Host callback behind `follow_container` (FL-3), for the same reason as
-   *  {@link trackExternal}: it is sync state, not an Atlassian call. */
+   *  {@link trackExternal}: it is sync state, not a provider call. */
   answerContainerOffer?: AnswerContainerOffer;
+  /**
+   * Where a draft may be addressed, with the provider that owns each container
+   * (PD-9). This is how `draft_ticket` stays provider-blind: the model names a
+   * project, the host says who holds it. Injected and identity-stable, so it
+   * stays out of `sameConfig` like the two callbacks above.
+   */
+  outboundContainers?: ListOutboundContainers;
 }
 
 export interface RunInput {
@@ -348,6 +419,42 @@ interface PendingSpawn {
 }
 
 /**
+ * The codebase approval card (docs/claude-code-tickets.md CC-7), as the
+ * renderer draws it. Same shape of decision as the spawn card, and for the same
+ * reason: this is the one moment the PM steers before minutes are spent.
+ *
+ * `resume` is what makes the card different. A run that continues an earlier
+ * Claude Code session keeps that session's model, so the card offers no picker
+ * and the decision carries no model. Switching models means the session asks
+ * again without `resume`, which raises a card with the picker back.
+ */
+export interface CodebaseRequestInfo {
+  id: string;
+  sessionId: string;
+  /** Exactly what will be asked, expandable on the card. */
+  question: string;
+  /** The repo, by the name it is set up under. */
+  repo: string;
+  suggestedModelId: string;
+  /** One line: why the session suggests that model. */
+  why: string;
+  models: ModelInfo[];
+  /** This continues an earlier Claude Code session: no picker, no model. */
+  resume: boolean;
+  /**
+   * Offered rather than owed (see `isOffered` in ask.ts). A tidy pass nobody
+   * asked for can want to ask the code, and the spend still needs approving,
+   * but it is not something the app may go and interrupt the PM about.
+   */
+  offered: boolean;
+}
+
+interface PendingCodebase {
+  request: CodebaseRequestInfo;
+  resolve: (decision: CodebaseDecision) => void;
+}
+
+/**
  * Facts about the TURN rather than the session, and the whole of what deciding
  * "did this run leave anything" needs (QM ticket 2). A mutable box because the
  * `end_quietly` tool closes over it at session creation, before the state it
@@ -426,6 +533,113 @@ function nobodyStarted(state: SessionState | undefined): boolean {
   return !!state && (state.turn.scheduled || state.turn.unattended);
 }
 
+/** Every connection's read tools, in registration order. Two providers with the
+ *  same tool name would be a registry bug, so nothing dedupes here. */
+function readToolNames(connections: readonly AgentConnection[]): string[] {
+  return connections.flatMap((c) => c.readTools.map((t) => t.name));
+}
+
+/** Whether any connection can start watching a single item. */
+function canTrack(connections: readonly AgentConnection[]): boolean {
+  return connections.some((c) => c.canTrack);
+}
+
+/**
+ * What the session may do RIGHT NOW — read off the harness, not off the file it
+ * opened with, because a runnable that arrives mid-conversation brings its own
+ * capabilities. Also where the workspace's outbound floor is applied: a
+ * capability becomes a tool here and nowhere else, so this is the one place that
+ * has to know what the workspace will actually let a draft reach.
+ *
+ * Module-level and exported rather than a method, though only the runtime calls
+ * it, because it is the whole permission boundary in one function: every line
+ * below decides what an unattended run is allowed to do, and that is worth being
+ * able to assert directly instead of reading carefully.
+ */
+export function toolNamesFor(
+  harness: SessionHarness,
+  /** The workspace's live connections; their reads are the session's reads. */
+  connections: readonly AgentConnection[],
+  canInvokeSkills: boolean,
+  /** Whether the workspace has any outbound connector at all (`ctx.outbound`). */
+  connected: boolean,
+  /** Whether a repo is set up and Claude Code is on the machine (`ctx.codebase`). */
+  codebaseActive: boolean,
+): string[] {
+  // Asking the PM is available to every session, under every skill: it grants
+  // no capability the session didn't already have (it writes nothing, reads
+  // nothing) — it only decides which of two allowed paths to take.
+  // Proposing is likewise always on: every propose_* lands as an approval
+  // card, so the gate is the review. The one earned permission is outbound.
+  // `end_quietly` is on everywhere too, and deliberately: it is a no-op on an
+  // interactive turn, and a tool that appeared and disappeared between kinds
+  // of session would only teach the model to guess which kind it is in.
+  // Taking a card back rides with proposing, and for the same reason: it
+  // writes nothing and decides nothing. A session that may put a card in front
+  // of the PM must be able to say "ignore that one" without leaving a second
+  // card beside the first for them to sort out.
+  // Recording a deferral is on everywhere for the same reason `end_quietly`
+  // is: it writes nothing, decides nothing, and grants no permission the
+  // session did not already have. It only makes the "I looked at this and
+  // chose not to act" that every run already performs silently into something
+  // the next run can read (OW6).
+  // Writing text into the chat is on everywhere too: `draft_text` draws a panel
+  // in the conversation and files nothing, and `get_voice` reads a file the
+  // workspace already holds. Neither can fail for want of a connector, and
+  // neither writes, so there is nothing for a capability to protect. Behind
+  // `draft-outbound` they made a skill claim the right to reach Jira and
+  // Confluence in order to write a paragraph nobody sends.
+  const names = [
+    ...VAULT_TOOL_NAMES,
+    ASK_TOOL_NAME,
+    END_QUIETLY_TOOL_NAME,
+    DEFER_TOOL_NAME,
+    ...PROPOSE_TOOL_NAMES,
+    WITHDRAW_TOOL_NAME,
+    DRAFT_TEXT_TOOL_NAME,
+    GET_VOICE_TOOL_NAME,
+  ];
+  // Outbound is two permissions in series and a file only holds the first:
+  // `can: [draft-outbound]` says this session may draft, the workspace's
+  // connectors say whether a draft can reach anything. With nothing connected
+  // these could only ever produce cards that fail on approval ("no outbound
+  // integration configured"), so a skill file does not get to grant them over
+  // the workspace's head. WHICH connector a given card needs stays an
+  // approval-time question: Google's write scope is granted by incremental
+  // consent at push time, so it is not knowable here.
+  if (harness.outbound && connected) names.push(...DRAFT_TOOL_NAMES);
+  // The calendar drafts sit under the same connector floor and their own
+  // capability. One skill in the workspace books meetings; the other outbound
+  // skills were carrying three tool schemas they never called, which is context
+  // spent on every turn to describe work they do not do.
+  if (harness.draftCalendar && connected) names.push(...CALENDAR_TOOL_NAMES);
+  // Filing is the one write that is not a card, so it is the one write a skill
+  // has to claim by name (`can: [file-material]`). See ./filing.ts.
+  if (harness.fileMaterial) names.push(...FILING_TOOL_NAMES);
+  if (canInvokeSkills) names.push(USE_SKILL_TOOL_NAME);
+  // Fan-out rides with session files: children write into the folder, and
+  // reading their output back is the whole point of having one. Asking for
+  // comments rides with them too, and by the same reading: it hands the PM a
+  // file from that folder, so without one there is nothing it could point at.
+  if (harness.sessionFiles)
+    names.push(...SESSION_FILE_TOOL_NAMES, SPAWN_TOOL_NAME, COMMENTS_TOOL_NAME);
+  // Reading an external system rides on the connection alone. A plain chat
+  // opens on the base skill, which declares no capabilities, so a capability
+  // here would mean "what is the status of PAY-142?" could not be answered in
+  // an ordinary conversation. Changing what the workspace WATCHES is a
+  // different thing and is claimed by name: it writes sync state that outlives
+  // the session (see TRACK_TOOL_NAMES in ./tools.ts).
+  names.push(...readToolNames(connections));
+  if (canTrack(connections) && harness.trackExternal) names.push(...TRACK_TOOL_NAMES);
+  // Asking the code rides on the setup alone, like the Jira reads above. It
+  // writes nothing, in the repo or in the workspace, and every run goes past
+  // the PM on a card, so there is nothing left for a `can:` line to protect. A
+  // capability would only mean "what does the importer actually do?" could not
+  // be answered in an ordinary conversation.
+  if (codebaseActive) names.push(CODEBASE_TOOL_NAME);
+  return names;
+}
+
 /**
  * Embeds pi in the main process in full-control mode (PLAN §3.3): its own
  * AuthStorage/SessionManager/SettingsManager paths (off the user's ~/.pi), a
@@ -439,7 +653,6 @@ export class AgentRuntime {
    * model goes through {@link models} and awaits it (see `configure`).
    */
   private modelRuntimeReady: Promise<ModelRuntime> | null = null;
-  private atlassian: AtlassianClient | null = null;
   private readonly sessions = new Map<string, SessionState>();
   /** sessionId → in-flight createSession — two rapid runs must share one session. */
   private readonly creating = new Map<string, Promise<SessionState>>();
@@ -472,6 +685,15 @@ export class AgentRuntime {
   onSpawnRequest: ((sessionId: string, request: SpawnRequestInfo | null) => void) | null = null;
   /** requestId → the card in flight and the promise the `spawn` tool is parked on. */
   private readonly pendingSpawns = new Map<string, PendingSpawn>();
+  /**
+   * A codebase question is waiting on the PM (`request`), or its card has
+   * settled (`null`). Same hook and same rule as the fan-out: nothing runs, and
+   * nothing is spent, until it settles.
+   */
+  onCodebaseRequest: ((sessionId: string, request: CodebaseRequestInfo | null) => void) | null =
+    null;
+  /** requestId → the card in flight and the promise `ask_codebase` is parked on. */
+  private readonly pendingCodebases = new Map<string, PendingCodebase>();
   /**
    * A session is asking the PM something (`request`), or its card has settled
    * (`null`). Same shape as the spawn hook, and the same rule: the turn is
@@ -515,7 +737,6 @@ export class AgentRuntime {
       }
       return runtime;
     });
-    this.atlassian = config.atlassian ? new AtlassianClient(config.atlassian) : null;
     // A config change invalidates existing sessions (built with the old model/tools).
     this.disposeSessions();
   }
@@ -687,131 +908,59 @@ export class AgentRuntime {
   }
 
   /**
-   * What the session may do RIGHT NOW — read off the harness, not off the file
-   * it opened with, because a runnable that arrives mid-conversation brings its
-   * own capabilities. Also where the workspace's outbound floor is applied: a
-   * capability becomes a tool here and nowhere else, so this is the one place
-   * that has to know what the workspace will actually let a draft reach.
-   */
-  private toolNamesFor(
-    harness: SessionHarness,
-    atlassianActive: boolean,
-    canInvokeSkills: boolean,
-    /** Whether the workspace has any outbound connector at all (`ctx.outbound`). */
-    connected: boolean,
-  ): string[] {
-    // Asking the PM is available to every session, under every skill: it grants
-    // no capability the session didn't already have (it writes nothing, reads
-    // nothing) — it only decides which of two allowed paths to take.
-    // Proposing is likewise always on: every propose_* lands as an approval
-    // card, so the gate is the review. The one earned permission is outbound.
-    // `end_quietly` is on everywhere too, and deliberately: it is a no-op on an
-    // interactive turn, and a tool that appeared and disappeared between kinds
-    // of session would only teach the model to guess which kind it is in.
-    // Taking a card back rides with proposing, and for the same reason: it
-    // writes nothing and decides nothing. A session that may put a card in front
-    // of the PM must be able to say "ignore that one" without leaving a second
-    // card beside the first for them to sort out.
-    // Recording a deferral is on everywhere for the same reason `end_quietly`
-    // is: it writes nothing, decides nothing, and grants no permission the
-    // session did not already have. It only makes the "I looked at this and
-    // chose not to act" that every run already performs silently into something
-    // the next run can read (OW6).
-    const names = [
-      ...VAULT_TOOL_NAMES,
-      ASK_TOOL_NAME,
-      END_QUIETLY_TOOL_NAME,
-      DEFER_TOOL_NAME,
-      ...PROPOSE_TOOL_NAMES,
-      WITHDRAW_TOOL_NAME,
-    ];
-    // Outbound is two permissions in series and a file only holds the first:
-    // `can: [draft-outbound]` says this session may draft, the workspace's
-    // connectors say whether a draft can reach anything. With nothing connected
-    // these could only ever produce cards that fail on approval ("no outbound
-    // integration configured"), so a skill file does not get to grant them over
-    // the workspace's head. WHICH connector a given card needs stays an
-    // approval-time question: Google's write scope is granted by incremental
-    // consent at push time, so it is not knowable here.
-    if (harness.outbound)
-      names.push(...(connected ? DRAFT_TOOL_NAMES : DRAFT_TOOL_NAMES.filter(needsNoConnector)));
-    // Filing is the one write that is not a card, so it is the one write a skill
-    // has to claim by name (`can: [file-material]`). See ./filing.ts.
-    if (harness.fileMaterial) names.push(...FILING_TOOL_NAMES);
-    if (canInvokeSkills) names.push(USE_SKILL_TOOL_NAME);
-    // Fan-out rides with session files: children write into the folder, and
-    // reading their output back is the whole point of having one.
-    if (harness.sessionFiles) names.push(...SESSION_FILE_TOOL_NAMES, SPAWN_TOOL_NAME);
-    if (atlassianActive) names.push(...ATLASSIAN_TOOL_NAMES);
-    return names;
-  }
-
-  /**
-   * Always-on skills (`starts: [always]`) injected into every session's system
-   * prompt: voice registers, filing rules — the house rules. Driven by what the
-   * file declares rather than a filename regex; the Skills view says "Always in
-   * effect", and this is the line that makes that sentence true.
+   * The house rules (SK-3): one file, `skills/house-rules/SKILL.md`, in every
+   * session's system prompt and in every fan-out child's.
    *
-   * `forDrafting: false` drops the audience-scoped ones. A fan-out child reads
-   * and writes a working file and can never draft for anyone, so a voice
-   * register aimed at executives is dead weight in its prompt, while a rule with
-   * no audience (how we file, what we call things, which language we write in)
-   * applies to it exactly as much as to the parent.
+   * One file, and no way for a second one to join it. Any file could once
+   * declare `starts: [always]` and ride along, which made "what is in force
+   * right now" a question you answered by reading every skill in the workspace,
+   * and made the prompt grow every time somebody wrote a rule down. The PM edits
+   * this one document instead, and what it costs is what always-on costs.
+   *
+   * A workspace that has not been seeded yet (or where the file was deleted)
+   * falls back to the shipped text, because a session with no rules at all
+   * writes in whatever voice it likes and nothing says so.
    */
-  private async alwaysOnGuides(
-    ctx: UseCaseContext,
-    opts: { forDrafting?: boolean } = {},
-  ): Promise<string> {
-    const forDrafting = opts.forDrafting !== false;
-    const skills = ctx.index.all().filter((n) => n.type === 'skill');
-    const bodies: string[] = [];
-    for (const g of skills) {
-      const raw = await ctx.vault.readRaw(g.path);
-      if (!raw) continue;
-      const cfg = parseRunnable(raw, g.slug.split('/').pop() ?? g.slug);
-      if (!cfg.starts.includes('always')) continue;
-      // A house rule someone switched off is off — the same edit that silences
-      // an agent silences a rule.
-      if (!cfg.enabled) continue;
-      if (!forDrafting && cfg.audience) continue;
-      const note = await ctx.vault.readNote(g.path);
-      if (!note) continue;
-      // The audience scope, stated where the model reads the rule — the Skills
-      // view describes this scoping, so the prompt must carry it too.
-      const scope = cfg.audience ? ` (applies when drafting for ${cfg.audience})` : '';
-      // The heading names the rule the way the Skills view does; the gloss
-      // only earns a line when it says something the title doesn't.
-      const gloss =
-        cfg.summary.trim() && cfg.summary.trim() !== cfg.name ? ` — ${cfg.summary.trim()}` : '';
-      bodies.push(`### ${cfg.title}${scope}${gloss}\n${note.body.trim()}`);
+  private async houseRules(ctx: UseCaseContext): Promise<string> {
+    let raw: string | null = null;
+    for (const path of runnableCandidates(HOUSE_RULES_NAME)) {
+      raw = await ctx.vault.readRaw(path);
+      if (raw !== null) break;
     }
-    return bodies.length ? `\n\n## House rules (always in effect)\n${bodies.join('\n\n')}` : '';
+    const body = parseRunnable(raw ?? HOUSE_RULES, HOUSE_RULES_NAME).body.trim();
+    return body ? `\n\n## House rules (always in effect)\n${body}` : '';
   }
 
   /**
-   * The on-demand skill index (Sessions v2 Part 3.1): every playbook and every
-   * reference skill, listed by name + summary so the model knows what it can
-   * pull in via `use_skill` without paying for the bodies until one is
-   * relevant. Returns null when nothing is loadable.
+   * The on-demand skill index (Sessions v2 Part 3.1): every skill the model may
+   * reach for, listed by name + summary so it knows what it can pull in via
+   * `use_skill` without paying for the bodies until one is relevant. Returns
+   * null when nothing is loadable.
    */
   private async skillIndex(ctx: UseCaseContext, current: string): Promise<string | null> {
     const skills = (await listLoadableSkills(ctx)).filter((s) => s.config.name !== current);
     if (skills.length === 0) return null;
-    const reference = skills.filter((s) => !governs(s.config));
-    const playbooks = skills.filter((s) => governs(s.config));
-    const parts = [
+    return [
       '\n\n## Skills available on demand',
       'Call `use_skill` with one of these names when the conversation turns into the work it describes. ' +
-        'A playbook takes over how you work from that point on — its instructions and the cards it may ' +
+        'A skill takes over how you work from that point on — its instructions and the cards it may ' +
         'produce. Load one rather than improvising a workflow it already describes.',
-    ];
-    if (playbooks.length > 0)
-      parts.push(playbooks.map((s) => `- \`${s.config.name}\` — ${s.config.summary}`).join('\n'));
-    if (reference.length > 0)
-      parts.push(
-        `Reference (read-only):\n${reference.map((g) => `- \`${g.config.name}\` — ${g.config.summary}`).join('\n')}`,
-      );
-    return parts.join('\n');
+      skills.map((s) => this.indexEntry(s.config)).join('\n'),
+    ].join('\n');
+  }
+
+  /**
+   * One line of the index, and the second line the routing actually turns on.
+   * The summary is picker copy written for a person; on its own it is a weak
+   * trigger, and a skill that never fires fails silently because the session
+   * just works freehand. `scenarios` is the trigger signal: each entry is a
+   * short "use when" clause plus the verbatim sentence a PM would type, so the
+   * model can match on the shape of the task and on the wording. A file that
+   * carries none is listed exactly as it was before.
+   */
+  private indexEntry(config: Runnable): string {
+    const head = `- \`${config.name}\` — ${config.summary}`;
+    return config.scenarios.length ? `${head}\n  Use when: ${config.scenarios.join('; ')}` : head;
   }
 
   /**
@@ -950,37 +1099,50 @@ export class AgentRuntime {
      */
     const skillConfig = await this.resolveSkill(BASE_SKILL_NAME, ctx);
     const harness = new SessionHarness(id, skillConfig, ctx.clock.now());
-    // House rules (always-on skills) ride along unconditionally: a voice guide
-    // is inert until something drafts outbound, and the filing rules apply to
-    // every proposal.
-    const voice = await this.alwaysOnGuides(ctx);
+    // The house rules ride along unconditionally: they say how everything this
+    // session writes is written, filed and worded.
+    const rules = await this.houseRules(ctx);
     const skillIndex = await this.skillIndex(ctx, skillConfig.name);
+    // The voices, for the drafting tools' descriptions only (SK-6). No voice
+    // text enters the system prompt: a session that never drafts never sees a
+    // line of it, and one that does fetches the brief at the moment it applies.
+    const voices = await listVoices(ctx);
+    const voiceGate = createVoiceGate(ctx, voices, harness);
     const vaultMap = await this.vaultMap(ctx);
     const filesRoot = sessionFilesRoot(this.config.vaultDir, id);
     const files = harness.sessionFiles ? sessionFilesPrompt(sessionFilesRelRoot(id)) : '';
-    // The licence to say nothing, and only where it applies (QM ticket 2). Baked
-    // in at creation because that is where the system prompt is composed; the
-    // TOOL asks per turn, so a PM writing into a scheduled run still gets an
-    // answer rather than silence.
-    // Only one of the two ever applies, and `scheduled` is the stricter: it also
-    // takes `ask_user` away, which the unattended note deliberately keeps.
-    const scheduledNote = scheduled ? SCHEDULED_PREAMBLE : unattended ? UNATTENDED_PREAMBLE : '';
+    // The repo names have to be in the prompt, so they are fetched here rather
+    // than at the tool's own read-fresh-each-call seam: the chain is composed
+    // once, at creation, and so is the tool set. A folder added while this chat
+    // is open does not reach it in place; it changes `config.codebase`, which
+    // tears the live sessions down (`sameConfig`) so the next turn is built with
+    // the tool and these names in it. No repos, no section: the tool would
+    // refuse anyway, and an empty list is a line of nothing on every turn.
+    const repos = (await ctx.codebase?.repos()) ?? [];
+    const codebase = repos.length > 0 ? codebasePrompt(repos) : '';
+    // The licence to say nothing, and the four rules that go with it (QM ticket
+    // 2, SK-4), only where they apply. Baked in at creation because that is where
+    // the system prompt is composed; the TOOL asks per turn, so a PM writing into
+    // a scheduled run still gets an answer rather than silence.
+    const scheduledNote = unattendedNote(scheduled, unattended);
     const baseSystemPrompt =
       buildSystemPrompt(SHARED_PREAMBLE, skillConfig) +
       languagePreamble(this.config.language ?? DEFAULT_LANGUAGE) +
       datePreamble(ctx.clock.now()) +
+      selfPreamble(this.config.selfName) +
       notePropertiesPreamble() +
-      voice +
+      rules +
       (skillIndex ?? '') +
       files +
+      codebase +
       vaultMap +
       scheduledNote;
 
-    // The tracker seam (Jira/Confluence) is available whenever it is configured.
-    // It used to be the `ask` session's alone; with types dissolved there is no
-    // "the ask session" to hang it on, and every read it offers is silent and
+    // The tracker seam is available whenever a connection is configured. It used
+    // to be the `ask` session's alone; with types dissolved there is no "the ask
+    // session" to hang it on, and every read it offers is silent and
     // non-mutating — `track_external` only starts a local mirror.
-    const atlassianActive = !!this.atlassian;
+    const connections = this.config.connections ?? [];
     const canInvokeSkills = !!skillIndex;
 
     /**
@@ -1007,12 +1169,18 @@ export class AgentRuntime {
       DEFER_TOOL_NAME,
       ...PROPOSE_TOOL_NAMES,
       WITHDRAW_TOOL_NAME,
+      DRAFT_TEXT_TOOL_NAME,
+      GET_VOICE_TOOL_NAME,
       ...DRAFT_TOOL_NAMES,
+      ...CALENDAR_TOOL_NAMES,
       ...FILING_TOOL_NAMES,
       ...(canInvokeSkills ? [USE_SKILL_TOOL_NAME] : []),
       ...SESSION_FILE_TOOL_NAMES,
       SPAWN_TOOL_NAME,
-      ...(atlassianActive ? ATLASSIAN_TOOL_NAMES : []),
+      COMMENTS_TOOL_NAME,
+      CODEBASE_TOOL_NAME,
+      ...readToolNames(connections),
+      ...(canTrack(connections) ? TRACK_TOOL_NAMES : []),
     ];
     const customTools = withDecodedArgs([
       ...createVaultTools(ctx, harness, this.config.language ?? DEFAULT_LANGUAGE),
@@ -1028,21 +1196,53 @@ export class AgentRuntime {
       createDeferralTool(ctx),
       ...createProposeTools(ctx, id, harness),
       createWithdrawTool(ctx, id, harness),
-      ...createDraftTools(ctx, id, harness),
+      // One voice gate per session, shared: `get_voice` is one tool, and the
+      // set of voices it has handed over is what every drafting tool checks.
+      ...createTextTools(voiceGate),
+      ...createDraftTools(
+        ctx,
+        id,
+        harness,
+        voiceGate,
+        this.config.outboundContainers ?? (() => []),
+      ),
       ...createFilingTools(ctx, harness, filesRoot),
       ...(canInvokeSkills ? [createUseSkillTool(ctx, harness, () => applyActivation())] : []),
       ...createSessionFileTools(filesRoot, () => this.onFilesChanged?.(id)),
+      createCommentsTool({
+        read: (path) => readSessionFile(filesRoot, path),
+        requestComments: (plan, signal) => this.askForComments(id, ctx, plan, signal),
+      }),
       createSpawnTool({
         readBrief: () => readSessionFile(filesRoot, BRIEF_FILE),
         requestApproval: (plan, brief) => this.askToSpawn(id, plan, brief),
         runChild: (child, opts) => this.runChild(id, child, opts, ctx, harness),
       }),
-      ...(atlassianActive
-        ? createAtlassianTools(
-            this.atlassian!,
-            this.config.trackExternal,
-            this.config.answerContainerOffer,
-          )
+      // `ctx.codebase` is read on every call rather than snapshotted, the same
+      // way `ctx.outbound` is: the port can be taken away underneath a session
+      // (the folder removed, the binary gone), and a call is the last honest
+      // moment to find out.
+      createCodebaseTool({
+        repos: async () => (await ctx.codebase?.repos()) ?? [],
+        requestApproval: (ask) => this.askTheCodebase(id, ask),
+        run: (req) => {
+          const port = ctx.codebase;
+          if (!port) throw new Error('no codebase is set up any more');
+          return port.run(req);
+        },
+        filed: async () =>
+          (await listSessionFiles(filesRoot))
+            .map((f) => f.path)
+            .filter((p) => p.startsWith(`${CODEBASE_REPORTS_DIR}/`)),
+        write: async (path, content) => {
+          await writeSessionFile(filesRoot, path, content);
+          this.onFilesChanged?.(id);
+        },
+        now: () => ctx.clock.now(),
+      }),
+      ...createReadTools(connections.flatMap((c) => c.readTools)),
+      ...(canTrack(connections)
+        ? createTrackTools(this.config.trackExternal, this.config.answerContainerOffer)
         : []),
     ]);
 
@@ -1088,14 +1288,14 @@ export class AgentRuntime {
     /**
      * Narrow the registry to what the skills currently in force actually grant,
      * bounded by what the workspace allows. `ctx.outbound` is read on every call
-     * rather than snapshotted: connecting Atlassian rebuilds sessions, but a
+     * rather than snapshotted: connecting a tracker rebuilds sessions, but a
      * Google grant only reassigns it on the shared context, and a live session
      * should pick that up on its next turn.
      */
     const applyActivation = (): void => {
       session.setActiveToolsByName(
-        this.toolNamesFor(harness, !!atlassianActive, canInvokeSkills, !!ctx.outbound).filter((n) =>
-          registry.includes(n),
+        toolNamesFor(harness, connections, canInvokeSkills, !!ctx.outbound, !!ctx.codebase).filter(
+          (n) => registry.includes(n),
         ),
       );
     };
@@ -1550,6 +1750,43 @@ export class AgentRuntime {
   }
 
   /**
+   * Park `ask_codebase` on a card and wait for the PM (CC-7). Same shape as the
+   * fan-out card, with one rule of its own: a run that resumes a Claude Code
+   * session keeps that session's model, so the card gets no picker.
+   *
+   * A run a clock started is refused instead of parked, the same way `ask_user`
+   * is (ask.ts): there is nobody at the screen to approve a spend, and a card
+   * recovered later would be asking about a turn that stopped days ago.
+   */
+  private async askTheCodebase(sessionId: string, ask: CodebaseAsk): Promise<CodebaseDecision> {
+    const state = this.sessions.get(sessionId);
+    if (state?.turn.scheduled) {
+      state.turn.blocked = true;
+      return { approved: false, unattended: true };
+    }
+    const request: CodebaseRequestInfo = {
+      id: codebaseRequestId(),
+      sessionId,
+      question: ask.question,
+      repo: ask.repo.name,
+      suggestedModelId: ask.modelId,
+      why: ask.why,
+      // Not the workspace's own models: these are the aliases the `claude` tool
+      // takes, and the two catalogues never mix (see ./codebase-models.ts).
+      models: CODEBASE_MODELS.map((m) => ({ id: m.id, label: m.label })),
+      resume: !!ask.resumeSessionId,
+      offered: isOffered(state?.harness.primarySkillName, nobodyStarted(state)),
+    };
+    // Same rule as the spawn card: a spend the PM had to approve is attention
+    // already spent, so the turn cannot end as if it left nothing.
+    if (state) state.turn.asked = true;
+    return new Promise<CodebaseDecision>((resolve) => {
+      this.pendingCodebases.set(request.id, { request, resolve });
+      this.onCodebaseRequest?.(sessionId, request);
+    });
+  }
+
+  /**
    * Park `ask_user` on a card and wait for the PM. No timeout, by design: the
    * exits are answer, skip, and stopping the run — all three visible on screen,
    * all three settling the promise. The turn stays alive underneath, which is
@@ -1565,6 +1802,48 @@ export class AgentRuntime {
     plan: AskPlan,
     signal?: AbortSignal,
   ): Promise<AskDecision> {
+    return this.parkCard(
+      sessionId,
+      ctx,
+      { id: askRequestId(sessionId, plan), sessionId, questions: plan.questions },
+      signal,
+    );
+  }
+
+  /**
+   * Park `request_comments` on a round file and wait. Everything that makes it
+   * work is {@link askThePm}'s: the same parking, the same refusal on a run a
+   * clock started, the same stamps. What differs is what the PM is handed, and
+   * that is a difference the renderer settles.
+   */
+  private askForComments(
+    sessionId: string,
+    ctx: UseCaseContext,
+    plan: CommentPlan,
+    signal?: AbortSignal,
+  ): Promise<AskDecision> {
+    return this.parkCard(
+      sessionId,
+      ctx,
+      {
+        id: commentRequestId(sessionId, plan),
+        sessionId,
+        // A round asks for comments, never for an answer to a question. The
+        // empty list is what says which of the two the renderer is drawing.
+        questions: [],
+        comments: plan,
+      },
+      signal,
+    );
+  }
+
+  /** The park both cards share: the run's own facts, stamped once. */
+  private parkCard(
+    sessionId: string,
+    ctx: UseCaseContext,
+    request: AskRequestDraft,
+    signal?: AbortSignal,
+  ): Promise<AskDecision> {
     const state = this.sessions.get(sessionId);
     const scheduled = !!state?.turn.scheduled;
     // Read once, so the flag the settle reads and the decision the parking makes
@@ -1577,11 +1856,6 @@ export class AgentRuntime {
       else state.turn.asked = true;
     }
     const skill = state?.harness.primarySkillName ?? null;
-    const request: AskRequestDraft = {
-      id: askRequestId(sessionId, plan),
-      sessionId,
-      questions: plan.questions,
-    };
     // The skill rides along so an answer that arrives tomorrow resumes under the
     // instructions the question was asked under, not as a plain chat. Who
     // started the run rides along with it, because the two together are what
@@ -1650,7 +1924,12 @@ export class AgentRuntime {
     await this.run(
       {
         sessionId: asked.sessionId,
-        prompt: askReplayPrompt({ questions: asked.questions }, decision.answers),
+        // Which card it was decides which prompt says so. Both open the same
+        // way ("you asked this in an earlier run"); only one of them can read
+        // back what the PM wrote.
+        prompt: asked.comments
+          ? commentsReplayPrompt(asked.comments, decision.comments ?? null)
+          : askReplayPrompt({ questions: asked.questions }, decision.answers),
         ...(asked.skill ? { skill: asked.skill } : {}),
         ...(asked.outbound ? { outbound: true } : {}),
       },
@@ -1691,11 +1970,11 @@ export class AgentRuntime {
       CHILD_PREAMBLE,
       languagePreamble(this.config.language ?? DEFAULT_LANGUAGE).trim(),
     ];
-    // House rules reach the children too. A rule that is "always in effect"
+    // The house rules reach the children too. A rule that is always in effect
     // cannot stop at the parent: a fan-out over Swedish transcripts would hand
     // back Swedish working files, and the parent files what it was handed.
-    const houseRules = (await this.alwaysOnGuides(ctx, { forDrafting: false })).trim();
-    if (houseRules) parts.push(houseRules);
+    const rules = (await this.houseRules(ctx)).trim();
+    if (rules) parts.push(rules);
     if (opts.brief)
       parts.push(`## The brief (what everyone working on this was told)\n${opts.brief.trim()}`);
     parts.push(`## Your output\nWrite exactly one file with write_result: \`${child.writeTo}\`.`);
@@ -1785,6 +2064,35 @@ export class AgentRuntime {
       this.onSpawnRequest?.(pending.request.sessionId, null);
       pending.resolve({ approved: false });
     }
+  }
+
+  /** The same, for codebase cards. A cancelled question never ran, so nothing was spent. */
+  private cancelCodebases(sessionId?: string): void {
+    for (const [id, pending] of [...this.pendingCodebases]) {
+      if (sessionId && pending.request.sessionId !== sessionId) continue;
+      this.pendingCodebases.delete(id);
+      this.onCodebaseRequest?.(pending.request.sessionId, null);
+      pending.resolve({ approved: false });
+    }
+  }
+
+  /**
+   * A pending codebase card, for a tab that reopened while the question waited.
+   * Without this the card would exist only in the push that announced it.
+   */
+  pendingCodebase(sessionId: string): CodebaseRequestInfo | null {
+    for (const p of this.pendingCodebases.values())
+      if (p.request.sessionId === sessionId) return p.request;
+    return null;
+  }
+
+  /** The PM answered the codebase card. Unknown ids are ignored (already settled). */
+  resolveCodebase(requestId: string, decision: CodebaseDecision): void {
+    const pending = this.pendingCodebases.get(requestId);
+    if (!pending) return;
+    this.pendingCodebases.delete(requestId);
+    this.onCodebaseRequest?.(pending.request.sessionId, null);
+    pending.resolve(decided(pending.request, decision));
   }
 
   /**
@@ -1903,6 +2211,7 @@ export class AgentRuntime {
 
   async deleteChat(sessionId: string, ctx?: UseCaseContext): Promise<void> {
     this.cancelSpawns(sessionId);
+    this.cancelCodebases(sessionId);
     this.cancelAsks(sessionId, ctx);
     const live = this.sessions.get(sessionId);
     if (live) {
@@ -1924,9 +2233,10 @@ export class AgentRuntime {
     if (!sessionId) return;
     // Stop also answers a spawn card the turn is parked on — otherwise Stop
     // looks dead while the tool waits for an approval nobody will give. Same
-    // for a question card: the PM chose to stop instead of answering, so the
-    // written-down copy goes with the promise.
+    // for a codebase card, and for a question card: the PM chose to stop
+    // instead of answering, so the written-down copy goes with the promise.
     this.cancelSpawns(sessionId);
+    this.cancelCodebases(sessionId);
     this.cancelAsks(sessionId, ctx);
     const state = this.sessions.get(sessionId);
     if (!state) return;
@@ -1936,6 +2246,7 @@ export class AgentRuntime {
 
   private disposeSessions(): void {
     this.cancelSpawns();
+    this.cancelCodebases();
     // No context, deliberately: reconfiguring or quitting kills the turns, but
     // the questions they were parked on are exactly what has to survive that.
     // The rows stay, and the next answer to one of them replays instead.
@@ -1961,6 +2272,22 @@ function providerFor(config: AgentRuntimeConfig | null): LlmProvider {
   return config?.provider ?? DEFAULT_PROVIDER;
 }
 
+/**
+ * The codebase decision as it is allowed to be. The card is drawn in the
+ * renderer and the model it carries ends up in a `--model` flag on somebody
+ * else's machine, so the two rules the card draws are checked again here rather
+ * than trusted: a resume carries no model at all, because its Claude Code
+ * session keeps the one it started on, and a model that is not in the catalogue
+ * is dropped. Dropping it falls the run back to the model the session suggested
+ * and the PM read on the card, which is the only other model in play.
+ */
+function decided(request: CodebaseRequestInfo, decision: CodebaseDecision): CodebaseDecision {
+  if (!decision.approved) return { approved: false };
+  if (request.resume || !decision.modelId || !isCodebaseModel(decision.modelId))
+    return { approved: true };
+  return { approved: true, modelId: decision.modelId };
+}
+
 function sameConfig(a: AgentRuntimeConfig, b: AgentRuntimeConfig): boolean {
   return (
     a.vaultDir === b.vaultDir &&
@@ -1971,10 +2298,32 @@ function sameConfig(a: AgentRuntimeConfig, b: AgentRuntimeConfig): boolean {
     a.modelId === b.modelId &&
     a.apiKey === b.apiKey &&
     (a.language ?? DEFAULT_LANGUAGE) === (b.language ?? DEFAULT_LANGUAGE) &&
-    (a.atlassian?.baseUrl ?? null) === (b.atlassian?.baseUrl ?? null) &&
-    (a.atlassian?.email ?? null) === (b.atlassian?.email ?? null) &&
-    (a.atlassian?.token ?? null) === (b.atlassian?.token ?? null)
+    (a.selfName ?? null) === (b.selfName ?? null) &&
+    (a.codebase ?? '') === (b.codebase ?? '') &&
+    connectionsFingerprint(a.connections) === connectionsFingerprint(b.connections)
   );
+}
+
+/**
+ * The connections list as one comparable string: which connection, what it can
+ * do, which tools it brings, and which credential is behind them. A change in
+ * any of those changes the tools a session was built with, so it has to tear
+ * the live sessions down. Order is the registry's, so it is stable. The two
+ * separators are control characters no id or tool name can hold, so two
+ * different lists cannot produce one string.
+ */
+function connectionsFingerprint(connections: readonly AgentConnection[] | undefined): string {
+  return (connections ?? [])
+    .map((c) =>
+      [
+        c.connectionId,
+        c.providerId,
+        c.canTrack ? 'track' : '',
+        c.readTools.map((t) => t.name).join(','),
+        c.fingerprint,
+      ].join('\u0000'),
+    )
+    .join('\u0001');
 }
 
 function truncate(s: string | undefined, n: number): string | undefined {

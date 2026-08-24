@@ -1,6 +1,7 @@
 import {
   Bot,
   Cable,
+  FolderGit2,
   FolderOpen,
   ShieldCheck,
   SlidersHorizontal,
@@ -20,13 +21,7 @@ import {
  * worth its click if what is behind it is short.
  */
 export type SettingsSection =
-  | 'general'
-  | 'you'
-  | 'workspace'
-  | 'agent'
-  | 'connections'
-  | 'advanced'
-  | 'privacy';
+  'general' | 'you' | 'workspace' | 'agent' | 'connections' | 'codebase' | 'advanced' | 'privacy';
 
 export interface SettingsSectionInfo {
   id: SettingsSection;
@@ -72,6 +67,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionInfo[] = [
     label: 'Connections',
     icon: Cable,
     keywords: 'jira confluence google calendar connect token sync follow projects spaces',
+  },
+  {
+    id: 'codebase',
+    label: 'Codebase',
+    icon: FolderGit2,
+    keywords: 'code repo repository repos git folder claude code source ask the code',
   },
   {
     id: 'advanced',

@@ -15,7 +15,7 @@ import { registerSecretValue } from '../log.js';
 
 /**
  * Persisted app settings (PLAN §3.5 "primary app state"). Secrets (Anthropic key,
- * Atlassian token) are encrypted at rest with Electron safeStorage WHEN the OS
+ * connector credentials) are encrypted at rest with Electron safeStorage WHEN the OS
  * has a secret store to offer. Otherwise they are stored base64-obfuscated and
  * the Settings UI says so (`secretsEncrypted`). Only ever decrypted in the main
  * process — never sent to the renderer. Values are prefixed with their scheme
@@ -85,6 +85,30 @@ const ONBOARDING_DEFAULT: OnboardingRecord = {
   telemetry: true,
 };
 
+/**
+ * One connector connection's stored credentials. `fields` is keyed by the
+ * connector's own `authFields` keys, and EVERY value is encrypted, not just the
+ * ones marked secret: which field is a secret is the connector's business, and a
+ * per-field rule here is one more thing to get wrong. None of them are large.
+ */
+export interface StoredConnection {
+  providerId: string;
+  fields: Record<string, string>;
+}
+
+/**
+ * One folder the PM pointed at their code. It is either a repo itself or a
+ * folder of repos; {@link discoverRepos} decides which by looking for `.git`.
+ *
+ * `gitPull` is a permission, not a preference: it is what lets a run do
+ * `git fetch` and a fast-forward pull in that clone before it asks a question.
+ * Off means the question is answered against whatever is checked out.
+ */
+export interface CodebasePath {
+  path: string;
+  gitPull: boolean;
+}
+
 export interface PersistedSettings {
   vaultPath: string | null;
   /**
@@ -112,11 +136,32 @@ export interface PersistedSettings {
    */
   anthropicKeyEnc: string | null;
   geminiKeyEnc?: string | null;
-  atlassian: { baseUrl: string; email: string; tokenEnc: string } | null;
+  /**
+   * Every field-auth connection, keyed by connection id ("atlassian", and
+   * whatever the next tracker is called). This used to be one named slot per
+   * connector, which left a second tracker nowhere to put its token
+   * (docs/provider-decoupling.md PD-3).
+   *
+   * The Google OAuth grant below keeps its own slot on purpose: it is a grant
+   * the browser hands back, not a form the PM fills in.
+   */
+  connections: Record<string, StoredConnection>;
+  /**
+   * LEGACY: the single Atlassian slot. Read once by {@link SettingsService.load}
+   * and dropped on the next save. Optional so files written after that parse.
+   */
+  atlassian?: { baseUrl: string; email: string; tokenEnc: string } | null;
   /** Google OAuth grant. Only the
    *  long-lived refresh token persists — access tokens live in memory. `email`
    *  arrives with the first successful verify (the primary calendar's id). */
   google: { email: string | null; refreshTokenEnc: string; scopes?: string } | null;
+  /**
+   * Where the code lives, for the questions a session puts to Claude Code
+   * (docs/claude-code-tickets.md CC-1). No secrets, so nothing here is
+   * encrypted. Null until the PM adds a folder, and null is also what turns the
+   * whole capability off: no folder, no tool.
+   */
+  codebase: { paths: CodebasePath[] } | null;
   schedules: ScheduleEntry[];
   /**
    * Who the PO is. `name` is what their own participant row reads (an invite
@@ -170,8 +215,9 @@ const DEFAULTS: PersistedSettings = {
   modelId: defaultModelId('anthropic'),
   anthropicKeyEnc: null,
   geminiKeyEnc: null,
-  atlassian: null,
+  connections: {},
   google: null,
+  codebase: null,
   schedules: [{ skill: 'weekly-update', dayOfWeek: 5, hour: 15, enabled: false, lastRun: null }],
   identity: { name: null, aliases: [] },
   onboarding: ONBOARDING_DEFAULT,
@@ -179,6 +225,27 @@ const DEFAULTS: PersistedSettings = {
   mcpPort: 7717,
   mcpToken: null,
 };
+
+/**
+ * The connections map as it comes off disk: a fresh object, and only entries
+ * that are the shape the rest of this file assumes. A settings file is a plain
+ * JSON file a person can edit, and a half-typed entry must not reach the point
+ * where a connector is built from it.
+ */
+function readConnections(raw: unknown): Record<string, StoredConnection> {
+  const out: Record<string, StoredConnection> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    const entry = value as Partial<StoredConnection> | null;
+    if (!entry || typeof entry.providerId !== 'string') continue;
+    if (!entry.fields || typeof entry.fields !== 'object') continue;
+    const fields: Record<string, string> = {};
+    for (const [key, field] of Object.entries(entry.fields))
+      if (typeof field === 'string') fields[key] = field;
+    out[id] = { providerId: entry.providerId, fields };
+  }
+  return out;
+}
 
 export class SettingsService {
   private data: PersistedSettings = { ...DEFAULTS };
@@ -203,6 +270,10 @@ export class SettingsService {
     } catch {
       this.data = { ...DEFAULTS };
     }
+    // Own the connections map instead of sharing the one on DEFAULTS, and drop
+    // whatever a hand-edited file put in it.
+    this.data.connections = readConnections(this.data.connections);
+    const migratedConnection = this.migrateConnections();
     // A schedule names a skill; it used to name a "session type". Carry settings
     // written before the rename over rather than silently losing the slot.
     this.data.schedules = this.data.schedules.map((s) => ({
@@ -246,8 +317,41 @@ export class SettingsService {
     this.data.language = workspaceLanguage(storedLanguage ?? app.getLocale());
     const settledLanguage = this.data.language !== storedLanguage;
     const grandfathered = this.migrateOnboarding(hadOnboarding);
-    if (carriedModel || mintedToken || mintedInstall || settledLanguage || grandfathered)
+    if (
+      carriedModel ||
+      mintedToken ||
+      mintedInstall ||
+      settledLanguage ||
+      grandfathered ||
+      migratedConnection
+    )
       await this.persist();
+  }
+
+  /**
+   * Carry the old single Atlassian slot into the connections map (PD-3), then
+   * drop it. The token moves across still in its envelope: to re-encrypt it we
+   * would have to decrypt it first, and that is exactly what fails on the run
+   * where the OS refuses (see {@link secretsUnreadable}). A token we cannot read
+   * today can still be read tomorrow, so it must survive the migration intact.
+   *
+   * Returns whether the file has to be written back.
+   */
+  private migrateConnections(): boolean {
+    if (!('atlassian' in this.data)) return false;
+    const old = this.data.atlassian;
+    delete this.data.atlassian;
+    // The field keys are the Atlassian connector's own `authFields` keys.
+    if (old && !this.data.connections['atlassian'])
+      this.data.connections['atlassian'] = {
+        providerId: 'atlassian',
+        fields: {
+          siteUrl: this.encrypt(old.baseUrl),
+          email: this.encrypt(old.email),
+          apiToken: old.tokenEnc,
+        },
+      };
+    return true;
   }
 
   /**
@@ -444,32 +548,96 @@ export class SettingsService {
     return this.getKey(this.getProvider());
   }
 
-  async setAtlassian(baseUrl: string, email: string, token: string): Promise<void> {
-    registerSecretValue(token);
-    this.data.atlassian = { baseUrl, email, tokenEnc: this.encrypt(token) };
+  /**
+   * Store one connection's credentials, replacing whatever was under that id.
+   * Every field is encrypted and every field is handed to the log scrubber: the
+   * connector knows which of them is the secret, this does not, and the scrubber
+   * is cheap to be wrong about.
+   */
+  async setConnection(
+    connectionId: string,
+    providerId: string,
+    fields: Record<string, string>,
+  ): Promise<void> {
+    const stored: Record<string, string> = {};
+    for (const [key, value] of Object.entries(fields)) {
+      registerSecretValue(value);
+      stored[key] = this.encrypt(value);
+    }
+    this.data.connections[connectionId] = { providerId, fields: stored };
+    // Re-entering a credential is the recovery path; a still-broken one
+    // re-raises the flag on its next read, before the flag reaches the UI.
     this.unreadable = false;
     await this.persist();
   }
 
-  /** Disconnect: the credential must actually go away — a kept token would make
+  /**
+   * One connection's decrypted fields, or null when it is not stored or a value
+   * does not decrypt. A half-readable credential is not a credential: a client
+   * built on '' would just 401 later, far from the cause.
+   */
+  getConnection(connectionId: string): StoredConnection | null {
+    const stored = this.data.connections[connectionId];
+    if (!stored) return null;
+    const fields: Record<string, string> = {};
+    for (const [key, enc] of Object.entries(stored.fields)) {
+      const value = this.decrypt(enc);
+      // Decryption is where a stored secret first becomes a value we hold, so it
+      // is where the scrubber has to hear about it.
+      registerSecretValue(value);
+      if (!value) return null;
+      fields[key] = value;
+    }
+    return { providerId: stored.providerId, fields };
+  }
+
+  /** Disconnect: the credential must actually go away. A kept token would make
    *  "Disconnect" a lie (the quiet kind the review called out). */
-  async clearAtlassian(): Promise<void> {
-    this.data.atlassian = null;
+  async clearConnection(connectionId: string): Promise<void> {
+    if (!(connectionId in this.data.connections)) return;
+    delete this.data.connections[connectionId];
     await this.persist();
   }
 
-  getAtlassian(): { baseUrl: string; email: string; token: string } | null {
-    if (!this.data.atlassian) return null;
-    const token = this.decrypt(this.data.atlassian.tokenEnc);
-    registerSecretValue(token);
-    // An unreadable token is not a credential — a client built on '' would just
-    // 401 later, far from the cause.
-    if (!token) return null;
-    return {
-      baseUrl: this.data.atlassian.baseUrl,
-      email: this.data.atlassian.email,
-      token,
-    };
+  /** Which connections are stored, and whose they are. No secrets leave here. */
+  listConnections(): { connectionId: string; providerId: string }[] {
+    return Object.entries(this.data.connections).map(([connectionId, stored]) => ({
+      connectionId,
+      providerId: stored.providerId,
+    }));
+  }
+
+  /**
+   * The code folders, in the order the PM added them. An empty list means the
+   * feature is off; callers never have to tell that apart from a null record.
+   * Hand-edited entries that are not the right shape are dropped here, not at
+   * the point where a `git` command would be built from one.
+   */
+  getCodebasePaths(): CodebasePath[] {
+    const stored = this.data.codebase?.paths;
+    if (!Array.isArray(stored)) return [];
+    return stored
+      .filter((p): p is CodebasePath => !!p && typeof p.path === 'string' && p.path.trim() !== '')
+      .map((p) => ({ path: p.path, gitPull: p.gitPull === true }));
+  }
+
+  /**
+   * Replace the code folder list. An empty list clears the record back to null,
+   * so removing the last folder leaves the same state a fresh install has.
+   * Duplicates fold into one: the same folder twice is one folder, and the
+   * second copy would only ever fight the first over its `gitPull`.
+   */
+  async setCodebasePaths(paths: CodebasePath[]): Promise<void> {
+    const seen = new Set<string>();
+    const cleaned: CodebasePath[] = [];
+    for (const entry of paths) {
+      const path = typeof entry?.path === 'string' ? entry.path.trim().replace(/[/\\]+$/, '') : '';
+      if (!path || seen.has(path)) continue;
+      seen.add(path);
+      cleaned.push({ path, gitPull: entry.gitPull === true });
+    }
+    this.data.codebase = cleaned.length > 0 ? { paths: cleaned } : null;
+    await this.persist();
   }
 
   async setGoogle(refreshToken: string, email: string | null, scopes?: string): Promise<void> {
@@ -533,11 +701,12 @@ export class SettingsService {
    * attendee emails are compared case-insensitively.
    */
   selfEmails(): string[] {
-    const raw = [
-      this.data.google?.email,
-      this.data.atlassian?.email,
-      ...this.getIdentity().aliases,
-    ];
+    // A connection contributes an address when its connector asks for one under
+    // that name, which every field-auth connector so far does.
+    const connectionEmails = this.listConnections().map(
+      ({ connectionId }) => this.getConnection(connectionId)?.fields['email'],
+    );
+    const raw = [this.data.google?.email, ...connectionEmails, ...this.getIdentity().aliases];
     return raw
       .filter((e): e is string => typeof e === 'string' && e.trim().length > 0)
       .map((e) => e.trim().toLowerCase())

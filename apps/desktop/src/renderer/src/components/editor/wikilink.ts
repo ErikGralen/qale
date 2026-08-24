@@ -1,7 +1,7 @@
 import { Node } from '@tiptap/core';
 import { linkTypeLabel, linkTypeToken, normalizeLinkTarget } from '@qale/domain';
 import { isExternalRef, refMetaCached } from '../../lib/connections';
-import { pillClass } from '../ExternalRef';
+import { AMBIGUOUS_PILL_CLASS, pillClass } from '../ExternalRef';
 import { requestLinkTypeMenu } from './link-type';
 
 /**
@@ -193,7 +193,16 @@ export const WikiLink = Node.create({
         dom.setAttribute('data-external-ref', attrs.target);
         void refMetaCached(attrs.target).then((meta) => {
           if (!meta || !dom.isConnected) return;
-          if (meta.kind === 'ticket') {
+          // Two trackers hold this id: the pill says so, and the hover card
+          // (which reads the same meta) says what to write instead.
+          if (meta.ambiguousProviders) {
+            label.textContent = meta.externalId;
+            dom.classList.add('inline-flex', 'items-baseline', 'gap-1');
+            const pill = document.createElement('span');
+            pill.className = AMBIGUOUS_PILL_CLASS;
+            pill.textContent = `${meta.ambiguousProviders.length} trackers`;
+            dom.insertBefore(pill, chevron);
+          } else if (meta.kind === 'ticket') {
             label.textContent = meta.externalId;
             if (meta.state && meta.stateCategory) {
               dom.classList.add('inline-flex', 'items-baseline', 'gap-1');

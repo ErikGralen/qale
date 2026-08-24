@@ -3,16 +3,16 @@ import {
   CalendarCheck,
   CalendarClock,
   CalendarPlus,
+  Check,
   FilePen,
   MessageSquarePlus,
-  Send,
   TicketPlus,
   type LucideIcon,
 } from 'lucide-react';
 import type { OutboundPayloadDTO } from '@qale/ipc';
 import { normalizeLinkTarget, rsvpAnswer } from '@qale/domain';
 import { invoke } from '../../lib/ipc';
-import { isExternalRef } from '../../lib/connections';
+import { isExternalRef, providerLabelOf } from '../../lib/connections';
 import { ExternalRefChip } from '../ExternalRef';
 
 /**
@@ -107,38 +107,29 @@ export function stripWikilinks(text: string): string {
   });
 }
 
-/** Proper names for the providers we ship; an unknown provider (a future
- *  connector) degrades to a capitalized word instead of an inbox code change. */
-const PROVIDER_LABEL: Record<string, string> = {
-  jira: 'Jira',
-  confluence: 'Confluence',
-  message: 'Message',
-  'google-calendar': 'Google Calendar',
-};
-
 /** Human name of where an outbound card goes — never the raw provider id. */
 export function providerLabel(ob: OutboundPayloadDTO): string {
   const provider = ob.provider ?? ob.system;
-  // A message goes to a person, not a system — name the audience when known.
-  if (provider === 'message') return ob.audience ?? 'the recipient';
-  if (!provider) return ob.audience ?? 'the recipient';
-  return PROVIDER_LABEL[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
+  if (!provider) return ob.voice ?? 'the recipient';
+  return providerLabelOf(provider);
 }
 
-/** The system's proper name, or null when the card goes to a person rather
- *  than a system — "Send an update to Sara" has no product name in it. */
+/** The system's proper name, or null when the card names no provider at all. */
 export function providerName(ob: OutboundPayloadDTO): string | null {
   const provider = ob.provider ?? ob.system;
-  if (!provider || provider === 'message') return null;
-  return PROVIDER_LABEL[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
+  return provider ? providerLabelOf(provider) : null;
 }
 
 /**
  * What a card actually does, said once and reused everywhere it appears: the
  * approve button's verb, the glyph on the card, and the receipt line after it
- * lands. Only a message is *sent* — an `update_page` rewrites a page that
- * already exists, and calling that "send" invents a delivery that never
+ * lands. Every action names its own act: an `update_page` rewrites a page that
+ * already exists, and calling that "send" would invent a delivery that never
  * happens while hiding the edit that does.
+ *
+ * Every action in the payload schema has a case below. The defaults are for a
+ * payload that names an action this build does not know, which is a card that
+ * cannot be applied at all, so they say nothing about what would happen.
  */
 export interface OutboundAct {
   /** Completes "Approve & …" — an imperative the PO would say out loud. */
@@ -162,7 +153,7 @@ export function outboundAct(ob: OutboundPayloadDTO): OutboundAct {
     case 'respond_to_event':
       return { verb: 'reply', Icon: CalendarCheck };
     default:
-      return { verb: 'send', Icon: Send };
+      return { verb: 'apply it', Icon: Check };
   }
 }
 
@@ -178,9 +169,9 @@ export function outboundTarget(ob: OutboundPayloadDTO): string {
   const named = (s: string): string => `“${s}”`;
   switch (ob.action) {
     case 'comment_ticket':
-      return ob.issueKey ? `Comment on ${ob.issueKey}` : 'Comment on a ticket';
+      return ob.targetId ? `Comment on ${ob.targetId}` : 'Comment on a ticket';
     case 'create_ticket': {
-      const file = `File a ${ob.issueType?.toLowerCase() ?? 'ticket'}${ob.projectKey ? ` in ${ob.projectKey}` : ''}`;
+      const file = `File a ${ob.issueType?.toLowerCase() ?? 'ticket'}${ob.container ? ` in ${ob.container}` : ''}`;
       return ob.title ? `${file}: ${ob.title}` : file;
     }
     case 'update_page':
@@ -191,10 +182,8 @@ export function outboundTarget(ob: OutboundPayloadDTO): string {
       return ob.title ? `Change ${named(ob.title)}` : 'Change an event';
     case 'respond_to_event':
       return `Reply ${rsvpAnswer(ob.responseStatus)} to ${ob.title ? named(ob.title) : 'an invite'}`;
-    default: {
-      const send = `Send an update${ob.audience ? ` to ${ob.audience}` : ''}`;
-      return ob.title ? `${send}: ${ob.title}` : send;
-    }
+    default:
+      return ob.title ? `Apply ${named(ob.title)}` : 'Apply this change';
   }
 }
 
@@ -208,9 +197,9 @@ export function outboundReceipt(ob: OutboundPayloadDTO): string {
     case 'update_page':
       return `Updated ${ob.title ?? 'a page'}`;
     case 'comment_ticket':
-      return `Commented on ${ob.issueKey ?? 'a ticket'}`;
+      return `Commented on ${ob.targetId ?? 'a ticket'}`;
     case 'create_ticket':
-      return `Created a ${ob.issueType?.toLowerCase() ?? 'ticket'}${ob.projectKey ? ` in ${ob.projectKey}` : ''}`;
+      return `Created a ${ob.issueType?.toLowerCase() ?? 'ticket'}${ob.container ? ` in ${ob.container}` : ''}`;
     case 'create_event':
       return `Added ${ob.title ?? 'an event'} to your calendar`;
     case 'update_event':
@@ -218,6 +207,6 @@ export function outboundReceipt(ob: OutboundPayloadDTO): string {
     case 'respond_to_event':
       return `Replied ${rsvpAnswer(ob.responseStatus)} to ${ob.title ?? 'an invite'}`;
     default:
-      return `Sent an update${ob.audience ? ` to ${ob.audience}` : ''}`;
+      return `Applied ${ob.title ?? 'the change'}`;
   }
 }

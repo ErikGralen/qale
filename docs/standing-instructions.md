@@ -1,5 +1,10 @@
 # Standing instructions: "remember to..." in chat becomes a rule
 
+> Built, then moved. SK-3 deleted the underscore files and the always-on scan.
+> The catch-all is now `skills/house-rules/SKILL.md`, and a rule with no owner
+> lands as a bullet under its **Your rules** heading. Everything below is the
+> original design; read `_your-rules` and `alwaysOnGuides` as house rules.
+
 ## The problem
 
 Erik writes things like "Remember to create person notes as well" or "If I drop an interesting article, tag it as inspiration by default" in a chat. Today the model agrees, and nothing changes. The preference should become durable product behavior, with the user approving it like any other write.

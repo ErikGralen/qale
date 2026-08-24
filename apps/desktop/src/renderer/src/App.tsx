@@ -14,7 +14,6 @@ import { SessionsView } from './app/SessionsView';
 import { SessionFileView } from './app/SessionFileView';
 import { SettingsView } from './app/SettingsView';
 import { SkillsView } from './app/SkillsView';
-import { AgentsView } from './app/AgentsView';
 import { InboxView } from './app/InboxView';
 import { TodosView } from './app/TodosView';
 import { MemoryView } from './app/MemoryView';
@@ -72,9 +71,7 @@ function Center() {
     case 'settings':
       return <SettingsView viewKey={activeTab.key} section={activeTab.section} />;
     case 'skills':
-      return <SkillsView />;
-    case 'agents':
-      return <AgentsView />;
+      return <SkillsView viewKey={activeTab.key} section={activeTab.section} />;
     default:
       return <Home />;
   }

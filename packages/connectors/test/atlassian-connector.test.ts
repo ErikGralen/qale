@@ -32,7 +32,7 @@ test('verifyAuth: unscoped token authenticates against the site directly, both p
   const r = await c.verifyAuth();
   assert.equal(r.ok, true);
   assert.equal(r.health, 'ok');
-  assert.equal(r.site?.tokenKind, 'unscoped');
+  assert.equal(r.site?.detail?.['tokenKind'], 'unscoped');
   assert.equal(r.identity?.displayName, 'Erik Gralén');
   assert.deepEqual(r.products, { jira: 'ok', confluence: 'ok' });
 });
@@ -62,8 +62,8 @@ test('verifyAuth: scoped token falls back to the api.atlassian.com gateway via t
   const c = atlassianConnector.create(AUTH, { fetchImpl });
   const r = await c.verifyAuth();
   assert.equal(r.ok, true);
-  assert.equal(r.site?.tokenKind, 'scoped');
-  assert.equal(r.site?.cloudId, CLOUD_ID);
+  assert.equal(r.site?.detail?.['tokenKind'], 'scoped');
+  assert.equal(r.site?.detail?.['cloudId'], CLOUD_ID);
   assert.deepEqual(r.products, { jira: 'ok', confluence: 'ok' });
 
   // Subsequent data calls must route through the gateway, not the site.
@@ -336,7 +336,7 @@ test('execute(create_ticket): posts ADF description, returns key + browse link',
   const r = await c.execute({
     provider: 'jira',
     action: 'create_ticket',
-    projectKey: 'PAY',
+    container: 'PAY',
     title: 'SCIM group-mapping for Nordkap',
     body: 'Nordkap needs SCIM group-mapping before the September rollout.',
     rationale: 'agreed in the Jul 14 check-in',
@@ -376,7 +376,7 @@ test('execute(update_page, no patch): appends the body + provenance, bumps the v
   const r = await c.execute({
     provider: 'confluence',
     action: 'update_page',
-    pageId: '98342',
+    targetId: '98342',
     body: '## Update\nSCIM deferred to Q3 per the Apr 15 decision.',
     provenance: 'Source: Nordkap check-in, Jul 14',
     rationale: 'page contradicts the SCIM deferral decision',
@@ -406,7 +406,7 @@ test('execute(update_page, patch): replaces the passage IN the storage XHTML —
   await c.execute({
     provider: 'confluence',
     action: 'update_page',
-    pageId: '98342',
+    targetId: '98342',
     body: 'SCIM ships in Q3 (deferred Apr 15).',
     patch: {
       search: 'SCIM ships in Q2 together with SSO.',
@@ -435,7 +435,7 @@ test('execute(update_page, patch): a passage the page no longer contains refuses
       c.execute({
         provider: 'confluence',
         action: 'update_page',
-        pageId: '98342',
+        targetId: '98342',
         body: 'x',
         patch: { search: 'A sentence that was edited away.', replace: 'y' },
         rationale: 'r',
@@ -465,7 +465,7 @@ test('execute(update_page, patch): an ambiguous passage refuses rather than gues
       c.execute({
         provider: 'confluence',
         action: 'update_page',
-        pageId: '777',
+        targetId: '777',
         body: 'x',
         patch: { search: 'SCIM slips.', replace: 'SCIM holds.' },
         rationale: 'r',
@@ -481,9 +481,10 @@ test('execute: actions this connector cannot perform are refused loudly', async 
   await assert.rejects(
     () =>
       c.execute({
-        provider: 'message',
-        action: 'send_message',
-        audience: 'cs',
+        provider: 'google-calendar',
+        action: 'create_event',
+        title: 'Sync',
+        start: '2026-08-24T15:00:00+02:00',
         body: 'b',
         rationale: 'r',
       }),
@@ -491,7 +492,7 @@ test('execute: actions this connector cannot perform are refused loudly', async 
   );
   await assert.rejects(
     () => c.execute({ provider: 'jira', action: 'create_ticket', body: 'b', rationale: 'r' }),
-    /projectKey/,
+    /container/,
   );
 });
 

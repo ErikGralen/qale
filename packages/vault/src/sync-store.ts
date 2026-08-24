@@ -342,11 +342,32 @@ export class SyncStore {
       .run(notePath, provider, externalId);
   }
 
-  itemByExternalId(externalId: string): SyncItemRow | null {
+  /**
+   * One item, by the connection that holds it. The provider is half the key on
+   * purpose: two trackers can mint the same ticket key (a Jira PAY-142 and a
+   * Linear PAY-142), and a lookup on the id alone answers with whichever row
+   * sqlite reaches first.
+   */
+  itemByExternalId(provider: string, externalId: string): SyncItemRow | null {
     const row = this.db
-      .prepare('SELECT * FROM sync_items WHERE external_id = ? COLLATE NOCASE LIMIT 1')
-      .get(externalId) as RawItem | undefined;
+      .prepare(
+        'SELECT * FROM sync_items WHERE provider = ? AND external_id = ? COLLATE NOCASE LIMIT 1',
+      )
+      .get(provider, externalId) as RawItem | undefined;
     return row ? toItemRow(row) : null;
+  }
+
+  /**
+   * Every connection's row for one external id, in provider order — for the read
+   * surfaces that are handed a bare key and no connection (a reference chip, a
+   * hover card). Two rows mean two providers mint that key; PD-11 decides what a
+   * link does about it, and until then the caller takes the first.
+   */
+  itemsByExternalId(externalId: string): SyncItemRow[] {
+    const rows = this.db
+      .prepare('SELECT * FROM sync_items WHERE external_id = ? COLLATE NOCASE ORDER BY provider')
+      .all(externalId);
+    return (rows as RawItem[]).map(toItemRow);
   }
 
   itemsByKind(kind: 'ticket' | 'wikipage' | 'event'): SyncItemRow[] {

@@ -1,5 +1,7 @@
 import {
+  isVoicePath,
   NOTE_TYPE_META,
+  VOICES_DIR,
   renderFolderIndex,
   renderRootIndex,
   type IndexEntry,
@@ -32,12 +34,12 @@ const FOLDER_PURPOSE: Record<NoteType, string> = {
   theme: 'the durable things worth solving — problems, pains, opportunities',
   person: 'people the work touches and what they were last told',
   session: 'session receipts — the replayable audit trail',
-  skill: 'playbooks, always-on rules, and reference the agent works with',
+  skill: 'the written instructions the agent follows when you hand work over',
   agent: 'self-starting agents — what fires on workspace events, and when',
   todo: 'tracked commitments — the PO’s own and what they are waiting on',
   note: 'authored notes that do not fit another folder',
-  ticket: 'mirrored tracker items (Jira), never edited locally',
-  wikipage: 'mirrored living documents (Confluence), never edited locally',
+  ticket: 'mirrored tracker items, never edited locally',
+  wikipage: 'mirrored living documents, never edited locally',
 };
 
 /**
@@ -47,6 +49,13 @@ const FOLDER_PURPOSE: Record<NoteType, string> = {
  */
 const SKIP_DIRS = new Set<string>([NOTE_TYPE_META.session.dir]);
 
+/**
+ * The voices (SK-6). They are filed as skill notes, so without this they would
+ * be mapped as skills, and the map is what a session reads to orient itself: a
+ * file listed as work the agent can hand itself is a file it will try to run.
+ */
+const VOICES_PURPOSE = 'how a draft sounds — tone and wording, applied when something is drafted';
+
 /** Build the shaped folder data the domain renderers consume. */
 function collectFolders(ctx: UseCaseContext): IndexFolder[] {
   const all = ctx.index.all();
@@ -54,7 +63,7 @@ function collectFolders(ctx: UseCaseContext): IndexFolder[] {
   for (const type of Object.keys(NOTE_TYPE_META) as NoteType[]) {
     const meta = NOTE_TYPE_META[type];
     if (SKIP_DIRS.has(meta.dir)) continue;
-    const notes = all.filter((n) => n.type === type);
+    const notes = all.filter((n) => n.type === type && (type !== 'skill' || !isVoicePath(n.path)));
     if (notes.length === 0) continue;
     const entries: IndexEntry[] = notes.map((n) => ({
       path: n.path,
@@ -68,6 +77,20 @@ function collectFolders(ctx: UseCaseContext): IndexFolder[] {
       label: labelFor(meta.dir),
       purpose: FOLDER_PURPOSE[type],
       entries,
+    });
+  }
+  const voices = all.filter((n) => isVoicePath(n.path));
+  if (voices.length > 0) {
+    folders.push({
+      dir: VOICES_DIR,
+      label: labelFor(VOICES_DIR),
+      purpose: VOICES_PURPOSE,
+      entries: voices.map((n) => ({
+        path: n.path,
+        title: n.title,
+        description: n.summary,
+        lifecycle: n.lifecycle,
+      })),
     });
   }
   return folders;

@@ -80,6 +80,12 @@ export function You({ onNext }: { onNext: () => void }) {
             adds its own.
           </span>
         </label>
+        {/* The empty submit is designed in (a deliberate "rather not say"), but
+            nothing on the screen said so — the polite reader felt forced and
+            the suspicious one stalled (clarity review area 2). */}
+        <p className="text-sm text-muted-foreground">
+          Both are optional. Nothing here is sent anywhere; it stays in your settings.
+        </p>
       </div>
     </Screen>
   );

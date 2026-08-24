@@ -59,11 +59,13 @@ function standing(status: string): string | null {
 
 /** One line per card: the id to act on it by, what it says, where it stands. */
 function cardLines(cards: SessionCardState[]): string[] {
-  return cards.slice(-MAX_CARDS).map((c) => {
+  const out: string[] = [];
+  for (const c of cards.slice(-MAX_CARDS)) {
     const where = standing(c.status) ?? c.status;
     const what = c.title.replace(/\s+/g, ' ').trim().slice(0, 120);
-    return `- ${c.id} (${where}): ${what}`;
-  });
+    out.push(`- ${c.id} (${where}): ${what}`);
+  }
+  return out;
 }
 
 /** Neutralize a marker the message itself carries, without mangling anything else. */

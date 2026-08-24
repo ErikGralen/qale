@@ -67,6 +67,20 @@ export function Telemetry({ onNext }: { onNext: () => void }) {
         <p className="text-sm text-balance text-muted-foreground">
           {TELEMETRY_PROCESSOR} You can change this any time in Settings.
         </p>
+
+        {/* The one door marked "help" in the whole flow (clarity review
+            area 11). A hand-picked beta's honest answer to "who do I ask?" is
+            a person, and saying so turns silent abandonment into a mail. */}
+        <p className="text-sm text-muted-foreground">
+          Stuck or unsure about anything? Write to{' '}
+          <a
+            href="mailto:erik@qale.ai"
+            className="rounded font-medium underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            erik@qale.ai
+          </a>
+          . That is what it is for.
+        </p>
       </div>
     </Screen>
   );

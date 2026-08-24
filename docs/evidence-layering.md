@@ -198,8 +198,10 @@ The v1 edits:
    counts as strength, citations as proof, inline quotes only when the
    wording itself is the finding. Arrival's verbatim commitment quotes pass
    this rule unchanged: the exact wording of a promise is the finding.
-   Promote the rule to a `_writing` always-on skill only when a third writer
-   needs it.
+   Promoted on 2026-08-21, when the spec skill became the third writer: the
+   rule now ships under **Writing** in `skills/house-rules/SKILL.md`, the one
+   document every session reads, and arrival and synthesis keep only the line
+   their own domain adds.
 4. **Synthesis and lifecycle copy:** contradiction resolution marks the
    losing insight disputed or superseded; migration-by-touch as above.
 

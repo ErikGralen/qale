@@ -36,6 +36,7 @@ import { useToast } from '../components/toast';
 import { PageHeader } from '../components/PageHeader';
 import { TelemetryDetails } from '../components/TelemetryDetails';
 import { NewWorkspace } from '../components/NewWorkspace';
+import { CodebaseSettings } from './CodebaseSettings';
 import { ConnectionsSettings } from './ConnectionsSettings';
 import { Setting, SettingNotice, SettingPanel } from '../components/Setting';
 import {
@@ -341,7 +342,7 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
               <SettingPanel>
                 <Setting
                   title="Your details"
-                  description="Invites carry an address, not a name. This is how you appear in a meeting’s participants, and which addresses the app recognises as you instead of as someone to file."
+                  description="Invites carry an address, not a name. This is how you appear in a meeting’s participants, which addresses the app recognises as you instead of as someone to file, and the name a draft is signed with. Without a name, a draft is left unsigned."
                 >
                   <IdentityCard
                     identity={settings?.identity ?? null}
@@ -581,7 +582,7 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
                     /* "Nothing is sent" only ever meant the outbound side. A scheduled
                        run still reads and still calls the model with nobody watching,
                        which is the part a schedule is easiest to be wrong about. */
-                    description={`Run while the app is open, and missed slots catch up on launch. Dry-run first: everything lands in the Inbox as cards, and nothing goes out to Jira, Confluence or your calendar. A run still reads your notes and sends them to ${providerInfo.name}, even when you are not at the machine.`}
+                    description={`Run while the app is open, and missed slots catch up on launch. Dry-run first: everything lands in the Inbox as cards, and nothing goes out to your tracker, wiki or calendar. A run still reads your notes and sends them to ${providerInfo.name}, even when you are not at the machine.`}
                   >
                     {settings.schedules.map((sc) => (
                       <div key={sc.skill} className="rounded-lg border border-border bg-card p-3">
@@ -653,6 +654,12 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
             <TabsContent value="connections">
               <SettingPanel>
                 <ConnectionsSettings />
+              </SettingPanel>
+            </TabsContent>
+
+            <TabsContent value="codebase">
+              <SettingPanel>
+                <CodebaseSettings />
               </SettingPanel>
             </TabsContent>
 

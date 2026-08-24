@@ -3,8 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "comment:exports": "The slot parser is the one exception to \"the agent package is main-only\". The renderer has to draw a box exactly where the fence is (docs/brainstorm-skill.md), and two scanners would drift; this subpath is that one file, which imports nothing, so nothing else in here reaches the browser bundle.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./slots": "./src/slots.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit -p tsconfig.json",
@@ -12,7 +14,7 @@
   },
   "dependencies": {
     "@qale/application": "workspace:*",
-    "@qale/atlassian": "workspace:*",
+    "@qale/connectors": "workspace:*",
     "@qale/domain": "workspace:*",
     "@qale/sessions": "workspace:*",
     "@earendil-works/pi-coding-agent": "0.83.0",

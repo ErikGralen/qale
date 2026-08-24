@@ -28,6 +28,8 @@ export interface AtlassianAuth {
   apiToken: string;
 }
 
+/** `site.detail` is this connector's own slot on the generic result: it carries
+ *  `tokenKind` ('unscoped' | 'scoped') and, on the gateway path, `cloudId`. */
 export interface ProbeResult extends VerifyResult {
   /** Request bases for the client when the probe succeeded via the gateway. */
   apiBases?: { jira: string; wiki: string };
@@ -133,7 +135,7 @@ export async function probeAtlassian(
       ok: true,
       health: 'ok',
       ...(identity ? { identity } : {}),
-      site: { url: site, tokenKind: 'unscoped' },
+      site: { url: site, detail: { tokenKind: 'unscoped' } },
       products: { jira: toHealth(jiraSite), confluence: toHealth(wikiSite) },
     };
   }
@@ -183,7 +185,7 @@ export async function probeAtlassian(
           ok: true,
           health: 'ok',
           ...(identity ? { identity } : {}),
-          site: { url: site, cloudId, tokenKind: 'scoped' },
+          site: { url: site, detail: { cloudId, tokenKind: 'scoped' } },
           apiBases: { jira: jiraBase, wiki: wikiBase },
           products: { jira: toHealth(gwJira), confluence: toHealth(gwWiki) },
         };
@@ -207,7 +209,11 @@ export async function probeAtlassian(
       health: 'auth-expired',
       site: { url: site },
       products,
-      error: 'Atlassian rejected the credentials — the API token may have expired.',
+      // The admin possibility is named because a well-formed token from an org
+      // that blocks API tokens fails exactly like a typo, and "check your
+      // token" sends that person in a circle (clarity review area 5).
+      error:
+        'Atlassian rejected the credentials. The token may have expired, or your company may block API tokens; if a fresh token fails too, ask your Atlassian administrator.',
     };
   }
   const errored = [jiraFinal, wikiFinal].find(

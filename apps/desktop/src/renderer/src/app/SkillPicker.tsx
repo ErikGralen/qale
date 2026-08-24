@@ -11,6 +11,7 @@ import {
   PopoverTrigger,
 } from '@qale/ui';
 import type { SkillDTO } from '@qale/ipc';
+import { tabForFile } from '../lib/skills-tabs';
 import { useApp } from '../state/app-state';
 
 /**
@@ -37,10 +38,11 @@ import { useApp } from '../state/app-state';
  */
 
 /**
- * Only playbooks are offered here — they are the skills that exist to be run.
- * Always-on rules are already in force in every session, and reference is the
- * agent's to reach for (`use_skill`); listing either would make picking it a
- * silent no-op.
+ * The Skills tab, and only it (SK-14). This menu is where you ask for work, so
+ * it offers the files that ARE work: the house rules are already in force in
+ * every session, a moment is fired by the product rather than picked, and a
+ * voice is how a draft sounds. Picking any of those would start a session with
+ * nothing to do.
  */
 export function SkillPicker({
   picked,
@@ -62,8 +64,11 @@ export function SkillPicker({
   const { skills } = useApp();
   const [query, setQuery] = useState('');
   const [active, setActive] = useState('');
-  const invocable = skills
-    .filter((s) => s.starts.some((x) => x.kind === 'you-run-it'))
+  // One derivation, shared with the Skills page: a file that moves between tabs
+  // there moves in here with it, and neither list can drift into offering
+  // something the other hides.
+  const invocable = [...skills]
+    .filter((s) => tabForFile(s) === 'skills')
     // Alphabetical, except a skill that needs fixing sinks — it stays offered
     // (hiding it would be the silent failure the Skills view exists to prevent)
     // but it never gets to be the second thing you read.

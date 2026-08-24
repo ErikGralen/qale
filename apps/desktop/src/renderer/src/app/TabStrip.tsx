@@ -15,7 +15,6 @@ import {
   Hash,
   Settings,
   Wand2,
-  Bot,
   ListTodo,
   Library,
   ArrowLeft,
@@ -54,8 +53,6 @@ function iconFor(tab: Tab): LucideIcon {
       return Settings;
     case 'skills':
       return Wand2;
-    case 'agents':
-      return Bot;
     default:
       return FileText;
   }

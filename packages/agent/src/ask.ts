@@ -3,6 +3,7 @@ import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { oneLine, type AskPort, type AskRecord } from '@qale/application';
 import { MAINTENANCE_AGENTS } from '@qale/sessions';
+import type { CommentAnswers, CommentPlan } from './slots.js';
 
 /**
  * Asking the PM a question mid-turn — the same primitive Claude Code exposes as
@@ -110,6 +111,13 @@ export interface AskAnswer {
 export interface AskDecision {
   answers: AskAnswer[] | null;
   /**
+   * What the PM wrote in a round file, when the card was a comment request
+   * rather than a question (see ./comments.ts). Absent on every other path, so
+   * `answers: null` with nothing here reads as a dismissal for both kinds and
+   * neither kind needs its own cancel.
+   */
+  comments?: CommentAnswers;
+  /**
    * The card was never shown, because a clock started this run and there is
    * nobody at the screen (QM ticket 9). Not a dismissal: a dismissal is a person
    * saying "decide it yourself", and this is the opposite instruction.
@@ -118,13 +126,22 @@ export interface AskDecision {
 }
 
 /**
- * A question card waiting on the PM, as the renderer draws it. The questions are
- * exactly what the tool validated — the card never re-derives them.
+ * A card waiting on the PM, as the renderer draws it. The questions are exactly
+ * what the tool validated, and the card never re-derives them.
+ *
+ * Two kinds ride on this one shape. A question card carries `questions` and
+ * nothing else. A comment request carries `comments` and an empty `questions`,
+ * and the renderer draws the round file instead (see ./comments.ts). One shape
+ * because everything downstream of the park treats them identically: the row,
+ * the badge, the replay, the cancel. A parallel twin would be four places to
+ * keep in step.
  */
 export interface AskRequestInfo {
   id: string;
   sessionId: string;
   questions: AskQuestion[];
+  /** Set when this is a round to write in rather than a question to answer. */
+  comments?: CommentPlan;
   /**
    * Offered rather than owed (see {@link isOffered}). The card carries the
    * answer rather than the facts behind it, so no surface downstream has to
@@ -286,7 +303,10 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
       'workspace already answers — read the note instead. Every question needs 2-4 concrete options with short ' +
       'descriptions of what each one means; the PM can always write their own answer instead. Ask everything ' +
       'you need in ONE call (up to 4 questions) rather than one card after another. If you can do useful work ' +
-      'without the answer, do that work first and ask at the point it actually matters.',
+      'without the answer, do that work first and ask at the point it actually matters. Name any note you ' +
+      'mention as a wikilink ([[notes/2026-07-17-friday-scratch]]), in the question and in the options alike: ' +
+      'the card renders them, so the PM can open the note before they answer. A bare path is dead text on a ' +
+      'card, and this is often a question about a file they have not read.',
     parameters: Type.Object({
       questions: Type.Array(
         Type.Object({
@@ -395,11 +415,13 @@ export function askReplayPrompt(plan: AskPlan, answers: AskAnswer[] | null): str
   return `${opener}\n\n${formatAnswers(plan, answers)}`;
 }
 
-/** One parked question, read back off disk with its questions decoded. */
+/** One parked card, read back off disk with its questions decoded. */
 export interface StoredAsk {
   id: string;
   sessionId: string;
   questions: AskQuestion[];
+  /** The round it asked for comments on, when that is what it was. */
+  comments: CommentPlan | null;
   /** The skill in force when it asked — the footing a replayed turn resumes on. */
   skill: string | null;
   outbound: boolean;
@@ -412,18 +434,20 @@ function decode(record: AskRecord): StoredAsk {
     id: record.id,
     sessionId: record.sessionId,
     questions: (record.questions ?? []) as AskQuestion[],
+    comments: (record.comments as CommentPlan | undefined) ?? null,
     skill: record.skill,
     outbound: record.outbound,
     unattended: record.unattended,
   };
 }
 
-/** The card, redrawn from the row a question was written to. */
+/** The card, redrawn from the row it was written to. */
 function toRequest(asked: StoredAsk): AskRequestInfo {
   return {
     id: asked.id,
     sessionId: asked.sessionId,
     questions: asked.questions,
+    ...(asked.comments ? { comments: asked.comments } : {}),
     offered: isOffered(asked.skill, asked.unattended),
   };
 }
@@ -448,6 +472,11 @@ export interface AskParkingDeps {
  * An answer takes the first layer if it is there and the second if it is not.
  * The second is a REPLAY: the session is reopened and the answer arrives as a
  * message rather than as the tool result nobody is holding any more.
+ *
+ * Both kinds of card park here, a question and a round to write in, because
+ * everything in this class is about the waiting rather than the asking. What
+ * differs between them is what the renderer draws and which replay prompt the
+ * runtime picks; nothing below has to know which it is holding.
  */
 export class AskParking {
   /** requestId → the card in flight and the promise `ask_user` is parked on. */
@@ -492,6 +521,7 @@ export class AskParking {
         id: asked.id,
         sessionId: asked.sessionId,
         questions: asked.questions,
+        comments: asked.comments ?? null,
         skill: context.skill ?? null,
         outbound: !!context.outbound,
         unattended,
@@ -577,6 +607,7 @@ export class AskParking {
             id: asked.id,
             sessionId: asked.sessionId,
             questions: asked.questions,
+            comments: asked.comments,
             skill: asked.skill,
             outbound: asked.outbound,
             unattended: asked.unattended,

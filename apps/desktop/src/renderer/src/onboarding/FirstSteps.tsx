@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarClock,
   Check,
@@ -7,11 +7,13 @@ import {
   KeyRound,
   MessageSquare,
   PenLine,
+  Plug,
   Ticket,
   X,
   type LucideIcon,
 } from 'lucide-react';
-import type { OnboardingDTO, SettingsDTO } from '@qale/ipc';
+import type { ConnectionProgress, OnboardingDTO, SettingsDTO } from '@qale/ipc';
+import { connections, type ProviderDescriptorDTO } from '../lib/connections';
 import { requestCapture } from '../lib/capture-event';
 import type { SettingsSection } from '../lib/settings-sections';
 import { useApp } from '../state/app-state';
@@ -25,7 +27,7 @@ import { useApp } from '../state/app-state';
  * what.
  *
  * It is also where skipped setup waits, which is why "finish onboarding" is
- * never a separate mode — just an unchecked row. The two connection rows in
+ * never a separate mode — just an unchecked row. The connect rows in
  * particular are a second chance rather than a nag: most people skip them in
  * the opening because on day one they have no reason to trust a new app with
  * their work systems, and the honest answer to that is to ask again once the
@@ -66,10 +68,28 @@ export function FirstSteps() {
   const onboarding = settings?.onboarding;
   /** A meeting to be briefed on has to exist before that row can go anywhere. */
   const hasMeetings = !!tree?.groups.find((g) => g.type === 'meeting')?.notes.length;
+  /**
+   * The registered connectors, for the connect rows. Asked for once; the rows
+   * fall back to the ids in the settings DTO until the answer lands, so the
+   * card never draws one row short and then grows.
+   */
+  const [providers, setProviders] = useState<ProviderDescriptorDTO[]>([]);
+  useEffect(() => {
+    let live = true;
+    connections
+      .providers()
+      .then((p) => {
+        if (live) setProviders(p);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const rows = useMemo<Row[]>(() => {
     if (!settings || !onboarding) return [];
-    return buildRows(settings, onboarding, {
+    return buildRows(settings, onboarding, providers, {
       hasMeetings,
       openSettings: (section) => openSettings(section),
       openInbox: () => openInbox(),
@@ -79,14 +99,26 @@ export function FirstSteps() {
       // The interview, not a file to edit (docs/product-understanding.md U-4).
       // It opens in its own tab and starts talking, because the whole lesson of
       // this row is that you say it out loud and it drafts.
+      //
+      // The skill takes any topic (SK-11), so the topic is what this hands in:
+      // the first prompt IS the argument, and the tab is named for it.
       learnProduct: () =>
-        openSession('learn-the-product', {
-          initialPrompt: 'Learn about my product.',
-          title: 'Learn about the product',
+        openSession('tell-qale', {
+          initialPrompt: 'Let me tell you about the product.',
+          title: 'Tell Qale about the product',
           fresh: true,
         }),
     });
-  }, [settings, onboarding, hasMeetings, openSettings, openInbox, openFolder, openSession]);
+  }, [
+    settings,
+    onboarding,
+    providers,
+    hasMeetings,
+    openSettings,
+    openInbox,
+    openFolder,
+    openSession,
+  ]);
 
   const remaining = rows.filter((r) => !r.done).length;
   const finished = rows.length > 0 && remaining === 0;
@@ -164,8 +196,8 @@ export function FirstSteps() {
 /**
  * The rows, and the rule for each one being done.
  *
- * Three of them are derived from live state rather than from a stamped
- * checklist: the key, and the two connections. That is deliberate — it means a
+ * Some of them are derived from live state rather than from a stamped
+ * checklist: the key, and every connection. That is deliberate — it means a
  * key added from Settings months later still ticks its row, and it means the
  * "only if skipped in the opening" rule needs no bookkeeping at all: anyone who
  * did it during setup already has the fact, so the row is simply done.
@@ -173,6 +205,7 @@ export function FirstSteps() {
 function buildRows(
   settings: SettingsDTO,
   onboarding: OnboardingDTO,
+  providers: ProviderDescriptorDTO[],
   go: {
     hasMeetings: boolean;
     openSettings: (section: SettingsSection) => void;
@@ -184,8 +217,6 @@ function buildRows(
   },
 ): Row[] {
   const stamped = onboarding.checklist;
-  const google = onboarding.connections.google;
-  const atlassian = onboarding.connections.atlassian;
 
   const rows: Row[] = [
     {
@@ -211,9 +242,11 @@ function buildRows(
       cta: 'Add',
     },
     {
+      // "Suggestion", not "card" (clarity review area 10): before the first
+      // one exists, "card" is an internal word pointing at nothing.
       id: 'proposal',
-      label: 'Decide on a card',
-      hint: 'Nothing is written until you approve it',
+      label: 'Approve or reject its first suggestion',
+      hint: 'After it reads something, suggestions wait in the Inbox',
       icon: Inbox,
       done: !!stamped.proposal,
       line: stamped.proposal?.line,
@@ -257,35 +290,72 @@ function buildRows(
       go: go.learnProduct,
       cta: 'Start',
     },
-    {
-      id: 'google',
-      label: 'Connect your calendar',
-      // Half-done is not done: connected with nothing followed reads nothing,
-      // and a green tick over that would be the quiet kind of lie.
-      hint:
-        google === 'connected'
-          ? 'Connected, but no calendar picked yet'
-          : 'Your meetings arrive as notes by themselves',
-      icon: CalendarClock,
-      done: google === 'following',
-      line: 'Your calendar is in, so meetings arrive on their own',
-      go: () => go.openSettings('connections'),
-      cta: 'Connect',
-    },
-    {
-      id: 'atlassian',
-      label: 'Connect Jira or Confluence',
-      hint:
-        atlassian === 'connected'
-          ? 'Connected, but no project or space picked yet'
-          : 'Tickets and pages you link stay current',
-      icon: Ticket,
-      done: atlassian === 'following',
-      line: 'Jira and Confluence are in, so linked work stays current',
-      go: () => go.openSettings('connections'),
-      cta: 'Connect',
-    },
   ];
 
+  // One row per registered connector, in the order Settings lists them. The
+  // progress comes from the settings DTO, which carries an entry per provider.
+  const listed: { id: string; label: string }[] = providers.length
+    ? providers.map((p) => ({ id: p.id, label: p.label }))
+    : Object.keys(onboarding.connections).map((id) => ({ id, label: id }));
+  for (const provider of listed) {
+    rows.push(
+      connectRow(provider, onboarding.connections[provider.id] ?? 'none', () =>
+        go.openSettings('connections'),
+      ),
+    );
+  }
+
   return rows;
+}
+
+/**
+ * What a connector's row says. A provider with no entry still gets a row, built
+ * from its own label, so a new connector needs no edit here. The entries exist
+ * because a label alone cannot say what the connection buys you, and these two
+ * lines are the ones people have been reading.
+ */
+const CONNECT_COPY: Record<
+  string,
+  { label: string; icon: LucideIcon; hint: string; half: string; line: string }
+> = {
+  'google-calendar': {
+    label: 'Connect your calendar',
+    icon: CalendarClock,
+    hint: 'Your meetings arrive as notes by themselves',
+    half: 'Connected, but no calendar picked yet',
+    line: 'Your calendar is in, so meetings arrive on their own',
+  },
+  atlassian: {
+    label: 'Connect Jira or Confluence',
+    icon: Ticket,
+    hint: 'Tickets and pages you link stay current',
+    half: 'Connected, but no project or space picked yet',
+    line: 'Jira and Confluence are in, so linked work stays current',
+  },
+};
+
+/** One connect row. Half-done is not done: connected with nothing followed
+ *  reads nothing, and a green tick over that would be the quiet kind of lie. */
+function connectRow(
+  provider: { id: string; label: string },
+  progress: ConnectionProgress,
+  go: () => void,
+): Row {
+  const copy = CONNECT_COPY[provider.id] ?? {
+    label: `Connect ${provider.label}`,
+    icon: Plug,
+    hint: 'What it reads there stays current in your workspace',
+    half: 'Connected, but nothing picked to read yet',
+    line: `${provider.label} is in, so linked work stays current`,
+  };
+  return {
+    id: `connect:${provider.id}`,
+    label: copy.label,
+    hint: progress === 'connected' ? copy.half : copy.hint,
+    icon: copy.icon,
+    done: progress === 'following',
+    line: copy.line,
+    go,
+    cta: 'Connect',
+  };
 }

@@ -1,11 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  basename,
   parseFrontmatter,
   checkFrontmatterMutation,
+  flatMirrorPath,
   layerForType,
   isBodyEditable,
   dirForType,
+  mirrorPath,
+  mirrorSlug,
+  retargetWikilinks,
   zOutboundPayload,
   type Frontmatter,
 } from '../src/index.js';
@@ -103,26 +108,71 @@ test('mirrors are raw layer: body immutable, only re-sync fields may change', ()
 });
 
 // ---------------------------------------------------------------------------
+// Mirror paths: one folder per provider (PD-10)
+// ---------------------------------------------------------------------------
+
+test('a mirror is addressed by provider, and the name is always the last segment', () => {
+  assert.equal(mirrorPath('ticket', 'jira', 'PAY-142'), 'tickets/jira/PAY-142.md');
+  assert.equal(mirrorPath('ticket', 'linear', 'PAY-142'), 'tickets/linear/PAY-142.md');
+  assert.equal(
+    mirrorPath('wikipage', 'confluence', 'release-checklist-2'),
+    'wikipages/confluence/release-checklist-2.md',
+  );
+  // Nobody to name: the flat form still resolves by basename.
+  assert.equal(mirrorSlug('ticket', null, 'PAY-142'), 'tickets/PAY-142');
+
+  // The one read rule: flat and nested answer the same name.
+  assert.equal(basename('tickets/PAY-142'), 'PAY-142');
+  assert.equal(basename('tickets/jira/PAY-142'), 'PAY-142');
+});
+
+test('only a flat mirror path is migration work', () => {
+  assert.deepEqual(flatMirrorPath('tickets/PAY-142.md'), { kind: 'ticket', name: 'PAY-142' });
+  assert.deepEqual(flatMirrorPath('wikipages/onboarding.md'), {
+    kind: 'wikipage',
+    name: 'onboarding',
+  });
+  assert.equal(flatMirrorPath('tickets/jira/PAY-142.md'), null, 'already moved');
+  assert.equal(flatMirrorPath('decisions/ship-sso.md'), null);
+  assert.equal(flatMirrorPath('tickets/index.md'), null, 'orientation, not a mirror');
+});
+
+test('retargeting a wikilink keeps everything the author wrote around it', () => {
+  const moved = (target: string): string | null =>
+    target === 'tickets/PAY-142' ? 'tickets/jira/PAY-142' : null;
+  const before = [
+    'Ship [[tickets/PAY-142]] and [[tickets/PAY-142|the epic]].',
+    'Typed: [[blocked-by::tickets/PAY-142#Scope|epic]].',
+    'Left alone: [[PAY-142]], [[decisions/ship-sso]], and tickets/PAY-142 in prose.',
+  ].join('\n');
+  assert.equal(
+    retargetWikilinks(before, moved),
+    [
+      'Ship [[tickets/jira/PAY-142]] and [[tickets/jira/PAY-142|the epic]].',
+      'Typed: [[blocked-by::tickets/jira/PAY-142#Scope|epic]].',
+      'Left alone: [[PAY-142]], [[decisions/ship-sso]], and tickets/PAY-142 in prose.',
+    ].join('\n'),
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Outbound payload: generic vocabulary + legacy-compat transform
 // ---------------------------------------------------------------------------
 
 test('outbound: legacy persisted records normalize to provider + generic actions', () => {
-  const cases: [Record<string, unknown>, { provider: string; action: string }][] = [
+  type Want = { provider: string; action: string; container?: string; targetId?: string };
+  const cases: [Record<string, unknown>, Want][] = [
     [
       { system: 'jira', action: 'create_issue', projectKey: 'PAY' },
-      { provider: 'jira', action: 'create_ticket' },
+      { provider: 'jira', action: 'create_ticket', container: 'PAY' },
     ],
     [
       { system: 'jira', action: 'add_comment', issueKey: 'PAY-142' },
-      { provider: 'jira', action: 'comment_ticket' },
+      { provider: 'jira', action: 'comment_ticket', targetId: 'PAY-142' },
     ],
     [
       { system: 'confluence', action: 'update_page', pageId: '98342' },
-      { provider: 'confluence', action: 'update_page' },
-    ],
-    [
-      { system: 'message', action: 'message', audience: 'cs' },
-      { provider: 'message', action: 'send_message' },
+      { provider: 'confluence', action: 'update_page', targetId: '98342' },
     ],
   ];
   for (const [legacy, want] of cases) {
@@ -130,6 +180,13 @@ test('outbound: legacy persisted records normalize to provider + generic actions
     if (!r.success) assert.fail(`legacy payload rejected: ${JSON.stringify(legacy)}`);
     assert.equal(r.data.provider, want.provider);
     assert.equal(r.data.action, want.action);
+    // The address folds onto one generic field, and the old names are gone from
+    // the parsed row: every reader downstream sees exactly one spelling.
+    assert.equal(r.data.container, want.container);
+    assert.equal(r.data.targetId, want.targetId);
+    assert.equal((r.data as Record<string, unknown>)['issueKey'], undefined);
+    assert.equal((r.data as Record<string, unknown>)['pageId'], undefined);
+    assert.equal((r.data as Record<string, unknown>)['projectKey'], undefined);
     // The deprecated mirror stays populated so old payload readers still resolve.
     assert.equal(r.data.system, want.provider);
   }
@@ -139,7 +196,7 @@ test('outbound: new-shape payloads parse and are a fixpoint of the transform', (
   const fresh = {
     provider: 'jira',
     action: 'comment_ticket',
-    issueKey: 'PAY-142',
+    targetId: 'PAY-142',
     body: 'Nordkap confirms go-live Jul 28.',
     linkBackPath: 'meetings/2026-07-14-nordkap-checkin.md',
     rationale: 'agreed in the check-in',

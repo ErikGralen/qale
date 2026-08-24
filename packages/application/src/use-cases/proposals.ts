@@ -169,6 +169,44 @@ export function withdrawProposal(
   return { ok: true };
 }
 
+/**
+ * Rewrite what a pending card holds, in place (SK-7).
+ *
+ * The same three refusals withdrawing has, and for the same reasons: a card
+ * that does not exist, a card another session owns, and a card the PM has
+ * already decided. The third is the one that matters here: approving a card
+ * applies it, and a session that could still edit the payload afterwards would
+ * be editing something the PM has read and signed off.
+ *
+ * Only the payload moves. The id, the session, the evidence and the card's
+ * place in the queue stay exactly as they were, so the PM sees one card change
+ * rather than a new one arrive.
+ */
+export function updateProposalPayload(
+  ctx: UseCaseContext,
+  id: string,
+  /** The session doing the rewriting. It may only revise its own cards. */
+  sessionId: string,
+  payload: unknown,
+): WithdrawResult {
+  const rec = ctx.proposals.get(id);
+  if (!rec) return { ok: false, error: `no card called ${id}` };
+  if (rec.sessionId !== sessionId) {
+    return {
+      ok: false,
+      error: `${id} was proposed by another session, so it is not yours to edit`,
+    };
+  }
+  if (rec.status !== 'pending') {
+    return {
+      ok: false,
+      error: `${id} is already ${rec.status} — the PM decided it, and a decided card cannot be rewritten`,
+    };
+  }
+  ctx.proposals.updatePayload(id, payload);
+  return { ok: true };
+}
+
 export interface ProposalPreview {
   before: string;
   after: string;
@@ -543,25 +581,8 @@ async function acceptOutbound(
   if (!parsed.success) return { ok: false, error: 'invalid outbound payload' };
   const p: OutboundPayload = parsed.data;
 
-  // 'message' drafts (CS/sales/exec notes) are saved to the workspace, not sent —
-  // Slack/Teams/email are out of scope until MVP2 (the card model already fits).
-  if (p.provider === 'message') {
-    const dateLine = `> Draft for ${p.audience ?? 'stakeholders'} — ${ctx.clock.now().slice(0, 10)}\n\n`;
-    if (!p.linkBackPath)
-      return { ok: false, error: 'no note to save this draft to — the card has no link-back path' };
-    const note = await ctx.vault.readNote(p.linkBackPath);
-    if (!note)
-      return { ok: false, error: `can't save the draft — ${p.linkBackPath} no longer exists` };
-    const next = `${note.body.trimEnd()}\n\n## Draft: ${p.title ?? p.audience ?? 'update'}\n${dateLine}${p.body}\n`;
-    const written = await ctx.vault.writeBody(p.linkBackPath, next);
-    ctx.index.reindex(written);
-    await ctx.git.commitPaths([p.linkBackPath], `draft: ${p.audience ?? 'message'}`);
-    ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
-    return { ok: true };
-  }
-
   if (!ctx.outbound)
-    return { ok: false, error: 'no outbound integration configured (set Atlassian in Settings)' };
+    return { ok: false, error: 'no outbound connection is configured (connect one in Settings)' };
 
   // Drafted-against-stale: the card snapshotted the mirror's `remote_updated`
   // (and `version` for pages) at draft time. If the mirror has since re-synced
@@ -580,7 +601,7 @@ async function acceptOutbound(
       return {
         ok: false,
         stale: true,
-        error: `${p.issueKey ?? mirror.title} changed since this was drafted — review the change, then approve again to send anyway`,
+        error: `${p.targetId ?? mirror.title} changed since this was drafted. Review the change, then approve again to send anyway`,
       };
     }
   }
@@ -638,19 +659,21 @@ function findOutboundMirror(
   // create_* actions have no prior mirror — wanted stays undefined → no compare.
   const [type, wanted]: readonly ['wikipage' | 'ticket' | 'meeting', string | undefined] =
     p.action === 'update_page'
-      ? (['wikipage', p.pageId] as const)
+      ? (['wikipage', p.targetId] as const)
       : p.action === 'update_event' || p.action === 'respond_to_event'
         ? (['meeting', p.eventId] as const)
-        : (['ticket', p.issueKey] as const);
+        : (['ticket', p.targetId] as const);
   if (!wanted) return null;
   return (
-    ctx.index
-      .listByType(type)
-      .find(
-        (n) =>
-          String((n.frontmatter as Record<string, unknown>)['external_id'] ?? '').toLowerCase() ===
-          wanted.toLowerCase(),
-      ) ?? null
+    ctx.index.listByType(type).find((n) => {
+      const fm = n.frontmatter as Record<string, unknown>;
+      if (String(fm['external_id'] ?? '').toLowerCase() !== wanted.toLowerCase()) return false;
+      // Two providers can mint the same key (Jira PAY-142, Linear PAY-142), so
+      // the id alone is not an address. A mirror that names no provider is old
+      // or is a meeting, where the field is optional: it still matches.
+      const provider = fm['provider'];
+      return typeof provider !== 'string' || !provider || provider === p.provider;
+    }) ?? null
   );
 }
 

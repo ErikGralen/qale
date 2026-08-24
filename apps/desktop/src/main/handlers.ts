@@ -6,23 +6,27 @@ import { randomUUID } from 'node:crypto';
 import type {
   AgentDTO,
   ArrivalItemInputDTO,
+  AskCommentAnswersDTO,
+  AskCommentPlanDTO,
   ConnectionProgress,
   FirstStepId,
   MeetingReviewAskDTO,
   OpeningStepId,
   PathCheckDTO,
   SettingsDTO,
-  SkillPackReviewDTO,
+  TelemetryValue,
 } from '@qale/ipc';
-import { ageBand, countBand, durationBand, skillWord } from '@qale/ipc';
+import { ageBand, countBand, durationBand, providerWord, skillWord } from '@qale/ipc';
 import {
   AgentRuntime,
   isOffered,
+  readSessionFile,
   sessionFilesRoot,
   writeSessionBinary,
   writeSessionFile,
   type SessionStatus,
 } from '@qale/agent';
+import { applyComments } from './comment-writeback.js';
 import {
   acceptProposal,
   completeMeetingReview,
@@ -35,10 +39,8 @@ import {
   undoCaptureNudge,
   deleteNote,
   ensureDefaultSkills,
-  reviewSkillPack,
-  applyShippedSkill,
-  dismissSkillNotice,
   createSkill,
+  createVoice,
   getBacklinks,
   getNote,
   getThemesByHeat,
@@ -58,6 +60,7 @@ import {
   markMeetingReviewed,
   queryNotes,
   planLibrarianSweep,
+  librarianAsks,
   newContainerFinding,
   markLibrarianRun,
   settleLibrarianPass,
@@ -75,10 +78,12 @@ import {
   searchNotes,
   setTodoDue,
   setTodoStatus,
+  type AskRecord,
   type UseCaseContext,
 } from '@qale/application';
 import { detectSyncedFolder, isWindowsPathTooDeep } from '@qale/application';
 import {
+  isVoicePath,
   parseFrontmatter,
   providerName,
   readableAs,
@@ -88,13 +93,13 @@ import {
   type HandCreatableType,
 } from '@qale/domain';
 import { materialName } from './material-name.js';
-import { atlassianAuthSchema } from '@qale/connectors';
 import {
   ARRIVAL_AGENT_NAME,
   buildKickoff,
   DEFAULT_SKILLS,
   DEFAULT_AGENTS,
-  RETIRED_SKILL_FILES,
+  DEFAULT_NOTES,
+  DEFAULT_VOICES,
   MAINTENANCE_AGENTS,
   MEETING_PREP_INSTRUCTION,
 } from '@qale/sessions';
@@ -115,7 +120,9 @@ import { SettingsService } from './services/settings-service.js';
 import { verifyProviderKey } from './services/verify-key.js';
 import { GoogleOAuthService } from './services/google-oauth-service.js';
 import { VaultService } from './services/vault-service.js';
-import { makeOutbound } from './services/outbound-service.js';
+import { makeOutbound, outboundConnections } from './services/outbound-service.js';
+import { agentConnections } from './services/agent-connections.js';
+import { CodebaseService } from './services/codebase-service.js';
 import { SchedulerService } from './services/scheduler-service.js';
 import { SyncService } from './services/sync-service.js';
 import { McpService } from './services/mcp-service.js';
@@ -135,8 +142,8 @@ import {
 
 /**
  * Where the product understanding lives (docs/product-understanding.md U-1).
- * The `_understanding` skill names these three notes; main only needs the
- * prefix, to know when the first one has actually been kept.
+ * `notes/understanding.md` names these three notes; main only needs the prefix,
+ * to know when the first one has actually been kept.
  */
 const UNDERSTANDING_PREFIX = 'notes/understanding-';
 
@@ -256,7 +263,32 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
    * the next tick stacking another on top of it. A pass in this map is a pass
    * still happening.
    */
-  const librarianPasses = new Map<string, LibrarianPassResult & { containers: string[] }>();
+  const librarianPasses = new Map<
+    string,
+    LibrarianPassResult & { containers: string[]; counted?: boolean }
+  >();
+
+  /**
+   * A librarian pass that has just parked a question, counted THERE rather than
+   * when the run settles.
+   *
+   * A parked question is a turn that never ends, so its settle never comes: quit
+   * the app with one on screen and nothing was ever written down, so the next
+   * tick scans the same workspace, builds the same worklist and asks the same
+   * question on a second card. Asking is the pass doing its job, so the moment
+   * the question exists the findings are handed over, the run is stamped, and the
+   * quiet week starts. `counted` is what stops the settle below doing it twice.
+   */
+  const countParkedLibrarianPass = (sessionId: string): void => {
+    const pass = librarianPasses.get(sessionId);
+    const ctx = vaultService.context();
+    if (!pass || pass.counted || !ctx) return;
+    pass.counted = true;
+    const at = Date.now();
+    settleLibrarianPass(ctx, { ...pass, asked: true }, at);
+    agentLastRun.set('librarian', at);
+    syncService.markContainersOffered(pass.containers);
+  };
 
   /**
    * The librarian maintenance pass, ONE entry point for every trigger
@@ -311,6 +343,17 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         (await runnableEnabled(ctx, 'librarian'))
       ) {
         const now = Date.now();
+        // A question this agent parked is offered, never owed, so it can wait
+        // for weeks. The scan below refuses to start a pass while one waits (one
+        // open question at a time), and this is the other half of that rule: a
+        // question nobody answered in a week is stale, because the note behind
+        // it has had a week to change. Drop it, which resolves the run holding
+        // it as dismissed, and let the passes carry on.
+        for (const id of librarianAsks(ctx, now).stale) {
+          await agent
+            .resolveAsk(id, { answers: null }, ctx)
+            .catch((err) => failures.push({ item: 'dropping a stale question', reason: err }));
+        }
         // The scan and the ledger, and nothing else: what a finding MEANS is
         // read out of the notes, which is the session's job below.
         // A new space full of the PM's own work is a question the scan cannot
@@ -433,16 +476,16 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         console.warn(
           `[qale] ${path} differs from its folder copy — left both in place, nothing lost`,
         );
-      // Seed what is missing, quietly update what nobody has touched, and take
-      // retired files out of force. Anything the PM edited is left exactly as it
-      // is; the Skills page offers those as a review (`skills:review`).
-      const pack = await ensureDefaultSkills(
-        ctx,
-        [...DEFAULT_SKILLS, ...DEFAULT_AGENTS],
-        RETIRED_SKILL_FILES,
-      );
-      const touched = [...pack.seeded, ...pack.updated, ...pack.removed];
-      if (touched.length > 0) pushEvent(getWindow(), { channel: 'vault:changed', paths: touched });
+      // Seed what is missing: the skills, the agents, and the notes the pack
+      // ships into the memory (SK-5). Anything already there is the PM's and is
+      // left exactly as it is, whatever we ship today.
+      const seeded = await ensureDefaultSkills(ctx, [
+        ...DEFAULT_SKILLS,
+        ...DEFAULT_AGENTS,
+        ...DEFAULT_VOICES,
+        ...DEFAULT_NOTES,
+      ]);
+      if (seeded.length > 0) pushEvent(getWindow(), { channel: 'vault:changed', paths: seeded });
       // One-time migration: agent off switches used to live in settings; the
       // frontmatter is the switch now. Carry the recorded intent over, once.
       const overrides = await settings.takeAgentOverrides();
@@ -456,33 +499,65 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     }
   };
 
+  /**
+   * Hand the open workspace the codebase port, or take it away. It is read as
+   * `!!ctx.codebase` every time a session builds its toolbox, so this has to be
+   * a live field and not a value captured at launch: the probe answers a second
+   * after startup, and every session built after that reads it. Exactly the
+   * rule `ctx.outbound` follows below.
+   */
+  const refreshCodebasePort = (): void => {
+    const ctx = vaultService.context();
+    if (ctx) ctx.codebase = codebaseService.port();
+  };
+
+  /**
+   * The `claude` probe answered, from wherever it was started. This is the
+   * moment the feature can turn on, so the port goes onto the context and the
+   * agent is reconfigured: a session's tools are fixed when it is built, and
+   * the reconfigure is what rebuilds a chat that opened before the answer
+   * landed. Cheap when nothing changed, because `agent.configure` compares the
+   * config it is handed against the one it holds.
+   */
+  const onCodebaseSettled = (): void => reconfigureAgent();
+  const codebaseService = new CodebaseService(settings, onCodebaseSettled);
+
   const reconfigureAgent = (): void => {
     const ctx = vaultService.context();
     if (!ctx) return;
     const s = settings.get();
-    // The card-application layer writes outbound by provider: Atlassian when its
-    // creds are set, Google Calendar when a grant exists (write scope is secured
-    // via incremental consent at push time, never pre-emptively).
+    // The card-application layer writes outbound by provider, through whichever
+    // connections have a credential right now. Google's write scope is secured
+    // via incremental consent at push time, never pre-emptively.
     ctx.outbound = makeOutbound(
-      settings.getAtlassian(),
-      settings.getGoogle()
-        ? {
-            getAccessToken: () => googleOAuth.getAccessToken(),
-            ensureWriteScope: () => googleOAuth.ensureWriteScope(),
-          }
-        : null,
+      outboundConnections(settings, {
+        getAccessToken: () => googleOAuth.getAccessToken(),
+        ensureWriteScope: () => googleOAuth.ensureWriteScope(),
+      }),
     );
+    // Whether a codebase question is even possible: a configured folder AND a
+    // `claude` on the machine. The probe is async, so this sets what is known
+    // now and `warm` calls back with the rest.
+    codebaseService.warm();
+    refreshCodebasePort();
     agent.configure({
       vaultDir: ctx.vault.root(),
       userDataDir: app.getPath('userData'),
       modelId: s.modelId,
       provider: settings.getProvider(),
       apiKey: settings.getActiveKey(),
-      atlassian: settings.getAtlassian(),
+      connections: agentConnections(settings),
+      // Which repos the sessions were built against. A change here rebuilds the
+      // live ones, because a session's tool set is fixed when it is built and a
+      // folder added mid-conversation would otherwise reach nothing until the
+      // next chat. Same rule as the connections list.
+      codebase: codebaseService.fingerprint(),
       language: settings.getLanguage(),
+      selfName: settings.getIdentity().name,
       trackExternal: (kind, externalId) => syncService.trackExternal(kind, externalId),
       answerContainerOffer: (containerId, follow) =>
         syncService.answerContainerOffer(containerId, follow),
+      outboundContainers: () => syncService.outboundContainers(),
     });
     syncService.reconfigure();
   };
@@ -502,6 +577,21 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   const settingsDTO = (): SettingsDTO => {
     const s = settings.get();
     const onboarding = settings.getOnboarding();
+    // One flag per registered provider, true when a stored connection of that
+    // provider decrypts. The read matters as much as the answer: decryption is
+    // what raises `secretsUnreadable` below, so this runs before it.
+    const stored = settings.listConnections();
+    const connected = Object.fromEntries(
+      syncService
+        .providers()
+        .map(
+          (p) =>
+            [
+              p.id,
+              stored.some((c) => c.providerId === p.id && !!settings.getConnection(c.connectionId)),
+            ] as const,
+        ),
+    );
     return {
       vaultPath: vaultService.currentVaultPath() ?? s.vaultPath,
       appVersion: appVersion(),
@@ -512,9 +602,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         anthropic: !!settings.getKey('anthropic'),
         google: !!settings.getKey('google'),
       },
-      hasAtlassianCreds: !!settings.getAtlassian(),
+      connected,
       secretsEncrypted: settings.secretsEncrypted(),
-      // Read AFTER the two secret getters above — they are what trips the flag.
+      // Read AFTER the secret getters above: they are what trips the flag.
       secretsUnreadable: settings.secretsUnreadable(),
       schedules: s.schedules,
       language: settings.getLanguage(),
@@ -528,10 +618,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         ...onboarding,
         step: onboarding.step as OpeningStepId,
         done: onboarding.done as OpeningStepId[],
-        connections: {
-          google: connectionProgress('google-calendar'),
-          atlassian: connectionProgress('atlassian'),
-        },
+        // One entry per registered provider, so a new connector gets its First
+        // steps row without an edit here or in the card.
+        connections: Object.fromEntries(
+          syncService.providers().map((p) => [p.id, connectionProgress(p.id)] as const),
+        ),
       },
     };
   };
@@ -553,30 +644,30 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
    * counts leave as bands, and the skill count is the number of skills the PM
    * wrote themselves (any skill or agent whose name is not one of ours), which
    * answers "are people building on this" without ever carrying a name.
+   *
+   * The connection flags are built from the registry, one per provider under
+   * the word it reports itself by. Which of them actually leave is the
+   * allowlist's call in `@qale/ipc`, and it names two: the consent screen
+   * renders those names, so the sending side stays closed while this side
+   * needs no edit when a connector arrives.
    */
-  const telemetryFacts = (): {
-    hasKey: boolean;
-    google: boolean;
-    atlassian: boolean;
-    notes: string;
-    meetings: string;
-    people: string;
-    todos: string;
-    customSkills: string;
-  } => {
+  const telemetryFacts = (): Record<string, TelemetryValue> => {
     const index = vaultService.context()?.index;
     const openTodos = index
       ? index.listByType('todo').filter((n) => (n.lifecycle ?? 'open') === 'open').length
       : 0;
     const customSkills = index
       ? [...index.listByType('skill'), ...index.listByType('agent')].filter(
-          (n) => skillWord(n.slug) === 'custom',
+          (n) => !isVoicePath(n.path) && skillWord(n.slug) === 'custom',
         ).length
       : 0;
     return {
       hasKey: !!settings.getActiveKey(),
-      google: connectionProgress('google-calendar') !== 'none',
-      atlassian: connectionProgress('atlassian') !== 'none',
+      ...Object.fromEntries(
+        syncService
+          .providers()
+          .map((p) => [providerWord(p.id), connectionProgress(p.id) !== 'none'] as const),
+      ),
       notes: countBand(index?.count() ?? 0),
       meetings: countBand(index?.listByType('meeting').length ?? 0),
       people: countBand(index?.listByType('person').length ?? 0),
@@ -914,6 +1005,43 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     setParked(`spawn:${sessionId}`, !!request && !request.offered);
   };
 
+  /**
+   * What each codebase card would run, held until the PM answers it (CC-10).
+   *
+   * The resolve handler is handed a request id and a decision, and the two
+   * facts the report needs live on the request: whether the run continues an
+   * earlier Claude Code session, and which model it would use when the decision
+   * carries none. Bounded, because a run that is abandoned rather than answered
+   * leaves its row behind.
+   */
+  const codebaseCards = new Map<string, { sessionId: string; resumed: boolean; model: string }>();
+  const MAX_CODEBASE_CARDS = 50;
+
+  // The codebase approval card. Same rule as the fan-out: the question runs on
+  // somebody else's machine and costs real minutes, so nothing goes until the
+  // PM says yes, and a pass nobody asked for still may not badge the dock.
+  agent.onCodebaseRequest = (sessionId, request) => {
+    pushEvent(getWindow(), { channel: 'session:codebase', sessionId, request });
+    setParked(`codebase:${sessionId}`, !!request && !request.offered);
+    if (!request) {
+      // The card is gone: answered, or cancelled by Stop. An answer deletes its
+      // own row on the way through the resolve handler; a cancel goes through
+      // here and nowhere else, so it has to clear the row too or a stopped
+      // question would sit in this map until it pushed a live one out.
+      for (const [id, card] of codebaseCards)
+        if (card.sessionId === sessionId) codebaseCards.delete(id);
+      return;
+    }
+    const oldest = codebaseCards.keys().next();
+    if (codebaseCards.size >= MAX_CODEBASE_CARDS && !oldest.done)
+      codebaseCards.delete(oldest.value);
+    codebaseCards.set(request.id, {
+      sessionId,
+      resumed: request.resume,
+      model: request.suggestedModelId,
+    });
+  };
+
   // The agent is asking the PM something mid-turn — the run is parked on it.
   // An offered question is drawn like any other but never counted: nobody asked
   // for that run, so nothing it asks is owed. Clearing goes through either way,
@@ -921,6 +1049,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   agent.onAskRequest = (sessionId, request) => {
     pushEvent(getWindow(), { channel: 'session:ask', sessionId, request });
     setParked(`ask:${sessionId}`, !!request && !request.offered);
+    // A question is a pass that got somewhere, and it may be the last thing this
+    // run ever does. Count it now, or a quit while it waits loses the record and
+    // the next tick asks the same thing again.
+    if (request) countParkedLibrarianPass(sessionId);
   };
 
   /**
@@ -1024,7 +1156,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // the run: the map is also what stops the next tick starting a second
     // librarian, and an entry nothing can ever settle would stop it for good.
     librarianPasses.delete(s.sessionId);
-    if (pass && ctx) {
+    // Already counted when it parked its question, so the run stamp and the
+    // handled rows are down. Settling again here would only move them forward
+    // and lend a failed run a "last ran" it never earned.
+    if (pass && ctx && !pass.counted) {
       const at = Date.now();
       const counted = settleLibrarianPass(
         ctx,
@@ -1081,7 +1216,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       markFirstStep(
         'prep',
         pendingCards > 0
-          ? `Prepped a meeting, and the brief is waiting as a card`
+          ? `Prepped a meeting, and the brief waits in the Inbox`
           : `Prepped a meeting and found nothing worth briefing`,
       );
     } else if (s.skill === 'chat' && !s.quiet) {
@@ -1137,6 +1272,19 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   );
 
   handle('app:ping', (message) => `pong: ${message}`);
+
+  // A folder picker for any panel that needs one. It reads nothing and opens
+  // nothing: the path travels back and the caller decides what it means.
+  handle('app:pickFolder', async (title) => {
+    const win = getWindow();
+    const result = await dialog.showOpenDialog(win ?? undefined!, {
+      title,
+      buttonLabel: 'Choose',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0]!;
+  });
 
   // Everything a bug report needs and nothing that says who sent it: counts and
   // booleans off the open workspace, provider labels off the connections (never
@@ -1199,30 +1347,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     return settingsDTO();
   });
   handle('settings:verifyProviderKey', (provider, key) => verifyProviderKey(provider, key));
-  handle('settings:setAtlassian', async (creds) => {
-    // An empty token is a disconnect, not a credential — a truthy-but-empty
-    // record here would make every downstream `hasAtlassianCreds` check lie.
-    if (!creds.token.trim() || !creds.baseUrl.trim() || !creds.email.trim()) {
-      await settings.clearAtlassian();
-      reconfigureAgent();
-      return settingsDTO();
-    }
-    const site = /^https?:\/\//i.test(creds.baseUrl.trim())
-      ? creds.baseUrl.trim().replace(/\/+$/, '')
-      : `https://${creds.baseUrl.trim().replace(/\/+$/, '')}`;
-    const parsed = atlassianAuthSchema.safeParse({
-      siteUrl: site,
-      email: creds.email.trim(),
-      apiToken: creds.token.trim(),
-    });
-    if (!parsed.success) {
-      throw new Error('Check the site URL, email and API token. One of them looks malformed.');
-    }
-    await settings.setAtlassian(parsed.data.siteUrl, parsed.data.email, parsed.data.apiToken);
-    reconfigureAgent();
-    return settingsDTO();
-  });
-
   // Connections (Area C): the renderer's one door to external-system state.
   handle('connections:providers', () => syncService.providers());
   handle('connections:list', () => syncService.list());
@@ -1230,31 +1354,22 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const result = await syncService.connect(providerId, values);
     if (result.ok) {
       reconfigureAgent();
-      // The two First steps rows read connection state live — a connect made
+      // The First steps connect rows read connection state live: a connect made
       // from Settings months later still ticks its row (ONB-8).
       pushSettings();
       // Which connectors exist is part of who this install is, so the person
       // record follows the connect rather than waiting for the next launch.
       syncTelemetryConsent();
-      // The provider ids are ours; anything the allowlist has no word for is
-      // not reported at all rather than reported as something else.
-      const provider =
-        providerId === 'google-calendar'
-          ? 'google'
-          : providerId === 'atlassian'
-            ? 'atlassian'
-            : null;
-      if (provider)
-        telemetry.send('connection.added', {
-          provider,
-          // Connected is not the finish line — how much they follow is the
-          // thing worth knowing, and it is a band like every other count.
-          following: countBand(
-            syncService
-              .list()
-              .reduce((n, c) => n + c.containers.filter((k) => k.followed).length, 0),
-          ),
-        });
+      // The provider id is a name we wrote in the registry, so it goes out as
+      // itself. The two that already ship keep their old words (providerWord).
+      telemetry.send('connection.added', {
+        provider: providerWord(providerId),
+        // Connected is not the finish line: how much they follow is the thing
+        // worth knowing, and it is a band like every other count.
+        following: countBand(
+          syncService.list().reduce((n, c) => n + c.containers.filter((k) => k.followed).length, 0),
+        ),
+      });
     }
     return result;
   });
@@ -1296,6 +1411,16 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const note = await ctx.vault.readNote(path);
     return note?.body ?? null;
   });
+  // Codebase (docs/claude-code-tickets.md). Only the settings panel asks.
+  handle('codebase:get', () => settings.getCodebasePaths());
+  handle('codebase:set', async (paths) => {
+    await settings.setCodebasePaths(paths);
+    // The folder list is what decides whether a session gets the tool at all,
+    // so the agent wiring has to hear about the change before the next turn.
+    reconfigureAgent();
+    return codebaseService.status();
+  });
+  handle('codebase:status', () => codebaseService.status());
   handle('settings:setSchedule', async (skill, patch) => {
     // Enabling starts the schedule from now — otherwise the next tick sees
     // last week's slot and fires immediately.
@@ -1309,26 +1434,15 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const summaries = await listSkills(vaultService.requireContext());
     return summaries.map(skillToDTO);
   });
-  // The pack review. Agents are in the same list on purpose: they are the same
-  // kind of file, shipped the same way, and the PM meets both on the Skills page
-  // rather than being sent to two places for one set of changes.
-  const packFiles = [...DEFAULT_SKILLS, ...DEFAULT_AGENTS];
-  const packReview = (): Promise<SkillPackReviewDTO> =>
-    reviewSkillPack(vaultService.requireContext(), packFiles, RETIRED_SKILL_FILES);
-  handle('skills:review', packReview);
-  handle('skills:applyUpdate', async (file) => {
-    const ctx = vaultService.requireContext();
-    if (await applyShippedSkill(ctx, packFiles, file))
-      pushEvent(getWindow(), { channel: 'vault:changed', paths: [file] });
-    return packReview();
-  });
-  handle('skills:dismissUpdate', async (file) => {
-    dismissSkillNotice(vaultService.requireContext(), packFiles, file);
-    return packReview();
-  });
   handle('skills:create', async (title) => {
     const ctx = vaultService.requireContext();
     const { path } = await createSkill(ctx, title);
+    pushEvent(getWindow(), { channel: 'vault:changed', paths: [path] });
+    return { path };
+  });
+  handle('voices:create', async (title) => {
+    const ctx = vaultService.requireContext();
+    const { path } = await createVoice(ctx, title);
     pushEvent(getWindow(), { channel: 'vault:changed', paths: [path] });
     return { path };
   });
@@ -1356,6 +1470,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // The name and work email ARE the person record (TEL-4), so editing them
     // has to reach the sender in the same tick.
     syncTelemetryConsent();
+    // The name is also who a draft is signed as, and that sits in the system
+    // prompt, so a session opened before it was set has to be rebuilt.
+    reconfigureAgent();
     return settingsDTO();
   });
   handle('settings:setOnboarding', async (patch) => {
@@ -1979,7 +2096,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const review = await afterCardResolved(id);
     notifyProposalsFor();
     if (result.ok)
-      markFirstStep('proposal', 'Approved your first card, and it went into the memory');
+      markFirstStep('proposal', 'Approved its first suggestion, and it went into the memory');
     // Keeping the first thing the interview drafted is what "tell it about your
     // product" now means (docs/product-understanding.md U-4). The step is the
     // approval, not a file save: you talk, it drafts, you approve.
@@ -2001,7 +2118,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     notifyProposalsFor();
     // Passing on a card teaches the loop exactly as well as keeping one: the
     // step is "you decided", not "you agreed".
-    markFirstStep('proposal', 'Passed on your first card, so nothing was written');
+    markFirstStep('proposal', 'Passed on its first suggestion, so nothing was written');
     return review ? { ...result, review } : result;
   });
   handle('meeting:markReviewed', (path) =>
@@ -2047,24 +2164,81 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     agent.resolveSpawn(requestId, decision);
     return { ok: true };
   });
+  handle('sessions:pendingCodebase', (sessionId) => agent.pendingCodebase(sessionId));
+  handle('sessions:resolveCodebase', (requestId, decision) => {
+    const card = codebaseCards.get(requestId);
+    codebaseCards.delete(requestId);
+    agent.resolveCodebase(requestId, decision);
+    // Both answers are worth having: a card the PM passes on says as much about
+    // what the agent asks for as one they run. The model is what WOULD run, so
+    // a resume, which carries no choice, reports the one its session started on.
+    if (card) {
+      telemetry.send('codebase.asked', {
+        model: decision.modelId ?? card.model,
+        resumed: card.resumed,
+        approved: decision.approved,
+      });
+    }
+    return { ok: true };
+  });
   handle('sessions:pendingAsk', (sessionId) =>
     agent.pendingAsk(sessionId, vaultService.context() ?? undefined),
   );
   handle('sessions:pendingAsks', () => agent.listPendingAsks(vaultService.context() ?? undefined));
-  handle('sessions:resolveAsk', async (requestId, answers) => {
+  handle('sessions:resolveAsk', async (requestId, answers, comments) => {
+    const ctx = vaultService.context() ?? undefined;
+    // Read while the request is still parked: resolving clears the row, and
+    // after that nothing here can say which round the PM was writing in.
+    const parked = comments ? (ctx?.asks?.get(requestId) ?? null) : null;
+    if (ctx && parked?.comments) await recordComments(ctx, parked, comments!);
     // The context and the emitter are what let an answer reach a question whose
     // turn died with the last app run: without a live promise to resolve, the
     // session is reopened and the answer replayed into it (QM ticket 9).
     await agent.resolveAsk(
       requestId,
-      { answers },
-      vaultService.context() ?? undefined,
+      { answers, ...(comments ? { comments } : {}) },
+      ctx,
       (streamId, chunk) => {
         pushEvent(getWindow(), { channel: 'agent:event', streamId, chunk });
       },
     );
     return { ok: true };
   });
+
+  /**
+   * A sent round, written into the file it came from and counted once (IT-4,
+   * IT-6). Both halves are for people rather than for the model: the model gets
+   * the answers as its tool result and is never shown the rewrite.
+   *
+   * Nothing in here may cost the PM their comments. A round file that was
+   * deleted, moved or edited into something that no longer parses is left
+   * alone, and the answers still reach the session that is waiting for them.
+   */
+  async function recordComments(
+    ctx: UseCaseContext,
+    parked: AskRecord,
+    comments: AskCommentAnswersDTO,
+  ): Promise<void> {
+    const round = parked.comments as AskCommentPlanDTO;
+    try {
+      const root = sessionFilesRoot(ctx.vault.root(), parked.sessionId);
+      const text = await readSessionFile(root, round.path);
+      const rewritten = text === null ? null : applyComments(text, comments);
+      if (rewritten !== null && rewritten !== text) {
+        await writeSessionFile(root, round.path, rewritten);
+        pushEvent(getWindow(), { channel: 'session:files', sessionId: parked.sessionId });
+      }
+    } catch (err) {
+      console.error('[qale] writing your comments back into the round failed:', err);
+    }
+    const answered = round.slots.filter((s) => comments.answers[s.id]?.trim()).length;
+    telemetry.send('round.sent', {
+      skill: skillWord(parked.skill),
+      slots: countBand(round.slots.length),
+      answered: countBand(answered),
+      general: !!comments.general?.trim(),
+    });
+  }
 
   // Chats that touched this note: session receipts link reads/writes as
   // wikilinks, so the note's backlinks from sessions/ name the conversations.
@@ -2148,6 +2322,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       scheduler.stop();
       await mcp.stop().catch(() => {});
       agent.dispose();
+      // No codebase run outlives the app.
+      codebaseService.dispose();
       // Flush what is batched, bounded inside itself so a dead network cannot
       // slow the quit past the watchdog.
       await telemetry.shutdown().catch(() => {});

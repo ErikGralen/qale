@@ -40,18 +40,37 @@ export type {
 /** Bare ticket key, e.g. "PAY-142" — the shape POs type and providers mint. */
 const TICKET_KEY_RE = /^[A-Z][A-Z0-9]{1,9}-\d+$/;
 
-/** Does a wikilink target point at an external mirror (ticket/wikipage)?
- *  Heuristic — "[[COVID-19]]" matches too, so every consumer must fall back to
- *  the ordinary vault resolve when the reference's meta comes back empty. */
+/** The reference without its anchor or extension — the lookup key, passed to
+ *  the main process as written. Nothing here builds a path from it (PD-11). */
+export function refKeyOf(target: string): string {
+  return target.split('#')[0]!.replace(/\.md$/, '').trim();
+}
+
+/** Is this token shaped like a ticket key? Syntax only: two trackers can mint
+ *  "PAY-142", so which ticket it names is always a lookup. */
+export function isTicketKey(target: string): boolean {
+  return TICKET_KEY_RE.test(refKeyOf(target));
+}
+
+/** Might a wikilink target name an external mirror (ticket/wikipage)? A cheap
+ *  gate, not an address — "[[COVID-19]]" passes it too, so every consumer falls
+ *  back to the ordinary vault resolve when the reference's meta comes back
+ *  empty. `refMeta` is the one that says which item, if any, this names. */
 export function isExternalRef(target: string): boolean {
-  const bare = target.split('#')[0]!.trim();
+  const bare = refKeyOf(target);
   return bare.startsWith('tickets/') || bare.startsWith('wikipages/') || TICKET_KEY_RE.test(bare);
 }
 
-/** Normalize a target to the mirror slug ("PAY-142" → "tickets/PAY-142"). */
-export function externalSlugOf(target: string): string {
-  const bare = target.split('#')[0]!.replace(/\.md$/, '').trim();
-  return TICKET_KEY_RE.test(bare) ? `tickets/${bare}` : bare;
+/** Proper names for the providers we ship; an unknown provider (a future
+ *  connector) degrades to a capitalized word instead of a code change. */
+const PROVIDER_LABEL: Record<string, string> = {
+  jira: 'Jira',
+  confluence: 'Confluence',
+  'google-calendar': 'Google Calendar',
+};
+
+export function providerLabelOf(provider: string): string {
+  return PROVIDER_LABEL[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
 // ---------------------------------------------------------------------------
@@ -125,8 +144,8 @@ export const connections = {
    * real mirror note in the vault still serves the chip.
    */
   async refMeta(target: string): Promise<ExternalRefMetaDTO | null> {
-    const slug = externalSlugOf(target);
-    return (await invoke['connections:refMeta'](slug)) ?? metaFromVaultNote(slug);
+    const key = refKeyOf(target);
+    return (await invoke['connections:refMeta'](key)) ?? metaFromVaultNote(key);
   },
 
   atRisk(): Promise<AtRiskLinkDTO[]> {
@@ -156,6 +175,9 @@ export async function openExternalRef(
   meta: ExternalRefMetaDTO | null,
   onOpen?: (path: string) => void,
 ): Promise<void> {
+  // Two trackers hold this id, so the reference names no one item. Opening
+  // either would be a guess, and the wrong ticket looks like the right one.
+  if (meta?.ambiguousProviders) return;
   if (meta?.notePath && onOpen) {
     onOpen(meta.notePath);
     return;
@@ -182,11 +204,11 @@ onEvent((event) => {
 });
 
 export function refMetaCached(target: string): Promise<ExternalRefMetaDTO | null> {
-  const slug = externalSlugOf(target);
-  let hit = metaCache.get(slug);
+  const key = refKeyOf(target);
+  let hit = metaCache.get(key);
   if (!hit) {
-    hit = connections.refMeta(slug).catch(() => null);
-    metaCache.set(slug, hit);
+    hit = connections.refMeta(key).catch(() => null);
+    metaCache.set(key, hit);
   }
   return hit;
 }

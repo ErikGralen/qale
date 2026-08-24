@@ -16,8 +16,13 @@ import { OPENING_STEPS } from './dtos.js';
 
 /**
  * What a property may hold. The point of the closed set is that none of these
- * shapes can carry the PM's material: a count, a flag, or one of a handful of
- * words we wrote ourselves.
+ * shapes can carry the PM's material: a count, a flag, one of a handful of
+ * words we wrote ourselves, or an id from our own registry.
+ *
+ * `id` is the one shape checked by form rather than by list, because the set it
+ * comes from grows: a connector's id is a name we write in code, never anything
+ * the PM types, so a new connector reports itself with no edit here. The form
+ * check ({@link TELEMETRY_ID_RE}) is what keeps a stray string out.
  *
  * `scrubbedText` is the one exception, and it exists for exactly one event: a
  * crash's name, message and stack. The caller must have run it through the log
@@ -28,6 +33,7 @@ export type TelemetryPropSpec =
   | { kind: 'count' }
   | { kind: 'flag' }
   | { kind: 'word'; values: readonly string[] }
+  | { kind: 'id' }
   | { kind: 'scrubbedText'; max: number };
 
 /** One event we would send, in the words the consent screen shows. */
@@ -100,15 +106,27 @@ export const KNOWN_SKILLS = [
   'weekly-update',
   'synthesis',
   'commitment-check',
+  'incoming-request',
+  'spec',
+  'iterate',
+  'tell-qale',
+  'house-rules',
   'librarian',
   'meeting-prep',
   'custom',
 ] as const;
 
-/** A skill name, folded to something we wrote. */
+/**
+ * A skill name, folded to something we wrote.
+ *
+ * Takes a name or a slug: a skill is a folder, so the caller often holds
+ * `skills/arrival` where the name is `arrival`. Reading the last segment keeps
+ * a shipped skill from being counted as somebody's own.
+ */
 export function skillWord(name: string | null | undefined): string {
-  if (!name) return 'custom';
-  return (KNOWN_SKILLS as readonly string[]).includes(name) ? name : 'custom';
+  const bare = name?.split('/').pop()?.trim();
+  if (!bare) return 'custom';
+  return (KNOWN_SKILLS as readonly string[]).includes(bare) ? bare : 'custom';
 }
 
 /** What started a session. */
@@ -128,7 +146,6 @@ export const VIEW_KINDS = [
   'context',
   'settings',
   'skills',
-  'agents',
 ] as const;
 
 /** Where a crash came from. */
@@ -147,11 +164,41 @@ export const CARD_KINDS = ['note', 'update', 'decision', 'outbound'] as const;
  */
 export const MATERIAL_KINDS = ['file', 'text', 'image'] as const;
 
-/** Which service was connected. */
-export const CONNECTION_PROVIDERS = ['google', 'atlassian'] as const;
+/**
+ * The shape an id must have to be sent: lower-case letters, digits and dashes,
+ * short. Our own registry ids all look like this; a title, a path or an address
+ * does not.
+ */
+export const TELEMETRY_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
+
+/**
+ * What a provider reports itself as. The id in the connector registry is the
+ * value, so a new connector needs no edit here. The exceptions are the words
+ * that already ship: `google-calendar` has always gone out as `google`, and a
+ * rename now would fork the dashboards it feeds.
+ */
+export const TELEMETRY_PROVIDER_WORDS: Readonly<Record<string, string>> = {
+  'google-calendar': 'google',
+};
+
+/** The word telemetry reports one provider id by. */
+export function providerWord(providerId: string): string {
+  return TELEMETRY_PROVIDER_WORDS[providerId] ?? providerId;
+}
 
 /** What happened to an opening screen. */
 export const ONBOARDING_ACTIONS = ['done', 'skipped', 'finished'] as const;
+
+/**
+ * What a codebase question would run on (docs/claude-code-tickets.md CC-10).
+ *
+ * These are the aliases the `claude` command line tool accepts, not the
+ * workspace's own model list: two accounts, two catalogues. The words are
+ * repeated here rather than imported because this package is the leaf both
+ * sides read, and the consent screen renders them. `CODEBASE_MODELS` in
+ * `@qale/agent` is the source, and a desktop test holds the two lists together.
+ */
+export const CODEBASE_MODEL_WORDS = ['sonnet', 'opus', 'fable'] as const;
 
 /**
  * Every event, spelled out, with every property it may carry.
@@ -169,6 +216,12 @@ export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
       firstRun: { kind: 'flag' },
       onboardingFinished: { kind: 'flag' },
       hasKey: { kind: 'flag' },
+      // One flag per connector, under the word it reports itself by
+      // ({@link providerWord}). The producer builds these from the registry, so
+      // adding a connector needs no edit there; the list stays closed HERE
+      // because the consent screen renders these names, and a screen that says
+      // "and whatever else we add later" promises nothing. A new connector is
+      // still reported by `connection.added` from its first day.
       google: { kind: 'flag' },
       atlassian: { kind: 'flag' },
       notes: { kind: 'word', values: COUNT_BANDS },
@@ -207,6 +260,21 @@ export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
     },
   },
   {
+    id: 'round.sent',
+    says: 'You sent your comments on a working document back to a session, and how many boxes you filled in',
+    props: {
+      skill: { kind: 'word', values: KNOWN_SKILLS },
+      // How much of the round the PM answered, in bands. The question the two
+      // together answer is whether the shape works: a round where one box in
+      // ten gets a reply is asking about the wrong things. Neither the prompts
+      // nor a word of what was typed goes anywhere near this.
+      slots: { kind: 'word', values: COUNT_BANDS },
+      answered: { kind: 'word', values: COUNT_BANDS },
+      // Whether the general box at the foot of the document was used at all.
+      general: { kind: 'flag' },
+    },
+  },
+  {
     id: 'card.decided',
     says: 'A card was approved or passed on, never what was in it',
     props: {
@@ -227,9 +295,9 @@ export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
   },
   {
     id: 'connection.added',
-    says: 'A calendar or Jira site was connected, never which one',
+    says: 'A service was connected, which service it was, and how much of it you follow, never which site',
     props: {
-      provider: { kind: 'word', values: CONNECTION_PROVIDERS },
+      provider: { kind: 'id' },
       following: { kind: 'word', values: COUNT_BANDS },
     },
   },
@@ -239,6 +307,17 @@ export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
     props: {
       step: { kind: 'word', values: OPENING_STEPS },
       action: { kind: 'word', values: ONBOARDING_ACTIONS },
+    },
+  },
+  {
+    id: 'codebase.asked',
+    says: 'The agent asked to read your code, which model it would use and whether you said yes, never which repo or what it asked',
+    props: {
+      model: { kind: 'word', values: CODEBASE_MODEL_WORDS },
+      // Whether the question continued an earlier Claude Code session. A resume
+      // keeps the model that session started with, so the card shows no picker.
+      resumed: { kind: 'flag' },
+      approved: { kind: 'flag' },
     },
   },
   {
@@ -260,7 +339,8 @@ export const TELEMETRY_IDENTITY =
   'Your name and work email, so we know which beta user hit which bug';
 
 /** Where it goes. "Anonymous, to somebody" is a weaker promise than it looks. */
-export const TELEMETRY_PROCESSOR = 'It goes to PostHog, on servers in Europe, and nowhere else.';
+export const TELEMETRY_PROCESSOR =
+  'It goes to PostHog, an analytics service, on servers in Europe, and nowhere else.';
 
 /**
  * The context every report carries besides its own properties: the build facts,
@@ -317,8 +397,9 @@ export type TelemetryValue = string | number | boolean;
  *
  * This is the rule that makes "a future caller cannot leak a note title" true
  * in code rather than in a comment: a property nobody named is dropped, a word
- * outside its list is dropped, and the one free-text shape is truncated. It
- * never throws — a bad property loses itself, it does not lose the event.
+ * outside its list is dropped, an id that is not id-shaped is dropped, and the
+ * one free-text shape is truncated. It never throws: a bad property loses
+ * itself, it does not lose the event.
  */
 export function filterTelemetryProps(
   event: string,
@@ -340,6 +421,9 @@ export function filterTelemetryProps(
         break;
       case 'word':
         if (typeof value === 'string' && shape.values.includes(value)) out[key] = value;
+        break;
+      case 'id':
+        if (typeof value === 'string' && TELEMETRY_ID_RE.test(value)) out[key] = value;
         break;
       case 'scrubbedText':
         if (typeof value === 'string') out[key] = value.slice(0, shape.max);

@@ -222,3 +222,32 @@ domain, checked on the index itself rather than only at the two doors in front o
 session's `input.md` was getting a row anyway and turning up as an unlinked note. And a run
 nobody started now writes its deterministic name into its transcript, so the row reads
 "Librarian" instead of the first sixty characters of the worklist it was handed.
+
+## The same question, twice (2026-08-23)
+
+The librarian asked whether to process a raw capture, nobody answered, and a later pass asked
+it again on a second card. Two causes, both now closed.
+
+1. **A parked question is a run that never settles.** Everything a pass writes down happens at
+   its settle: the handled rows, the run stamp, the quiet week. A question parks the turn on a
+   promise, so the settle never comes, so nothing was written. Quit the app with a question on
+   screen and the next tick scanned the same workspace, built the same worklist and asked the
+   same thing. A pass now counts the moment it parks a question (`countParkedLibrarianPass` in
+   main), which is what `settleLibrarianPass` already meant by `asked: true`, only durable.
+   The settle skips a pass already counted.
+
+2. **Nothing stopped a second pass while the first one waited.** The map of in-flight passes
+   is per app run, so it forgets across a quit while the question itself survives in `app.db`.
+   The tick now reads the questions: while a librarian question waits, no pass starts
+   (`librarianAsks`). One open question at a time.
+
+An offered question can wait for weeks, and a librarian blocked for weeks is a librarian that
+quietly stopped. So a question nobody answered within the quiet window (a week) is stale: the
+tick drops it, which resolves any run still holding it as dismissed, and passes resume.
+
+The card it asked on could not be clicked either. The worklist named notes as bare paths
+(`notes/2026-07-17-friday-scratch.md`), the model repeated what it was given, and the question
+card rendered the text raw. Now the worklist writes `[[slug]]` like everything else, the
+question card renders wikilinks (option rows strip them: the row is one hit target), and the
+rule that every note is named as a link sits in the shared system preamble, so it holds for
+every session and not only this one.

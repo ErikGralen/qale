@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { TSchema } from 'typebox';
 import type { StateCategory, SyncedCalendarEvent } from '@qale/domain';
 
 /**
@@ -90,8 +91,10 @@ export interface PullResult {
   /** Changed items since the mark, oldest first. */
   changes: ShallowChange[];
   /**
-   * The mark to persist for the next pull: the newest `remote_updated` seen, or
-   * the incoming mark unchanged when nothing changed. Provider clock, ISO.
+   * The mark to persist for the next pull, per container. Opaque: only the
+   * connector that produced it may interpret it. An ISO `remote_updated` on the
+   * provider clock is one valid choice, an encoded sync token is another.
+   * Return the incoming mark unchanged when nothing changed.
    */
   highWaterMark: string | null;
 }
@@ -137,19 +140,24 @@ export interface VerifyResult {
   health: ConnectorHealth;
   /** Who the credentials authenticate as, when the probe got that far. */
   identity?: { displayName: string; email?: string };
-  site?: { url: string; cloudId?: string; tokenKind?: 'unscoped' | 'scoped' };
   /**
-   * Per-product health for connectors spanning several products (Jira +
-   * Confluence): overall `health` is 'ok' when ANY product authenticates — a
-   * one-product token is a working connection, not an expired one — and this
-   * map carries the partial detail for the Connections UI.
+   * Where the credentials point. `url` is the only field anybody upstream may
+   * read. `detail` holds provider-specific extras (tenant ids, token kinds);
+   * only the connector that wrote them may interpret them.
+   */
+  site?: { url: string; detail?: Record<string, string> };
+  /**
+   * Per-product health when one credential covers several products. Overall
+   * `health` is 'ok' when ANY product authenticates: a one-product token is a
+   * working connection, not an expired one. This map carries the partial detail
+   * for the Connections UI. Keys are the connector's own product ids.
    */
   products?: Record<string, ConnectorHealth>;
   error?: string;
 }
 
 export interface ExecuteResult {
-  /** Provider id of the touched item (issue key, page id). */
+  /** The provider's own id for the touched item (ticket key, page id). */
   externalId: string;
   /** Deterministic human-facing link, built from the API response only. */
   url: string;
@@ -209,13 +217,70 @@ export interface Connector {
   execute(payload: unknown): Promise<ExecuteResult>;
 }
 
+/** One credential field, described so the settings form renders generically. */
+export interface ConnectorAuthField {
+  /** Matches the key {@link ConnectorProvider.authSchema} expects. */
+  key: string;
+  label: string;
+  placeholder?: string;
+  /** Render as a password input and never echo back. */
+  secret?: boolean;
+  hint?: string;
+}
+
+/**
+ * What one agent-facing read returns: the text the model reads, and where the
+ * words came from.
+ *
+ * Reads are the one place the provider peeks through (docs/provider-decoupling.md):
+ * search speaks the provider's own query language, so each provider brings its
+ * own read tools. Everything else about them is neutral, including this result:
+ * the host decides how to fence external text, this package only names the
+ * origin.
+ */
+export interface ReadToolResult {
+  text: string;
+  /**
+   * Origin address for text somebody else wrote, e.g. `jira:PAY-142`. Absent
+   * when the text is the tool's own sentence ("No matching Jira issues."),
+   * which is ours and needs no fence.
+   */
+  external?: string;
+}
+
+/**
+ * One read tool a provider offers the agent, already bound to a credential. The
+ * shape is deliberately not the agent harness's own tool type: the harness
+ * adapts these, so this package never imports the agent.
+ */
+export interface ProviderReadTool {
+  /** Tool name the model calls, e.g. `jira_search`. */
+  name: string;
+  /** Human-readable label for the session trail. */
+  label: string;
+  description: string;
+  /** JSON Schema for the arguments, built with typebox. */
+  parameters: TSchema;
+  execute(params: Record<string, unknown>): Promise<ReadToolResult>;
+}
+
 /** A registered provider: what the settings UI needs before credentials exist. */
 export interface ConnectorProvider<C = unknown> {
   id: string;
   label: string;
-  /** Credential fields, described so the settings form renders generically. */
+  /** Validates the collected field values. */
   authSchema: z.ZodType<C>;
+  /** The fields to collect, in the order the form shows them. */
+  authFields: ConnectorAuthField[];
+  /** Which secret field(s) to re-collect on token expiry (subset of authFields). */
+  renewFieldKeys: string[];
+  /** `oauth` = auth is a browser flow (no fields); the form renders a Connect
+   *  button instead of inputs. Absent/`fields` = paste-credentials form. */
+  authKind?: 'fields' | 'oauth';
   create(creds: C, opts?: { fetchImpl?: FetchLike }): Connector;
+  /** The provider's agent-facing reads, bound to these credentials. Absent
+   *  means the provider offers the agent nothing to read. */
+  readTools?(creds: C, opts?: { fetchImpl?: FetchLike }): ProviderReadTool[];
 }
 
 /** Injectable fetch so connectors are testable against recorded fixtures. */

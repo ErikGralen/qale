@@ -17,6 +17,8 @@ interface Row {
   id: string;
   session_id: string;
   questions_json: string;
+  /** The round file a comment request parked on; null for a question card. */
+  comments_json: string | null;
   skill: string | null;
   outbound: number;
   unattended: number;
@@ -30,6 +32,7 @@ export class AskStore implements AskPort {
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
         questions_json TEXT NOT NULL,
+        comments_json TEXT,
         skill TEXT,
         outbound INTEGER NOT NULL DEFAULT 0,
         unattended INTEGER NOT NULL DEFAULT 0,
@@ -45,6 +48,11 @@ export class AskStore implements AskPort {
     if (!cols.some((c) => c.name === 'unattended')) {
       this.db.exec('ALTER TABLE asks ADD COLUMN unattended INTEGER NOT NULL DEFAULT 0');
     }
+    // Comment requests arrived after both of those. A row without this column
+    // is a question card, which is what NULL reads as.
+    if (!cols.some((c) => c.name === 'comments_json')) {
+      this.db.exec('ALTER TABLE asks ADD COLUMN comments_json TEXT');
+    }
   }
 
   create(input: CreateAskInput, now: number): AskRecord {
@@ -52,6 +60,7 @@ export class AskStore implements AskPort {
       id: input.id,
       session_id: input.sessionId,
       questions_json: JSON.stringify(input.questions),
+      comments_json: input.comments == null ? null : JSON.stringify(input.comments),
       skill: input.skill ?? null,
       outbound: input.outbound ? 1 : 0,
       unattended: input.unattended ? 1 : 0,
@@ -62,10 +71,11 @@ export class AskStore implements AskPort {
     // a second row for it would be a second card on one session.
     this.db
       .prepare(
-        `INSERT INTO asks (id, session_id, questions_json, skill, outbound, unattended, created)
-         VALUES (@id, @session_id, @questions_json, @skill, @outbound, @unattended, @created)
+        `INSERT INTO asks (id, session_id, questions_json, comments_json, skill, outbound, unattended, created)
+         VALUES (@id, @session_id, @questions_json, @comments_json, @skill, @outbound, @unattended, @created)
          ON CONFLICT(id) DO UPDATE SET
            questions_json = excluded.questions_json,
+           comments_json = excluded.comments_json,
            skill = excluded.skill,
            outbound = excluded.outbound,
            unattended = excluded.unattended,
@@ -103,6 +113,7 @@ export class AskStore implements AskPort {
       id: row.id,
       sessionId: row.session_id,
       questions: JSON.parse(row.questions_json),
+      ...(row.comments_json ? { comments: JSON.parse(row.comments_json) } : {}),
       skill: row.skill,
       outbound: row.outbound === 1,
       unattended: row.unattended === 1,

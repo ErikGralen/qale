@@ -74,9 +74,10 @@ function targetOf(p: ProposalDTO): string {
 /**
  * A standing instruction: a rule the PO taught the app, landing in a skill or
  * agent file rather than in their memory. It arrives as an ordinary `update`
- * (a bullet appended to Standing instructions) or, the first time, as the
- * `note` that creates `skills/_your-rules/SKILL.md` — the same rule either way,
- * so the card must not read differently depending on which.
+ * (a bullet appended to Standing instructions, or to Your rules in the house
+ * rules) or, where no house-rules file exists yet, as the `note` that creates
+ * `skills/house-rules/SKILL.md` — the same rule either way, so the card must
+ * not read differently depending on which.
  */
 function isInstruction(p: ProposalDTO): boolean {
   const dir = dirOf(targetOf(p));
@@ -173,10 +174,7 @@ function iconFor(p: ProposalDTO): LucideIcon {
 }
 
 function kindNoun(p: ProposalDTO): string {
-  if (p.kind === 'outbound') {
-    const ob = p.payload as OutboundPayloadDTO;
-    return (ob.provider ?? ob.system) === 'message' ? 'message' : providerLabel(ob);
-  }
+  if (p.kind === 'outbound') return providerLabel(p.payload as OutboundPayloadDTO);
   if (isInstruction(p)) return 'standing instruction';
   if (p.kind === 'decision') return 'decision';
   if (p.kind === 'update')

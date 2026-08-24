@@ -4,6 +4,7 @@ import { Check, MessageCircleQuestion, Minus } from 'lucide-react';
 import type { AskAnswerDTO, AskQuestionDTO, AskRequestDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 import { Key } from '../Composer';
+import { stripWikilinks, WikiText } from './shared';
 
 /**
  * The agent asking the PO something mid-turn (the `ask_user` tool). Inline in
@@ -34,7 +35,11 @@ import { Key } from '../Composer';
  *   and typing.
  */
 export function QuestionCard({ request }: { request: AskRequestDTO }) {
-  const { resolveAsk } = useApp();
+  const { resolveAsk, openDoc } = useApp();
+  // A question is usually ABOUT a note, and answering it well means reading that
+  // note first. So every wikilink in the card opens it, exactly as it would in
+  // the chat above. The run stays parked while the PM goes and looks.
+  const open = (path: string) => void openDoc(path);
   const total = request.questions.length;
   const [step, setStep] = useState(0);
   // Per question: the option labels ticked, whether the write row is open, and
@@ -43,14 +48,23 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
   const [writing, setWriting] = useState<Record<number, boolean>>({});
   const [written, setWritten] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
+  const card = useRef<HTMLDivElement>(null);
   const firstOption = useRef<HTMLInputElement>(null);
 
-  // Land the focus on each step's first option as it appears — on the card
+  // Land the focus on each step's first option as it appears: on the card
   // arriving, and on every move through it. The composer below can't carry the
-  // session while the turn is parked, and focusing here also scrolls the
-  // card into view.
+  // session while the turn is parked.
+  //
+  // The focus never scrolls anything itself. An option's real input is
+  // `sr-only`, which is absolutely positioned, so the browser reveals it by
+  // scrolling every ancestor that can scroll. The app shell is `h-screen
+  // overflow-hidden`: it scrolls under that rule and then has no scrollbar to
+  // scroll back, so a card sitting below the fold took the tab strip and the
+  // page header off the screen for good. The card scrolls itself into view
+  // instead, inside the transcript, where scrolling belongs.
   useEffect(() => {
-    firstOption.current?.focus();
+    firstOption.current?.focus({ preventScroll: true });
+    card.current?.scrollIntoView({ block: 'nearest' });
   }, [request.id, step]);
 
   const answerFor = (qi: number): AskAnswerDTO => {
@@ -104,6 +118,7 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
 
   return (
     <div
+      ref={card}
       className="overflow-hidden rounded-xl bg-card ring-1 ring-brand/30"
       onKeyDown={(e) => {
         // ↵ moves on from anywhere in the step. Buttons handle their own Enter,
@@ -151,6 +166,7 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
         <QuestionStep
           key={step}
           question={question}
+          onOpen={open}
           name={`ask-${request.id}-${step}`}
           firstRef={firstOption}
           disabled={busy}
@@ -227,7 +243,9 @@ function TrailRow({
   disabled: boolean;
   onRevisit: () => void;
 }) {
-  const parts = [...answer.selected, ...(answer.written ? [answer.written] : [])];
+  const parts = [...answer.selected, ...(answer.written ? [answer.written] : [])].map(
+    stripWikilinks,
+  );
   // A check on a skipped question would read as "done"; a dash says "passed on
   // it", which is what actually happened.
   const Glyph = parts.length ? Check : Minus;
@@ -237,7 +255,7 @@ function TrailRow({
         className="flex w-full items-baseline gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:hover:bg-transparent"
         onClick={onRevisit}
         disabled={disabled}
-        title={`${question.question}: click to change your answer`}
+        title={`${stripWikilinks(question.question)}: click to change your answer`}
       >
         <Glyph
           className={`size-3 shrink-0 self-center ${parts.length ? 'text-brand' : 'text-muted-foreground/50'}`}
@@ -265,6 +283,7 @@ function TrailRow({
  */
 function QuestionStep({
   question,
+  onOpen,
   name,
   firstRef,
   disabled,
@@ -276,6 +295,7 @@ function QuestionStep({
   onWrite,
 }: {
   question: AskQuestionDTO;
+  onOpen: (path: string) => void;
   name: string;
   firstRef: React.RefObject<HTMLInputElement | null>;
   disabled: boolean;
@@ -320,7 +340,9 @@ function QuestionStep({
         <span className="mr-1.5 rounded-md bg-muted px-1.5 py-0.5 align-[0.08em] text-xs font-medium text-muted-foreground">
           {question.header}
         </span>
-        <span className="font-medium text-foreground">{question.question}</span>
+        <span className="font-medium text-foreground">
+          <WikiText text={question.question} onOpen={onOpen} />
+        </span>
         {question.multiSelect && (
           <span className="ml-1.5 text-xs text-muted-foreground">pick any</span>
         )}
@@ -365,7 +387,7 @@ function QuestionStep({
             value={written}
             disabled={disabled}
             placeholder="Your answer…"
-            aria-label={`Your own answer to: ${question.question}`}
+            aria-label={`Your own answer to: ${stripWikilinks(question.question)}`}
             className="mt-1 ml-8 h-8 rounded-lg border border-input bg-background px-2.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             onChange={(e) => onWrite(e.target.value)}
           />
@@ -402,8 +424,12 @@ function OptionRow({
   onSelect: () => void;
 }) {
   return (
+    // `relative` does work here. The input below is `sr-only`, so it is
+    // absolutely positioned and lands in the nearest positioned ancestor.
+    // Without a positioned row that ancestor is the app shell, and the input
+    // then sits outside the transcript that is supposed to clip it.
     <label
-      className={`flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/50 ${
+      className={`relative flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/50 ${
         checked ? 'bg-brand/8' : 'hover:bg-accent'
       } ${disabled ? 'cursor-default opacity-60' : ''}`}
     >
@@ -426,11 +452,17 @@ function OptionRow({
       >
         {checked ? <Check className="size-3" strokeWidth={3} /> : index + 1}
       </span>
+      {/* An option's text is stripped of its link syntax rather than rendered as
+          links: the whole row is one hit target, and a link inside it would be a
+          second thing to click on the control you are trying to pick. The note
+          the question is about is named in the question, which does link. */}
       <span className="min-w-0">
-        <span className="block text-sm leading-snug break-words text-foreground">{label}</span>
+        <span className="block text-sm leading-snug break-words text-foreground">
+          {stripWikilinks(label)}
+        </span>
         {description && (
           <span className="mt-0.5 block text-xs leading-snug break-words text-muted-foreground">
-            {description}
+            {stripWikilinks(description)}
           </span>
         )}
       </span>

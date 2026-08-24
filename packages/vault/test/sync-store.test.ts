@@ -63,6 +63,51 @@ test('only pending, unfollowed containers are offers', { skip }, async () => {
   db.close();
 });
 
+test('two providers can mint one key without colliding', { skip }, async () => {
+  const db = await openDb();
+  const item = (provider: string, url: string) => ({
+    provider,
+    kind: 'ticket' as const,
+    externalId: 'PAY-142',
+    container: 'PAY',
+    title: 'SAML SSO',
+    state: 'Open',
+    stateCategory: 'open',
+    assignee: null,
+    version: null,
+    remoteUpdated: '2026-08-20T09:00:00.000Z',
+    url,
+    notePath: null,
+    startAt: null,
+    endAt: null,
+    allDay: false,
+    eventStatus: null,
+    attendees: null,
+    recurringId: null,
+  });
+  db.sync.upsertItem(item('atlassian', 'https://tavla.atlassian.net/browse/PAY-142'));
+  db.sync.upsertItem(item('linear', 'https://linear.app/tavla/issue/PAY-142'));
+
+  // Named, each connection gets its own ticket back…
+  assert.match(db.sync.itemByExternalId('atlassian', 'PAY-142')!.url, /atlassian/);
+  assert.match(db.sync.itemByExternalId('linear', 'PAY-142')!.url, /linear/);
+  assert.equal(db.sync.itemByExternalId('jira', 'PAY-142'), null);
+  // …and the surfaces handed a bare key see both, rather than one at random.
+  assert.deepEqual(
+    db.sync.itemsByExternalId('PAY-142').map((r) => r.provider),
+    ['atlassian', 'linear'],
+  );
+
+  // The binding is per connection too: moving one mirror must not move the other.
+  db.sync.setNotePath('linear', 'PAY-142', 'tickets/linear/PAY-142.md');
+  assert.equal(db.sync.itemByExternalId('atlassian', 'PAY-142')!.notePath, null);
+  assert.equal(
+    db.sync.itemByExternalId('linear', 'PAY-142')!.notePath,
+    'tickets/linear/PAY-142.md',
+  );
+  db.close();
+});
+
 test('sync meta survives as the drift check stamp', { skip }, async () => {
   const db = await openDb();
   assert.equal(db.sync.getMeta('drift-check:atlassian'), null);

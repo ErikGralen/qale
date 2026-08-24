@@ -8,7 +8,7 @@ import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import type { SearchHitDTO } from '@qale/ipc';
 import { invoke } from '../lib/ipc';
-import { isExternalRef, refMetaCached } from '../lib/connections';
+import { isExternalRef, openExternalRef, refMetaCached } from '../lib/connections';
 import { navFromEvent, type NavOpts } from '../lib/nav';
 import { webUrl } from '../lib/urls';
 import { useToast } from './toast';
@@ -134,13 +134,17 @@ export function NoteEditor({
   }, [registerFlush, flush]);
 
   const openLink = useCallback((target: string, opts?: NavOpts) => {
+    // A ticket/wikipage reference is addressed by lookup, not by its written
+    // form: the mirror note when one exists, else the provider page, else the
+    // ordinary resolve. Never a dead click, and never a guessed path.
+    if (isExternalRef(target)) {
+      void refMetaCached(target).then((meta) =>
+        openExternalRef(target, meta, (path) => callbacks.current.onOpenNote(path, opts)),
+      );
+      return;
+    }
     void invoke['note:resolveLink'](target).then((path) => {
       if (path) callbacks.current.onOpenNote(path, opts);
-      // A ticket/wikipage reference with no mirror note yet still opens — in
-      // the provider, from the shallow index. Never a dead click.
-      else if (isExternalRef(target)) {
-        void refMetaCached(target).then((meta) => meta?.url && window.open(meta.url));
-      }
     });
   }, []);
 

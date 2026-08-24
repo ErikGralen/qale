@@ -34,7 +34,9 @@ test('the session folder lives under sessions/.files — invisible to the indexe
   // join(), so the expectation carries the platform's separator. The relative
   // form above stays forward-slashed on purpose: it is a vault path, not a
   // filesystem one.
-  assert.ok(sessionFilesRoot('/vault', 'abc123').endsWith(join('/vault', 'sessions/.files/abc123')));
+  assert.ok(
+    sessionFilesRoot('/vault', 'abc123').endsWith(join('/vault', 'sessions/.files/abc123')),
+  );
 });
 
 test('a session writes, lists and reads back its own files', async () => {

@@ -129,8 +129,7 @@ export function NewWorkspace({
         </p>
       ) : check?.exists && check.hasNotes ? (
         <p className="text-sm text-muted-foreground">
-          This folder already has markdown in it. Opening it reads what is there and leaves it
-          alone.
+          This folder already has notes in it. Opening it reads what is there and leaves it alone.
         </p>
       ) : null}
 

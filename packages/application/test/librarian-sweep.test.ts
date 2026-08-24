@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  librarianAsks,
   markLibrarianHandled,
   markLibrarianRun,
   newContainerFinding,
@@ -118,13 +119,13 @@ test('a broken-link line carries its similar pages, said to be a hint', async ()
 
   assert.equal(
     work.findings[0]!.line,
-    '- Broken link in notes/plan.md: [[customers/nordkap-shiping]] resolves to nothing.' +
+    '- Broken link in [[notes/plan]]: [[customers/nordkap-shiping]] resolves to nothing.' +
       ' Similar existing pages: customers/nordkap-shipping.',
   );
   assert.match(work.worklist, /they decide nothing/);
   assert.equal(
     work.findings[1]!.line,
-    '- Unlinked note: "Scratch pad" (notes/scratch.md). Nothing links it and it links nothing.',
+    '- Unlinked note: "Scratch pad" ([[notes/scratch]]). Nothing links it and it links nothing.',
   );
 });
 
@@ -224,7 +225,7 @@ test('the similar-pages hint never points at machinery', async () => {
   assert.equal(work.findings.length, 1);
   assert.equal(
     work.findings[0]!.line,
-    '- Broken link in notes/plan.md: [[librarain]] resolves to nothing.',
+    '- Broken link in [[notes/plan]]: [[librarain]] resolves to nothing.',
   );
 });
 
@@ -463,6 +464,76 @@ test('a pass that parked a question counts as a run', async () => {
   assert.equal(w.checks.get('librarian:last-run'), String(T0 + SETTLE));
 });
 
+/**
+ * The other half of "a pass that parked a question counts as a run": the
+ * question itself paces the tick while it waits.
+ *
+ * A parked question is a turn that never settles, so nothing about it reaches
+ * the ledger until it is answered. Without this rule the PM walks away from one
+ * offered question, comes back to two identical cards, and the second one was
+ * asked by a run that scanned the same workspace and found the same thing.
+ */
+function park(w: ReturnType<typeof linkWorld>, at: number, id = 'ask_1'): void {
+  w.ctx.asks!.create(
+    {
+      id,
+      sessionId: `s-${id}`,
+      questions: [{ header: 'Friday', question: 'Process it now?' }],
+      comments: null,
+      skill: 'librarian',
+      outbound: false,
+      unattended: true,
+    },
+    at,
+  );
+}
+
+test('no pass starts while a librarian question is still waiting', async () => {
+  const w = linkWorld();
+  await planLibrarianSweep(w.ctx, T0, OPTS);
+  park(w, T0 + SETTLE);
+
+  // Findings and a clear interval, and still nothing: the run that asked is not
+  // finished, whatever the ledger looks like.
+  assert.equal(await planLibrarianSweep(w.ctx, T0 + SETTLE, OPTS), null);
+  assert.equal(await planLibrarianSweep(w.ctx, T0 + 20 * INTERVAL, OPTS), null);
+
+  // Answered (the row is gone), so the next tick works the list as usual.
+  w.asks.clear();
+  assert.ok(await planLibrarianSweep(w.ctx, T0 + 21 * INTERVAL, OPTS));
+});
+
+test('a question nobody answered in a week is stale, and the caller drops it', async () => {
+  const w = linkWorld();
+  park(w, T0);
+
+  assert.deepEqual(librarianAsks(w.ctx, T0 + QUIET - 1, QUIET), { waiting: 1, stale: [] });
+  assert.deepEqual(librarianAsks(w.ctx, T0 + QUIET, QUIET), { waiting: 0, stale: ['ask_1'] });
+
+  // Nothing else asked it, so nothing else is held back by it.
+  park(w, T0 + QUIET, 'ask_2');
+  assert.deepEqual(librarianAsks(w.ctx, T0 + QUIET, QUIET), { waiting: 1, stale: ['ask_1'] });
+});
+
+test('a question from another agent never paces the librarian', async () => {
+  const w = linkWorld();
+  await planLibrarianSweep(w.ctx, T0, OPTS);
+  w.ctx.asks!.create(
+    {
+      id: 'ask_prep',
+      sessionId: 's-prep',
+      questions: [],
+      comments: null,
+      skill: 'meeting-prep',
+      outbound: false,
+      unattended: true,
+    },
+    T0,
+  );
+
+  assert.ok(await planLibrarianSweep(w.ctx, T0 + SETTLE, OPTS));
+});
+
 test('the fingerprint ignores the run’s own receipt', () => {
   const w = fakeDriftWorld({
     notes: [inote({ path: 'notes/plan.md', type: 'note', title: 'Rollout plan' })],
@@ -529,7 +600,7 @@ test('a note titled with an injection becomes one inert worklist line', async ()
   assert.equal(finding.line.includes('\n'), false, finding.line);
   assert.ok(!finding.line.includes('<<<'), finding.line);
   assert.match(finding.line, /Q3 call/);
-  assert.match(finding.line, /sources\/drop\.md/);
+  assert.match(finding.line, /\[\[sources\/drop\]\]/);
   // The worklist the session is handed is only as long as the findings on it.
   assert.equal(work.worklist.includes('<<<'), false);
 });

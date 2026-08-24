@@ -1,5 +1,7 @@
 import { makeNote, type Frontmatter, type NoteType } from '@qale/domain';
 import type {
+  AskPort,
+  AskRecord,
   CheckLedgerPort,
   CreateProposalInput,
   IndexedNote,
@@ -61,6 +63,8 @@ export interface FakeDriftWorld {
   ctx: UseCaseContext;
   proposals: ProposalRecord[];
   checks: Map<string, string>;
+  /** Questions parked on the PM, by request id. */
+  asks: Map<string, AskRecord>;
   reindex(note: IndexedNote): void;
 }
 
@@ -75,6 +79,7 @@ export function fakeDriftWorld(args: {
   const nowIso = args.now ?? '2026-07-22T09:00:00.000Z';
   const proposals: ProposalRecord[] = [];
   const checks = new Map<string, string>();
+  const asks = new Map<string, AskRecord>();
   let pid = 0;
 
   const resolve = (t: string): string | null => resolverFor(notes)(t);
@@ -170,12 +175,28 @@ export function fakeDriftWorld(args: {
           .map(([key, value]) => ({ key, value })),
       remove: (key: string) => void checks.delete(key),
     } satisfies CheckLedgerPort,
+    // Questions the PM has not answered. In memory here, in app.db in the real
+    // thing, and the tick reads it for the same reason either way: a question
+    // still waiting is a pass that has not finished.
+    asks: {
+      create: (input, now) => {
+        const rec: AskRecord = { ...input, comments: input.comments ?? null, created: now };
+        asks.set(rec.id, rec);
+        return rec;
+      },
+      list: () => [...asks.values()].sort((a, b) => a.created - b.created),
+      get: (id: string) => asks.get(id) ?? null,
+      forSession: (sessionId: string) =>
+        [...asks.values()].find((a) => a.sessionId === sessionId) ?? null,
+      remove: (id: string) => void asks.delete(id),
+    } satisfies AskPort,
   };
 
   return {
     ctx,
     proposals,
     checks,
+    asks,
     // Every ctx closure reads the `notes` binding, so swapping the array is
     // enough for index/vault/resolve to see the change.
     reindex: (note: IndexedNote) => {

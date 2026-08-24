@@ -381,7 +381,7 @@ export interface ProposalPreviewDTO {
 
 export type ProposalKind = 'note' | 'update' | 'decision' | 'outbound';
 export type ProposalStatus = 'pending' | 'accepted' | 'rejected' | 'stale';
-export type OutboundProvider = 'jira' | 'confluence' | 'message' | 'google-calendar';
+export type OutboundProvider = 'jira' | 'confluence' | 'google-calendar';
 /** @deprecated legacy name for {@link OutboundProvider}. */
 export type OutboundSystem = OutboundProvider;
 /** Provider-generic outbound vocabulary — consumers branch on this, never on the provider.
@@ -390,7 +390,6 @@ export type OutboundAction =
   | 'create_ticket'
   | 'comment_ticket'
   | 'update_page'
-  | 'send_message'
   | 'create_event'
   | 'update_event'
   | 'respond_to_event';
@@ -438,10 +437,13 @@ export interface OutboundPayloadDTO {
   /** @deprecated mirror of `provider` (main normalizes both onto every payload). */
   system: OutboundProvider;
   action: OutboundAction;
-  projectKey?: string;
+  /** Where a create lands: a tracker project, a wiki space. */
+  container?: string;
   issueType?: string;
-  issueKey?: string;
-  pageId?: string;
+  /** The provider's own id for the item addressed: a ticket key, a page id.
+   *  Main parses every payload through the domain schema, so rows filed under
+   *  the old `issueKey`/`pageId` names arrive here as `targetId`. */
+  targetId?: string;
   title?: string;
   body: string;
   /** update_page: localized in-place edit; absent ⇒ the body is appended as a section. */
@@ -451,7 +453,8 @@ export interface OutboundPayloadDTO {
   /** Drafted-against snapshot of the mirror (staleness banner + accept check). */
   remote_updated?: string;
   version?: number;
-  audience?: string;
+  /** The voice the draft was written in — a file in `voices/` (SK-6). */
+  voice?: string;
   /** google-calendar events: target + scheduling fields (RFC3339 times). */
   calendarId?: string;
   eventId?: string;
@@ -645,6 +648,35 @@ export interface SpawnRequestDTO {
   offered: boolean;
 }
 
+/**
+ * A codebase question waiting on the PM (docs/claude-code-tickets.md CC-7). It
+ * carries what will be asked and where, because that is what approving means:
+ * somebody else's machine is about to spend minutes reading that repo.
+ */
+export interface CodebaseRequestDTO {
+  id: string;
+  sessionId: string;
+  /** The question itself, expandable on the card. */
+  question: string;
+  /** The repo, by the name it is set up under. */
+  repo: string;
+  suggestedModelId: string;
+  /** One line: why the session suggests that model. */
+  why: string;
+  /** What Claude Code accepts. NOT the workspace's own model list. */
+  models: ModelInfoDTO[];
+  /**
+   * This continues an earlier Claude Code session, which keeps the model it
+   * started with. The card shows the model as fixed and offers no picker.
+   */
+  resume: boolean;
+  /**
+   * Offered, not owed: a tidy pass nobody asked for wants to ask the code. The
+   * spend still needs approving, but the app never interrupts the PM about it.
+   */
+  offered: boolean;
+}
+
 /** One choice on a question card. The description carries the trade-off. */
 export interface AskOptionDTO {
   label: string;
@@ -661,6 +693,32 @@ export interface AskQuestionDTO {
   multiSelect: boolean;
 }
 
+/** One place in a round file where the session wants the PM's take. */
+export interface AskCommentSlotDTO {
+  /** The id the answer is keyed by: the same id the fence carries in the file. */
+  id: string;
+  /** What the model wrote above the box, when it wrote anything. */
+  prompt?: string;
+}
+
+/**
+ * A document handed to the PM to write in (docs/brainstorm-skill.md). The path
+ * is relative to the session's own folder, so the reader that draws the boxes
+ * opens the same file the session wrote.
+ */
+export interface AskCommentPlanDTO {
+  path: string;
+  slots: AskCommentSlotDTO[];
+}
+
+/** What the PM wrote in a round, as Send posts it back. */
+export interface AskCommentAnswersDTO {
+  /** Slot id → what they typed. A box they left empty is simply absent. */
+  answers: Record<string, string>;
+  /** The general box at the foot of the document, if they used it. */
+  general?: string;
+}
+
 /**
  * A session asking the PM something mid-turn (the ask_user tool). Rendered
  * inline in the chat, like the other cards: the run is parked on it, so it is
@@ -670,6 +728,15 @@ export interface AskRequestDTO {
   id: string;
   sessionId: string;
   questions: AskQuestionDTO[];
+  /**
+   * Set when this is a round to write in rather than a question to answer
+   * (the request_comments tool). Both kinds ride on this one shape, because
+   * everything around them treats them the same: the badge, the sidebar row,
+   * the composer lock, the dismissal. Read `comments` BEFORE `questions`: a
+   * round carries an empty question list, and a question card drawn from it
+   * would be empty too.
+   */
+  comments?: AskCommentPlanDTO;
   /**
    * Offered, not owed: an agent that tidies the workspace asked it on a run
    * nobody was there for. Such a question renders in the quiet section and
@@ -729,8 +796,8 @@ export const OPENING_STEPS: readonly OpeningStepId[] = [
 /**
  * The First steps rows whose completion is a MOMENT rather than a standing
  * fact: each is stamped once, with the one line saying what happened. The other
- * three rows (the key, the two connections) are derived from live state instead
- * — see {@link ConnectionProgress} — so a key added from Settings months later
+ * rows (the key, and one per connection) are derived from live state instead,
+ * see {@link ConnectionProgress}, so a key added from Settings months later
  * still ticks its row.
  */
 export type FirstStepId =
@@ -772,8 +839,10 @@ export interface OnboardingDTO {
   dismissed: boolean;
   /** Telemetry consent (ONB-6). Nothing is sent while this is false. */
   telemetry: boolean;
-  /** Live connection state, for the two rows that ask about it. */
-  connections: { google: ConnectionProgress; atlassian: ConnectionProgress };
+  /** Live connection state per registered provider, keyed by providerId. The
+   *  First steps card draws one row per entry, so a new connector needs no
+   *  edit here. */
+  connections: Record<string, ConnectionProgress>;
 }
 
 /** A merge-patch on the onboarding record — everything optional, one channel. */
@@ -813,7 +882,10 @@ export interface SettingsDTO {
    * choice is ready to go.
    */
   storedKeys: Record<LlmProviderDTO, boolean>;
-  hasAtlassianCreds: boolean;
+  /** Which registered providers have credentials stored, keyed by providerId.
+   *  One entry per provider in the connector registry, true once any
+   *  connection of that provider is stored. */
+  connected: Record<string, boolean>;
   /** False when the OS offers no secret store, so secrets are only obfuscated at rest. */
   secretsEncrypted: boolean;
   /**
@@ -841,26 +913,28 @@ export interface SettingsDTO {
 }
 
 /**
- * A skill file as the Skills view sees it: one `use` axis, one plain-language
- * sentence for how it applies, and any frontmatter errors to pin. Clicking a
- * row opens `path` — the file is the editor.
+ * A skill file as the Skills view sees it: what it is, what it may do, and any
+ * frontmatter errors to pin. Clicking a row opens `path` — the file is the
+ * editor. Nothing says what starts it: every skill is work you hand over, and
+ * it runs when you ask for it or when the agent sees the session turn into it.
  */
 export interface SkillDTO {
   path: string;
   slug: string;
+  /**
+   * Which file this row is. A voice is filed as a skill note and told apart by
+   * its folder (`voices/`), so the row carries the answer rather than every
+   * consumer slicing the path: the picker offers skills only, and the Skills
+   * page lists voices apart from them (SK-6).
+   */
+  kind: 'skill' | 'voice';
   /** Invocation name — the bare filename the runtime resolves. Never displayed. */
   name: string;
   /** Display title ("Prep a meeting"), from frontmatter `title` or the filename. */
   title: string;
   summary: string;
-  /** What puts it in force — the same shape an agent's row shows. */
-  starts: StartDTO[];
   /** What it may do beyond reading and proposing cards. */
   can: CapabilityDTO[];
-  /** The off switch's position, from the file's frontmatter. */
-  enabled: boolean;
-  /** Plain-language sentence: how this skill applies. */
-  sentence: string;
   errors: string[];
   mtime: number;
   /**
@@ -874,58 +948,19 @@ export interface SkillDTO {
   lastUsedMs: number | null;
 }
 
-/**
- * One built-in skill the PM edited, where the version we ship has since moved
- * on. Their file is untouched and still in force; this is the offer to look.
- * Both texts ride along so the page can show what changed without a second call.
- */
-export interface SkillUpdateDTO {
-  /** The shipped file's path — the key every action on this row is taken with. */
-  file: string;
-  /** What their copy calls itself, so the row names what they see in the list. */
-  title: string;
-  /** Their file as it stands. */
-  yours: string;
-  /** What we ship now. */
-  ours: string;
-}
-
-/** A skill that stopped shipping, whose edited copy was kept rather than deleted. */
-export interface RetiredSkillDTO {
-  file: string;
-  title: string;
-  /** Where their copy is now. */
-  keptAt: string;
-}
-
-/** Everything the Skills page has to tell the PM about the pack itself. */
-export interface SkillPackReviewDTO {
-  updates: SkillUpdateDTO[];
-  retired: RetiredSkillDTO[];
-}
-
 /** A workspace happening an agent watches for. The renderer holds the phrase. */
 export type StartEvent = 'decision-superseded';
 
 /**
- * What puts a runnable in force, as data rather than a sentence. A hand-written
- * "Every 5 minutes" drifts the moment the timer changes and can't be shown as
- * anything but prose; a start carries the same number the clock runs on, so
- * main states the mechanism and the renderer chooses the words.
+ * What starts an agent, as data rather than a sentence. A hand-written "Every 5
+ * minutes" drifts the moment the timer changes and can't be shown as anything
+ * but prose; a start carries the same number the clock runs on, so main states
+ * the mechanism and the renderer chooses the words.
  *
- * The first four a file declares for itself (`starts:` in its frontmatter); the
- * last three are the app's clockwork, merged in by main because only code knows
- * when a sweep fires.
+ * All of these are the app's clockwork. No file declares one: a frontmatter
+ * trigger with no dispatch site behind it is a promise the file cannot keep.
  */
 export type StartDTO =
-  /** The PM picks it from the composer. */
-  | { kind: 'you-run-it' }
-  /** The agent pulls it in mid-session; it governs from there on. */
-  | { kind: 'model-picks-it-up' }
-  /** In force in every session, optionally scoped to an audience. */
-  | { kind: 'always'; audience?: string }
-  /** Never in force: material the agent reads when it becomes relevant. */
-  | { kind: 'read-when-relevant' }
   /** The maintenance tick. `everyMs` IS the interval the timer is set to. */
   | { kind: 'interval'; everyMs: number }
   /** Fires within `leadMs` of a calendar-synced meeting's start. */
@@ -934,7 +969,8 @@ export type StartDTO =
   | { kind: 'event'; event: StartEvent };
 
 /** What a runnable may do beyond reading the memory and proposing cards. */
-export type CapabilityDTO = 'draft-outbound' | 'keep-working-files' | 'file-material';
+export type CapabilityDTO =
+  'draft-outbound' | 'draft-calendar' | 'keep-working-files' | 'file-material' | 'track-external';
 
 /**
  * An agent as the Agents view sees it. Every agent IS a file (`agents/<name>/AGENT.md`):
@@ -989,10 +1025,9 @@ export interface AgentDTO {
    */
   lastStoppedMs: number | null;
   /**
-   * What starts it: what the file declares, plus the app's clocks when one is
-   * wired to this name. An agent with only file-declared starts is one the app
-   * never begins on its own — the honest answer for any file the PM adds, since
-   * the clocks are still code.
+   * What starts it: the app's clocks, where one is wired to this name. An empty
+   * list is one the app never begins on its own — the honest answer for any
+   * file the PM adds, since the clocks are still code.
    */
   starts: StartDTO[];
   /** What it may do beyond reading and proposing cards. */
@@ -1089,6 +1124,41 @@ export interface ConnectResultDTO {
   connection?: ConnectionDTO;
 }
 
+/**
+ * One folder the PM pointed at their code (docs/claude-code-tickets.md CC-1).
+ * Either a repo or a folder of repos. `gitPull` is the permission to run
+ * `git fetch` and a fast-forward pull in those clones before a question.
+ */
+export interface CodebasePathDTO {
+  path: string;
+  gitPull: boolean;
+}
+
+/** One repo found under a configured folder. `name` is how a session asks for it. */
+export interface CodebaseRepoDTO {
+  /** Directory basename, qualified with the parent folder when two collide. */
+  name: string;
+  /** Absolute path of the repo root. */
+  dir: string;
+  /** Which configured folder this repo was found under. */
+  parentPath: string;
+}
+
+/** Whether the `claude` command line tool is on this machine, and which one. */
+export interface CodebaseClaudeDTO {
+  ok: boolean;
+  /** Set when `ok`, e.g. "2.1.220". */
+  version?: string;
+  /** Set when not `ok`: one plain line the settings panel can show as is. */
+  reason?: string;
+}
+
+/** What the Codebase settings panel renders, gathered in one call. */
+export interface CodebaseStatusDTO {
+  claude: CodebaseClaudeDTO;
+  repos: CodebaseRepoDTO[];
+}
+
 /** A shallow-mirror item for `[[` autocomplete and reference pickers. */
 export interface ShallowIndexItemDTO {
   kind: 'ticket' | 'wikipage';
@@ -1128,6 +1198,12 @@ export interface ExternalRefMetaDTO {
   health: ConnectionHealth;
   /** Vault path of the mirror note once deep-tracked, else null. */
   notePath: string | null;
+  /**
+   * Set when two trackers hold this id, naming both (PD-11). The reference then
+   * names no one item: the chip says so and the click goes nowhere. Every other
+   * field is a placeholder while this is set, so read this first.
+   */
+  ambiguousProviders?: string[];
 }
 
 /** One at-risk external item and the vault notes its risk touches. Rendered in

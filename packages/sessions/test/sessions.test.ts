@@ -2,8 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseRunnable,
-  governs,
-  describeStarts,
   buildSystemPrompt,
   SessionHarness,
   buildSessionReceipt,
@@ -15,14 +13,16 @@ import {
   CHAT_SKILL,
   SYNTHESIS_SKILL,
   VOICE_EXEC,
-  FILING_RULES,
-  LANGUAGE,
+  HOUSE_RULES,
+  HOUSE_RULES_NAME,
   DEFAULT_SKILL_BY_NAME,
   DEFAULT_SKILLS,
   DEFAULT_AGENTS,
-  RETIRED_SKILL_FILES,
+  DEFAULT_NOTES,
+  DEFAULT_VOICES,
+  UNDERSTANDING_NOTE,
   newSkillFile,
-  shippedHash,
+  newVoiceFile,
   buildSkillBrief,
   buildKickoff,
   parseKickoff,
@@ -49,39 +49,35 @@ test('a file with headings keeps them — they are prose now, not a schema', () 
   assert.equal(p, `PRE\n\n${c.body.trim()}`);
 });
 
-test('starts: what puts a file in force, defaulting to reachable', () => {
-  assert.deepEqual(parseRunnable(ASK_SKILL, 'ask').starts, ['you-run-it', 'model-picks-it-up']);
-  assert.deepEqual(parseRunnable(VOICE_EXEC, 'voice-exec').starts, ['always']);
-  assert.equal(parseRunnable(VOICE_EXEC, 'voice-exec').audience, 'executives');
-  assert.deepEqual(parseRunnable(FILING_RULES, '_filing-rules').starts, ['always']);
-  // The language rule carries no audience on purpose: an audience would scope it
-  // to drafting, and it has to reach fan-out children, who never draft.
-  assert.deepEqual(parseRunnable(LANGUAGE, '_language').starts, ['always']);
-  assert.equal(parseRunnable(LANGUAGE, '_language').audience, undefined);
-  // A file that says nothing is one you can run — never silently unreachable.
-  const bare = parseRunnable(`---\ntype: skill\nsummary: s\n---\nX.\n`, 't');
-  assert.deepEqual(bare.starts, ['you-run-it', 'model-picks-it-up']);
-  assert.deepEqual(bare.errors, []);
+test('what puts a file in force is not in the file', () => {
+  // `starts` and `audience` are gone (SK-2). Where the file sits says it: a
+  // skill is work you hand over, and a clock lives in code beside the sweep.
+  const c = parseRunnable(ASK_SKILL, 'ask');
+  assert.deepEqual(c.errors, []);
+  assert.equal('starts' in c, false);
+  assert.equal('audience' in c, false);
 });
 
-test('an unknown start is flagged and dropped, and the file stays reachable', () => {
-  const junk = parseRunnable(`---\ntype: skill\nstarts: [whenever]\nsummary: s\n---\nX.\n`, 't');
-  assert.ok(junk.errors.some((e) => /unknown starts "whenever"/.test(e)));
-  assert.deepEqual(junk.starts, ['you-run-it', 'model-picks-it-up']);
+test('a retired key is an error on the file page, and honours nothing', () => {
+  const old = parseRunnable(
+    `---\ntype: skill\nstarts: [always]\naudience: executives\nsummary: s\n---\nX.\n`,
+    'voice',
+  );
+  assert.ok(old.errors.some((e) => /`starts` is gone/.test(e)));
+  assert.ok(old.errors.some((e) => /`audience` is gone/.test(e)));
+  // The body is still the instructions: a bad key never costs a file its words.
+  assert.equal(old.body.trim(), 'X.');
 });
 
-test('governs: material is read, everything else takes over the session', () => {
-  const ref = parseRunnable(
-    `---\ntype: skill\nstarts: [read-when-relevant]\nsummary: s\n---\nX.\n`,
-    'g',
+test('a key nothing reads is flagged, whatever it is', () => {
+  const c = parseRunnable(`---\ntype: skill\nsummary: s\nmood: cheerful\n---\nX.\n`, 't');
+  assert.ok(c.errors.some((e) => /`mood` is not a setting/.test(e)));
+  // The four keys, plus `type` and the agents' switch, never flag.
+  const clean = parseRunnable(
+    `---\ntype: skill\ntitle: T\nsummary: s\nscenarios:\n  - one ("do the thing")\ncan: [draft-outbound]\nenabled: false\n---\nX.\n`,
+    't',
   );
-  assert.equal(governs(ref), false);
-  assert.equal(describeStarts(ref), 'The agent reads it when it becomes relevant.');
-  assert.equal(governs(parseRunnable(SYNTHESIS_SKILL, 'synthesis')), true);
-  assert.equal(
-    describeStarts(parseRunnable(VOICE_EXEC, 'voice-exec')),
-    'Always applied when drafting for executives.',
-  );
+  assert.deepEqual(clean.errors, []);
 });
 
 test('can: capabilities are a list, and the floor is empty', () => {
@@ -94,35 +90,75 @@ test('can: capabilities are a list, and the floor is empty', () => {
   const junk = parseRunnable(`---\ntype: skill\ncan: [rm-rf]\nsummary: s\n---\nX.\n`, 't');
   assert.deepEqual(junk.can, [], 'a typo must never read as a capability');
   assert.ok(junk.errors.some((e) => /unknown can "rm-rf"/.test(e)));
+  // The message names every capability there is, generated from the list, so a
+  // new one is offered the moment it exists.
+  assert.ok(junk.errors.some((e) => /draft-calendar/.test(e) && /track-external/.test(e)));
 });
 
-test('a file written before this vocabulary keeps working, and says what to change', () => {
-  // A workspace is seeded once: old files sit on disk everywhere. Dropping
-  // their config would quietly turn a house rule into a playbook nobody runs.
+test('the two files that need the narrow capabilities declare them', () => {
+  // Only these two. A capability granted to a file that never uses it is the
+  // thing this split was for.
+  assert.deepEqual(parseRunnable(ARRIVAL_SKILL, 'arrival').can, [
+    'file-material',
+    'keep-working-files',
+    'draft-outbound',
+    'draft-calendar',
+    'track-external',
+  ]);
+  assert.deepEqual(parseRunnable(LIBRARIAN_AGENT, 'librarian').can, [
+    'draft-outbound',
+    'track-external',
+  ]);
+  for (const raw of [WEEKLY_UPDATE_SKILL, SYNTHESIS_SKILL, CHAT_SKILL]) {
+    const cfg = parseRunnable(raw, 'x');
+    assert.ok(!cfg.can.includes('draft-calendar'), `${cfg.title} does not book meetings`);
+    assert.ok(!cfg.can.includes('track-external'), `${cfg.title} does not change what syncs`);
+  }
+  // And every default file parses clean, which is what makes the check below a
+  // signal rather than noise everybody learns to skip.
+  for (const [name, raw] of Object.entries(DEFAULT_SKILL_BY_NAME)) {
+    assert.deepEqual(parseRunnable(raw, name).errors, [], `${name} has a frontmatter problem`);
+  }
+});
+
+test('a capability that got narrower says so, where the file is read', () => {
+  // The case readList cannot catch: `draft-outbound` is still a real capability,
+  // so the file parses clean and quietly loses the three calendar tools.
   const old = parseRunnable(
-    `---\ntype: skill\nuse: always\naudience: executives\nsummary: s\n---\nX.\n`,
-    'voice',
+    `---\ntype: skill\nsummary: s\ncan: [draft-outbound]\n---\nBook the follow-up with draft_calendar_event.\n`,
+    'old-skill',
   );
-  assert.deepEqual(old.starts, ['always'], 'still a house rule');
-  assert.equal(old.audience, 'executives');
-  assert.ok(old.errors.some((e) => /`use` moved/.test(e)));
+  assert.deepEqual(old.can, ['draft-outbound'], 'the capability it does have is untouched');
+  assert.ok(
+    old.errors.some((e) => /draft_calendar_event/.test(e) && /draft-calendar/.test(e)),
+    `expected a narrowing hint, got ${JSON.stringify(old.errors)}`,
+  );
 
-  const ref = parseRunnable(`---\ntype: skill\nuse: reference\nsummary: s\n---\nX.\n`, 'g');
-  assert.equal(governs(ref), false);
+  const tracking = parseRunnable(
+    `---\ntype: agent\nsummary: s\n---\nAsk, then record it with follow_container.\n`,
+    'old-agent',
+  );
+  assert.ok(tracking.errors.some((e) => /follow_container/.test(e) && /track-external/.test(e)));
 
+  // Silent once the file says what it needs, and silent for a file that never
+  // mentions the tools at all.
+  const fixed = parseRunnable(
+    `---\ntype: skill\nsummary: s\ncan: [draft-outbound, draft-calendar]\n---\nBook it with draft_calendar_event.\n`,
+    'new-skill',
+  );
+  assert.deepEqual(fixed.errors, []);
+  assert.deepEqual(parseRunnable(WEEKLY_UPDATE_SKILL, 'weekly-update').errors, []);
+});
+
+test('the keys that moved are gone, and say what to write instead', () => {
   const caps = parseRunnable(
     `---\ntype: skill\noutbound: true\nsession_files: true\nsummary: s\n---\nX.\n`,
     'w',
   );
-  assert.deepEqual(caps.can, ['draft-outbound', 'keep-working-files'], 'permissions survive');
-  assert.ok(caps.errors.some((e) => /`outbound: true` moved/.test(e)));
-
-  // An explicit `starts` wins over a stale `use` — the new key is the answer.
-  const both = parseRunnable(
-    `---\ntype: skill\nuse: always\nstarts: [you-run-it]\nsummary: s\n---\nX.\n`,
-    'b',
-  );
-  assert.deepEqual(both.starts, ['you-run-it']);
+  // Nothing is honoured any more: a file says what it may do, or it may not.
+  assert.deepEqual(caps.can, []);
+  assert.ok(caps.errors.some((e) => /`outbound: true` is gone/.test(e)));
+  assert.ok(caps.errors.some((e) => /`session_files: true` is gone/.test(e)));
 });
 
 test('keys whose machinery is gone are flagged and honour nothing', () => {
@@ -171,11 +207,6 @@ test('keys whose machinery is gone are flagged and honour nothing', () => {
   }
 });
 
-test('audience only means something on an always-on rule', () => {
-  const stray = parseRunnable(`---\ntype: skill\naudience: executives\nsummary: s\n---\nX.\n`, 't');
-  assert.ok(stray.errors.some((e) => /audience/.test(e)));
-});
-
 test('title is the human name; the filename is only the fallback', () => {
   assert.equal(parseRunnable(SYNTHESIS_SKILL, 'synthesis').title, 'Find the pattern');
   // No title: the filename, made readable — never a path, even if the caller
@@ -218,15 +249,15 @@ test('agents are parsed by the same door as skills, and declare no clock', () =>
 
 test('no shipped default carries a frontmatter error, and every one has instructions', () => {
   // Both registries, because they overlap without either containing the other:
-  // the always-on files ship without being invocable, so checking only the
-  // by-name registry would let a broken house rule reach a workspace and
-  // surface as a red flag on the Skills page instead of a red test.
+  // the house rules ship without being invocable, so checking only the by-name
+  // registry would let a broken one reach a workspace and surface as a red flag
+  // on the Skills page instead of a red test. The voices go through the same
+  // parser, so they are held to the same bar.
   const shipped: [string, string][] = [
     ...Object.entries(DEFAULT_SKILL_BY_NAME),
-    ...[...DEFAULT_SKILLS, ...DEFAULT_AGENTS].map(({ file, content }): [string, string] => [
-      file,
-      content,
-    ]),
+    ...[...DEFAULT_SKILLS, ...DEFAULT_AGENTS, ...DEFAULT_VOICES].map(
+      ({ file, content }): [string, string] => [file, content],
+    ),
   ];
   for (const [name, raw] of shipped) {
     const c = parseRunnable(raw, name);
@@ -235,61 +266,140 @@ test('no shipped default carries a frontmatter error, and every one has instruct
   }
 });
 
-test('every shipped file ends the version list it is fingerprinted in', () => {
-  // The guard against the one mistake that breaks the upgrade path silently:
-  // editing a shipped file and not appending its new fingerprint. Everyone
-  // already running the old text would then be asked to review a change they
-  // never made, and nobody would find out until a user did.
-  for (const { file, content, shipped } of [...DEFAULT_SKILLS, ...DEFAULT_AGENTS]) {
-    const now = shippedHash(content);
-    assert.ok(shipped.length > 0, `${file} has no shipped versions recorded`);
-    assert.equal(
-      shipped[shipped.length - 1],
-      now,
-      `${file} changed. APPEND '${now}' to its list in shipped-versions.ts (do not replace the last one: the older entries are what let an existing workspace update quietly).`,
-    );
-    // Appended, never replaced — a list that lost its history would still pass
-    // the check above while quietly nagging everyone on the previous build.
-    assert.equal(new Set(shipped).size, shipped.length, `${file} lists a version twice`);
+test('the house rules are one file, and Your rules is its last heading', () => {
+  const c = parseRunnable(HOUSE_RULES, HOUSE_RULES_NAME);
+  assert.deepEqual(c.errors, []);
+  assert.equal(c.title, 'House rules');
+  // The sections the merged always-on files became, plus the two that took the
+  // rules the individual skills each used to restate. One document, so the model
+  // reads one set of rules instead of the same rule in six bodies.
+  for (const heading of [
+    '## Language',
+    '## Reading the memory',
+    '## Writing',
+    '## Proposing',
+    '## Filing',
+    '## Your rules',
+  ]) {
+    assert.ok(c.body.includes(heading), `the house rules have no ${heading} section`);
+  }
+  // Last on purpose: `propose_instruction` appends a bullet to the end of the
+  // file, and that only lands under Your rules while nothing follows it.
+  const headings = c.body.split('\n').filter((line) => /^#{1,6}\s/.test(line));
+  assert.equal(headings.at(-1), '## Your rules');
+  // It ships as a file, so a fresh workspace has it to edit.
+  assert.ok(DEFAULT_SKILLS.some((s) => s.file === 'skills/house-rules/SKILL.md'));
+});
+
+test('the always-on files it replaced are gone from the pack', () => {
+  const files = DEFAULT_SKILLS.map((s) => s.file);
+  for (const name of ['_language', '_writing', '_filing-rules', '_your-rules']) {
+    assert.ok(!files.includes(`skills/${name}/SKILL.md`), `${name} still ships`);
   }
 });
 
-test('a retired file keeps every fingerprint it ever shipped under', () => {
-  // Its versions are the only way to tell an untouched copy (safe to take away)
-  // from one somebody rewrote (theirs to keep), so retiring a file must carry
-  // its list across rather than drop it.
-  const shipped = [...DEFAULT_SKILLS, ...DEFAULT_AGENTS];
-  for (const gone of RETIRED_SKILL_FILES) {
+/**
+ * SK-4 and SK-5: the pack ships no underscore file at all. The unattended rules
+ * are code in the agent preamble, and the product understanding is a note. Both
+ * left because neither was work anyone hands over, which is the only thing a
+ * skill is.
+ */
+test('nothing underscore-prefixed ships any more', () => {
+  const files = [...DEFAULT_SKILLS, ...DEFAULT_AGENTS].map((s) => s.file);
+  for (const f of files) {
+    assert.ok(!/\/_/.test(f), `${f} is still an underscore file`);
+  }
+  assert.ok(!files.includes('skills/_unattended/SKILL.md'));
+  assert.ok(!files.includes('skills/_understanding/SKILL.md'));
+});
+
+test('the product understanding ships as a note in the memory, not as a skill', () => {
+  const seed = DEFAULT_NOTES.find((n) => n.file === 'notes/understanding.md');
+  assert.ok(seed, 'the orientation note is not in the pack');
+  assert.equal(seed.content, UNDERSTANDING_NOTE);
+  // A note, in `notes/`, with the frontmatter its type wants. Get this wrong and
+  // the file lands in the memory as a broken note rather than as orientation.
+  assert.match(seed.content, /^---\ntype: note\n/);
+  assert.match(seed.content, /\ntitle: Product understanding\n/);
+  assert.match(seed.content, /\nsummary: .+\n/);
+  // It is the note the interview writes into, so it names the three area notes.
+  for (const area of ['product', 'technical', 'organization']) {
     assert.ok(
-      !shipped.some((s) => s.file === gone.file),
-      `${gone.file} is both shipped and retired`,
+      seed.content.includes(`notes/understanding-${area}.md`),
+      `the orientation note does not name the ${area} note`,
     );
   }
-  const withHistory = RETIRED_SKILL_FILES.filter((g) => g.shipped.length > 0);
-  assert.ok(withHistory.length >= 8, 'the retired list lost its version history');
+  // Nothing seeds a skill under that name any more.
+  assert.ok(!DEFAULT_SKILLS.some((s) => s.file.includes('_understanding')));
 });
 
-test('a brand new skill parses clean, and says how it starts', () => {
+test('scenarios: a list when the file writes one, empty when it does not', () => {
+  const c = parseRunnable(
+    `---\ntype: skill\nsummary: s\nscenarios:\n  - chasing a promise ("this one is overdue")\n  - closing one out ("can I close this")\n---\nX.\n`,
+    't',
+  );
+  assert.deepEqual(c.scenarios, [
+    'chasing a promise ("this one is overdue")',
+    'closing one out ("can I close this")',
+  ]);
+  assert.deepEqual(c.errors, [], 'prose has nothing to validate against');
+  // Absent is the common case and is not a problem: a house rule has nothing to
+  // trigger, and neither does a file the PM only ever runs by name.
+  const none = parseRunnable(`---\ntype: skill\nsummary: s\n---\nX.\n`, 't');
+  assert.deepEqual(none.scenarios, []);
+  assert.deepEqual(none.errors, []);
+  assert.deepEqual(parseRunnable(VOICE_EXEC, 'exec').scenarios, []);
+});
+
+/**
+ * The lint the whole `scenarios` change exists for. `use_skill` routes on this
+ * text, so a shipped skill the model may pick up and that carries no scenarios
+ * is reachable in theory and unreachable in practice: the session works freehand
+ * and nothing fails, which is why an unchecked rule does not hold.
+ */
+test('every shipped skill the model may pick up says when to pick it up', () => {
+  // Every skill is pickable now, so the one exception is named rather than read
+  // off a key: the house rules are already in the prompt. The voices are not in
+  // this list at all any more; they live in `voices/` (SK-6), where nobody picks
+  // them up as work.
+  const exempt = ['house-rules'];
+  const pickable = DEFAULT_SKILLS.filter(
+    ({ file }) => !exempt.some((name) => file === `skills/${name}/SKILL.md`),
+  );
+  // A filter that matched nothing would pass the loop below in silence.
+  assert.ok(pickable.length >= 6, `only ${pickable.length} shipped skills are pickable`);
+  for (const { file, content } of pickable) {
+    const c = parseRunnable(content, file);
+    assert.ok(c.scenarios.length > 0, `${file} carries no scenarios`);
+  }
+});
+
+test('a brand new skill parses clean, and teaches no settings', () => {
   const c = parseRunnable(newSkillFile('Chase renewals'), 'chase-renewals');
   // A red flag on a file the PM created ten seconds ago would be a bad first
   // minute, and the flag would be ours, not theirs.
   assert.deepEqual(c.errors, []);
   assert.equal(c.title, 'Chase renewals');
-  assert.deepEqual(c.starts, ['you-run-it', 'model-picks-it-up']);
-  assert.ok(c.body.includes('read-when-relevant'), 'the template never names the other doors');
+  // Nothing left to configure, so the template teaches no key.
+  assert.ok(!/starts:|audience:/.test(c.body), 'the template names a key that is gone');
   // A title with YAML punctuation in it must survive rather than break the file.
   const odd = parseRunnable(newSkillFile('Renewals: "the hard ones"'), 'renewals');
   assert.deepEqual(odd.errors, []);
   assert.equal(odd.title, 'Renewals: "the hard ones"');
 });
 
-test('the fingerprint ignores what an editor changes and nothing else', () => {
-  const file = 'a: 1\n\nSome instructions.\n';
-  assert.equal(shippedHash(file), shippedHash(file.replace(/\n/g, '\r\n')));
-  assert.equal(shippedHash(file), shippedHash(`${file}\n\n`));
-  assert.notEqual(shippedHash(file), shippedHash(file.replace('Some', 'Other')));
-  // One character back is a different version, which is the whole point.
-  assert.notEqual(shippedHash(file), shippedHash(file.replace('instructions', 'instruction')));
+test('a brand new voice parses clean, and says a voice is tone only', () => {
+  const c = parseRunnable(newVoiceFile('Board'), 'board');
+  assert.deepEqual(c.errors, []);
+  assert.equal(c.title, 'Board');
+  // A voice must never steer what a draft says, and the file the PM starts
+  // from is the only place that rule can be stated before they write.
+  assert.match(c.body, /never decides what a draft says/);
+  // No key to teach, same as the skill template.
+  assert.ok(!/starts:|audience:/.test(c.body), 'the template names a key that is gone');
+  const odd = parseRunnable(newVoiceFile('Sales: "the short one"'), 'sales');
+  assert.deepEqual(odd.errors, []);
+  assert.equal(odd.title, 'Sales: "the short one"');
 });
 
 test('ask and chat dissolved into built-ins: resolvable by name, never shipped as files', () => {
@@ -305,12 +415,6 @@ test('ask and chat dissolved into built-ins: resolvable by name, never shipped a
   assert.ok(files.includes('agents/meeting-prep/AGENT.md'));
   // Every shipped file is a folder entry: one layout, no exceptions.
   for (const f of files) assert.ok(/^(skills|agents)\/[^/]+\/(SKILL|AGENT)\.md$/.test(f), f);
-  // Retired files are named in the layout they were shipped in; seeding removes
-  // both forms (see ensureDefaultSkills), so what matters is that none is back.
-  for (const gone of RETIRED_SKILL_FILES) {
-    const folder = gone.file.replace(/\.md$/, '');
-    assert.ok(!files.some((f) => f.startsWith(`${folder}/`)), `${gone.file} is still shipped`);
-  }
 });
 
 test('old names still resolve: before-meeting is an alias for meeting-prep', () => {
@@ -359,29 +463,32 @@ test('receipt does not link what nothing can link', () => {
 
 // --- Sessions v2 Part 3: skills arrive, they aren't a mode you're locked in ---
 
-test('buildSkillBrief: a playbook arrives as rules in force, material as prose', () => {
+test('buildSkillBrief: every skill arrives as rules in force', () => {
   const brief = buildSkillBrief(parseRunnable(SYNTHESIS_SKILL, 'synthesis'));
   assert.match(brief, /Skill now in force: synthesis/);
   assert.match(brief, /govern the rest of this conversation/);
   assert.match(brief, /## Produce/);
-  const ref = `---\ntype: skill\nstarts: [read-when-relevant]\nsummary: A checklist\n---\n\nCheck the thing.\n`;
-  const g = buildSkillBrief(parseRunnable(ref, 'a-checklist'));
-  assert.match(g, /## Reference: A checklist/);
+  // Reference material died with `starts` (SK-2): a file the model reads
+  // without following it is a note, and notes live in the memory.
+  const plain = `---\ntype: skill\nsummary: A checklist\n---\n\nCheck the thing.\n`;
+  const g = buildSkillBrief(parseRunnable(plain, 'a-checklist'));
+  assert.match(g, /Skill now in force: a-checklist/);
   assert.match(g, /Check the thing\./);
-  assert.doesNotMatch(g, /in force/);
 });
 
 test('an arriving skill brings its capabilities', () => {
   const chat = parseRunnable(CHAT_SKILL, 'chat');
   const h = new SessionHarness('s1', chat, '2026-07-28T09:00:00Z');
-  assert.equal(h.outbound, false);
+  assert.equal(h.outbound, true, 'open chat can already draft a message');
+  assert.equal(h.draftCalendar, false);
 
-  h.invokeSkill(parseRunnable(SYNTHESIS_SKILL, 'synthesis'));
-  assert.equal(h.outbound, true, 'arrival adds permissions');
+  h.invokeSkill(parseRunnable(ARRIVAL_SKILL, 'arrival'));
+  assert.equal(h.outbound, true, 'arrival keeps permissions the session already had');
+  assert.equal(h.draftCalendar, true, 'and adds its own, new ones');
   assert.equal(h.sessionFiles, true, 'and its working files');
   assert.equal(h.grants('draft-outbound'), true);
-  assert.equal(h.activeSkillName, 'synthesis', 'cards are tagged with the skill that made them');
-  assert.deepEqual(h.skillNames, ['chat', 'synthesis']);
+  assert.equal(h.activeSkillName, 'arrival', 'cards are tagged with the skill that made them');
+  assert.deepEqual(h.skillNames, ['chat', 'arrival']);
 });
 
 test('the switch is a floor, so it is deliberately outside the composing OR', () => {
@@ -502,4 +609,106 @@ test('a message the PM typed is never mistaken for a kickoff', () => {
   assert.equal(parseKickoff('what did we decide about pricing?'), null);
   assert.equal(parseKickoff('Run the numbers on decisions/adopt-workos.md before Friday'), null);
   assert.equal(parseKickoff('I just added these to the workspace:\n- sources/a.md'), null);
+});
+
+/**
+ * SK-6: the voices ship into their own folder, and carry tone only. The last
+ * assertion is the one with teeth: a voice that told a draft what to include
+ * would quietly overrule the skill that asked for it, which is exactly the
+ * audience concept this replaced.
+ */
+test('the voices ship in voices/, as flat files, with nothing but tone in them', () => {
+  assert.deepEqual(
+    DEFAULT_VOICES.map((v) => v.file),
+    ['voices/exec.md', 'voices/cs.md'],
+  );
+  // Not a skill, and not in the by-name registry: nothing invokes a voice.
+  const skillFiles = DEFAULT_SKILLS.map((s) => s.file);
+  for (const v of DEFAULT_VOICES) assert.ok(!skillFiles.includes(v.file));
+  assert.ok(!('exec' in DEFAULT_SKILL_BY_NAME));
+  assert.ok(!('cs' in DEFAULT_SKILL_BY_NAME));
+
+  for (const { file, content } of DEFAULT_VOICES) {
+    const c = parseRunnable(content, file);
+    assert.deepEqual(c.errors, [], `${file}: ${c.errors.join('; ')}`);
+    assert.deepEqual(c.can, [], 'a voice performs nothing');
+    assert.deepEqual(c.scenarios, [], 'nothing reaches for a voice');
+    assert.ok(c.summary.length > 0);
+    // Frontmatter is title and summary (plus the note type). A retired key here
+    // would flag on the file's own page, which is not what a shipped file does.
+    const fm = content.split('---')[1] ?? '';
+    assert.deepEqual(
+      fm
+        .trim()
+        .split('\n')
+        .map((line) => line.split(':')[0]),
+      ['type', 'title', 'summary'],
+      `${file} carries a key a voice has no use for`,
+    );
+  }
+});
+
+/**
+ * SK-10: the weekly update names its audiences and drafts one panel each. The
+ * confidentiality lines are the round-5 KISS call (R5-3): they used to sit in an
+ * audience-scoped voice, and a voice carries tone only now, so the skill that
+ * drafts to customers carries them.
+ */
+test('the weekly update lists its voices, and holds the CS draft to what it may not say', () => {
+  const c = parseRunnable(WEEKLY_UPDATE_SKILL, 'weekly-update');
+  assert.deepEqual(c.errors, []);
+  // Both shipped voices are named, and the list says it is a list to add to.
+  assert.match(c.body, /\*\*exec\*\*/);
+  assert.match(c.body, /\*\*cs\*\*/);
+  assert.match(c.body, /Add a voice here/);
+  // One panel per voice, with a variant per take, rather than one call per take.
+  assert.match(c.body, /One `draft_text` call per voice/);
+  assert.ok(c.body.includes('**Full**') && c.body.includes('**Short**'));
+  // The guardrails the voices no longer carry.
+  assert.ok(c.body.includes('## Never in the CS draft'), 'the confidentiality section is gone');
+  for (const rule of ['No internal metrics', 'No other customer', 'No internal shorthand']) {
+    assert.ok(c.body.includes(rule), `the CS draft is not held to "${rule}"`);
+  }
+  // The output shape stays the last thing in the body: the preamble reads a
+  // trailing fenced block as the shape of the drafts.
+  assert.ok(c.body.trimEnd().endsWith('```'));
+});
+
+/**
+ * SK-11: one interview skill, any topic. The address matters as much as the
+ * title — `interview` was the obvious slug and the wrong one, because a
+ * workspace full of customer interviews would send everyone holding transcripts
+ * to it instead of to `synthesis`.
+ */
+test('the interview takes a topic, and ships under a name that is not the product', () => {
+  const seed = DEFAULT_SKILLS.find((s) => s.file === 'skills/tell-qale/SKILL.md');
+  assert.ok(seed, 'the interview does not ship');
+  assert.equal(DEFAULT_SKILL_BY_NAME['tell-qale'], seed.content);
+  // The old name is gone from both registries. Nothing aliases it: the file a
+  // workspace already has keeps working under its own folder name.
+  assert.ok(!('learn-the-product' in DEFAULT_SKILL_BY_NAME));
+  assert.ok(!DEFAULT_SKILLS.some((s) => s.file.includes('learn-the-product')));
+
+  const c = parseRunnable(seed.content, 'tell-qale');
+  assert.deepEqual(c.errors, []);
+  assert.equal(c.title, 'Tell Qale about something');
+  // Three scenarios, and not one of them is about the product: the product is an
+  // example inside the body, not what the skill is for.
+  assert.equal(c.scenarios.length, 3);
+  assert.ok(c.scenarios.some((s) => /pricing/.test(s)));
+  assert.ok(c.scenarios.some((s) => /onboarding/.test(s)));
+  assert.ok(c.scenarios.some((s) => /team/.test(s)));
+  // A topic comes in with the request, and the product is one of them.
+  assert.match(c.body, /## Example topic: the product/);
+  // What it learns lands in the memory, at the notes the orientation note maps.
+  for (const area of ['product', 'technical', 'organization']) {
+    assert.ok(c.body.includes(`notes/understanding-${area}.md`), `${area} is not a landing place`);
+  }
+  assert.ok(c.body.includes('notes/understanding.md'));
+});
+
+/** The orientation note points at the interview by its address, so it has to move with it. */
+test('the orientation note names the interview by the name that resolves', () => {
+  assert.ok(UNDERSTANDING_NOTE.includes('`tell-qale`'));
+  assert.ok(!UNDERSTANDING_NOTE.includes('learn-the-product'));
 });

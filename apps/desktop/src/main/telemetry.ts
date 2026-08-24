@@ -53,6 +53,11 @@ const SHUTDOWN_MS = 1500;
  * Person properties, allowlisted exactly like event properties. This is where
  * the name and the work email live (TEL-4), which is the whole reason the list
  * is closed: everything else about a person stays a count or a flag.
+ *
+ * The connection flags are named here for the same reason they are named in the
+ * event allowlist: the consent screen renders these words. The caller builds
+ * its flags from the connector registry and hands over whatever it has; a
+ * connector nobody has named yet is dropped here rather than sent.
  */
 const PERSON_PROPS = [
   'name',
@@ -205,8 +210,12 @@ export class Telemetry {
     if ((VIEW_KINDS as readonly string[]).includes(view)) this.view = view;
   }
 
-  /** Who this is (TEL-4). Merged, so a later launch can add what screen 2 gave us. */
-  describe(props: PersonProps): void {
+  /**
+   * Who this is (TEL-4). Merged, so a later launch can add what screen 2 gave
+   * us. The parameter is wide on purpose: callers build some of these keys from
+   * a registry, and {@link PERSON_PROPS} is what decides which of them survive.
+   */
+  describe(props: Readonly<Record<string, TelemetryValue | undefined>>): void {
     for (const key of PERSON_PROPS) {
       const value = props[key];
       if (value !== undefined && value !== null) this.person[key] = value;

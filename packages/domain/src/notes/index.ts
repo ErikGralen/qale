@@ -10,5 +10,6 @@ export * from './invariant.js';
 export * from './edit-layer.js';
 export * from './decisions.js';
 export * from './event-mirror.js';
+export * from './mirror-path.js';
 export * from './note.js';
 export * from './reference.js';

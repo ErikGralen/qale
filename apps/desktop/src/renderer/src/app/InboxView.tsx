@@ -1,25 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@qale/ui';
-import { AlertTriangle, ArrowRight, ArrowUpRight, Check, Inbox, Layers } from 'lucide-react';
-import type { MeetingReviewAskDTO, OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
+import { ArrowRight, Check, Inbox } from 'lucide-react';
+import type { ProposalDTO } from '@qale/ipc';
 import { MAINTENANCE_AGENTS } from '@qale/sessions';
 import { useApp, type SessionOverview } from '../state/app-state';
 import { ofKind, type AttentionItem } from '../lib/attention';
 import { navFromEvent } from '../lib/nav';
 import { timeAgo } from '../lib/session-meta';
-import { useToast } from '../components/toast';
 import { PageHeader } from '../components/PageHeader';
 import { QuestionItem } from '../components/inbox/QuestionItem';
-import { CardItem, HousekeepingItem } from '../components/inbox/CardItem';
 import { ResultItem } from '../components/inbox/ResultItem';
-import { outboundAct, outboundReceipt, staleAcceptMessage } from '../components/inbox/shared';
-import {
-  bareRef,
-  cardRank,
-  HOUSEKEEPING_RANK,
-  orderCards,
-  titleForRef,
-} from '../components/inbox/cardMeta';
+import { ReviewAsks, SentReceipts, SpotAudit, useApprovals } from '../components/inbox/approvals';
+import { ApproveAll, CardRows } from '../components/inbox/CardRows';
+import { bareRef, orderCards, titleForRef } from '../components/inbox/cardMeta';
 
 /**
  * The document a group of cards is ABOUT — the meeting or source they target,
@@ -68,11 +61,6 @@ function groupCause(cards: ProposalDTO[]): string | null {
 const fromMaintenance = (cards: readonly ProposalDTO[]): boolean =>
   cards.some((c) => MAINTENANCE_AGENTS.has(c.skill ?? ''));
 
-interface SentReceipt {
-  id: string;
-  target: string;
-}
-
 /** One session's pending cards, headed by the session that produced them. */
 interface CardGroup {
   sessionId: string;
@@ -116,44 +104,26 @@ type QueueItem =
  */
 export function InboxView() {
   const {
-    vault,
     attention,
     waitingCount,
     proposals,
     sessions,
-    acceptProposal,
-    rejectProposal,
-    markMeetingReviewed,
     refreshProposals,
     openDoc,
     openChat,
     markSessionSeen,
   } = useApp();
-  const [busy, setBusy] = useState(false);
-  const [receipt, setReceipt] = useState<{ accepted: number; rejected: number }>({
-    accepted: 0,
-    rejected: 0,
-  });
-  const [sent, setSent] = useState<SentReceipt[]>([]);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  // Outbound cards whose send was refused because the target moved — they get
-  // the explicit "Approve anyway" affordance instead of a blind Retry.
-  const [staleSends, setStaleSends] = useState<Record<string, boolean>>({});
-  // Meetings whose session emptied with nothing kept: one open question each,
-  // asked where the cards just were.
-  const [reviewAsks, setReviewAsks] = useState<MeetingReviewAskDTO[]>([]);
-  const [streak, setStreak] = useState(0);
-  const [audit, setAudit] = useState(false);
+  // Every accept, discard and batch on this page runs the one approve path,
+  // the same one the session's own review block runs.
+  const approvals = useApprovals();
+  const { busy, receipt, accept, reject, rejectAll } = approvals;
   const [focusIdx, setFocusIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
-  const toast = useToast();
 
   // Keyboard mode works immediately — j/k must not wait for a click.
   useEffect(() => {
     listRef.current?.focus();
   }, []);
-
-  const SPOT_AUDIT_EVERY = 5;
 
   useEffect(() => {
     void refreshProposals();
@@ -178,8 +148,8 @@ export function InboxView() {
       g.newest = Math.max(g.newest, p.created);
     }
     // Every group reads in narrative order (summary → decisions → insights →
-    // housekeeping → outbound); render order MUST match this — focus indices
-    // walk g.cards positionally.
+    // housekeeping → outbound); the flattened queue below walks the same order,
+    // so ↑↓ follows the page.
     for (const g of bySession.values()) g.cards = orderCards(g.cards);
     return [...bySession.values()].sort((a, b) => b.newest - a.newest);
   }, [queue, sessions]);
@@ -227,13 +197,6 @@ export function InboxView() {
     return [...byRun.values()].sort((a, b) => b.newest - a.newest);
   }, [groups, quietQuestions, sessions]);
 
-  /** Every librarian repair a batch could actually apply — a drafted page
-   *  update leaves the workspace, so it stays its own decision. */
-  const librarianFixable = useMemo(
-    () => librarianRuns.flatMap((r) => r.cards).filter((c) => c.kind !== 'outbound'),
-    [librarianRuns],
-  );
-
   // Stakes descending: parked questions, the PO's own sessions' output,
   // finished sessions, then the librarian — its repairs are still approvals
   // ("need you"), but its questions can always wait and never count.
@@ -256,182 +219,41 @@ export function InboxView() {
     setFocusIdx((i) => Math.min(i, Math.max(0, items.length - 1)));
   }, [items.length]);
 
-  const bumpStreak = () =>
-    setStreak((s) => {
-      const next = s + 1;
-      if (next % SPOT_AUDIT_EVERY === 0) setAudit(true);
-      return next;
-    });
+  /**
+   * Where each row sits in the flattened queue, by its own id — the cursor's
+   * only map. The rows themselves are rendered by CardRows, which knows cards
+   * by id, so nothing here has to count positions and stay in step with the
+   * render order.
+   */
+  const focusIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    items.forEach((it, i) =>
+      m.set(
+        it.kind === 'card'
+          ? it.proposal.id
+          : it.kind === 'result'
+            ? `result:${it.session.id}`
+            : it.item.id,
+        i,
+      ),
+    );
+    return m;
+  }, [items]);
 
-  const vaultPath = vault?.path ?? '';
-
-  // The resolve that empties a session hands back a question when nothing was
-  // kept. Asked once per meeting: a "not yet" is remembered for the workspace,
-  // so re-resolving another of its sessions never re-opens the same question.
-  const noteReviewAsk = useCallback(
-    (ask: MeetingReviewAskDTO | undefined) => {
-      if (!ask || dismissedReviewAsks(vaultPath).includes(ask.path)) return;
-      setReviewAsks((asks) => (asks.some((a) => a.path === ask.path) ? asks : [...asks, ask]));
+  const focusRow = useCallback(
+    (id: string) => {
+      const idx = focusIndex.get(id);
+      if (idx !== undefined) setFocusIdx(idx);
     },
-    [vaultPath],
+    [focusIndex],
   );
 
-  const answerReviewAsk = useCallback(
-    async (ask: MeetingReviewAskDTO) => {
-      setReviewAsks((asks) => asks.filter((a) => a.path !== ask.path));
-      const r = await markMeetingReviewed(ask.path).catch(() => ({ ok: false }));
-      if (!r.ok) toast(`Could not mark ${ask.title} reviewed. Open it and set the status there.`);
-    },
-    [markMeetingReviewed, toast],
-  );
-
-  const dismissReviewAsk = useCallback(
-    (ask: MeetingReviewAskDTO) => {
-      setReviewAsks((asks) => asks.filter((a) => a.path !== ask.path));
-      persistDismissedReviewAsk(vaultPath, ask.path);
-    },
-    [vaultPath],
-  );
-
-  const setError = (id: string, message: string | null) =>
-    setErrors((e) => {
-      const next = { ...e };
-      if (message === null) delete next[id];
-      else next[id] = message;
-      return next;
-    });
-
-  const onAccept = useCallback(
-    async (p: ProposalDTO, edited?: unknown) => {
-      setBusy(true);
-      setError(p.id, null);
-      try {
-        const r = await acceptProposal(p.id, edited);
-        noteReviewAsk(r.review);
-        if (r.ok) {
-          setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
-          bumpStreak();
-          setStaleSends((s) => {
-            const next = { ...s };
-            delete next[p.id];
-            return next;
-          });
-          if (p.kind === 'outbound') {
-            const ob = p.payload as OutboundPayloadDTO;
-            setSent((s) => [...s, { id: p.id, target: outboundReceipt(ob) }]);
-          }
-        } else if (r.stale && p.kind === 'outbound') {
-          // The target moved after this was drafted; main refused the send and
-          // the card stays pending. The card's error row grows an explicit
-          // "Approve anyway" that re-accepts with a refreshed snapshot.
-          setStaleSends((s) => ({ ...s, [p.id]: true }));
-          setError(
-            p.id,
-            r.error ??
-              `This changed upstream since the card was drafted. Take one more look, then approve anyway to ${outboundAct(p.payload as OutboundPayloadDTO).verb}.`,
-          );
-        } else if (r.stale) {
-          // The keyboard path can accept without ever seeing the preview's
-          // stale banner — a stale refusal must speak, never no-op.
-          setError(p.id, staleAcceptMessage(r.staleReason));
-        } else {
-          setError(p.id, r.error ?? 'Could not apply this card: the workspace rejected the write.');
-        }
-      } catch (err) {
-        setError(
-          p.id,
-          err instanceof Error ? err.message : 'Something went wrong applying this card.',
-        );
-      } finally {
-        setBusy(false);
-      }
-    },
-    [acceptProposal, noteReviewAsk],
-  );
-
-  const onReject = useCallback(
-    async (p: ProposalDTO) => {
-      setBusy(true);
-      setError(p.id, null);
-      try {
-        noteReviewAsk((await rejectProposal(p.id)).review);
-        setReceipt((x) => ({ ...x, rejected: x.rejected + 1 }));
-        setStreak(0);
-      } catch (err) {
-        setError(
-          p.id,
-          err instanceof Error ? err.message : 'Something went wrong discarding this card.',
-        );
-      } finally {
-        setBusy(false);
-      }
-    },
-    [rejectProposal, noteReviewAsk],
-  );
-
-  const acceptCards = useCallback(
-    async (cards: ProposalDTO[]) => {
-      setBusy(true);
-      try {
-        let local = streak;
-        let attempted = 0;
-        let failed = 0;
-        for (const p of cards) {
-          // Anti-rubber-stamping: pause the batch for a spot-audit every N accepts.
-          if (local > 0 && local % SPOT_AUDIT_EVERY === 0) {
-            setAudit(true);
-            break;
-          }
-          // Outbound never rides along in a batch — each send is its own decision.
-          if (p.kind === 'outbound') continue;
-          attempted++;
-          const r = await acceptProposal(p.id).catch((err: unknown) => {
-            setError(p.id, err instanceof Error ? err.message : 'Failed. Retry from the card.');
-            return { ok: false as const };
-          });
-          noteReviewAsk('review' in r ? r.review : undefined);
-          if (r.ok) {
-            local++;
-            setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
-          } else {
-            failed++;
-          }
-        }
-        setStreak(local);
-        if (failed > 0)
-          toast(`${failed} of ${attempted} cards failed to apply. See the cards for details.`);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [acceptProposal, noteReviewAsk, streak, toast],
-  );
-
-  // Discard a whole cause block at once — the PO judged the premise wrong, so
-  // none of the consequent edits should land.
-  const rejectCards = useCallback(
-    async (cards: ProposalDTO[]) => {
-      setBusy(true);
-      try {
-        let failed = 0;
-        for (const p of cards) {
-          try {
-            noteReviewAsk((await rejectProposal(p.id)).review);
-            setReceipt((x) => ({ ...x, rejected: x.rejected + 1 }));
-          } catch (err) {
-            failed++;
-            setError(p.id, err instanceof Error ? err.message : 'Failed. Retry from the card.');
-          }
-        }
-        setStreak(0);
-        if (failed > 0)
-          toast(`${failed} of ${cards.length} cards failed to discard. See the cards for details.`);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [rejectProposal, noteReviewAsk, toast],
-  );
+  /** The card under the cursor, or null when the cursor is on a question or a
+   *  finished session. */
+  const focusedCardId = (() => {
+    const cur = items[focusIdx];
+    return cur?.kind === 'card' ? cur.proposal.id : null;
+  })();
 
   const openResult = useCallback(
     (s: SessionOverview) => {
@@ -455,8 +277,6 @@ export function InboxView() {
     },
     [openChat, openResult],
   );
-
-  const internalCount = queue.filter((p) => p.kind !== 'outbound').length;
 
   /** The focused outbound card's send button — the queue's ↵ moves to it
    *  instead of pressing it for you. */
@@ -491,12 +311,12 @@ export function InboxView() {
       // pressing it there is the decision. Everything internal stays one tap.
       if (current.kind !== 'card') openItemSession(current);
       else if (current.proposal.kind === 'outbound') focusSend(current.proposal.id);
-      else void onAccept(current.proposal);
+      else accept(current.proposal);
     } else if ((e.key === 'Backspace' || e.key === 'x') && current && !busy) {
       e.preventDefault();
       // A question is answered, never dismissed — the key is a deliberate no-op
       // on an ask row rather than a way to lose the turn that is waiting.
-      if (current.kind === 'card') void onReject(current.proposal);
+      if (current.kind === 'card') reject(current.proposal);
       else if (current.kind === 'result') markSessionSeen(current.session.id);
     } else if (e.key === 'o' && current) {
       e.preventDefault();
@@ -504,20 +324,6 @@ export function InboxView() {
     }
   };
 
-  // Where each visual block starts in the flattened queue (for focus mapping).
-  let cursor = questions.length;
-  const groupStarts = sessionGroups.map((g) => {
-    const start = cursor;
-    cursor += g.cards.length;
-    return start;
-  });
-  const resultStart = cursor;
-  cursor += results.length;
-  const runStarts = librarianRuns.map((r) => {
-    const start = cursor;
-    cursor += r.cards.length + r.questions.length;
-    return start;
-  });
   // The hint states what ↵ does on the row you are actually on — on a send it
   // moves you to the button rather than pressing it, and must say so.
   const focusedOutbound = (() => {
@@ -551,17 +357,6 @@ export function InboxView() {
               : '↑↓ navigate · ↵ approve/open · ⌫ dismiss · o open session'}
           </span>
         )}
-        {internalCount > 1 && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="shrink-0"
-            onClick={() => void acceptCards(queue)}
-            disabled={busy}
-          >
-            <Layers className="size-3.5" /> Accept all internal ({internalCount})
-          </Button>
-        )}
       </PageHeader>
 
       {/* `data-queue` marks the region the roving cursor lives in: rows take real
@@ -572,71 +367,11 @@ export function InboxView() {
         className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-8 py-5 outline-none"
         tabIndex={0}
       >
-        {audit && queue.length > 0 && (
-          <div className="mb-3 flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/8 px-3 py-2 text-sm">
-            <AlertTriangle className="size-4 shrink-0 text-warning" />
-            <span className="flex-1 text-foreground">
-              You've approved {streak} in a row. Take a closer look at this one before continuing.
-            </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setAudit(false);
-                setStreak(0);
-              }}
-            >
-              Got it
-            </Button>
-          </div>
-        )}
+        {queue.length > 0 && <SpotAudit approvals={approvals} />}
 
-        {sent.length > 0 && (
-          <div className="mb-3 flex items-start gap-2 rounded-lg border border-success/30 bg-success/8 px-3 py-2 text-sm">
-            <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-success" />
-            <div className="min-w-0 flex-1">
-              {/* The banner promised "leaves your workspace"; the receipt says
-                  it left, in the same words and in past tense. */}
-              <span className="font-medium text-foreground">Left your workspace</span>
-              <ul className="mt-0.5 text-muted-foreground">
-                {sent.slice(-3).map((s) => (
-                  <li key={s.id} className="truncate">
-                    {s.target}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
+        <SentReceipts sent={approvals.sent} />
 
-        {/* The one question a discarded pile leaves behind, in the spot its
-            cards just vacated: nothing was kept, so nothing says the meeting
-            was read. "Not yet" leaves it in needs review and never asks again. */}
-        {reviewAsks.map((ask) => (
-          <div
-            key={ask.path}
-            className="mb-3 flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm"
-          >
-            <span className="min-w-0 flex-1 text-muted-foreground">
-              Nothing kept from <span className="text-foreground">{ask.title}</span>. Mark it
-              reviewed?
-            </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="shrink-0"
-              onClick={() => void answerReviewAsk(ask)}
-            >
-              <Check className="size-3.5" /> Mark reviewed
-            </Button>
-            <button
-              className="shrink-0 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-              onClick={() => dismissReviewAsk(ask)}
-            >
-              Not yet
-            </button>
-          </div>
-        ))}
+        <ReviewAsks approvals={approvals} />
 
         {items.length === 0 ? (
           <div className="mt-16 flex flex-col items-center gap-3 text-center">
@@ -662,12 +397,12 @@ export function InboxView() {
               <section aria-label="Questions">
                 <h3 className="mb-1.5 px-0.5 text-sm font-semibold">Questions</h3>
                 <ul className="flex flex-col gap-2">
-                  {questions.map((item, i) => (
+                  {questions.map((item) => (
                     <QuestionItem
                       key={item.id}
                       item={item}
-                      focused={i === focusIdx}
-                      onFocus={() => setFocusIdx(i)}
+                      focused={focusIndex.get(item.id) === focusIdx}
+                      onFocus={() => focusRow(item.id)}
                       onOpen={() => openItemSession({ kind: 'question', item })}
                     />
                   ))}
@@ -675,44 +410,11 @@ export function InboxView() {
               </section>
             )}
 
-            {sessionGroups.map((g, gi) => {
+            {sessionGroups.map((g) => {
               const cause = groupCause(g.cards);
               // The note the group is about — its meeting page (or source note).
               // A cause group is about its decision, and says so in the header.
               const anchor = cause ? null : groupAnchor(g.cards);
-              // Housekeeping folds away as the boring tail of a bigger story. When
-              // it IS the whole group there is no story to spare the PO, and every
-              // card stays legible.
-              const hkOnly = g.cards.every((c) => cardRank(c) === HOUSEKEEPING_RANK);
-              const hkStart = hkOnly
-                ? -1
-                : g.cards.findIndex((c) => cardRank(c) === HOUSEKEEPING_RANK);
-              const hkEnd =
-                hkStart === -1
-                  ? -1
-                  : g.cards.findIndex((c, i) => i >= hkStart && cardRank(c) > HOUSEKEEPING_RANK);
-              const hk =
-                hkStart === -1 ? [] : g.cards.slice(hkStart, hkEnd === -1 ? undefined : hkEnd);
-              const renderCard = (p: ProposalDTO, ci: number, compact: boolean) => {
-                const idx = groupStarts[gi]! + ci;
-                const shared = {
-                  proposal: p,
-                  busy,
-                  focused: idx === focusIdx,
-                  error: errors[p.id] ?? null,
-                  staleSend: staleSends[p.id] ?? false,
-                  onFocus: () => setFocusIdx(idx),
-                  onAccept: (edited?: unknown) => onAccept(p, edited),
-                  onReject: () => onReject(p),
-                  onOpen: openDoc,
-                };
-                return compact ? (
-                  <HousekeepingItem key={p.id} {...shared} />
-                ) : (
-                  <CardItem key={p.id} {...shared} />
-                );
-              };
-              const internalN = g.cards.filter((c) => c.kind !== 'outbound').length;
               // The header speaks the meeting, or the cause — never the prompt or a path.
               const title = cause ? causeSentence(cause, g.cards.length) : groupTitle(g, anchor);
               const summary = cause
@@ -739,26 +441,16 @@ export function InboxView() {
                       </p>
                     </div>
                     <span className="flex shrink-0 items-center gap-1">
-                      {internalN > 1 && (
-                        // The batch never sends, so it counts only what it will
-                        // actually apply — a group with a pending send says "3",
-                        // not "all", and the send stays its own decision below.
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => void acceptCards(g.cards)}
-                          disabled={busy}
-                        >
-                          <Check className="size-3.5" /> {cause ? 'Update' : 'Approve'} all{' '}
-                          {internalN}
-                        </Button>
-                      )}
+                      {/* One batch button on the page, and it belongs to this
+                          group. A cause group used to say "Update all"; the verb
+                          is the same act, so it is the same word. */}
+                      <ApproveAll cards={g.cards} approvals={approvals} />
                       {cause ? (
                         <Button
                           size="sm"
                           variant="ghost"
                           className="text-muted-foreground"
-                          onClick={() => void rejectCards(g.cards)}
+                          onClick={() => rejectAll(g.cards)}
                           disabled={busy}
                         >
                           Discard all
@@ -790,35 +482,13 @@ export function InboxView() {
                       )}
                     </span>
                   </div>
-                  <ul className="flex flex-col gap-3">
-                    {hk.length === 0
-                      ? g.cards.map((p, ci) => renderCard(p, ci, false))
-                      : [
-                          ...g.cards.slice(0, hkStart).map((p, ci) => renderCard(p, ci, false)),
-                          <li key="hk" className="flex flex-col gap-1.5">
-                            <div className="mt-1 flex items-center gap-2 px-0.5">
-                              <span className="text-xs font-medium text-muted-foreground">
-                                Housekeeping · {hk.length}: ledgers & links, glance and go
-                              </span>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="ml-auto"
-                                onClick={() => void acceptCards(hk)}
-                                disabled={busy}
-                              >
-                                <Check className="size-3.5" /> Approve all {hk.length}
-                              </Button>
-                            </div>
-                            <ul className="flex flex-col gap-1.5">
-                              {hk.map((p, i) => renderCard(p, hkStart + i, true))}
-                            </ul>
-                          </li>,
-                          ...g.cards
-                            .slice(hkStart + hk.length)
-                            .map((p, i) => renderCard(p, hkStart + hk.length + i, false)),
-                        ]}
-                  </ul>
+                  <CardRows
+                    cards={g.cards}
+                    approvals={approvals}
+                    focusedId={focusedCardId}
+                    onFocus={focusRow}
+                    onOpen={openDoc}
+                  />
                 </section>
               );
             })}
@@ -827,12 +497,12 @@ export function InboxView() {
               <section aria-label="While you were away">
                 <h3 className="mb-1.5 px-0.5 text-sm font-semibold">While you were away</h3>
                 <ul className="flex flex-col gap-2">
-                  {results.map((s, i) => (
+                  {results.map((s) => (
                     <ResultItem
                       key={s.id}
                       session={s}
-                      focused={resultStart + i === focusIdx}
-                      onFocus={() => setFocusIdx(resultStart + i)}
+                      focused={focusIndex.get(`result:${s.id}`) === focusIdx}
+                      onFocus={() => focusRow(`result:${s.id}`)}
                       onOpen={() => openResult(s)}
                       onClear={() => markSessionSeen(s.id)}
                     />
@@ -854,77 +524,58 @@ export function InboxView() {
                   <span className="min-w-0 truncate text-xs text-muted-foreground">
                     keeps the memory connected: a tap approves, nothing happens silently
                   </span>
-                  {librarianFixable.length > 1 && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="ml-auto shrink-0"
-                      onClick={() => void acceptCards(librarianFixable)}
-                      disabled={busy}
-                    >
-                      <Check className="size-3.5" /> Fix all {librarianFixable.length}
-                    </Button>
-                  )}
                 </div>
                 {/* One block per pass, each with the door into the session that
                     read the notes — the tidy-ups are somebody's reasoning now,
                     not a list a sweep printed, so the reasoning stays reachable. */}
                 <div className="flex flex-col gap-3">
-                  {librarianRuns.map((run, ri) => (
+                  {librarianRuns.map((run) => (
                     <div key={run.sessionId}>
                       <div className="mb-1 flex items-baseline gap-2 px-0.5">
                         <span className="text-xs text-muted-foreground">
                           Ran {timeAgo(run.newest)}
                         </span>
-                        {run.session && (
-                          <button
-                            className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                            onClick={(e) =>
-                              openChat(
-                                { id: run.session!.id, title: run.session!.title },
-                                navFromEvent(e),
-                              )
-                            }
-                          >
-                            Open session <ArrowRight className="size-3" />
-                          </button>
-                        )}
+                        <span className="ml-auto flex shrink-0 items-center gap-1">
+                          {/* The batch sits on the run it applies to, and says
+                              the same word as every other batch on the page. */}
+                          <ApproveAll cards={run.cards} approvals={approvals} />
+                          {run.session && (
+                            <button
+                              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                              onClick={(e) =>
+                                openChat(
+                                  { id: run.session!.id, title: run.session!.title },
+                                  navFromEvent(e),
+                                )
+                              }
+                            >
+                              Open session <ArrowRight className="size-3" />
+                            </button>
+                          )}
+                        </span>
                       </div>
-                      <ul className="flex flex-col gap-1.5">
-                        {run.cards.map((p, ci) => {
-                          const idx = runStarts[ri]! + ci;
-                          const shared = {
-                            proposal: p,
-                            busy,
-                            focused: idx === focusIdx,
-                            error: errors[p.id] ?? null,
-                            staleSend: staleSends[p.id] ?? false,
-                            onFocus: () => setFocusIdx(idx),
-                            onAccept: (edited?: unknown) => onAccept(p, edited),
-                            onReject: () => onReject(p),
-                            onOpen: openDoc,
-                          };
-                          // A repointed link is glance-and-go; anything richer
-                          // (a drafted page update, say) gets the full card.
-                          return p.kind === 'update' ? (
-                            <HousekeepingItem key={p.id} {...shared} />
-                          ) : (
-                            <CardItem key={p.id} {...shared} />
-                          );
-                        })}
-                        {run.questions.map((item, qi) => {
-                          const idx = runStarts[ri]! + run.cards.length + qi;
-                          return (
+                      <CardRows
+                        cards={run.cards}
+                        approvals={approvals}
+                        focusedId={focusedCardId}
+                        onFocus={focusRow}
+                        onOpen={openDoc}
+                        variant="compact-updates"
+                        gap="row"
+                      />
+                      {run.questions.length > 0 && (
+                        <ul className="mt-1.5 flex flex-col gap-1.5">
+                          {run.questions.map((item) => (
                             <QuestionItem
                               key={item.id}
                               item={item}
-                              focused={idx === focusIdx}
-                              onFocus={() => setFocusIdx(idx)}
+                              focused={focusIndex.get(item.id) === focusIdx}
+                              onFocus={() => focusRow(item.id)}
                               onOpen={() => openItemSession({ kind: 'question', item })}
                             />
-                          );
-                        })}
-                      </ul>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -935,32 +586,6 @@ export function InboxView() {
       </div>
     </div>
   );
-}
-
-/**
- * Meetings the PO answered "not yet" to. Per workspace, like the pin set, and
- * view-only: the answer is "don't ask me again", not a fact about the meeting,
- * so it stays out of the vault. The meeting itself stays in needs review.
- */
-const REVIEW_ASK_KEY = 'qale.reviewAskDismissed.v1';
-
-function dismissedReviewAsks(vaultPath: string): string[] {
-  try {
-    const raw = localStorage.getItem(`${REVIEW_ASK_KEY}:${vaultPath}`);
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistDismissedReviewAsk(vaultPath: string, path: string): void {
-  try {
-    const next = [...new Set([...dismissedReviewAsks(vaultPath), path])];
-    localStorage.setItem(`${REVIEW_ASK_KEY}:${vaultPath}`, JSON.stringify(next));
-  } catch {
-    /* ignore quota */
-  }
 }
 
 /** The group header in human terms: the document the cards are about — never the

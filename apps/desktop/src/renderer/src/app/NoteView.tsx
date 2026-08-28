@@ -60,24 +60,37 @@ function upcomingLabel(frontmatter: Record<string, unknown>): string | null {
 
 const LINKS_OPEN_KEY = 'qale.note.links.open';
 
-/** Typed groups first, alphabetical; untyped mentions last as "Linked from". */
+/**
+ * A session receipt cites every note the run touched, as `reads` and `writes`.
+ * On the note side that grew two headings, "Reads" and "Writes", on every page
+ * a session ever opened, and the difference between them is the run's business,
+ * not the page's. They fold into one "Sessions" group, so "this decision was
+ * taken in that run" is still one click, at the cost of one line.
+ */
+const SESSION_EDGES = new Set(['reads', 'writes']);
+const SESSIONS = 'Sessions';
+const UNTYPED = 'Linked from';
+
+/** Where a group sits: named relationships first, the two quiet ones last. */
+function groupOrder(label: string): number {
+  return label === SESSIONS ? 2 : label === UNTYPED ? 1 : 0;
+}
+
+/** Typed groups first, alphabetical; untyped mentions and sessions last. */
 function groupBacklinks(backlinks: BacklinkDTO[]): { label: string; items: BacklinkDTO[] }[] {
   const groups = new Map<string, BacklinkDTO[]>();
   for (const b of backlinks) {
-    const label = b.typeLabel ?? 'Linked from';
+    const session = b.type !== undefined && SESSION_EDGES.has(b.type);
+    const label = session ? SESSIONS : (b.typeLabel ?? UNTYPED);
     const items = groups.get(label) ?? [];
+    // One row per session: a run that read AND wrote this note arrives twice.
+    if (session && items.some((i) => i.from.path === b.from.path)) continue;
     items.push(b);
     groups.set(label, items);
   }
   return [...groups.entries()]
     .map(([label, items]) => ({ label, items }))
-    .sort((a, b) =>
-      a.label === 'Linked from'
-        ? 1
-        : b.label === 'Linked from'
-          ? -1
-          : a.label.localeCompare(b.label),
-    );
+    .sort((a, b) => groupOrder(a.label) - groupOrder(b.label) || a.label.localeCompare(b.label));
 }
 
 /**
@@ -110,26 +123,29 @@ function LinksSection({
     });
   };
   const groups = groupBacklinks(backlinks);
+  // What the list actually shows: grouping drops a session that both read and
+  // wrote the note, and a count nobody can find the rows for is a wrong count.
+  const count = groups.reduce((n, g) => n + g.items.length, 0);
 
   return (
     <section className="mt-8 border-t border-border/60 pt-3">
       <button
         className="flex items-center gap-1.5 rounded-md py-0.5 text-xs text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:hover:text-muted-foreground/80"
         onClick={toggle}
-        aria-expanded={backlinks.length > 0 ? open : undefined}
-        disabled={backlinks.length === 0}
+        aria-expanded={count > 0 ? open : undefined}
+        disabled={count === 0}
       >
         <ChevronRight
           className={`size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none ${
             open ? 'rotate-90' : ''
-          } ${backlinks.length === 0 ? 'opacity-0' : ''}`}
+          } ${count === 0 ? 'opacity-0' : ''}`}
           aria-hidden
         />
         <Link2 className="size-3.5 shrink-0" aria-hidden />
-        {backlinks.length === 0 ? 'Nothing links here yet' : `Links (${backlinks.length})`}
+        {count === 0 ? 'Nothing links here yet' : `Links (${count})`}
       </button>
 
-      {backlinks.length > 0 && (
+      {count > 0 && (
         <div
           className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${
             open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'

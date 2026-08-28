@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@qale/ui';
-import { ChevronDown, Code2 } from 'lucide-react';
+import { ChevronDown, Code2, X } from 'lucide-react';
 import type { CodebaseRequestDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 
@@ -54,7 +54,7 @@ export function CodebaseCard({ request }: { request: CodebaseRequestDTO }) {
     request.suggestedModelId;
 
   return (
-    <div className="rounded-xl border border-border bg-card p-3.5">
+    <div className="overflow-hidden rounded-xl bg-card p-3.5 ring-1 ring-brand/30">
       <div className="flex items-center gap-1.5 text-sm font-medium">
         <Code2 className="size-4 text-muted-foreground" aria-hidden />
         Ask the codebase
@@ -110,11 +110,11 @@ export function CodebaseCard({ request }: { request: CodebaseRequestDTO }) {
           </>
         )}
         <span className="ml-auto flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => answer(false)} disabled={busy}>
-            Not now
+          <Button size="sm" variant="ghost" onClick={() => answer(false)} disabled={busy}>
+            <X className="size-3.5" /> Discard
           </Button>
           <Button ref={runRef} size="sm" onClick={() => answer(true)} disabled={busy}>
-            Run
+            <Code2 className="size-3.5" /> Approve & run
           </Button>
         </span>
       </div>

@@ -134,6 +134,7 @@ import {
   SessionHarness,
   DEFAULT_SKILL_BY_NAME,
   BASE_SKILL_NAME,
+  isBaseSkillName,
   HOUSE_RULES,
   HOUSE_RULES_NAME,
   type Runnable,
@@ -1695,9 +1696,10 @@ export class AgentRuntime {
     if (state.harness.invoked.some((c) => c.name === name)) return; // already in force
     // The base skill is loaded at creation. Invoking it AS an arrival would
     // append its body to the system prompt a second time and make an ordinary
-    // chat file a receipt claiming a skill arrived — a caller naming it is
-    // asking for a plain chat, which is what it already has.
-    if (name === BASE_SKILL_NAME) return;
+    // session file a receipt claiming a skill arrived: a caller naming it is
+    // asking for a plain session, which is what it already has. Its old name
+    // counts too, because a stored receipt and a stale caller still say `chat`.
+    if (isBaseSkillName(name)) return;
     const config = await this.resolveSkill(name, ctx);
     if (!config.name || !config.body.trim()) {
       console.error(`[qale] skill "${name}" could not be resolved — invoking it was skipped`);

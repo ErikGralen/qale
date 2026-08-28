@@ -10,13 +10,16 @@ import {
   MEETING_PREP_AGENT,
   ASK_SKILL,
   WEEKLY_UPDATE_SKILL,
-  CHAT_SKILL,
   SYNTHESIS_SKILL,
   VOICE_EXEC,
   HOUSE_RULES,
   HOUSE_RULES_NAME,
   DEFAULT_SKILL_BY_NAME,
   DEFAULT_SKILLS,
+  RETIRED_SKILLS,
+  BASE_SKILL_NAME,
+  isBaseSkillName,
+  COMMITMENT_CHECK_SKILL,
   DEFAULT_AGENTS,
   DEFAULT_NOTES,
   DEFAULT_VOICES,
@@ -81,7 +84,12 @@ test('a key nothing reads is flagged, whatever it is', () => {
 });
 
 test('can: capabilities are a list, and the floor is empty', () => {
-  assert.deepEqual(parseRunnable(ASK_SKILL, 'ask').can, []);
+  // A file that claims nothing gets nothing: reading and proposing cards is what
+  // every session may do, and neither is a capability.
+  assert.deepEqual(parseRunnable(COMMITMENT_CHECK_SKILL, 'commitment-check').can, []);
+  // The base skill is the one built-in, and it carries the two the composer
+  // needs: a session file to work in, and a draft to put in front of the PM.
+  assert.deepEqual(parseRunnable(ASK_SKILL, 'ask').can, ['keep-working-files', 'draft-outbound']);
   assert.deepEqual(parseRunnable(WEEKLY_UPDATE_SKILL, 'weekly-update').can, ['draft-outbound']);
   assert.deepEqual(parseRunnable(SYNTHESIS_SKILL, 'synthesis').can, [
     'draft-outbound',
@@ -89,10 +97,23 @@ test('can: capabilities are a list, and the floor is empty', () => {
   ]);
   const junk = parseRunnable(`---\ntype: skill\ncan: [rm-rf]\nsummary: s\n---\nX.\n`, 't');
   assert.deepEqual(junk.can, [], 'a typo must never read as a capability');
-  assert.ok(junk.errors.some((e) => /unknown can "rm-rf"/.test(e)));
-  // The message names every capability there is, generated from the list, so a
-  // new one is offered the moment it exists.
-  assert.ok(junk.errors.some((e) => /draft-calendar/.test(e) && /track-external/.test(e)));
+  // Leads with the plain sentence, not the raw key, and "rm-rf" is nowhere
+  // near a real capability, so every option is offered by its chip label.
+  assert.ok(junk.errors.some((e) => /permission that does not exist: "rm-rf"/.test(e)));
+  assert.ok(
+    junk.errors.some(
+      (e) => /Drafts calendar changes \(draft-calendar\)/.test(e) && /track-external/.test(e),
+    ),
+  );
+
+  // A close typo gets one suggestion instead of the whole list, named in the
+  // same plain words as the permission chip.
+  const typo = parseRunnable(`---\ntype: skill\ncan: [draft-outbund]\nsummary: s\n---\nX.\n`, 't');
+  assert.ok(
+    typo.errors.some((e) =>
+      /Did you mean "Drafts outgoing updates" \(can: \[draft-outbound\]\)/.test(e),
+    ),
+  );
 });
 
 test('the two files that need the narrow capabilities declare them', () => {
@@ -109,7 +130,7 @@ test('the two files that need the narrow capabilities declare them', () => {
     'draft-outbound',
     'track-external',
   ]);
-  for (const raw of [WEEKLY_UPDATE_SKILL, SYNTHESIS_SKILL, CHAT_SKILL]) {
+  for (const raw of [WEEKLY_UPDATE_SKILL, SYNTHESIS_SKILL, ASK_SKILL]) {
     const cfg = parseRunnable(raw, 'x');
     assert.ok(!cfg.can.includes('draft-calendar'), `${cfg.title} does not book meetings`);
     assert.ok(!cfg.can.includes('track-external'), `${cfg.title} does not change what syncs`);
@@ -130,7 +151,11 @@ test('a capability that got narrower says so, where the file is read', () => {
   );
   assert.deepEqual(old.can, ['draft-outbound'], 'the capability it does have is untouched');
   assert.ok(
-    old.errors.some((e) => /draft_calendar_event/.test(e) && /draft-calendar/.test(e)),
+    old.errors.some(
+      (e) =>
+        /draft_calendar_event/.test(e) &&
+        /"Drafts calendar changes" permission \(can: \[draft-calendar\]\)/.test(e),
+    ),
     `expected a narrowing hint, got ${JSON.stringify(old.errors)}`,
   );
 
@@ -138,7 +163,13 @@ test('a capability that got narrower says so, where the file is read', () => {
     `---\ntype: agent\nsummary: s\n---\nAsk, then record it with follow_container.\n`,
     'old-agent',
   );
-  assert.ok(tracking.errors.some((e) => /follow_container/.test(e) && /track-external/.test(e)));
+  assert.ok(
+    tracking.errors.some(
+      (e) =>
+        /follow_container/.test(e) &&
+        /"Watches your tracker and wiki" permission \(can: \[track-external\]\)/.test(e),
+    ),
+  );
 
   // Silent once the file says what it needs, and silent for a file that never
   // mentions the tools at all.
@@ -157,8 +188,17 @@ test('the keys that moved are gone, and say what to write instead', () => {
   );
   // Nothing is honoured any more: a file says what it may do, or it may not.
   assert.deepEqual(caps.can, []);
-  assert.ok(caps.errors.some((e) => /`outbound: true` is gone/.test(e)));
-  assert.ok(caps.errors.some((e) => /`session_files: true` is gone/.test(e)));
+  // Leads with the plain chip label, then names the key that replaces the setting.
+  assert.ok(
+    caps.errors.some(
+      (e) => /`outbound: true` is gone/.test(e) && /"Drafts outgoing updates"/.test(e),
+    ),
+  );
+  assert.ok(
+    caps.errors.some(
+      (e) => /`session_files: true` is gone/.test(e) && /"Keeps working files"/.test(e),
+    ),
+  );
 });
 
 test('keys whose machinery is gone are flagged and honour nothing', () => {
@@ -402,9 +442,12 @@ test('a brand new voice parses clean, and says a voice is tone only', () => {
   assert.equal(odd.title, 'Sales: "the short one"');
 });
 
-test('ask and chat dissolved into built-ins: resolvable by name, never shipped as files', () => {
+test('ask dissolved into a built-in: resolvable by name, never shipped as a file', () => {
   assert.ok(DEFAULT_SKILL_BY_NAME['ask']);
-  assert.ok(DEFAULT_SKILL_BY_NAME['chat']);
+  // One default now. `chat` was the second one and resolves to the same text.
+  assert.equal(DEFAULT_SKILL_BY_NAME['chat'], ASK_SKILL);
+  assert.equal(BASE_SKILL_NAME, 'ask');
+  assert.ok(isBaseSkillName('chat'), 'the old name must not arrive as a second skill');
   const files = [...DEFAULT_SKILLS, ...DEFAULT_AGENTS].map((s) => s.file);
   assert.ok(!files.some((f) => f.startsWith('skills/ask/')));
   assert.ok(!files.some((f) => f.startsWith('skills/chat/')));
@@ -417,8 +460,13 @@ test('ask and chat dissolved into built-ins: resolvable by name, never shipped a
   for (const f of files) assert.ok(/^(skills|agents)\/[^/]+\/(SKILL|AGENT)\.md$/.test(f), f);
 });
 
-test('old names still resolve: before-meeting is an alias for meeting-prep', () => {
+test('old names still resolve: an alias points at whatever does the work now', () => {
   assert.equal(DEFAULT_SKILL_BY_NAME['before-meeting'], MEETING_PREP_AGENT);
+  // incoming-request folded into commitment-check, so a stored receipt naming
+  // it opens the merged skill instead of nothing.
+  assert.equal(DEFAULT_SKILL_BY_NAME['incoming-request'], COMMITMENT_CHECK_SKILL);
+  assert.ok(!DEFAULT_SKILLS.some((s) => s.file.startsWith('skills/incoming-request/')));
+  assert.deepEqual(RETIRED_SKILLS, ['skills/incoming-request/SKILL.md']);
 });
 
 test('receipt records reads, writes and turns', () => {
@@ -477,9 +525,9 @@ test('buildSkillBrief: every skill arrives as rules in force', () => {
 });
 
 test('an arriving skill brings its capabilities', () => {
-  const chat = parseRunnable(CHAT_SKILL, 'chat');
-  const h = new SessionHarness('s1', chat, '2026-07-28T09:00:00Z');
-  assert.equal(h.outbound, true, 'open chat can already draft a message');
+  const base = parseRunnable(ASK_SKILL, 'ask');
+  const h = new SessionHarness('s1', base, '2026-07-28T09:00:00Z');
+  assert.equal(h.outbound, true, 'an open session can already draft a message');
   assert.equal(h.draftCalendar, false);
 
   h.invokeSkill(parseRunnable(ARRIVAL_SKILL, 'arrival'));
@@ -488,7 +536,7 @@ test('an arriving skill brings its capabilities', () => {
   assert.equal(h.sessionFiles, true, 'and its working files');
   assert.equal(h.grants('draft-outbound'), true);
   assert.equal(h.activeSkillName, 'arrival', 'cards are tagged with the skill that made them');
-  assert.deepEqual(h.skillNames, ['chat', 'arrival']);
+  assert.deepEqual(h.skillNames, ['ask', 'arrival']);
 });
 
 test('the switch is a floor, so it is deliberately outside the composing OR', () => {
@@ -503,7 +551,7 @@ test('the switch is a floor, so it is deliberately outside the composing OR', ()
   // And the harness composes capabilities ONLY. Teaching grants() about the
   // switch would move a floor into the one path that widens, where the next
   // arrival's OR could climb back over it.
-  const h = new SessionHarness('s4', parseRunnable(CHAT_SKILL, 'chat'), '2026-07-28T09:00:00Z');
+  const h = new SessionHarness('s4', parseRunnable(ASK_SKILL, 'ask'), '2026-07-28T09:00:00Z');
   h.invokeSkill(cfg);
   assert.equal(h.grants('draft-outbound'), true);
 });
@@ -519,7 +567,7 @@ test('a quieter arrival never strips permissions the session already had', () =>
 test('the receipt records every skill that was in force, not just the opener', () => {
   const h = new SessionHarness(
     'abcd1234ef',
-    parseRunnable(CHAT_SKILL, 'chat'),
+    parseRunnable(ASK_SKILL, 'ask'),
     '2026-07-28T09:00:00Z',
   );
   h.beginTurn('what do these nine interviews add up to?', '2026-07-28T09:00:00Z');
@@ -529,26 +577,26 @@ test('the receipt records every skill that was in force, not just the opener', (
   // arrived — not the base every session opens with.
   assert.equal(r.frontmatter.skill, 'synthesis');
   assert.ok(r.path.includes('-synthesis-'));
-  assert.deepEqual(r.frontmatter.skills, ['chat', 'synthesis']);
+  assert.deepEqual(r.frontmatter.skills, ['ask', 'synthesis']);
   // The frontmatter keeps the invocation names (addresses); the body, which a
   // person reads, prints the titles.
-  assert.ok(r.body.includes('Skills: Open session → Find the pattern'));
+  assert.ok(r.body.includes('Skills: Ask the memory → Find the pattern'));
   assert.equal(r.frontmatter.title, 'Find the pattern session');
 });
 
 test('a skill invoked on a later turn does not rename an already-filed receipt', () => {
   const h = new SessionHarness(
     'abcd1234ef',
-    parseRunnable(CHAT_SKILL, 'chat'),
+    parseRunnable(ASK_SKILL, 'ask'),
     '2026-07-28T09:00:00Z',
   );
   h.beginTurn('what changed this week?', '2026-07-28T09:00:00Z');
   const first = buildSessionReceipt(h, '2026-07-28T09:05:00Z');
-  assert.ok(first.path.includes('-chat-'));
+  assert.ok(first.path.includes('-ask-'));
   h.invokeSkill(parseRunnable(SYNTHESIS_SKILL, 'synthesis'));
   const later = buildSessionReceipt(h, '2026-07-28T09:40:00Z');
   assert.equal(later.path, first.path, 'a renamed receipt would orphan the one already on disk');
-  assert.deepEqual(later.frontmatter.skills, ['chat', 'synthesis']);
+  assert.deepEqual(later.frontmatter.skills, ['ask', 'synthesis']);
 });
 
 test('a kickoff round-trips: the chat reads back the skill, the page, and the wording', () => {

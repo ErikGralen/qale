@@ -4,7 +4,7 @@ import {
   parseRunnable,
   SessionHarness,
   ARRIVAL_SKILL,
-  CHAT_SKILL,
+  ASK_SKILL,
   LIBRARIAN_AGENT,
   WEEKLY_UPDATE_SKILL,
   SYNTHESIS_SKILL,
@@ -36,7 +36,7 @@ const harness = (skill: string, name: string, invoked?: [string, string]) => {
 };
 
 /** The plain session: `chat`, nothing invoked, nothing connected. */
-const openSession = () => harness(CHAT_SKILL, 'chat');
+const openSession = () => harness(ASK_SKILL, 'ask');
 
 /** Nothing connected: no reads, nothing to track. */
 const NONE: AgentConnection[] = [];
@@ -219,7 +219,7 @@ test('asking the code needs the setup and nothing else', () => {
 });
 
 test('a skill arriving mid-session still adds what it grants', () => {
-  const h = harness(CHAT_SKILL, 'chat', [SYNTHESIS_SKILL, 'synthesis']);
+  const h = harness(ASK_SKILL, 'ask', [SYNTHESIS_SKILL, 'synthesis']);
   const names = toolNamesFor(h, NONE, true, true, false);
   for (const t of DRAFT_TOOL_NAMES) assert.ok(names.includes(t), `${t} missing after arrival`);
   assert.ok(names.includes('spawn'), 'working files bring fan-out');

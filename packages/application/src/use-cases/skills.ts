@@ -302,6 +302,54 @@ export async function ensureDefaultSkills(
   return seeded;
 }
 
+/**
+ * The basename a retired skill's entry file is moved to. Not an entry basename,
+ * so nothing indexes it, nothing lists it and nothing resolves it: the file is
+ * out of force the moment it is renamed, and every word in it is still there.
+ */
+const RETIRED_ENTRY = 'RETIRED-SKILL.md';
+
+/**
+ * Take out of force what the pack used to seed and does not seed any more
+ * (`RETIRED_SKILLS`). A workspace opened before the change still holds the file,
+ * and a skill nobody maintains sitting in the picker is worse than one fewer
+ * entry there.
+ *
+ * The file is RENAMED, never deleted. Nothing here can tell an untouched copy
+ * from one the PM rewrote (the fingerprint ledger went with the shipped-versions
+ * machinery, SK-1), and deleting somebody's writing on a guess is the one thing
+ * worse than leaving an inert file in its folder. The PM can delete the folder;
+ * the app does not.
+ *
+ * The name still resolves. Every retired skill has an alias in
+ * `DEFAULT_SKILL_BY_NAME` pointing at whatever does the work now, so an old
+ * receipt or a stale picker entry opens the merged skill instead of nothing.
+ *
+ * Safe to run repeatedly: after the first pass there is no entry file left to
+ * find. Both layouts are checked, so a vault that never migrated is caught too.
+ */
+export async function retireDefaultSkills(ctx: UseCaseContext, files: string[]): Promise<string[]> {
+  const touched: string[] = [];
+  for (const file of files) {
+    const folder = file.slice(0, file.lastIndexOf('/'));
+    const target = `${folder}/${RETIRED_ENTRY}`;
+    for (const form of runnableForms(file)) {
+      const raw = await ctx.vault.readRaw(form);
+      if (raw === null) continue;
+      if (!(await ctx.vault.exists(target))) await ctx.vault.writeRaw(target, raw);
+      await ctx.vault.remove(form);
+      ctx.index.removeByPath(form);
+      touched.push(form, target);
+      // One form is the truth: `migrateRunnableFolders` runs first and leaves at
+      // most one entry file per skill.
+      break;
+    }
+  }
+  if (touched.length > 0)
+    await ctx.git.commitPaths(touched, 'skills: retire what the pack no longer ships');
+  return touched;
+}
+
 export interface CreatedSkill {
   path: string;
   /** The invocation name, which is the folder name and never changes after this. */

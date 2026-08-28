@@ -116,14 +116,17 @@ function SelfStartedLine({ text }: { text: string }) {
   );
 }
 
-/** Amber flag — an unsourced claim is never the quietest thing on screen. */
+/** Amber flag — an unsourced claim is never the quietest thing on screen. The
+ *  pill says what it means: the agent wrote this with nothing to point at. It
+ *  used to say "Unverified", which is also the name of a trust tier on a note,
+ *  so one word carried two facts. */
 function InferenceFlag() {
   return (
     <span
       className="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
-      title="The agent inferred this without citing a source. Double-check it."
+      title="The agent inferred this and cited no source for it. Check it before you approve."
     >
-      <AlertTriangle className="size-3" aria-hidden /> Unverified
+      <AlertTriangle className="size-3" aria-hidden /> No source cited
     </span>
   );
 }
@@ -253,7 +256,12 @@ export function CardItem({
   const act = outbound ? outboundAct(outbound) : null;
   // An outbound send is the review's own last decision — never a one-line row.
   // It always shows its detail so nothing leaves the workspace unseen.
-  const open = expanded || editing || !!outbound;
+  //
+  // A refused accept opens the card too. The error row and the stale banner
+  // both live in the detail, so a card that stayed shut said nothing at all:
+  // the keyboard path and the batch could hit a stale card and read as a silent
+  // approval. Whatever refused the write now has to speak.
+  const open = expanded || editing || !!outbound || !!error;
 
   // Collapsing hands control back to the caller's compact form (the
   // housekeeping row) when there is one — except mid-edit, where the detail
@@ -377,6 +385,11 @@ export function CardItem({
         fresh: true,
       });
   };
+
+  // A stale edit has nowhere to land, so a second try lands nowhere either. The
+  // banner above owns the way out ("Fix this"), and the error row drops its
+  // Retry rather than offer the same refusal again.
+  const retryable = !preview?.stale || !!outbound;
 
   const approveEdited = () => {
     const edited =
@@ -704,9 +717,11 @@ export function CardItem({
                   {act && <act.Icon className="size-3.5" />} Approve anyway
                 </Button>
               ) : (
-                <Button size="sm" variant="outline" onClick={() => onAccept()} disabled={busy}>
-                  Retry
-                </Button>
+                retryable && (
+                  <Button size="sm" variant="outline" onClick={() => onAccept()} disabled={busy}>
+                    Retry
+                  </Button>
+                )
               )}
             </div>
           )}

@@ -148,24 +148,18 @@ export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[
   // app's machinery there, not something a person edits row by row.
   note: [SUMMARY, PROCESSING, TAGS],
   // External mirrors: re-sync owns the delivery facts, so they display but
-  // never edit (a hand-flipped state_category is exactly the drift the sync
-  // exists to catch, and main rejects the write anyway). Only the PO's own
+  // never edit (a hand-flipped state is exactly the drift the sync exists to
+  // catch, and main rejects the write anyway). Only the PO's own
   // summary/processing/tags stay live.
+  //
+  // `state_category` has no row at all: it is how the app colours the state
+  // chip, and the chip is already on screen. Two rows, one saying "In review"
+  // and one saying "In progress", only ask the reader which one the tracker
+  // meant. See {@link HIDDEN_KEYS}.
   ticket: [
     SUMMARY,
     PROCESSING,
     { key: 'state', label: 'State (as in tracker)', widget: 'readonly' },
-    {
-      key: 'state_category',
-      label: 'State category',
-      widget: 'readonly',
-      options: [
-        { value: 'open', label: 'Open' },
-        { value: 'in_progress', label: 'In progress' },
-        { value: 'blocked', label: 'Blocked' },
-        { value: 'done', label: 'Done' },
-      ],
-    },
     { key: 'assignee', label: 'Assignee', widget: 'readonly' },
     { key: 'remote_updated', label: 'Changed upstream', widget: 'readonly' },
     TAGS,
@@ -189,6 +183,37 @@ export const REF_FIELDS = [
   'customer',
   'transcript',
 ] as const;
+
+/**
+ * What a ref field is CALLED on screen, where the field name is not the word.
+ * `evidence` and `sources` are two channels in the pipeline (one is
+ * resolution-checked, the other self-heals) and one thing to a reader: where
+ * this came from. They render under the same heading, and a note carrying both
+ * gets one list. The keys on disk do not move.
+ */
+export const REF_LABELS: Record<string, string> = {
+  evidence: 'Sources',
+  sources: 'Sources',
+};
+
+/**
+ * Frontmatter the panel never draws a row for. Each is machinery that already
+ * says what it means somewhere the reader is looking anyway:
+ *
+ * - `state_category`: the colour of the ticket's state chip;
+ * - `needs_summary`: a note to the next session. The summary above was lifted
+ *   from the body and still owes the note a real one. "Needs summary: true" is
+ *   the pass talking to itself, and it read as a demand on the PM;
+ * - `broken_frontmatter`: one plain sentence replaces it (PropertiesBlock),
+ *   because a wall of raw YAML in a value column explains nothing.
+ *
+ * Hidden, not dropped: the keys stay in the file, and the agent still reads them.
+ */
+export const HIDDEN_KEYS = new Set<string>([
+  'state_category',
+  'needs_summary',
+  'broken_frontmatter',
+]);
 
 /**
  * Frontmatter the harness/domain writes, not the human: session receipt fields

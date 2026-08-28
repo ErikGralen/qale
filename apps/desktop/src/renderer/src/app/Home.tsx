@@ -65,18 +65,27 @@ import {
  * metrics: every line is either an action or a fact with a destination.
  */
 export function Home() {
-  const { vault, openVaultDialog } = useApp();
+  const { vault, openVaultDialog, skills } = useApp();
   // The composer's text lives out here because two things write it: the PO
-  // typing, and a starter below the bar handing it a first sentence.
+  // typing, and a starter below the bar handing it a first sentence. The
+  // picked skill lives out here too, for the same reason: a starter with an
+  // obvious skill sets it, the same field the picker itself writes to.
   const [ask, setAsk] = useState('');
+  const [pickedSkill, setPickedSkill] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   if (!vault) return <NoWorkspace onOpen={openVaultDialog} />;
 
   /** Load a starter into the bar and hand the PO the caret after it — the
-   *  starter opens the sentence, it never sends it. */
-  const seed = (text: string) => {
+   *  starter opens the sentence, it never sends it. Where the starter also
+   *  names a skill, pick it too, exactly as if the PO had opened the picker,
+   *  unless the file behind it is gone. Then the text still seeds and the
+   *  skill is quietly skipped. */
+  const seed = (text: string, skillName?: string) => {
     setAsk(text);
+    if (skillName && skills.some((s) => s.name === skillName)) {
+      setPickedSkill(skillName);
+    }
     const el = inputRef.current;
     if (!el) return;
     el.focus();
@@ -101,7 +110,13 @@ export function Home() {
           {/* Extra air on top of the column gap: the pause before the page's
               centerpiece is part of what makes it the centerpiece. */}
           <div className="mt-4 flex flex-col gap-3">
-            <HomeComposer ask={ask} setAsk={setAsk} inputRef={inputRef} />
+            <HomeComposer
+              ask={ask}
+              setAsk={setAsk}
+              pickedSkill={pickedSkill}
+              setPickedSkill={setPickedSkill}
+              inputRef={inputRef}
+            />
             <Starters onPick={seed} />
           </div>
         </div>
@@ -220,20 +235,24 @@ function QuickActions() {
  *
  * The skill picker is the same instrument as the session composer's: without a
  * pick the question opens an Ask, with one it opens that skill instead. The
- * verb chips at the foot of the page are the shortcut for a skill with nothing
- * to say to it; this is the same start with a first sentence attached.
+ * verb chips at the foot of the page are the shortcut with a first sentence
+ * already in hand; where one has an obvious skill, it picks that too, through
+ * this same field.
  */
 function HomeComposer({
   ask,
   setAsk,
+  pickedSkill,
+  setPickedSkill,
   inputRef,
 }: {
   ask: string;
   setAsk: (text: string) => void;
+  pickedSkill: string | null;
+  setPickedSkill: (name: string | null) => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const { tree, skills, openSession } = useApp();
-  const [pickedSkill, setPickedSkill] = useState<string | null>(null);
   const [skillMenuOpen, setSkillMenuOpen] = useState(false);
   const mentions = useChatMentions(tree, inputRef, ask, setAsk);
   useAutoGrow(inputRef, ask);
@@ -349,6 +368,10 @@ interface Starter {
   /** What lands in the bar, when that differs from the label — an unfinished
    *  starter loads without its ellipsis and with the space already typed. */
   text?: string;
+  /** This sentence's obvious skill, by its invocation name (the folder name
+   *  under `skills/`). Picked alongside the text, same as if the PO had opened
+   *  the picker themselves. Left out where no one skill is the plain answer. */
+  skill?: string;
 }
 
 interface Category {
@@ -366,8 +389,14 @@ interface Category {
  * These are deliberately not the skill catalogue. A skill name answers "what
  * does this workspace have installed"; a PO between meetings is asking "what
  * can I get out of this right now", and the honest answer is a sentence, not a
- * noun. The session that runs is still chosen the same way it is for anything
- * typed into the bar — the starter only writes the first line.
+ * noun. Most starters just write that sentence into the bar and leave the
+ * choice of skill where it always was, to `ask`.
+ *
+ * A few sentences already have one obvious skill behind them: "Draft this
+ * week's update" is the weekly-update skill, in any words. Those carry a
+ * `skill` field, and picking them picks that skill too, through the same
+ * field the composer's own picker writes to. If the file behind it is gone,
+ * the sentence still seeds and the skill is quietly left unpicked.
  */
 const CATEGORIES: Category[] = [
   {
@@ -375,11 +404,11 @@ const CATEGORIES: Category[] = [
     label: 'Draft',
     icon: PenLine,
     starters: [
-      { label: "Draft this week's update" },
-      { label: 'Summarise where we landed for the exec team' },
+      { label: "Draft this week's update", skill: 'weekly-update' },
+      { label: 'Summarise where we landed for the exec team', skill: 'weekly-update' },
       { label: 'Write a customer note about what shipped' },
-      { label: 'Draft a one-pager for…', text: 'Draft a one-pager for ' },
-      { label: 'Write up a decision we just made' },
+      { label: 'Draft a one-pager for…', text: 'Draft a one-pager for ', skill: 'spec' },
+      { label: 'Write up a decision we just made', skill: 'tell-qale' },
     ],
   },
   {
@@ -387,11 +416,11 @@ const CATEGORIES: Category[] = [
     label: 'Analyse',
     icon: Layers,
     starters: [
-      { label: 'Find the pattern across recent interviews' },
+      { label: 'Find the pattern across recent interviews', skill: 'synthesis' },
       { label: 'What actually changed this week?' },
       { label: 'What is the evidence behind…', text: 'What is the evidence behind ' },
-      { label: 'Is this one loud account or a real pattern?' },
-      { label: 'Compare what two customers are asking for' },
+      { label: 'Is this one loud account or a real pattern?', skill: 'synthesis' },
+      { label: 'Compare what two customers are asking for', skill: 'synthesis' },
     ],
   },
   {
@@ -442,11 +471,12 @@ const CATEGORIES: Category[] = [
  * active chip is the label and pressing it (or Escape) folds the stack away.
  * Picking a starter loads it into the bar above, folds the stack, and stops
  * there — nothing is opened, nothing is sent, and the PO edits a sentence they
- * can see rather than watching a session start on a guess. Last on the page,
- * so the stack grows downward into free space instead of shoving the waiting
- * list around.
+ * can see rather than watching a session start on a guess. Where the sentence
+ * carries an obvious skill, that lands in the bar's skill chip too, the same
+ * as picking it by hand. Last on the page, so the stack grows downward into
+ * free space instead of shoving the waiting list around.
  */
-function Starters({ onPick }: { onPick: (text: string) => void }) {
+function Starters({ onPick }: { onPick: (text: string, skillName?: string) => void }) {
   const { tree } = useApp();
   const [openId, setOpenId] = useState<string | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -511,7 +541,7 @@ function Starters({ onPick }: { onPick: (text: string) => void }) {
                 className="max-w-full truncate rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none"
                 onClick={() => {
                   setOpenId(null);
-                  onPick(s.text ?? s.label);
+                  onPick(s.text ?? s.label, s.skill);
                 }}
               >
                 {s.label}

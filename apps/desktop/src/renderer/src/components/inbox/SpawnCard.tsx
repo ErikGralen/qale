@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@qale/ui';
-import { ChevronDown, Users } from 'lucide-react';
+import { ChevronDown, Users, X } from 'lucide-react';
 import type { SpawnRequestDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 
@@ -41,7 +41,7 @@ export function SpawnCard({ request }: { request: SpawnRequestDTO }) {
   };
 
   return (
-    <div className="rounded-xl border border-border bg-card p-3.5">
+    <div className="overflow-hidden rounded-xl bg-card p-3.5 ring-1 ring-brand/30">
       <div className="flex items-center gap-1.5 text-sm font-medium">
         <Users className="size-4 text-muted-foreground" aria-hidden />
         Spawn {request.total} subagent{request.total === 1 ? '' : 's'}?
@@ -78,7 +78,7 @@ export function SpawnCard({ request }: { request: SpawnRequestDTO }) {
       {request.brief === null && (
         <p className="mt-2 text-xs text-warning">
           No brief.md yet. Each child will read its item with no idea what you already believe, so
-          none of them can flag a contradiction. Cancel and ask for a brief first if that matters
+          none of them can flag a contradiction. Discard and ask for a brief first if that matters
           here.
         </p>
       )}
@@ -102,11 +102,11 @@ export function SpawnCard({ request }: { request: SpawnRequestDTO }) {
           ))}
         </select>
         <span className="ml-auto flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => answer(false)} disabled={busy}>
-            Cancel
+          <Button size="sm" variant="ghost" onClick={() => answer(false)} disabled={busy}>
+            <X className="size-3.5" /> Discard
           </Button>
           <Button ref={approveRef} size="sm" onClick={() => answer(true)} disabled={busy}>
-            Approve
+            <Users className="size-3.5" /> Approve & run
           </Button>
         </span>
       </div>

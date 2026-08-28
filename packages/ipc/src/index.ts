@@ -175,6 +175,14 @@ export interface InvokeMap {
   'note:create': { args: [input: CreateNoteInputDTO]; result: NoteDTO };
   'note:rename': { args: [input: RenameNoteInput]; result: NoteDTO };
   'note:delete': { args: [path: string]; result: { ok: boolean } };
+  /**
+   * "I checked this": append one `human:<you>` verification to the note. Its
+   * own channel because the frontmatter form cannot carry it. The mutability
+   * invariant freezes `verified` on the very types worth vouching for (a
+   * meeting, a session receipt). `ok: false` when the note is gone, or when you
+   * already checked it today.
+   */
+  'note:markChecked': { args: [path: string]; result: { ok: boolean } };
   'note:backlinks': { args: [path: string]; result: BacklinkDTO[] };
   'note:resolveLink': { args: [target: string]; result: string | null };
   'note:history': { args: [path: string]; result: NoteCommitDTO[] };
@@ -407,6 +415,7 @@ export const INVOKE_CHANNELS = [
   'note:create',
   'note:rename',
   'note:delete',
+  'note:markChecked',
   'note:backlinks',
   'note:resolveLink',
   'note:history',

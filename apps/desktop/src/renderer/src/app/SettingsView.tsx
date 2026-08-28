@@ -1,6 +1,30 @@
 import { useEffect, useState } from 'react';
-import { Button, Input, Tabs, TabsContent, TabsList, TabsTrigger, useTheme } from '@qale/ui';
-import { Check, Copy, Eye, EyeOff, Play, Settings, Sun, Moon, Monitor, X } from 'lucide-react';
+import {
+  Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  Input,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  cn,
+  useTheme,
+} from '@qale/ui';
+import {
+  Check,
+  ChevronRight,
+  Copy,
+  Eye,
+  EyeOff,
+  Play,
+  Settings,
+  Sun,
+  Moon,
+  Monitor,
+  X,
+} from 'lucide-react';
 import {
   LANGUAGE_NAMES,
   LANGUAGE_TAGS,
@@ -916,8 +940,15 @@ function McpPortInput({ port, onCommit }: { port: number; onCommit: (port: numbe
   );
 }
 
-/** MCP connection details — the bearer token stays masked until revealed. */
+/**
+ * MCP connection details. The bearer token stays masked until revealed, and
+ * the whole block stays folded until asked for. It is the address and the pass
+ * for the local server: three lines of `url`, `header` and `Bearer ••••` that
+ * only mean something while you are pasting them into another app, and read as
+ * a leak the rest of the time.
+ */
 function McpConnection({ port, token }: { port: number; token: string }) {
+  const [open, setOpen] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -926,33 +957,47 @@ function McpConnection({ port, token }: { port: number; token: string }) {
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg bg-muted/60 p-3 font-mono text-xs">
-      <div>
-        <span className="text-muted-foreground">url </span>
-        http://127.0.0.1:{port}/mcp
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="truncate">
-          <span className="text-muted-foreground">header </span>
-          Authorization: Bearer {revealed ? token : '••••••••••••'}
-        </span>
-        <button
-          className="ml-auto shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={() => setRevealed((r) => !r)}
-          aria-label={revealed ? 'Hide token' : 'Reveal token'}
-          title={revealed ? 'Hide token' : 'Reveal token'}
-        >
-          {revealed ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-        </button>
-        <button
-          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={copy}
-          aria-label="Copy token"
-          title="Copy token"
-        >
-          {copied ? <Check className="size-3.5 text-brand" /> : <Copy className="size-3.5" />}
-        </button>
-      </div>
-    </div>
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="flex items-center gap-1 rounded text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none">
+        <ChevronRight
+          className={cn(
+            'size-3.5 transition-transform motion-reduce:transition-none',
+            open && 'rotate-90',
+          )}
+          aria-hidden
+        />
+        {open ? 'Hide details' : 'Show details'}
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-2 flex flex-col gap-1.5 rounded-lg bg-muted/60 p-3 font-mono text-xs">
+          <div>
+            <span className="text-muted-foreground">url </span>
+            http://127.0.0.1:{port}/mcp
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="truncate">
+              <span className="text-muted-foreground">header </span>
+              Authorization: Bearer {revealed ? token : '••••••••••••'}
+            </span>
+            <button
+              className="ml-auto shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              onClick={() => setRevealed((r) => !r)}
+              aria-label={revealed ? 'Hide token' : 'Reveal token'}
+              title={revealed ? 'Hide token' : 'Reveal token'}
+            >
+              {revealed ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+            </button>
+            <button
+              className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              onClick={copy}
+              aria-label="Copy token"
+              title="Copy token"
+            >
+              {copied ? <Check className="size-3.5 text-brand" /> : <Copy className="size-3.5" />}
+            </button>
+          </div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

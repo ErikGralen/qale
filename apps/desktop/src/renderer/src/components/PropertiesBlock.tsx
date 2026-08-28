@@ -35,7 +35,9 @@ import { isExternalRef } from '../lib/connections';
 import { collectContexts } from '../lib/contexts';
 import {
   FIELDS,
+  HIDDEN_KEYS,
   REF_FIELDS,
+  REF_LABELS,
   SYSTEM_KEYS,
   type FieldSpec,
   type Widget,
@@ -140,30 +142,50 @@ function coerceVerified(value: unknown): Verification[] {
 }
 
 /**
- * The OKF trust tier (OKF alignment, phase 2), shown next to the freshness
- * status: who last confirmed the note is still true, and when. Absence is the
- * "unverified" default and shows no row — this only appears once something has
- * actually been verified.
+ * The OKF trust tier (OKF alignment, phase 2): who last confirmed the note is
+ * still true, and when. The row now carries the one action that sets it, so it
+ * renders on every note, "Unverified" included. A tier a person can read but
+ * never touch is a verdict on their notes; a tier that only appeared once an
+ * agent had already spoken hid the button behind the very state it was there to
+ * change. One action, and it only ever adds: nothing here takes a check back.
  */
-function TrustRow({ verifications }: { verifications: Verification[] }) {
+function TrustRow({
+  verifications,
+  onCheck,
+}: {
+  verifications: Verification[];
+  onCheck: () => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
   const tier = trustTier(verifications);
   const latest = latestVerification(verifications);
   const who = latest ? parseActor(latest.by) : null;
   const when = latest && /^\d{4}-\d{2}-\d{2}/.test(latest.at) ? latest.at.slice(0, 10) : latest?.at;
   const detail = who ? `${who.id}${when ? ` · ${when}` : ''}` : null;
+  const pill =
+    tier === 'human'
+      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+      : tier === 'machine'
+        ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
+        : 'bg-muted text-muted-foreground';
   return (
     <PropertyRow icon={BadgeCheck} label="Trust">
       <div className="flex min-h-[26px] flex-wrap items-center gap-1.5 px-1.5 py-0.5 text-sm">
-        <span
-          className={
-            tier === 'human'
-              ? 'rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400'
-              : 'rounded-full bg-sky-500/15 px-1.5 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-400'
-          }
-        >
+        <span className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${pill}`}>
           {trustTierLabel(tier)}
         </span>
         {detail && <span className="text-xs text-muted-foreground">{detail}</span>}
+        <button
+          className="ml-auto shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
+          onClick={() => {
+            setSaving(true);
+            void onCheck().finally(() => setSaving(false));
+          }}
+          disabled={saving}
+          title="Say that you read this note and it is still true"
+        >
+          Mark as checked
+        </button>
       </div>
     </PropertyRow>
   );
@@ -210,12 +232,23 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
   // told and the file quietly refused: those rows read as values, not inputs.
   const mutable = TYPE_RULES[note.type]?.mutableFields ?? 'all';
   const canEdit = (key: string): boolean => mutable === 'all' || mutable.includes(key);
-  const refs = REF_FIELDS.flatMap((key) => {
+  // Grouped by LABEL, not by key: `evidence` and `sources` are one word to a
+  // reader ("Sources"), so a note carrying both reads as one list of where it
+  // came from rather than two headings the reader has to tell apart.
+  const refGroups = new Map<string, string[]>();
+  for (const key of REF_FIELDS) {
     const v = note.frontmatter[key];
     const arr = Array.isArray(v) ? v : typeof v === 'string' ? [v] : [];
     const targets = arr.map((r) => String(r).replace(/^\[\[/, '').replace(/\]\]$/, ''));
-    return targets.length > 0 ? [{ key, targets }] : [];
-  });
+    if (targets.length === 0) continue;
+    const label = REF_LABELS[key] ?? humanize(key);
+    const merged = [...(refGroups.get(label) ?? []), ...targets];
+    refGroups.set(
+      label,
+      merged.filter((t, i) => merged.indexOf(t) === i),
+    );
+  }
+  const refs = [...refGroups.entries()].map(([label, targets]) => ({ label, targets }));
   // Ticket relationships written by sync: `parent` reads
   // as "Part of"; `links` entries group under their relationship label. They
   // render as the same ref chips — synced, so no remove affordance.
@@ -233,7 +266,12 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
     ...specs.map((s) => s.key),
     ...REF_FIELDS,
   ]);
-  const customKeys = Object.keys(note.frontmatter).filter((k) => !known.has(k));
+  const customKeys = Object.keys(note.frontmatter).filter(
+    (k) => !known.has(k) && !HIDDEN_KEYS.has(k),
+  );
+  // The normalizer kept a frontmatter block that would not parse. One sentence
+  // below says so; the raw YAML itself is not a property row anybody can read.
+  const brokenHeader = typeof note.frontmatter['broken_frontmatter'] === 'string';
   // The type's own schema is what a human came here to read; everything else is
   // sync provenance (`provider`, `external_id`, `calendar`, `event_status`…) —
   // true, worth keeping, but not worth a row until asked for. The exception is
@@ -247,6 +285,16 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
     refs.length +
     relationRows.length +
     (verifications.length > 0 ? 1 : 0);
+
+  // The trust write is its own IPC call, not a frontmatter save: `verified` is
+  // frozen on the types most worth vouching for (see the use-case). Reload
+  // after it lands, so the row reads what the file now says.
+  const markChecked = async () => {
+    // Same shape as the save queue above: whatever main did or refused, the
+    // panel then reads the file rather than its own guess at it.
+    await invoke['note:markChecked'](note.path).catch(() => {});
+    await loadDoc(note.path);
+  };
 
   const openRef = (target: string, e?: React.MouseEvent) => {
     const opts = e && navFromEvent(e);
@@ -299,10 +347,10 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
               </PropertyRow>
             ))}
 
-            {verifications.length > 0 && <TrustRow verifications={verifications} />}
+            <TrustRow verifications={verifications} onCheck={markChecked} />
 
-            {refs.map(({ key, targets }) => (
-              <PropertyRow key={key} icon={Link2} label={humanize(key)}>
+            {refs.map(({ label, targets }) => (
+              <PropertyRow key={label} icon={Link2} label={label}>
                 <div className="flex min-h-[26px] flex-wrap items-center gap-1 px-1.5 py-0.5">
                   {targets.map((target) => (
                     <button
@@ -376,9 +424,16 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
                 main rejects them, so the affordance doesn't appear. */}
             {mutable === 'all' && (
               <AddPropertyRow
-                reserved={new Set([...known, ...customKeys])}
+                reserved={new Set([...known, ...customKeys, ...HIDDEN_KEYS])}
                 onAdd={(key, value) => commit(key, value)}
               />
+            )}
+
+            {brokenHeader && (
+              <p className="mt-1.5 px-1.5 text-xs text-muted-foreground">
+                Qale could not read part of this note’s header. The original text stays in the file,
+                exactly as it was written.
+              </p>
             )}
 
             <p className="mt-1.5 px-1.5 text-xs text-muted-foreground/70">

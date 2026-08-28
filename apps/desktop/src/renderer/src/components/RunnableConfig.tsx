@@ -9,14 +9,17 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { CapabilityDTO, StartDTO, StartEvent } from '@qale/ipc';
+import { CAPABILITY_LABEL } from '@qale/sessions';
 import { cn } from '@qale/ui';
 
 /**
  * The configured facts a skill or an agent shows: what it may do, and for an
  * agent, what clock starts it. Both are data (see `@qale/sessions/runnable` and
- * main's `agents.ts`) — the file's instructions never describe them, and these
- * chips are the only place the app puts them into words, so the wiring and the
- * wording cannot drift apart.
+ * main's `agents.ts`) — the file's instructions never describe them, and this
+ * chip and `runnable.ts`'s own error copy are the only places the app puts
+ * them into words. The label text comes from `CAPABILITY_LABEL` in
+ * `@qale/sessions` so the two cannot drift apart; the icon and the long
+ * description are only ever needed here, so they stay local.
  */
 
 /** The phrase for each watched happening. Main names the event; the words are ours. */
@@ -24,34 +27,29 @@ const EVENT_PHRASE: Record<StartEvent, string> = {
   'decision-superseded': 'When you approve a decision that replaces another',
 };
 
-const CAN_META: Record<CapabilityDTO, { icon: LucideIcon; text: string; title: string }> = {
+const CAN_META: Record<CapabilityDTO, { icon: LucideIcon; title: string }> = {
   'draft-outbound': {
     icon: Send,
-    text: 'Drafts outgoing updates',
     title:
       'May draft things that leave the workspace: comments on tickets and edits to wiki pages. Nothing is sent without your approval.',
   },
   'draft-calendar': {
     icon: CalendarClock,
-    text: 'Drafts calendar changes',
     title:
       'May draft a new meeting, a move of one, or a reply to an invitation. Nothing reaches your calendar or the guests without your approval.',
   },
   'keep-working-files': {
     icon: FolderClosed,
-    text: 'Keeps working files',
     title:
       'May keep scratch files for the length of a session. Working material, never part of the memory.',
   },
   'file-material': {
     icon: FolderInput,
-    text: 'Files what you hand over',
     title:
       'May put material you dropped in where it belongs, and move it when that turns out to be wrong. Filing needs no approval; everything it goes on to write about the material is still a card.',
   },
   'track-external': {
     icon: Eye,
-    text: 'Watches your tracker and wiki',
     title:
       'May start watching a ticket or a wiki page, so the workspace keeps its own copy up to date, and may record your answer about a whole project or space. It writes nothing to the tracker or the wiki, so it needs no approval. Reading them needs no permission at all.',
   },
@@ -145,7 +143,7 @@ export function CanChips({ can, className }: { can: CapabilityDTO[]; className?:
         const meta = CAN_META[c];
         return (
           <Chip key={c} icon={meta.icon} title={meta.title}>
-            {meta.text}
+            {CAPABILITY_LABEL[c]}
           </Chip>
         );
       })}

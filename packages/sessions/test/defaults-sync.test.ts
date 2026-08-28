@@ -168,9 +168,9 @@ test('a demo skill, agent or voice with no seeded pair is named here or it fails
 
 /**
  * The other gap: a constant written in `defaults.ts` that no registry seeds.
- * `ask` and `chat` are the two real ones, and they are built-in only, so the
- * sweep above never sees them. They are named here rather than filtered by a
- * pattern, so the next constant that quietly stops being seeded is loud.
+ * `ask` is the one real case, and it is built-in only, so the sweep above never
+ * sees it. It is named here rather than filtered by a pattern, so the next
+ * constant that quietly stops being seeded is loud.
  *
  * This reads the module namespace of `defaults.ts` rather than the package's
  * public exports on purpose: a constant added to the file but not re-exported
@@ -185,7 +185,7 @@ test('every skill-shaped constant in defaults.ts is seeded, or is named as a bui
     .sort();
   assert.deepEqual(
     unseeded,
-    ['ASK_SKILL', 'CHAT_SKILL'],
+    ['ASK_SKILL'],
     'a skill-shaped constant in defaults.ts is neither seeded nor a known built-in.\n' +
       'Seed it and give it a vault-dev copy, or name it here if it ships as a built-in only.',
   );

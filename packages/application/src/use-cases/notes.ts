@@ -460,6 +460,49 @@ export async function saveFrontmatter(
   return note;
 }
 
+/**
+ * "I checked this note": append one verification to the `verified` list, which
+ * is what derives the trust tier (OKF §5.2, see `trustTier` in @qale/domain).
+ * `by` is the actor string, `human:<id>` for a person.
+ *
+ * Its own use-case rather than a frontmatter save, because a verification is a
+ * statement ABOUT a note, not a field of it. The mutability invariant freezes a
+ * meeting's provenance and a session receipt whole, and it should: this still
+ * has to work there, since raw material is exactly what a person vouches for.
+ * The write only ever APPENDS one entry, so nothing already in the file can be
+ * rewritten through this door.
+ *
+ * The same actor on the same day is the same check: it writes nothing and
+ * reports `ok: false`, so a second click never grows the list.
+ */
+export async function markNoteChecked(
+  ctx: UseCaseContext,
+  path: string,
+  by: string,
+): Promise<{ ok: boolean }> {
+  const existing = await ctx.vault.readNote(path);
+  if (!existing) return { ok: false };
+  const at = ctx.clock.now().slice(0, 10);
+  const fm = existing.frontmatter as Record<string, unknown>;
+  const list = Array.isArray(fm['verified']) ? fm['verified'] : [];
+  const already = list.some((entry) => {
+    const v = entry as { by?: unknown; at?: unknown };
+    return v?.by === by && typeof v.at === 'string' && v.at.slice(0, 10) === at;
+  });
+  if (already) return { ok: false };
+  // A note that failed its schema reads as a plain `note`; writing that reading
+  // back would replace the file's own `type` (see {@link typeToWrite}).
+  const type = typeToWrite(existing, undefined);
+  const written = await ctx.vault.writeNote(
+    path,
+    { ...existing.frontmatter, type, verified: [...list, { by, at }] } as Frontmatter,
+    existing.body,
+  );
+  ctx.index.reindex(written);
+  await ctx.git.commitPaths([written.path], `verified: ${written.slug}`);
+  return { ok: true };
+}
+
 export interface Backlink {
   from: IndexedNote;
   /** Canonical link type of the inbound edge; absent = untyped mention. */

@@ -20,24 +20,36 @@ import { noteTypeIcon } from '../lib/note-icons';
 import { isUnprocessedSource, needsReview } from '../lib/note-status';
 
 /**
- * The shelves, clustered by what they are to the PO — four plain groups keep
- * the full ceiling scannable where a flat wall of twelve types read as bloat.
- * Notes sits alone on top as the desk. Every shelf renders from day one, empty
- * or not: Memory is the map of what the workspace can hold, so nothing is
- * drip-fed. The sidebar is the part that stays small — a type only gets a rail
- * section once one of its notes is pinned.
+ * The shelves, in one flat list — a wall of typed shelves reads fine once it
+ * is not also carrying four invented category names. Notes sits alone on top
+ * as the desk. Every shelf renders from day one, empty or not: Memory is the
+ * map of what the workspace can hold, so nothing is drip-fed. The sidebar is
+ * the part that stays small — a type only gets a rail section once one of its
+ * notes is pinned.
+ *
+ * Ticket and Wikipage keep a group of their own: they are the two types Qale
+ * never writes, only mirrors, and that is worth a label.
  *
  * Sessions are deliberately absent: a session receipt is a record the user
  * never authors, and it already has a home in the Sessions rail. It stays
  * addressable ([[sessions/…]] links resolve, backlinks work) without costing
  * a shelf here.
  */
-const SHELVES: readonly { label: string; types: readonly NoteType[] }[] = [
-  { label: 'Record', types: ['meeting', 'source'] },
-  { label: 'Judgment', types: ['decision', 'insight', 'theme'] },
-  { label: 'People', types: ['customer', 'person'] },
-  { label: 'Delivery', types: ['ticket', 'wikipage'] },
+const FLAT_SHELVES: readonly NoteType[] = [
+  'meeting',
+  'source',
+  'decision',
+  'insight',
+  'theme',
+  'customer',
+  'person',
 ];
+
+const SYNCED_SHELVES: { label: string; subtitle: string; types: readonly NoteType[] } = {
+  label: 'Synced',
+  subtitle: 'Mirrored from your tracker and wiki. Qale never edits them.',
+  types: ['ticket', 'wikipage'],
+};
 
 /**
  * What each shelf holds — the whole subtitle: note titles here read as bloat,
@@ -176,11 +188,11 @@ function FirstRun() {
 }
 
 /**
- * The whole memory, one shelf per note type, clustered so the eye chunks the
- * ceiling instead of scrolling a wall. Each row: what the shelf holds, how
- * much, and anything on it waiting for the PO — never individual note titles,
- * which read as inventory bloat. Week 6 reads fuller than week 1 through the
- * counts, not through rows that appear out of nowhere.
+ * The whole memory, one shelf per note type, in a flat list with one group at
+ * the end for the two synced types. Each row: what the shelf holds, how much,
+ * and anything on it waiting for the PO — never individual note titles, which
+ * read as inventory bloat. Week 6 reads fuller than week 1 through the counts,
+ * not through rows that appear out of nowhere.
  */
 export function MemoryView() {
   const { tree } = useApp();
@@ -193,7 +205,6 @@ export function MemoryView() {
   // of that type yet.
   const groupFor = (t: NoteType): VaultTreeGroupDTO =>
     byType.get(t) ?? { dir: dirForType(t), type: t, layer: layerForType(t), notes: [] };
-  const shelves = SHELVES.map((s) => ({ label: s.label, groups: s.types.map(groupFor) }));
 
   // The header count has to match what the shelves add up to, so the types
   // with homes of their own (Skills, Todos, Sessions) stay out of it.
@@ -212,22 +223,28 @@ export function MemoryView() {
           {/* An empty memory gets the loop above the shelves, not instead of
               them: the whole ceiling is visible from the first launch. */}
           {total === 0 && <FirstRun />}
-          {/* The desk — the scratch pad rides on top, ungrouped. */}
+          {/* The desk — the scratch pad rides on top, then the rest of the
+              flat list. */}
           <ul className={`flex flex-col gap-0.5 ${total === 0 ? 'mt-8' : ''}`}>
             <ShelfRow group={groupFor('note')} />
+            {FLAT_SHELVES.map((t) => (
+              <ShelfRow key={t} group={groupFor(t)} />
+            ))}
           </ul>
-          {shelves.map((s) => (
-            <section key={s.label} className="mt-5">
-              <h2 className="px-3 pb-1 text-xs font-medium tracking-wide text-muted-foreground/80 uppercase">
-                {s.label}
-              </h2>
-              <ul className="flex flex-col gap-0.5">
-                {s.groups.map((g) => (
-                  <ShelfRow key={g.dir} group={g} />
-                ))}
-              </ul>
-            </section>
-          ))}
+          {/* The one remaining group: types Qale mirrors, never authors. */}
+          <section className="mt-5">
+            <h2 className="px-3 pb-1 text-xs font-medium tracking-wide text-muted-foreground/80 uppercase">
+              {SYNCED_SHELVES.label}
+            </h2>
+            <p className="px-3 pb-1 text-xs text-muted-foreground/70">
+              {SYNCED_SHELVES.subtitle}
+            </p>
+            <ul className="flex flex-col gap-0.5">
+              {SYNCED_SHELVES.types.map((t) => (
+                <ShelfRow key={t} group={groupFor(t)} />
+              ))}
+            </ul>
+          </section>
         </div>
       </div>
     </div>

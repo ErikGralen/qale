@@ -231,20 +231,28 @@ export const MEETING_PREP_INSTRUCTION =
   "read the participants' people pages (last_told), the customer/theme hubs this meeting touches, and the previous meeting in its series, then propose a ## Prep section for the meeting page as one approval card.";
 
 /**
- * Built-in only, never seeded as a file. Asking the memory is what the
- * composer does, not a skill the PM manages; the config survives here so entry
- * points that invoke \`ask\` by name keep resolving.
+ * The one built-in, never seeded as a file. Every session opens as this, and
+ * every blank composer and every "Ask about this" opens it: asking the memory is
+ * what the composer does, not a skill the PM manages.
+ *
+ * It was two files for a while, `ask` and `chat`, and the difference between
+ * them was whether the memory was searched before the first sentence or during
+ * it. Six entry points opened one and a seventh opened the other, neither had a
+ * page anywhere, and nobody could see which room they were in. One default now;
+ * `chat` still resolves to this text, because stored receipts say it.
  */
 export const ASK_SKILL = `---
 type: skill
 title: Ask the memory
 summary: Answers with sources and dates, or says it doesn't know.
+can: [keep-working-files, draft-outbound]
 ---
 
 ## When
-Anytime you ask a question about the product, a customer, a decision, or what was said. Pull
-this in mid-session when the conversation stops being thinking out loud and becomes a question
-that deserves a cited, dated answer.
+Every session starts here: a question about the product, a customer, a decision or what was
+said, and open-ended thinking with everything the workspace remembers, across meetings,
+decisions, insights and themes. When the conversation turns into work a skill already describes,
+load that skill rather than improvising it.
 
 ## Read
 The whole workspace (search_vault, vault_read) and, when they are connected, the live tracker and
@@ -257,30 +265,6 @@ A cited, dated answer, external systems cited by their deep link. When a decisio
 superseded, give the reason it changed. When the evidence is thin (few insights, one account,
 old dates), say so plainly.
 
-## Then
-If the answer is worth keeping, propose it as a note or insight citing what it rests on.
-`;
-
-/**
- * Built-in only, never seeded as a file. Every session opens as this; it is
- * not a mode the PM picks, so it is not a file the PM manages.
- */
-export const CHAT_SKILL = `---
-type: skill
-title: Open session
-summary: Think out loud with everything the workspace remembers.
-can: [keep-working-files, draft-outbound]
----
-
-## When
-Every session starts here: open-ended thinking with everything the workspace remembers,
-connections across meetings, decisions, insights, and themes. When the conversation turns into
-work a skill already describes, load that skill rather than improvising it.
-
-## Read
-The workspace, via search_vault and vault_read.
-
-## Produce
 Nothing lands in the memory on its own, but you do have session files: a question too big for
 one context ("read these nine transcripts and tell me what's there") is worked in the folder
 rather than refused. Write a brief, then a file per source, then answer from those.
@@ -295,7 +279,8 @@ which voice it is in. When none fits, write plainly and leave \`voice\` out. Giv
 a rule: two takes far enough apart to choose between, not one text reworded.
 
 ## Then
-Surface what is worth keeping, and you can pull in a skill that proposes it.
+If the answer is worth keeping, propose it as a note or insight citing what it rests on, or pull
+in a skill that proposes it.
 `;
 
 export const PROCESS_NOTE_SKILL = `---
@@ -1156,21 +1141,49 @@ Approved cards land the repairs: links point where they were meant to, stray not
 they belong to, mirrored pages catch up with the decision.
 `;
 
+/**
+ * One promise, in whichever direction it runs (complexity review finding 8). It
+ * was two skills: this one for a commitment of the PM's going stale, and
+ * `incoming-request` for somebody else's ask arriving. The same move, twice:
+ * read what was actually promised or asked, read what the memory already holds
+ * about it, and say what to do. The boundary between them lived as a sentence
+ * inside each body ("the inbound twin of commitment-check"), which the PM only
+ * ever met by opening the files.
+ *
+ * The memory is the whole advantage on the inbound side. Any chat assistant can
+ * decode a Slack ping; only this one can say the ask contradicts a decision made
+ * in March.
+ *
+ * The decode lands as note type `note` for the same reason the spec does: the
+ * type list is closed, and adding to it is a product call.
+ */
 export const COMMITMENT_CHECK_SKILL = `---
 type: skill
 title: Handle a commitment
-summary: Works out what to do about one promise that's slipping.
+summary: Works out what to do about a promise that's slipping, or a request that just came in.
 scenarios:
   - one todo that has gone past its date ("this one is overdue, what do I do about it")
   - something owed to a named person ("I still owe Sara the SCIM timeline")
   - deciding whether a commitment can be closed or has to move ("can I close this one out")
+  - a request that just came in where it is not obvious what it wants ("what do I do with this message from sales?")
+  - a request from somebody whose position changes the answer ("the CEO wants SSO by Q3, what now")
+  - working out what to say back to one ("how should I answer this")
 ---
 
 ## When
-You point at one commitment (todo) and ask for help with it, usually because it slipped or you
-are unsure what to do. Work only on that one todo.
+One promise, and it runs in one of two directions. Work out which before anything else, because
+everything below branches on it.
 
-## Read
+- **Outbound**: you point at one commitment (todo) and ask for help with it, usually because it
+  slipped or you are unsure what to do. Work only on that one todo.
+- **Inbound**: a request arrived, a pasted Slack ping, a forwarded email, a mandate from above,
+  and you want to know what it actually wants and what to do about it.
+
+An inbound ask is usually pasted into the conversation, so it is not a note anything can cite.
+The sender's message is the source. Where it arrived as a file instead, filing it is the arrival
+skill's job and this one reads what got filed.
+
+## Read: a commitment of yours
 The todo (title, due date, owner, the \`sources\` it cites), the meeting or note where the
 commitment was made, and the related customer, theme, and decision pages. Three checks change
 the answer, so make all three:
@@ -1181,7 +1194,21 @@ the answer, so make all three:
   source meeting), look for a meeting note whose \`date\` is today or later that lists them in
   \`participants\`. A conversation already on the calendar changes the best move.
 
-## Produce
+## Read: a request that came in
+The message first, closely: what is literally asked for, by when, and what is only implied.
+
+Then the memory it touches:
+- **Who is asking** (people/): what they own, what they care about, what they were last told
+  (\`last_told\`), and which customer or team they speak for. How far they can decide this on their
+  own is what makes the same words a request or an instruction. An unknown sender is a fine
+  answer: say they have no page rather than guess at their position.
+- **What we already know**: the insights that bear on the ask and how many accounts back them, the
+  live decisions that settle or contradict it, the theme it belongs under, and the ticket mirrors
+  for anything already in flight.
+- **What we already promised**: open todos, and the customer hub's ledger of what they were told.
+  An ask we committed to in March is a different conversation from a new one.
+
+## Produce: a commitment of yours
 The right handling for this one commitment, each option as its own approval card. Pick what fits;
 do not produce all of them.
 - **A plan**, the default when it is live and just needs doing: a short \`## Plan\` section on the
@@ -1202,10 +1229,69 @@ do not produce all of them.
 - **Nudge**, when it waits on someone else and no meeting is coming: a draft_text you can copy and
   send yourself, citing where the commitment was made. It is not a card, and nothing sends it.
 
+## Produce: a request that came in
+One card, the decode (propose_note, type \`note\`, path \`notes/YYYY-MM-DD-<sender>-<ask>.md\`), with
+\`sources\` citing every note it rests on. Where the pasted message is genuinely all there is, set
+\`asked\`.
+
+One addition to the writing rules: quote the ask itself. The message lives nowhere else, and what
+somebody asked for, in their own words, is what they will hold you to later.
+
+The job behind the ask is an inference, never what the sender stated. Label it **Inference** and
+say what would confirm it. The solution somebody names is not the job: "can we add a CSV export
+button" is a request, "finance rebuilds that report by hand every month" is the job, and only one
+of the two has more than one answer.
+
+Then what the ask actually forces, and only that:
+- **A commitment you take on**: a todo (propose_todo) quoting the ask and citing this decode.
+- **A reply** (draft_text), where the posture is to answer now: cite the decisions and tickets it
+  rests on, and follow the voice for that audience. It is text to copy, and nothing sends it.
+- **A signal worth keeping**: where the ask is evidence for a theme or a customer, extend that
+  page (propose_update) and say what the addition changes.
+- **A collision**: where the ask runs into a live decision or something already promised, that is
+  its own card.
+
+Saying no is a posture like any other and forces no card by itself. Recommend it plainly, with the
+decision it rests on, and draft the reply only where it has to be said out loud.
+
 ## Then
 Approved cards update this one commitment: the plan lands on the todo, a close flips
-\`commitment\`, a reschedule moves \`due\`. A nudge waits in the chat for you to copy. Nothing else
-in the memory is touched.
+\`commitment\`, a reschedule moves \`due\`. Nothing else in the memory is touched.
+
+An approved decode sits in \`notes/\` as the record of what was asked and what we said back, so the
+same ask arriving next month from somebody else lands on something. Approved todos join the
+commitment ledger.
+
+A nudge and a reply are not cards. Both wait in the chat for you to copy and send yourself.
+
+## The shape of the decode
+\`\`\`
+[propose_note, type note, notes/YYYY-MM-DD-<sender>-<ask>.md]
+# <what was asked, in one line>
+
+## The ask
+> <the sentence that asks it, verbatim>
+<who sent it, when, and by when they want it>
+
+## The job behind it
+**Inference** <what they are trying to get done>. <What would confirm it.>
+
+## Who is asking
+<what they own, what they can decide on their own, what they were last told> ([[people/...]])
+
+## What we know that bears on it
+- **Fact** <the insight, decision or ticket, and what it says> ([[...]])
+
+## Where it collides
+<the live decision, the promise, or the ticket state it runs into, or "nothing found">
+
+## Posture
+<do it / do a smaller thing / not now / no / one answer needed first>: <why, in one sentence>
+Next move: <what this run proposed, or nothing>
+
+## What I could not check
+<what nothing in the workspace answers>
+\`\`\`
 `;
 
 /**
@@ -1325,113 +1411,8 @@ Out: <what it deliberately does not, and why>
 `;
 
 /**
- * The inbound twin of commitment-check (docs/research/suggestions.md item 5).
- *
- * Commitment-check works a promise the PM already made, going stale. This one
- * works somebody else's request, arriving: what it literally says, the job
- * behind it, who is asking and what they can decide, what the memory already
- * holds about it, and what to say back. The memory is the whole advantage.
- * Any chat assistant can decode a Slack ping; only this one can say the ask
- * contradicts a decision made in March.
- *
- * The decode lands as note type `note` for the same reason the spec does: the
- * type list is closed, and adding to it is a product call.
- */
-export const INCOMING_REQUEST_SKILL = `---
-type: skill
-title: Answer an incoming request
-summary: Works out what a message really wants, who is asking, and what to say back.
-scenarios:
-  - a request that just came in where it is not obvious what it wants ("what do I do with this message from sales?")
-  - a request from somebody whose position changes the answer ("the CEO wants SSO by Q3, what now")
-  - working out what to say back to one ("how should I answer this")
----
-
-## When
-A request arrived: a pasted Slack ping, a forwarded email, a mandate from above. You want to know
-what it actually wants and what to do about it.
-
-It is usually pasted into the conversation, so it is not a note anything can cite. The sender's
-message is the source. Where it arrived as a file instead, filing it is the arrival skill's job
-and this one reads what got filed.
-
-## Read
-The message first, closely: what is literally asked for, by when, and what is only implied.
-
-Then the memory it touches:
-- **Who is asking** (people/): what they own, what they care about, what they were last told
-  (\`last_told\`), and which customer or team they speak for. How far they can decide this on their
-  own is what makes the same words a request or an instruction. An unknown sender is a fine
-  answer: say they have no page rather than guess at their position.
-- **What we already know**: the insights that bear on the ask and how many accounts back them, the
-  live decisions that settle or contradict it, the theme it belongs under, and the ticket mirrors
-  for anything already in flight.
-- **What we already promised**: open todos, and the customer hub's ledger of what they were told.
-  An ask we committed to in March is a different conversation from a new one.
-
-## Produce
-One card, the decode (propose_note, type \`note\`, path \`notes/YYYY-MM-DD-<sender>-<ask>.md\`), with
-\`sources\` citing every note it rests on. Where the pasted message is genuinely all there is, set
-\`asked\`.
-
-One addition to the writing rules: quote the ask itself. The message lives nowhere else, and what
-somebody asked for, in their own words, is what they will hold you to later.
-
-The job behind the ask is an inference, never what the sender stated. Label it **Inference** and
-say what would confirm it. The solution somebody names is not the job: "can we add a CSV export
-button" is a request, "finance rebuilds that report by hand every month" is the job, and only one
-of the two has more than one answer.
-
-Then what the ask actually forces, and only that:
-- **A commitment you take on**: a todo (propose_todo) quoting the ask and citing this decode.
-- **A reply** (draft_text), where the posture is to answer now: cite the decisions and tickets it
-  rests on, and follow the voice for that audience. It is text to copy, and nothing sends it.
-- **A signal worth keeping**: where the ask is evidence for a theme or a customer, extend that
-  page (propose_update) and say what the addition changes.
-- **A collision**: where the ask runs into a live decision or something already promised, that is
-  its own card.
-
-Saying no is a posture like any other and forces no card by itself. Recommend it plainly, with the
-decision it rests on, and draft the reply only where it has to be said out loud.
-
-## Then
-The approved decode sits in \`notes/\` as the record of what was asked and what we said back, so the
-same ask arriving next month from somebody else lands on something. Approved todos join the
-commitment ledger. A reply is not a card: copy it out of the chat and send it yourself.
-
-## The shape of the decode
-\`\`\`
-[propose_note, type note, notes/YYYY-MM-DD-<sender>-<ask>.md]
-# <what was asked, in one line>
-
-## The ask
-> <the sentence that asks it, verbatim>
-<who sent it, when, and by when they want it>
-
-## The job behind it
-**Inference** <what they are trying to get done>. <What would confirm it.>
-
-## Who is asking
-<what they own, what they can decide on their own, what they were last told> ([[people/...]])
-
-## What we know that bears on it
-- **Fact** <the insight, decision or ticket, and what it says> ([[...]])
-
-## Where it collides
-<the live decision, the promise, or the ticket state it runs into, or "nothing found">
-
-## Posture
-<do it / do a smaller thing / not now / no / one answer needed first>: <why, in one sentence>
-Next move: <what this run proposed, or nothing>
-
-## What I could not check
-<what nothing in the workspace answers>
-\`\`\`
-`;
-
-/**
- * The third conversation shape, beside chat and the question card
- * (docs/brainstorm-skill.md). The session writes a round into a file, the PM
+ * The third conversation shape, beside the ordinary session and the question
+ * card (docs/brainstorm-skill.md). The session writes a round into a file, the PM
  * marks it up in slots, and the next round is written from what came back.
  *
  * The two rules the body spends its words on are the two that fail quietly.
@@ -1548,7 +1529,17 @@ export interface DefaultSkill {
  * session with the memory is before anything narrows it. Built-in only: there
  * is no file, because it is not something the PM picks or manages.
  */
-export const BASE_SKILL_NAME = 'chat';
+export const BASE_SKILL_NAME = 'ask';
+
+/**
+ * The names that all mean the base skill. `chat` was the second built-in
+ * default until the two merged, and it is still written in stored receipts and
+ * in any caller that names it, so it has to resolve to the same session rather
+ * than arrive as a second skill on top of the one already loaded.
+ */
+export function isBaseSkillName(name: string): boolean {
+  return name === BASE_SKILL_NAME || name === 'chat';
+}
 
 /**
  * The skill the capture pipeline invokes when something lands (Sessions v2
@@ -1589,12 +1580,23 @@ export const DEFAULT_SKILLS: DefaultSkill[] = [
   { file: 'skills/weekly-update/SKILL.md', content: WEEKLY_UPDATE_SKILL },
   { file: 'skills/synthesis/SKILL.md', content: SYNTHESIS_SKILL },
   { file: 'skills/commitment-check/SKILL.md', content: COMMITMENT_CHECK_SKILL },
-  { file: 'skills/incoming-request/SKILL.md', content: INCOMING_REQUEST_SKILL },
   { file: 'skills/spec/SKILL.md', content: SPEC_SKILL },
   { file: 'skills/iterate/SKILL.md', content: ITERATE_SKILL },
   { file: 'skills/tell-qale/SKILL.md', content: TELL_QALE_SKILL },
   { file: 'skills/house-rules/SKILL.md', content: HOUSE_RULES },
 ];
+
+/**
+ * What the pack used to seed and does not seed any more. A workspace opened
+ * before the change still holds the file, so open takes it out of force
+ * (`retireDefaultSkills`, @qale/application) instead of leaving a skill in the
+ * picker that nothing maintains. The name keeps resolving, through its alias in
+ * {@link DEFAULT_SKILL_BY_NAME}.
+ *
+ * `incoming-request` folded into commitment-check: one skill for one promise,
+ * whichever direction it runs (complexity review finding 8).
+ */
+export const RETIRED_SKILLS: string[] = ['skills/incoming-request/SKILL.md'];
 
 /**
  * The voices, seeded into their own folder (SK-6). Flat files: a voice is a
@@ -1706,15 +1708,18 @@ A voice is tone and language only. It never decides what a draft says.
  * The built-in registry, keyed by invocation name (Sessions v2 Part 4): the
  * fallback the runtime resolves an invocation against when the workspace has no
  * file of its own. Skills and agents share it because an agent, once fired, is
- * invoked into a session through exactly the same door. `ask` and `chat` exist
- * ONLY here: they are the composer's own vocabulary, not files.
- * `before-meeting` is an alias: old session receipts and pending cards carry
- * the name meeting-prep had when it was a skill.
+ * invoked into a session through exactly the same door. `ask` exists ONLY here:
+ * it is the composer's own vocabulary, not a file.
+ *
+ * Three entries are aliases, and they stay for good. Old session receipts and
+ * pending cards carry the name each one had before a merge: `chat` before it
+ * became `ask`, `before-meeting` before meeting-prep became an agent, and
+ * `incoming-request` before it folded into commitment-check.
  */
 export const DEFAULT_SKILL_BY_NAME: Record<string, string> = {
   arrival: ARRIVAL_SKILL,
   ask: ASK_SKILL,
-  chat: CHAT_SKILL,
+  chat: ASK_SKILL,
   'process-note': PROCESS_NOTE_SKILL,
   'weekly-update': WEEKLY_UPDATE_SKILL,
   synthesis: SYNTHESIS_SKILL,
@@ -1722,7 +1727,7 @@ export const DEFAULT_SKILL_BY_NAME: Record<string, string> = {
   'meeting-prep': MEETING_PREP_AGENT,
   'before-meeting': MEETING_PREP_AGENT,
   'commitment-check': COMMITMENT_CHECK_SKILL,
-  'incoming-request': INCOMING_REQUEST_SKILL,
+  'incoming-request': COMMITMENT_CHECK_SKILL,
   spec: SPEC_SKILL,
   iterate: ITERATE_SKILL,
   'tell-qale': TELL_QALE_SKILL,

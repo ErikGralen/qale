@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CHAT_SKILL, LIBRARIAN_AGENT, parseRunnable, SessionHarness } from '@qale/sessions';
+import { ASK_SKILL, LIBRARIAN_AGENT, parseRunnable, SessionHarness } from '@qale/sessions';
 import { AgentRuntime, type CodebaseRequestInfo } from '../src/runtime.js';
 import { CODEBASE_MODELS } from '../src/codebase-models.js';
 import type { CodebaseAsk, CodebaseDecision } from '../src/codebase.js';
@@ -60,7 +60,7 @@ function runtimeFor(opts: { skill?: [string, string]; unattended?: boolean } = {
     asked: false,
     blocked: false,
   };
-  const [file, name] = opts.skill ?? [CHAT_SKILL, 'chat'];
+  const [file, name] = opts.skill ?? [ASK_SKILL, 'ask'];
   const state = {
     turn,
     harness: new SessionHarness('s1', parseRunnable(file, name), '2026-08-23T09:00:00Z'),

@@ -235,8 +235,8 @@ function HouseRulesPanel({ file }: { file: SkillDTO | undefined }) {
     <div>
       <p className="mb-3 text-dense text-muted-foreground">
         Every session reads this before it starts: which language things come out in, how a note is
-        written, where it lands, and the rules you have given Qale yourself. Edit a line and the
-        next session works the new way.
+        written, where it lands, and the rules you have given Qale yourself. It is always in
+        force. Edit a line and the next session works the new way.
       </p>
       <RowErrors errors={file.errors} />
 
@@ -435,7 +435,7 @@ function NewSkill({ onTab }: { onTab: (tab: SkillsTab) => void }) {
         {step === 'name-skill' && (
           <NameStep
             placeholder="What should it be called?"
-            hint="Name it now. The name is the address Qale runs it by, so it cannot change later."
+            hint="Name it. Short, lowercase."
             busy={busy}
             onCreate={(title) => void create('skills:create', title, 'skills')}
             onCancel={close}
@@ -608,6 +608,7 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
               <p className="mb-2 text-dense text-muted-foreground">
                 What Qale does the moment something happens. These cannot be switched off, and what
                 fires them lives in the app, not in the file. The instructions are yours to edit.
+                Each row below says when it fires.
               </p>
               <ul className={LIST}>
                 {moments.map(({ moment, file }) =>
@@ -623,7 +624,8 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
             <TabsContent value="voices">
               <p className="mb-2 text-dense text-muted-foreground">
                 A voice is how a draft sounds: which words, how long, how formal. It is applied when
-                something is drafted, and it never decides what the draft says.
+                something is drafted, and it never decides what the draft says. Switch it from the
+                dropdown in the draft panel.
               </p>
               {voices.length === 0 ? (
                 <p className="px-1 py-8 text-center text-sm text-muted-foreground">

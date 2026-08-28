@@ -138,6 +138,11 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
               <Play className="size-3.5" /> Start session
             </Button>
           )}
+          {isAgent && agent && (
+            <Button size="sm" onClick={() => openSession(name, { title: note.title })}>
+              <Play className="size-3.5" /> Run now
+            </Button>
+          )}
           {confirmDelete ? (
             <div className="flex items-center gap-1.5 pl-1">
               <span className="text-xs text-muted-foreground">Delete {noun}?</span>
@@ -196,6 +201,10 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
             autoFocus={false}
             onCommit={(title) => commitFm({ title })}
           />
+          <p className="mb-2 text-xs text-muted-foreground/60">
+            Runs as <span className="font-mono">{name}</span>. The title above can change. This
+            never does.
+          </p>
           <SummaryEditor
             key={`${note.path}:${String(note.frontmatter['summary'] ?? '')}`}
             value={String(note.frontmatter['summary'] ?? '')}

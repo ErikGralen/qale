@@ -56,8 +56,10 @@ import {
   listAgentFiles,
   migrateRunnableFolders,
   normalizeVaultFrontmatter,
+  retireDefaultSkills,
   runnableEnabled,
   markMeetingReviewed,
+  markNoteChecked,
   queryNotes,
   planLibrarianSweep,
   librarianAsks,
@@ -100,6 +102,8 @@ import {
   DEFAULT_AGENTS,
   DEFAULT_NOTES,
   DEFAULT_VOICES,
+  RETIRED_SKILLS,
+  isBaseSkillName,
   MAINTENANCE_AGENTS,
   MEETING_PREP_INSTRUCTION,
 } from '@qale/sessions';
@@ -476,6 +480,12 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         console.warn(
           `[qale] ${path} differs from its folder copy — left both in place, nothing lost`,
         );
+      // Take out of force what the pack has stopped shipping. Renamed, never
+      // deleted, so a file the PM edited keeps every word (see
+      // `retireDefaultSkills`). The name still resolves, through its alias.
+      const retired = await retireDefaultSkills(ctx, RETIRED_SKILLS);
+      if (retired.length > 0)
+        console.log(`[qale] retired ${retired.length / 2} skill file(s) the pack no longer ships`);
       // Seed what is missing: the skills, the agents, and the notes the pack
       // ships into the memory (SK-5). Anything already there is the PM's and is
       // left exactly as it is, whatever we ship today.
@@ -485,7 +495,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         ...DEFAULT_VOICES,
         ...DEFAULT_NOTES,
       ]);
-      if (seeded.length > 0) pushEvent(getWindow(), { channel: 'vault:changed', paths: seeded });
+      const changed = [...retired, ...seeded];
+      if (changed.length > 0) pushEvent(getWindow(), { channel: 'vault:changed', paths: changed });
       // One-time migration: agent off switches used to live in settings; the
       // frontmatter is the switch now. Carry the recorded intent over, once.
       const overrides = await settings.takeAgentOverrides();
@@ -1219,7 +1230,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
           ? `Prepped a meeting, and the brief waits in the Inbox`
           : `Prepped a meeting and found nothing worth briefing`,
       );
-    } else if (s.skill === 'chat' && !s.quiet) {
+      // The base skill by either name: `chat` is what a session opened with
+      // before the two built-in defaults merged into `ask`.
+    } else if (isBaseSkillName(s.skill ?? '') && !s.quiet) {
       markFirstStep('ask', 'Answered a question from your own notes');
     }
     // A scheduled run that had nothing to report leaves no receipt, no row and
@@ -1672,6 +1685,15 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('note:delete', async (path) => {
     await deleteNote(vaultService.requireContext(), path);
     return { ok: true };
+  });
+  // Who "checked" it is the PO themselves: the name from Settings → You, else
+  // the first address that means them, else the word the button already used.
+  // The actor string never ends up empty: an unnamed reviewer is still a human
+  // reviewer, and that is the fact the tier turns on.
+  handle('note:markChecked', async (path) => {
+    const identity = settings.getIdentity();
+    const who = identity.name ?? settings.selfEmails()[0] ?? 'you';
+    return markNoteChecked(vaultService.requireContext(), path, `human:${who}`);
   });
   handle('note:backlinks', (path) =>
     getBacklinks(vaultService.requireContext(), path).map(backlinkToDTO),

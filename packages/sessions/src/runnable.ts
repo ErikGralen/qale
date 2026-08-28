@@ -102,6 +102,76 @@ const CAPABILITIES: Capability[] = [
 ];
 
 /**
+ * The plain words for each capability — the same ones the permission chip
+ * shows (`CanChips` in the desktop app's `RunnableConfig.tsx`). Kept here,
+ * not in the renderer, because the error path below needs them too: a person
+ * fixing a broken file should read the same label whichever side of the app
+ * told them about it.
+ */
+export const CAPABILITY_LABEL: Record<Capability, string> = {
+  'draft-outbound': 'Drafts outgoing updates',
+  'draft-calendar': 'Drafts calendar changes',
+  'keep-working-files': 'Keeps working files',
+  'file-material': 'Files what you hand over',
+  'track-external': 'Watches your tracker and wiki',
+};
+
+/** "plain label (key)", the shape every capability list in an error uses. */
+function labeled(capability: Capability): string {
+  return `${CAPABILITY_LABEL[capability]} (${capability})`;
+}
+
+/**
+ * How many single-character edits turn `a` into `b`. Used only to tell a typo
+ * ("draft-outbund") from a value that is not a capability at all ("rm-rf"),
+ * so the error can offer one close match instead of the whole list.
+ */
+function editDistance(a: string, b: string): number {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const d: number[][] = Array.from({ length: rows }, () => new Array<number>(cols).fill(0));
+  for (let i = 0; i < rows; i++) d[i]![0] = i;
+  for (let j = 0; j < cols; j++) d[0]![j] = j;
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i]![j] = Math.min(d[i - 1]![j]! + 1, d[i]![j - 1]! + 1, d[i - 1]![j - 1]! + cost);
+    }
+  }
+  return d[rows - 1]![cols - 1]!;
+}
+
+/** The one capability closest to `value`, if it is close enough to be a typo. */
+function nearestCapability(value: string): Capability | null {
+  let best: Capability | null = null;
+  let bestDistance = Infinity;
+  for (const c of CAPABILITIES) {
+    const distance = editDistance(value, c);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = c;
+    }
+  }
+  // A third of the key's length is a spelling mistake; more than that is a
+  // different word, and offering it as "the one you meant" would mislead.
+  return best && bestDistance <= Math.ceil(best.length / 3) ? best : null;
+}
+
+/**
+ * The error for a `can` value that is not a capability. Leads with the plain
+ * words a person recognises from the permission chip, and gives the key
+ * second — the key is what fixes the file, but it should not be the whole
+ * sentence.
+ */
+function unknownCapabilityMessage(value: string): string {
+  const near = nearestCapability(value);
+  if (near) {
+    return `This skill asks for a permission that does not exist: "${value}". Did you mean "${CAPABILITY_LABEL[near]}" (can: [${near}])?`;
+  }
+  return `This skill asks for a permission that does not exist: "${value}". Choose one of: ${CAPABILITIES.map(labeled).join(', ')}.`;
+}
+
+/**
  * Tools that a broader capability used to bring, and now do not.
  *
  * This is the one kind of change `readList` cannot catch. An unknown value is a
@@ -197,8 +267,8 @@ const RETIRED_KEYS: Record<string, string> = {
   audience:
     '`audience` is gone. A voice is applied when something is drafted, not scoped in frontmatter',
   use: '`use` is gone. A file declares `can`, and where it sits says the rest',
-  outbound: '`outbound: true` is gone. Write `can: [draft-outbound]`',
-  session_files: '`session_files: true` is gone. Write `can: [keep-working-files]`',
+  outbound: `\`outbound: true\` is gone. Give it "${CAPABILITY_LABEL['draft-outbound']}" instead: \`can: [draft-outbound]\``,
+  session_files: `\`session_files: true\` is gone. Give it "${CAPABILITY_LABEL['keep-working-files']}" instead: \`can: [keep-working-files]\``,
   checkpoints: '`checkpoints` is gone. Ask for the order you want in the instructions',
   gate_output: '`gate_output` is gone. Ask for the order you want in the instructions',
   completion_bar: '`completion_bar` is gone. Say the bar in the instructions',
@@ -236,20 +306,23 @@ function asStringArray(v: unknown): string[] {
  * Read one config list, keeping only values the app knows how to honour and
  * flagging the rest. An unknown value is dropped rather than passed through:
  * the runtime asks these lists what is allowed, and a typo must not read as a
- * capability.
+ * capability. `message` builds the error sentence for one bad value; the
+ * default is a plain fallback, and `can` passes {@link unknownCapabilityMessage}
+ * so the error can speak the same words as the permission chip.
  */
 function readList<T extends string>(
   raw: unknown,
   allowed: T[],
   key: string,
   errors: string[],
+  message: (value: string) => string = (v) => `unknown ${key} "${v}". Use one of: ${allowed.join(', ')}`,
 ): T[] {
   const out: T[] = [];
   for (const v of asStringArray(raw)) {
     if (allowed.includes(v as T)) {
       if (!out.includes(v as T)) out.push(v as T);
     } else {
-      errors.push(`unknown ${key} "${v}". Use one of: ${allowed.join(', ')}`);
+      errors.push(message(v));
     }
   }
   return out;
@@ -284,7 +357,7 @@ export function parseRunnable(raw: string, name: string): Runnable {
     );
   }
 
-  const can = readList(fm['can'], CAPABILITIES, 'can', errors);
+  const can = readList(fm['can'], CAPABILITIES, 'can', errors, unknownCapabilityMessage);
 
   // A tool the instructions name but the frontmatter no longer buys. Checked
   // after `can` is read, and only against the tools that changed hands.
@@ -293,8 +366,9 @@ export function parseRunnable(raw: string, name: string): Runnable {
     const named = tools.filter((t) => new RegExp(`\\b${t}\\b`).test(body));
     if (named.length === 0) continue;
     errors.push(
-      `${named.map((t) => `\`${t}\``).join(', ')} now needs \`can: [${capability}]\`. ` +
-        `It used to come ${came}, so this file asks for a tool it is not offered`,
+      `This file uses ${named.map((t) => `\`${t}\``).join(', ')} but does not have the ` +
+        `"${CAPABILITY_LABEL[capability]}" permission (can: [${capability}]). ` +
+        `It used to come ${came}, so the tool is not offered any more`,
     );
   }
 

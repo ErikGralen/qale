@@ -11,4 +11,5 @@ in the flag voice, so a broken skill can never fail silently.
 
 Two things are wrong with it. `starts` is a setting that no longer exists, and Qale says what
 replaced it. `can: [draft-outbund]` is a typo for `draft-outbound`, so the capability is dropped
-rather than guessed at, and Qale lists what it would have accepted.
+rather than guessed at, and Qale names the permission it thinks you meant, in the same plain
+words as the chip.

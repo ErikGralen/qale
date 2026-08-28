@@ -11,6 +11,11 @@ finding.
 
 At the end there is a list of things I saw and chose not to flag, with the reason.
 
+Implementation pass 2026-08-24: findings 1-6, 8, 11, 12, 15, 16 and 17 are built, per the
+notes under each. Verified together: `pnpm check-types` 11/11, `pnpm test` 922 pass / 0 fail
+(10 pre-existing skips), `pnpm lint` 0 errors. Not live-verified in the app, not committed.
+Finding 13 still waits for a decision on the rename table.
+
 ---
 
 ## 1. Three grammars for "the agent needs you"
@@ -29,6 +34,10 @@ dressed as a third thing (`SpawnCard.tsx:47`, `CodebaseCard.tsx:60`).
 
 **Your comment:**
 sounds good
+
+**Implementation notes:**
+Done 2026-08-24. SpawnCard and CodebaseCard carry the approval grammar now: the accent ring,
+"Approve & run", and Discard. Behavior (model dropdown, brief fold, decline) is unchanged.
 ---
 
 ## 2. One act of asking, two hidden skills
@@ -45,6 +54,12 @@ look like one is not.
 
 **Your comment:**
 sure .
+
+**Implementation notes:**
+Done 2026-08-24. `chat` is deleted; its body (session files, draft_text and voice guidance)
+folded into `ask`, which is now the base skill for every blank session. `chat` stays as an
+alias so old receipts and callers resolve. Side find: the "Answered a question" First step
+keyed on `skill === 'chat'` and would have gone dead; it now checks the base skill.
 ---
 
 ## 3. Two places to approve the same card
@@ -61,6 +76,13 @@ Inbox shows, not a sibling.
 
 **Your comment:**
 sure sounds good.
+
+**Implementation notes:**
+Done 2026-08-24. A shared `useApprovals` hook and `CardRows` component render both the Inbox
+and the in-session review; SessionReview shrank from 136 to 55 lines and lost its "in the
+Inbox instead" link, since the rows are the same rows now. Every approve route (click,
+keyboard, batch) surfaces a stale refusal on an open card, and Retry is suppressed where it
+would only repeat the refusal.
 ---
 
 ## 4. Four batch buttons, four scope rules
@@ -74,7 +96,13 @@ silently stop a batch halfway (`InboxView.tsx:381`).
 but when it stops a batch, say so in the interstitial ("Paused after 5. N left in this group.").
 
 **Your comment:**
+yes
 
+**Implementation notes:**
+Done 2026-08-24. One button, "Approve all N", scoped to the group it sits on (session group,
+librarian run, session review). "Accept all internal", the housekeeping sub-batch, and
+"Fix all N" are gone. The spot-audit pause reads "Paused after {n}. {m} left in this group."
+A paused batch does not resume itself; the count has already dropped by what landed.
 ---
 
 ## 5. The Memory page teaches 15 nouns
@@ -91,7 +119,13 @@ one line to the sidebar's Memory header that states the pin rule, so the vanishi
 reading as a bug.
 
 **Your comment:**
+sounds good, but the Ticket + WIkipage can be grouped on their own and labeled to make it obvious they are externally synced.
 
+**Implementation notes:**
+Done 2026-08-24. The four group labels are gone; shelves render as one flat list, except
+ticket + wikipage, which sit in a "Synced" group with the subtitle "Mirrored from your
+tracker and wiki. Qale never edits them." The sidebar Memory tooltip now states the pin rule:
+"Pinned notes show here. The Memory page holds everything."
 ---
 
 ## 6. The Skills page taxonomy leaks at the edges
@@ -109,7 +143,13 @@ is written", "Moments run on their own; here is where"). Agent pages get a "Run 
 immutable-name rule moves to the moment someone tries to rename, not the moment they create.
 
 **Your comment:**
+Sure
 
+**Implementation notes:**
+Done 2026-08-24. The Voices, Moments and House-rules intros now say where each takes effect.
+Agent pages have "Run now". The create step says "Name it. Short, lowercase." and the address
+shows as a quiet caption on the file's page: "Runs as `<name>`. The title above can change.
+This never does."
 ---
 
 ## 7. The house rules file is also a schema reference
@@ -125,7 +165,7 @@ the user's editing surface. The model still reads instructions, the user just st
 past a schema to add a rule.
 
 **Your comment:**
-
+No skip this. 
 ---
 
 ## 8. Ten skills, boundaries written in prose
@@ -142,7 +182,16 @@ starts from conclusions), and fold `incoming-request` into `commitment-check` as
 sentence in the picker subtitle, where the user actually chooses.
 
 **Your comment:**
+Just merge incoming-request and commitment-check
 
+**Implementation notes:**
+Done 2026-08-24. One skill, two directions: the title stays "Handle a commitment", the
+summary is "Works out what to do about a promise that's slipping, or a request that just came
+in", and the body carries both read/produce paths. `incoming-request` resolves as an alias;
+on open, an existing vault's copy is renamed to RETIRED-SKILL.md rather than deleted, because
+no fingerprint ledger can tell an untouched file from one you rewrote. One consequence to
+know: the picker entry "Answer an incoming request" is gone (the merged file sits on
+Moments), so the inbound path is paste the message and the session pulls the skill itself.
 ---
 
 ## 9. `processing: stale` has no producer
@@ -156,7 +205,7 @@ panel on six note types, and it does nothing.
 the app maintains beat three states the user maintains.
 
 **Your comment:**
-
+keep it.
 ---
 
 ## 10. Four different things are called "stale"
@@ -171,7 +220,7 @@ already avoid the word, which is the right instinct. A copy sweep can finish the
 banner and the lifecycle label each get their own phrase.
 
 **Your comment:**
-
+Keep it.
 ---
 
 ## 11. A Trust row the user cannot touch
@@ -186,7 +235,14 @@ card means "no source cited" (`CardItem.tsx:119`).
 And rename the card pill to what it means, "No source cited", so "unverified" has one meaning.
 
 **Your comment:**
+yes
 
+**Implementation notes:**
+Done 2026-08-24. The Trust row renders on every note, "Unverified" in muted grey, with one
+"Mark as checked" action that appends `human:<you>` plus today through a new append-only
+use-case (the generic save path refuses `verified` on frozen types, so this is a dedicated
+IPC channel). A second click the same day writes nothing. The card pill reads "No source
+cited".
 ---
 
 ## 12. Two names for citation: `evidence` and `sources`
@@ -200,24 +256,47 @@ ref chips under two labels.
 The pipeline keeps its two channels; the user reads one word.
 
 **Your comment:**
+Yes use Source
 
+**Implementation notes:**
+Done 2026-08-24. Both fields render under one "Sources" label, merged into one deduped chip
+list when a note carries both. The field names on disk are unchanged.
 ---
 
 ## 13. Todos: the label and the field disagree
 
-**What:** Three small frictions in one model. The field `owner` (who committed) is labelled
-"Waiting on" (who blocks me), so typing your own name into "Waiting on" moves your own todo to
-the waiting lane. The domain has six lane names, the board shows five different bands, so the
-agent and `index.md` speak a different lane language than the screen
-(`todos/index.ts:20`, `TodosView.tsx:43`). And the closed lane is labelled "Done" while holding
-both done and dropped items.
+**What:** A todo note has a frontmatter field called `owner`. The properties panel shows that
+same field with the label "Waiting on" (`properties-schema.ts:142`). So the file says `owner:
+Jonas` and the screen says "Waiting on: Jonas": two names for one field, and they frame it in
+opposite directions (who does the work vs. who blocks me). The rule "field empty = the todo is
+yours" is stated nowhere.
 
-**Proposal:** Align the three vocabularies to the board, since that is what the user reads:
-label the field by its meaning, rename the domain lanes to the band names, and call the closed
-lane "Closed".
+Second, the code has six lane names (Overdue, Due today, Upcoming, Someday, Waiting on others,
+Done) but the board shows five different bands (Now, Upcoming, Someday, Waiting on others, Done)
+(`todos/index.ts:20`, `TodosView.tsx:43`). The code's names are what the agent and the generated
+`index.md` headings use, so the agent can say "Overdue" about a todo the board files under
+"Now".
+
+Third, the "Done" band holds both done and dropped todos.
+
+**Proposal:** Exact renames:
+
+| Where | Today | Proposed |
+|---|---|---|
+| Todo frontmatter field | `owner: Jonas` | `waiting_on: Jonas` (keep reading `owner` from old files) |
+| Properties panel label | "Waiting on" | unchanged; now matches the file |
+| Properties panel hint | none | "Leave empty when it is yours" |
+| Lane labels `Overdue`, `Due today` | two labels | one label, "Now", matching the board |
+| Lane label `Done` (the band) | "Done" | "Closed" |
+| Per-row resolved text | "done 3 Jul" / "dropped 3 Jul" | unchanged |
+| `commitment` values Open / Done / Dropped | unchanged | unchanged |
+
+The six lane tokens can stay in the code for logic (overdue vs. today drives the amber flag).
+Only the printed names change, so every surface (board, agent, `index.md`) says the same five
+words: Now, Upcoming, Someday, Waiting on others, Closed.
 
 **Your comment:**
-
+yes
 ---
 
 ## 14. One gesture, two meanings on the sidebar
@@ -231,7 +310,7 @@ where lifecycle lives: the session page header and the sessions list. This match
 "anything in the sidebar is pinned" rule the sidebar already follows for notes.
 
 **Your comment:**
-
+no keep it as is
 ---
 
 ## 15. Machinery rows the user was never meant to read
@@ -248,7 +327,14 @@ a fix action. Filter receipt edges out of backlinks or fold them under one "Sess
 Fold the MCP block behind "Show details".
 
 **Your comment:**
+yes
 
+**Implementation notes:**
+Done 2026-08-24. The State-category row and `needs_summary` are hidden. A broken header shows
+one plain sentence instead of a raw-yaml row: "Qale could not read part of this note's
+header. The original text stays in the file, exactly as it was written." Session read/write
+backlinks fold into one deduped "Sessions" group, listed last. The MCP block sits behind
+"Show details", collapsed by default.
 ---
 
 ## 16. Repair copy speaks frontmatter, normal copy speaks plain words
@@ -264,7 +350,14 @@ for a permission that does not exist. Did you mean 'Drafts outgoing updates'
 being the whole sentence.
 
 **Your comment:**
+yes
 
+**Implementation notes:**
+Done 2026-08-24. Errors lead with the chip's words and give the key second, with a
+nearest-match suggestion for typos: `This skill asks for a permission that does not exist:
+"draft-outbund". Did you mean "Drafts outgoing updates" (can: [draft-outbound])?` The labels
+live once, in `CAPABILITY_LABEL` in @qale/sessions, and the chips import them, so the two
+vocabularies cannot drift again. The broken-demo skill's prose was updated to match.
 ---
 
 ## 17. Two catalogues of what Qale can do
@@ -279,7 +372,13 @@ seeds the text. The rest keep seeding plain text. One catalogue with two depths,
 catalogues.
 
 **Your comment:**
+yes
 
+**Implementation notes:**
+Done 2026-08-24. Seven starters now pick their skill and seed the text: the weekly-update
+pair, the one-pager (spec), the decision write-up (tell-qale), and the three pattern
+questions (synthesis). The rest stay text-only where no single skill is the obvious answer.
+A mapped skill whose file is gone degrades to seeding text, silently.
 ---
 
 ## Seen, and not flagged

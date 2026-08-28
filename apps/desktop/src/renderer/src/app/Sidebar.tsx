@@ -603,7 +603,7 @@ function MemoryTree({
   return (
     <Section
       label="Memory"
-      title="The whole memory: sources, insights, customers, people, notes"
+      title="Pinned notes show here. The Memory page holds everything: sources, insights, customers, people, notes."
       onOpen={(e) => openMemory(navFromEvent(e))}
       action={<NewNoteMenu />}
     >

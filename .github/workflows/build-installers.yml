@@ -94,7 +94,20 @@ jobs:
       # signing step, finds no credential, logs that it skipped, and carries on.
       # What a tester sees because of that, and the two ways to fix it, are in
       # the `win:` block of electron-builder.yml.
+      # electron.vite.config.ts reads these from process.env at build time and
+      # bakes them into the bundle (see src/main/build-env.ts): a packaged app
+      # launched from the Start Menu never sees a runtime env var, so anything
+      # not set here ships as an empty string and the feature it configures
+      # dies quietly. Values come from repo secrets; set them under Settings →
+      # Secrets and variables → Actions. A secret that was never added resolves
+      # to '', same as an unset shell variable, so a missing one is silent here
+      # too — check the built app if a baked feature stops working.
       - name: Package
+        env:
+          QALE_GOOGLE_CLIENT_ID: ${{ secrets.QALE_GOOGLE_CLIENT_ID }}
+          QALE_GOOGLE_CLIENT_SECRET: ${{ secrets.QALE_GOOGLE_CLIENT_SECRET }}
+          QALE_POSTHOG_KEY: ${{ secrets.QALE_POSTHOG_KEY }}
+          QALE_POSTHOG_HOST: ${{ secrets.QALE_POSTHOG_HOST }}
         run: pnpm --filter @qale/desktop run win
 
       - uses: actions/upload-artifact@v4

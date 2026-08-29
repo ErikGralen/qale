@@ -980,9 +980,16 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
           instruction: MEETING_PREP_INSTRUCTION,
         }),
         { scheduled: true },
-      ).then((handle) => {
-        if (handle) checks.set(selfPrepKey(handle.sessionId), provenance, Date.now());
-      });
+      )
+        .then((handle) => {
+          if (handle) checks.set(selfPrepKey(handle.sessionId), provenance, Date.now());
+        })
+        .catch((err: unknown) => {
+          console.error(
+            `[qale] meeting-prep ledger update failed for ${m.notePath}:`,
+            err instanceof Error ? err.message : err,
+          );
+        });
     }
     // A look, not a run: fireSession stamps `agentLastRun` for the meetings it
     // actually prepped, and most sweeps prep nothing.

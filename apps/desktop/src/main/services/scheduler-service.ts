@@ -62,12 +62,20 @@ export class SchedulerService {
       if (!s.enabled) continue;
       const slot = mostRecentSlot(now, s.dayOfWeek, s.hour);
       if (!s.lastRun || new Date(s.lastRun) < slot) {
-        await this.settings.setSchedule(s.skill, { lastRun: now.toISOString() });
+        try {
+          await this.settings.setSchedule(s.skill, { lastRun: now.toISOString() });
+        } catch (err) {
+          // A stamp that can't persist (disk full, locked settings file) must
+          // not skip every later schedule and both sweeps for this tick — it
+          // just means this one may run again next tick too.
+          console.error(`[qale] could not stamp lastRun for ${s.skill}:`, err);
+          continue;
+        }
         // The clock started this one, so it is allowed to end with nothing (QM
         // ticket 2): a weekly pass with no new material leaves no receipt, no
         // Sessions row and no badge, only a line on the agent's own page.
         await this.fireSession(s.skill, defaultPrompt(s.skill), { scheduled: true }).catch((err) =>
-          console.error('[qale] scheduled session failed:', err),
+          console.error(`[qale] scheduled session failed for ${s.skill}:`, err),
         );
       }
     }

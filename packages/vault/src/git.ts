@@ -178,7 +178,7 @@ export class GitAdapter implements GitPort {
         author: c.author_name,
       }));
     } catch (err) {
-      console.error('[git] history failed:', err instanceof Error ? err.message : err);
+      console.error(`[git] history failed for ${relPath}:`, err instanceof Error ? err.message : err);
       return [];
     }
   }
@@ -216,7 +216,10 @@ export class GitAdapter implements GitPort {
       // Never let a git hiccup break a vault write; the file is already saved.
       // But never silently either — a broken setup would otherwise disable
       // versioning forever with zero signal.
-      console.error('[git] commit failed:', err instanceof Error ? err.message : err);
+      console.error(
+        `[git] commit failed for ${paths.length} path(s) ("${message}"):`,
+        err instanceof Error ? err.message : err,
+      );
     }
   }
 }

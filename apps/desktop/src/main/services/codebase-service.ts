@@ -270,21 +270,30 @@ export class CodebaseService {
   async claude(): Promise<CodebaseClaudeDTO> {
     if (this.probed && (this.probed.value.ok || Date.now() - this.probed.at < RECHECK_MISSING_MS))
       return this.probed.value;
-    this.probing ??= this.probeClaude().then((value) => {
-      this.probed = { value, at: Date.now() };
-      this.probing = null;
-      // Every probe that lands calls back, wherever it was started from: the
-      // warm at launch, and the settings panel asking again after a miss. The
-      // port is only read when something tells the host to read it, so a probe
-      // that answered yes and told nobody would leave the tool off until the
-      // next reconfigure.
-      try {
-        this.onSettled();
-      } catch {
-        // A callback that throws is the host's problem. The probe still answers.
-      }
-      return value;
-    });
+    this.probing ??= this.probeClaude()
+      .catch((err: unknown) => {
+        // resolveClaude/runCommand are meant to turn every failure into
+        // { ok: false, reason }, but if one still throws, land here rather than
+        // leaving `probing` set forever — that would wedge `warm()`'s guard and
+        // stop every future probe.
+        console.error('[qale] claude probe failed:', err instanceof Error ? err.message : err);
+        return { ok: false, reason: 'Could not check for Claude Code.' } satisfies CodebaseClaudeDTO;
+      })
+      .then((value) => {
+        this.probed = { value, at: Date.now() };
+        this.probing = null;
+        // Every probe that lands calls back, wherever it was started from: the
+        // warm at launch, and the settings panel asking again after a miss. The
+        // port is only read when something tells the host to read it, so a probe
+        // that answered yes and told nobody would leave the tool off until the
+        // next reconfigure.
+        try {
+          this.onSettled();
+        } catch {
+          // A callback that throws is the host's problem. The probe still answers.
+        }
+        return value;
+      });
     return this.probing;
   }
 

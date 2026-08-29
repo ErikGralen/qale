@@ -636,7 +636,8 @@ async function acceptOutbound(
       }
     } catch (err) {
       logError(
-        '[qale] outbound link-back failed (push already landed):',
+        `[qale] outbound link-back failed (push already landed) for ${p.linkBackPath} ` +
+          `(${p.provider} ${out.externalId}):`,
         err instanceof Error ? err.message : err,
       );
     }

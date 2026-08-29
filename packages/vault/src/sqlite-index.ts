@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { unlinkSync } from 'node:fs';
 import {
   basename as slugBasename,
   isIndexableNote,
@@ -64,12 +65,38 @@ export class SqliteIndex implements IndexPort {
   private db: Database.Database;
 
   constructor(dbPath: string) {
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('busy_timeout = 5000');
-    this.db.pragma('foreign_keys = ON');
-    this.migrate();
+    this.db = this.openWithPragmas(dbPath);
+    try {
+      this.migrate();
+    } catch (err) {
+      // A corrupt file (bad header, truncated page) throws here, before
+      // verifyIntegrity ever gets to run its self-heal — the index is fully
+      // rebuildable, so recover by starting the file over rather than leaving
+      // the vault permanently unable to open its own index.
+      console.error(
+        '[qale] index migration failed, rebuilding the index file:',
+        err instanceof Error ? err.message : err,
+      );
+      this.db.close();
+      for (const suffix of ['', '-wal', '-shm']) {
+        try {
+          unlinkSync(`${dbPath}${suffix}`);
+        } catch {
+          // Sidecar files don't always exist; a missing one is not a failure.
+        }
+      }
+      this.db = this.openWithPragmas(dbPath);
+      this.migrate();
+    }
     this.verifyIntegrity();
+  }
+
+  private openWithPragmas(dbPath: string): Database.Database {
+    const db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    db.pragma('busy_timeout = 5000');
+    db.pragma('foreign_keys = ON');
+    return db;
   }
 
   private migrate(): void {

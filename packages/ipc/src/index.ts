@@ -452,6 +452,8 @@ export const INVOKE_CHANNELS = [
   'sessions:fileText',
   'sessions:pendingSpawn',
   'sessions:resolveSpawn',
+  'sessions:pendingCodebase',
+  'sessions:resolveCodebase',
   'sessions:pendingAsk',
   'sessions:pendingAsks',
   'sessions:resolveAsk',
@@ -475,11 +477,16 @@ export const INVOKE_CHANNELS = [
   'codebase:status',
 ] as const satisfies readonly InvokeChannel[];
 
-// Compile-time completeness guard: every InvokeMap key must appear above.
+// Compile-time completeness guard: every InvokeMap key must appear above. A
+// channel that is typed and handled but missing from the list has no preload
+// function, so the renderer call throws `is not a function` mid-render and the
+// window goes white. Keep the value below a plain `true`: an `as never` cast
+// satisfies any annotation and turns this guard into a no-op, which is how
+// `sessions:pendingCodebase` shipped missing.
 type _AllChannelsListed = Exclude<InvokeChannel, (typeof INVOKE_CHANNELS)[number]>;
 const _exhaustive: _AllChannelsListed extends never
   ? true
-  : ['missing channels', _AllChannelsListed] = true as never;
+  : ['missing channels', _AllChannelsListed] = true;
 void _exhaustive;
 
 /** The typed client surface exposed on `window.qale.invoke`. */

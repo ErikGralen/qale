@@ -170,6 +170,21 @@ function lastAssistantText(messages: PiLikeMessage[]): string {
 }
 
 /**
+ * Same refusal signal the top-level bridge reads off pi's own events
+ * (`bridge.ts`'s `reportError`): the last assistant message carries
+ * `stopReason: "error"` instead of rejecting the `prompt()` promise. A child
+ * has no bridge watching its events, so without this check a rate limit or a
+ * rejected key resolves quietly and `runChild` hands back its placeholder text
+ * as if the child had simply written nothing.
+ */
+function lastMessageFault(messages: PiLikeMessage[]): string | null {
+  const m = messages[messages.length - 1];
+  const stopReason = (m as { stopReason?: string } | undefined)?.stopReason;
+  if (m?.role !== 'assistant' || stopReason !== 'error') return null;
+  return (m as { errorMessage?: string }).errorMessage ?? '';
+}
+
+/**
  * One live connection, as the runtime sees it (PD-8). The runtime receives
  * PREPARED capabilities: the host holds the credential and builds the tools,
  * this package never learns what a provider's client needs. That is what keeps
@@ -2025,7 +2040,10 @@ export class AgentRuntime {
 
     try {
       await session.prompt(child.prompt);
-      const closing = lastAssistantText(session.messages as unknown as PiLikeMessage[]);
+      const messages = session.messages as unknown as PiLikeMessage[];
+      const fault = lastMessageFault(messages);
+      if (fault !== null) throw new Error(providerFault(fault).text);
+      const closing = lastAssistantText(messages);
       // A child that reasoned but never called write_result still has an answer
       // worth keeping — the parent asked for a file, so file it rather than
       // losing the work to a missed tool call.

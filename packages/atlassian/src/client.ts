@@ -110,6 +110,13 @@ export interface ConfluenceSpaceHit {
  */
 const MAX_PAGES = 20;
 
+/**
+ * Every request goes through the one serialized queue below, so a connection
+ * that never gets a response — no RST, just silence — would stall every Jira
+ * or Confluence call for the rest of the session, not just this one.
+ */
+const REQUEST_TIMEOUT_MS = 30_000;
+
 /** Append vs. in-place edit for {@link AtlassianClient.updatePage}. */
 export type UpdatePageInput =
   | { mode: 'append'; markdown: string; provenance?: string }
@@ -143,9 +150,11 @@ export class AtlassianClient {
       const url = `${base.replace(/\/$/, '')}${path}`;
       for (let attempt = 0; attempt < 4; attempt++) {
         let res: Response;
+        const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
         try {
           res = await this.fetchImpl(url, {
             ...init,
+            signal: init?.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal,
             headers: {
               Authorization: this.authHeader(),
               Accept: 'application/json',
@@ -154,9 +163,12 @@ export class AtlassianClient {
             },
           });
         } catch (err) {
-          throw new Error("Couldn't reach your Atlassian site — check your connection.", {
-            cause: err,
-          });
+          throw new Error(
+            timeoutSignal.aborted
+              ? "Your Atlassian site did not respond in time — check your connection."
+              : "Couldn't reach your Atlassian site — check your connection.",
+            { cause: err },
+          );
         }
         if (res.status === 429) {
           await sleep(retryAfterMs(res.headers.get('Retry-After')));

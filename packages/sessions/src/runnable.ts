@@ -283,17 +283,23 @@ const RETIRED_KEYS: Record<string, string> = {
 const FRONTMATTER_RE = /^﻿?---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
 /** Split a file into its YAML frontmatter and markdown body. */
-function split(raw: string): { fm: Record<string, unknown>; body: string } {
+function split(raw: string): { fm: Record<string, unknown>; body: string; error: string | null } {
   const m = raw.match(FRONTMATTER_RE);
-  if (!m) return { fm: {}, body: raw };
+  if (!m) return { fm: {}, body: raw, error: null };
   let fm: Record<string, unknown> = {};
+  let error: string | null = null;
   try {
     const parsed = parseYaml(m[1] ?? '');
     if (parsed && typeof parsed === 'object') fm = parsed as Record<string, unknown>;
-  } catch {
-    fm = {};
+  } catch (err) {
+    // Falling back to an empty frontmatter is silent by design elsewhere (an
+    // unset `can` just means no capabilities), but here it drops every setting
+    // the file actually has — `title`, `can`, all of it — with nothing to show
+    // for it. Say so, so the file's page names the real cause instead of just
+    // looking unconfigured.
+    error = `The frontmatter is not valid YAML, so it is being read as empty (${err instanceof Error ? err.message : String(err)})`;
   }
-  return { fm, body: raw.slice(m[0].length) };
+  return { fm, body: raw.slice(m[0].length), error };
 }
 
 function asStringArray(v: unknown): string[] {
@@ -345,8 +351,9 @@ function titleFromName(name: string): string {
  * disagree about when they drift.
  */
 export function parseRunnable(raw: string, name: string): Runnable {
-  const { fm, body } = split(raw);
+  const { fm, body, error } = split(raw);
   const errors: string[] = [];
+  if (error) errors.push(error);
 
   for (const key of Object.keys(fm)) {
     if (KNOWN_KEYS.includes(key)) continue;

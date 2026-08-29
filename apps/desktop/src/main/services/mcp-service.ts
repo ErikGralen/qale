@@ -94,8 +94,12 @@ export class McpService {
     const mcp = this.buildServer();
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on('close', () => {
-      void transport.close();
-      void mcp.close();
+      transport.close().catch((err: unknown) => {
+        console.error('[qale] mcp transport close failed:', err instanceof Error ? err.message : err);
+      });
+      mcp.close().catch((err: unknown) => {
+        console.error('[qale] mcp server close failed:', err instanceof Error ? err.message : err);
+      });
     });
     await mcp.connect(transport);
     await transport.handleRequest(req, res, body);

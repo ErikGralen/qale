@@ -53,19 +53,36 @@ export class VaultWatcher {
     this.watcher = watch(this.root, {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
-      ignored: (path: string) => isWatchIgnored(this.root, path),
+      ignored: (path: string) => {
+        try {
+          return isWatchIgnored(this.root, path);
+        } catch (err) {
+          // chokidar calls this synchronously on every fs event; a throw here
+          // is not caught by chokidar, so fail open (don't ignore) rather than
+          // let one pathological path stop the scan or the watch outright.
+          console.error('[watcher] ignore check failed:', err instanceof Error ? err.message : err);
+          return false;
+        }
+      },
     });
 
     const enqueue = (kind: ChangeKind) => (abs: string) => {
-      if (!abs.toLowerCase().endsWith('.md')) return;
-      // The other door a note id comes in through, and it has to agree with the
-      // walk in `FsVault` exactly: chokidar reports OS-shaped absolute paths, so
-      // without this a Windows edit would upsert `meetings\weekly.md` beside the
-      // `meetings/weekly.md` the scan already indexed, and the note the PM is
-      // looking at would never refresh.
-      const rel = toPosixPath(relative(this.root, abs));
-      this.pending.set(rel, kind);
-      this.schedule();
+      try {
+        if (!abs.toLowerCase().endsWith('.md')) return;
+        // The other door a note id comes in through, and it has to agree with the
+        // walk in `FsVault` exactly: chokidar reports OS-shaped absolute paths, so
+        // without this a Windows edit would upsert `meetings\weekly.md` beside the
+        // `meetings/weekly.md` the scan already indexed, and the note the PM is
+        // looking at would never refresh.
+        const rel = toPosixPath(relative(this.root, abs));
+        this.pending.set(rel, kind);
+        this.schedule();
+      } catch (err) {
+        // A throw here runs inside chokidar's own event emission, uncaught by
+        // chokidar — swallow it rather than risk losing this and every later
+        // event for the change kind it was registered on.
+        console.error(`[watcher] failed to enqueue ${abs}:`, err instanceof Error ? err.message : err);
+      }
     };
 
     this.watcher
@@ -101,8 +118,13 @@ export class VaultWatcher {
           for (const { path, kind } of batch) {
             if (!this.pending.has(path)) this.pending.set(path, kind);
           }
+          const names = batch
+            .slice(0, 5)
+            .map((c) => c.path)
+            .join(', ');
+          const rest = batch.length > 5 ? ` (+${batch.length - 5} more)` : '';
           console.error(
-            '[watcher] batch failed, retrying:',
+            `[watcher] batch failed, retrying — ${names}${rest}:`,
             err instanceof Error ? err.message : err,
           );
           this.timer = setTimeout(() => void this.drain(), 2000);

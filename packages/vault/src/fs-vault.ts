@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { realpathSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join, resolve, relative, isAbsolute, sep, dirname } from 'node:path';
 import {
   NOTE_TYPE_META,
@@ -153,14 +154,37 @@ export class FsVault implements VaultPort {
     const abs = this.contain(relPath);
     if (!abs) throw new VaultBoundaryError(relPath);
     await fs.mkdir(dirname(abs), { recursive: true });
-    await retryWhileLocked(() => fs.writeFile(abs, content, 'utf8'));
+    await this.writeAtomic(abs, content, 'utf8');
   }
 
   async writeBinary(relPath: string, data: Uint8Array): Promise<void> {
     const abs = this.contain(relPath);
     if (!abs) throw new VaultBoundaryError(relPath);
     await fs.mkdir(dirname(abs), { recursive: true });
-    await retryWhileLocked(() => fs.writeFile(abs, data));
+    await this.writeAtomic(abs, data);
+  }
+
+  /**
+   * Write to a same-directory temp file, then rename it over the destination.
+   * The rename is the only step that touches the real path, and rename is
+   * atomic on both POSIX and Windows: a crash, power loss or disk-full error
+   * mid-write leaves the old note exactly as it was, never truncated.
+   */
+  private async writeAtomic(
+    abs: string,
+    content: string | Uint8Array,
+    encoding?: 'utf8',
+  ): Promise<void> {
+    const tmp = `${abs}.${randomUUID()}.tmp`;
+    try {
+      await retryWhileLocked(async () => {
+        await fs.writeFile(tmp, content, encoding);
+        await fs.rename(tmp, abs);
+      });
+    } catch (err) {
+      await fs.unlink(tmp).catch(() => {});
+      throw err;
+    }
   }
 
   async remove(relPath: string): Promise<void> {

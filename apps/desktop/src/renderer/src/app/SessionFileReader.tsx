@@ -274,15 +274,23 @@ function CommentsPreview({
 }
 
 /**
+ * A round's drafts, keyed by request id: module-level so leaving the tab (a
+ * remount, not a save) and coming back finds the typed answers intact.
+ */
+const roundDrafts = new Map<string, { answers: Record<string, string>; general: string }>();
+
+/**
  * The round, with a box wherever the session left a slot. The document around
  * the boxes still renders as prose: what makes this shape work is that every
  * question sits under the paragraph it is about, so answering it costs no
  * scrolling and no remembering.
  *
- * Drafts are local and stay local until Send. The file's text is re-read on
- * every mtime change, so a session that rewrote something else in the folder
- * must not take what the PM has half-typed with it. The drafts are keyed by
- * slot id, so they survive the text swapping underneath them.
+ * Drafts stay local until Send: nothing here is sent to the agent a
+ * keystroke at a time. The file's text is re-read on every mtime change, so a
+ * session that rewrote something else in the folder must not take what the PM
+ * has half-typed with it. The drafts are keyed by slot id, so they survive the
+ * text swapping underneath them, and mirrored into `roundDrafts` so they also
+ * survive the component itself being unmounted (leaving the tab).
  */
 function CommentsForm({
   request,
@@ -294,9 +302,22 @@ function CommentsForm({
   slots: readonly Slot[];
 }) {
   const { openDoc, resolveAsk, sessions, openChat } = useApp();
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [general, setGeneral] = useState('');
+  const saved = roundDrafts.get(request.id);
+  const [drafts, setDraftsState] = useState<Record<string, string>>(() => saved?.answers ?? {});
+  const [general, setGeneralState] = useState(() => saved?.general ?? '');
   const [busy, setBusy] = useState(false);
+
+  const setDrafts: typeof setDraftsState = (update) => {
+    setDraftsState((prev) => {
+      const next = typeof update === 'function' ? update(prev) : update;
+      roundDrafts.set(request.id, { answers: next, general: roundDrafts.get(request.id)?.general ?? '' });
+      return next;
+    });
+  };
+  const setGeneral = (value: string) => {
+    setGeneralState(value);
+    roundDrafts.set(request.id, { answers: roundDrafts.get(request.id)?.answers ?? {}, general: value });
+  };
 
   const prompts = usePrompts(request);
 
@@ -312,6 +333,7 @@ function CommentsForm({
       if (text) answers[slot.id] = text;
     }
     const rest = general.trim();
+    roundDrafts.delete(request.id);
     void resolveAsk(request, null, { answers, ...(rest ? { general: rest } : {}) });
     // Sent means done with this file: back to the chat, where the agent
     // resumes and the reply will show up.
@@ -322,8 +344,9 @@ function CommentsForm({
   const skip = () => {
     if (busy) return;
     setBusy(true);
+    roundDrafts.delete(request.id);
     // A dismissal is answers and comments both absent, the same shape a skipped
-    // question card sends. The agent is told to decide for itself and say so.
+    // question sends. The agent is told to decide for itself and say so.
     void resolveAsk(request, null);
   };
 
@@ -365,31 +388,41 @@ function CommentsForm({
         onChange={setGeneral}
       />
 
-      <div className="sticky bottom-0 mt-5 flex items-center gap-2 border-t border-border bg-background/95 py-2.5 backdrop-blur">
-        <p className="hidden min-w-0 truncate text-xs text-muted-foreground sm:block" aria-hidden>
-          <Key>⌘↵</Key> send · empty boxes are fine
-        </p>
-        <span className="ml-auto flex shrink-0 items-center gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={busy}
-            title="Leave this round to the agent: it carries on and says what it assumed"
-            onClick={skip}
-          >
-            Skip
-          </Button>
-          {/* Nothing typed is a skip in all but name, so the accent only arrives
-              once there is something to send (DESIGN §6). */}
-          <Button
-            size="sm"
-            variant={anything ? 'default' : 'secondary'}
-            disabled={busy || !anything}
-            onClick={send}
-          >
-            Send
-          </Button>
-        </span>
+      <div className="sticky bottom-0 mt-5">
+        {/* The document keeps scrolling under this bar, so a hard cut reads as
+            clipped text. The fade says "more is behind here", not "broken
+            layout" — and it has to match the real background, not white, or
+            it shows as a mismatched patch in dark mode. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-full h-8 bg-gradient-to-t from-background to-transparent"
+        />
+        <div className="flex items-center gap-2 border-t border-border bg-background py-2.5">
+          <p className="hidden min-w-0 truncate text-xs text-muted-foreground sm:block" aria-hidden>
+            <Key>⌘↵</Key> send · empty boxes are fine
+          </p>
+          <span className="ml-auto flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              title="Leave this round to the agent: it carries on and says what it assumed"
+              onClick={skip}
+            >
+              Skip
+            </Button>
+            {/* Nothing typed is a skip in all but name, so the accent only arrives
+                once there is something to send (DESIGN §6). */}
+            <Button
+              size="sm"
+              variant={anything ? 'default' : 'secondary'}
+              disabled={busy || !anything}
+              onClick={send}
+            >
+              Send
+            </Button>
+          </span>
+        </div>
       </div>
     </div>
   );

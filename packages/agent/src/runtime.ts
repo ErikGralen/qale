@@ -113,7 +113,7 @@ import {
   COMMENTS_TOOL_NAME,
 } from './comments.js';
 import type { CommentPlan } from './slots.js';
-import { createFilingTools, FILING_TOOL_NAMES } from './filing.js';
+import { createFilingTools, FILING_TOOL_NAMES, type SourceFiled } from './filing.js';
 import { createDeferralTool, DEFER_TOOL_NAME } from './deferrals.js';
 import { createEndQuietlyTool, ranSilent, END_QUIETLY_TOOL_NAME } from './quiet.js';
 import {
@@ -291,7 +291,7 @@ export interface RunInput {
   modelId?: string;
   /**
    * Whether the arrival may draft outbound, from the trigger that fired it
-   * (Sessions v2 Part 5). The material's permission, not the session's: one
+   * (Sessions v2 Part 5). The source's permission, not the session's: one
    * arrival agent serves both the PM's own meeting and a colleague's sales
    * call, and only the first may draft outbound. Enforced by the tool set, not
    * by the model remembering.
@@ -308,7 +308,7 @@ export interface RunInput {
   /**
    * Nobody is at the screen for this turn, but somebody will come back to it
    * (docs/arrival-agentic.md, rung 0). A person started it — they dropped
-   * material and walked away — so it is not `scheduled`, and the two differ in
+   * a source and walked away — so it is not `scheduled`, and the two differ in
    * exactly one place that matters: a question here PARKS and waits for them,
    * where a scheduled run must stop instead because nothing will ever answer it.
    * What the two share is the licence to say nothing: a drop that turned out to
@@ -328,21 +328,21 @@ export interface ModelInfo {
 }
 
 /**
- * User-set shelf state: `active` (default), `done` (outcome landed), or
- * `dismissed` (won't be useful). Stored off the pi files in a sidecar map;
- * a new message on a closed conversation flips it back to active.
+ * User-set shelf state: `active` (default) or `unpinned` (not relevant right
+ * now). Stored off the pi files in a sidecar map; a new message on an
+ * unpinned conversation flips it back to active.
  */
-export type SessionLifecycle = 'active' | 'done' | 'dismissed';
+export type SessionLifecycle = 'active' | 'unpinned';
 
 /**
- * What the sidecar can hold: the three shelf states a PM sets, plus one the app
+ * What the sidecar can hold: the two shelf states a PM sets, plus one the app
  * sets. `quiet` means a scheduled run finished with nothing to say (QM ticket
  * 2). It is a SUCCESS, not a failure and not a shelving: the transcript stays on
  * disk so a schedule that goes wrongly silent can still be read, but the session
  * never reaches {@link AgentRuntime.listChats}, so it leaves no row, no unread
  * result and no badge. A run that BROKE is never marked this way.
  *
- * Kept out of the wire `SessionLifecycle` on purpose. The three shelf states are
+ * Kept out of the wire `SessionLifecycle` on purpose. The two shelf states are
  * a control the PM operates; this is a fact about a run, and the only surface
  * that reports it is the agent's own page.
  */
@@ -541,7 +541,7 @@ interface SessionState {
 
 /**
  * Was there nobody at the screen when this turn put a card up? True for both
- * ways a run starts without a person: a clock's slot, and material arriving
+ * ways a run starts without a person: a clock's slot, and a source arriving
  * while the PM was away. Without a live session to read, the answer is "somebody
  * was there", because a card that waits for the PM is the safe way to be wrong.
  */
@@ -630,8 +630,8 @@ export function toolNamesFor(
   // spent on every turn to describe work they do not do.
   if (harness.draftCalendar && connected) names.push(...CALENDAR_TOOL_NAMES);
   // Filing is the one write that is not a card, so it is the one write a skill
-  // has to claim by name (`can: [file-material]`). See ./filing.ts.
-  if (harness.fileMaterial) names.push(...FILING_TOOL_NAMES);
+  // has to claim by name (`can: [file-source]`). See ./filing.ts.
+  if (harness.fileSource) names.push(...FILING_TOOL_NAMES);
   if (canInvokeSkills) names.push(USE_SKILL_TOOL_NAME);
   // Fan-out rides with session files: children write into the folder, and
   // reading their output back is the whole point of having one. Asking for
@@ -694,6 +694,12 @@ export class AgentRuntime {
   onRename: ((rename: { sessionId: string; title: string }) => void) | null = null;
   /** Fired when a session writes a working file — main pushes `session:files`. */
   onFilesChanged: ((sessionId: string) => void) | null = null;
+  /**
+   * A session put a source on a shelf. Main counts a dropped batch down with it
+   * (docs/critical-mass.md CM-2), so the line the PM watches during a pile says
+   * what has landed rather than only that something is happening.
+   */
+  onSourceFiled: ((sessionId: string, filed: SourceFiled) => void) | null = null;
   /**
    * A fan-out is waiting on the PM (`request`), or its card has settled
    * (`null`). The only moment the PM steers before money is spent.
@@ -959,7 +965,7 @@ export class AgentRuntime {
     return [
       '\n\n## Skills available on demand',
       'Call `use_skill` with one of these names when the conversation turns into the work it describes. ' +
-        'A skill takes over how you work from that point on — its instructions and the cards it may ' +
+        'A skill takes over how you work from that point on — its instructions and the proposals it may ' +
         'produce. Load one rather than improvising a workflow it already describes.',
       skills.map((s) => this.indexEntry(s.config)).join('\n'),
     ].join('\n');
@@ -1013,7 +1019,10 @@ export class AgentRuntime {
       >;
       const out: Record<string, StoredLifecycle> = {};
       for (const [id, v] of Object.entries(parsed)) {
-        if (v === 'done' || v === 'dismissed' || v === 'quiet') out[id] = v;
+        // 'done'/'dismissed' are pre-merge values from older sidecars; both
+        // meant "not relevant," which is now just 'unpinned'.
+        if (v === 'done' || v === 'dismissed') out[id] = 'unpinned';
+        else if (v === 'unpinned' || v === 'quiet') out[id] = v;
       }
       return out;
     } catch {
@@ -1222,7 +1231,7 @@ export class AgentRuntime {
         voiceGate,
         this.config.outboundContainers ?? (() => []),
       ),
-      ...createFilingTools(ctx, harness, filesRoot),
+      ...createFilingTools(ctx, harness, filesRoot, (filed) => this.onSourceFiled?.(id, filed)),
       ...(canInvokeSkills ? [createUseSkillTool(ctx, harness, () => applyActivation())] : []),
       ...createSessionFileTools(filesRoot, () => this.onFilesChanged?.(id)),
       createCommentsTool({
@@ -1543,7 +1552,7 @@ export class AgentRuntime {
     const opening = this.openingPrompt(state) ?? input.prompt;
     if (!state.title) state.title = this.titleFor(opening, state, ctx);
     // Then a cheap model gives it a real name, once, off that same first
-    // message. Not on a turn nobody started: a clock's tick and material
+    // message. Not on a turn nobody started: a clock's tick and a source
     // arriving while the PM is away keep the deterministic name and spend
     // nothing. The moment a person writes into one of those, it gets named like
     // any other conversation, because now somebody is reading the row.

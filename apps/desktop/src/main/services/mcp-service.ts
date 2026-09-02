@@ -8,10 +8,10 @@ import { zOutboundPayload, OUTBOUND_PROVIDERS } from '@qale/domain';
 /**
  * The workspace as an MCP server (PLAN-V2 §3.5) — not just a client. A Claude-
  * forward team's existing AI queries the same verified memory and files drafts
- * through the SAME approval cards. Localhost + bearer-token gated. Three tools:
+ * through the SAME proposals. Localhost + bearer-token gated. Three tools:
  *   ask_product   — a cited, dated answer from the memory (read; deterministic)
- *   log_decision  — file a decision as an approval card (never writes silently)
- *   draft_writeback — file an outbound draft (Jira/Confluence/message) as a card
+ *   log_decision  — file a decision as a proposal (never writes silently)
+ *   draft_writeback — file an outbound draft (Jira/Confluence/message) as a proposal
  * All three route through the same use cases and land in the Inbox.
  */
 export class McpService {
@@ -129,7 +129,7 @@ export class McpService {
 
     mcp.tool(
       'log_decision',
-      'File a product decision as an approval card (the PM approves before it is written). Cite sources.',
+      'File a product decision as a proposal (the PM approves before it is written). Cite sources.',
       {
         summary: z.string(),
         body: z.string(),
@@ -165,13 +165,13 @@ export class McpService {
           inference: sources.length === 0,
         });
         this.onChanged();
-        return textResult(`Decision card ${rec.id} filed to the Inbox for approval: ${path}`);
+        return textResult(`Decision proposal ${rec.id} filed to the Inbox for approval: ${path}`);
       },
     );
 
     mcp.tool(
       'draft_writeback',
-      'File an outbound draft as an approval card. Never sends; the PM approves. Actions: create_ticket (requires container, the project it goes in) | comment_ticket (requires targetId, the ticket key) | update_page (requires targetId, the page id).',
+      'File an outbound draft as a proposal. Never sends; the PM approves. Actions: create_ticket (requires container, the project it goes in) | comment_ticket (requires targetId, the ticket key) | update_page (requires targetId, the page id).',
       {
         provider: z.enum(OUTBOUND_PROVIDERS).optional().describe('Where the draft is addressed.'),
         /** Deprecated alias of `provider`, still accepted from older callers. */
@@ -216,7 +216,7 @@ export class McpService {
         });
         this.onChanged();
         return textResult(
-          `Outbound draft card ${rec.id} filed to the Inbox for approval (${parsed.data.provider}).`,
+          `Outbound draft proposal ${rec.id} filed to the Inbox for approval (${parsed.data.provider}).`,
         );
       },
     );

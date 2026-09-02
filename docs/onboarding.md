@@ -40,10 +40,10 @@ Two halves, deliberately different in character:
 - **Build toward a payoff.** The screens get shorter as you go, and the payoff is not inside the
   opening at all: it is your own transcript being read, or your own week arriving from the calendar
   you just connected, once the app is in front of you. Nothing in the workspace is ever fake, so
-  the suspense is real: the thing being revealed is the product working on your material.
+  the suspense is real: the thing being revealed is the product working on your sources.
 - **Respect over confetti.** No "Awesome!", no fireworks, no mascot. A completed First step gets a
   quiet check and one line about what just happened. The reward is the product doing something
-  real with your material.
+  real with your sources.
 - **The words are plain.** Every string in this flow follows the product copy rule: plain, human,
   no jargon. This is the first text a user ever reads from us.
 - **Interruptible.** Quitting mid-flow resumes at the same step next launch. Every completed step
@@ -83,8 +83,8 @@ BYOK per beta-launch ticket 3; we hand keys to beta users, so the copy says "pas
 your invite" rather than sending anyone to the Anthropic console.
 
 **5. What it may read.** The connections: Jira + Confluence, and Google Calendar. Both optional,
-both skippable, and the screen says why in one line: the memory is only as good as the material it
-can see, and this is where most of a PM's material already lives. Each provider is one row.
+both skippable, and the screen says why in one line: the memory is only as good as the sources it
+can see, and this is where most of a PM's sources already live. Each provider is one row.
 Google is a browser sign-in; Atlassian is site URL, email and API token, verified on save (this is
 the existing Settings → Connections machinery, in a first-run frame).
 
@@ -108,7 +108,7 @@ consent surface.)
 
 Then the shell appears, with the First steps card on Home.
 
-There is no seventh screen. Getting the first piece of material in used to be one (First light,
+There is no seventh screen. Getting the first source in used to be one (First light,
 ONB-7), and it is a First steps row instead: the workspace still starts empty, the ask is still
 made, but it is made by the app once someone is in it rather than as the last gate of a setup
 flow. Same words, better moment.
@@ -313,7 +313,7 @@ in resources and copying it into a real folder with dates slid to install day.
 
 **Proposal:** the workspace starts empty and stays the user's own. Two doors, no bundle, no demo
 vault in the app at all. **Drop something in** opens the capture tray in the flow, so the last
-thing that happens in the opening is their own material being read; the handoff line from ONB-9
+thing that happens in the opening is their own sources being read; the handoff line from ONB-9
 carries it from there. **Start empty** just proceeds to the shell, which is a legitimate choice
 and not a lesser one, especially for someone who connected a calendar on screen 5 and will find
 their week already waiting.
@@ -350,7 +350,7 @@ verified, container followed), writing into the `onboarding.checklist` record fr
 the two connection rows read the same connection and follow state ONB-11 writes, so a connection
 made straight from Settings months later still ticks the row; renderer subscribes through
 the existing settings-changed push. Each row deep-links to the right surface using the existing
-tab-opening actions. No sample-material affordance, per ONB-7: every row is waiting on something
+tab-opening actions. No sample-source affordance, per ONB-7: every row is waiting on something
 the user actually does, so the transcript row has to explain what counts as one. Dismiss and
 retire rules as written above.
 
@@ -377,7 +377,7 @@ ticket 18.)
 **Proposal:** one line, shown the moment a capture is submitted: "Reading your meeting. Watch it
 here", pointing at where the session and its proposals will land. Cheap, and it closes the loop
 the whole product is built on. Worth doing early because both onboarding doors that involve real
-material ("Bring your own", the transcript First step) depend on this moment not being silent.
+sources ("Bring your own", the transcript First step) depend on this moment not being silent.
 
 **Decision:**
 Yes implement this. (Carried over from beta-launch ticket 18.)

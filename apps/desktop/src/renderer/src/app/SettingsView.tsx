@@ -606,7 +606,7 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
                     /* "Nothing is sent" only ever meant the outbound side. A scheduled
                        run still reads and still calls the model with nobody watching,
                        which is the part a schedule is easiest to be wrong about. */
-                    description={`Run while the app is open, and missed slots catch up on launch. Dry-run first: everything lands in the Inbox as cards, and nothing goes out to your tracker, wiki or calendar. A run still reads your notes and sends them to ${providerInfo.name}, even when you are not at the machine.`}
+                    description={`Run while the app is open, and missed slots catch up on launch. Dry-run first: everything lands in the Inbox as proposals, and nothing goes out to your tracker, wiki or calendar. A run still reads your notes and sends them to ${providerInfo.name}, even when you are not at the machine.`}
                   >
                     {settings.schedules.map((sc) => (
                       <div key={sc.skill} className="rounded-lg border border-border bg-card p-3">
@@ -703,7 +703,7 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
                       <>
                         Let your own Claude or Cursor reach this memory through three tools:{' '}
                         <code>ask_product</code>, <code>log_decision</code> and{' '}
-                        <code>draft_writeback</code>. Writes go through the same approval cards, and
+                        <code>draft_writeback</code>. Writes go through the same proposals, and
                         the server only listens on this machine and only answers with the token.
                         What that does not cover: whatever app you connect can read your notes, and
                         it sends them on to its own model.

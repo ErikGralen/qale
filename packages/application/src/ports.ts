@@ -262,7 +262,7 @@ export interface AskRecord {
   outbound: boolean;
   /**
    * Nobody was at the screen when it asked: a clock started the run, or the PM
-   * handed material over and walked away. Half of what decides whether the
+   * dropped a source and walked away. Half of what decides whether the
    * question is owed an answer; the other half is which agent asked.
    */
   unattended: boolean;

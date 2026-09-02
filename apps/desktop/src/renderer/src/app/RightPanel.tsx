@@ -341,7 +341,7 @@ function FileRowItem({
 
 /**
  * The session's working files (Sessions v2 Part 1), filling live as the agent
- * writes. The agent writes these WITHOUT an approval card, so the
+ * writes. The agent writes these WITHOUT a proposal, so the
  * nothing-silent principle is honoured differently here: by visibility and
  * disposability rather than by approval. That trade only holds if the tree is
  * genuinely live and every file is one glance from being read.

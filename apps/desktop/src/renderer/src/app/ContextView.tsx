@@ -71,8 +71,8 @@ export function ContextView({ tag }: { tag: string }) {
         <div className="mx-auto w-full max-w-2xl">
           {notes.length === 0 ? (
             <p className="px-1 py-2 text-sm text-muted-foreground">
-              Nothing tagged #{tag} yet. The librarian suggests contexts when filing: approve a card
-              carrying this tag and it fills up.
+              Nothing tagged #{tag} yet. The librarian suggests contexts when filing: approve a
+              proposal carrying this tag and it fills up.
             </p>
           ) : (
             <div className="flex flex-col gap-5">
@@ -83,7 +83,9 @@ export function ContextView({ tag }: { tag: string }) {
                 const truncated = s.rows.length > s.shown.length;
                 return (
                   <section key={s.type}>
-                    <div className="mb-0.5 flex items-baseline gap-2 px-2">
+                    {/* `pl-8` lands the label on the title column, past the
+                        row's checkbox gutter (see NoteList). */}
+                    <div className="mb-1 flex items-baseline gap-2 pl-8">
                       <h2 className="text-xs font-medium text-muted-foreground">{label}</h2>
                       <span className="text-xs text-muted-foreground tabular-nums">
                         {s.rows.length}

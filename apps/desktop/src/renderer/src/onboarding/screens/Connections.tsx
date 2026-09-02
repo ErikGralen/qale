@@ -9,6 +9,8 @@ import {
 } from '../../lib/connections';
 import { AtlassianTokenHelp } from '../../components/AtlassianTokenHelp';
 import { FollowPicker } from '../../components/FollowPicker';
+import { followReceipt } from '../../lib/follow-receipt';
+import { siteUrlPreview } from '../../lib/site-url';
 import { useApp } from '../../state/app-state';
 import { Screen, SkipLink } from '../Opening';
 
@@ -30,7 +32,7 @@ import { Screen, SkipLink } from '../Opening';
  * "connected" would be quietly lying about what just happened.
  */
 export function Connections({ onNext, onSkip }: { onNext: () => void; onSkip: () => void }) {
-  const { patchOnboarding, refreshSettings } = useApp();
+  const { patchOnboarding, refreshSettings, settings } = useApp();
   const [providers, setProviders] = useState<ProviderDescriptorDTO[]>([]);
   const [conns, setConns] = useState<ConnectionDTO[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,6 +107,7 @@ export function Connections({ onNext, onSkip }: { onNext: () => void; onSkip: ()
               }}
               onSkip={() => skipProvider(provider.id)}
               onPicking={(open) => setPicking((prev) => ({ ...prev, [provider.id]: open }))}
+              hasKey={settings?.hasApiKey ?? false}
             />
           ))
         )}
@@ -139,12 +142,16 @@ function ProviderRow({
   onChanged,
   onSkip,
   onPicking,
+  hasKey,
 }: {
   provider: ProviderDescriptorDTO;
   connections: ConnectionDTO[];
   onChanged: () => Promise<void>;
   onSkip: () => void;
   onPicking: (open: boolean) => void;
+  /** Is a model key saved? Without one no debrief runs, so the receipt below
+   *  promises nothing (docs/first-look-debrief.md FD-2). */
+  hasKey: boolean;
 }) {
   const oauth = provider.authKind === 'oauth';
   const [open, setOpen] = useState(false);
@@ -164,6 +171,9 @@ function ProviderRow({
   const [picking, setPicking] = useState(
     () => connected && hasContainers && followedNames.length === 0,
   );
+  // What the confirm started, said once the card settles (docs/closing-beat.md).
+  // No door here: the opening owns the way forward, and that is the footer.
+  const [receipt, setReceipt] = useState<string | null>(null);
   const showPicker = picking && connected && hasContainers;
   // Through a ref: the parent hands us a fresh closure every render, and a
   // plain dependency on it would report the same state back on every one.
@@ -225,7 +235,14 @@ function ProviderRow({
               <Check className="size-3.5" aria-hidden /> Connected
             </span>
             {hasContainers && !showPicker && (
-              <Button size="sm" variant="ghost" onClick={() => setPicking(true)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setReceipt(null);
+                  setPicking(true);
+                }}
+              >
                 Change
               </Button>
             )}
@@ -309,9 +326,14 @@ function ProviderRow({
             key={conn.id}
             conn={conn}
             onChanged={onChanged}
-            onDone={() => setPicking(false)}
+            onDone={(outcome) => {
+              setPicking(false);
+              setReceipt(followReceipt(outcome, hasKey));
+            }}
           />
         ))}
+
+      {!showPicker && receipt && <p className="mt-2 text-sm text-muted-foreground">{receipt}</p>}
     </div>
   );
 }
@@ -343,6 +365,9 @@ function AuthField({
   onChange: (v: string) => void;
   onEnter: () => void;
 }) {
+  // Confirm what a pasted address resolves to instead of leaving the person
+  // to guess the right shape (clarity review: Atlassian site URL confusion).
+  const preview = /url$/i.test(field.key) ? siteUrlPreview(value) : null;
   return (
     <div className="flex flex-col gap-0.5">
       <Input
@@ -360,7 +385,13 @@ function AuthField({
           }
         }}
       />
-      {field.hint && <p className="px-1 text-xs text-muted-foreground">{field.hint}</p>}
+      {preview ? (
+        <p className="px-1 text-xs text-muted-foreground">
+          We’ll connect to <span className="font-medium text-foreground">{preview}</span>
+        </p>
+      ) : (
+        field.hint && <p className="px-1 text-xs text-muted-foreground">{field.hint}</p>
+      )}
     </div>
   );
 }

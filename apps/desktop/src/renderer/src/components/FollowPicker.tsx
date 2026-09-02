@@ -7,6 +7,7 @@ import {
   type ConnectionDTO,
   type ContainerRecommendationDTO,
 } from '../lib/connections';
+import type { FollowOutcome } from '../lib/follow-receipt';
 
 /**
  * "These look like where you work" (docs/product-understanding.md FL-2).
@@ -41,8 +42,13 @@ export interface FollowPickerProps {
   conn: ConnectionDTO;
   /** Re-read the connection list after the follows were written. */
   onChanged: () => Promise<void>;
-  /** The picker is finished with (confirmed). */
-  onDone?: () => void;
+  /**
+   * The picker is finished with (confirmed). The outcome says what the confirm
+   * started, so the frame that owns the card can close the moment with a
+   * receipt (lib/follow-receipt.ts). The card itself cannot: both frames drop
+   * it here and settle into their own quiet state.
+   */
+  onDone?: (outcome: FollowOutcome) => void;
 }
 
 export function FollowPicker({ conn, onChanged, onDone }: FollowPickerProps) {
@@ -96,21 +102,33 @@ export function FollowPicker({ conn, onChanged, onDone }: FollowPickerProps) {
 
   const chosen = containers.filter((c) => ticked[c.id]);
 
+  /**
+   * Is this the connection's first read? Nothing is followed yet, so the read
+   * that starts here ends in a debrief (docs/first-look-debrief.md), and the
+   * confirm can promise it. Reopening the picker later to change the list
+   * promises nothing, because nothing more is coming.
+   */
+  const firstFollow = containers.every((c) => !c.followed);
+
   const confirm = useCallback(async () => {
     setSaving(true);
+    let started = 0;
     try {
       // Only what actually changed: re-following something already followed
       // would kick off a sync tick for nothing.
       for (const c of containers) {
         const want = !!ticked[c.id];
-        if (want !== c.followed) await connections.setFollow(conn.id, c.id, want);
+        if (want !== c.followed) {
+          await connections.setFollow(conn.id, c.id, want);
+          if (want) started++;
+        }
       }
       await onChanged();
-      onDone?.();
+      onDone?.({ firstFollow, started });
     } finally {
       setSaving(false);
     }
-  }, [containers, ticked, conn.id, onChanged, onDone]);
+  }, [containers, ticked, conn.id, firstFollow, onChanged, onDone]);
 
   if (containers.length === 0) return null;
 
@@ -189,7 +207,9 @@ export function FollowPicker({ conn, onChanged, onDone }: FollowPickerProps) {
         <span className="text-xs text-muted-foreground">
           {chosen.length === 0
             ? 'Pick at least one, or it reads nothing'
-            : 'Nothing is read until you press this'}
+            : firstFollow
+              ? 'It reads these, then comes back and tells you what it found'
+              : 'Nothing is read until you press this'}
         </span>
       </div>
     </div>

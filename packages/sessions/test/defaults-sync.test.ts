@@ -139,7 +139,17 @@ test('the house rules match down to Your rules, where the demo carries its own e
 test('a demo skill, agent or voice with no seeded pair is named here or it fails', () => {
   // Deliberately demo-only: it carries a dead setting and a typo, so the Skills
   // page has a broken file to show. Seeding one would be absurd.
-  const demoOnly = new Set(['skills/broken-demo/SKILL.md']);
+  //
+  // The two conventions skills are demo-only for the opposite reason: nothing
+  // seeds them (they are created on first use), and the demo copies hold Tavla's
+  // own rules rather than the template's example lines, so a word-for-word
+  // comparison would be wrong. The next test checks the part that must not
+  // drift, which is their shape.
+  const demoOnly = new Set([
+    'skills/broken-demo/SKILL.md',
+    'skills/jira/SKILL.md',
+    'skills/confluence/SKILL.md',
+  ]);
   const paired = new Set(seededFiles().map((s) => s.file));
 
   for (const folder of ['skills', 'agents', 'voices']) {
@@ -168,9 +178,11 @@ test('a demo skill, agent or voice with no seeded pair is named here or it fails
 
 /**
  * The other gap: a constant written in `defaults.ts` that no registry seeds.
- * `ask` is the one real case, and it is built-in only, so the sweep above never
- * sees it. It is named here rather than filtered by a pattern, so the next
- * constant that quietly stops being seeded is loud.
+ * There are three, and they are named here rather than filtered by a pattern, so
+ * the next constant that quietly stops being seeded is loud. `ask` is built-in
+ * only, so the sweep above never sees it. The two conventions skills are created
+ * on demand: a workspace without Jira must not carry an empty Jira skill
+ * (docs/conventions.md CV-1).
  *
  * This reads the module namespace of `defaults.ts` rather than the package's
  * public exports on purpose: a constant added to the file but not re-exported
@@ -185,8 +197,64 @@ test('every skill-shaped constant in defaults.ts is seeded, or is named as a bui
     .sort();
   assert.deepEqual(
     unseeded,
-    ['ASK_SKILL'],
+    ['ASK_SKILL', 'CONFLUENCE_CONVENTIONS', 'JIRA_CONVENTIONS'],
     'a skill-shaped constant in defaults.ts is neither seeded nor a known built-in.\n' +
       'Seed it and give it a vault-dev copy, or name it here if it ships as a built-in only.',
   );
+});
+
+/**
+ * The conventions skills stay out of every seed registry. This is the property
+ * the feature rests on: the file exists once the team has told Qale something
+ * about that system, and a fresh workspace shows neither of them.
+ */
+test('no conventions skill is seeded into a new workspace', () => {
+  const seeded = seededFiles();
+  for (const name of defaults.CONVENTION_SKILLS.keys()) {
+    const path = `skills/${name}/SKILL.md`;
+    assert.ok(
+      !seeded.some((s) => s.file === path || s.content === defaults.conventionsSkill(name)),
+      `${path} is seeded. It is created on first use instead, so a workspace with no ${name} ` +
+        'connection never carries it.',
+    );
+  }
+});
+
+/** The template has to parse, and its anchor has to be the last heading in it. */
+test('each conventions template ends with the Standing instructions section', () => {
+  for (const [name, content] of defaults.CONVENTION_SKILLS) {
+    const skill = defaults.DEFAULT_SKILL_BY_NAME[name];
+    assert.equal(skill, undefined, `${name} is in the built-in registry, so it can be run`);
+    const lines = words(content).filter((line) => line.startsWith('#'));
+    assert.equal(
+      lines.at(-1),
+      '## Standing instructions',
+      `the last heading in the ${name} template is not the anchor propose_instruction appends to`,
+    );
+    assert.match(content, /^---\ntype: skill\ntitle: How we use /);
+  }
+});
+
+/**
+ * The demo copies (CV-5) are not mirrors. A real workspace fills the template
+ * with its own rules, so `vault-dev/skills/jira/SKILL.md` holds Tavla's rules
+ * and says nothing the template says. What must still hold is the shape: the
+ * same title, and the same headings in the same order, ending on the anchor
+ * `propose_instruction` appends to. A demo file that lost a drafting moment
+ * would show the feature wrong on the Skills page.
+ */
+test('each conventions demo file keeps its template shape', () => {
+  for (const [name, content] of defaults.CONVENTION_SKILLS) {
+    const file = `skills/${name}/SKILL.md`;
+    const demo = readFileSync(join(REPO, 'vault-dev', file), 'utf8');
+    const headings = (text: string): string[] => words(text).filter((l) => l.startsWith('#'));
+    assert.deepEqual(
+      headings(demo),
+      headings(content),
+      `vault-dev/${file} does not have the same headings as its template, in the same order`,
+    );
+    const title = /^title: (.+)$/m.exec(content)?.[1];
+    assert.match(demo, new RegExp(`^title: ${title}$`, 'm'));
+    assert.notEqual(demo.trim(), content.trim(), `vault-dev/${file} is still the empty template`);
+  }
 });

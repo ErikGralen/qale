@@ -18,7 +18,7 @@ export interface Kickoff {
   skill: string;
   /**
    * The vault paths the run is about, when it has any. More than one where a
-   * batch of material was handed over to be read as one thing, so the chat can
+   * batch of sources was handed over to be read as one thing, so the chat can
    * link every page the run was started on rather than the first of them.
    */
   targets?: string[];

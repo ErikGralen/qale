@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  isMirrorType,
   latestVerification,
   linkTypeLabel,
   parseActor,
@@ -8,14 +9,16 @@ import {
   TYPE_RULES,
   type Verification,
 } from '@qale/domain';
-import type { NoteDTO } from '@qale/ipc';
+import type { NoteDTO, StateCategory } from '@qale/ipc';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@qale/ui';
 import {
   AlignLeft,
+  ArrowUpRight,
   BadgeCheck,
   Calendar,
   ChevronRight,
   CircleDot,
+  Clock,
   ExternalLink,
   Hash,
   Link2,
@@ -31,9 +34,10 @@ import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
 import { invoke } from '../lib/ipc';
 import { webUrl } from '../lib/urls';
-import { isExternalRef } from '../lib/connections';
+import { isExternalRef, providerLabelOf } from '../lib/connections';
 import { collectContexts } from '../lib/contexts';
 import {
+  FACTS,
   FIELDS,
   HIDDEN_KEYS,
   REF_FIELDS,
@@ -42,6 +46,10 @@ import {
   type FieldSpec,
   type Widget,
 } from '../state/properties-schema';
+import { StatePill } from './ExternalRef';
+import { localDateStr } from '../lib/dates';
+import { dateLabel } from '../lib/due-date';
+import { DatePicker } from './DatePicker';
 import { TagInput } from './TagInput';
 import { PeopleInput } from './PeopleInput';
 import { PersonChip } from './PersonChip';
@@ -160,14 +168,13 @@ function TrustRow({
   const tier = trustTier(verifications);
   const latest = latestVerification(verifications);
   const who = latest ? parseActor(latest.by) : null;
-  const when = latest && /^\d{4}-\d{2}-\d{2}/.test(latest.at) ? latest.at.slice(0, 10) : latest?.at;
+  const when =
+    latest && /^\d{4}-\d{2}-\d{2}/.test(latest.at) ? dateLabel(latest.at.slice(0, 10)) : latest?.at;
   const detail = who ? `${who.id}${when ? ` · ${when}` : ''}` : null;
+  // A human check is provenance, so it speaks in ink (One Voice Rule); the
+  // machine tier and the default stay muted — the label carries the difference.
   const pill =
-    tier === 'human'
-      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-      : tier === 'machine'
-        ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
-        : 'bg-muted text-muted-foreground';
+    tier === 'human' ? 'bg-brand/12 text-brand' : 'bg-muted text-muted-foreground';
   return (
     <PropertyRow icon={BadgeCheck} label="Trust">
       <div className="flex min-h-[26px] flex-wrap items-center gap-1.5 px-1.5 py-0.5 text-sm">
@@ -191,13 +198,140 @@ function TrustRow({
   );
 }
 
+/** `state_category` as the pill's tone, defensively: sync writes it, but an
+ *  old mirror may miss it, and an unknown word must not lose the state. */
+function categoryOf(value: unknown): StateCategory {
+  return value === 'in_progress' || value === 'blocked' || value === 'done' ? value : 'open';
+}
+
+/** A quiet lead-in word where the bare value would not say what it is. */
+const FACT_PREFIX: Record<string, string> = {
+  due: 'Due',
+  owner: 'Waiting on',
+  remote_updated: 'Changed',
+  captured: 'Captured',
+  confidence: 'Confidence',
+};
+
+/**
+ * The headline facts, one glanceable row under the title: what a reader opens
+ * this type of note for (FACTS in the schema), before the Details fold that
+ * holds everything. A ticket leads with the tracker's own state — colored by
+ * `state_category`, worded in the tracker's raw label — not with Qale's
+ * bookkeeping. Mirrors end the row with the door to the original, and
+ * `processing: stale` opens it with the amber flag on every type (the one
+ * moment the pipeline's state is the reader's business).
+ */
+function FactStrip({ note }: { note: NoteDTO }) {
+  const fm = note.frontmatter;
+  const specs = FIELDS[note.type] ?? FIELDS.note;
+  const stale = fm['processing'] === 'stale';
+  const url = isMirrorType(note.type) && typeof fm['url'] === 'string' ? fm['url'] : null;
+  const provider = typeof fm['provider'] === 'string' ? fm['provider'] : null;
+
+  const facts: { key: string; node: React.ReactNode }[] = [];
+  for (const key of FACTS[note.type] ?? []) {
+    const value = fm[key];
+    if (
+      value === undefined ||
+      value === null ||
+      value === '' ||
+      (Array.isArray(value) && value.length === 0)
+    )
+      continue;
+    const spec = specs.find((s) => s.key === key);
+    const prefix = FACT_PREFIX[key];
+
+    if (key === 'state' && typeof value === 'string') {
+      facts.push({
+        key,
+        node: <StatePill state={value} category={categoryOf(fm['state_category'])} />,
+      });
+      continue;
+    }
+    if (key === 'assignee' && typeof value === 'string') {
+      facts.push({ key, node: <PersonChip value={value} /> });
+      continue;
+    }
+    if (spec?.widget === 'people') {
+      const people = (Array.isArray(value) ? value : [value]).filter(
+        (p): p is string => typeof p === 'string',
+      );
+      if (people.length === 0) continue;
+      facts.push({
+        key,
+        node: (
+          <span className="flex flex-wrap items-center gap-1">
+            {people.map((raw, i) => (
+              <PersonChip key={`${raw}-${i}`} value={raw} />
+            ))}
+          </span>
+        ),
+      });
+      continue;
+    }
+    let text: string;
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      text = dateLabel(value);
+    } else if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+      text = dateLabel(value.slice(0, 10));
+    } else if (spec?.widget === 'select') {
+      text = spec.options?.find((o) => o.value === value)?.label ?? String(value);
+    } else {
+      text = Array.isArray(value) ? value.join(', ') : String(value);
+    }
+    facts.push({
+      key,
+      node: (
+        <span className="flex items-baseline gap-1">
+          {prefix && <span className="text-muted-foreground">{prefix}</span>}
+          <span className="truncate">{text}</span>
+        </span>
+      ),
+    });
+  }
+
+  if (!stale && facts.length === 0 && !url) return null;
+  return (
+    <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
+      {stale && (
+        <span
+          className="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
+          title="Marked stale: what this rests on changed after it was last processed."
+        >
+          <Clock className="size-3" aria-hidden />
+          Stale
+        </span>
+      )}
+      {facts.map((f) => (
+        <span key={f.key} className="flex min-w-0 items-center">
+          {f.node}
+        </span>
+      ))}
+      {url && (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-0.5 rounded text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          Open in {provider ? providerLabelOf(provider) : 'browser'}
+          <ArrowUpRight className="size-3" aria-hidden />
+        </a>
+      )}
+    </div>
+  );
+}
+
 const COLLAPSE_KEY = 'qale.properties.collapsed';
 const SHOW_ALL_KEY = 'qale.properties.showAll';
 
 export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: () => void }) {
-  const { saveFrontmatter, loadDoc, tree, openContext, openDoc } = useApp();
+  const { saveFrontmatter, markChecked: check, loadDoc, tree, openContext, openDoc } = useApp();
   const tagSuggestions = useMemo(() => collectContexts(tree), [tree]);
-  const [open, setOpen] = useState(() => localStorage.getItem(COLLAPSE_KEY) !== '1');
+  // Closed unless the PO opened it: the fact strip carries what a reader came
+  // for, and the full table is reference material, not the page's opening act.
+  const [open, setOpen] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '0');
   // Whether the machine-written tail is unfolded. A preference, not per-note
   // state: someone who wants to see `external_id` wants to see it everywhere.
   const [showAll, setShowAll] = useState(() => localStorage.getItem(SHOW_ALL_KEY) === '1');
@@ -292,7 +426,7 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
   const markChecked = async () => {
     // Same shape as the save queue above: whatever main did or refused, the
     // panel then reads the file rather than its own guess at it.
-    await invoke['note:markChecked'](note.path).catch(() => {});
+    await check(note.path, note.type);
     await loadDoc(note.path);
   };
 
@@ -311,6 +445,7 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
         readOnly={!canEdit('summary')}
         onCommit={(v) => commit('summary', v)}
       />
+      <FactStrip note={note} />
       <Collapsible
         open={open}
         onOpenChange={(next) => {
@@ -323,7 +458,7 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
             className="size-3.5 transition-transform duration-150 group-data-[state=open]:rotate-90 motion-reduce:transition-none"
             aria-hidden
           />
-          Properties
+          Details
           {!open && filledCount > 0 && (
             <span className="font-normal text-muted-foreground/70">· {filledCount} set</span>
           )}
@@ -416,7 +551,7 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
                   className={`size-3.5 transition-transform duration-150 motion-reduce:transition-none ${showAll ? 'rotate-90' : ''}`}
                   aria-hidden
                 />
-                {showAll ? 'Show less' : `${tailKeys.length} more`}
+                {showAll ? 'Show less' : `${tailKeys.length} sync details`}
               </button>
             )}
 
@@ -437,7 +572,7 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
             )}
 
             <p className="mt-1.5 px-1.5 text-xs text-muted-foreground/70">
-              Modified {new Date(note.mtime).toLocaleString()}
+              Modified {dateLabel(localDateStr(new Date(note.mtime)))}
             </p>
           </div>
         </CollapsibleContent>
@@ -479,6 +614,7 @@ function CustomRow({
         <UrlValue
           value={value as string}
           href={href}
+          label={humanize(propKey)}
           readOnly={locked}
           onCommit={(v) => onCommit(propKey, v)}
         />
@@ -494,6 +630,7 @@ function CustomRow({
       ) : (
         <TextValue
           value={typeof value === 'string' ? value : String(value)}
+          label={humanize(propKey)}
           onCommit={(v) => onCommit(propKey, typeof v === 'string' ? coerceScalar(v, value) : v)}
         />
       )}
@@ -514,7 +651,7 @@ function PropertyRow({
 }) {
   return (
     <div className="group/row -mx-1.5 flex items-start gap-1 rounded-md px-1.5 transition-colors hover:bg-accent/40">
-      <span className="flex h-[26px] w-32 shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <span className="flex h-[26px] w-36 shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <Icon className="size-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
         <span className="truncate" title={label}>
           {label}
@@ -555,6 +692,10 @@ function SummaryEditor({
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const cancelled = useRef(false);
+  // Closing with the keyboard puts focus back on the display button; closing
+  // with a click must not yank focus to wherever the click landed.
+  const refocus = useRef(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const norm = value.trim().toLowerCase();
   const echo = !norm || norm === title.trim().toLowerCase() || norm === 'untitled';
 
@@ -563,13 +704,15 @@ function SummaryEditor({
   }
   if (draft === null) {
     return (
-      <p
-        className="mb-4 cursor-text rounded-md text-body text-muted-foreground transition-colors hover:bg-accent/40"
+      <button
+        ref={buttonRef}
+        type="button"
+        className="mb-4 block w-full cursor-text rounded-md text-left text-body text-muted-foreground transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
         onClick={() => setDraft(echo ? '' : value)}
-        title="Click to edit summary"
+        title="Edit summary"
       >
         {echo ? <span className="text-muted-foreground/50">Add a summary…</span> : value}
-      </p>
+      </button>
     );
   }
   return (
@@ -577,6 +720,7 @@ function SummaryEditor({
       className="mb-4 w-full field-sizing-content resize-none rounded-md border border-input bg-card px-2 py-1 text-body text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       value={draft}
       autoFocus
+      aria-label="Summary"
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
         // Baseline is what editing started from — a click into the echo state
@@ -585,11 +729,19 @@ function SummaryEditor({
           onCommit(draft.trim() || undefined);
         cancelled.current = false;
         setDraft(null);
+        if (refocus.current) {
+          refocus.current = false;
+          requestAnimationFrame(() => buttonRef.current?.focus());
+        }
       }}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) e.currentTarget.blur();
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          refocus.current = true;
+          e.currentTarget.blur();
+        }
         if (e.key === 'Escape') {
           cancelled.current = true;
+          refocus.current = true;
           e.currentTarget.blur();
         }
       }}
@@ -634,6 +786,7 @@ function PropertyValue({
         value={arr}
         onChange={(next) => onCommit(next.length > 0 ? next : undefined)}
         placeholder="Empty"
+        ariaLabel={spec.label}
       />
     );
   }
@@ -652,7 +805,7 @@ function PropertyValue({
       typeof value === 'string' &&
       /^\d{4}-\d{2}-\d{2}T/.test(value) &&
       !Number.isNaN(Date.parse(value))
-        ? new Date(value).toLocaleString()
+        ? dateLabel(value.slice(0, 10))
         : null;
     return (
       <p className="min-h-[26px] truncate px-1.5 py-0.5 text-sm text-muted-foreground" title={text}>
@@ -666,6 +819,7 @@ function PropertyValue({
       <select
         className={`${quietInput} ${current ? '' : 'text-muted-foreground/50'}`}
         value={current}
+        aria-label={spec.label}
         onChange={(e) => onCommit(e.target.value || undefined)}
       >
         <option value="">Empty</option>
@@ -678,13 +832,11 @@ function PropertyValue({
     );
   }
   if (spec.widget === 'date') {
-    const current = (value as string) ?? '';
     return (
-      <input
-        type="date"
-        className={`${quietInput} ${current ? '' : 'text-muted-foreground/50'}`}
-        value={current}
-        onChange={(e) => onCommit(e.target.value || undefined)}
+      <DateValue
+        value={typeof value === 'string' ? value : ''}
+        label={spec.label}
+        onCommit={onCommit}
       />
     );
   }
@@ -700,15 +852,57 @@ function PropertyValue({
         normalize={onTagClick ? (raw) => raw.trim().toLowerCase().replace(/\s+/g, '-') : undefined}
         onTagClick={onTagClick}
         placeholder="Empty"
+        ariaLabel={spec.label}
       />
     );
   }
   // 'text' (and any future free-text widget): draft while focused, Enter
   // commits (via blur), Escape reverts.
-  return <TextValue value={(value as string) ?? ''} onCommit={onCommit} />;
+  return <TextValue value={(value as string) ?? ''} label={spec.label} onCommit={onCommit} />;
 }
 
-function TextValue({ value, onCommit }: { value: string; onCommit: (v: unknown) => void }) {
+/** A day-field: the value as we print dates, and our own calendar to change it.
+ *  A loose date from an old vault reads as the text it is, and picking a day
+ *  repairs it. */
+function DateValue({
+  value,
+  label,
+  onCommit,
+}: {
+  value: string;
+  label: string;
+  onCommit: (v: unknown) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+  return (
+    <DatePicker
+      value={day}
+      today={localDateStr()}
+      open={open}
+      onOpenChange={setOpen}
+      onPick={(next) => onCommit(next ?? undefined)}
+      align="start"
+    >
+      <button
+        className={`${quietInput} min-h-[26px] text-left ${value ? '' : 'text-muted-foreground/50'}`}
+        aria-label={label}
+      >
+        {day ? dateLabel(day) : value || 'Empty'}
+      </button>
+    </DatePicker>
+  );
+}
+
+function TextValue({
+  value,
+  label,
+  onCommit,
+}: {
+  value: string;
+  label: string;
+  onCommit: (v: unknown) => void;
+}) {
   const [draft, setDraft] = useState<string | null>(null);
   const cancelled = useRef(false);
   return (
@@ -716,6 +910,7 @@ function TextValue({ value, onCommit }: { value: string; onCommit: (v: unknown) 
       className={quietInput}
       value={draft ?? value}
       placeholder="Empty"
+      aria-label={label}
       onFocus={() => setDraft(value)}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
@@ -747,11 +942,13 @@ function TextValue({ value, onCommit }: { value: string; onCommit: (v: unknown) 
 function UrlValue({
   value,
   href,
+  label,
   readOnly,
   onCommit,
 }: {
   value: string;
   href: string;
+  label: string;
   readOnly?: boolean;
   onCommit: (v: unknown) => void;
 }) {
@@ -764,6 +961,7 @@ function UrlValue({
         value={draft}
         autoFocus
         placeholder="Empty"
+        aria-label={label}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
           if (!cancelled.current && draft.trim() !== value) onCommit(draft.trim() || undefined);
@@ -865,7 +1063,7 @@ function AddPropertyRow({
   return (
     <div className="-mx-1.5 rounded-md bg-accent/40 px-1.5 py-0.5">
       <div className="flex items-start gap-1">
-        <span className="flex h-[26px] w-32 shrink-0 items-center gap-1.5">
+        <span className="flex h-[26px] w-36 shrink-0 items-center gap-1.5">
           <Type className="size-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
           <input
             className="w-full rounded-sm border border-transparent bg-transparent px-0.5 py-0.5 text-xs font-medium text-muted-foreground placeholder:text-muted-foreground/50 focus-visible:border-input focus-visible:bg-card focus-visible:outline-none"

@@ -179,7 +179,7 @@ Rebuild `SkillsView.tsx` as one page with five tabs, in this order:
 - Skills: the requests (weekly-update, synthesis, process-note, the
   interview skill, user-created ones). No toggles; delete is the off.
 - House rules: the one document, edited in place. No list.
-- Moments: arrival ("When material arrives") and commitment-check ("When
+- Moments: arrival ("When a source arrives") and commitment-check ("When
   a commitment slips and you ask for help"). Trigger text comes from
   code. Editable bodies, no off switch.
 - Voices: the `voices/` files.

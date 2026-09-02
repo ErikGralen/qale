@@ -114,11 +114,11 @@ export function workspaceNameOf(root: string): string | null {
  * How much room every file INSIDE a workspace needs, in characters, and where
  * the number comes from. The longest paths the app mints, measured:
  *
- * - **Dropped material**, which is the worst case. A session's folder is
+ * - **A dropped source**, which is the worst case. A session's folder is
  *   `sessions/.files/<uuid>/`: 16 + 36 + 1 = 53 characters before the session has
- *   written anything, because the id is a `randomUUID`. Arriving material goes in
- *   `material/` (9) under a name taken from the file the PM dropped, capped at 72
- *   (`MATERIAL_NAME_CAP` in the arrival handler, which points back here). Total:
+ *   written anything, because the id is a `randomUUID`. An arriving source goes in
+ *   `source/` (9) under a name taken from the file the PM dropped, capped at 72
+ *   (`SOURCE_NAME_CAP` in the arrival handler, which points back here). Total:
  *   **134**.
  * - A session's own working files: the same 53, plus the conventional
  *   `per-item/<name>.md` (9 + a model-chosen name of roughly a slug's length + 3)

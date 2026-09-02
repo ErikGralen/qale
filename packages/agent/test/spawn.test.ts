@@ -46,7 +46,7 @@ test('an "over" entry is a template: one child per target, {target} in the path'
   assert.deepEqual(p.entries[0]!.children[0]!.read, ['sources/2026-06-12-nordkap.md']);
 });
 
-test('the axis of variation can be the PROMPT, not the material — three lenses, one document', () => {
+test('the axis of variation can be the PROMPT, not the source — three lenses, one document', () => {
   const doc = ['sources/nordkap-qbr.md'];
   const p = plan([
     { prompt: 'Read this for pricing signals.', read: doc, write_to: 'pricing-read.md' },

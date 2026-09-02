@@ -4,6 +4,7 @@ import {
   outboundEffect,
   titleFromSlug,
   transcriptRefs,
+  vaultEffect,
   zOutboundPayload,
   type Note,
   type OutboundEffectFacts,
@@ -253,27 +254,51 @@ export function outboundEffectFacts(
   return { selfEmails, names, titles };
 }
 
+/** A proposal payload as stored: JSON of a shape this build may not know. Read
+ *  it field by field so an unexpected one costs a missing line, never a throw. */
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+
+const stringField = (rec: Record<string, unknown>, key: string): string | undefined => {
+  const value = rec[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+};
+
 export function proposalToDTO(
   rec: ProposalRecord,
   selfStarted?: string | null,
   effectFacts?: OutboundEffectFacts,
 ): ProposalDTO {
-  // Outbound payloads persisted before the provider-generic vocabulary carry
-  // `system` + legacy action names; normalize so the renderer always sees
-  // `provider` + generic actions. Best-effort — an unparsable payload passes
-  // through as-is rather than hiding the card.
+  // A card's effect line is composed here rather than in the renderer: the
+  // sentence is a property of the card, so anything that shows one later says
+  // the same thing. A plain update gets none, because its headline names the
+  // page and the diff shows the change. Composed at serialisation rather than
+  // at draft time so a card filed before the PO named their own address still
+  // gets the "outside your company" flag. A card that leaves the machine gets
+  // `outboundEffect`, which names who the write reaches; a card that stays in
+  // the workspace gets `vaultEffect`, which names the folder it lands in. The
+  // two never both speak.
+  const fields = asRecord(rec.payload);
   let payload = rec.payload;
   let effect: string | undefined;
   if (rec.kind === 'outbound') {
+    // Outbound payloads persisted before the provider-generic vocabulary carry
+    // `system` + legacy action names; normalize so the renderer always sees
+    // `provider` + generic actions. Best-effort: an unparsable payload passes
+    // through as-is, and without an effect line, rather than hiding the card.
     const parsed = zOutboundPayload.safeParse(rec.payload);
     if (parsed.success) {
       payload = parsed.data;
-      // Composed here, not in the renderer: the sentence is a property of the
-      // card, so anything that shows one later says the same thing. Composed at
-      // serialisation rather than at draft time so a card filed before the PO
-      // named their own address still gets the "outside your company" flag.
       effect = outboundEffect(parsed.data, effectFacts);
     }
+  } else {
+    effect = vaultEffect({
+      kind: rec.kind as Exclude<ProposalDTO['kind'], 'outbound'>,
+      // A new note names its own file in the payload; only an update and a
+      // decision carry a `targetPath`. Read it the way the renderer does.
+      targetPath: rec.targetPath ?? stringField(fields, 'path'),
+      frontmatter: asRecord(fields['frontmatter']),
+    });
   }
   return {
     id: rec.id,
@@ -282,9 +307,11 @@ export function proposalToDTO(
     skill: rec.skill,
     targetPath: rec.targetPath,
     payload: payload as ProposalDTO['payload'],
-    // The agent authors the headline inside the payload (no DB column); surface
-    // it as a first-class field so the renderer never reaches into payload shape.
-    headline: (rec.payload as { headline?: string }).headline?.trim() || undefined,
+    // The rare authored headline, carried inside the payload (no DB column).
+    // Only `propose_instruction` writes one, so most cards leave this empty and
+    // the card copy composes the line instead. Surfaced as a first-class field
+    // so the renderer never reaches into payload shape.
+    headline: stringField(fields, 'headline'),
     // No DB column either: the sweep that started the run writes the sentence to
     // the check ledger against its session id, and the caller reads it back.
     selfStarted: selfStarted?.trim() || undefined,
@@ -319,6 +346,10 @@ const _outboundProviderLock: _MutualLock<
 > = true;
 const _noteTypeLock: _MutualLock<import('@qale/ipc').NoteType, import('@qale/domain').NoteType> =
   true;
+const _proposalKindLock: _MutualLock<
+  import('@qale/ipc').ProposalKind,
+  import('@qale/domain').ProposalKind
+> = true;
 const _stateCategoryLock: _MutualLock<
   import('@qale/ipc').StateCategory,
   import('@qale/domain').StateCategory
@@ -326,4 +357,5 @@ const _stateCategoryLock: _MutualLock<
 void _outboundActionLock;
 void _outboundProviderLock;
 void _noteTypeLock;
+void _proposalKindLock;
 void _stateCategoryLock;

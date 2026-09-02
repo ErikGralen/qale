@@ -3,11 +3,13 @@ import { Screen } from '../Opening';
 
 /**
  * Screen 1 (docs/onboarding.md, clarity review area 1). The cover, not a
- * dialog: the mark, the value, then briefly the how. One button.
+ * dialog: the mark, then the concept. One button.
  *
- * Value first, mechanics second: the reader on this screen has not decided to
- * care yet, so the first paragraph says what they get, not how it works. The
- * deal (it drafts, you approve, the files stay yours) and the one boundary
+ * Concept first, not pitch first (reworked 2026-08-30): the earlier
+ * value-first draft read as a sales pitch to the person who already installed
+ * the app. What they need before the next five screens is the mental model:
+ * everything is a text file in a folder they own, this is where they work,
+ * the AI drafts and they approve. The why (control) and the one boundary
  * (notes go to the AI service they pick) still get said, because someone who
  * reads only this screen should already know what they have installed.
  */
@@ -24,7 +26,7 @@ export function Hello({ onNext }: { onNext: () => void }) {
           </span>
         </div>
       }
-      title="Your new workspace"
+      title="How Qale works"
       footer={
         <Button data-opening-primary size="lg" onClick={onNext}>
           Set it up
@@ -34,22 +36,25 @@ export function Hello({ onNext }: { onNext: () => void }) {
       <div className="space-y-5">
         <div className="space-y-3 text-body text-muted-foreground">
           <p>
-            One place that remembers your product work for you: what was decided, why, and who
-            promised what. You always have the answer, with links to where it came from.
+            Everything here is a plain text file on your computer. Your notes, meetings and
+            decisions live in one folder that you pick, and you can open it with any other app,
+            with Qale closed.
           </p>
           <p>
-            The AI does the busywork. Drop in meetings, notes and tickets, and it reads them, files
-            them, and drafts the follow-ups. You approve before anything counts.
+            That folder is where you work. Write notes, drop in transcripts, ask questions. The AI
+            reads what you give it, files it, and drafts the follow-ups. You approve before
+            anything counts.
           </p>
-          {/* The limit of the promise, said in the same breath as the promise
-              (OW10). "Nothing leaves" was never true of the model, and a
-              boundary whose one gap you find out about later is not one you
-              agreed to. Plain "AI service" here: "model provider" and "agent"
-              are our words, and this is the first screen anyone reads. */}
+          {/* The why, then the limit of the promise in the same breath (OW10).
+              "Nothing leaves" was never true of the model, and a boundary
+              whose one gap you find out about later is not one you agreed to.
+              Plain "AI service" here: "model provider" and "agent" are our
+              words, and this is the first screen anyone reads. */}
           <p>
-            Everything lives in plain files on your own computer. When the AI reads your notes, they
-            go to the AI service you pick, and nothing reaches your team or your tools without your
-            approval.
+            We built it this way so you stay in control: files any app can open are never locked
+            in, and an AI that asks first never surprises you. When the AI reads your notes, they
+            go to the AI service you pick, and nothing reaches your team or your tools without
+            your approval.
           </p>
         </div>
       </div>

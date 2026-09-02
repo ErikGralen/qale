@@ -14,7 +14,8 @@ errors never trap anyone. The gaps below are almost all the same kind: a term or
 a task that is obvious to us and opaque to someone on day one.
 
 **Status 2026-08-23: all 11 areas built as commented.** The Hello screen is
-rewritten value-first ("Your new workspace"). The key explainer and the
+rewritten value-first ("Your new workspace"); on 2026-08-30 it was rewritten
+again, concept-first ("How Qale works"), see the update under area 1. The key explainer and the
 Atlassian token walk are Collapsible folds; the token walk is one shared
 component (`AtlassianTokenHelp`) used by the opening and Settings. The verify
 line now says only "We make a quick check of the key here". Obsidian is gone
@@ -49,6 +50,13 @@ from".
 
 **Your comment:**
 Honestly I think we can rewrite this entirely to something mentioning this is your new workspace, our ai will make this easy .. focus on the VALUE/WHY we provide not HOW. We can introduce our product HOW a bit as well afterwards?
+
+**Update 2026-08-30.** The value-first draft ("Your new workspace") read as a
+sales pitch to someone who already installed the app. Rewritten concept-first
+as "How Qale works": everything is a text file in a folder you own, that
+folder is where you work (write notes, drop in transcripts, the AI drafts,
+you approve), and we built it this way so you stay in control. The AI-service
+boundary sentence stays verbatim.
 ---
 
 ## 2. Screen 2, You: nothing says the fields are optional

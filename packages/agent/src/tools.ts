@@ -20,6 +20,7 @@ import {
   fileSlug,
   isBodyEditable,
   isFolderIndex,
+  isIndexableNote,
   isVoicePath,
   languageName,
   layerForType,
@@ -27,19 +28,24 @@ import {
   refToSlug,
   runnableCandidates,
   runnableEntryPath,
+  slugify,
   sameLanguage,
   typeForDir,
   validateEvidence,
   zNotePayload,
   zUpdatePayload,
   zDecisionPayload,
+  zDeletePayload,
   TYPE_RULES,
 } from '@qale/domain';
 import {
   buildSkillBrief,
   parseRunnable,
+  conventionsSkill,
+  CAPABILITY_LABEL,
   HOUSE_RULES,
   HOUSE_RULES_NAME,
+  type Capability,
   type Runnable,
   type SessionHarness,
 } from '@qale/sessions';
@@ -140,7 +146,7 @@ export const VAULT_TOOL_NAMES = [
  * whole file arrives before anything can decide it was too much. The caps sit
  * well above every authored note in a real workspace (the longest runnable in
  * the seeded vault is under 200 lines), so the only thing that meets them is
- * dropped material, which is exactly what `vault_outline` plus a range is for.
+ * a dropped source, which is exactly what `vault_outline` plus a range is for.
  *
  * Two numbers, because one of them is always the wrong one: a transcript
  * exported as one paragraph per speaker turn is short in lines and huge in
@@ -541,9 +547,11 @@ export const PROPOSE_TOOL_NAMES = [
   'propose_note',
   'propose_meeting',
   'propose_update',
+  'propose_delete',
   'propose_decision',
   'propose_todo',
   'propose_instruction',
+  'propose_skill',
 ];
 
 export const WITHDRAW_TOOL_NAME = 'withdraw_proposal';
@@ -609,7 +617,7 @@ export function createUseSkillTool(
     label: 'Use skill',
     description:
       'Load a skill into this conversation by name (see "Skills available on demand" in your instructions). ' +
-      'It takes over how you work from here — its instructions and the cards it is allowed to produce. ' +
+      'It takes over how you work from here — its instructions and the proposals it is allowed to produce. ' +
       'Call it the moment the conversation turns into work that skill describes, rather than improvising ' +
       'the workflow yourself.',
     parameters: Type.Object({
@@ -749,21 +757,46 @@ function rulesSectionIsLast(body: string, heading: string): boolean {
  * they are opposite things to the PM. `asked` is their own words coming back;
  * `inference` is the agent's own reasoning with nothing behind it. One flag for
  * both meant a note the PM dictated arrived wearing "the agent inferred this
- * without citing a source", which is the one card they should never doubt.
+ * without citing a source", which is the one proposal they should never doubt.
  */
 const ASKED_PARAM = Type.Optional(
   Type.Boolean({
     description:
-      'True when the PM asked for this in the conversation: their message IS the source, and a message is not a note you can cite. Stands in for sources[], and the card says they asked for it. Never for something you worked out yourself.',
+      'True when the PM asked for this in the conversation: their message IS the source, and a message is not a note you can cite. Stands in for sources[], and the proposal says they asked for it. Never for something you worked out yourself.',
   }),
 );
 
 const INFERENCE_PARAM = Type.Optional(
   Type.Boolean({
     description:
-      'True when you worked this out yourself and nothing in the workspace or the conversation says it. The card is flagged for the PM to double-check, so use it only when there is genuinely nothing to point at.',
+      'True when you worked this out yourself and nothing in the workspace or the conversation says it. The proposal is flagged for the PM to double-check, so use it only when there is genuinely nothing to point at.',
   }),
 );
+
+/**
+ * Which note types a delete card may never touch, and the reason in the words
+ * the model gets back. Four different reasons, so they are four messages:
+ *
+ * - The raw layer and the mirrors are copies of something upstream. Deleting one
+ *   removes our copy and nothing else, and the next sync writes it back.
+ * - The decision spine is append-only. Superseding is how a decision stops
+ *   holding; erasing one erases why the workspace is the way it is.
+ * - A skill or an agent is how the app behaves, not something it remembers.
+ * - A session is the receipt for a run that happened.
+ */
+function undeletable(type: string): string | null {
+  if (type === 'source')
+    return 'a source is the raw material other notes cite as evidence, and deleting it leaves those notes pointing at nothing.';
+  if (type === 'ticket' || type === 'wikipage')
+    return `a ${type} is a copy of something upstream. Deleting it here changes nothing there, and the next sync writes it back. Stop following it instead.`;
+  if (type === 'decision')
+    return 'the decision spine is append-only. A decision that no longer holds is superseded by a newer one, never erased.';
+  if (type === 'skill' || type === 'agent')
+    return `a ${type} is how the app works, not something it remembers. The PM removes one from its own page.`;
+  if (type === 'session')
+    return 'a session is the receipt for a run that happened, and the PM clears those from the sessions list.';
+  return null;
+}
 
 export function createProposeTools(
   ctx: UseCaseContext,
@@ -788,7 +821,7 @@ export function createProposeTools(
     const hit = duplicatePending(ctx, candidate);
     if (!hit) return null;
     return text(
-      `Not proposed: a card already waiting on the PM says the same thing — "${candidate.title}" (${hit.id}). ` +
+      `Not proposed: a proposal already waiting on the PM says the same thing — "${candidate.title}" (${hit.id}). ` +
         'Nothing was created, and you do not need to do anything about it. ' +
         'If what you found is genuinely different, propose it again with a title that says how it differs.',
     );
@@ -811,11 +844,19 @@ export function createProposeTools(
     if (!ctx.index.resolve(path.replace(/\.md$/, '')) && !(await ctx.vault.exists(path)))
       return null;
     return text(
-      `Not proposed: ${path} already exists as a note — usually a card of yours the PM has already approved. ` +
-        'Approving it is what wrote the note, and it is theirs now, so a second create card for that path could ' +
+      `Not proposed: ${path} already exists as a note — usually a proposal of yours the PM has already approved. ` +
+        'Approving it is what wrote the note, and it is theirs now, so a second create proposal for that path could ' +
         'never be applied. If it needs to change, propose_update it instead.',
     );
   };
+
+  /**
+   * The basis a card carries when the PM asked for it in the chat. Their
+   * message IS the source, and a message is not a note you can cite, so this is
+   * the `asked` basis exactly and never the inference one. Nothing on such a
+   * card was worked out by the model.
+   */
+  const chatIsTheSource = { evidence: [], inference: false, asked: true };
 
   const { resolves, evidenceRows } = citations(ctx);
 
@@ -854,7 +895,7 @@ export function createProposeTools(
         : '';
     return text(
       `Rejected: that frontmatter does not fit the note's schema — ${parsed.error}. ` +
-        `Fix the field named there and propose again; the card could not be approved as written.${shape}`,
+        `Fix the field named there and propose again; the proposal could not be approved as written.${shape}`,
     );
   };
 
@@ -935,13 +976,13 @@ export function createProposeTools(
     name: 'propose_meeting',
     label: 'Propose meeting',
     description:
-      "Propose a NEW meeting page for a recording you just filed — the summary and the page are ONE card, so nothing lands in meetings/ until the PM approves it. Use it after file_material has put the transcript in sources/ and no meeting page exists yet. Name every transcript in `transcript` (the source paths file_material reported): they become the page's evidence and flip to processed on approval. `summary` is the meeting written up in your own voice — what was decided, what is open, what happens next — not a paste of the transcript. `participants` is who was in it, and a meeting needs it: set it from whoever speaks in the transcript, or set `participants_unknown` when the material names nobody. If the calendar ALREADY holds this meeting, do not use this: attach the transcript with file_material `attach_to` and propose_update the summary onto the page that exists.",
+      "Propose a NEW meeting page for a recording you just filed — the summary and the page are ONE proposal, so nothing lands in meetings/ until the PM approves it. Use it after file_source has put the transcript in sources/ and no meeting page exists yet. Name every transcript in `transcript` (the source paths file_source reported): they become the page's evidence and flip to processed on approval. `summary` is the meeting written up in your own voice — what was decided, what is open, what happens next — not a paste of the transcript. `participants` is who was in it, and a meeting needs it: set it from whoever speaks in the transcript, or set `participants_unknown` when the source names nobody. If the calendar ALREADY holds this meeting, do not use this: attach the transcript with file_source `attach_to` and propose_update the summary onto the page that exists.",
     parameters: Type.Object({
       title: Type.String({
         description: 'What the meeting is called, in the words a person would use.',
       }),
       date: Type.String({
-        description: 'The day it happened, "YYYY-MM-DD", as the material itself states it.',
+        description: 'The day it happened, "YYYY-MM-DD", as the source itself states it.',
       }),
       summary: Type.String({
         description: "The write-up, markdown. It becomes the page's Summary section.",
@@ -959,7 +1000,7 @@ export function createProposeTools(
       participants_unknown: Type.Optional(
         Type.Boolean({
           description:
-            'Only when the material genuinely names nobody (speaker labels only). Says you looked and there is no name to write. Required when `participants` is empty.',
+            'Only when the source genuinely names nobody (speaker labels only). Says you looked and there is no name to write. Required when `participants` is empty.',
         }),
       ),
       customer: Type.Optional(
@@ -1003,15 +1044,15 @@ export function createProposeTools(
       }
       if (!params.summary.trim()) {
         return text(
-          'Rejected: the summary is the whole point of the card. Write the meeting up, or propose nothing.',
+          'Rejected: the summary is the whole point of the proposal. Write the meeting up, or propose nothing.',
         );
       }
       if (params.transcript.length === 0) {
         return text(
-          'Rejected: name the transcript(s) this meeting is recorded by. File the recording with file_material first; it reports the paths.',
+          'Rejected: name the transcript(s) this meeting is recorded by. File the recording with file_source first; it reports the paths.',
         );
       }
-      // Every transcript must exist and be raw material. A meeting page whose
+      // Every transcript must exist and be a source note. A meeting page whose
       // `transcript` points at nothing reads as "this meeting has no recording",
       // which is the one wrong answer that loses the evidence entirely.
       const refs: string[] = [];
@@ -1032,7 +1073,7 @@ export function createProposeTools(
       const path = `meetings/${fileSlug(title.slice(0, 200), params.date)}.md`;
       if (ctx.index.resolve(path.replace(/\.md$/, '')) || (await ctx.vault.exists(path))) {
         return text(
-          `Not proposed: ${path} already exists. That meeting has a page — attach the recording to it with file_material \`attach_to\`, then propose_update the summary onto it.`,
+          `Not proposed: ${path} already exists. That meeting has a page — attach the recording to it with file_source \`attach_to\`, then propose_update the summary onto it.`,
         );
       }
       const dup = alreadyProposed({ kind: 'note', targetPath: path, noteType: 'meeting', title });
@@ -1045,11 +1086,11 @@ export function createProposeTools(
       // asking for it was simply skipped. Refused here rather than nudged
       // afterwards, because once the card exists the path is taken and
       // `alreadyProposed` refuses the second one. The flag is the way through
-      // for material that really does name nobody.
+      // for a source that really does name nobody.
       if (!params.participants?.length && !params.participants_unknown) {
         return text(
           'Rejected: nobody is on this meeting. Set `participants` from whoever speaks in the transcript — a plain ' +
-            'name is fine where there is no person page, and it becomes one on the page in a click. If the material ' +
+            'name is fine where there is no person page, and it becomes one on the page in a click. If the source ' +
             'genuinely names nobody, say so with `participants_unknown: true` and propose it again.',
         );
       }
@@ -1092,7 +1133,7 @@ export function createProposeTools(
       harness?.recordWrite(path, rec.id, 'note');
       return text(
         `Proposed meeting (${rec.id}): ${path}, with the summary in it. Cite it as ` +
-          `"[[${path.replace(/\.md$/, '')}]]" on the other cards from this meeting — a card may rest on one that is ` +
+          `"[[${path.replace(/\.md$/, '')}]]" on the other proposals from this meeting — a proposal may rest on one that is ` +
           `still waiting, so the todos and decisions point at the meeting rather than at the raw recording.` +
           (params.participants_unknown && !params.participants?.length
             ? ' Nobody is on it: say so in your closing line, so the PM knows to add them.'
@@ -1293,11 +1334,99 @@ export function createProposeTools(
     },
   });
 
+  /**
+   * Propose that a file goes.
+   *
+   * The one card that takes something away, and it exists because the librarian
+   * had no way to say it. Told to flag noise for the PM to delete, and holding
+   * only `propose_update`, it did the only thing it could: it appended a
+   * paragraph to the note explaining that the note should be deleted, and set a
+   * lifecycle field to make the card legal. The PM got an edit to approve when
+   * what they wanted was a file to lose.
+   *
+   * The guards below are what keeps it from being a way to lose work. Nothing
+   * upstream, nothing the spine depends on, nothing another page points at, and
+   * nothing the app itself runs on.
+   */
+  const proposeDelete = defineTool({
+    name: 'propose_delete',
+    label: 'Propose delete',
+    description:
+      'Propose deleting a note: an empty file, a scratch page, a near-duplicate of a page that says it better, something left over from a test. The PM approves and the file goes. Read the note first — this is the one proposal that takes something away, so propose it for a page that carries nothing worth keeping, never as a way to tidy a page you disagree with. A page another note links to is refused here; repoint or drop those links first. Sources, mirrored tickets and wiki pages, decisions, skills and agents cannot be deleted this way. Keep the rationale to one sentence: the card shows the page itself, so saying what is in it twice helps nobody.',
+    parameters: Type.Object({
+      path: Type.String({ description: 'The note to delete, e.g. "notes/untitled.md".' }),
+      rationale: Type.String({
+        description:
+          'Why it should go, in one sentence. "The file is empty." is a complete answer.',
+      }),
+      sources: Type.Optional(Type.Array(Type.String())),
+      asked: ASKED_PARAM,
+      inference: INFERENCE_PARAM,
+    }),
+    async execute(_id, params: unknown) {
+      const parsed = zDeletePayload.safeParse(params);
+      if (!parsed.success)
+        return text(`Rejected: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
+      const target = ctx.index.resolve(stripLink(parsed.data.path));
+      if (!target) return text(`Rejected: no note called ${parsed.data.path}.`);
+      const note = await ctx.vault.readNote(target);
+      if (!note) return text(`Rejected: cannot read ${target}.`);
+      // Orientation files, a skill's own material and session files are not
+      // notes, so they are not this card's business either.
+      if (!isIndexableNote(target)) {
+        return text(
+          `Rejected: ${target} is not a note — it is orientation, a skill's own material, or a session's working file. None of those are deleted through a proposal.`,
+        );
+      }
+      const refuse = undeletable(note.type);
+      if (refuse) return text(`Rejected: ${refuse}`);
+      // A page other pages point at is never noise, whatever it says. Deleting
+      // it turns every one of those links into a dead end, and the repair for
+      // that is a second pass nobody asked for.
+      const inbound = ctx.index.backlinks(note.slug);
+      if (inbound.length > 0) {
+        const names = inbound
+          .slice(0, 5)
+          .map((row) => row.fromPath)
+          .join(', ');
+        return text(
+          `Rejected: ${inbound.length} note(s) link to ${target} (${names}), so deleting it would break those links. Repoint or drop them first, then propose this again.`,
+        );
+      }
+      const p = params as { sources?: string[]; inference?: boolean; asked?: boolean };
+      const check = validateEvidence(p.sources ?? [], resolves, {
+        inference: !!p.inference,
+        asked: !!p.asked,
+      });
+      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const dup = alreadyProposed({
+        kind: 'delete',
+        targetPath: target,
+        title: parsed.data.rationale,
+      });
+      if (dup) return dup;
+      const rec = createProposal(ctx, {
+        kind: 'delete',
+        sessionId,
+        skill: harness?.activeSkillName,
+        targetPath: target,
+        baseHash: null,
+        payload: { ...parsed.data, path: target },
+        rationale: parsed.data.rationale,
+        evidence: evidenceRows(p.sources ?? []),
+        inference: !!p.inference,
+        asked: !!p.asked,
+      });
+      harness?.recordWrite(target, rec.id, 'delete');
+      return text(`Proposed deleting ${target} (${rec.id}). Awaiting review.`);
+    },
+  });
+
   const proposeTodo = defineTool({
     name: 'propose_todo',
     label: 'Propose todo',
     description:
-      'Propose a tracked commitment (todo) heard in a meeting or found in a note. Use it when the PO committed to something ("I\'ll get back to you on that") OR when someone else did ("I\'ll update the docs" — then set owner to that person). Give a concrete imperative title, a due date only if one was named or clearly implied, and cite sources[] (the meeting/note where it was said). Include the verbatim quote when you have it. Check existing todos first (vault_list type "todo") and skip anything already tracked; cards still awaiting review are caught here for you, so a commitment another run already proposed comes back as "not proposed" rather than landing twice.',
+      'Propose a tracked commitment (todo) heard in a meeting or found in a note. Use it when the PO committed to something ("I\'ll get back to you on that") OR when someone else did ("I\'ll update the docs" — then set owner to that person). Give a concrete imperative title, a due date only if one was named or clearly implied, and cite sources[] (the meeting/note where it was said). Include the verbatim quote when you have it. Check existing todos first (vault_list type "todo") and skip anything already tracked; proposals still awaiting review are caught here for you, so a commitment another run already proposed comes back as "not proposed" rather than landing twice.',
     parameters: Type.Object({
       title: Type.String({
         description:
@@ -1404,6 +1533,13 @@ export function createProposeTools(
    * Nothing new is invented for it. An existing file takes an `update` card with
    * the `append` lever, which cannot miss its anchor the way a patch can; a
    * workspace with no house-rules file yet takes a `note` card that creates one.
+   *
+   * The description also says when NOT to reach for this tool. A rule was the
+   * only move the model had when the PM corrected it, so a wrong fact became a
+   * standing rule and a typo became one too. Both belong somewhere else: a fact
+   * belongs in the note that holds it, and a slip belongs nowhere. The branches
+   * live in this description rather than in the house rules because the choice
+   * is between two tools, and this is the one that gets over-reached for.
    */
   const proposeInstruction = defineTool({
     name: 'propose_instruction',
@@ -1413,22 +1549,30 @@ export function createProposeTools(
       'conversation ("remember to create person notes too", "articles with no project get the inspiration tag"). ' +
       'It lands as a bullet under "Standing instructions" in the skill or agent that owns the behavior, and every ' +
       'session that runs that file reads it from then on. Name `target` when one skill or agent clearly owns it ' +
-      '(arrival, librarian, meeting-prep) and leave it out otherwise: the rule then goes under "Your rules" in the ' +
-      'house rules, the one document every session reads. Keep `rule` to one short imperative sentence, and keep ' +
-      'answering the PM normally in the same turn. Never say you will remember something without this card.',
+      '(arrival, librarian, meeting-prep). A rule about drafting tickets or ticket comments belongs to "jira", ' +
+      'and one about pages to "confluence"; those two files are created by the proposal when they do not exist ' +
+      'yet. Leave `target` out when nothing owns the rule: it then goes under "Your rules" in the house rules, ' +
+      'the one document every session reads. Not every correction is a rule. A correction about what is TRUE ' +
+      '("the pilot starts in October, not September") means the note that holds that fact is wrong: ' +
+      'propose_update that note instead. A correction about HOW the work is done ("read the ticket mirror before ' +
+      'you draft the update") is this tool, aimed at the owning skill. A correction about taste ("never open a ' +
+      'customer email with an apology") is this tool with no `target`, or propose_update on the voice file when ' +
+      'it is about one voice. A one-off slip (a typo, a misread, a fluke) needs no file: say nothing needs filing ' +
+      'here and carry on. Keep `rule` to one short imperative sentence, and keep ' +
+      'answering the PM normally in the same turn. Never say you will remember something without this proposal.',
     parameters: Type.Object({
       rule: Type.String({
         description:
-          'The rule, one short imperative sentence, e.g. "When filing material that mentions a person, create their person note too."',
+          'The rule, one short imperative sentence, e.g. "When filing a source that mentions a person, create their person note too."',
       }),
       target: Type.Optional(
         Type.String({
           description:
-            'The skill or agent that owns this behavior, by name ("arrival", "librarian"). Leave it out when no single one does.',
+            'The skill or agent that owns this behavior, by name ("arrival", "librarian"). Use "jira" for a rule about drafting tickets or ticket comments, and "confluence" for one about pages. Leave it out when no single one does.',
         }),
       ),
       why: Type.Optional(
-        Type.String({ description: 'Why the PM wants it, in one line. Shown on the card.' }),
+        Type.String({ description: 'Why the PM wants it, in one line. Shown on the proposal.' }),
       ),
     }),
     async execute(_id, params: { rule: string; target?: string; why?: string }) {
@@ -1460,27 +1604,36 @@ export function createProposeTools(
         }
         return null;
       };
-      const owner = wanted ? await read(wanted) : null;
-      const home = owner ?? (await read(HOUSE_RULES_NAME));
-      const name = owner ? wanted : HOUSE_RULES_NAME;
-      const missed = wanted && !owner ? wanted : '';
+      // A conventions skill is written on demand and seeded nowhere, so "always
+      // set the roadmap label on tickets" usually arrives before
+      // skills/jira/SKILL.md exists (docs/conventions.md CV-3). A name that IS
+      // one of them and has no file yet takes the template rather than the house
+      // rules: a rule only ticket drafting needs has no business riding in every
+      // session prompt. Resolved before the read so that "Jira" and "jira" find
+      // the one file rather than write a second one beside it.
+      const convention = wanted ? conventionsSkill(wanted) : undefined;
+      const lookFor = convention?.name ?? wanted;
+      const owner = lookFor ? await read(lookFor) : null;
+      const missing = convention && !owner ? convention : undefined;
+      const shipped = missing ? parseRunnable(missing.template, missing.name) : null;
+      const home = owner ?? (missing ? null : await read(HOUSE_RULES_NAME));
+      const name = owner ? lookFor : (missing?.name ?? HOUSE_RULES_NAME);
+      const missed = wanted && !owner && !missing ? wanted : '';
       // Each home files rules under its own heading: a skill or agent collects
       // them as standing instructions, the house rules as the PM's own rules.
-      const heading = owner ? RULES_HEADING : HOUSE_RULES_HEADING;
+      const heading = owner || missing ? RULES_HEADING : HOUSE_RULES_HEADING;
 
       const label =
         home && typeof home.note.frontmatter['title'] === 'string' && home.note.frontmatter['title']
           ? (home.note.frontmatter['title'] as string)
           : name;
-      const lands = owner
-        ? `Goes into ${label}'s standing instructions.`
-        : 'Goes into Your rules, in the house rules every session reads.';
+      const lands = shipped
+        ? `Goes into ${shipped.title}.`
+        : owner
+          ? `Goes into ${label}'s standing instructions.`
+          : 'Goes into Your rules, in the house rules every session reads.';
       const rationale = `${params.why?.trim() || 'You asked for this in chat.'} ${lands}`;
       const headline = `Remember this: ${rule}`;
-      // The PM saying it in the chat IS the source, and a message is not a note,
-      // so there is nothing to cite: this is the `asked` basis exactly, not the
-      // inference one. Nothing here was worked out by the model.
-      const chatIsTheSource = { evidence: [], inference: false, asked: true };
       const receipt = (id: string) =>
         text(
           `Proposed instruction (${id}): "${rule}" -> ${name}. Awaiting review.` +
@@ -1512,7 +1665,7 @@ export function createProposeTools(
         });
         if (waiting) {
           return text(
-            `Not proposed: a card already waiting on the PM adds that same rule (${waiting.id}). Nothing was ` +
+            `Not proposed: a proposal already waiting on the PM adds that same rule (${waiting.id}). Nothing was ` +
               'created, and you do not need to do anything about it.',
           );
         }
@@ -1537,18 +1690,20 @@ export function createProposeTools(
         return receipt(rec.id);
       }
 
-      // No house-rules file at all: the card writes the shipped document with
-      // the new rule at the end of it. The whole document, not just the rule —
-      // the runtime falls back to this same text while the file is missing, so
-      // a card that wrote the bullet alone would silently drop the language,
-      // writing and filing rules the session had a moment ago.
-      const shipped = parseRunnable(HOUSE_RULES, HOUSE_RULES_NAME);
-      const path = runnableEntryPath('skills', HOUSE_RULES_NAME);
+      // Nothing to append to, so the card creates the file: the conventions
+      // template the name asked for, or the house rules when nothing owns the
+      // rule. Either way it writes the whole document with the new rule at the
+      // end of it, not the bullet alone. For the house rules that is what keeps
+      // the language, writing and filing rules the runtime was falling back to
+      // while the file was missing; for a conventions skill it is the headings
+      // that give the next rule somewhere to land.
+      const first = shipped ?? parseRunnable(HOUSE_RULES, HOUSE_RULES_NAME);
+      const path = runnableEntryPath('skills', name);
       const dup = alreadyProposed({
         kind: 'note',
         targetPath: path,
         noteType: 'skill',
-        title: shipped.title,
+        title: first.title,
       });
       if (dup) return dup;
       const rec = createProposal(ctx, {
@@ -1561,10 +1716,10 @@ export function createProposeTools(
           path,
           frontmatter: {
             type: 'skill',
-            title: shipped.title,
-            summary: shipped.summary,
+            title: first.title,
+            summary: first.summary,
           },
-          body: `${shipped.body.trim()}\n\n- ${rule}`,
+          body: `${first.body.trim()}\n\n- ${rule}`,
           rationale,
           headline,
         },
@@ -1576,14 +1731,193 @@ export function createProposeTools(
     },
   });
 
+  /**
+   * The work of one session, written down so the next one runs the same way
+   * (docs/research/claude-code-pm-starter-teardown.md §5).
+   *
+   * The PM finishes something they will do again and says so. Until now the
+   * only answer was the New skill button, which writes an empty draft with a
+   * prompt in each section and leaves the PM to fill it in from memory. This
+   * tool drafts the skill from the session that just ran, while the reads, the
+   * order and the dead ends are still in front of the model, and files it as
+   * the same approval card as everything else.
+   *
+   * A `note` card, not a kind of its own: a skill IS a file, and the approval
+   * pipeline already writes files. Nothing new is invented for it.
+   *
+   * The trigger is the PM asking, and only that. Noticing on its own that the
+   * same shape of work has come round three times is the bigger version of
+   * this, and it can wait: the model cannot see past its own session, so it
+   * would be guessing.
+   */
+  const proposeSkill = defineTool({
+    name: 'propose_skill',
+    label: 'Propose skill',
+    description:
+      'Propose a NEW skill: what you just did, written down so the next run does it the same way. ' +
+      'Reach for it when the PM asks ("turn this into a skill", "remember how to do this", "do it ' +
+      'this way from now on"), never on your own. Draft `body` from THIS session: when the skill ' +
+      'applies, what to read and in what order, what to produce, and what happens after. Use the ' +
+      'sections "## When", "## Read", "## Produce", "## Then", short imperative sentences, and name ' +
+      'the real files and tools the work used. It lands as a file in skills/ that runs only once the ' +
+      'PM approves it. One rule about work an existing skill already covers is not a new skill: that ' +
+      'is propose_instruction, aimed at the file that owns the behavior.',
+    parameters: Type.Object({
+      title: Type.String({
+        description:
+          'What the skill is called, in the words a person would use ("Weekly roadmap update"). Its filename comes from this and never changes.',
+      }),
+      summary: Type.String({
+        description:
+          'One line saying what it does, e.g. "Reads a stack of interviews and says what they add up to." Every session sees it.',
+      }),
+      body: Type.String({
+        description:
+          'The instructions themselves, markdown, starting at the first "## When" heading. No frontmatter: the title, summary and the rest are composed from the other parameters.',
+      }),
+      scenarios: Type.Optional(
+        Type.Array(Type.String(), {
+          description:
+            'A few phrases saying when this work starts, in the PM\'s own words ("the Monday roadmap mail"). They are what a later session matches against to know the conversation has turned into this work.',
+        }),
+      ),
+      can: Type.Optional(
+        Type.Array(Type.String(), {
+          description: `Only the permissions the work needs: ${capabilityList()}. Leave it out when the skill reads the workspace and proposes notes, which needs none.`,
+        }),
+      ),
+      why: Type.Optional(
+        Type.String({ description: 'Why the PM wants it, in one line. Shown on the proposal.' }),
+      ),
+    }),
+    async execute(
+      _id,
+      params: {
+        title: string;
+        summary: string;
+        body: string;
+        scenarios?: string[];
+        can?: string[];
+        why?: string;
+      },
+    ) {
+      const title = params.title.replace(/\s+/g, ' ').trim();
+      const summary = params.summary.replace(/\s+/g, ' ').trim();
+      const body = params.body.trim();
+      if (!title || !summary) {
+        return text(
+          'Rejected: a skill needs a title a person would use for it and a one-line summary of what it does.',
+        );
+      }
+      if (!body) {
+        return text(
+          'Rejected: the body IS the skill. Write what to do, in the sections "## When", "## Read", "## Produce" and "## Then".',
+        );
+      }
+      // The frontmatter is composed here, so a body that opens with its own
+      // would land as literal text in the file. Refused rather than stripped: a
+      // `can:` line written there is a permission the model meant to ask for,
+      // and silently dropping it would ship a skill missing its tools.
+      if (body.startsWith('---')) {
+        return text(
+          'Rejected: leave the frontmatter out of `body`. The title, summary, scenarios and permissions ' +
+            'come from the other parameters; `body` starts at the first "## When" heading.',
+        );
+      }
+      // The name is the title, slugified, and never a parameter of its own. A
+      // skill's folder is the address the runtime resolves and every session
+      // receipt cites, so title and name must agree forever; asking for both is
+      // asking for two strings that can drift on the first rename. `createSkill`
+      // mints a name the same way when the PM uses the New skill button.
+      const name = slugify(title);
+      if (!name) {
+        return text(
+          `Rejected: "${title}" leaves nothing to name the file with. Give it a title with letters or digits in it.`,
+        );
+      }
+
+      const scenarios = (params.scenarios ?? []).map((s) => s.trim()).filter(Boolean);
+      const can = (params.can ?? []).map((s) => s.trim()).filter(Boolean);
+      // Read back as a file, because that is what it becomes. `parseRunnable`
+      // is what every session runs a skill through, so a file it flags is one
+      // whose page opens with an error the PM has to fix by hand. Both things
+      // it flags here are still fixable while the model holds the draft: a
+      // permission that is not one, and instructions naming a tool the
+      // permissions do not buy. The frontmatter below is the payload's, written
+      // out; the file itself is serialised on approval.
+      const draft = `---\ntype: skill\ntitle: ${JSON.stringify(title)}\nsummary: ${JSON.stringify(summary)}\nscenarios: [${scenarios.map((s) => JSON.stringify(s)).join(', ')}]\ncan: [${can.join(', ')}]\n---\n\n${body}\n`;
+      const config = parseRunnable(draft, name);
+      if (config.errors.length > 0) {
+        return text(
+          `Rejected: ${config.errors.join('; ')}. Fix that and propose the skill again; as written its own page would open with that error.`,
+        );
+      }
+
+      // A name resolves the way an invocation does (skills before agents, the
+      // folder entry before the legacy flat file), so a second file cannot land
+      // beside a skill the session would run instead of it.
+      for (const candidate of runnableCandidates(name)) {
+        const note = await ctx.vault.readNote(candidate);
+        if (!note) continue;
+        return text(
+          `Not proposed: "${name}" already exists (${candidate}), and two files of one name would split the ` +
+            'same work in two. If this changes how that one works, use propose_instruction with `target` ' +
+            `"${name}" and the rule goes into the file itself. If it is genuinely different work, give it a ` +
+            'title that says how it differs.',
+        );
+      }
+
+      const path = runnableEntryPath('skills', name);
+      const dup = alreadyProposed({ kind: 'note', targetPath: path, noteType: 'skill', title });
+      if (dup) return dup;
+
+      const rationale = `${params.why?.trim() || 'You asked for this in chat.'} Written from the work in this session.`;
+      const rec = createProposal(ctx, {
+        kind: 'note',
+        sessionId,
+        skill: harness?.activeSkillName,
+        targetPath: path,
+        baseHash: null,
+        payload: {
+          path,
+          frontmatter: {
+            type: 'skill',
+            title,
+            summary,
+            ...(scenarios.length > 0 ? { scenarios } : {}),
+            ...(can.length > 0 ? { can } : {}),
+          },
+          body: `${body}\n`,
+          rationale,
+        },
+        rationale,
+        ...chatIsTheSource,
+      });
+      harness?.recordWrite(path, rec.id, 'note');
+      return text(
+        `Proposed skill (${rec.id}): "${title}" -> ${path}. Awaiting review, and nothing can run it until the PM approves it.`,
+      );
+    },
+  });
+
   return [
     proposeNote,
     proposeMeeting,
     proposeUpdate,
+    proposeDelete,
     proposeDecision,
     proposeTodo,
     proposeInstruction,
+    proposeSkill,
   ];
+}
+
+/** The permissions a skill may declare, as "key (what it means)", built from the
+ *  labels the permission chip shows so the two can never drift apart. */
+function capabilityList(): string {
+  return (Object.keys(CAPABILITY_LABEL) as Capability[])
+    .map((key) => `${key} (${CAPABILITY_LABEL[key].toLowerCase()})`)
+    .join(', ');
 }
 
 /**
@@ -1607,15 +1941,16 @@ export function createWithdrawTool(
 ): ToolDefinition {
   return defineTool({
     name: WITHDRAW_TOOL_NAME,
-    label: 'Withdraw card',
+    label: 'Withdraw proposal',
     description:
-      'Take back cards you proposed in this session that the PM has not decided yet — they disappear from the review queue and nothing is written. ' +
-      'Use it the moment a card turns out to be wrong: the PM corrects a fact it rests on, you read something that changes it, or you are about to propose a replacement. ' +
-      'Withdraw the wrong card FIRST, then propose the corrected one, so the PM is left holding one card instead of two. ' +
-      'A card they already approved cannot be withdrawn — it is a note now, so propose_update it — and one they discarded is already gone.',
+      'Take back proposals you proposed in this session that the PM has not decided yet — they disappear from the review queue and nothing is written. ' +
+      'Use it the moment a proposal turns out to be wrong: the PM corrects a fact it rests on, you read something that changes it, or you are about to propose a replacement. ' +
+      'Withdraw the wrong proposal FIRST, then propose the corrected one, so the PM is left holding one proposal instead of two. ' +
+      'A proposal they already approved cannot be withdrawn — it is a note now, so propose_update it — and one they discarded is already gone.',
     parameters: Type.Object({
       ids: Type.Array(Type.String(), {
-        description: 'Card ids, as the propose/draft tool reported them, e.g. ["p_abc123_def"].',
+        description:
+          'Proposal ids, as the propose/draft tool reported them, e.g. ["p_abc123_def"].',
       }),
       reason: Type.String({
         description:
@@ -1624,13 +1959,13 @@ export function createWithdrawTool(
     }),
     async execute(_id, params: { ids: string[]; reason: string }) {
       const ids = params.ids.map((s) => s.trim()).filter(Boolean);
-      if (ids.length === 0) return text('Rejected: name at least one card id to withdraw.');
+      if (ids.length === 0) return text('Rejected: name at least one proposal id to withdraw.');
       // Required, and it goes nowhere but this call — which is the point: the
-      // step is right there in the session trail, so a card that vanishes from
+      // step is right there in the session trail, so a proposal that vanishes from
       // the PM's queue has a reason next to it in the PM's own words.
       if (!params.reason.trim()) {
         return text(
-          'Rejected: say why you are taking it back — the PM sees this step and the card disappearing from their queue.',
+          'Rejected: say why you are taking it back — the PM sees this step and the proposal disappearing from their queue.',
         );
       }
       const gone: string[] = [];
@@ -1646,7 +1981,7 @@ export function createWithdrawTool(
       const lines: string[] = [];
       if (gone.length > 0) {
         lines.push(
-          `Withdrawn (${gone.join(', ')}). ${gone.length === 1 ? 'That card is' : 'Those cards are'} out of the PM's queue and nothing was written. ` +
+          `Withdrawn (${gone.join(', ')}). ${gone.length === 1 ? 'That proposal is' : 'Those proposals are'} out of the PM's queue and nothing was written. ` +
             'If a corrected version should take its place, propose it now.',
         );
       }
@@ -1978,6 +2313,14 @@ export function createDraftTools(
   const fromDraftNote =
     'When the PM points at a version you showed with `draft_text` ("post that as a comment"), take that body word for word and send it here. Do not rewrite it.';
 
+  /**
+   * How the team bends the tool into its own shape (docs/conventions.md CV-2).
+   * A pointer, not a gate: the session already has read tools, the file is often
+   * absent, and a missing file has to cost nothing.
+   */
+  const conventionsNote = (path: string) =>
+    `Before you draft, read \`${path}\` if it exists and follow it: it says how this team wants this written. Nothing there, nothing to follow.`;
+
   const voiceParam = Type.Optional(
     Type.String({
       description: 'A voice name from this workspace, e.g. "exec". Leave it out to write plainly.',
@@ -2100,7 +2443,9 @@ export function createDraftTools(
     name: 'draft_ticket',
     label: 'Draft a tracker ticket',
     description:
-      'Draft a NEW ticket as an approval card (never created until approved). `container` is the project or team it goes in, named by its key; the card shows which tracker that is. Give a title and a markdown body ending with a provenance line ("Source: <meeting>, <date>"). Cite sources[] (the meeting or decision it came from). Optionally linkBack: a workspace note path to append the created ticket\'s link to on approval. ' +
+      'Draft a NEW ticket as a proposal (never created until approved). `container` is the project or team it goes in, named by its key; the proposal shows which tracker that is. Give a title and a markdown body ending with a provenance line ("Source: <meeting>, <date>"). Cite sources[] (the meeting or decision it came from). Optionally linkBack: a workspace note path to append the created ticket\'s link to on approval. ' +
+      conventionsNote('skills/jira/SKILL.md') +
+      ' ' +
       voiceNote,
     parameters: Type.Object({
       container: Type.String({
@@ -2154,7 +2499,7 @@ export function createDraftTools(
         params.sources,
         'ticket',
       );
-      return text(`Drafted a ticket card (${rec.id}) in ${container.id}. Awaiting approval.`);
+      return text(`Drafted a ticket proposal (${rec.id}) in ${container.id}. Awaiting approval.`);
     },
   });
 
@@ -2162,7 +2507,9 @@ export function createDraftTools(
     name: 'draft_ticket_comment',
     label: 'Draft a ticket comment',
     description:
-      'Draft a comment on an existing ticket as an approval card. `ticket` is the item itself: its key (PAY-142) or its mirror note (tickets/PAY-142). Take the key from the mirror note (tickets/, frontmatter external_id) when one exists, and cite that mirror in sources[] alongside the meeting or decision. The card shows which tracker it goes to. End the body with a provenance line ("Source: <meeting>, <date>"). ' +
+      'Draft a comment on an existing ticket as a proposal. `ticket` is the item itself: its key (PAY-142) or its mirror note (tickets/PAY-142). Take the key from the mirror note (tickets/, frontmatter external_id) when one exists, and cite that mirror in sources[] alongside the meeting or decision. The proposal shows which tracker it goes to. End the body with a provenance line ("Source: <meeting>, <date>"). ' +
+      conventionsNote('skills/jira/SKILL.md') +
+      ' ' +
       voiceNote +
       ' ' +
       fromDraftNote,
@@ -2213,7 +2560,7 @@ export function createDraftTools(
         params.sources,
         'ticket-comment',
       );
-      return text(`Drafted a comment card (${rec.id}) on ${targetId}. Awaiting approval.`);
+      return text(`Drafted a comment proposal (${rec.id}) on ${targetId}. Awaiting approval.`);
     },
   });
 
@@ -2221,7 +2568,9 @@ export function createDraftTools(
     name: 'draft_page_update',
     label: 'Draft a page update',
     description:
-      'Draft a change to a wikipage as an approval card. There are two ways to change a page; pick the one that fits. With `patch` (search + replace) that ONE passage is rewritten in place on the live page and the rest of it is left untouched, which is what you want when the page now says something wrong. The search text must be copied word for word from the page as it stands, with enough of it around the change that it appears only once. Anchor it on a plain run of prose, never on a line carrying markup (a **bold** span, a `- ` bullet, a `## ` heading, a [text](url) link): here it is checked against the page\'s mirror note, which is markdown, but on approval it is matched against the live page, where that markup is not written the same way, and the edit fails then with "the page\'s text changed". Give `provenance` with a patch: the redline is only the corrected sentence, so that one line ("Source: <origin>, <date>") is how the page says where the change came from. Without a patch, `body` is appended to the page as a new section, which is what you want when you are adding something the page does not say yet; end it with a provenance line of its own and leave the `provenance` field out, because the page gets that line as written and a second one would be added underneath. `page` is the page itself: its id, or its mirror note (wikipages/…). Cite that mirror in sources[] when one exists. The card shows which wiki it goes to. ' +
+      'Draft a change to a wikipage as a proposal. There are two ways to change a page; pick the one that fits. With `patch` (search + replace) that ONE passage is rewritten in place on the live page and the rest of it is left untouched, which is what you want when the page now says something wrong. The search text must be copied word for word from the page as it stands, with enough of it around the change that it appears only once. Anchor it on a plain run of prose, never on a line carrying markup (a **bold** span, a `- ` bullet, a `## ` heading, a [text](url) link): here it is checked against the page\'s mirror note, which is markdown, but on approval it is matched against the live page, where that markup is not written the same way, and the edit fails then with "the page\'s text changed". Give `provenance` with a patch: the redline is only the corrected sentence, so that one line ("Source: <origin>, <date>") is how the page says where the change came from. Without a patch, `body` is appended to the page as a new section, which is what you want when you are adding something the page does not say yet; end it with a provenance line of its own and leave the `provenance` field out, because the page gets that line as written and a second one would be added underneath. `page` is the page itself: its id, or its mirror note (wikipages/…). Cite that mirror in sources[] when one exists. The proposal shows which wiki it goes to. ' +
+      conventionsNote('skills/confluence/SKILL.md') +
+      ' ' +
       voiceNote +
       ' ' +
       fromDraftNote,
@@ -2322,7 +2671,7 @@ export function createDraftTools(
         params.sources,
         'page-update',
       );
-      const what = params.patch ? 'a page redline card' : 'a page update card';
+      const what = params.patch ? 'a page redline proposal' : 'a page update proposal';
       return text(`Drafted ${what} (${rec.id}) on page ${targetId}. Awaiting approval.`);
     },
   });
@@ -2331,7 +2680,7 @@ export function createDraftTools(
     name: 'draft_calendar_event',
     label: 'Draft calendar event',
     description:
-      'Draft a NEW Google Calendar event as an approval card (never created until approved) — a follow-up meeting, a booked slot. Give a title (the invite summary), a start as RFC3339 with offset (e.g. 2026-08-04T15:00:00+02:00), optionally an end (defaults to +30 min) and attendee emails, and a body used as the invite description ending with a provenance line ("Source: <meeting>, <date>"). calendarId defaults to the primary calendar. Cite sources[]. linkBack: the meeting/todo note to append the created event\'s link to on approval. ' +
+      'Draft a NEW Google Calendar event as a proposal (never created until approved) — a follow-up meeting, a booked slot. Give a title (the invite summary), a start as RFC3339 with offset (e.g. 2026-08-04T15:00:00+02:00), optionally an end (defaults to +30 min) and attendee emails, and a body used as the invite description ending with a provenance line ("Source: <meeting>, <date>"). calendarId defaults to the primary calendar. Cite sources[]. linkBack: the meeting/todo note to append the created event\'s link to on approval. ' +
       voiceNote,
     parameters: Type.Object({
       title: Type.String(),
@@ -2383,7 +2732,9 @@ export function createDraftTools(
         params.sources,
         'calendar-event',
       );
-      return text(`Drafted calendar event card (${rec.id}): "${params.title}". Awaiting approval.`);
+      return text(
+        `Drafted a calendar event proposal (${rec.id}): "${params.title}". Awaiting approval.`,
+      );
     },
   });
 
@@ -2391,7 +2742,7 @@ export function createDraftTools(
     name: 'draft_calendar_reschedule',
     label: 'Draft calendar reschedule',
     description:
-      "Draft a change to an EXISTING calendar event as an approval card — a new time, a new title. eventId is the event's id — take it from the synced meeting note (meetings/, frontmatter external_id) and cite that note in sources[]. Give the new start/end (RFC3339 with offset) and/or title, and a body describing the change. linkBack: the meeting note to append the confirmation to.",
+      "Draft a change to an EXISTING calendar event as a proposal — a new time, a new title. eventId is the event's id — take it from the synced meeting note (meetings/, frontmatter external_id) and cite that note in sources[]. Give the new start/end (RFC3339 with offset) and/or title, and a body describing the change. linkBack: the meeting note to append the confirmation to.",
     parameters: Type.Object({
       eventId: Type.String(),
       calendarId: Type.Optional(Type.String()),
@@ -2438,7 +2789,7 @@ export function createDraftTools(
         params.sources,
         'calendar-reschedule',
       );
-      return text(`Drafted calendar reschedule card (${rec.id}). Awaiting approval.`);
+      return text(`Drafted a calendar reschedule proposal (${rec.id}). Awaiting approval.`);
     },
   });
 
@@ -2446,7 +2797,7 @@ export function createDraftTools(
     name: 'draft_calendar_rsvp',
     label: 'Draft calendar RSVP',
     description:
-      "Draft an RSVP to a calendar event on your behalf as an approval card. eventId is the event's id (from the synced meeting note's external_id — cite that note). attendeeEmail is your own calendar email; responseStatus is accepted/declined/tentative. Give a short body explaining the response. linkBack: the meeting note to note the RSVP on.",
+      "Draft an RSVP to a calendar event on your behalf as a proposal. eventId is the event's id (from the synced meeting note's external_id — cite that note). attendeeEmail is your own calendar email; responseStatus is accepted/declined/tentative. Give a short body explaining the response. linkBack: the meeting note to note the RSVP on.",
     parameters: Type.Object({
       eventId: Type.String(),
       attendeeEmail: Type.String(),
@@ -2495,7 +2846,7 @@ export function createDraftTools(
         'calendar-rsvp',
       );
       return text(
-        `Drafted calendar RSVP card (${rec.id}): ${params.responseStatus}. Awaiting approval.`,
+        `Drafted a calendar RSVP proposal (${rec.id}): ${params.responseStatus}. Awaiting approval.`,
       );
     },
   });

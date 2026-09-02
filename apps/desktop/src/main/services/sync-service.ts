@@ -38,7 +38,6 @@ import type {
   ConnectionHealth,
   ConnectResultDTO,
   ContainerRecommendationDTO,
-  DeliveryDeltaDTO,
   ExternalRefMetaDTO,
   ProviderDescriptorDTO,
   ShallowIndexItemDTO,
@@ -105,6 +104,79 @@ export interface ContainerOffer {
  *  weeks later without re-running the survey to remember why. */
 const offerReasonKey = (connectionId: string, containerId: string): string =>
   `offer-reason:${connectionId}:${containerId}`;
+
+/**
+ * How far one connection has got through the first look
+ * (docs/first-look-debrief.md): `ready` once its first read finished and
+ * nothing has been said about it yet, `done` once a session has been handed it.
+ *
+ * In the store rather than in memory, because the read usually finishes on a
+ * tick nobody is waiting for and the session that reports it starts on the next
+ * maintenance pass, which can be after a relaunch. A key that is absent means
+ * this connection has never finished a first read, and that is also what every
+ * workspace connected before this existed reads as: their containers already
+ * carry a `last_sync`, so the check below never arms.
+ */
+type FirstLookState = 'ready' | 'done';
+const firstLookKey = (connectionId: string): string => `first-look:${connectionId}`;
+
+/** What one connection read the first time, as the debrief session is told it. */
+export interface FirstLookRead {
+  connectionId: string;
+  /** What the connector calls itself ("Jira + Confluence"), from the registry. */
+  providerLabel: string;
+  /** The site or account, for the one line that names what was read. */
+  siteLabel: string;
+  containers: { id: string; kind: string; name: string; count: number }[];
+}
+
+/** What one container holds, said in the reader's words rather than the
+ *  index's. Singular and plural, because "1 tickets" reads as a bug. */
+const KIND_WORDS: Record<string, [string, string]> = {
+  ticket: ['ticket', 'tickets'],
+  wikipage: ['page', 'pages'],
+  calendar: ['event', 'events'],
+};
+
+function itemWords(kind: string, count: number): string {
+  const words = KIND_WORDS[kind] ?? ['item', 'items'];
+  return `${count} ${count === 1 ? words[0] : words[1]}`;
+}
+
+/**
+ * What the debrief session is handed (docs/first-look-debrief.md). Facts only:
+ * which site, which containers, and how much is in each. What to DO with them
+ * is the skill's own "First look" section, which the PM can read and edit, so
+ * this names the section rather than repeating it.
+ *
+ * It takes every read that is owed, not one (CM-5). Two connections made in the
+ * same onboarding are one haul to the PM, and two knocks would be the app asking
+ * the same opening question twice in five minutes.
+ *
+ * `told` is the one fact that changes the shape of the session: the workspace
+ * has already been told about the product, so the report is the whole of it and
+ * the interview would be asking again for what is written down. It arrives as a
+ * line here rather than as a gate in the caller, because a workspace that has
+ * heard the pitch still deserves to hear what its new connection just read
+ * (2026-08-31).
+ */
+export function firstLookInstruction(reads: FirstLookRead[], told = false): string {
+  const blocks = reads.map((read) => {
+    const rows = read.containers
+      .filter((c) => c.count > 0)
+      .map((c) => `- ${c.name} (${c.id}): ${itemWords(c.kind, c.count)}`);
+    return [`The ${read.providerLabel} connection on ${read.siteLabel}:`, ...rows].join('\n');
+  });
+  return [
+    reads.length === 1
+      ? 'A connection has finished its first read, and nothing has been said about it yet.'
+      : `${reads.length} connections have finished their first read, and nothing has been said about them yet.`,
+    'What is in the index now:',
+    blocks.join('\n\n'),
+    'This is a first look. Follow the "First look" section of the skill, and the topic is the product.',
+    ...(told ? ['The workspace already holds the product picture, so skip the interview.'] : []),
+  ].join('\n\n');
+}
 
 /** Changes whenever any stored field changes, which is when a connector has to
  *  be rebuilt. Held in memory only, like the credentials it is built from. */
@@ -608,6 +680,58 @@ export class SyncService {
     return true;
   }
 
+  // -------------------------------------------------------------------------
+  // The first look (docs/first-look-debrief.md)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Connections that have finished their first read and have had nothing said
+   * about them yet. One entry means one debrief session is owed.
+   *
+   * The counts are read back out of the store rather than counted during the
+   * tick, so the numbers the session quotes are the numbers the workspace holds
+   * at the moment it speaks, however long after the read that is.
+   */
+  firstLookReads(): FirstLookRead[] {
+    const store = this.getStore();
+    if (!store) return [];
+    // For the site label: without this it falls back to the provider's own name
+    // ("Jira + Confluence") rather than the site they actually connected.
+    this.reconfigure();
+    const out: FirstLookRead[] = [];
+    for (const [connectionId, state] of this.conns) {
+      if (store.getMeta(firstLookKey(connectionId)) !== 'ready') continue;
+      const containers = store.followedContainers(connectionId).map((c) => ({
+        id: c.containerId,
+        kind: c.kind,
+        name: c.name,
+        count: store.countByContainer(connectionId, c.containerId),
+      }));
+      // Nothing read is nothing to report. It cannot happen on a clean first
+      // pass over a project with work in it, and an empty site is not news.
+      if (containers.every((c) => c.count === 0)) {
+        store.setMeta(firstLookKey(connectionId), 'done' as FirstLookState);
+        continue;
+      }
+      out.push({
+        connectionId,
+        providerLabel: state.provider.label,
+        siteLabel: state.siteLabel,
+        containers,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * A session has been handed this read. Stamped BEFORE the run starts, the way
+   * the meeting sweep stamps its ledger: the window between firing and the
+   * question landing is exactly where a second tick would ask the same thing.
+   */
+  markFirstLookDone(connectionId: string): void {
+    this.getStore()?.setMeta(firstLookKey(connectionId), 'done' as FirstLookState);
+  }
+
   /** Which connection lists this container. An offer travels as a bare id (it
    *  passes through a session), so the owner is looked up, not carried. */
   private connectionForContainer(containerId: string): string | null {
@@ -671,6 +795,18 @@ export class SyncService {
       await this.refreshContainers(connectionId).catch(() => {});
       const followed = store.followedContainers(connectionId);
       if (followed.length === 0) continue;
+
+      // Is this the connection's very first read (docs/first-look-debrief.md)?
+      // Nothing followed here has ever been pulled, so what lands in this pass
+      // is everything the workspace knows about this site. Read BEFORE the pull
+      // loop, because the loop is what makes it stop being true.
+      //
+      // "Never pulled" is the whole test, and it is what keeps this off every
+      // workspace that already syncs: their containers carry a `last_sync`.
+      // Following a second project months later is not a first read either, for
+      // the same reason.
+      const firstRead =
+        !store.getMeta(firstLookKey(connectionId)) && followed.every((c) => c.lastSync === null);
 
       // Deep mirrors, promotion and tracking all hang off pulling an item by
       // its id. A connector that can't do that (a calendar) has none of them:
@@ -759,6 +895,12 @@ export class SyncService {
       } else {
         state.health = 'ok';
       }
+
+      // The first read is over. Arm the debrief, once, and only on a clean pass:
+      // a container that failed still has no `last_sync`, so the next tick tries
+      // again rather than reporting on half a site.
+      if (firstRead && !failed)
+        store.setMeta(firstLookKey(connectionId), 'ready' as FirstLookState);
     }
 
     if (written.length > 0) {
@@ -1558,51 +1700,6 @@ export class SyncService {
   }
 
   /**
-   * "Since last time" for one meeting: mirror tickets in the meeting's 1-hop
-   * orbit (linked from the meeting note or from notes it links) whose upstream
-   * change postdates the previous meeting in the same series (else 7 days).
-   */
-  async deliveryDelta(meetingPath: string): Promise<DeliveryDeltaDTO[]> {
-    const ctx = this.getContext();
-    if (!ctx) return [];
-    const meeting = ctx.index.get(meetingPath);
-    if (!meeting) return [];
-
-    const since = this.previousMeetingDate(ctx, meeting) ?? Date.now() - 7 * 24 * 60 * 60 * 1000;
-
-    const orbit = new Set<string>();
-    const addLinks = (n: IndexedNote): void => {
-      for (const l of n.links) {
-        const p = ctx.index.resolve(l.target.split('#')[0]!.trim());
-        if (p) orbit.add(p);
-      }
-    };
-    addLinks(meeting);
-    for (const p of [...orbit]) {
-      const n = ctx.index.get(p);
-      if (n && n.type !== 'ticket' && n.type !== 'wikipage') addLinks(n);
-    }
-
-    const out: DeliveryDeltaDTO[] = [];
-    for (const p of orbit) {
-      const n = ctx.index.get(p);
-      if (!n || n.type !== 'ticket') continue;
-      const fm = n.frontmatter as Record<string, unknown>;
-      const updated = Date.parse(String(fm['remote_updated'] ?? ''));
-      if (Number.isNaN(updated) || updated < since) continue;
-      const category = isStateCategory(fm['state_category']) ? fm['state_category'] : 'open';
-      out.push({
-        externalId: String(fm['external_id'] ?? n.title),
-        slug: n.slug,
-        title: n.title,
-        line: category === 'done' ? 'shipped' : `now ${String(fm['state'] ?? category)}`,
-        stateCategory: category,
-      });
-    }
-    return out;
-  }
-
-  /**
    * Synced meeting notes whose event overlaps [fromMs, toMs) — the shallow event
    * index read surface for time-aware sessions (before-meeting auto-prep) and
    * capture matching. Only events promoted to a meeting note (`note_path` set)
@@ -1654,23 +1751,6 @@ export class SyncService {
   // -------------------------------------------------------------------------
   // Internals
   // -------------------------------------------------------------------------
-
-  private previousMeetingDate(ctx: UseCaseContext, meeting: IndexedNote): number | null {
-    const fm = meeting.frontmatter as Record<string, unknown>;
-    const series = typeof fm['series'] === 'string' ? fm['series'] : null;
-    const myDate = Date.parse(String(fm['date'] ?? ''));
-    if (!series || Number.isNaN(myDate)) return null;
-    let best: number | null = null;
-    for (const n of ctx.index.listByType('meeting')) {
-      if (n.path === meeting.path) continue;
-      const nfm = n.frontmatter as Record<string, unknown>;
-      if (nfm['series'] !== series) continue;
-      const d = Date.parse(String(nfm['date'] ?? ''));
-      if (Number.isNaN(d) || d >= myDate) continue;
-      if (best === null || d > best) best = d;
-    }
-    return best;
-  }
 
   private mirrorByPath(ctx: UseCaseContext, path: string): IndexedNote | null {
     const n = ctx.index.get(path);

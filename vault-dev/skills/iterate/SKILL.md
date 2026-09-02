@@ -85,15 +85,15 @@ the record of how the thinking moved.
 The last round is the artifact, not another set of ideas. A brainstorm that ends in a brainstorm
 failed.
 
-Propose the output through the ordinary paths: approval cards (propose_note, propose_update) for
-a document, a spec, a set of stories, and outbound cards (draft_ticket), one per issue, for work
+Propose the output through the ordinary paths: proposals (propose_note, propose_update) for
+a document, a spec, a set of stories, and outbound proposals (draft_ticket), one per issue, for work
 that belongs upstream. Say which round the output came from, so the reasoning behind it is one
 click away.
 
-A dismissed comment card is an instruction, the same as a skipped question: pick the reasonable
+A dismissed comment proposal is an instruction, the same as a skipped question: pick the reasonable
 reading, say in the next round which reading that was, and carry on.
 
 ## Then
 
 The rounds stay in the session folder with the comments written into them, so the thinking is
-readable later. Nothing lands in the memory except the cards you approve.
+readable later. Nothing lands in the memory except the proposals you approve.

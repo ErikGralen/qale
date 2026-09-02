@@ -23,7 +23,7 @@ url: 'https://calendar.google.com/calendar/event?eid=demo-nordkap-checkin'
 
 ## Summary
 
-_Unprocessed. After-Meeting proposes this section as a card._
+_Unprocessed. After-Meeting proposes this section as a proposal._
 
 &nbsp;
 

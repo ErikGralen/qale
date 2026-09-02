@@ -125,7 +125,7 @@ export interface CaptureTranscriptsInput {
   /** The recording. Several parts means several files, one recording. */
   parts: MeetingTranscriptPart[];
   /**
-   * The day the meeting happened (YYYY-MM-DD), when the material says so.
+   * The day the meeting happened (YYYY-MM-DD), when the recording says so.
    * Defaults to today, which is right for a transcript dropped straight off the
    * call and wrong for one dropped on Monday from a call on Thursday.
    */
@@ -135,13 +135,13 @@ export interface CaptureTranscriptsInput {
 
 /**
  * Put a recording on the shelf: one immutable source note per file, and nothing
- * else. This is the whole of what arriving material writes by itself.
+ * else. This is the whole of what an arriving source writes by itself.
  *
  * There used to be a `captureMeeting` here that wrote a meeting page too — an
  * empty scaffold with "not read yet" where the summary goes, which the agent
  * then had to patch with an update card. That was two steps for one thing, and
  * the first of them created a page in `meetings/` that nobody had approved. Now
- * the transcript lands (it is the PM's own material, and every card cites it)
+ * the transcript lands (it is the PM's own source, and every card cites it)
  * and the meeting page is proposed whole, summary included: see `propose_meeting`.
  *
  * A recording delivered as several files is ONE recording with several parts,
@@ -244,7 +244,7 @@ export interface CaptureDocumentInput {
 }
 
 /**
- * Material that arrived — a spec someone sent, a pasted thread, an exported
+ * A source that arrived — a spec someone sent, a pasted thread, an exported
  * page. Raw layer, `sources/`, exactly like a link or a screenshot: the PO is
  * its reader, not its author. Anything derived from it (a note, an insight, a
  * decision) is proposed later and cites this.

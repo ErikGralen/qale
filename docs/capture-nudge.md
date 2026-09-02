@@ -36,7 +36,7 @@ Three things came out differently from the sketch below, all of them small:
 
 ## The problem
 
-The product gets better the more the user feeds it: transcripts, meeting notes, dropped material. But nothing in the app ever asks for any of it. Worse, the one moment where asking would feel natural is currently invisible:
+The product gets better the more the user feeds it: transcripts, meeting notes, dropped sources. But nothing in the app ever asks for any of it. Worse, the one moment where asking would feel natural is currently invisible:
 
 - Calendar sync creates a meeting note from every qualifying event (`sync-service.ts:497-560`), with no body and no `processing` state.
 - `needsReview` only fires on `processing: new | stale` (`lib/note-status.ts:56-59`), and only a transcript attach sets that (`use-cases/notes.ts:163-166`).
@@ -170,6 +170,6 @@ Phase 1 was CN-1..4 (the actual ask); CN-5..6 ship separately and only if Phase 
   ledger, plus `captureNudge:state|dismiss|undo` in `handlers.ts`.
 - `apps/desktop/src/renderer/src/lib/note-status.ts` — `meetingEnd`, `needsCapture`.
 - `apps/desktop/src/renderer/src/lib/attention.ts` — the `capture` kind and its door.
-- `Home.tsx` (row, dismiss, undo line), `AddMaterial.tsx` (preset meeting),
+- `Home.tsx` (row, dismiss, undo line), `AddSource.tsx` (preset meeting),
   `NoteView.tsx` (the empty-meeting block).
 - `apps/desktop/test/attention.test.ts` — the trigger, the window, the mute.

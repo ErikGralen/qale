@@ -1,24 +1,20 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Button } from '@qale/ui';
-import { AlertTriangle, ArrowUpRight, Check } from 'lucide-react';
+import { ArrowUpRight, Check } from 'lucide-react';
 import type { MeetingReviewAskDTO, OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 import { useToast } from '../toast';
+import { receiptEntry, type ReceiptEntry } from './cardMeta';
 import { outboundAct, outboundReceipt, staleAcceptMessage } from './shared';
-
-/** Approvals in a row before the spot-audit asks for a closer look. */
-const SPOT_AUDIT_EVERY = 5;
 
 interface SentReceipt {
   id: string;
   target: string;
 }
 
-/** A batch the spot-audit stopped: what it applied, and what it left. */
-interface PausedBatch {
-  done: number;
-  left: number;
-}
+/** How many consequence lines the Inbox's receipt keeps. Past five it is a log
+ *  of the sitting rather than what the last few taps did. */
+const TOUCHED_MAX = 5;
 
 /**
  * The one approve path. Every surface that shows a card — the Inbox and the
@@ -39,11 +35,13 @@ export interface Approvals {
   staleSends: Record<string, boolean>;
   receipt: { accepted: number; rejected: number };
   sent: SentReceipt[];
+  /**
+   * What this sitting's approvals touched, oldest dropped past five. The Inbox
+   * reads it to say what clearing the queue set in motion, so that surface needs
+   * no second query: the hook already knows, because it did the writes.
+   */
+  touched: ReceiptEntry[];
   reviewAsks: MeetingReviewAskDTO[];
-  auditOpen: boolean;
-  streak: number;
-  paused: PausedBatch | null;
-  dismissAudit: () => void;
   answerReviewAsk: (ask: MeetingReviewAskDTO) => void;
   dismissReviewAsk: (ask: MeetingReviewAskDTO) => void;
   accept: (p: ProposalDTO, edited?: unknown) => void;
@@ -62,13 +60,8 @@ export function useApprovals(): Approvals {
   const [staleSends, setStaleSends] = useState<Record<string, boolean>>({});
   const [receipt, setReceipt] = useState({ accepted: 0, rejected: 0 });
   const [sent, setSent] = useState<SentReceipt[]>([]);
+  const [touched, setTouched] = useState<ReceiptEntry[]>([]);
   const [reviewAsks, setReviewAsks] = useState<MeetingReviewAskDTO[]>([]);
-  const [auditOpen, setAuditOpen] = useState(false);
-  const [streak, setStreak] = useState(0);
-  const [paused, setPaused] = useState<PausedBatch | null>(null);
-  // The batch reads the streak between two awaits, so it lives in a ref as well
-  // as in state: state is what the banner prints, the ref is what the loop asks.
-  const streakRef = useRef(0);
   const toast = useToast();
   const vaultPath = vault?.path ?? '';
 
@@ -128,10 +121,8 @@ export function useApprovals(): Approvals {
         noteReviewAsk(r.review);
         if (r.ok) {
           setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
-          streakRef.current += 1;
-          setStreak(streakRef.current);
-          // Anti-rubber-stamping: after N in a row, ask for a closer look.
-          if (streakRef.current % SPOT_AUDIT_EVERY === 0) setAuditOpen(true);
+          setTouched((t) => [...t, receiptEntry(p)].slice(-TOUCHED_MAX));
+          markJudged(vaultPath);
           setStaleSends((s) => {
             const next = { ...s };
             delete next[p.id];
@@ -158,20 +149,20 @@ export function useApprovals(): Approvals {
           // shows its own stale banner, so no accept can pass unseen.
           setError(p.id, staleAcceptMessage(r.staleReason));
         } else {
-          setError(p.id, r.error ?? 'Could not apply this card: the workspace rejected the write.');
+          setError(p.id, r.error ?? 'Could not apply this proposal: the workspace rejected the write.');
         }
         return false;
       } catch (err) {
         setError(
           p.id,
-          err instanceof Error ? err.message : 'Something went wrong applying this card.',
+          err instanceof Error ? err.message : 'Something went wrong applying this proposal.',
         );
         return false;
       } finally {
         release();
       }
     },
-    [acceptProposal, noteReviewAsk],
+    [acceptProposal, noteReviewAsk, vaultPath],
   );
 
   const rejectOne = useCallback(
@@ -181,20 +172,19 @@ export function useApprovals(): Approvals {
       try {
         noteReviewAsk((await rejectProposal(p.id)).review);
         setReceipt((x) => ({ ...x, rejected: x.rejected + 1 }));
-        streakRef.current = 0;
-        setStreak(0);
+        markJudged(vaultPath);
         return true;
       } catch (err) {
         setError(
           p.id,
-          err instanceof Error ? err.message : 'Something went wrong discarding this card.',
+          err instanceof Error ? err.message : 'Something went wrong discarding this proposal.',
         );
         return false;
       } finally {
         release();
       }
     },
-    [rejectProposal, noteReviewAsk],
+    [rejectProposal, noteReviewAsk, vaultPath],
   );
 
   const acceptAll = useCallback(
@@ -203,22 +193,12 @@ export function useApprovals(): Approvals {
       const batch = cards.filter((c) => c.kind !== 'outbound');
       const release = hold();
       try {
-        let done = 0;
         let failed = 0;
-        for (let i = 0; i < batch.length; i++) {
-          // Anti-rubber-stamping: the run stops at the spot-audit. It used to
-          // stop without a word, so the interstitial now carries the count and
-          // what is still waiting in this group.
-          if (streakRef.current > 0 && streakRef.current % SPOT_AUDIT_EVERY === 0) {
-            setAuditOpen(true);
-            setPaused({ done, left: batch.length - i });
-            return;
-          }
-          if (await acceptOne(batch[i]!)) done++;
-          else failed++;
+        for (const card of batch) {
+          if (!(await acceptOne(card))) failed++;
         }
         if (failed > 0)
-          toast(`${failed} of ${batch.length} cards failed to apply. See the cards for details.`);
+          toast(`${failed} of ${batch.length} proposals failed to apply. See the proposals for details.`);
       } finally {
         release();
       }
@@ -243,24 +223,14 @@ export function useApprovals(): Approvals {
     [rejectOne, toast],
   );
 
-  const dismissAudit = useCallback(() => {
-    setAuditOpen(false);
-    setPaused(null);
-    streakRef.current = 0;
-    setStreak(0);
-  }, []);
-
   return {
     busy: busyCount > 0,
     errors,
     staleSends,
     receipt,
     sent,
+    touched,
     reviewAsks,
-    auditOpen,
-    streak,
-    paused,
-    dismissAudit,
     answerReviewAsk,
     dismissReviewAsk,
     accept: (p, edited) => void acceptOne(p, edited),
@@ -268,35 +238,6 @@ export function useApprovals(): Approvals {
     acceptAll: (cards) => void acceptAll(cards),
     rejectAll: (cards) => void rejectAll(cards),
   };
-}
-
-/**
- * The spot-audit interstitial. It appears after N approvals in a row, and a
- * batch that ran into it says how far it got — a run that stopped halfway
- * without a word read as a batch that had finished.
- */
-export function SpotAudit({ approvals }: { approvals: Approvals }) {
-  const { auditOpen, streak, paused, dismissAudit } = approvals;
-  if (!auditOpen) return null;
-  return (
-    <div className="mb-3 flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/8 px-3 py-2 text-sm">
-      <AlertTriangle className="size-4 shrink-0 text-warning" />
-      <span className="flex-1 text-foreground">
-        {paused && (
-          // A batch that was stopped before its first card has no count to
-          // give, so it says what it can rather than "Paused after 0".
-          <>
-            {paused.done > 0 ? `Paused after ${paused.done}.` : 'Paused.'} {paused.left} left in
-            this group.{' '}
-          </>
-        )}
-        You've approved {streak} in a row. Take a closer look at this one before continuing.
-      </span>
-      <Button size="sm" variant="ghost" onClick={dismissAudit}>
-        Got it
-      </Button>
-    </div>
-  );
 }
 
 /** The receipt for what left the workspace, in the banner's own past tense. */
@@ -380,6 +321,34 @@ function persistDismissedReviewAsk(vaultPath: string, path: string): void {
   try {
     const next = [...new Set([...dismissedReviewAsks(vaultPath), path])];
     localStorage.setItem(`${REVIEW_ASK_KEY}:${vaultPath}`, JSON.stringify(next));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+/**
+ * Whether the PO has ever judged a card in this workspace. Per workspace and
+ * view-only, like the dismissed asks above: it is a fact about what they have
+ * seen, not about the vault.
+ *
+ * The empty Inbox explains what the Inbox is for. That sentence is worth a lot
+ * on day one and nothing at all in week three, and the one moment it becomes
+ * furniture is the first tap on Approve or Discard. So the first tap sets this,
+ * and the explainer never comes back (docs/closing-beat.md).
+ */
+const JUDGED_KEY = 'qale.cardJudged.v1';
+
+export function hasJudgedACard(vaultPath: string): boolean {
+  try {
+    return localStorage.getItem(`${JUDGED_KEY}:${vaultPath}`) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markJudged(vaultPath: string): void {
+  try {
+    localStorage.setItem(`${JUDGED_KEY}:${vaultPath}`, '1');
   } catch {
     /* ignore quota */
   }

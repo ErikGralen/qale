@@ -386,7 +386,7 @@ test('the backlog is bounded, so a long first run cannot grow without end', asyn
 test('every event that goes out carries an env stamp that is one of ours', async () => {
   const { telemetry, sent } = live();
   telemetry.send('view.opened', { view: 'home' });
-  telemetry.send('material.added', { kind: 'transcript', count: '1', startedSession: true });
+  telemetry.send('source.added', { kind: 'transcript', count: '1', startedSession: true });
   await settle();
   assert.equal(sent.length, 2);
   for (const one of sent) {
@@ -474,7 +474,7 @@ test('a session that parked a question says so, and only as a flag', () => {
 test('once the renderer reports a view, every event carries it as context', async () => {
   const { telemetry, sent } = live();
   // Before any report there is nothing to stamp, and nothing is guessed.
-  telemetry.send('material.added', { kind: 'file', count: '1', startedSession: true });
+  telemetry.send('source.added', { kind: 'file', count: '1', startedSession: true });
   telemetry.setView('inbox');
   telemetry.send('card.decided', { decision: 'accepted', kind: 'note', edited: false });
   await settle();
@@ -499,7 +499,7 @@ test('an event held for consent keeps the view it happened on', async () => {
   telemetry.bind(INSTALL_ID);
   telemetry.setConsent(true, false);
   telemetry.setView('home');
-  telemetry.send('material.added', { kind: 'text', count: '1', startedSession: true });
+  telemetry.send('source.added', { kind: 'text', count: '1', startedSession: true });
   telemetry.setView('settings');
   telemetry.setConsent(true, true);
   await settle();

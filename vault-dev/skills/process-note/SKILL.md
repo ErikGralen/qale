@@ -22,17 +22,17 @@ them alone and work on what is new or still raw.
 
 ## Produce
 
-Each piece its own approval card:
+Each piece its own proposal:
 - **The note itself**, as one propose_update: fix typos and half-sentences, group related lines
   under short headings, and turn plain-text mentions into wikilinks to pages that exist. This is
   a copy edit, not a rewrite: keep your wording and your meaning, and add nothing the dump does
-  not say. If the note is untitled or its title no longer fits, set the card's `title` to a short
+  not say. If the note is untitled or its title no longer fits, set the proposal's `title` to a short
   descriptive one.
 - **Updates to other notes**: the customer or theme hub the dump adds signal to, an open question
   elsewhere it answers, a person's `last_told` when it says who was told what.
 - **New notes the dump implies**: commitments become todos (propose_todo, with `owner` when
   someone else owes it), claims worth keeping become insights (propose_note type insight), and a
-  real decision with a named decider becomes a decision card (propose_decision). A line with no
+  real decision with a named decider becomes a decision proposal (propose_decision). A line with no
   decider is not a decision yet; ask first. Every new note cites this one.
 
 If a fragment is ambiguous, keep it verbatim and ask one concrete question. Guessing what you
@@ -40,6 +40,6 @@ meant puts words in your notes.
 
 ## Then
 
-Approved cards clean the note and propagate it: hubs updated, loops closed, new todos, insights,
+Approved proposals clean the note and propagate it: hubs updated, loops closed, new todos, insights,
 and decisions filed. The note stays your scratch pad. More gets dumped, the button gets hit
 again, and only the new material is touched.

@@ -160,8 +160,8 @@ word every tool in the workspace refuses with.
   them, same as the current message draft.
 - The body as rendered markdown.
 - A footer row: **Use this** on the left, **Copy** on the right.
-- Nothing else. No approve, no discard, no edit, no "Ask about this", no
-  "Based on", no rationale, no effect line, no "Leaves your workspace" banner.
+- Nothing else. No approve, no discard, no edit, no "Based on", no rationale, no
+  effect line, no "Leaves your workspace" banner.
 
 The panel sits in the flow of the conversation, not in a card frame that implies
 a pending decision.

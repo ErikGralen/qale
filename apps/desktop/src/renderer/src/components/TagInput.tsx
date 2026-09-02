@@ -20,6 +20,7 @@ export function TagInput({
   normalize,
   onTagClick,
   placeholder,
+  ariaLabel,
 }: {
   value: string[];
   onChange: (next: string[]) => void;
@@ -27,6 +28,8 @@ export function TagInput({
   normalize?: (raw: string) => string;
   onTagClick?: (tag: string) => void;
   placeholder?: string;
+  /** Names the input for screen readers — the visual label sits outside it. */
+  ariaLabel?: string;
 }) {
   const [token, setToken] = useState('');
   const [open, setOpen] = useState(false);
@@ -104,6 +107,7 @@ export function TagInput({
           className="min-w-16 flex-1 bg-transparent py-px text-sm outline-none placeholder:text-muted-foreground/50"
           value={token}
           placeholder={value.length === 0 ? placeholder : undefined}
+          aria-label={ariaLabel}
           role={suggestions !== undefined ? 'combobox' : undefined}
           aria-expanded={showList}
           aria-activedescendant={highlight >= 0 ? `tag-option-${highlight}` : undefined}

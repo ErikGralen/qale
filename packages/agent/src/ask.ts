@@ -45,6 +45,15 @@ export const ASK_MAX_QUESTIONS = 4;
 /** Options per question. Two is a decision; five is a menu nobody reads. */
 export const ASK_MAX_OPTIONS = 4;
 
+/**
+ * The ceiling when the options arrive ticked and the PM is unticking what they
+ * do not want (docs/first-look-debrief.md). A pick-one question past four
+ * options is a menu, but a checked list is not a menu: it is a batch somebody
+ * reviews, the same shape the follow picker uses on the connections screen. Ten
+ * rows is what one screen holds and what one person reads in a glance.
+ */
+export const ASK_MAX_OPTIONS_TICKED = 10;
+
 /** Headers are chips in the UI, not sentences. */
 export const ASK_HEADER_MAX = 12;
 
@@ -62,11 +71,17 @@ export const ASK_HEADER_MAX = 12;
  *
  * Nothing here can stop the model asking a leading question, and nothing should:
  * asking is the point. What these do is keep a question the SIZE of a question.
- * Flattened, capped and stripped of envelope markers, it can hold a sentence
- * somebody has to read and not a page of instructions dressed as one — and the
- * card renders the same text, so the PM sees exactly what will be replayed.
+ * Flattened, bounded and stripped of envelope markers, it can hold the short
+ * paragraph somebody has to read and not a page of instructions dressed as one —
+ * and the card renders the same text, so the PM sees exactly what will be
+ * replayed.
+ *
+ * Over the ceiling the question is REFUSED, never cut (see {@link bounded}). The
+ * numbers are set where a real question fits under them: a first-look debrief
+ * that names what it read and what it is missing runs to a few sentences, and
+ * 400 characters used to cut it off mid-word on the card.
  */
-export const ASK_QUESTION_MAX = 400;
+export const ASK_QUESTION_MAX = 700;
 export const ASK_LABEL_MAX = 100;
 export const ASK_DESCRIPTION_MAX = 200;
 
@@ -74,6 +89,13 @@ export const ASK_DESCRIPTION_MAX = 200;
 export interface AskOption {
   label: string;
   description?: string;
+  /**
+   * The row arrives ticked. Multi-select only, and it turns the question from
+   * "which one" into "here is what I would do, take out what you do not want".
+   * A ticked row must carry its own reason in `description`: a tick with
+   * nothing beside it is a guess wearing a checkmark.
+   */
+  checked?: boolean;
 }
 
 /** One question, after validation. */
@@ -148,13 +170,20 @@ export interface AskRequestInfo {
    * work the rule out again and get a different result.
    */
   offered: boolean;
+  /**
+   * The skill that asked. Carried so a surface elsewhere in the app can reach
+   * the session waiting on this rather than starting a second one on the same
+   * work: First steps looks for a waiting interview before it opens a fresh one
+   * (docs/first-look-debrief.md).
+   */
+  skill: string | null;
 }
 
 /**
  * What the tool knows at the moment it asks. Who asked, and whether the answer
  * is owed, are facts about the RUN, so {@link AskParking.park} stamps them.
  */
-export type AskRequestDraft = Omit<AskRequestInfo, 'offered'>;
+export type AskRequestDraft = Omit<AskRequestInfo, 'offered' | 'skill'>;
 
 /**
  * Is what this run asks for offered rather than owed? Both halves have to hold.
@@ -179,6 +208,22 @@ function chip(header: string): string {
   const cut = flat.slice(0, ASK_HEADER_MAX);
   const lastSpace = cut.lastIndexOf(' ');
   return lastSpace >= 3 ? cut.slice(0, lastSpace) : cut;
+}
+
+/**
+ * Flatten a line the PM will read, and report its length when it is over the
+ * ceiling instead of cutting it there.
+ *
+ * Cutting is what a header can afford and a question cannot. A trimmed chip
+ * still reads as a chip; a trimmed question reaches the PM stopping mid-word
+ * ("What I do not have is the…"), and the same broken line is what a later run
+ * gets back through {@link askReplayPrompt}. The model can fix an over-long
+ * question in one more tool call, so it is told to, and the ceiling holds either
+ * way: nothing longer is ever parked.
+ */
+function bounded(raw: string, max: number): { text: string } | { tooLong: number } {
+  const flat = oneLine(raw, Number.MAX_SAFE_INTEGER);
+  return flat.length > max ? { tooLong: flat.length } : { text: flat };
 }
 
 /**
@@ -216,30 +261,72 @@ export function planAsk(input: unknown): { plan: AskPlan } | { error: string } {
         error: `${at}: give at least 2 concrete options. A question with no options is just a question — end your turn and ask it in prose instead.`,
       };
     }
-    if (q.options.length > ASK_MAX_OPTIONS) {
+    const multiSelect = q.multiSelect === true;
+    // A ticked list is reviewed, not chosen from, so it earns the wider cap.
+    const anyChecked =
+      multiSelect && q.options.some((o) => (o as { checked?: boolean } | null)?.checked === true);
+    const cap = anyChecked ? ASK_MAX_OPTIONS_TICKED : ASK_MAX_OPTIONS;
+    if (q.options.length > cap) {
       return {
-        error: `${at}: at most ${ASK_MAX_OPTIONS} options (the PM can always write their own answer).`,
+        error: `${at}: at most ${cap} options (the PM can always write their own answer).`,
       };
     }
     const options: AskOption[] = [];
     const seen = new Set<string>();
     for (const [j, rawOpt] of q.options.entries()) {
-      const opt = rawOpt as { label?: string; description?: string };
-      const label = oneLine(opt?.label ?? '', ASK_LABEL_MAX);
+      const opt = rawOpt as { label?: string; description?: string; checked?: boolean };
+      const bare = bounded(opt?.label ?? '', ASK_LABEL_MAX);
+      if ('tooLong' in bare) {
+        return {
+          error: `${at}.options[${j}]: the label is ${bare.tooLong} characters; keep it under ${ASK_LABEL_MAX}. The label is the choice in a few words — the sentence about it goes in description.`,
+        };
+      }
+      const label = bare.text;
       if (!label) return { error: `${at}.options[${j}]: label is required.` };
       if (seen.has(label.toLowerCase()))
         return { error: `${at}: two options are labelled "${label}".` };
       seen.add(label.toLowerCase());
-      const description = oneLine(opt.description ?? '', ASK_DESCRIPTION_MAX);
-      options.push({ label, ...(description ? { description } : {}) });
+      const said = bounded(opt.description ?? '', ASK_DESCRIPTION_MAX);
+      if ('tooLong' in said) {
+        return {
+          error: `${at}.options[${j}]: the description is ${said.tooLong} characters; keep it under ${ASK_DESCRIPTION_MAX}. One short sentence on what picking this leads to.`,
+        };
+      }
+      const description = said.text;
+      // A ticked radio is an answer the PM never gave, so it is refused rather
+      // than dropped: on a pick-one question the recommendation goes first and
+      // says why, and that is as far as a default may go.
+      if (opt.checked === true && !multiSelect) {
+        return {
+          error: `${at}.options[${j}]: checked works only with multiSelect. On a pick-one question, put your recommendation first instead.`,
+        };
+      }
+      // No reason, no tick. The rule the follow picker already holds: a box
+      // somebody has to review needs the line that makes it reviewable.
+      if (opt.checked === true && !description) {
+        return {
+          error: `${at}.options[${j}]: a checked option needs a description saying why it is ticked.`,
+        };
+      }
+      options.push({
+        label,
+        ...(description ? { description } : {}),
+        ...(opt.checked === true ? { checked: true } : {}),
+      });
+    }
+    // Flattened and bounded on the way IN, so the card, the row in `app.db` and
+    // the replayed message a later run reads are all the same line.
+    const asked = bounded(q.question, ASK_QUESTION_MAX);
+    if ('tooLong' in asked) {
+      return {
+        error: `${at}: the question is ${asked.tooLong} characters; keep it under ${ASK_QUESTION_MAX}. Ask the thing you are blocked on and leave the recap out — name the notes as wikilinks and the PM can open them.`,
+      };
     }
     out.push({
       header: chip(q.header),
-      // Flattened and capped on the way IN, so the card, the row in `app.db` and
-      // the replayed message a later run reads are all the same bounded line.
-      question: oneLine(q.question, ASK_QUESTION_MAX),
+      question: asked.text,
       options,
-      multiSelect: q.multiSelect === true,
+      multiSelect,
     });
   }
   return { plan: { questions: out } };
@@ -258,7 +345,15 @@ export function formatAnswers(plan: AskPlan, answers: AskAnswer[]): string {
     const written = a?.written?.trim();
     lines.push('', `Q (${q.header}): ${q.question}`);
     if (chosen.length === 0 && !written) {
-      lines.push('A: (skipped — decide this yourself and say what you assumed)');
+      // On a ticked list an empty answer is a decision, not a shrug: they read
+      // the rows and took every one of them out. Reporting that as "skipped"
+      // would tell the model to go ahead and pick for itself, which is the one
+      // thing the PM just said no to.
+      lines.push(
+        q.options.some((o) => o.checked)
+          ? 'A: (none of them — they cleared every box, so do none of this)'
+          : 'A: (skipped — decide this yourself and say what you assumed)',
+      );
     } else if (chosen.length === 0) {
       lines.push(`A: (wrote) ${written}`);
     } else if (written) {
@@ -314,20 +409,28 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
             description: `Short chip label for this question, max ${ASK_HEADER_MAX} characters, e.g. "Scope" or "Which theme".`,
           }),
           question: Type.String({
-            description:
-              'The question, in full. State what is unclear and why it changes what you would do.',
+            description: `The question, in full. State what is unclear and why it changes what you would do. Under ${ASK_QUESTION_MAX} characters, or the call is refused — a few sentences, not a recap of what you read.`,
           }),
           options: Type.Array(
             Type.Object({
-              label: Type.String({ description: 'The choice, in a few words.' }),
+              label: Type.String({
+                description: `The choice, in a few words. Under ${ASK_LABEL_MAX} characters.`,
+              }),
               description: Type.Optional(
                 Type.String({
-                  description: 'What picking this means or leads to. One short sentence.',
+                  description: `What picking this means or leads to. One short sentence, under ${ASK_DESCRIPTION_MAX} characters.`,
+                }),
+              ),
+              checked: Type.Optional(
+                Type.Boolean({
+                  description:
+                    'Start this row ticked. multiSelect only, and only when you are proposing a batch you would carry out: "here is what I would set up, take out what you do not want". Every ticked row needs a description saying why it is ticked. Ticking lets one question carry up to ' +
+                    `${ASK_MAX_OPTIONS_TICKED} rows instead of ${ASK_MAX_OPTIONS}.`,
                 }),
               ),
             }),
             {
-              description: `The choices. 2-${ASK_MAX_OPTIONS} of them, concrete and mutually distinct. Put your recommendation first.`,
+              description: `The choices. 2-${ASK_MAX_OPTIONS} of them, concrete and mutually distinct (up to ${ASK_MAX_OPTIONS_TICKED} when they arrive ticked). Put your recommendation first.`,
             },
           ),
           multiSelect: Type.Optional(
@@ -384,10 +487,20 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
  * rather than two, and an answer that arrives twice — a double click, a second
  * window, a retried IPC — settles the same id and the second one finds nothing
  * left to settle.
+ *
+ * The ticks count as part of the shape (the `*` below): the same rows offered
+ * ticked and offered clear are two different questions.
  */
 export function askRequestId(sessionId: string, plan: AskPlan): string {
   const shape = plan.questions
-    .map((q) => [q.header, q.question, q.multiSelect, ...q.options.map((o) => o.label)].join(' '))
+    .map((q) =>
+      [
+        q.header,
+        q.question,
+        q.multiSelect,
+        ...q.options.map((o) => `${o.label}${o.checked ? '*' : ''}`),
+      ].join(' '),
+    )
     .join('');
   const digest = createHash('sha1').update(`${sessionId}${shape}`).digest('hex');
   return `ask_${digest.slice(0, 12)}`;
@@ -449,6 +562,7 @@ function toRequest(asked: StoredAsk): AskRequestInfo {
     questions: asked.questions,
     ...(asked.comments ? { comments: asked.comments } : {}),
     offered: isOffered(asked.skill, asked.unattended),
+    skill: asked.skill,
   };
 }
 
@@ -515,7 +629,11 @@ export class AskParking {
     // resumes on, and the card carries the one thing every surface downstream
     // wants out of them, which is whether this answer is owed.
     const unattended = !!context.unattended;
-    const asked: AskRequestInfo = { ...request, offered: isOffered(context.skill, unattended) };
+    const asked: AskRequestInfo = {
+      ...request,
+      offered: isOffered(context.skill, unattended),
+      skill: context.skill ?? null,
+    };
     store?.create(
       {
         id: asked.id,

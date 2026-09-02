@@ -17,7 +17,7 @@ const at = (rel: string): string => join(ROOT, ...rel.split('/'));
 test('a dot-folder at any depth is invisible to the watcher', () => {
   for (const rel of [
     'sessions/.files/abc123/input.md',
-    'sessions/.files/abc123/material/kranelund.md',
+    'sessions/.files/abc123/source/kranelund.md',
     '.git/COMMIT_EDITMSG',
     '.obsidian/workspace.json',
     'insights/.trash/old.md',

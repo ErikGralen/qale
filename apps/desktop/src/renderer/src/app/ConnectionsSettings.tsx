@@ -5,6 +5,9 @@ import { AtlassianTokenHelp } from '../components/AtlassianTokenHelp';
 import { FollowPicker } from '../components/FollowPicker';
 import { Setting } from '../components/Setting';
 import { relativeTime } from '../lib/dates';
+import { followReceipt } from '../lib/follow-receipt';
+import { siteUrlPreview } from '../lib/site-url';
+import { useApp } from '../state/app-state';
 import {
   connections,
   type AuthFieldDTO,
@@ -52,7 +55,7 @@ export function ConnectionsSettings() {
   return (
     <Setting
       title="Connected systems"
-      description="Where your delivery truth lives: tickets and pages from followed projects stay readable here, and anything you link from a note keeps itself up to date. Reading never asks, and writing always goes through an approval card. What comes in becomes notes like any other, so it goes to your model provider with the rest when the agent works."
+      description="Where your delivery truth lives: tickets and pages from followed projects stay readable here, and anything you link from a note keeps itself up to date. Reading never asks, and writing always goes through a proposal. What comes in becomes notes like any other, so it goes to your model provider with the rest when the agent works."
     >
       {loadFailed ? (
         <p className="text-sm text-muted-foreground">
@@ -100,6 +103,15 @@ function containerHealth(c: ConnectionContainerDTO, connHealth: ConnectionDTO['h
   return connHealth === 'ok' ? synced : `showing local data · ${synced}`;
 }
 
+/** One connection can bundle two systems (Jira + Confluence): a container's
+ *  `kind` says which. Named for what a person picks from, not the storage
+ *  word ("wikipage"). */
+const KIND_GROUP_LABEL: Record<ConnectionContainerDTO['kind'], string> = {
+  ticket: 'Jira projects',
+  wikipage: 'Confluence spaces',
+  calendar: 'Calendars',
+};
+
 function ConnectionCard({
   conn,
   providers,
@@ -109,6 +121,7 @@ function ConnectionCard({
   providers: ProviderDescriptorDTO[];
   onChanged: () => Promise<void>;
 }) {
+  const { settings, openHome } = useApp();
   const provider = providers.find((p) => p.id === conn.providerId);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -125,6 +138,14 @@ function ConnectionCard({
   const [picking, setPicking] = useState(
     () => conn.containers.length > 0 && !conn.containers.some((c) => c.followed),
   );
+  /**
+   * The closing beat for this visit (docs/closing-beat.md). The confirm used to
+   * leave somebody sitting in Settings with a row of toggles and no word about
+   * what had started. The receipt says what is running; the door beside it goes
+   * back to Home, which is where the debrief knocks. It lives here rather than
+   * in the picker because the confirm is what collapses the picker.
+   */
+  const [receipt, setReceipt] = useState<string | null>(null);
 
   const toggleFollow = async (c: ConnectionContainerDTO) => {
     setBusyContainer(c.id);
@@ -179,35 +200,29 @@ function ConnectionCard({
       )}
 
       {picking ? (
-        <FollowPicker conn={conn} onChanged={onChanged} onDone={() => setPicking(false)} />
+        <FollowPicker
+          conn={conn}
+          onChanged={onChanged}
+          onDone={(outcome) => {
+            setPicking(false);
+            setReceipt(followReceipt(outcome, settings?.hasApiKey ?? false));
+          }}
+        />
       ) : (
-        <ul className="mt-2 flex flex-col divide-y divide-border/60">
-          {conn.containers.map((c) => (
-            <li key={c.id} className="flex items-center gap-2.5 py-1.5">
-              {c.kind === 'ticket' ? (
-                <Ticket className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              ) : c.kind === 'calendar' ? (
-                <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              ) : (
-                <BookOpen className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              )}
-              <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
-              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                {containerHealth(c, conn.health)}
-              </span>
-              <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={c.followed}
-                  disabled={busyContainer === c.id}
-                  onChange={() => void toggleFollow(c)}
-                  aria-label={`Follow ${c.name}`}
-                />
-                Follow
-              </label>
-            </li>
-          ))}
-        </ul>
+        <>
+          {receipt && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/60 pt-3">
+              <p className="text-sm text-muted-foreground">{receipt}</p>
+              <button
+                className="rounded px-1.5 py-0.5 text-sm font-medium text-brand transition-colors hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                onClick={() => openHome()}
+              >
+                Back to Home
+              </button>
+            </div>
+          )}
+          <ContainerGroups conn={conn} busyContainer={busyContainer} onToggle={toggleFollow} />
+        </>
       )}
       {conn.providerId === 'google-calendar' ? (
         <p className="mt-1.5 text-xs text-muted-foreground">
@@ -225,7 +240,10 @@ function ConnectionCard({
         {!picking && conn.containers.length > 0 && (
           <button
             className="mr-auto rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={() => setPicking(true)}
+            onClick={() => {
+              setReceipt(null);
+              setPicking(true);
+            }}
           >
             Change what it reads
           </button>
@@ -274,6 +292,69 @@ function ConnectionCard({
       </div>
     </div>
   );
+}
+
+/**
+ * A connection's containers, split by kind. "Jira + Confluence" is one
+ * connection with two systems inside it, so a flat list reads as one pile —
+ * the kind icon alone was not enough to tell a project from a space at a
+ * glance. A labelled group per kind is; a connection with only one kind
+ * (Google Calendar) skips the label, since there is nothing to tell apart.
+ */
+function ContainerGroups({
+  conn,
+  busyContainer,
+  onToggle,
+}: {
+  conn: ConnectionDTO;
+  busyContainer: string | null;
+  onToggle: (c: ConnectionContainerDTO) => void;
+}) {
+  const kinds = Array.from(new Set(conn.containers.map((c) => c.kind)));
+  const labelled = kinds.length > 1;
+
+  return (
+    <div className="mt-2 flex flex-col gap-2.5">
+      {kinds.map((kind) => (
+        <div key={kind}>
+          {labelled && (
+            <div className="flex items-center gap-1.5 px-0.5 pb-1 text-2xs font-semibold tracking-wide text-muted-foreground/70 uppercase">
+              <KindIcon kind={kind} />
+              {KIND_GROUP_LABEL[kind]}
+            </div>
+          )}
+          <ul className="flex flex-col divide-y divide-border/60">
+            {conn.containers
+              .filter((c) => c.kind === kind)
+              .map((c) => (
+                <li key={c.id} className="flex items-center gap-2.5 py-1.5">
+                  {!labelled && <KindIcon kind={c.kind} />}
+                  <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                    {containerHealth(c, conn.health)}
+                  </span>
+                  <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={c.followed}
+                      disabled={busyContainer === c.id}
+                      onChange={() => onToggle(c)}
+                      aria-label={`Follow ${c.name}`}
+                    />
+                    Follow
+                  </label>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function KindIcon({ kind }: { kind: ConnectionContainerDTO['kind'] }) {
+  const Icon = kind === 'ticket' ? Ticket : kind === 'calendar' ? CalendarDays : BookOpen;
+  return <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />;
 }
 
 /**
@@ -501,6 +582,9 @@ function AuthFieldInput({
   onChange: (v: string) => void;
   onEnter: () => void;
 }) {
+  // Confirm what a pasted address resolves to instead of leaving the person
+  // to guess the right shape (clarity review: Atlassian site URL confusion).
+  const preview = /url$/i.test(field.key) ? siteUrlPreview(value) : null;
   return (
     <div className="flex flex-col gap-0.5">
       <Input
@@ -511,7 +595,13 @@ function AuthFieldInput({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && onEnter()}
       />
-      {field.hint && <p className="px-1 text-xs text-muted-foreground">{field.hint}</p>}
+      {preview ? (
+        <p className="px-1 text-xs text-muted-foreground">
+          We’ll connect to <span className="font-medium text-foreground">{preview}</span>
+        </p>
+      ) : (
+        field.hint && <p className="px-1 text-xs text-muted-foreground">{field.hint}</p>
+      )}
     </div>
   );
 }

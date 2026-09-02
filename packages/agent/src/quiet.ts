@@ -167,7 +167,7 @@ export function createEndQuietlyTool(deps: QuietDeps): ToolDefinition {
       'did what you were asked, nothing needs their judgment, and any message you wrote now would be a "nothing ' +
       'to report" they have to open to read. Call it instead of writing that message, and stop there. Do NOT use ' +
       'it to get out of work you have not done, and do NOT use it when you found something and decided it was ' +
-      'small: propose the card. On a session somebody is sitting in front of this does nothing, because they are ' +
+      'small: propose it instead. On a session somebody is sitting in front of this does nothing, because they are ' +
       'waiting for an answer and silence is not one.',
     parameters: Type.Object({}),
     async execute() {

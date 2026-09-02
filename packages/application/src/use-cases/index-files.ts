@@ -26,7 +26,7 @@ import { workspaceNameOf } from './vault.js';
 
 /** One-line purpose per folder — shown in the root map and each folder header. */
 const FOLDER_PURPOSE: Record<NoteType, string> = {
-  source: 'raw captured material — transcripts, articles, threads, cited by derived notes',
+  source: 'the raw layer — transcripts, articles, threads, cited by derived notes',
   meeting: 'meeting pages: prep, notes, and processed summaries',
   decision: 'the append-only decision spine',
   insight: 'analyses over the raw layer, each citing its evidence',

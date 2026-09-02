@@ -272,7 +272,7 @@ test('only a tidy pass nobody started asks quietly, and it still asks quietly to
   void live.park(store, byHand, { skill: 'librarian' });
   assert.equal(pushes.at(-1)?.request?.offered, false);
 
-  // Arrival runs with nobody watching, but somebody handed it the material and
+  // Arrival runs with nobody watching, but somebody handed it a source and
   // is coming back for it.
   const arriving = requestFor('s3');
   void live.park(store, arriving, { unattended: true, skill: 'arrival' });
@@ -294,4 +294,30 @@ test('a refused question tells the model to stop, not to decide for itself', asy
   // A dismissal says "pick the most reasonable option yourself"; this is the
   // opposite instruction, and confusing the two is the whole risk here.
   assert.doesNotMatch(said, /Pick the most reasonable option yourself/i);
+});
+
+// --- reaching the session that is waiting ---------------------------------
+
+test('a parked card names the skill that asked, live and after a relaunch', async () => {
+  // First steps reads this to open the interview that is already waiting rather
+  // than starting a blank second one on the same topic
+  // (docs/first-look-debrief.md).
+  const store = fakeStore();
+  const pushes: Pushed[] = [];
+  const live = parking(pushes);
+  const request = requestFor('s1');
+  void live.park(store, request, { skill: 'tell-qale', unattended: true });
+  assert.equal(pushes.at(-1)?.request?.skill, 'tell-qale');
+  assert.equal(parking([]).pendingFor(store, 's1')?.skill, 'tell-qale');
+  assert.deepEqual(
+    parking([])
+      .all(store)
+      .map((r) => r.skill),
+    ['tell-qale'],
+  );
+
+  // A run with no skill in force says so rather than guessing one.
+  const bare = requestFor('s2');
+  void parking(pushes).park(store, bare, {});
+  assert.equal(pushes.at(-1)?.request?.skill, null);
 });

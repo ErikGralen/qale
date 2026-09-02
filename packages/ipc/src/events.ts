@@ -1,4 +1,10 @@
-import type { AskRequestDTO, CodebaseRequestDTO, SettingsDTO, SpawnRequestDTO } from './dtos.js';
+import type {
+  ArrivalProgressDTO,
+  AskRequestDTO,
+  CodebaseRequestDTO,
+  SettingsDTO,
+  SpawnRequestDTO,
+} from './dtos.js';
 
 /**
  * Push events from main → renderer (webContents.send). These are the flattened,
@@ -123,6 +129,17 @@ export interface AskRequestEvent {
   request: AskRequestDTO | null;
 }
 
+/**
+ * A dropped batch moved: one more piece is filed, or the run settled
+ * (docs/critical-mass.md CM-2). Its own channel rather than a field on
+ * `session:status`, because status speaks twice per run and this speaks every
+ * time the pile gets smaller, which is the whole point of it.
+ */
+export interface ArrivalProgressEvent {
+  channel: 'arrival:progress';
+  progress: ArrivalProgressDTO;
+}
+
 /** Fired when an OS notification is clicked — the renderer opens that session. */
 export interface SessionFocusEvent {
   channel: 'session:focus';
@@ -158,6 +175,7 @@ export type PushEvent =
   | SpawnRequestEvent
   | CodebaseRequestEvent
   | AskRequestEvent
+  | ArrivalProgressEvent
   | SessionFocusEvent
   | ConnectionsChangedEvent
   | SettingsChangedEvent;
@@ -179,6 +197,7 @@ export const PUSH_CHANNELS = [
   'session:spawn',
   'session:codebase',
   'session:ask',
+  'arrival:progress',
   'session:focus',
   'connections:changed',
   'settings:changed',

@@ -174,7 +174,7 @@ test('a session working file is not a note, and a row holding one is evicted', a
   const removed: string[] = [];
   // The scan cannot see these (the dot folder is skipped), so they arrive here as
   // rows the live watcher put in before it agreed with the scan.
-  const stale = ['sessions/.files/abc123/input.md', 'sessions/.files/abc123/material/kranelund.md'];
+  const stale = ['sessions/.files/abc123/input.md', 'sessions/.files/abc123/source/kranelund.md'];
   const vault = {
     list: async () => [{ path: 'sessions/2026-08-13-arrival-abc123.md', mtime: 5 }],
     readNote: async (p: string) => ({ path: p }),

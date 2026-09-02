@@ -10,7 +10,7 @@ The flow review found fourteen problems. Read together, almost all of them are t
 problem: `planArrival` / `ingestArrival` is a pile of hardcoded heuristics standing in for
 judgment. The 90-minute clock window guessing which meeting a transcript belongs to. The
 21-day and 5-unit rules silently switching reviews off. The part-marker regex deciding two
-files are one meeting. The "text is material unless a file exists" fork. Each rule tries to
+files are one meeting. The "text is a source unless a file exists" fork. Each rule tries to
 answer "what is this and what should happen to it?" without reading anything, and each edge
 of each rule is a finding in the review.
 
@@ -23,12 +23,12 @@ plus skill copy, not construction.
 ## The shape
 
 **Landing is mechanical.** The moment Add is pressed, the files are written to disk as
-session files in a new session, before any model call. Material is never hostage to an API
-key or a model's mood. No key: the files sit in the session as unfiled material with the
+session files in a new session, before any model call. Sources are never hostage to an API
+key or a model's mood. No key: the files sit in the session as unfiled sources with the
 session's normal "could not run" state, and nothing is lost.
 
-**Judgment is the skill's.** The session runs "Handle new material". The agent skims the
-material, decides filing, matches meetings by what the transcript says (title, participants,
+**Judgment is the skill's.** The session runs "Handle new sources". The agent skims the
+sources, decides filing, matches meetings by what the transcript says (title, participants,
 content) rather than by the clock, notices when the PM is not in the room, checks for
 duplicates against what is already filed, files into the vault, and starts full reads only
 where they are earned. When it cannot tell, it asks with an option card. Everything the old
@@ -38,7 +38,7 @@ just typing.
 **The tray shrinks to almost nothing.** File rows with an X each, one text field, one button.
 The handling radio group dies. The ambition/catchup machinery dies. The "Attaches to" line
 dies (the agent proposes the match with evidence, where it can be declined). Pasted text
-becomes an item row like any file, so the material/instruction fork dies too: the text field
+becomes an item row like any file, so the source/instruction fork dies too: the text field
 always means "anything I should know or want done?".
 
 **What stays dumb.** Format refusals (unreadable file, empty file), the folder walk, and
@@ -73,7 +73,7 @@ stated up front.
 ## Large batches
 
 The skill describes the judgment: up to 5 files, read them yourself. More than that, or
-names that say the material is old, treat it as a backlog:
+names that say the source is old, treat it as a backlog:
 write `brief.md`, spawn one skim per file on a quick model, each child returning title, date,
 what kind of thing it is, and whose voice is in it. File from the results, start full reads
 only where something looks live, and say what you skipped.
@@ -99,7 +99,7 @@ Product copy to be written properly, but the judgment it must cover:
 - **The meeting page is a card, not a filing** (changed 2026-08-07). Filing a transcript used
   to mint the meeting page as a side effect: an empty scaffold reading "not read yet", which
   the summary then arrived to patch. Two steps for one thing, and the first of them put a
-  page in the workspace nobody had approved. Now `file_material` writes only the recording and
+  page in the workspace nobody had approved. Now `file_source` writes only the recording and
   `propose_meeting` proposes the page whole, summary in it, transcript cited. Approve and the
   meeting exists finished; decline and only the recording is on the shelf. Nothing an agent
   authors reaches the workspace without the PM saying yes — a meeting page included.
@@ -117,14 +117,14 @@ Product copy to be written properly, but the judgment it must cover:
 - **Not my meeting.** If the PM never speaks and was not invited, it is someone else's
   meeting: file under `sources/`, set `origin: external` in frontmatter, and never draft
   outbound in the PM's voice over it. Unsure: ask.
-- **Duplicates.** Before filing, check whether this material is already here (name, date,
+- **Duplicates.** Before filing, check whether this source is already here (name, date,
   content). Already filed: say so and stop, offering "add anyway".
 - **Re-reads.** When a meeting already has processed transcripts, read only what is new.
   `processing: processed` on a source means its commitments were already proposed; do not
   propose them again.
-- **Reviews.** Fresh meeting material earns a full read. A backlog earns filing plus skims.
+- **Reviews.** A fresh meeting source earns a full read. A backlog earns filing plus skims.
   The user's instruction always wins, in both directions: "just file these" files without
-  reading, "review them anyway" reviews month-old material without argument.
+  reading, "review them anyway" reviews month-old sources without argument.
 - **Batches.** Up to 5 files: read them yourself. More: the backlog judgment above, via
   `spawn`. The 5 is skill copy, tunable without code.
 
@@ -154,7 +154,7 @@ means no dedicated feature is built; the design removes the machinery that cause
 | AR-6 duplicate drop is silent                  | **Dissolves into the skill.** The agent checks before filing. The tray may keep a cheap name-match hint, but nothing depends on it.                                                                                                                     |
 | AR-7 "together" sticks after the batch shrinks | **Dissolves.** The radio group is deleted; there is no handling state to go stale.                                                                                                                                                                      |
 | AR-8 several reviews, dead pointer             | **Dissolves.** No receipt, so no dead pointer; the sidebar sessions rail already shows running reads. The 21-day rule is gone, and "review it anyway" wins by instruction, per the decision.                                                            |
-| AR-9 "After-Meeting" naming                    | **Survives as a sweep.** Six user-visible strings name a retired skill; that cleanup is due regardless. Tabs get named after the material.                                                                                                              |
+| AR-9 "After-Meeting" naming                    | **Survives as a sweep.** Six user-visible strings name a retired skill; that cleanup is due regardless. Tabs get named after the source.                                                                                                                |
 | AR-10 zombie `capture:ingest` pipeline         | **Survives, grows.** The demolition list above includes it and most of the planner besides.                                                                                                                                                             |
 | AR-11 re-reads re-propose approved cards       | **Dissolves into the skill.** The distinction is already on disk (`processing: processed`); the skill tells the agent to honour it.                                                                                                                     |
 | AR-12 second drop / ⇧⌘N wipes the tray         | **Survives.** Merge incoming drafts while the tray is open; guard ⇧⌘N like ⌘↵. Small tray fix, still worth doing.                                                                                                                                       |

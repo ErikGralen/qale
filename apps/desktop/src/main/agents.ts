@@ -23,6 +23,15 @@ import type { StartDTO } from '@qale/ipc';
 export const MAINTENANCE_TICK_MS = 5 * 60 * 1000;
 
 /**
+ * How long the confirm in the follow picker has to settle before the first-look
+ * knock chases it (docs/first-look-debrief.md FD-2). The picker sends one
+ * `setFollow` per container, so this is the window that collapses a confirm into
+ * one maintenance pass. Long enough for a slow list of containers, short enough
+ * that the person who just pressed the button is still watching.
+ */
+export const FIRST_LOOK_KICK_MS = 4 * 1000;
+
+/**
  * How long a finding has to hold still before the agent is told about it. One
  * full tick, so a link somebody is halfway through typing is never repaired out
  * from under them.

@@ -67,7 +67,7 @@ test('provider labels read as their product names', () => {
 });
 
 test('the read-only sentences stay short and plain', () => {
-  assert.equal(readOnlyReason('source'), 'Raw material. Never rewritten.');
+  assert.equal(readOnlyReason('source'), 'Raw source. Never rewritten.');
   assert.equal(
     readOnlyReason('session'),
     'A record of what happened. Kept exactly as it was filed.',

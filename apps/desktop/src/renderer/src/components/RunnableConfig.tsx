@@ -43,10 +43,10 @@ const CAN_META: Record<CapabilityDTO, { icon: LucideIcon; title: string }> = {
     title:
       'May keep scratch files for the length of a session. Working material, never part of the memory.',
   },
-  'file-material': {
+  'file-source': {
     icon: FolderInput,
     title:
-      'May put material you dropped in where it belongs, and move it when that turns out to be wrong. Filing needs no approval; everything it goes on to write about the material is still a card.',
+      'May put a source you dropped in where it belongs, and move it when that turns out to be wrong. Filing needs no approval; everything it goes on to write about the source is still a proposal.',
   },
   'track-external': {
     icon: Eye,

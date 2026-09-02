@@ -1,7 +1,7 @@
 /**
  * Is this card already waiting on the PM?
  *
- * Two sessions reading the same material propose the same things, and until now
+ * Two sessions reading the same source propose the same things, and until now
  * nothing stopped them: the propose tools tell the model to "check existing
  * todos first", but a card that has not been approved yet is not a note on
  * disk, so there is nothing for it to find. Drop part 2 of a recording an hour

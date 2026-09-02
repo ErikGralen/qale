@@ -49,14 +49,14 @@ confirm the claim. A run that ends there has done its job.
 
 ## Produce
 
-One card, the spec (propose_note, type `note`, path `notes/spec-<theme-slug>.md`), with `sources`
+One proposal, the spec (propose_note, type `note`, path `notes/spec-<theme-slug>.md`), with `sources`
 citing the theme, the insights and the decisions it rests on. Take `tags` from the theme.
 
 One addition to the writing rules: no requirement without a trace. Every requirement names the
 insight, decision or ticket mirror behind it. One that cites nothing is not a requirement, it is
 your idea, and it belongs under Assumptions with what would settle it.
 
-A second card where the theme does not link the spec yet: a propose_update adding the link.
+A second proposal where the theme does not link the spec yet: a propose_update adding the link.
 
 Tickets are not this skill's work. Breaking a spec into tracked work comes after the spec is read
 and accepted.

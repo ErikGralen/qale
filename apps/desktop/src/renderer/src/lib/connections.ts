@@ -3,7 +3,6 @@ import type {
   ConnectionDTO,
   ConnectResultDTO,
   ContainerRecommendationDTO,
-  DeliveryDeltaDTO,
   ExternalRefMetaDTO,
   ProviderDescriptorDTO,
   ShallowIndexItemDTO,
@@ -27,7 +26,6 @@ export type {
   ConnectionHealth,
   ConnectResultDTO,
   ContainerRecommendationDTO,
-  DeliveryDeltaDTO,
   ExternalRefMetaDTO,
   ProviderDescriptorDTO,
   ShallowIndexItemDTO,
@@ -150,11 +148,6 @@ export const connections = {
 
   atRisk(): Promise<AtRiskLinkDTO[]> {
     return invoke['connections:atRisk']();
-  },
-
-  /** "Since last time" delta lines for one meeting page (keyed by series). */
-  deliveryDelta(meetingPath: string): Promise<DeliveryDeltaDTO[]> {
-    return invoke['connections:deliveryDelta'](meetingPath);
   },
 
   /** Current mirrored body of a wikipage — the "before" of a redline preview. */

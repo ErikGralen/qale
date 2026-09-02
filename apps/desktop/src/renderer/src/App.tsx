@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, TooltipProvider } from '@qale/ui';
 import type { ArrivalItemInputDTO } from '@qale/ipc';
 import { readableAs } from '@qale/domain';
-import { AlertTriangle, FileUp } from 'lucide-react';
+import { AlertTriangle, FileUp, X } from 'lucide-react';
 import { pathForFile } from './lib/ipc';
 import { AppStateProvider, useApp } from './state/app-state';
 import { CAPTURE_EVENT, type CaptureRequest } from './lib/capture-event';
@@ -22,7 +22,7 @@ import { ContextView } from './app/ContextView';
 import { RightPanel } from './app/RightPanel';
 import { TabStrip } from './app/TabStrip';
 import { QuickSwitcher } from './app/QuickSwitcher';
-import { AddMaterial, type MaterialDraft } from './app/AddMaterial';
+import { AddSource, type SourceDraft } from './app/AddSource';
 import { ExternalRefHoverLayer } from './components/ExternalRef';
 import { Opening } from './onboarding/Opening';
 
@@ -43,6 +43,7 @@ function Center() {
           key={activeTab.key}
           skill={activeTab.skill}
           sessionId={activeTab.sessionId}
+          draftKey={activeTab.key}
           initialPrompt={activeTab.initialPrompt}
           onSessionId={(sessionId) => bindTabSession(activeTab.key, sessionId)}
           onNewSession={() => openSession(activeTab.skill, { fresh: true })}
@@ -92,7 +93,7 @@ function inEditable(e: KeyboardEvent): boolean {
 function Shell() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
-  const [captureDraft, setCaptureDraft] = useState<MaterialDraft | null>(null);
+  const [captureDraft, setCaptureDraft] = useState<SourceDraft | null>(null);
   const [dragging, setDragging] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
@@ -128,6 +129,7 @@ function Shell() {
     reopenClosedTab,
     sessionFiles,
     blockedBy,
+    dismissBlockedBy,
   } = useApp();
 
   // ⌘N: a blank note straight into the editor — capture (⇧⌘N) keeps the dialog.
@@ -162,14 +164,14 @@ function Shell() {
     });
   }, []);
 
-  const openCapture = useCallback((draft?: MaterialDraft) => {
+  const openCapture = useCallback((draft?: SourceDraft) => {
     setCaptureDraft(draft ?? null);
     setCaptureOpen(true);
   }, []);
 
   /**
    * The drag overlay's kill switch. The Shell counts dragenter/dragleave, but a
-   * drop that lands on the Add material tray stops propagating before the
+   * drop that lands on the Add source tray stops propagating before the
    * Shell's own handler runs — so without this the counter never returns to
    * zero and the "Drop anything" overlay stays on screen for good. Capture
    * phase on the window catches every drop, ours or not.
@@ -188,7 +190,7 @@ function Shell() {
   }, []);
 
   // Home, deep links, and anything outside the Shell request capture by event —
-  // with a draft when they already hold the material (a pasted transcript).
+  // with a draft when they already hold the source (a pasted transcript).
   useEffect(() => {
     const onCapture = (e: Event) =>
       openCapture((e as CustomEvent<CaptureRequest | undefined>).detail ?? undefined);
@@ -312,7 +314,7 @@ function Shell() {
   ]);
 
   /**
-   * Shell-wide drop: everything dragged anywhere lands in the Add material
+   * Shell-wide drop: everything dragged anywhere lands in the Add source
    * tray, however many files it is. The drop is an accelerator for the button,
    * not a second door with its own behaviour — discovering one has to teach the
    * other (docs/vision/arrival.md §7).
@@ -367,6 +369,13 @@ function Shell() {
       : 0;
   const rightAvailable = activeTab?.kind === 'doc' || sessionFileCount > 0;
   const showRight = rightAvailable && rightOpen;
+  // Two different rails, two different widths. The note's session corner is a
+  // chat and needs room to read; the session's file tree is a column of short
+  // filenames, and 420px of it was mostly empty space taken off the session.
+  // The key remounts the panel so the new default applies — a width dragged by
+  // hand still holds for as long as that kind of rail stays up.
+  const railKind = activeTab?.kind === 'session' ? 'files' : 'doc';
+  const railWidth = railKind === 'files' ? '320px' : '420px';
   // The toggle names what it would open — "session files", not "panel" — and
   // stays in the strip (disabled) on tabs that have no rail, so the cluster
   // beside it never reflows.
@@ -423,12 +432,21 @@ function Shell() {
             {/* Nothing can run until this is cleared, so it sits above whatever
                 you are looking at rather than inside the session that happened
                 to hit it first. It takes itself down the moment a turn gets an
-                answer: there is nothing here to dismiss, because dismissing it
-                would not unblock anything. */}
+                answer, but a run queued before the fix can still resettle after
+                and put it back up, so the close button is a manual override for
+                that race, not a way to unblock anything. */}
             {blockedBy && (
               <div className="flex items-start gap-2 border-b border-warning/40 bg-warning/10 px-6 py-2 text-sm text-warning">
                 <AlertTriangle className="mt-px size-4 shrink-0" aria-hidden />
-                <span>{blockedBy}</span>
+                <span className="flex-1">{blockedBy}</span>
+                <button
+                  className="-mr-1 -mt-1 shrink-0 rounded-md p-1 text-warning transition-colors duration-150 hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none"
+                  onClick={dismissBlockedBy}
+                  aria-label="Dismiss"
+                  title="Dismiss"
+                >
+                  <X className="size-3.5" aria-hidden />
+                </button>
               </div>
             )}
             <div className="min-h-0 flex-1">
@@ -439,7 +457,15 @@ function Shell() {
                 {showRight && (
                   <>
                     <ResizableHandle />
-                    <ResizablePanel defaultSize="35%" minSize="22%" maxSize="58%">
+                    {/* Fixed in px, not a percentage of the group: on a wide
+                        window a percentage grows past a readable column width
+                        and steals focus from the center panel. */}
+                    <ResizablePanel
+                      key={railKind}
+                      defaultSize={railWidth}
+                      minSize="260px"
+                      maxSize="640px"
+                    >
                       <RightPanel />
                     </ResizablePanel>
                   </>
@@ -470,16 +496,16 @@ function Shell() {
         onOpenCapture={() => openCapture()}
         onNewNote={() => void newNote()}
       />
-      <AddMaterial
+      <AddSource
         open={captureOpen}
         onOpenChange={setCaptureOpen}
         draft={captureDraft}
-        /* Pressing Add goes to the session holding the material. It used to
+        /* Pressing Add goes to the session holding the source. It used to
            close onto a floating line asking whether you wanted to look, plus a
            second rule that opened the tab anyway once the run stopped to ask
            something. Both are gone: the session is where the work is, so that
            is where Add lands you, and there is nothing left to dismiss. */
-        onHandoff={(r) => openChat({ id: r.sessionId, title: 'Handling new material' })}
+        onHandoff={(r) => openChat({ id: r.sessionId, title: 'Handling new source' })}
       />
       {/* One hover card serves every [[PAY-142]]-style reference — read view,
           cards, and the editor's wikilink atoms all stamp data-external-ref. */}

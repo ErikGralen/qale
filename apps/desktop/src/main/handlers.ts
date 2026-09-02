@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   AgentDTO,
   ArrivalItemInputDTO,
+  ArrivalProgressDTO,
   AskCommentAnswersDTO,
   AskCommentPlanDTO,
   ConnectionProgress,
@@ -69,6 +70,7 @@ import {
   vaultFingerprint,
   type LibrarianPassResult,
   listProposals,
+  resolvedProposals,
   previewProposal,
   rebuild,
   rejectProposal,
@@ -86,6 +88,7 @@ import {
 import { detectSyncedFolder, isWindowsPathTooDeep } from '@qale/application';
 import {
   isVoicePath,
+  sourceModelId,
   parseFrontmatter,
   providerName,
   readableAs,
@@ -94,7 +97,7 @@ import {
   type Frontmatter,
   type HandCreatableType,
 } from '@qale/domain';
-import { materialName } from './material-name.js';
+import { sourceName } from './source-name.js';
 import {
   ARRIVAL_AGENT_NAME,
   buildKickoff,
@@ -106,12 +109,14 @@ import {
   isBaseSkillName,
   MAINTENANCE_AGENTS,
   MEETING_PREP_INSTRUCTION,
+  TELL_QALE_NAME,
 } from '@qale/sessions';
 import { handle, pushEvent } from './ipc.js';
 import { failureReport, type PassFailure } from './log.js';
 import { appVersion, buildDiagnostics } from './diagnostics.js';
 import {
   CODE_RUN_FACTS,
+  FIRST_LOOK_KICK_MS,
   LIBRARIAN_SESSION_INTERVAL_MS,
   LIBRARIAN_SETTLE_MS,
   MEETING_PREP_LEAD_MS,
@@ -128,7 +133,8 @@ import { makeOutbound, outboundConnections } from './services/outbound-service.j
 import { agentConnections } from './services/agent-connections.js';
 import { CodebaseService } from './services/codebase-service.js';
 import { SchedulerService } from './services/scheduler-service.js';
-import { SyncService } from './services/sync-service.js';
+import { firstLookInstruction, SyncService } from './services/sync-service.js';
+import { createFirstLookKick } from './services/first-look-kick.js';
 import { McpService } from './services/mcp-service.js';
 import {
   backlinkToDTO,
@@ -295,6 +301,56 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   };
 
   /**
+   * The knock at the end of the first read (docs/first-look-debrief.md).
+   *
+   * Connecting a system used to end at consent: the sync filled an index nobody
+   * could see and nothing visible ever came of it. So the read now ends in one
+   * unattended session that looks at what arrived, parks a single question and
+   * stops. Answering it walks straight into the interview, in the same session.
+   *
+   * ONE knock over everything that is owed (CM-5). Two connections made in the
+   * same onboarding are one haul to the PM, so every ready read goes into one
+   * kickoff and the question names the lot.
+   *
+   * Three guards, and each one is a way of not asking too soon or twice:
+   *
+   * - **Once per connection, ever.** `markFirstLookDone` is stamped before the
+   *   session fires, so the window between firing and the question landing
+   *   cannot let the next tick raise the same knock.
+   * - **Not while sources are still being read.** A backlog dropped a minute ago
+   *   is the best thing the debrief could speak about, and a debrief that reads
+   *   the index before it lands wastes its one opening. Nothing is stamped and
+   *   nothing fires; the next maintenance tick tries again.
+   * - **Not without a key**, which is not a guard so much as arithmetic: the
+   *   flag stays `ready` and the knock happens once a key exists.
+   *
+   * A workspace that has already been told about the product used to be a fourth
+   * guard, and it fired nothing at all. That made the picker's promise
+   * ("it reads these, then comes back and tells you what it found") a lie for
+   * anybody who had done First steps first, which is most people. So the knock
+   * always happens now and the fact rides into the kickoff instead: the session
+   * reports what it read and skips the interview (2026-08-31).
+   */
+  const runFirstLookDebriefs = async (failures: PassFailure[]): Promise<void> => {
+    if (!settings.getActiveKey()) return;
+    if (runInFlight(ARRIVAL_AGENT_NAME)) return;
+    const reads = syncService.firstLookReads();
+    if (reads.length === 0) return;
+    for (const read of reads) syncService.markFirstLookDone(read.connectionId);
+    const checklist = settings.getOnboarding().checklist;
+    const told = Boolean(checklist['understanding'] || checklist['about-us']);
+    await fireSession(
+      TELL_QALE_NAME,
+      buildKickoff({ skill: TELL_QALE_NAME, instruction: firstLookInstruction(reads, told) }),
+      // Not `scheduled`: a clock did not start this, their connect did, and a
+      // scheduled run refuses to park a question at all, and that question is
+      // this run's whole output. `unattended` is the honest word: nobody is at the
+      // screen right now, and they are coming back.
+      { trigger: 'arrival', unattended: true },
+    ).catch((err) => failures.push({ item: 'the first-look debrief', reason: err }));
+  };
+
+  /**
    * The librarian maintenance pass, ONE entry point for every trigger
    * (app-open catch-up AND the 5-minute tick). The in-flight guard is the
    * reentrancy fix: sync and the scan both take real time, and two overlapping
@@ -331,6 +387,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       });
       if (tidy && tidy.written.length > 0)
         pushEvent(getWindow(), { channel: 'vault:changed', paths: tidy.written });
+      // Before the librarian block, and outside its off switch: the first look
+      // is not maintenance, and a workspace with the librarian switched off
+      // still deserves to hear what its new connection just read.
+      await runFirstLookDebriefs(failures);
       // The librarian's off switch (its file's `enabled` frontmatter) is
       // enforced HERE, before the scan is entered: off has to mean nothing is
       // even looked at, not a hidden pass whose output is filtered later. The
@@ -459,6 +519,30 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       });
     return maintenanceInFlight;
   };
+
+  /**
+   * The knock chases the sync (docs/first-look-debrief.md FD-2, amended
+   * 2026-08-31). Confirming the follow picker used to end in silence: the
+   * confirm starts a sync tick, but the debrief only fires from the maintenance
+   * pass, and that pass is on a five-minute clock.
+   *
+   * `setFollow` starts its tick before it returns, so a kick can never land
+   * ahead of it. And `tick()` joins a run in flight rather than skipping it, so
+   * the pass below waits for the confirm's own sync to finish, and finishing is
+   * what arms the first-look flag. The pass then reads it in the same breath.
+   *
+   * `stillOwed` covers the one gap the wait does not: a maintenance pass already
+   * past its first-look step is joined, not queued, so the kick would resolve
+   * with nothing said. One more pass settles that. With no key nothing will fire
+   * whatever we do, so that case is left to the ordinary tick.
+   */
+  const firstLookKick = createFirstLookKick({
+    delayMs: FIRST_LOOK_KICK_MS,
+    pass: runMaintenance,
+    stillOwed: () => Boolean(settings.getActiveKey()) && syncService.firstLookReads().length > 0,
+    onError: (err) =>
+      console.error('[qale] first-look kick failed:', err instanceof Error ? err.message : err),
+  });
 
   // Runs in the BACKGROUND after a vault opens (`void afterOpen()`): seeding
   // skills and the launch maintenance pass must never block first paint or the
@@ -789,9 +873,34 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
    * signal, and both are wanted at the far end of a run that can take minutes.
    * In memory only: a run that spans a quit reports no duration rather than a
    * made-up one.
+   *
+   * `sessionRuns` holds an entry from the moment a run is fired until it
+   * settles, so it also answers "is a run of this skill in flight" for anyone
+   * who asks. `runFirstLookDebriefs` is the one asker (CM-5).
    */
   const sessionStarted = new Map<string, number>();
-  const sessionTrigger = new Map<string, string>();
+  const sessionRuns = new Map<string, { skill: string; trigger: string }>();
+
+  /** Whether a run of this skill is still going. In-memory, like the map: a run
+   *  that did not survive a quit is not in flight, and nothing waits for it. */
+  const runInFlight = (skill: string): boolean =>
+    [...sessionRuns.values()].some((r) => r.skill === skill);
+
+  /**
+   * Dropped batches and how far they have got (docs/critical-mass.md CM-2). A
+   * pile of transcripts takes minutes, so the one line the PM is watching
+   * counts pieces off as they are filed.
+   *
+   * Every number is counted from a filing that happened. In memory only, and
+   * bounded: this feeds one line in one tab, and a batch nobody watched is not
+   * worth keeping over a quit.
+   */
+  const arrivalBatches = new Map<string, ArrivalProgressDTO>();
+  const MAX_ARRIVAL_BATCHES = 20;
+
+  const pushBatch = (progress: ArrivalProgressDTO): void => {
+    pushEvent(getWindow(), { channel: 'arrival:progress', progress });
+  };
 
   /**
    * What a run the app started for ITSELF opens on. A background tidy pass is
@@ -811,7 +920,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       /**
        * What to report this run as when it settles. Only the caller knows; the
        * status signal carries no trigger. `scheduled` below already names the
-       * two clock-started paths, so this only has to be set where material
+       * two clock-started paths, so this only has to be set where a source
        * arriving is what started the run.
        */
       trigger?: 'manual' | 'scheduled' | 'arrival';
@@ -837,7 +946,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       modelId?: string;
       /**
        * Run in THIS session rather than a fresh one. Arrival mints the id first
-       * so it can write the material into the session's folder before any model
+       * so it can write the sources into the session's folder before any model
        * call; the session it starts has to be that one.
        */
       sessionId?: string;
@@ -895,10 +1004,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       // Recorded against the id rather than threaded through the runtime: a
       // session that settles minutes later has to be able to say what started
       // it, and the runtime has no reason to carry that.
-      sessionTrigger.set(
-        handle.sessionId,
-        opts?.trigger ?? (opts?.scheduled ? 'scheduled' : 'manual'),
-      );
+      sessionRuns.set(handle.sessionId, {
+        skill,
+        trigger: opts?.trigger ?? (opts?.scheduled ? 'scheduled' : 'manual'),
+      });
       return { sessionId: handle.sessionId };
     } catch (err) {
       // Every caller is fire-and-forget (`void fireSession(...)`): a run that
@@ -1002,6 +1111,19 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     pushEvent(getWindow(), { channel: 'session:files', sessionId });
   };
 
+  // One more piece off the pile. Only a drop the tray handed over is counted:
+  // every other session that files sources was never a batch, so there is no
+  // line waiting for its number.
+  agent.onSourceFiled = (sessionId, filed) => {
+    const batch = arrivalBatches.get(sessionId);
+    if (!batch) return;
+    // Never past the total: a run that files one piece twice must not report
+    // more sources than the PM handed over.
+    batch.filed = Math.min(batch.total, batch.filed + filed.pieces);
+    if (filed.matched) batch.matched = Math.min(batch.filed, batch.matched + filed.pieces);
+    pushBatch(batch);
+  };
+
   // A conversation named itself a moment after its first message. Nothing else
   // to do here: the name is already in the transcript, so the tab, the rail and
   // the Sessions row all follow from this one push.
@@ -1092,7 +1214,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
    * own: an empty account fails a meeting sweep, a schedule's slot and a tidy
    * pass alike, and every one of those is a request the PM is billed nothing for
    * and told nothing about. Nothing they started is ever held back — a message
-   * they type, a "Run now" they click, material they drop — because retrying by
+   * they type, a "Run now" they click, a source they drop — because retrying by
    * hand is exactly how somebody checks whether they have fixed it, and the
    * answer to that clears the latch.
    */
@@ -1156,6 +1278,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     if (s.status === 'running' && !sessionStarted.has(s.sessionId))
       sessionStarted.set(s.sessionId, Date.now());
     if (s.status !== 'settled') return;
+    // The batch is final. The counts stay in the map after this: the receipt
+    // that replaces the running line reads the same row.
+    const batch = arrivalBatches.get(s.sessionId);
+    if (batch && !batch.done) {
+      batch.done = true;
+      pushBatch(batch);
+    }
     notifyProposalsFor();
     // Whether the clock keeps asking, decided on the way past. A settle with no
     // fault at all is the proof the latch was waiting for.
@@ -1208,8 +1337,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     }
     const startedAt = sessionStarted.get(s.sessionId);
     sessionStarted.delete(s.sessionId);
-    const trigger = sessionTrigger.get(s.sessionId) ?? 'manual';
-    sessionTrigger.delete(s.sessionId);
+    const trigger = sessionRuns.get(s.sessionId)?.trigger ?? 'manual';
+    sessionRuns.delete(s.sessionId);
     telemetry.send('session.finished', {
       // Folded to something we wrote: a PM's own skill is named in their own
       // words, so the name itself is their material.
@@ -1410,6 +1539,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // Following the first container is what turns "connected" into a row that
     // can honestly tick — half-done counts as not done.
     pushSettings();
+    // And the read now ends in a knock a few seconds later, not on the next
+    // five-minute tick. One confirm sends one of these per container, and the
+    // debounce collapses them into a single pass.
+    firstLookKick.follow(followed);
   });
   handle('connections:syncNow', async () => {
     try {
@@ -1422,7 +1555,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('connections:searchIndex', (query, limit) => syncService.searchIndex(query, limit ?? 6));
   handle('connections:refMeta', (slug) => syncService.refMeta(slug));
   handle('connections:atRisk', () => syncService.atRisk());
-  handle('connections:deliveryDelta', (meetingPath) => syncService.deliveryDelta(meetingPath));
   handle('connections:pageBody', async (externalIdOrSlug) => {
     const ctx = vaultService.context();
     if (!ctx) return null;
@@ -1531,6 +1663,12 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // number and leaves as a band, like every count.
     telemetry.setView(view);
     telemetry.send('view.opened', { view, tabs: countBand(tabs) });
+  });
+  // Which meeting tool the backlog row's guide was opened for (CM-1). One word
+  // from our own list; anything else is dropped by the allowlist rather than
+  // sent.
+  handle('telemetry:meetingTool', (tool) => {
+    telemetry.send('source.tool', { tool });
   });
   // The chosen provider's shortlist. No key needed: the list is what the app
   // OFFERS, so Settings can show it before anybody has pasted anything.
@@ -1761,7 +1899,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   // decided inside that session, out loud, where a correction is just typing.
   // -------------------------------------------------------------------------
 
-  /** One piece of material, resolved to bytes or refused with a reason. */
+  /** One source, resolved to bytes or refused with a reason. */
   type Landing = { name: string; text?: string; data?: Uint8Array; error?: string };
 
   /** A last line of defence for extensionless files: real text has no NULs. */
@@ -1799,7 +1937,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     return found;
   };
 
-  /** Read one file off disk into material, or refuse it by name. */
+  /** Read one file off disk into a source, or refuse it by name. */
   const readOne = async (path: string, name: string): Promise<Landing> => {
     try {
       const buf = await readFile(path);
@@ -1817,7 +1955,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   };
 
   /**
-   * Turn wire items into material. A `path` (from the picker, or from a drop —
+   * Turn wire items into sources. A `path` (from the picker, or from a drop —
    * the preload hands back the real path) is read here, so fifty files never
    * cross IPC as base64 and a dropped FOLDER can be walked at all. Anything the
    * renderer already holds rides in as it is.
@@ -1864,7 +2002,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('arrival:pick', async () => {
     const win = getWindow();
     const result = await dialog.showOpenDialog(win ?? undefined!, {
-      title: 'Add material',
+      title: 'Add source',
       buttonLabel: 'Add',
       // Folders too: a quarter of old interviews is a folder, not forty
       // shift-clicks, and it is the front door of the backlog story.
@@ -1883,22 +2021,22 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     };
   });
 
-  handle('arrival:ingest', async (items, instruction) => {
+  handle('arrival:ingest', async (items, instruction, modelId) => {
     const ctx = vaultService.requireContext();
     const landed = await resolveItems(items);
     const good = landed.filter((l) => !l.error);
     const refused = landed.flatMap((l) => (l.error ? [{ name: l.name, error: l.error }] : []));
 
     // The session id is minted here, before anything runs, because the folder is
-    // named after it: the material has to be on disk before a model is asked for
+    // named after it: the sources have to be on disk before a model is asked for
     // anything, so a missing API key costs nothing but a delay.
     const sessionId = randomUUID();
     const root = sessionFilesRoot(ctx.vault.root(), sessionId);
     const taken = new Set<string>();
     const written: { file: string; original: string; bytes: number }[] = [];
     for (const piece of good) {
-      const name = materialName(piece.name, taken);
-      const file = `material/${name}`;
+      const name = sourceName(piece.name, taken);
+      const file = `source/${name}`;
       if (piece.data) await writeSessionBinary(root, file, piece.data);
       else await writeSessionFile(root, file, piece.text ?? '');
       written.push({
@@ -1927,7 +2065,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const manifest = [
       `# What arrived`,
       ``,
-      `${written.length} piece${written.length === 1 ? '' : 's'} of material, handed over ${ctx.clock.now()}.`,
+      `${written.length} source${written.length === 1 ? '' : 's'}, handed over ${ctx.clock.now()}.`,
       ``,
       ...written.map((w) => `- \`${w.file}\` — dropped as "${w.original}", ${w.bytes} bytes`),
       ...(refused.length
@@ -1959,7 +2097,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       : items.some((i) => i.text && !i.path)
         ? 'text'
         : 'file';
-    telemetry.send('material.added', {
+    telemetry.send('source.added', {
       kind,
       count: countBand(written.length),
       startedSession: written.length > 0,
@@ -1978,7 +2116,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const prompt = buildKickoff({
       skill: ARRIVAL_AGENT_NAME,
       instruction: [
-        `${written.length} piece${written.length === 1 ? '' : 's'} of material just landed in your session folder, unfiled.`,
+        `${written.length} source${written.length === 1 ? '' : 's'} just landed in your session folder, unfiled.`,
         `Read \`input.md\` for the list, work out what each thing is, file it, and read what is worth reading.`,
         instruction?.trim()
           ? `What I asked for when I handed them over, which takes precedence: ${instruction.trim()}`
@@ -1987,10 +2125,16 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         .filter(Boolean)
         .join(' '),
     });
+    // What reads the pile. The tray sends the model the PM chose; without one
+    // (a drop from an older window, a path that never opened the tray) the
+    // provider's own filing model is the default, so a Gemini workspace never
+    // gets a Claude id it cannot route (docs/critical-mass.md CM-2).
+    const readWith = modelId?.trim() || sourceModelId(settings.getProvider());
     const started = await fireSession(ARRIVAL_AGENT_NAME, prompt, {
       trigger: 'arrival',
       unattended: true,
       sessionId,
+      modelId: readWith,
     });
     if (!started) {
       return {
@@ -1999,21 +2143,40 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         refused,
         started: false,
         reason: settings.getActiveKey()
-          ? 'Handle new material is switched off, so nothing is reading these yet.'
+          ? 'Handle new sources is switched off, so nothing is reading these yet.'
           : `Set a ${providerName(settings.getProvider())} API key in Settings and these will be read.`,
       };
     }
 
-    // The First step the whole product hangs off: real material went in, and
+    // The batch, so the counts have somewhere to land. Only a started run gets
+    // a row: nothing is reading a batch that never began, and a line counting
+    // from zero for good is worse than no line.
+    if (arrivalBatches.size >= MAX_ARRIVAL_BATCHES) {
+      const oldest = arrivalBatches.keys().next();
+      if (!oldest.done) arrivalBatches.delete(oldest.value);
+    }
+    arrivalBatches.set(sessionId, {
+      sessionId,
+      total: written.length,
+      filed: 0,
+      matched: 0,
+      done: false,
+    });
+
+    // The First step the whole product hangs off: a real source went in, and
     // something started reading it.
     markFirstStep(
       'transcript',
       written.length === 1
         ? `Handed over “${written[0]!.original}”. It is being filed and read now`
-        : `Handed over ${written.length} pieces of material. They are being filed and read now`,
+        : `Handed over ${written.length} sources. They are being filed and read now`,
     );
     return { sessionId, landed: written.length, refused, started: true };
   });
+
+  // What a window that missed the pushes needs: the batches this process knows,
+  // running and settled alike.
+  handle('arrival:batches', () => [...arrivalBatches.values()]);
 
   handle('search:query', (query, limit) =>
     searchNotes(vaultService.requireContext(), query, limit).map(hitToDTO),
@@ -2031,6 +2194,16 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // needs the PO's own addresses to say who is outside their company.
     const effectFacts = outboundEffectFacts(ctx, settings.selfEmails());
     return listProposals(ctx, status).map((rec) =>
+      proposalToDTO(rec, ctx.checks?.get(selfPrepKey(rec.sessionId)), effectFacts),
+    );
+  });
+  // One session's judged cards, for the receipt its chat shows once the queue is
+  // gone (docs/closing-beat.md). Same DTO as the queue itself, so the receipt
+  // reads a card the same way the card did.
+  handle('proposals:resolved', (sessionId) => {
+    const ctx = vaultService.requireContext();
+    const effectFacts = outboundEffectFacts(ctx, settings.selfEmails());
+    return resolvedProposals(ctx, sessionId).map((rec) =>
       proposalToDTO(rec, ctx.checks?.get(selfPrepKey(rec.sessionId)), effectFacts),
     );
   });
@@ -2073,7 +2246,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         skill: 'librarian',
         instruction: `[[${replaced}]] was replaced by [[${landed}]]. Repoint what still cites the old one.`,
       }),
-      // A reaction to material the PO just kept, not a run they asked for.
+      // A reaction to a source the PO just kept, not a run they asked for.
       { trigger: 'arrival' },
     )
       .then((started) => {
@@ -2125,7 +2298,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const review = await afterCardResolved(id);
     notifyProposalsFor();
     if (result.ok)
-      markFirstStep('proposal', 'Approved its first suggestion, and it went into the memory');
+      markFirstStep('proposal', 'Approved its first proposal, and it went into the memory');
     // Keeping the first thing the interview drafted is what "tell it about your
     // product" now means (docs/product-understanding.md U-4). The step is the
     // approval, not a file save: you talk, it drafts, you approve.
@@ -2147,7 +2320,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     notifyProposalsFor();
     // Passing on a card teaches the loop exactly as well as keeping one: the
     // step is "you decided", not "you agreed".
-    markFirstStep('proposal', 'Passed on its first suggestion, so nothing was written');
+    markFirstStep('proposal', 'Passed on its first proposal, so nothing was written');
     return review ? { ...result, review } : result;
   });
   handle('meeting:markReviewed', (path) =>

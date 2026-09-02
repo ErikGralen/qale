@@ -51,7 +51,7 @@ _What is wrapped._ All four Atlassian reads: `jira_get_issue` (origin `jira:PAY-
 (`jira:search`, since every summary was typed by whoever filed the issue), `confluence_get_page`
 (`confluence:12345`) and `confluence_search` (`confluence:search`). Plus `vault_read`, conditionally.
 The line drawn there is the domain's own raw layer, which is exactly `sources/`, `tickets/` and
-`wikipages/`: dropped transcripts and ingested material, plus the two mirrors that say whatever
+`wikipages/`: dropped transcripts and other ingested sources, plus the two mirrors that say whatever
 upstream says today. Authored hubs and derived analyses come back unwrapped, because wrapping those
 too would teach the model the marker means "text" rather than "someone else's text", which is the
 failure mode that makes the whole thing inert. The check reads `rec.layer === 'raw'` from the index

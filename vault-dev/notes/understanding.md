@@ -20,10 +20,10 @@ Three notes, and deliberately no more:
   up.
 
 If they do not exist yet, the way to get them is the interview (`tell-qale`), which asks
-the PM and drafts from what they say. Nobody writes them from synced material alone: a picture
+the PM and drafts from what they say. Nobody writes them from synced sources alone: a picture
 mined out of this quarter's tickets is confident and narrow at the same time.
 
-Material the PM hands over on purpose to answer one of these questions is the exception, such as
+A source the PM hands over on purpose to answer one of these questions is the exception, such as
 a technical overview generated from their own code (`product-overview.md`). It gets filed like
 anything else, and the note it was for is proposed in the same session, citing it, unverified
 until they confirm it.
@@ -43,7 +43,7 @@ paragraph assembled out of guesses.
 
 The default is those three notes, in this workspace. A team that keeps this on a wiki page names
 that page here instead, and it works: writing to a mirrored page already goes through the
-ordinary approval path (a `draft_page_update` card the PM approves). This note is the setting.
+ordinary approval path (a `draft_page_update` proposal the PM approves). This note is the setting.
 
 ## Changing what is there
 
@@ -62,7 +62,7 @@ Where a claim came from decides how it is marked:
       at: 2026-03-04
   ```
 
-- **Qale inferred it from synced material.** It lands unverified, which is simply the absence of
+- **Qale inferred it from a synced source.** It lands unverified, which is simply the absence of
   that field, and cites the page or ticket it came from. It stays that way until the PM confirms
   it.
 
@@ -70,8 +70,8 @@ Freshness applies either way, so a picture nobody has touched in six months admi
 
 ## What to watch
 
-When synced material contradicts what is recorded here, the correction comes as its own card and
-says which sentence disagreed with what. Silence is not disagreement: material that simply does
+When a synced source contradicts what is recorded here, the correction comes as its own proposal and
+says which sentence disagreed with what. Silence is not disagreement: a source that simply does
 not mention something contradicts nothing.
 
-Nothing here is written without an approval card, these notes included.
+Nothing here is written without a proposal, these notes included.

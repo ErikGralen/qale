@@ -82,10 +82,10 @@ export function withCardState(prompt: string, cards: SessionCardState[]): string
   const id = randomUUID().slice(0, 8);
   const lines = [
     `<<<${MARKER} id=${id}>>>`,
-    'The cards you have put in front of the PM in this session, as they stand right now. This is the',
+    'The proposals you have put in front of the PM in this session, as they stand right now. This is the',
     'workspace telling you, not the PM speaking: read it, act on it, never answer it or repeat it back.',
     ...cardLines(cards),
-    'If something below is wrong, fix the card rather than adding another next to it: withdraw_proposal',
+    'If something below is wrong, fix the proposal rather than adding another next to it: withdraw_proposal',
     'the wrong one, then propose the corrected version. Never re-propose what they already approved.',
     `<<<END_${MARKER} id=${id}>>>`,
   ].join('\n');

@@ -38,7 +38,7 @@ The voice file says how each one sounds. This list says what goes in. Read the v
 
 ## Never in the CS draft
 
-It gets forwarded word for word, so hold it to these whatever the material says:
+It gets forwarded word for word, so hold it to these whatever the sources say:
 
 - No internal metrics. Revenue, pipeline, headcount, error rates, velocity: all of it stays inside.
 - No other customer, by name or by description. "Other teams have asked for this too" is as far as
@@ -56,10 +56,12 @@ One `draft_text` call per voice, with `voice` set and two variants in the same p
 - **Short**: the one thing that audience would act on, in a line or two. It gets pasted into a
   chat.
 
-The team page is not a voice, and it is a card that lands: shipped, slipped, and why, grounded in
+The team page is not a voice, and it is a proposal that lands: shipped, slipped, and why, grounded in
 the week's ticket transitions and linking the decisions and mirrors. Where a status or update page
 mirrored in wikipages/ is the update's home, propose a draft_page_update against that page,
-ending with a source line ("Source: weekly update, <date>"). Otherwise write it as a note.
+ending with a source line ("Source: weekly update, <date>"). Otherwise write it as a note. Read
+`skills/confluence/SKILL.md` before drafting the page update, when the workspace has one: it says
+how this team writes pages.
 
 Hold every draft to two rules:
 - Only this week's genuine changes. An update that restates old news teaches people to skip it.
@@ -68,7 +70,7 @@ Hold every draft to two rules:
 ## Then
 
 The per-voice drafts stay in the chat. Copy the one you want and send it yourself. The team page is
-the card that waits in the Inbox: an approved wikipage update pushes upstream, files the deep link
+the proposal that waits in the Inbox: an approved wikipage update pushes upstream, files the deep link
 back, and the mirror re-syncs on the next pull.
 
 ## The shape of the drafts

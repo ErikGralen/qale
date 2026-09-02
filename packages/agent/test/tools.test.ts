@@ -223,7 +223,7 @@ test('a patch card carries the redlined page for the preview and the passage for
     sources: ['decisions/adopt-workos'],
     rationale: 'The page still describes the manual path.',
   });
-  assert.match(said, /redline card/);
+  assert.match(said, /redline proposal/);
   const payload = filed[0]!['payload'] as {
     provider: string;
     targetId: string;
@@ -265,7 +265,7 @@ test('with no patch the body is appended, and with neither the card is refused',
     sources: ['decisions/adopt-workos'],
     rationale: 'The page never mentions SSO.',
   });
-  assert.match(said, /update card/);
+  assert.match(said, /update proposal/);
   const payload = filed[0]!['payload'] as { body: string; patch?: unknown; provenance?: unknown };
   assert.equal(payload.patch, undefined);
   assert.match(payload.body, /Access comes from WorkOS/);
@@ -340,7 +340,11 @@ test('the container decides the provider, and a container nobody reads is refuse
     rationale: 'Agreed in the check-in.',
   });
   assert.match(said, /Awaiting approval/);
-  const payload = filed[0]!['payload'] as { provider: string; container: string; issueType: string };
+  const payload = filed[0]!['payload'] as {
+    provider: string;
+    container: string;
+    issueType: string;
+  };
   assert.equal(payload.provider, 'linear'); // the model never said which tracker
   assert.equal(payload.container, 'ENG');
   assert.equal(payload.issueType, 'bug');
@@ -392,6 +396,31 @@ test('a comment on an item nothing mirrors, with two trackers connected, is refu
   assert.match(said, /^Rejected:/);
   assert.match(said, /track_external/);
   assert.equal(filed.length, 0);
+});
+
+/**
+ * CV-2 (docs/conventions.md): each write tool points at the conventions file for
+ * the system it writes to. The description is what the model reads at call time,
+ * and neither file is seeded, so the line has to say the file may not be there.
+ * No gate anywhere: a missing file costs nothing.
+ */
+test('every write tool names the conventions file for the system it writes to', () => {
+  const filed: Record<string, unknown>[] = [];
+  const ctx = ticketCtx(filed);
+  const said = (name: string) => ticketTool(ctx, name).description ?? '';
+  for (const name of ['draft_ticket', 'draft_ticket_comment']) {
+    assert.match(
+      said(name),
+      /skills\/jira\/SKILL\.md/,
+      `${name} does not name the Jira conventions`,
+    );
+    assert.match(said(name), /if it exists/, `${name} makes the file sound required`);
+  }
+  assert.match(said('draft_page_update'), /skills\/confluence\/SKILL\.md/);
+  assert.match(said('draft_page_update'), /if it exists/);
+  // The wrong file on the wrong tool sends every ticket rule to the wiki.
+  assert.ok(!said('draft_ticket').includes('skills/confluence/SKILL.md'));
+  assert.ok(!said('draft_page_update').includes('skills/jira/SKILL.md'));
 });
 
 /**
@@ -486,7 +515,7 @@ test('a meeting with no recording, or a recording that is not there, is refused'
  * meeting pages with nobody on them — and an empty `participants` shows no chips,
  * which is the one click that ever makes a person page.
  */
-test('a meeting nobody is on is refused, unless the material really names nobody', async () => {
+test('a meeting nobody is on is refused, unless the source really names nobody', async () => {
   const filed: Record<string, unknown>[] = [];
   const tool = meetingTool(meetingCtx(filed));
 
@@ -970,4 +999,144 @@ test('a note with no headings says how long it is instead of listing nothing', a
     'notes/huge.md: 700 lines, no headings. One read returns at most 600 lines, so take it a ' +
       'section at a time with vault_read `from` and `to`.',
   );
+});
+
+/**
+ * `propose_delete` — the one card that takes a page away.
+ *
+ * It exists because the librarian had no way to say "this file is empty, lose
+ * it". Holding only `propose_update`, it appended a paragraph to the note
+ * explaining that the note should be deleted, and the PM got an edit to approve
+ * when what they wanted was a file to lose. So the tests here are mostly about
+ * the guards: this is the one proposal that can cost somebody work.
+ */
+
+interface DeleteFixture {
+  path: string;
+  type: string;
+  body?: string;
+  backlinks?: string[];
+}
+
+function deleteCtx(filed: Record<string, unknown>[], note: DeleteFixture): UseCaseContext {
+  const slug = note.path.replace(/\.md$/, '');
+  const record = {
+    path: note.path,
+    slug,
+    type: note.type,
+    frontmatter: { type: note.type },
+    body: note.body ?? '',
+  };
+  return {
+    vault: { readNote: async (p: string) => (p === note.path ? record : null) },
+    index: {
+      resolve: (t: string) => (t === slug ? note.path : null),
+      get: () => null,
+      backlinks: (s: string) =>
+        s === slug ? (note.backlinks ?? []).map((fromPath) => ({ fromPath })) : [],
+    },
+    proposals: {
+      create: (input: Record<string, unknown>) => {
+        filed.push(input);
+        return { id: `p${filed.length}` };
+      },
+      list: () => [],
+    },
+  } as unknown as UseCaseContext;
+}
+
+const deleteTool = (ctx: UseCaseContext) =>
+  createProposeTools(ctx, 'session-1').find((t) => t.name === 'propose_delete')!;
+
+test('an empty note can be proposed for deletion, and the card is a path and a reason', async () => {
+  const filed: Record<string, unknown>[] = [];
+  const ctx = deleteCtx(filed, { path: 'notes/untitled.md', type: 'note' });
+
+  const said = await out(deleteTool(ctx), {
+    path: 'notes/untitled.md',
+    rationale: 'The file is empty.',
+    inference: true,
+  });
+
+  assert.match(said, /Proposed deleting notes\/untitled\.md/);
+  assert.equal(filed.length, 1);
+  assert.equal(filed[0]!['kind'], 'delete');
+  assert.equal(filed[0]!['targetPath'], 'notes/untitled.md');
+  assert.deepEqual(filed[0]!['payload'], {
+    path: 'notes/untitled.md',
+    rationale: 'The file is empty.',
+  });
+});
+
+test('a page other pages link to is refused, and the refusal names them', async () => {
+  const filed: Record<string, unknown>[] = [];
+  const ctx = deleteCtx(filed, {
+    path: 'notes/scratch.md',
+    type: 'note',
+    backlinks: ['themes/sso.md'],
+  });
+
+  const said = await out(deleteTool(ctx), {
+    path: 'notes/scratch.md',
+    rationale: 'Looks like a leftover.',
+    inference: true,
+  });
+
+  assert.match(said, /^Rejected:/);
+  assert.match(said, /themes\/sso\.md/);
+  assert.equal(filed.length, 0);
+});
+
+test('the types a delete may never touch are refused, each in its own words', async () => {
+  for (const [type, pattern] of [
+    ['source', /raw material/],
+    ['ticket', /copy of something upstream/],
+    ['wikipage', /copy of something upstream/],
+    ['decision', /append-only/],
+    ['skill', /how the app works/],
+    ['agent', /how the app works/],
+    ['session', /receipt for a run/],
+  ] as const) {
+    const filed: Record<string, unknown>[] = [];
+    const ctx = deleteCtx(filed, { path: `${type}s/thing.md`, type });
+
+    const said = await out(deleteTool(ctx), {
+      path: `${type}s/thing.md`,
+      rationale: 'Tidying up.',
+      inference: true,
+    });
+
+    assert.match(said, /^Rejected:/, type);
+    assert.match(said, pattern, type);
+    assert.equal(filed.length, 0, type);
+  }
+});
+
+test('a session file is not a note, so no card is ever raised about one', async () => {
+  const filed: Record<string, unknown>[] = [];
+  const ctx = deleteCtx(filed, { path: 'sessions/.files/a1b2c3/brief.md', type: 'note' });
+
+  const said = await out(deleteTool(ctx), {
+    path: 'sessions/.files/a1b2c3/brief.md',
+    rationale: 'Working file, no longer needed.',
+    inference: true,
+  });
+
+  assert.match(said, /^Rejected:/);
+  assert.match(said, /not a note/);
+  assert.equal(filed.length, 0);
+});
+
+test('a card with no basis at all is refused here, like every other proposal', async () => {
+  const filed: Record<string, unknown>[] = [];
+  const ctx = deleteCtx(filed, { path: 'notes/untitled.md', type: 'note' });
+
+  const said = await out(deleteTool(ctx), {
+    path: 'notes/untitled.md',
+    rationale: 'The file is empty.',
+  });
+
+  assert.match(said, /^Rejected: /);
+  assert.match(said, /asked:true/);
+  assert.equal(filed.length, 0);
 });

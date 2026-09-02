@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeNote, transcriptRefs, type Frontmatter, type Note, type NoteType } from '@qale/domain';
-import { fileMaterial, refileMaterial } from '../src/use-cases/arrival.js';
+import { fileSource, refileSource } from '../src/use-cases/arrival.js';
 import type { IndexedNote, UseCaseContext } from '../src/ports.js';
 
 /**
@@ -127,7 +127,7 @@ async function meetingPage(
 
 test('a recording lands as transcripts and makes no meeting page of its own', async () => {
   const { ctx, files } = fakeWorld();
-  const result = await fileMaterial(ctx, {
+  const result = await fileSource(ctx, {
     as: 'meeting',
     title: 'Nordkap QBR',
     date: '2026-08-04',
@@ -146,7 +146,7 @@ test('a recording lands as transcripts and makes no meeting page of its own', as
     result.wrote.every((p) => p.startsWith('sources/')),
     `landed in ${result.wrote.join(', ')}`,
   );
-  // The date the material states, not the day it was handed over.
+  // The date the source states, not the day it was handed over.
   assert.match(result.path, /2026-08-04/);
   assert.equal(files.get(result.path)!.body, 'Erik: first half.');
 });
@@ -165,7 +165,7 @@ test('attaching to a meeting the calendar already holds never mints a second pag
   );
   ctx.index.reindex(synced);
 
-  const result = await fileMaterial(ctx, {
+  const result = await fileSource(ctx, {
     as: 'meeting',
     title: 'Nordkap QBR',
     attachTo: synced.path,
@@ -184,7 +184,7 @@ test('attaching to a meeting the calendar already holds never mints a second pag
 
 test('a transcript of somebody else’s meeting files as a source and says whose it was', async () => {
   const { ctx, files } = fakeWorld();
-  const result = await fileMaterial(ctx, {
+  const result = await fileSource(ctx, {
     as: 'source',
     title: 'Kranelund sales call',
     origin: 'Jonas Palm',
@@ -199,7 +199,7 @@ test('a transcript of somebody else’s meeting files as a source and says whose
 test('an image is never a meeting, and the refusal names the file', async () => {
   const { ctx } = fakeWorld();
   await assert.rejects(
-    fileMaterial(ctx, {
+    fileSource(ctx, {
       as: 'meeting',
       title: 'Whiteboard',
       parts: [{ name: 'board.png', image: new Uint8Array([1, 2, 3]) }],
@@ -210,13 +210,13 @@ test('an image is never a meeting, and the refusal names the file', async () => 
 
 test('refiling a transcript onto another meeting moves the evidence and clears the empty page', async () => {
   const { ctx, files } = fakeWorld();
-  const wrong = await fileMaterial(ctx, {
+  const wrong = await fileSource(ctx, {
     as: 'meeting',
     title: 'Nordkap QBR',
     attachTo: await meetingPage(ctx, 'meetings/2026-08-04-nordkap-qbr.md', 'Nordkap QBR'),
     parts: [{ name: 'qbr.vtt', text: 'Erik: hello.' }],
   });
-  const right = await fileMaterial(ctx, {
+  const right = await fileSource(ctx, {
     as: 'meeting',
     title: 'Kranelund sync',
     attachTo: await meetingPage(ctx, 'meetings/2026-08-04-kranelund-sync.md', 'Kranelund sync'),
@@ -225,7 +225,7 @@ test('refiling a transcript onto another meeting moves the evidence and clears t
   const transcript = refsOf(files, wrong.path)[0]!;
   const transcriptPath = wrong.wrote[1]!;
 
-  const result = await refileMaterial(ctx, { path: transcriptPath, meeting: right.path });
+  const result = await refileSource(ctx, { path: transcriptPath, meeting: right.path });
 
   assert.equal(result.path, right.path);
   assert.deepEqual(result.moved, [transcriptPath]);
@@ -237,7 +237,7 @@ test('refiling a transcript onto another meeting moves the evidence and clears t
 
 test('a whole meeting that was never the PM’s becomes signal, with whose it was', async () => {
   const { ctx, files } = fakeWorld();
-  const filed = await fileMaterial(ctx, {
+  const filed = await fileSource(ctx, {
     as: 'meeting',
     title: 'Kranelund call',
     attachTo: await meetingPage(ctx, 'meetings/2026-08-04-kranelund-call.md', 'Kranelund call'),
@@ -245,7 +245,7 @@ test('a whole meeting that was never the PM’s becomes signal, with whose it wa
   });
   const transcriptPath = filed.wrote[1]!;
 
-  const result = await refileMaterial(ctx, {
+  const result = await refileSource(ctx, {
     path: filed.path,
     meeting: 'none',
     origin: 'Jonas Palm',
@@ -258,7 +258,7 @@ test('a whole meeting that was never the PM’s becomes signal, with whose it wa
 
 test('a meeting somebody has written on is never emptied out from under them', async () => {
   const { ctx, files } = fakeWorld();
-  const filed = await fileMaterial(ctx, {
+  const filed = await fileSource(ctx, {
     as: 'meeting',
     title: 'Nordkap QBR',
     attachTo: await meetingPage(
@@ -271,7 +271,7 @@ test('a meeting somebody has written on is never emptied out from under them', a
   });
 
   await assert.rejects(
-    refileMaterial(ctx, { path: filed.path, meeting: 'none', origin: 'Jonas Palm' }),
+    refileSource(ctx, { path: filed.path, meeting: 'none', origin: 'Jonas Palm' }),
     /notes or a summary/,
   );
   assert.equal(files.has(filed.path), true);
@@ -279,14 +279,14 @@ test('a meeting somebody has written on is never emptied out from under them', a
 
 test('refiling can just rename, without touching where anything lives', async () => {
   const { ctx, files } = fakeWorld();
-  const filed = await fileMaterial(ctx, {
+  const filed = await fileSource(ctx, {
     as: 'meeting',
     title: 'Untitled meeting',
     attachTo: await meetingPage(ctx, 'meetings/2026-08-04-untitled-meeting.md', 'Untitled meeting'),
     parts: [{ name: 'qbr.vtt', text: 'Erik: hello.' }],
   });
 
-  const result = await refileMaterial(ctx, { path: filed.path, title: 'Nordkap QBR' });
+  const result = await refileSource(ctx, { path: filed.path, title: 'Nordkap QBR' });
 
   assert.equal(files.get(result.path)!.frontmatter['title'], 'Nordkap QBR');
   assert.equal(refsOf(files, result.path).length, 1, 'the transcript stayed attached');

@@ -21,15 +21,17 @@ import {
   X,
 } from 'lucide-react';
 import type { ArrivalCheckDTO, ArrivalHandoffDTO, ArrivalItemInputDTO } from '@qale/ipc';
-import { readableAs } from '@qale/domain';
+import { sourceModelId, readableAs } from '@qale/domain';
 import { pathForFile } from '../lib/ipc';
 import { isBulkPaste } from '../lib/capture-event';
-import { aimLabel, aimSentence, type MaterialAim } from '../lib/material-aim';
+import { aimLabel, aimSentence, type SourceAim } from '../lib/source-aim';
+import { pileWarning, submitLabel } from '../lib/source-batch';
 import { useApp } from '../state/app-state';
 import { useToast } from '../components/toast';
+import { ModelPicker } from './ModelPicker';
 
-/** Material handed to the tray before it opens (a drop, a paste from Home). */
-export interface MaterialDraft {
+/** A source handed to the tray before it opens (a drop, a paste from Home). */
+export interface SourceDraft {
   text?: string;
   fileName?: string;
   files?: ArrivalItemInputDTO[];
@@ -38,7 +40,7 @@ export interface MaterialDraft {
    * meeting page or a folder says something the agent would otherwise have to
    * work out, so it rides along as a sentence rather than a second code path.
    */
-  aim?: MaterialAim;
+  aim?: SourceAim;
 }
 
 /** "2 files · 12,400 words" — what is in the tray, without opening anything. */
@@ -68,7 +70,7 @@ const PASTED = 'Pasted text.md';
  * What a paste is called. It is a file like any other once it is in the tray —
  * it has a name and a size and it can be taken back out — so it is named like
  * one, and two pastes in the same tray are told apart by a number. What the
- * material actually IS stays the agent's to say once it has read it.
+ * source actually IS stays the agent's to say once it has read it.
  */
 function pastedName(items: ArrivalItemInputDTO[]): string {
   const taken = items.filter(
@@ -79,7 +81,7 @@ function pastedName(items: ArrivalItemInputDTO[]): string {
 
 /**
  * The first line with something in it. A wall of text has no business being
- * shown in full — it is material, not a message — but one line of it is what
+ * shown in full — it is a source, not a message — but one line of it is what
  * lets the PM see they pasted the right thing.
  */
 function firstLine(text: string): string {
@@ -91,11 +93,11 @@ function firstLine(text: string): string {
 }
 
 /**
- * Add material — the visible front door (docs/arrival-agentic.md).
+ * Add source — the visible front door (docs/arrival-agentic.md).
  *
  * A tray, and now barely that: rows with an X each, one text field, one button.
  * Everything that used to sit here was a guess made before anything had read
- * the material — what each file was, where it would land, whether it was old
+ * the source — what each file was, where it would land, whether it was old
  * enough to skip reading, which meeting the clock said it belonged to — and
  * every one of those guesses is now the agent's to make out loud, in a session,
  * where a correction is a sentence rather than a radio button.
@@ -106,10 +108,10 @@ function firstLine(text: string): string {
  *
  * The text field is always an instruction ("these are old interviews, just file
  * them"). It is the power-user rung of the ladder: one sentence that skips every
- * question the agent would otherwise ask. Material never goes in it — pasting
+ * question the agent would otherwise ask. A source never goes in it — pasting
  * anywhere else in the tray adds a row, so the two can never be confused.
  */
-export function AddMaterial({
+export function AddSource({
   open,
   onOpenChange,
   draft,
@@ -117,14 +119,23 @@ export function AddMaterial({
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  draft?: MaterialDraft | null;
-  /** The material is in a session and (usually) being read — go and see it. */
+  draft?: SourceDraft | null;
+  /** The source is in a session and (usually) being read — go and see it. */
   onHandoff: (result: ArrivalHandoffDTO) => void;
 }) {
-  const { vault, pickMaterial, checkArrival, ingestArrival } = useApp();
+  const { vault, settings, pickSource, checkArrival, ingestArrival } = useApp();
   const toast = useToast();
   const [items, setItems] = useState<ArrivalItemInputDTO[]>([]);
   const [instruction, setInstruction] = useState('');
+  /**
+   * The model that reads this batch. It starts on the provider's filing model
+   * (Sonnet on Anthropic) rather than on the Settings default: reading a pile is
+   * long, shallow work, and the strongest model earns its price on the thinking
+   * jobs. Main resolves the same default when nothing is sent, so the picker
+   * shows what would happen either way (docs/critical-mass.md CM-2).
+   */
+  const [model, setModel] = useState<string | null>(null);
+  const defaultModel = sourceModelId(settings?.provider);
   const [check, setCheck] = useState<ArrivalCheckDTO | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -136,8 +147,8 @@ export function AddMaterial({
   /**
    * Once there are rows there is no drop zone left to hold the focus, and the
    * dialog hands it to the first row's remove button — where Enter throws the
-   * material away. The instruction field is the only thing here anyone types
-   * into, so the caret goes there the moment the first material lands, and
+   * source away. The instruction field is the only thing here anyone types
+   * into, so the caret goes there the moment the first source lands, and
    * stays wherever it is put after that.
    */
   useEffect(() => {
@@ -152,7 +163,7 @@ export function AddMaterial({
 
   /**
    * Anything the tray was handed, as rows. A pasted transcript from Home is
-   * material like any file (AR-5): it arrives as a row, and the text field below
+   * a source like any file (AR-5): it arrives as a row, and the text field below
    * it keeps meaning the one thing it always means.
    */
   useEffect(() => {
@@ -162,6 +173,9 @@ export function AddMaterial({
       setCheck(null);
       setDragOver(false);
       setBusy(false);
+      // The model goes back to the default with everything else: a pick made
+      // for one pile is not a preference for the next drop.
+      setModel(null);
       return;
     }
     // Merged, not replaced: a second drop while the tray is open used to throw
@@ -227,9 +241,9 @@ export function AddMaterial({
   }, []);
 
   const choose = useCallback(async () => {
-    const picked = await pickMaterial().catch(() => []);
+    const picked = await pickSource().catch(() => []);
     if (picked.length > 0) setItems((prev) => [...prev, ...picked]);
-  }, [pickMaterial]);
+  }, [pickSource]);
 
   const submit = async () => {
     if (items.length === 0 || busy || !vault) return;
@@ -238,24 +252,24 @@ export function AddMaterial({
       // The aim goes first and the PM's own sentence last, because where they
       // disagree the sentence they typed wins.
       const said = [aim ? aimSentence(aim) : '', instruction.trim()].filter(Boolean).join(' ');
-      const result = await ingestArrival(items, said || undefined);
-      // The material landed but nothing is reading it (no API key, or the skill
+      const result = await ingestArrival(items, said || undefined, model ?? defaultModel);
+      // The source landed but nothing is reading it (no API key, or the skill
       // is switched off). The session tab will look idle and say nothing about
       // why, so the reason is the one thing that still has to be spoken.
       if (!result.started) {
         toast(
           result.reason
-            ? `Your material is safe, but nothing is reading it: ${result.reason}`
-            : 'Your material is safe, but nothing is reading it.',
+            ? `Your source is safe, but nothing is reading it: ${result.reason}`
+            : 'Your source is safe, but nothing is reading it.',
         );
       }
       onHandoff(result);
       onOpenChange(false);
     } catch (err) {
       // The front door must never fail silently — the tray stays open with the
-      // material intact so nothing the PM gathered is lost.
+      // source intact so nothing the PM gathered is lost.
       toast(
-        `Could not add material: ${err instanceof Error ? err.message : 'the workspace rejected the write.'}`,
+        `Could not add source: ${err instanceof Error ? err.message : 'the workspace rejected the write.'}`,
       );
     } finally {
       setBusy(false);
@@ -268,6 +282,8 @@ export function AddMaterial({
 
   const refused = check?.items.filter((i) => i.error) ?? [];
   const nothingReadable = !!check?.empty;
+  /** The warning a pile earns, or null when this is an ordinary drop. */
+  const pile = pileWarning(items.length);
   const canSubmit = !!vault && !busy && items.length > 0 && !nothingReadable;
 
   return (
@@ -284,10 +300,10 @@ export function AddMaterial({
           }
         }}
         onPaste={(e) => {
-          // Pasted material is a row like any file, wherever in the tray it was
+          // A pasted source is a row like any file, wherever in the tray it was
           // pasted. An image has nowhere else to go, and a wall of text pasted
           // into the instruction field is a transcript that would have been sent
-          // as a prompt and the material itself thrown away (AR-5). Only a
+          // as a prompt and the source itself thrown away (AR-5). Only a
           // sentence is left to the field it was aimed at.
           const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'));
           if (file) {
@@ -317,7 +333,7 @@ export function AddMaterial({
       >
         <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border pr-9 pl-4">
           <DialogTitle className="font-sans text-xs font-medium text-foreground/80">
-            Add material
+            Add source
           </DialogTitle>
           <DialogDescription className="sr-only">
             Drop files or a folder, choose them, or paste. Whatever you add is filed and read for
@@ -328,11 +344,11 @@ export function AddMaterial({
           )}
         </div>
 
-        <div className={`flex flex-col ${dragOver ? 'bg-brand/5' : ''}`}>
+        <div className={`flex min-w-0 flex-col ${dragOver ? 'bg-brand/5' : ''}`}>
           {items.length === 0 ? (
             /* The empty tray leads with the drop zone: this is where the PM
                learns that dropping works at all. It also takes focus, so ⌘V
-               lands here as material rather than in the instruction field. */
+               lands here as a source rather than in the instruction field. */
             <div className="px-4 pt-4">
               <button
                 type="button"
@@ -429,7 +445,7 @@ export function AddMaterial({
             placeholder="Anything I should know, or want done with these? (optional)"
             rows={1}
             disabled={!vault}
-            aria-label="What to do with this material"
+            aria-label="What to do with this source"
             className="h-14 w-full resize-none bg-transparent px-4 py-2.5 text-sm outline-none placeholder:text-foreground/70 disabled:opacity-50"
           />
         </div>
@@ -463,6 +479,17 @@ export function AddMaterial({
             ) : (
               <span className="flex-1" />
             )}
+            {/* The quietest control in the tray, beside the button that spends
+                the money. It says which model reads this pile and lets the PM
+                move it, and it is worth exactly that much room. */}
+            <ModelPicker
+              pinned={model ?? defaultModel}
+              onPick={setModel}
+              disabled={busy}
+              describe={(label) => `${label} reads this source. Pick another for this batch.`}
+              scope="this batch"
+              note="Applies to this batch. Your other sessions keep their own model."
+            />
             <Button
               size="sm"
               variant={canSubmit ? 'default' : 'secondary'}
@@ -477,7 +504,7 @@ export function AddMaterial({
                 </>
               ) : (
                 <>
-                  {items.length > 1 ? `Add ${items.length} files` : 'Add material'}
+                  {submitLabel(items.length)}
                   <kbd className="ml-0.5 font-sans text-micro opacity-60" aria-hidden>
                     ⌘↵
                   </kbd>
@@ -485,6 +512,10 @@ export function AddMaterial({
               )}
             </Button>
           </div>
+          {/* A pile is the one drop that takes real time and real money, so the
+              button says the number and this says what pressing it costs. No
+              second dialog: the button is the confirmation (CM-2). */}
+          {pile && <p className="text-right text-xs text-muted-foreground">{pile}</p>}
         </div>
       </DialogContent>
     </Dialog>

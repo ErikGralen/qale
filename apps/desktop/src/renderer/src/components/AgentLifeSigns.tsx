@@ -73,7 +73,7 @@ export function AgentLifeSigns({ agent, className }: { agent: AgentDTO; classNam
               className="relative rounded font-medium text-brand underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
               onClick={(e) => openInbox(navFromEvent(e))}
             >
-              {agent.pendingCards} card{agent.pendingCards === 1 ? '' : 's'} in the Inbox
+              {agent.pendingCards} proposal{agent.pendingCards === 1 ? '' : 's'} in the Inbox
             </button>
           </>
         )}

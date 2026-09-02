@@ -308,13 +308,13 @@ export class SettingsService {
     // it has to exist before the first thing that would report happens.
     const mintedInstall = !this.data.installId;
     if (mintedInstall) this.data.installId = randomUUID();
-    // The workspace language, taken from the OS locale exactly ONCE (OW5). From
+    // The workspace language defaults to English, not the OS locale (OW5). From
     // then on it is the PM's setting: a laptop that changes region, or a machine
     // this workspace is copied onto, must never restate what they write in.
     // Region is dropped on the way in and on the way back out, so a stored
     // "sv-SE" settles to "sv" and stops looking like a change every launch.
     const storedLanguage = this.data.language;
-    this.data.language = workspaceLanguage(storedLanguage ?? app.getLocale());
+    this.data.language = workspaceLanguage(storedLanguage);
     const settledLanguage = this.data.language !== storedLanguage;
     const grandfathered = this.migrateOnboarding(hadOnboarding);
     if (

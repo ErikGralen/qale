@@ -51,7 +51,7 @@ export function buildSessionReceipt(
     // Titled, because a receipt without one is named after its file, and its
     // file ends in a session id.
     title: `${harness.primarySkillTitle} session`,
-    summary: `${cards === 0 ? 'No cards' : cards === 1 ? '1 card' : `${cards} cards`} proposed.`,
+    summary: `${cards === 0 ? 'No proposals filed.' : cards === 1 ? '1 proposal filed.' : `${cards} proposals filed.`}`,
     skill: name,
     ...(harness.invoked.length > 0 ? { skills: harness.skillNames } : {}),
     session_id: harness.sessionId,
@@ -75,7 +75,7 @@ export function buildSessionReceipt(
   for (const [i, turn] of harness.turns.entries()) {
     const n = turn.cardIds.length;
     lines.push(
-      `${i + 1}. ${truncate(turn.prompt, 200)}${n ? ` (${n} ${n === 1 ? 'card' : 'cards'})` : ''}`,
+      `${i + 1}. ${truncate(turn.prompt, 200)}${n ? ` (${n} ${n === 1 ? 'proposal' : 'proposals'})` : ''}`,
     );
   }
   lines.push(
@@ -83,7 +83,7 @@ export function buildSessionReceipt(
     '## Read',
     reads.length ? reads.map((r) => `- ${mention(r)}`).join('\n') : '_none_',
   );
-  lines.push('', '## Proposed (approval cards)');
+  lines.push('', '## Proposals');
   lines.push(
     harness.writes.length
       ? harness.writes

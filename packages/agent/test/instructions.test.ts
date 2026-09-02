@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { UseCaseContext } from '@qale/application';
-import { HOUSE_RULES, parseRunnable } from '@qale/sessions';
+import {
+  CONFLUENCE_CONVENTIONS,
+  HOUSE_RULES,
+  JIRA_CONVENTIONS,
+  parseRunnable,
+} from '@qale/sessions';
 import { createProposeTools } from '../src/tools.js';
 
 /**
@@ -77,7 +82,7 @@ function rulesCtx(
 const tool = (ctx: UseCaseContext) =>
   createProposeTools(ctx, 'session-1').find((t) => t.name === 'propose_instruction')!;
 
-const RULE = 'When filing material that mentions a person, create their person note too.';
+const RULE = 'When filing a source that mentions a person, create their person note too.';
 
 const ARRIVAL = 'skills/arrival/SKILL.md';
 const RULES = 'skills/house-rules/SKILL.md';
@@ -89,7 +94,7 @@ test('a rule joins the Standing instructions the target already ends with', asyn
   const ctx = rulesCtx({
     [ARRIVAL]: {
       title: 'Arrival',
-      body: '# Arrival\n\nWhat to do with material.\n\n## Standing instructions\n\n- Keep the source link.\n',
+      body: '# Arrival\n\nWhat to do with a source.\n\n## Standing instructions\n\n- Keep the source link.\n',
     },
   });
   const said = await out(tool(ctx), { rule: RULE, target: 'arrival' });
@@ -213,7 +218,7 @@ test('a rule the file already carries is refused, whatever the spacing and punct
     [ARRIVAL]: {
       body:
         '## Standing instructions\n\n' +
-        '- when filing material that   mentions a person, create their person note too\n',
+        '- when filing a source that   mentions a person, create their person note too\n',
     },
   });
   const said = await out(tool(ctx), { rule: RULE, target: 'arrival' });
@@ -300,7 +305,159 @@ test('the receipt names the card, the rule and where it goes', async () => {
   assert.match(ctx.filed[0]!.rationale, /^Erik asked for it after the Nordkap call\./);
 });
 
+/**
+ * The conventions skills (docs/conventions.md CV-3). "Always set the roadmap
+ * label on tickets" is a rule ONLY ticket drafting needs, so it must not become
+ * a house rule riding in every session prompt. Nothing seeds
+ * `skills/jira/SKILL.md`, so the card that files the first such rule is also the
+ * card that writes the file.
+ */
+
+const JIRA = 'skills/jira/SKILL.md';
+const CONFLUENCE = 'skills/confluence/SKILL.md';
+const TICKET_RULE = 'Set the label team-checkout on every ticket you draft for NORD.';
+const PAGE_RULE = 'Keep the headings a page already has and add under them.';
+
+/** The Jira template as it ships, which is what the creation card writes. */
+const JIRA_TEMPLATE = parseRunnable(JIRA_CONVENTIONS, 'jira');
+
+test('a ticket rule with no conventions file yet creates it from the template', async () => {
+  // The house rules are right there and are NOT where this lands.
+  const ctx = rulesCtx({ [RULES]: { title: 'House rules', body: `${HOUSE}\n` } });
+  const said = await out(tool(ctx), { rule: TICKET_RULE, target: 'jira' });
+
+  assert.equal(said, `Proposed instruction (p1): "${TICKET_RULE}" -> jira. Awaiting review.`);
+  // Nothing is missing: "jira" resolved, to a file the card writes.
+  assert.doesNotMatch(said, /Nothing is called/);
+  const card = ctx.filed[0]!;
+  assert.equal(card.kind, 'note');
+  assert.equal(card.targetPath, JIRA);
+  assert.equal(card.baseHash, null);
+  const fm = (card.payload as unknown as { frontmatter: Record<string, unknown> }).frontmatter;
+  assert.equal(fm['type'], 'skill');
+  assert.equal(fm['title'], 'How we use Jira');
+  assert.equal(fm['summary'], JIRA_TEMPLATE.summary);
+  // Nothing declares itself always-on, and this file never runs: no `starts`.
+  assert.equal(fm['starts'], undefined);
+  // The whole template, with the rule at the end of it, which is inside the
+  // Standing instructions section because that section is last.
+  assert.equal(card.payload.body, `${JIRA_TEMPLATE.body.trim()}\n\n- ${TICKET_RULE}`);
+  assert.match(card.payload.body!, /## When you draft a ticket/);
+  assert.equal(card.payload.headline, `Remember this: ${TICKET_RULE}`);
+  assert.match(card.rationale, /Goes into How we use Jira\./);
+  assert.doesNotMatch(card.rationale, /Your rules/);
+  assert.equal(card.asked, true);
+  assert.equal(card.inference, false);
+});
+
+test('a page rule with no conventions file yet creates the Confluence one', async () => {
+  const ctx = rulesCtx({});
+  const said = await out(tool(ctx), { rule: PAGE_RULE, target: 'confluence' });
+
+  assert.match(said, /-> confluence\./);
+  const card = ctx.filed[0]!;
+  assert.equal(card.targetPath, CONFLUENCE);
+  const fm = (card.payload as unknown as { frontmatter: Record<string, unknown> }).frontmatter;
+  assert.equal(fm['title'], 'How we use Confluence');
+  assert.equal(
+    card.payload.body,
+    `${parseRunnable(CONFLUENCE_CONVENTIONS, 'confluence').body.trim()}\n\n- ${PAGE_RULE}`,
+  );
+  assert.match(card.rationale, /Goes into How we use Confluence\./);
+});
+
+/**
+ * The second rule, and the reason the template ends where it does: the anchor
+ * has to be the last heading in the file it just wrote, or every rule after the
+ * first would start a second Standing instructions section.
+ */
+test('a conventions file that exists takes the bullet, with no new heading', async () => {
+  const ctx = rulesCtx({
+    [JIRA]: {
+      title: 'How we use Jira',
+      body: `${JIRA_TEMPLATE.body.trim()}\n\n- ${TICKET_RULE}\n`,
+    },
+  });
+  const said = await out(tool(ctx), { rule: PAGE_RULE, target: 'jira' });
+
+  assert.match(said, /-> jira\./);
+  const card = ctx.filed[0]!;
+  assert.equal(card.kind, 'update');
+  assert.equal(card.targetPath, JIRA);
+  assert.equal(card.payload.append, `\n- ${PAGE_RULE}`);
+  assert.doesNotMatch(card.payload.append!, /## Standing instructions/);
+  assert.ok(card.baseHash);
+  assert.match(card.rationale, /Goes into How we use Jira's standing instructions\./);
+});
+
+test('a rule already in the conventions file is refused, not filed twice', async () => {
+  const ctx = rulesCtx({
+    [JIRA]: { body: `${JIRA_TEMPLATE.body.trim()}\n\n- ${TICKET_RULE}\n` },
+  });
+  const said = await out(tool(ctx), { rule: TICKET_RULE, target: 'jira' });
+
+  assert.match(said, /already a standing instruction there/);
+  assert.equal(ctx.filed.length, 0);
+});
+
+/**
+ * The model spells the target from the prose it was given, where the system is
+ * called Jira. A capital must reach the one file, not write a second one beside
+ * it under a name nothing else resolves.
+ */
+test('the name folds, so "Jira" is the same file as "jira"', async () => {
+  const ctx = rulesCtx({ [JIRA]: { title: 'How we use Jira', body: JIRA_TEMPLATE.body.trim() } });
+  const said = await out(tool(ctx), { rule: TICKET_RULE, target: 'Jira' });
+
+  assert.equal(ctx.filed[0]!.targetPath, JIRA);
+  assert.equal(ctx.filed[0]!.kind, 'update');
+  assert.match(said, /-> jira\./);
+
+  const empty = rulesCtx({});
+  await out(tool(empty), { rule: TICKET_RULE, target: 'Confluence' });
+  assert.equal(empty.filed[0]!.targetPath, CONFLUENCE);
+});
+
+/** Only these two names create a file. Anything else still falls to the house rules. */
+test('a name that is not a conventions skill still falls back to the house rules', async () => {
+  const ctx = rulesCtx({ [RULES]: { body: `${HOUSE}\n` } });
+  const said = await out(tool(ctx), { rule: TICKET_RULE, target: 'zendesk' });
+
+  assert.equal(ctx.filed[0]!.kind, 'update');
+  assert.equal(ctx.filed[0]!.targetPath, RULES);
+  assert.match(said, /-> house-rules\./);
+  assert.match(said, /Nothing is called "zendesk" here/);
+});
+
+test('a second card for the same missing conventions file is refused', async () => {
+  const ctx = rulesCtx({}, [
+    {
+      id: 'p_waiting',
+      kind: 'note',
+      targetPath: JIRA,
+      payload: { path: JIRA, frontmatter: { type: 'skill', title: 'How we use Jira' } },
+      rationale: 'You asked for this in chat.',
+    },
+  ]);
+  const said = await out(tool(ctx), { rule: TICKET_RULE, target: 'jira' });
+
+  assert.match(said, /^Not proposed:/);
+  assert.equal(ctx.filed.length, 0);
+});
+
 test('propose_instruction is one of the propose tools, on in every session', () => {
   const names = createProposeTools(rulesCtx({}), 'session-1').map((t) => t.name);
   assert.ok(names.includes('propose_instruction'), names.join(', '));
+});
+
+/**
+ * A rule was the only move the model had when the PM corrected it, so a wrong
+ * fact and a typo both came out as standing rules. The fix is words, not a gate:
+ * the description now sends a corrected FACT to `propose_update` and lets a
+ * one-off slip go unfiled. Only the cross-tool half is asserted here, because
+ * the tool name is an address and the rest is prose that may be reworded.
+ */
+test('the description sends a corrected fact to propose_update instead', () => {
+  const said = tool(rulesCtx({})).description ?? '';
+  assert.match(said, /propose_update/);
 });

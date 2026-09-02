@@ -105,7 +105,7 @@ test('a read says which language the note is in, but only when it differs', asyn
   );
 });
 
-test('raw material gets an envelope, never a language line: nothing is edited into it', async () => {
+test('a source gets an envelope, never a language line: nothing is edited into it', async () => {
   const [vaultRead] = createVaultTools(fakeCtx(), undefined, 'en');
   const got = await out(vaultRead, { path: 'sources/gong-call.md' });
   assert.match(got, /^<<<EXTERNAL_MATERIAL /);

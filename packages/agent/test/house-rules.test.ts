@@ -27,7 +27,7 @@ Read them all.
 const PROCESS = `---
 type: skill
 title: Tidy a note
-summary: Turns a dumped note into filed cards.
+summary: Turns a dumped note into filed proposals.
 ---
 
 Read it, then file it.
@@ -90,7 +90,7 @@ test('the house rules carry the rules every session used to be told twice', () =
   assert.match(body, /Follow `supersedes` to the end of the chain/);
 
   assert.match(body, /## Proposing/);
-  assert.match(body, /A contradiction is its own card/);
+  assert.match(body, /A contradiction is its own proposal/);
   assert.match(body, /An empty result is a result/);
   assert.match(body, /Follow the output template/);
   assert.match(body, /Where a skill's body ends with a fenced block/);

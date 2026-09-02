@@ -86,22 +86,28 @@ const STANCE: FieldSpec = {
   ],
 };
 
+/**
+ * `processing` sits last everywhere it appears: it is Qale's own bookkeeping
+ * (did the pipeline read this yet), not a fact about the thing the note
+ * describes, and the one time it matters to a reader — stale — the fact strip
+ * flags it above the fold.
+ */
 export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[] } = {
   source: [
     SUMMARY,
-    PROCESSING,
     { key: 'captured', label: 'Captured', widget: 'date' },
     { key: 'updated', label: 'Last synced', widget: 'date' },
-    { key: 'origin', label: 'Origin (whose material)', widget: 'text' },
+    { key: 'origin', label: "Origin (who it's from)", widget: 'text' },
     TAGS,
+    PROCESSING,
   ],
   meeting: [
     SUMMARY,
-    PROCESSING,
     { key: 'date', label: 'Date', widget: 'date' },
     { key: 'participants', label: 'Participants', widget: 'people' },
     { key: 'series', label: 'Series', widget: 'text' },
     TAGS,
+    PROCESSING,
   ],
   decision: [
     SUMMARY,
@@ -112,7 +118,6 @@ export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[
   ],
   insight: [
     SUMMARY,
-    PROCESSING,
     {
       key: 'confidence',
       label: 'Confidence',
@@ -124,6 +129,7 @@ export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[
       ],
     },
     TAGS,
+    PROCESSING,
   ],
   customer: [SUMMARY, RELATIONSHIP, { key: 'segment', label: 'Segment', widget: 'text' }, TAGS],
   theme: [SUMMARY, STANCE, TAGS],
@@ -146,31 +152,50 @@ export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[
   // `skill` and `agent` have no entries: they render as purpose-built pages
   // (SkillAgentPage), never through PropertiesBlock — the frontmatter is the
   // app's machinery there, not something a person edits row by row.
-  note: [SUMMARY, PROCESSING, TAGS],
+  note: [SUMMARY, TAGS, PROCESSING],
   // External mirrors: re-sync owns the delivery facts, so they display but
   // never edit (a hand-flipped state is exactly the drift the sync exists to
   // catch, and main rejects the write anyway). Only the PO's own
   // summary/processing/tags stay live.
   //
   // `state_category` has no row at all: it is how the app colours the state
-  // chip, and the chip is already on screen. Two rows, one saying "In review"
-  // and one saying "In progress", only ask the reader which one the tracker
-  // meant. See {@link HIDDEN_KEYS}.
+  // chip, and the chip is already on screen (the fact strip). Two rows, one
+  // saying "In review" and one saying "In progress", only ask the reader which
+  // one the tracker meant. See {@link HIDDEN_KEYS}.
   ticket: [
     SUMMARY,
-    PROCESSING,
-    { key: 'state', label: 'State (as in tracker)', widget: 'readonly' },
+    { key: 'state', label: 'Tracker state', widget: 'readonly' },
     { key: 'assignee', label: 'Assignee', widget: 'readonly' },
     { key: 'remote_updated', label: 'Changed upstream', widget: 'readonly' },
     TAGS,
+    PROCESSING,
   ],
   wikipage: [
     SUMMARY,
-    PROCESSING,
     { key: 'version', label: 'Version', widget: 'readonly' },
     { key: 'remote_updated', label: 'Changed upstream', widget: 'readonly' },
     TAGS,
+    PROCESSING,
   ],
+};
+
+/**
+ * The fact strip: the few facts a reader opens this type of note for, rendered
+ * in one glanceable row under the title. Everything else, this included, lives
+ * in the Details fold. A key with no value on the note is skipped, so the strip
+ * only ever states what is true. Mirrors add their open-at-the-provider door;
+ * `processing: stale` adds the amber flag on every type, listed here or not.
+ */
+export const FACTS: Partial<Record<NoteType, string[]>> = {
+  ticket: ['state', 'assignee', 'remote_updated'],
+  wikipage: ['remote_updated'],
+  meeting: ['date', 'participants'],
+  decision: ['date', 'deciders'],
+  todo: ['due', 'owner'],
+  customer: ['relationship', 'segment'],
+  person: ['role'],
+  insight: ['confidence'],
+  source: ['origin', 'captured'],
 };
 
 /** Ref-array frontmatter keys shown read-only as chips. */

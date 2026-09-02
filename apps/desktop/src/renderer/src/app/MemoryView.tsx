@@ -61,7 +61,7 @@ const TYPE_DESC: Partial<Record<NoteType, string>> = {
   meeting: 'Meetings, with what each one changed. The recordings live in sources.',
   decision: 'The decision spine: active calls, and the chain of what they superseded.',
   theme: 'The durable things worth solving, accreting evidence.',
-  source: 'Dumped material, analyzed but never rewritten.',
+  source: 'Dumped-in sources, analyzed but never rewritten.',
   insight: 'Claims extracted from meetings, each citing its evidence.',
   customer: 'Accounts the memory knows, prospect to churned.',
   person: 'Stakeholders: what they care about, what they were last told.',
@@ -90,7 +90,7 @@ function ShelfRow({ group }: { group: VaultTreeGroupDTO }) {
   const Icon = noteTypeIcon(group.type);
   const attention = attentionFor(group.type, notes);
   // Only the four the PM writes from scratch get a "+". A shelf without one is
-  // not locked: it is filled by material arriving or a card being approved, and
+  // not locked: it is filled by a source arriving or a card being approved, and
   // an empty page there would have nothing to stand on (see HAND_CREATABLE_TYPES).
   const startable = isHandCreatable(group.type);
   const what = noteTypeLabel(group.type).toLowerCase();
@@ -150,7 +150,7 @@ function FirstRun() {
     {
       icon: Inbox,
       title: 'You approve what it finds',
-      desc: 'Decisions, actions, and drafts arrive as cards. Nothing is written silently.',
+      desc: 'Decisions, actions, and drafts arrive as proposals. Nothing is written silently.',
     },
     {
       icon: Library,

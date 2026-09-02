@@ -66,12 +66,12 @@ export function isSkillsTab(value: string | undefined): value is SkillsTab {
 export interface Moment {
   /** The skill's invocation name, which is its folder name. */
   name: string;
-  /** What fires it, in the words the row prints: "When material arrives". */
+  /** What fires it, in the words the row prints: "When a source arrives". */
   when: string;
 }
 
 export const MOMENTS: readonly Moment[] = [
-  { name: ARRIVAL_AGENT_NAME, when: 'When material arrives' },
+  { name: ARRIVAL_AGENT_NAME, when: 'When a source arrives' },
   { name: 'process-note', when: 'When you go through a note from its page' },
   { name: 'commitment-check', when: 'When a commitment slips and you ask for help' },
 ];

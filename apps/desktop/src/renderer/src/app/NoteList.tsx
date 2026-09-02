@@ -14,11 +14,22 @@ function refSlug(ref: string): string | null {
   return m?.[1] ?? null;
 }
 
+/** Chips a row shows before it stops counting. The rail must never grow wide
+ *  enough to push the title into an ellipsis; two is what fits. */
+const MAX_CHIPS = 2;
+
 /**
  * Shared note listing — smart views, folder browse pages, context pages.
- * Dense rows on hairline separators (cards were the clutter): title + date on
- * the first line, summary on the second, context chips inline. Decisions show
- * their supersedes-chain so the spine is readable in-list.
+ * Dense rows on hairline separators (cards were the clutter): the title is the
+ * row, and it gets the whole line. Everything else (context chips, the date) is
+ * metadata that sits in a fixed rail on the right and never takes width from
+ * the title. Decisions show their supersedes-chain so the spine is readable
+ * in-list.
+ *
+ * There is no summary line. A browse page is for *finding*, and a one-line
+ * fragment cut mid-sentence never finished a thought — it only halved the
+ * number of titles in view. The summary is still searched by the page filter,
+ * and it rides the row as its tooltip.
  *
  * Rows use the stretched-button pattern: the row is one big button, chips and
  * chain links float above it and stay independently clickable.
@@ -76,6 +87,8 @@ export function NoteList({
         const chain = n.supersedes ? refSlug(n.supersedes) : null;
         const chainNote = chain ? bySlug.get(chain) : undefined;
         const picked = selection?.isSelected(n.path) ?? false;
+        const tags = (n.tags ?? []).filter((t) => t !== omitTag);
+        const overflow = tags.slice(MAX_CHIPS);
         return (
           <li
             key={n.path}
@@ -96,10 +109,13 @@ export function NoteList({
               }}
               onAuxClick={(e) => e.button === 1 && void openDoc(n.path, navFromEvent(e))}
               aria-label={n.title}
+              // The summary left the row, so it waits here: one hover, no
+              // cost to the line. (`aria-label` still names the row.)
+              title={n.summary || undefined}
             />
-            <div className="pointer-events-none relative flex gap-2 px-2 py-2">
+            <div className="pointer-events-none relative flex items-start gap-2 px-2 py-2">
               {selection && (
-                <span className="pointer-events-auto flex shrink-0 pt-0.5">
+                <span className="pointer-events-auto flex h-5 shrink-0 items-center">
                   <button
                     role="checkbox"
                     aria-checked={picked}
@@ -119,38 +135,15 @@ export function NoteList({
                   </button>
                 </span>
               )}
+              {/* The title. It wraps to a second line rather than truncate:
+                  a decision's title is a whole sentence, and half of one is
+                  not something you can recognise at a glance. */}
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <div className="flex items-baseline gap-2">
-                  <span
-                    className={`min-w-0 truncate text-sm font-medium ${cancelled ? 'line-through' : ''}`}
-                  >
-                    {n.title}
-                  </span>
-                  {showType && (
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {noteTypeLabel(n.type)}
-                    </span>
-                  )}
-                  {superseded && (
-                    <span className="shrink-0 text-xs text-muted-foreground">superseded</span>
-                  )}
-                  {cancelled && (
-                    <span className="shrink-0 text-xs text-muted-foreground">cancelled</span>
-                  )}
-                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                    {(n.tags ?? [])
-                      .filter((t) => t !== omitTag)
-                      .map((t) => (
-                        <span key={t} className="pointer-events-auto">
-                          <TagChip tag={t} />
-                        </span>
-                      ))}
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {formatRefDate(n)}
-                    </span>
-                  </span>
-                </div>
-                <div className="truncate text-dense text-muted-foreground">{n.summary}</div>
+                <span
+                  className={`line-clamp-2 text-sm font-medium text-pretty ${cancelled ? 'line-through' : ''}`}
+                >
+                  {n.title}
+                </span>
                 {chain && (
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
                     <CornerDownRight className="size-3 shrink-0" aria-hidden />
@@ -167,6 +160,32 @@ export function NoteList({
                     )}
                   </div>
                 )}
+              </div>
+
+              {/* The metadata rail: one line tall, on the title's first line,
+                  never wider than what it holds. */}
+              <div className="flex h-5 shrink-0 items-center gap-1.5">
+                {showType && (
+                  <span className="text-xs text-muted-foreground">{noteTypeLabel(n.type)}</span>
+                )}
+                {superseded && <span className="text-xs text-muted-foreground">superseded</span>}
+                {cancelled && <span className="text-xs text-muted-foreground">cancelled</span>}
+                {tags.slice(0, MAX_CHIPS).map((t) => (
+                  <span key={t} className="pointer-events-auto">
+                    <TagChip tag={t} />
+                  </span>
+                ))}
+                {overflow.length > 0 && (
+                  <span
+                    className="pointer-events-auto text-xs text-muted-foreground tabular-nums"
+                    title={overflow.map((t) => `#${t}`).join(' ')}
+                  >
+                    +{overflow.length}
+                  </span>
+                )}
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {formatRefDate(n)}
+                </span>
               </div>
             </div>
           </li>

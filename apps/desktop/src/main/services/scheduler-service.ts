@@ -115,7 +115,7 @@ export function mostRecentSlot(now: Date, dayOfWeek: number, hour: number): Date
 function defaultPrompt(skill: string): string {
   const instruction =
     skill === 'weekly-update'
-      ? 'produce this week\'s update. Read the week\'s deltas (the "This week" scope) and draft per-audience updates (exec, CS, team) as approval cards, every claim cited. If nothing material changed, end quietly rather than writing an update that says so.'
+      ? 'produce this week\'s update. Read the week\'s deltas (the "This week" scope) and draft per-audience updates (exec, CS, team) as proposals, every claim cited. If nothing material changed, end quietly rather than writing an update that says so.'
       : '';
   return buildKickoff({ skill, instruction });
 }

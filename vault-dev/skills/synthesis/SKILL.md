@@ -44,15 +44,15 @@ wrote.
 
 ## Produce
 
-The clustering, each cluster its own approval card.
+The clustering, each cluster its own proposal.
 
-Two different things get called evidence, and cards break when they are confused. A card's
-`sources` argument cites material already on disk: the original transcripts and sources, never
+Two different things get called evidence, and proposals break when they are confused. A proposal's
+`sources` argument cites content already on disk: the original transcripts and sources, never
 your session files (those get deleted) and never a note this run has only proposed. A note's
 `evidence` frontmatter is written into the note itself and may point at anything, including the
 insights a theme rests on.
 
-The cards:
+The proposals:
 - **Insights** (propose_note, type insight): one claim, stated in your own voice, with every
   account that backs it gathered inside it. An insight is the smallest thing we believe, and the
   one place a transcript quote belongs. The bar is a claim someone could act on or a future theme
@@ -68,24 +68,24 @@ The cards:
   with an honest `stance` (`exploring` unless the evidence is overwhelming), and make the body an
   argument over insights. A theme never quotes a transcript directly; if a quote is worth using,
   it is worth keeping as an insight first. `evidence` lists the insights the theme rests on, and
-  the card's `sources` cite the transcripts underneath them.
+  the proposal's `sources` cite the transcripts underneath them.
 - **Evidence added to an existing theme** (propose_update): extend `evidence` and say in the
   rationale what the addition changes about how strong the theme now is.
 - **A stance change** (propose_update setting `stance`) only where the evidence genuinely moved,
   and `wont-do` only where the memory shows a deliberate decline (cite the decision). Never
-  `committed` from here: committing is a decision with a decider, so propose the decision card
+  `committed` from here: committing is a decision with a decider, so use `propose_decision`
   and let the decider own it.
 - **Disagreement**: a live insight the material contradicts is never quietly rewritten: propose
   the corrected insight and point it at the old one with a `supersedes` link, so the old one
   carries a pointer to what replaced it.
-- **The gaps**: one card holding what this run could not answer. Which clusters rest on one
+- **The gaps**: one proposal holding what this run could not answer. Which clusters rest on one
   account, which documents in scope said nothing about the question, and anything you went
   looking for and did not find, with where you looked. A gap belongs here and never inside a
   claim: a missing fact written as a hedged sentence is the one thing the three labels cannot
   catch.
 
 Promote before you delete. Every per-item finding a cluster ends up leaning on becomes an insight
-card, new or extended, and the cluster's card names those insights in its `evidence`. Do that
+proposal, new or extended, and the cluster's proposal names those insights in its `evidence`. Do that
 while the session files are still there; the quotes live nowhere else.
 
 Themes written before insights existed carry their quotes inline. Leave them until a run touches
@@ -109,6 +109,6 @@ Counting rules:
 
 ## Then
 
-Approved cards file the themes and insights and move the stances that moved; the sources stay
+Approved proposals file the themes and insights and move the stances that moved; the sources stay
 exactly as they were. Session files are working material, not memory: anything worth keeping from
 them was worth proposing as a note, and any quote worth keeping belongs in an insight.

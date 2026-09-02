@@ -208,14 +208,11 @@ test('attention: a round to write in waits exactly as a question waits', () => {
   assert.equal(homeRows(items, 4, NOW)[0]!.id, 'question:session-1');
 });
 
-test('attention: a resolved card and a shelved session leave the list', () => {
+test('attention: a resolved card and an unpinned session leave the list', () => {
   const items = buildAttention(
     input({
       proposals: [card('p1', { status: 'accepted' }), card('p2', { status: 'rejected' })],
-      sessions: [
-        session('session-1', { unread: true, lifecycle: 'done' }),
-        session('session-2', { unread: true, lifecycle: 'dismissed' }),
-      ],
+      sessions: [session('session-1', { unread: true, lifecycle: 'unpinned' })],
     }),
     NOW,
   );
@@ -264,6 +261,69 @@ test('attention: only the next meeting, and only while it is within the day', ()
     NOW,
   );
   assert.deepEqual(ids(items), ['meeting:meetings/soon.md']);
+});
+
+test('attention: the meeting row survives the start time (LN-2)', () => {
+  // Started ten minutes ago, runs for an hour. The old window ended at the
+  // start, so the row went away at the minute the PO walked into the room.
+  const items = buildAttention(
+    input({
+      tree: tree(note('meeting', 'nordkap', { date: '2026-07-28', time: '08:50', durationMin: 60 })),
+    }),
+    NOW,
+  );
+  assert.deepEqual(ids(items), ['meeting:meetings/nordkap.md']);
+  assert.equal(items[0]!.label, 'Take notes in nordkap');
+  assert.equal(items[0]!.meta, 'now');
+  // Same door as before: the meeting page.
+  assert.deepEqual(items[0]!.target, { open: 'doc', path: 'meetings/nordkap.md' });
+  assert.equal(homeRows(items, 4, NOW)[0]!.meta, 'now');
+});
+
+test('attention: the meeting row goes once the meeting ends', () => {
+  const items = buildAttention(
+    input({
+      tree: tree(note('meeting', 'nordkap', { date: '2026-07-28', time: '07:30', durationMin: 60 })),
+    }),
+    NOW,
+  );
+  assert.deepEqual(items, []);
+});
+
+test('attention: a meeting in progress outranks a later one', () => {
+  const items = buildAttention(
+    input({
+      tree: tree(
+        note('meeting', 'happening', { date: '2026-07-28', time: '08:50', durationMin: 60 }),
+        note('meeting', 'later-today', { date: '2026-07-28', time: '11:00' }),
+      ),
+    }),
+    NOW,
+  );
+  assert.deepEqual(ids(items), ['meeting:meetings/happening.md']);
+  assert.equal(items[0]!.label, 'Take notes in happening');
+});
+
+test('attention: a cancelled meeting never asks for notes, running or not', () => {
+  const items = buildAttention(
+    input({
+      tree: tree(
+        note('meeting', 'called-off-now', {
+          date: '2026-07-28',
+          time: '08:50',
+          durationMin: 60,
+          eventStatus: 'cancelled',
+        }),
+        note('meeting', 'called-off-later', {
+          date: '2026-07-28',
+          time: '11:00',
+          eventStatus: 'cancelled',
+        }),
+      ),
+    }),
+    NOW,
+  );
+  assert.deepEqual(items, []);
 });
 
 test("attention: commitments are the PO's own, due today or slipped", () => {
@@ -442,7 +502,7 @@ test('home: cards, reviews and commitments each collapse behind one door', () =>
   assert.deepEqual(
     rows.map((r) => [r.label, r.meta, r.count]),
     [
-      ['3 cards waiting for your approval', 'Inbox', 3],
+      ['3 proposals waiting for your approval', 'Inbox', 3],
       ['2 meetings still to review', 'meetings', 2],
       ['2 commitments due', '1 overdue', 2],
     ],

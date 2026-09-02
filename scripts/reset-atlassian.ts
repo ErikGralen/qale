@@ -7,13 +7,14 @@
  * What it converges:
  *  - Jira `PAY`: the cast issues exist (epic Blocked, audit-log export Done,
  *    IdP validation In Progress, fillers), descriptions and statuses match,
- *    the epic is assigned to you, comment threads are reset to the seeds.
+ *    every issue carries its one area label, the epic is assigned to you, and
+ *    comment threads are reset to the seeds.
  *    Issues NOT in the cast — e.g. the "SCIM group-mapping for Nordkap" ticket
  *    the after-meeting demo creates live — are DELETED (skip with
  *    --keep-extras).
  *  - Confluence: the "Product" space exists; "Enterprise Onboarding" and
  *    "Product weekly update" are rewritten to their canonical bodies from
- *    vault-dev/wikipages/ — which un-does the librarian's redline fix and the
+ *    vault-dev/wikipages/confluence/ — which un-does the librarian's redline fix and the
  *    weekly-update appends. Extra pages are listed but never deleted.
  *  - The runtime vault (.vault-dev): the canonical scenario ships with STATIC
  *    mirrors (tickets/PAY-142.md, fake tavla.atlassian.net URLs, made-up page
@@ -71,6 +72,10 @@ interface CastIssue {
   issueType: 'Epic' | 'Task';
   status: string;
   description: string;
+  /** The one area label every PAY ticket carries, matching the `tags` on the
+   *  static mirror in vault-dev/tickets/. It is the house shape the conventions
+   *  skill names (docs/conventions.md CV-5), so the live site has to show it. */
+  label: 'enterprise-auth' | 'reporting' | 'reliability';
   /** Seeded oldest-first after wiping the live thread. Comment authorship and
    *  timestamps are whoever runs the script, now — the story lives in the text. */
   comments?: string[];
@@ -85,6 +90,7 @@ interface CastIssue {
 const CAST: CastIssue[] = [
   {
     summary: 'SAML SSO (epic)',
+    label: 'enterprise-auth',
     issueType: 'Epic',
     status: 'Blocked',
     assignSelf: true,
@@ -101,6 +107,7 @@ const CAST: CastIssue[] = [
   },
   {
     summary: 'Audit-log export for SSO events',
+    label: 'enterprise-auth',
     issueType: 'Task',
     status: 'Done',
     childOfEpic: true,
@@ -115,6 +122,7 @@ const CAST: CastIssue[] = [
   },
   {
     summary: 'IdP metadata validation in staging',
+    label: 'enterprise-auth',
     issueType: 'Task',
     status: 'In Progress',
     childOfEpic: true,
@@ -124,6 +132,7 @@ const CAST: CastIssue[] = [
   },
   {
     summary: 'Payout report exports',
+    label: 'reporting',
     issueType: 'Task',
     status: 'Done',
     description:
@@ -132,12 +141,14 @@ const CAST: CastIssue[] = [
   },
   {
     summary: 'Webhook delivery retries with backoff',
+    label: 'reliability',
     issueType: 'Task',
     status: 'To Do',
     description: 'Retry failed webhook deliveries with exponential backoff and a dead-letter view.',
   },
   {
     summary: 'Reconciliation report date-range filter',
+    label: 'reporting',
     issueType: 'Task',
     status: 'To Do',
     description: 'Let finance filter the reconciliation report by settlement date range.',
@@ -157,7 +168,7 @@ const CAST_LINKS: { type: string; inward: string; outward: string }[] = [
 
 // Canonical Confluence bodies come from the git-tracked mirrors so the
 // load-bearing text (the SCIM sentence the librarian redlines) is verbatim by
-// construction — vault-dev/wikipages/ is the single source of truth.
+// construction — vault-dev/wikipages/confluence/ is the single source of truth.
 const PAGES = [
   { title: 'Enterprise Onboarding', file: 'enterprise-onboarding.md' },
   { title: 'Product weekly update', file: 'product-weekly-update.md' },
@@ -458,6 +469,7 @@ interface LiveIssue {
   issueType: string;
   description: string;
   assigneeId: string | null;
+  labels: string[];
 }
 
 async function listProjectIssues(api: Api): Promise<LiveIssue[]> {
@@ -473,6 +485,7 @@ async function listProjectIssues(api: Api): Promise<LiveIssue[]> {
           issuetype?: { name?: string };
           description?: unknown;
           assignee?: { accountId?: string } | null;
+          labels?: string[];
         };
       }[];
       nextPageToken?: string;
@@ -480,7 +493,7 @@ async function listProjectIssues(api: Api): Promise<LiveIssue[]> {
       method: 'POST',
       body: JSON.stringify({
         jql: `project = ${PROJECT_KEY} ORDER BY created ASC`,
-        fields: ['summary', 'status', 'issuetype', 'description', 'assignee'],
+        fields: ['summary', 'status', 'issuetype', 'description', 'assignee', 'labels'],
         maxResults: 100,
         ...(nextPageToken ? { nextPageToken } : {}),
       }),
@@ -493,6 +506,7 @@ async function listProjectIssues(api: Api): Promise<LiveIssue[]> {
         issueType: raw.fields?.issuetype?.name ?? '',
         description: adfToText(raw.fields?.description),
         assigneeId: raw.fields?.assignee?.accountId ?? null,
+        labels: raw.fields?.labels ?? [],
       });
     }
     nextPageToken = page.nextPageToken;
@@ -514,6 +528,7 @@ async function createIssue(
     issuetype: { name: member.issueType },
     summary: member.summary,
     description: textToAdf(description),
+    labels: [member.label],
     ...(member.childOfEpic && epicKey ? { parent: { key: epicKey } } : {}),
   };
   try {
@@ -640,15 +655,26 @@ async function convergeJira(
       console.log(`  + create ${member.issueType} "${member.summary}" → ${member.status}`);
       if (opts.dry) continue;
       key = await createIssue(api, member, description, epicKey);
-    } else if (!opts.dry && !sameText(existing.description, description)) {
-      // Converge the fields the drafted-against-stale demo edits — but never
-      // touch a clean issue: every gratuitous write bumps `updated` and stales
-      // pending cards on the next sync.
-      await api.request(`/rest/api/3/issue/${key}`, {
-        method: 'PUT',
-        body: JSON.stringify({ fields: { description: textToAdf(description) } }),
-      });
-      fixed.push('description');
+    } else if (!opts.dry) {
+      // Converge the fields the drafted-against-stale demo edits, plus the area
+      // label the conventions skill names. Never touch a clean issue: every
+      // gratuitous write bumps `updated` and stales pending cards on the next
+      // sync, so the patch is built first and sent only if it holds something.
+      const patch: Record<string, unknown> = {};
+      if (!sameText(existing.description, description)) {
+        patch['description'] = textToAdf(description);
+        fixed.push('description');
+      }
+      if (existing.labels.length !== 1 || existing.labels[0] !== member.label) {
+        patch['labels'] = [member.label];
+        fixed.push(`label → ${member.label}`);
+      }
+      if (Object.keys(patch).length) {
+        await api.request(`/rest/api/3/issue/${key}`, {
+          method: 'PUT',
+          body: JSON.stringify({ fields: patch }),
+        });
+      }
     }
     if (!key) continue;
     keyBySummary.set(member.summary, key);
@@ -773,7 +799,7 @@ async function convergeConfluence(
   const byTitle = new Map((livePages.results ?? []).map((p) => [p.title ?? '', p]));
 
   for (const pageDef of PAGES) {
-    const mdPath = join(import.meta.dirname, '..', 'vault-dev', 'wikipages', pageDef.file);
+    const mdPath = join(import.meta.dirname, '..', 'vault-dev', 'wikipages', 'confluence', pageDef.file);
     const md = shiftDates(readFileSync(mdPath, 'utf8').replace(FRONTMATTER_RE, '').trim(), offset);
     const body = markdownToStorage(md);
     const existing = byTitle.get(pageDef.title);
@@ -951,7 +977,7 @@ function reconcileVault(
   for (const pageDef of PAGES) {
     const live = pages.get(pageDef.title);
     if (!live?.version) continue;
-    const mirrorPath = join(vaultRoot, 'wikipages', pageDef.file);
+    const mirrorPath = join(vaultRoot, 'wikipages', 'confluence', pageDef.file);
     if (!existsSync(mirrorPath)) continue;
     const raw = readFileSync(mirrorPath, 'utf8');
     let next = raw.replace(/^version: .*$/m, `version: ${live.version}`);

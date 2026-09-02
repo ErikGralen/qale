@@ -58,6 +58,13 @@ export function MentionHint({ show }: { show: boolean }) {
  * Grow the textarea with its content up to `max` px, then scroll inside it.
  * Without this a `rows={1}` composer silently scrolls a one-line window as soon
  * as the question runs long — you can't see what you're about to send.
+ *
+ * Also watches the element's own width. A composer that mounts inside a panel
+ * still settling its size (the right panel converts its pixel `defaultSize`
+ * into a percentage a frame after mount) can measure `scrollHeight` while
+ * still narrow, wrapping the placeholder hard and pinning the height near
+ * `max`. The resize observer redoes the measurement once the panel reaches
+ * its real width, instead of leaving the box stuck tall.
  */
 export function useAutoGrow(
   ref: React.RefObject<HTMLTextAreaElement | null>,
@@ -67,15 +74,21 @@ export function useAutoGrow(
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, max)}px`;
-    el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
+    const fit = () => {
+      el.style.height = 'auto';
+      el.style.height = `${Math.min(el.scrollHeight, max)}px`;
+      el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [ref, value, max]);
 }
 
 /**
  * A keycap in a hint line. One vocabulary for every keyboard hint in the app:
- * the composer's `↵ ask · ⇧↵ new line`, the question card's `1–3 pick`. Lives
+ * the composer's `↵ ask · ⇧↵ new line`, the question's `1–3 pick`. Lives
  * here because hints and composers travel together.
  */
 export function Key({ children }: { children: ReactNode }) {

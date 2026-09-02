@@ -251,7 +251,7 @@ export function createCodebaseTool(deps: CodebaseDeps): ToolDefinition {
       'write it, so never ask for an edit, a fix or a patch. Write the question for a colleague who knows this ' +
       'repo well and has never heard of Qale: name files and terms from the code, not from the workspace. One ' +
       'run takes real minutes and real money, so ask everything you want to know about a topic in ONE question ' +
-      'rather than firing off three. The PM approves every run on a card first, and picks the model. ' +
+      'rather than firing off three. The PM approves every run as a proposal first, and picks the model. ' +
       'Follow-ups: every answer comes back with a Claude Code session id, and passing it as "resume" continues ' +
       'that session with everything it already read. A resumed session keeps the model it started with, so ' +
       'switching models means leaving "resume" out and starting a new one.',
@@ -267,7 +267,7 @@ export function createCodebaseTool(deps: CodebaseDeps): ToolDefinition {
         description: `Which model should answer: ${CODEBASE_MODELS.map((m) => `"${m.id}": ${m.note}`).join(' ')}`,
       }),
       why: Type.String({
-        description: 'One line: why that model fits this question. The PM reads it on the card.',
+        description: 'One line: why that model fits this question. The PM reads it on the proposal.',
       }),
       resume: Type.Optional(
         Type.String({

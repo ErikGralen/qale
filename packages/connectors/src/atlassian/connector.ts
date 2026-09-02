@@ -531,7 +531,7 @@ export const atlassianConnector: ConnectorProvider<AtlassianAuthInput> = {
       key: 'siteUrl',
       label: 'Site URL',
       placeholder: 'your-team.atlassian.net',
-      hint: 'The address in your browser when Jira or Confluence is open.',
+      hint: 'Paste the address from your browser, even a full page link: we keep only the site part. Works with Jira Cloud and Confluence Cloud (addresses ending in atlassian.net).',
     },
     {
       key: 'email',

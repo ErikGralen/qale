@@ -9,26 +9,26 @@ conclusion that the modal is the wrong shape for the problem.
 
 **Built, and rebuilt (2026-08-05).** The spine landed 2026-07-30 as a tray plus a planner; the
 planner is gone. What the planner decided by rule — what a file was, which meeting it belonged to,
-whether it was old enough to skip reading — is now decided by an agent that reads the material, in a
+whether it was old enough to skip reading — is now decided by an agent that reads the sources, in a
 session, out loud. `docs/arrival-agentic.md` is the direction doc that carried that change, and the
 code comments cite it. What ships:
 
-- **Add material** (`app/AddMaterial.tsx`) — file rows with an X each, one text field, one button.
+- **Add source** (`app/AddSource.tsx`) — file rows with an X each, one text field, one button.
   It leads with a drop zone next to the native picker (files _and_ folders) and decides exactly one
   thing by itself: whether these bytes can be read at all. Pasted text is a row like any file, so
   the text field always means the same thing.
 - **Landing is mechanical** (`main/handlers.ts`, `arrival:ingest`). The moment Add is pressed the
   files are written into a fresh session's folder, before any model call. No key, or the skill
-  switched off, and the material still sits safe in the session with a line saying what to fix.
+  switched off, and the sources still sit safe in the session with a line saying what to fix.
 - **Judgment is the skill's** (`skills/arrival`, `agent/filing.ts`, `application/use-cases/arrival.ts`).
-  The session runs "Handle new material": it skims, matches a transcript to a meeting by what the
+  The session runs "Handle new sources": it skims, matches a transcript to a meeting by what the
   transcript says rather than by the clock, notices when the PM was not in the room, checks for
-  duplicates, files with `file_material`, corrects with `refile_material`, and starts full reads
+  duplicates, files with `file_source`, corrects with `refile_source`, and starts full reads
   only where they are earned. When it cannot tell, it asks with an option card.
-- **Filing is the one write that is not a card.** It is gated on `can: [file-material]`, because the
+- **Filing is the one write that is not a card.** It is gated on `can: [file-source]`, because the
   PM already handed the file over: putting it on a shelf carries out their instruction rather than
   proposing one, and the two ways it can go wrong are both fixed by moving it. Everything DERIVED
-  from the material is still an approval card.
+  from a source is still an approval card.
 - **The speed ladder.** Say nothing and the agent files and narrates, ending quietly when the job
   was pure filing (`unattended` runs, `end_quietly`). One line of steering in the text field
   overrides its judgment. Or drop with aim: on a meeting page, on a folder, and the aim reaches the
@@ -38,12 +38,12 @@ code comments cite it. What ships:
   five is skill copy, tunable without code.
 - **A meeting owns its transcripts, plural.** One recording routinely arrives as several files: a
   call that dropped and resumed, a notetaker that splits on the hour. Those are one meeting, named
-  in one `file_material` call, kept verbatim as one `sources/` note per part with `transcript`
+  in one `file_source` call, kept verbatim as one `sources/` note per part with `transcript`
   holding the list. The part marker regex that used to guess this is gone; the agent can see it.
 - **Every past meeting has two doors.** "Add transcript" takes a recording that arrived late;
   "Read this meeting" starts the review that failed to start, and "Mark as filed" settles one nobody
   is going to read.
-- **Arrival never authors.** Everything added through this door is raw material in `sources/`. The
+- **Arrival never authors.** Everything added through this door is a raw source in `sources/`. The
   only derived note an arrival creates is the meeting page for a transcript of a meeting the PM was
   in. `notes/` is the authored layer and is reachable only by writing one (⌘N): the workspace must
   never claim to have written something that was handed to it, because once the memory cites that
@@ -54,7 +54,7 @@ code comments cite it. What ships:
   format.
 
 **Not built, and deliberately so:** the Import room (folder picker, Obsidian overlay, Evernote
-triage, the report), rules-by-promotion, and retrieval ranking for imported material. §6 and §10 are
+triage, the report), rules-by-promotion, and retrieval ranking for imported sources. §6 and §10 are
 still the brief for them.
 
 ---
@@ -64,24 +64,24 @@ still the brief for them.
 Everything the product knows arrives from somewhere. Today there is exactly one door — a modal that
 takes one file at a time and asks the user to classify it in our vocabulary before anything happens.
 That door works for one case (a transcript, right after the call) and fails every other one: fifty
-transcripts, a folder of mixed material, an article the user wants read a particular way, a question
+transcripts, a folder of mixed sources, an article the user wants read a particular way, a question
 with evidence attached, or an existing note-taking system the user wants to move in from.
 
 The failure isn't cosmetic. Arrival is where the memory either accretes or doesn't, and it's where a
-new user decides whether this thing is worth their real material.
+new user decides whether this thing is worth their own sources.
 
 ---
 
-## 2. The person, and where material comes from
+## 2. The person, and where sources come from
 
-One product owner, adopting alone, working between meetings. Material reaches them from six
+One product owner, adopting alone, working between meetings. Sources reach them from six
 directions: their own recorded meetings, someone else's forwarded recording, documents people send
 them, things they read, threads they paste, and thoughts they have.
 
 What they need back out is narrower than what goes in: commitments that didn't get dropped, decisions
 with a name attached, answers they can defend, and the feeling of not being behind.
 
-The emotional state at the moment of arrival varies more than the material does, and it's the better
+The emotional state at the moment of arrival varies more than the sources do, and it's the better
 design signal:
 
 | Situation                     | State                      | What they want                      |
@@ -91,7 +91,7 @@ design signal:
 | Read something interesting    | Curiosity, no stakes       | For it not to be lost               |
 | Forwarded someone's recording | Obligation, low ownership  | To know what's in it                |
 | Has a question, has the files | Impatient, investigative   | An answer, not a filing outcome     |
-| Trying the product for real   | Skeptical, protective      | To see it work on _their_ material  |
+| Trying the product for real   | Skeptical, protective      | To see it work on _their_ sources   |
 
 Note that "correctly classified" appears nowhere on the right-hand side. Taxonomy is our concern that
 we promoted into a user question.
@@ -110,7 +110,7 @@ of it, and I was not handed hundreds of small decisions to make.
 
 **Move in.** _When I decide to try a tool for something as personal as my own thinking, I want to
 bring my existing notes with me without losing their structure or my ability to leave, so I can judge
-it against my real material instead of a demo._ Done = my stuff is here, it looks like my stuff, and
+it against my own sources instead of a demo._ Done = my stuff is here, it looks like my stuff, and
 I can see exactly what was done to it.
 
 **Get an answer.** _When someone asks me something I should be able to answer, I want to point at the
@@ -131,7 +131,7 @@ being allowed to happen without a confirmation step.
 
 ---
 
-## 4. Three relationships to material
+## 4. Three relationships to a source
 
 Anything handed to the system is one of three things, and they want opposite treatment.
 
@@ -141,7 +141,7 @@ findable. The user has no opinion about what happens next and shouldn't need one
 **An errand.** "Do this with it." An action is the point and filing is a byproduct. The user has
 specific intent — a skill they wrote, a prompt for this once — and today has nowhere to put it.
 
-**A question.** "Answer this using these." An answer is the point; the material might not be worth
+**A question.** "Answer this using these." An answer is the point; the sources might not be worth
 keeping at all.
 
 A door that only models deposits is what makes the product feel rigid. The fix is not more chips —
@@ -152,7 +152,7 @@ it's letting the user say a sentence, and treating silence as a real answer.
 ## 5. Two ambitions: capture and catch-up
 
 The instinct to split ingestion from import is right, but the line isn't volume. It's **what the
-material can still cause.**
+sources can still cause.**
 
 **Capture answers "what just happened?"** Per-item, forward-looking, about things that are still
 live: this meeting produced these commitments, this decision, this contradiction with what we
@@ -173,8 +173,8 @@ catch-up. Same machinery, different ambition.
 
 **Superseded as a mode, kept as judgment (2026-08-05).** This distinction was real and the control
 that expressed it was not: a 5-item and a 21-day rule chose between them, and both edges were bugs.
-The line survives inside the skill instead — fresh material about live work earns a full read, a
-backlog earns filing plus skims — where an agent that has read the material can draw it, and where
+The line survives inside the skill instead — a fresh source about live work earns a full read, a
+backlog earns filing plus skims — where an agent that has read the source can draw it, and where
 the PM's own sentence overrides it in either direction. Nobody says "ingest", and nobody says
 "catch-up" at them either.
 
@@ -198,7 +198,7 @@ years ago. Both destroy trust instantly and permanently.
 
 For this flavour the right first move is an **overlay, not a migration**: leave every file where it
 is, resolve the links, recognise the entities, and let the user opt into promoting parts of it into
-typed notes as they turn out to matter. Their material starts as theirs and becomes ours only by
+typed notes as they turn out to matter. Their sources start as theirs and become ours only by
 invitation.
 
 **An everything dump** — _"here's my Evernote export."_ Structure is nominal and most of the content
@@ -206,20 +206,20 @@ is sediment: web clippings, receipts, half-written notes, three copies of the sa
 to **separate signal from sediment and be honest about the ratio.** The failure mode here is the worst
 of the three and the least visible: importing eighteen hundred web clippings degrades retrieval for
 everything else, forever, and it degrades it silently. Nothing looks broken; the memory just gets
-worse at answering. Imported-but-unvetted material has to be rankable _below_ material that was
+worse at answering. Imported-but-unvetted sources have to be rankable _below_ sources that were
 earned, or the import quietly poisons the product's core value.
 
 Across all three, two things are non-negotiable. **Nothing the user wrote gets rewritten** — we add
 alongside, never edit in place. And **the exit stays open**: plain markdown in a git repository they
 own means import is reversible and export is a non-event. That property is the only honest answer to
-"what if I want to leave," and it's what makes trying us with real material a reasonable risk instead
-of a leap.
+"what if I want to leave," and it's what makes trying us with their own sources a reasonable risk
+instead of a leap.
 
 ---
 
 ## 7. The shape we chose
 
-**Material plus an optional instruction, behaving like nothing at all by default.**
+**A source plus an optional instruction, behaving like nothing at all by default.**
 
 - **Drop anything, any number, anywhere.** It lands immediately — versioned, unchanged, no model in
   the loop, no modal. Arrival never waits.
@@ -252,7 +252,7 @@ when the answer actually mattered.
 ### Arrival
 
 1. **Arrival is free.** Nothing the user hands us waits on a decision, a form, or a model. If we
-   need to know something, we ask after the material is safe.
+   need to know something, we ask after the source is safe.
 2. **Silence is an answer.** An empty field means "you decide," never "you forgot." _(product-wide:
    applies to every optional input we ship)_
 3. **Ask only what only they know, and only when the answer changes what happens.** A question whose
@@ -268,7 +268,7 @@ when the answer actually mattered.
    directory gets legibility and correction instead. Filing a file and posting to a stakeholder are
    not the same risk, and treating them the same is what made fifty files unusable. _(product-wide
    — this is a deliberate narrowing of "nothing writes without an approval card")_
-6. **Correction beats undo.** Filing is reversible by moving, not by rewinding: the material is the
+6. **Correction beats undo.** Filing is reversible by moving, not by rewinding: the source is the
    user's own and they will not regret handing it over. So the affordance is "that was Kranelund's
    call", answered in a sentence, rather than a batch rewind nobody reaches for. _(revised
    2026-08-05; the earlier form asked for a real one-click undo of everything a run touched)_
@@ -283,7 +283,7 @@ when the answer actually mattered.
 
 ### Adoption
 
-10. **Day-one value on their material, not our demo.** The product's promise is that the memory
+10. **Day-one value on their own sources, not our demo.** The product's promise is that the memory
     accretes — catch-up is the time machine that lets week one look like week six. It's an activation
     mechanism, not a bulk-convenience feature.
 11. **Structure is earned, never manufactured.** No themes or insights invented from a single document
@@ -291,7 +291,7 @@ when the answer actually mattered.
     skill's position; it should be everyone's)_
 12. **History doesn't make commitments.** What arrives as past produces structure and findings, not
     todos and drafts.
-13. **Imported material ranks below earned material** until something vouches for it. Otherwise a
+13. **Imported sources rank below earned sources** until something vouches for it. Otherwise a
     dump degrades retrieval for everything, silently.
 14. **The exit stays open.** Plain markdown, git, no proprietary format. The files are theirs; we're a
     lens over them. _(product-wide — this is the foundation the rest of the trust story stands on)_
@@ -327,7 +327,7 @@ Deliberately out of scope here, to be designed separately:
   could mean five summaries or one synthesis. It was briefly a control the PM set (_each_ or
   _together_); it is now simply what the agent is reading, since one session handles the whole drop
   and can hold five interviews at once. What is left open is unchanged: whether a run over genuinely
-  unrelated material should look for patterns across it. The arrival skill says no and points at
+  unrelated sources should look for patterns across them. The arrival skill says no and points at
   synthesis, which needs a question to work from.
 - **Format adapters.** ENEX, Notion exports, Bear, Apple Notes. The principles above apply unchanged;
   the parsing does not.

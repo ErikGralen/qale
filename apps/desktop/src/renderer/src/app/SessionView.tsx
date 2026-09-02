@@ -1,10 +1,11 @@
 import { useMemo, useState, useRef, useEffect, type ReactNode } from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
+import { useStickToBottom } from 'use-stick-to-bottom';
 import { Button, Spinner } from '@qale/ui';
 import {
   AlertTriangle,
-  Check,
+  ArrowDown,
   Square,
   Wrench,
   Brain,
@@ -12,6 +13,8 @@ import {
   FileText,
   History,
   MessageSquarePlus,
+  Pin,
+  PinOff,
   RotateCcw,
   Wand2,
 } from 'lucide-react';
@@ -23,6 +26,7 @@ import { navFromEvent, type NavOpts } from '../lib/nav';
 import { draftTextShown } from '../lib/draft-text';
 import { noteTypeIcon } from '../lib/note-icons';
 import { fileIconFor } from '../lib/session-files';
+import { isPile, progressLine, receiptLine } from '../lib/source-batch';
 import { HeaderAction, HeaderActions, PageHeader } from '../components/PageHeader';
 import { InkWriting } from '../components/InkWriting';
 import { Markdown } from '../components/Markdown';
@@ -285,7 +289,7 @@ function liveLabel(part: AnyPart | undefined): string {
     case 'confluence_get_page':
       return 'Checking Confluence…';
     default:
-      if (name.startsWith('propose_') || name.startsWith('draft_')) return 'Drafting a card…';
+      if (name.startsWith('propose_') || name.startsWith('draft_')) return 'Drafting a proposal…';
       return 'Working…';
   }
 }
@@ -479,7 +483,7 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
 
 /**
  * A turn the app composed rather than the PM typed: a skill invoked on a page,
- * from "Go through this note", the meeting brief, or the receipt after material
+ * from "Go through this note", the meeting brief, or the receipt after a source
  * lands. Printing the instruction verbatim ("Run the arrival skill on
  * sources/…: read the capture, search the memory…") put a paragraph of machine
  * prose in a bubble the PM never wrote, and buried the two things they wanted:
@@ -488,11 +492,11 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
  * one click away, for when the question is what it was actually asked to do.
  *
  * The row is a sentence, and the verb carries the state: "Running Handle new
- * material on <the files>" while the turn is in flight, "Ran …" once it
- * settled. Material handed over with the run (the arrival drop) shows as file
+ * sources on <the files>" while the turn is in flight, "Ran …" once it
+ * settled. Sources handed over with the run (the arrival drop) show as file
  * chips exactly like vault targets show as page links — a run is never "on"
  * nothing when there was a something. The skill's own one-line summary sits
- * beneath, because a title like "Handle new material" names the skill without
+ * beneath, because a title like "Handle new sources" names the skill without
  * saying what it does.
  */
 function RunRow({
@@ -501,7 +505,7 @@ function RunRow({
   skillTitle,
   skillSummary,
   live,
-  materials = [],
+  sources = [],
   onOpen,
   onOpenFile,
 }: {
@@ -513,10 +517,10 @@ function RunRow({
   skillSummary?: string;
   /** True while this kickoff's turn is the one in flight. */
   live?: boolean;
-  /** Session files handed over with this run (`material/…`) — what an arrival ran on. */
-  materials?: SessionFileDTO[];
+  /** Session files handed over with this run (`source/…`) — what an arrival ran on. */
+  sources?: SessionFileDTO[];
   onOpen: (path: string, opts?: NavOpts) => void;
-  /** Opens a material chip in the session-file reader. */
+  /** Opens a source chip in the session-file reader. */
   onOpenFile?: (path: string, opts?: NavOpts) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -524,7 +528,7 @@ function RunRow({
     ? kickoff.instruction.charAt(0).toUpperCase() + kickoff.instruction.slice(1)
     : '';
   const targets = kickoff.targets ?? [];
-  const hasObjects = targets.length > 0 || materials.length > 0;
+  const hasObjects = targets.length > 0 || sources.length > 0;
   return (
     <div className="rounded-xl border border-border bg-secondary/40 px-3 py-2.5 text-sm">
       <div className="flex items-start gap-2.5">
@@ -569,10 +573,10 @@ function RunRow({
                 </a>
               );
             })}
-            {/* Working material, not memory: these chips stay neutral — the
+            {/* Handed-over sources, not memory: these chips stay neutral — the
                 ink-blue wash belongs to pages in the vault, and a session file
                 is deliberately not one. */}
-            {materials.map((file) => {
+            {sources.map((file) => {
               const FileIcon = fileIconFor(file.path);
               const name = file.path.slice(file.path.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '');
               return (
@@ -623,7 +627,7 @@ function RunRow({
 
 /** What a blank session says before the first message. */
 const EMPTY_HINT =
-  'A session with your memory. Pick a skill (or let the agent load one) when it turns into work. Nothing is written without an approval card.';
+  'Chat with an agent that can read all your notes. If it wants to change something, it sends you a proposal first.';
 
 interface SessionViewProps {
   /**
@@ -635,6 +639,10 @@ interface SessionViewProps {
   skill?: string;
   /** Stored session to reopen — its transcript replays before the live view mounts. */
   sessionId?: string;
+  /** The tab's history entry key: what a half-typed message is filed under so
+   *  it survives leaving this tab and coming back (a fresh session has no
+   *  sessionId to key off yet, but its tab does). */
+  draftKey?: string;
   /** Fired when the main process assigns this session its id (first turn). */
   onSessionId?: (sessionId: string) => void;
   /** Shows a "New session" button in the header wired to this. */
@@ -651,13 +659,20 @@ interface SessionViewProps {
 }
 
 /**
+ * A half-typed message survives leaving the tab and coming back. Module-level
+ * and keyed by the tab's history entry (View.key), not the session id — a
+ * fresh session has no id yet, but its tab does.
+ */
+const drafts = new Map<string, string>();
+
+/**
  * Loads the stored transcript (if any) before mounting the live view, so
  * reopening yesterday's session shows its history and keeps going in the
  * same pi session. If the session has a turn running in the background (kicked
  * off, tab closed, reopened), the view shows the transcript so far with a
  * working banner and refreshes itself when the run settles.
  */
-export function SessionView({ sessionId, ...props }: SessionViewProps) {
+export function SessionView({ sessionId, draftKey, ...props }: SessionViewProps) {
   // The id this view mounted with; later binds re-render the parent but must
   // not reset the live useChat state.
   const initialSessionId = useRef(sessionId).current;
@@ -713,6 +728,7 @@ export function SessionView({ sessionId, ...props }: SessionViewProps) {
     <SessionThread
       {...props}
       key={reloadKey}
+      draftKey={draftKey}
       initialSessionId={initialSessionId}
       initialMessages={history}
       backgroundStreamId={backgroundRunning ? overview?.streamId : undefined}
@@ -734,6 +750,7 @@ function SessionThread({
   embedded,
   backgroundStreamId,
   onOwnStream,
+  draftKey,
 }: Omit<SessionViewProps, 'sessionId'> & {
   initialSessionId?: string;
   initialMessages: UIMessage[];
@@ -756,6 +773,7 @@ function SessionThread({
     spawnRequests,
     codebaseRequests,
     askRequests,
+    arrivalProgress,
     skills,
     sessionFiles,
     openSessionFile,
@@ -810,8 +828,24 @@ function SessionThread({
     transport,
     messages: initialMessages,
   });
-  const [input, setInput] = useState('');
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [input, setInputState] = useState(() => (draftKey ? (drafts.get(draftKey) ?? '') : ''));
+  const setInput = (v: string) => {
+    setInputState(v);
+    if (!draftKey) return;
+    if (v) drafts.set(draftKey, v);
+    else drafts.delete(draftKey);
+  };
+  // Follow the stream only while the PO is at the bottom — scrolling up to
+  // reread must not get yanked back down by the next chunk.
+  //
+  // This watches the transcript's SIZE, not React state, which is the whole
+  // reason it is a library and not four lines here. Half of what lands in a
+  // session is not a chat message: a question card, a spawn or codebase
+  // approval, and the review cards all come from their own stores, and a card
+  // already on screen grows after it mounts (a diff measures itself, Markdown
+  // reflows). A follower keyed on `messages` sees none of that, so the card
+  // that just arrived stayed below the fold.
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mentions = useChatMentions(tree, inputRef, input, setInput);
   // Titles + glyphs for the pages a run names, so a kickoff row can say
@@ -834,18 +868,31 @@ function SessionThread({
   // session while it is: a message sent now is silently dropped, and the
   // answer belongs in the card that is holding the run.
   const askPending = !!boundSessionId && !!askRequests[boundSessionId];
+  // Parked on any card that holds the run (a question, a fan-out, a codebase
+  // ask). The card is the state, so the working banner stays quiet.
+  const parkedOnCard =
+    !!boundSessionId &&
+    (!!askRequests[boundSessionId] ||
+      !!spawnRequests[boundSessionId] ||
+      !!codebaseRequests[boundSessionId]);
   // The stored row for this session (once it exists) — drives Mark done/Reopen.
   const overview = boundSessionId ? sessions.find((s) => s.id === boundSessionId) : undefined;
 
-  // Material handed over with the drop (`material/…`) — the files an arrival
+  // Sources handed over with the drop (`source/…`) — the files an arrival
   // run is ON. Only the opening kickoff wears them: they landed with it.
-  const materials = useMemo(
+  const sources = useMemo(
     () =>
       boundSessionId
-        ? (sessionFiles[boundSessionId] ?? []).filter((f) => f.path.startsWith('material/'))
+        ? (sessionFiles[boundSessionId] ?? []).filter((f) => f.path.startsWith('source/'))
         : [],
     [sessionFiles, boundSessionId],
   );
+
+  // A pile of dropped files this session is reading, or has read
+  // (docs/critical-mass.md CM-2). Small drops carry no batch line: counting two
+  // files reads as bookkeeping, and the reply says it better.
+  const batch = boundSessionId ? arrivalProgress[boundSessionId] : undefined;
+  const pile = isPile(batch) ? batch : undefined;
 
   // The turn in flight belongs to the last user message; every kickoff before
   // it has settled by definition, so only this one may read "Running".
@@ -856,20 +903,6 @@ function SessionThread({
       break;
     }
   }
-
-  // What the background banner calls the work: the skill the in-flight turn
-  // was kicked off with, when it was a kickoff at all.
-  const runningSkill = useMemo(() => {
-    if (lastUserIdx < 0) return undefined;
-    const parts = messages[lastUserIdx]!.parts as AnyPart[];
-    const text = parts
-      .filter((p) => p.type === 'text')
-      .map((p) => p.text)
-      .join('\n');
-    const kickoff = parseKickoff(text);
-    if (!kickoff) return undefined;
-    return skills.find((s) => s.name === kickoff.skill)?.title ?? kickoff.skill;
-  }, [messages, lastUserIdx, skills]);
 
   // Voices ride the same roster as skills, told apart by the folder they sit in
   // (SkillDTO.kind). A draft panel offers them so a take the PM does not like
@@ -890,13 +923,6 @@ function SessionThread({
   useEffect(() => {
     if (status === 'ready' && currentSessionId.current) markSessionSeen(currentSessionId.current);
   }, [status, markSessionSeen]);
-
-  // Follow the stream only while the PO is at the bottom — scrolling up to
-  // reread must not get yanked back down by the next chunk.
-  const atBottom = useRef(true);
-  useEffect(() => {
-    if (atBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, status]);
 
   const send = (raw: string) => {
     let text = raw;
@@ -963,7 +989,7 @@ function SessionThread({
           crumbs={[{ label: 'Sessions', onClick: (e) => openChats(navFromEvent(e)) }]}
           label={overview?.title || 'New session'}
           labelTitle={overview?.title || undefined}
-          meta={overview?.lifecycle === 'done' ? 'done' : undefined}
+          meta={overview?.lifecycle === 'unpinned' ? 'unpinned' : undefined}
         >
           <HeaderActions>
             {overview &&
@@ -971,15 +997,15 @@ function SessionThread({
               !backgroundBusy &&
               (overview.lifecycle === 'active' ? (
                 <HeaderAction
-                  icon={Check}
-                  label="Mark done"
-                  title="Mark this session done: it leaves the active list (a new message reopens it)"
-                  onClick={() => void setSessionLifecycle(overview.id, 'done')}
+                  icon={PinOff}
+                  label="Unpin"
+                  title="Unpin: it leaves the active list (a new message reopens it)"
+                  onClick={() => void setSessionLifecycle(overview.id, 'unpinned')}
                 />
               ) : (
                 <HeaderAction
-                  icon={RotateCcw}
-                  label="Reopen"
+                  icon={Pin}
+                  label="Pin"
                   title="Put this session back on the active list"
                   onClick={() => void setSessionLifecycle(overview.id, 'active')}
                 />
@@ -991,221 +1017,262 @@ function SessionThread({
         </PageHeader>
       )}
 
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto px-6"
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        }}
-      >
-        <div className="mx-auto flex max-w-2xl flex-col gap-4 py-4">
-          {messages.length === 0 && !busy && (
-            <p className="mt-16 text-center text-sm text-muted-foreground">{EMPTY_HINT}</p>
-          )}
-          {messages.map((message, mi) => {
-            const parts = message.parts as AnyPart[];
-            if (message.role === 'user') {
-              const text = parts
-                .filter((p) => p.type === 'text')
-                .map((p) => p.text)
-                .join('\n');
-              // A skill the PM invoked from a button reads as a run, not as
-              // something they said. Anything they actually typed stays a message.
-              const kickoff = parseKickoff(text);
-              if (kickoff) {
-                const skillMeta = skills.find((s) => s.name === kickoff.skill);
+      {/* `relative` so the catch-up button can sit over the foot of the
+          transcript rather than taking a row from the composer. */}
+      <div className="relative min-h-0 flex-1">
+        <div ref={scrollRef} className="h-full overflow-y-auto px-6">
+          <div ref={contentRef} className="mx-auto flex max-w-2xl flex-col gap-4 py-4">
+            {messages.length === 0 && !busy && (
+              <p className="mt-16 text-center text-sm text-muted-foreground">{EMPTY_HINT}</p>
+            )}
+            {messages.map((message, mi) => {
+              const parts = message.parts as AnyPart[];
+              if (message.role === 'user') {
+                const text = parts
+                  .filter((p) => p.type === 'text')
+                  .map((p) => p.text)
+                  .join('\n');
+                // A skill the PM invoked from a button reads as a run, not as
+                // something they said. Anything they actually typed stays a message.
+                const kickoff = parseKickoff(text);
+                if (kickoff) {
+                  const skillMeta = skills.find((s) => s.name === kickoff.skill);
+                  return (
+                    <RunRow
+                      key={message.id}
+                      kickoff={kickoff}
+                      notes={noteByPath}
+                      skillTitle={skillMeta?.title ?? kickoff.skill}
+                      skillSummary={skillMeta?.summary}
+                      live={mi === lastUserIdx && (busy || backgroundBusy)}
+                      // The opening kickoff of a drop ran on the handed-over
+                      // files; naming them here is the row's whole point.
+                      sources={mi === 0 && !kickoff.targets?.length ? sources : []}
+                      onOpen={openDoc}
+                      onOpenFile={(path, opts) =>
+                        boundSessionId && openSessionFile(boundSessionId, path, opts)
+                      }
+                    />
+                  );
+                }
                 return (
-                  <RunRow
-                    key={message.id}
-                    kickoff={kickoff}
-                    notes={noteByPath}
-                    skillTitle={skillMeta?.title ?? kickoff.skill}
-                    skillSummary={skillMeta?.summary}
-                    live={mi === lastUserIdx && (busy || backgroundBusy)}
-                    // The opening kickoff of a drop ran on the handed-over
-                    // files; naming them here is the row's whole point.
-                    materials={mi === 0 && !kickoff.targets?.length ? materials : []}
-                    onOpen={openDoc}
-                    onOpenFile={(path, opts) =>
-                      boundSessionId && openSessionFile(boundSessionId, path, opts)
-                    }
-                  />
+                  <div key={message.id} className="flex justify-end">
+                    <div className="max-w-[85%] rounded-2xl bg-secondary px-3.5 py-2 text-secondary-foreground">
+                      <Markdown content={messageMarkdown(text)} onOpenNote={openDoc} />
+                    </div>
+                  </div>
                 );
               }
+              // The working phase (reasoning, tool calls, mid-work narration)
+              // folds into an ActivityBlock; only the final text renders as the
+              // answer. While streaming, a trailing text is treated as the answer
+              // until a later tool call proves it was narration.
+              let lastTextIdx = -1;
+              for (let i = parts.length - 1; i >= 0; i--) {
+                if (parts[i]!.type === 'text') {
+                  lastTextIdx = i;
+                  break;
+                }
+              }
+              // A text with a parking call after it ("let me check with the
+              // PM", then ask_user) is narration on the way to the card below,
+              // not the answer. It folds into the trail; the card is what the
+              // PM reads. Once the turn carries on past the card, a later text
+              // becomes the answer again.
+              const parked = parts.some(
+                (p, i) =>
+                  i > lastTextIdx &&
+                  isToolPart(p) &&
+                  ['ask_user', 'spawn', 'ask_codebase'].includes(toolNameOf(p)),
+              );
+              const answerIdx = parked ? -1 : lastTextIdx;
+              // With one exception: a fenced block mid-work is not narration, it
+              // is something the PM is meant to copy and run somewhere else. The
+              // interview hands over a prompt for Claude Code that way, and folded
+              // into the trace it read as "you never gave me anything". Anything
+              // carrying a fence comes back out and renders in place.
+              const handover = (p: AnyPart, i: number) =>
+                p.type === 'text' && i !== answerIdx && (p.text ?? '').includes('```');
+              const isLastMessage = mi === messages.length - 1;
+              // Only the trail at the very end of a turn can still be running.
+              const tail = parts[parts.length - 1];
+              const liveTail = busy && isLastMessage && !!tail && isActivityPart(tail);
+
+              // The turn in the order it happened. Work piles up until something
+              // the PM is meant to read interrupts it — a draft panel, a handover,
+              // the answer — and that flushes the pile into one folded block. One
+              // block for the whole turn lost the order, so "a panel, then a
+              // paragraph, then another panel" came out as neither.
+              const nodes: ReactNode[] = [];
+              let pending: AnyPart[] = [];
+              let pendingFrom = 0;
+              const flush = (live: boolean) => {
+                if (pending.length === 0) return;
+                nodes.push(
+                  <ActivityBlock key={`activity-${pendingFrom}`} parts={pending} live={live} />,
+                );
+                pending = [];
+              };
+              parts.forEach((part, i) => {
+                // A call still running, refused, or with no usable variants reads
+                // as null and folds into the trail like any other step.
+                const draft =
+                  isToolPart(part) && toolNameOf(part) === 'draft_text'
+                    ? draftTextShown(part)
+                    : null;
+                if (draft) {
+                  flush(false);
+                  nodes.push(
+                    <DraftTextPanel
+                      key={`draft-${i}`}
+                      draft={draft}
+                      voices={voices}
+                      onUse={send}
+                      onOpenNote={openDoc}
+                      disabled={busy || backgroundBusy || askPending}
+                    />,
+                  );
+                  return;
+                }
+                if (part.type === 'text' && (i === answerIdx || handover(part, i))) {
+                  flush(false);
+                  nodes.push(
+                    <Markdown
+                      key={`text-${i}`}
+                      content={outsideCode(part.text ?? '', linkifyNotePaths)}
+                      onOpenNote={openDoc}
+                    />,
+                  );
+                  return;
+                }
+                if (isActivityPart(part) || part.type === 'text') {
+                  if (pending.length === 0) pendingFrom = i;
+                  pending.push(part);
+                }
+              });
+              flush(liveTail);
               return (
-                <div key={message.id} className="flex justify-end">
-                  <div className="max-w-[85%] rounded-2xl bg-secondary px-3.5 py-2 text-secondary-foreground">
-                    <Markdown content={messageMarkdown(text)} onOpenNote={openDoc} />
-                  </div>
+                <div key={message.id} className="w-full">
+                  {nodes}
                 </div>
               );
-            }
-            // The working phase (reasoning, tool calls, mid-work narration)
-            // folds into an ActivityBlock; only the final text renders as the
-            // answer. While streaming, a trailing text is treated as the answer
-            // until a later tool call proves it was narration.
-            let lastTextIdx = -1;
-            for (let i = parts.length - 1; i >= 0; i--) {
-              if (parts[i]!.type === 'text') {
-                lastTextIdx = i;
-                break;
-              }
-            }
-            // With one exception: a fenced block mid-work is not narration, it
-            // is something the PM is meant to copy and run somewhere else. The
-            // interview hands over a prompt for Claude Code that way, and folded
-            // into the trace it read as "you never gave me anything". Anything
-            // carrying a fence comes back out and renders in place.
-            const handover = (p: AnyPart, i: number) =>
-              p.type === 'text' && i !== lastTextIdx && (p.text ?? '').includes('```');
-            const isLastMessage = mi === messages.length - 1;
-            // Only the trail at the very end of a turn can still be running.
-            const tail = parts[parts.length - 1];
-            const liveTail = busy && isLastMessage && !!tail && isActivityPart(tail);
-
-            // The turn in the order it happened. Work piles up until something
-            // the PM is meant to read interrupts it — a draft panel, a handover,
-            // the answer — and that flushes the pile into one folded block. One
-            // block for the whole turn lost the order, so "a panel, then a
-            // paragraph, then another panel" came out as neither.
-            const nodes: ReactNode[] = [];
-            let pending: AnyPart[] = [];
-            let pendingFrom = 0;
-            const flush = (live: boolean) => {
-              if (pending.length === 0) return;
-              nodes.push(
-                <ActivityBlock key={`activity-${pendingFrom}`} parts={pending} live={live} />,
-              );
-              pending = [];
-            };
-            parts.forEach((part, i) => {
-              // A call still running, refused, or with no usable variants reads
-              // as null and folds into the trail like any other step.
-              const draft =
-                isToolPart(part) && toolNameOf(part) === 'draft_text' ? draftTextShown(part) : null;
-              if (draft) {
-                flush(false);
-                nodes.push(
-                  <DraftTextPanel
-                    key={`draft-${i}`}
-                    draft={draft}
-                    voices={voices}
-                    onUse={send}
-                    onOpenNote={openDoc}
-                    disabled={busy || backgroundBusy || askPending}
-                  />,
-                );
-                return;
-              }
-              if (part.type === 'text' && (i === lastTextIdx || handover(part, i))) {
-                flush(false);
-                nodes.push(
-                  <Markdown
-                    key={`text-${i}`}
-                    content={outsideCode(part.text ?? '', linkifyNotePaths)}
-                    onOpenNote={openDoc}
-                  />,
-                );
-                return;
-              }
-              if (isActivityPart(part) || part.type === 'text') {
-                if (pending.length === 0) pendingFrom = i;
-                pending.push(part);
-              }
-            });
-            flush(liveTail);
-            return (
-              <div key={message.id} className="w-full">
-                {nodes}
+            })}
+            {waitingFirstToken && (
+              <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                <InkWriting className="shrink-0 text-brand" /> Reading the memory…
               </div>
-            );
-          })}
-          {waitingFirstToken && (
-            <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
-              <InkWriting className="shrink-0 text-brand" /> Reading the memory…
-            </div>
-          )}
-          {/* A turn running somewhere this view can't see into. It can't narrate
-              steps the way a live stream does, so it says the three things it
-              does know: whose work this is, how long it has been at it, and
-              that nothing here needs watching. */}
-          {backgroundBusy && (
-            <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
-              <InkWriting className="shrink-0 text-brand" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">
-                  {runningSkill ? `${runningSkill} is working` : 'Still working on this'}
+            )}
+            {/* A turn running somewhere this view can't see into. The kickoff
+              row above already names the work, so this row only says that it
+              is alive, for how long, and how to stop it. While the run is
+              parked on a card, that card is the state and this stays quiet. */}
+            {backgroundBusy && !parkedOnCard && (
+              <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5">
+                <InkWriting className="shrink-0 text-brand" />
+                {/* A pile counts down here instead of saying it is busy: the
+                    files land one at a time over several minutes, and this is
+                    the line the PM is watching (CM-2). */}
+                <p className="min-w-0 flex-1 truncate text-sm font-medium">
+                  {pile && !pile.done ? progressLine(pile) : 'Still working'}
                   {backgroundClock && (
                     <span className="font-normal text-muted-foreground"> · {backgroundClock}</span>
                   )}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  This page updates by itself when it finishes.
-                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() =>
+                    backgroundStreamId && void invoke['agent:abort'](backgroundStreamId)
+                  }
+                >
+                  <Square className="size-3" /> Stop
+                </Button>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="shrink-0"
-                onClick={() => backgroundStreamId && void invoke['agent:abort'](backgroundStreamId)}
-              >
-                <Square className="size-3" /> Stop
-              </Button>
-            </div>
-          )}
-          {/* The provider's refusal, said in one sentence with what to do about
+            )}
+            {/* The provider's refusal, said in one sentence with what to do about
               it (api-errors.ts), not wrapped in a second sentence of ours. Most
               of these clear on their own (overloaded, rate limited), so the one
               thing the PM needs is the same turn again without retyping it —
               and a kickoff they never typed at all can only be retried here. */}
-          {error && (
-            <div className="rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-              {error.message}
-              <span className="block text-destructive/80">Nothing was lost.</span>
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-2"
-                disabled={busy || backgroundBusy}
-                onClick={() => void regenerate()}
-              >
-                <RotateCcw className="size-3" /> Try again
-              </Button>
-            </div>
-          )}
+            {error && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
+                {error.message}
+                <span className="block text-destructive/80">Nothing was lost.</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  disabled={busy || backgroundBusy}
+                  onClick={() => void regenerate()}
+                >
+                  <RotateCcw className="size-3" /> Try again
+                </Button>
+              </div>
+            )}
 
-          {/* The turn is parked on the PM. First of everything below the
+            {/* What the pile came to, in one sentence (CM-2). It sums a batch
+              the reply above describes piece by piece, and every number in it
+              was counted from a filing that happened.
+
+              It wears the same 20px mark column as the approval receipt below
+              it, because the two are one closing moment: what was read, then
+              what was approved. Naked, the sentence floated between them as a
+              third unrelated line. */}
+            {pile?.done && (
+              <p className="flex items-center gap-2 px-0.5 text-sm text-muted-foreground">
+                <span className="flex size-5 shrink-0 items-center justify-center">
+                  <FileText className="size-3.5" />
+                </span>
+                {receiptLine(pile)}
+              </p>
+            )}
+
+            {/* The turn is parked on the PM. First of everything below the
               transcript: the agent is holding its whole reading open waiting
               for this, and nothing else here can move until it settles.
 
               Which card depends on what it parked on, and `comments` is read
               first: a round carries no questions, so the question card drawn
               from one would be an empty card. */}
-          {boundSessionId &&
-            askRequests[boundSessionId] &&
-            (askRequests[boundSessionId]!.comments ? (
-              <CommentsCard request={askRequests[boundSessionId]!} />
-            ) : (
-              <QuestionCard request={askRequests[boundSessionId]!} />
-            ))}
+            {boundSessionId &&
+              askRequests[boundSessionId] &&
+              (askRequests[boundSessionId]!.comments ? (
+                <CommentsCard request={askRequests[boundSessionId]!} />
+              ) : (
+                <QuestionCard request={askRequests[boundSessionId]!} />
+              ))}
 
-          {/* A fan-out waiting on approval. Above the proposal cards: nothing
+            {/* A fan-out waiting on approval. Above the proposal cards: nothing
               else in this session can move until it settles. */}
-          {boundSessionId && spawnRequests[boundSessionId] && (
-            <SpawnCard request={spawnRequests[boundSessionId]!} />
-          )}
+            {boundSessionId && spawnRequests[boundSessionId] && (
+              <SpawnCard request={spawnRequests[boundSessionId]!} />
+            )}
 
-          {/* A codebase question waiting on approval, in the same place and for
+            {/* A codebase question waiting on approval, in the same place and for
               the same reason: the turn is parked until it settles. */}
-          {boundSessionId && codebaseRequests[boundSessionId] && (
-            <CodebaseCard request={codebaseRequests[boundSessionId]!} />
-          )}
+            {boundSessionId && codebaseRequests[boundSessionId] && (
+              <CodebaseCard request={codebaseRequests[boundSessionId]!} />
+            )}
 
-          {/* The cards this session proposed — approvable right here, so the PO
+            {/* The cards this session proposed — approvable right here, so the PO
               never has to hop to the Inbox to close out a meeting. */}
-          {boundSessionId && <SessionReview sessionId={boundSessionId} />}
+            {boundSessionId && <SessionReview sessionId={boundSessionId} />}
+          </div>
         </div>
+
+        {/* Scrolled up while a turn runs, the PO loses the thread of it. The
+            button says so and puts them back, and it is only ever there when
+            there is something below to go back to. */}
+        {!isAtBottom && messages.length > 0 && (
+          <button
+            onClick={() => void scrollToBottom()}
+            className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-background/95 py-1.5 pr-3 pl-2.5 text-xs font-medium text-muted-foreground shadow-md backdrop-blur transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            <ArrowDown className="size-3.5" aria-hidden />
+            {busy || backgroundBusy ? 'Follow along' : 'Latest'}
+          </button>
+        )}
       </div>
 
       {needsKey && (

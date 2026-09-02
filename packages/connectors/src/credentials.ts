@@ -7,10 +7,22 @@ import type { Connector, ConnectorProvider, ProviderReadTool } from './types.js'
  * different clients.
  */
 
-/** A bare host is what people paste; the client needs a scheme. */
+/**
+ * A bare host is what people paste; the client needs a scheme. People also
+ * paste the whole page they were looking at (a ticket, a Confluence page) —
+ * the site is only its scheme and host, so a path never becomes part of the
+ * stored address. Falls back to a plain trim when the string won't parse as
+ * a URL even with a scheme added (kept as-is; downstream validation reports
+ * it as malformed rather than this function guessing further).
+ */
 export function withScheme(siteUrl: string): string {
   const trimmed = siteUrl.trim().replace(/\/+$/, '');
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    return new URL(withProto).origin;
+  } catch {
+    return withProto;
+  }
 }
 
 /** A field that holds an address, by its key. The one generic fact this file

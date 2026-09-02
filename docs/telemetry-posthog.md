@@ -309,7 +309,7 @@ could disagree with it (the rule the First steps work landed on, and it held up)
 | `app.crashed`      | `uncaughtException`, `unhandledRejection`, `render-process-gone`, `child-process-gone` | error name, message, scrubbed stack, which process                                                                       |
 | `session.finished` | `handlers.ts` `agent.onStatus`, `status === 'settled'` (~line 610)                     | skill (known names, else `custom`), trigger (manual, scheduled, arrival), duration bucket, failed, cards proposed bucket |
 | `card.decided`     | `proposals:accept` / `proposals:reject` (~1343, ~1352)                                 | decision, card kind, edited, age bucket                                                                                  |
-| `material.added`   | the capture handlers (~1046 single, ~1255 batch)                                       | kind, count bucket, started a session                                                                                    |
+| `source.added`     | the capture handlers (~1046 single, ~1255 batch)                                       | kind, count bucket, started a session                                                                                    |
 | `connection.added` | Google connect success, Atlassian verify success                                       | provider, followed-container count bucket                                                                                |
 | `onboarding.step`  | `settings:setOnboarding`                                                               | step id, done or skipped or finished                                                                                     |
 
@@ -450,7 +450,7 @@ of them new events:
   event happens, not when the consent backlog drains, so a held event keeps the screen it happened
   on. A string outside the union is dropped, never remembered.
 - **Which sitting it belongs to.** Events had nothing tying a launch-to-quit run together, so
-  funnels like "material in, session finished, card decided, all in one sitting" had no join key.
+  funnels like "source in, session finished, card decided, all in one sitting" had no join key.
   The sender mints one UUIDv7 per process and sends it as `$session_id`, the property PostHog's
   session analytics read. One run of the app is one session, which is the honest unit for a desktop
   app. The id is random plus its own mint time and is never stored.

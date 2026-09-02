@@ -28,21 +28,52 @@ export function beforeMeetingSeed(path: string): string {
   });
 }
 
+/** What a meeting page actually holds, for {@link readMeetingSeed}. */
+export interface MeetingContents {
+  /** How many transcripts the page links. */
+  transcripts: number;
+  /** Whether the PO typed anything into the page itself. */
+  typed: boolean;
+}
+
 /**
- * Read a meeting that is already filed (meeting page → "Go through the transcript").
+ * Read a meeting that is already filed (meeting page → "Go through this meeting").
  *
  * The one door back into a review (AR-3). An arrival that could not start — no
  * API key that afternoon, the skill switched off, the app quit mid-run — used to
  * leave the transcript on the page with nothing that could ever pick it up
  * again. Nothing is filed here, so the run starts on the page rather than on a
- * session folder of material.
+ * session folder of sources.
+ *
+ * The seed names what the page holds because the two kinds are not read the
+ * same way. A transcript is received: it says what a room said, and a model
+ * may weigh it. Typed notes are authored, so the run has nothing to weigh: the
+ * PO already decided what mattered when they wrote it down (docs/live-notes.md,
+ * LN-3).
  */
-export function readMeetingSeed(path: string): string {
+export function readMeetingSeed(path: string, contents: MeetingContents): string {
+  const holds =
+    contents.transcripts > 0 && contents.typed
+      ? 'It carries notes I typed myself, and it links transcripts.'
+      : contents.transcripts > 0
+        ? 'It links transcripts.'
+        : 'It carries notes I typed myself, and no recording.';
+  const sentences = [
+    `this meeting is already filed. ${holds}`,
+    contents.transcripts > 0
+      ? 'Read the page and every transcript it links, plus the memory those touch, then file what it changes as proposals: decisions with their decider, every commitment made, the summary, and anything that contradicts what the memory holds.'
+      : 'Read the page, plus the memory it touches, then file what it changes as proposals: decisions with their decider, every commitment made, the summary, and anything that contradicts what the memory holds.',
+    contents.typed
+      ? 'The typed notes are my own words. Treat them as authored, not as received content, and where they disagree with a transcript the typed notes win, because I wrote them.'
+      : null,
+    contents.transcripts > 0
+      ? 'Transcripts already marked processed have been through this, so leave their commitments alone and read only what is new.'
+      : null,
+  ];
   return buildKickoff({
     skill: ARRIVAL_AGENT_NAME,
     targets: [path],
-    instruction:
-      'this meeting is already filed. Read the page and every transcript it links, plus the memory those touch, then propose what it changes as approval cards: decisions with their decider, every commitment made, the summary, and anything that contradicts what the memory holds. Transcripts already marked processed have been through this, so leave their commitments alone and read only what is new.',
+    instruction: sentences.filter(Boolean).join(' '),
   });
 }
 
@@ -51,7 +82,7 @@ export function processNoteSeed(path: string): string {
   return buildKickoff({
     skill: 'process-note',
     targets: [path],
-    instruction: `read it, then propose the full ripple as approval cards: one update cleaning the note itself (typos, structure, wikilinks into the memory, and a title on the card if the note needs one), updates to the other notes it impacts (hubs it adds signal to, open questions it answers, last_told it advances, claims it contradicts), and new notes it implies (commitments heard as todos, insights worth keeping, a real decision with a decider as a decision card). Parts already processed and wikilinked by an earlier run stay untouched. Only handle what's new or still raw.`,
+    instruction: `read it, then file the full ripple as proposals: one update cleaning the note itself (typos, structure, wikilinks into the memory, and a title on the proposal if the note needs one), updates to the other notes it impacts (hubs it adds signal to, open questions it answers, last_told it advances, claims it contradicts), and new notes it implies (commitments heard as todos, insights worth keeping, a real decision with a decider as its own decision proposal). Parts already processed and wikilinked by an earlier run stay untouched. Only handle what's new or still raw.`,
   });
 }
 
@@ -74,6 +105,6 @@ export function handleTodoSeed(todo: TodoRef, today: string): string {
     targets: [todo.path],
     instruction: `help me handle this commitment: “${todo.title}”${
       meta ? ` (${meta})` : ''
-    }, today is ${today}. Read it, its source meeting, and the related memory, and check whether it has already happened. Also check the calendar: if it involves a person, look for an upcoming meeting with them (a meeting note dated today or later listing them in participants). A conversation on the horizon may be the place to handle it. Then propose how to handle it as approval cards: a short concrete plan on the todo if it's still live, close it if the memory shows it's done or moot, reschedule only if there's a real reason to move the date, raise it on the upcoming meeting's page if you're seeing them soon, or draft a nudge if someone else is blocking and there's no meeting coming. Don't just push the due date to clear the flag.`,
+    }, today is ${today}. Read it, its source meeting, and the related memory, and check whether it has already happened. Also check the calendar: if it involves a person, look for an upcoming meeting with them (a meeting note dated today or later listing them in participants). A conversation on the horizon may be the place to handle it. Then turn how to handle it into proposals: a short concrete plan on the todo if it's still live, close it if the memory shows it's done or moot, reschedule only if there's a real reason to move the date, raise it on the upcoming meeting's page if you're seeing them soon, or draft a nudge if someone else is blocking and there's no meeting coming. Don't just push the due date to clear the flag.`,
   });
 }

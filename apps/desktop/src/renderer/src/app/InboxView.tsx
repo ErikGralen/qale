@@ -5,14 +5,27 @@ import type { ProposalDTO } from '@qale/ipc';
 import { MAINTENANCE_AGENTS } from '@qale/sessions';
 import { useApp, type SessionOverview } from '../state/app-state';
 import { ofKind, type AttentionItem } from '../lib/attention';
-import { navFromEvent } from '../lib/nav';
+import { navFromEvent, type NavOpts } from '../lib/nav';
 import { timeAgo } from '../lib/session-meta';
 import { PageHeader } from '../components/PageHeader';
 import { QuestionItem } from '../components/inbox/QuestionItem';
 import { ResultItem } from '../components/inbox/ResultItem';
-import { ReviewAsks, SentReceipts, SpotAudit, useApprovals } from '../components/inbox/approvals';
+import {
+  hasJudgedACard,
+  ReviewAsks,
+  SentReceipts,
+  useApprovals,
+  type Approvals,
+} from '../components/inbox/approvals';
 import { ApproveAll, CardRows } from '../components/inbox/CardRows';
-import { bareRef, orderCards, titleForRef } from '../components/inbox/cardMeta';
+import {
+  bareRef,
+  clearedInbox,
+  orderCards,
+  receiptSummary,
+  titleForRef,
+} from '../components/inbox/cardMeta';
+import { ReceiptLines } from '../components/inbox/Receipt';
 
 /**
  * The document a group of cards is ABOUT — the meeting or source they target,
@@ -108,15 +121,17 @@ export function InboxView() {
     waitingCount,
     proposals,
     sessions,
+    vault,
     refreshProposals,
     openDoc,
     openChat,
+    openHome,
     markSessionSeen,
   } = useApp();
   // Every accept, discard and batch on this page runs the one approve path,
   // the same one the session's own review block runs.
   const approvals = useApprovals();
-  const { busy, receipt, accept, reject, rejectAll } = approvals;
+  const { busy, accept, reject, rejectAll } = approvals;
   const [focusIdx, setFocusIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -367,28 +382,20 @@ export function InboxView() {
         className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-8 py-5 outline-none"
         tabIndex={0}
       >
-        {queue.length > 0 && <SpotAudit approvals={approvals} />}
-
-        <SentReceipts sent={approvals.sent} />
+        {/* While the queue still holds something, a send that just left needs
+            its own banner. Once the queue is empty the receipt below says it,
+            in the same words, with everything else the sitting did. */}
+        {items.length > 0 && <SentReceipts sent={approvals.sent} />}
 
         <ReviewAsks approvals={approvals} />
 
         {items.length === 0 ? (
-          <div className="mt-16 flex flex-col items-center gap-3 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-brand/10">
-              <Check className="size-6 text-brand" />
-            </div>
-            <h2 className="text-lg font-semibold">Inbox zero</h2>
-            {(receipt.accepted > 0 || receipt.rejected > 0) && (
-              <p className="text-sm text-muted-foreground">
-                {receipt.accepted} accepted · {receipt.rejected} dismissed so far.
-              </p>
-            )}
-            <p className="max-w-sm text-sm text-muted-foreground">
-              Nothing needs you. Approval cards, finished sessions, and the librarian's tidy-ups
-              land here, judged in seconds, nothing written silently.
-            </p>
-          </div>
+          <Cleared
+            approvals={approvals}
+            judgedBefore={hasJudgedACard(vault?.path ?? '')}
+            onOpen={openDoc}
+            onHome={() => openHome()}
+          />
         ) : (
           /* Sections breathe at 24px while the cards inside one section sit at
              12px — the old 20px left both gaps reading as the same beat. */
@@ -584,6 +591,64 @@ export function InboxView() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The empty Inbox, which is two different things (docs/closing-beat.md).
+ *
+ * "You just cleared it" is a moment, and it gets the receipt: what the PO
+ * judged, what it changed, and one door onward. "It is empty" is a state, and
+ * it stays near silent. The old zero conflated the two and greeted a PO who
+ * had touched nothing with a tally and an explanation.
+ *
+ * Only Home says "you're done", so the door goes there rather than trying to
+ * end the story here.
+ */
+function Cleared({
+  approvals,
+  judgedBefore,
+  onOpen,
+  onHome,
+}: {
+  approvals: Approvals;
+  /** Whether the PO has ever judged a card in this workspace. */
+  judgedBefore: boolean;
+  onOpen: (path: string, opts?: NavOpts) => unknown;
+  onHome: () => void;
+}) {
+  const { receipt, touched } = approvals;
+  const state = clearedInbox(receipt, judgedBefore);
+
+  return (
+    <div className="mt-16 flex flex-col items-center gap-3 text-center">
+      <div className="flex size-12 items-center justify-center rounded-full bg-brand/10">
+        <Check className="size-6 text-brand" />
+      </div>
+      {state.mode === 'receipt' ? (
+        <>
+          <h2 className="text-lg font-semibold">You cleared it.</h2>
+          <p className="text-sm text-muted-foreground">{receiptSummary(receipt)}.</p>
+          {/* Centred as a block, read as a column: the verb and the note keep
+              their two edges even here, where everything around them is
+              centred text. */}
+          <ReceiptLines entries={touched} onOpen={onOpen} className="max-w-sm text-left" />
+          <Button size="sm" variant="outline" className="mt-1" onClick={onHome}>
+            See where things stand <ArrowRight className="size-3.5" />
+          </Button>
+        </>
+      ) : (
+        <>
+          <h2 className="text-lg font-semibold">Nothing needs you.</h2>
+          {state.explain && (
+            <p className="max-w-sm text-sm text-muted-foreground">
+              Proposals, finished sessions, and the librarian's tidy-ups land here, judged in
+              seconds, nothing written silently.
+            </p>
+          )}
+        </>
+      )}
     </div>
   );
 }

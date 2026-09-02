@@ -325,6 +325,7 @@ const SMALL_WORDS = new Set([
  * general dictionary — an unknown token stays plain title case.
  */
 const WORDMARKS: Record<string, string> = {
+  ai: 'AI',
   api: 'API',
   arr: 'ARR',
   b2b: 'B2B',
@@ -335,6 +336,7 @@ const WORDMARKS: Record<string, string> = {
   gdpr: 'GDPR',
   ios: 'iOS',
   kpi: 'KPI',
+  llm: 'LLM',
   mrr: 'MRR',
   mvp: 'MVP',
   nda: 'NDA',

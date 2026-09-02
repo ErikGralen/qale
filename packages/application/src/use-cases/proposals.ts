@@ -2,6 +2,7 @@ import {
   zNotePayload,
   zUpdatePayload,
   zDecisionPayload,
+  zDeletePayload,
   zOutboundPayload,
   findDuplicate,
   parseFrontmatter,
@@ -19,7 +20,7 @@ import {
 } from '@qale/domain';
 import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../ports.js';
 import { clearReasons } from './deferrals.js';
-import { renameNote } from './notes.js';
+import { deleteNote, renameNote } from './notes.js';
 
 /**
  * Proposals (approval cards) are the only write path for the agent (PLAN-V2 §3.3).
@@ -88,6 +89,23 @@ export function duplicatePending(
 
 export function listProposals(ctx: UseCaseContext, status?: string): ProposalRecord[] {
   return ctx.proposals.list(status);
+}
+
+/**
+ * The cards one session put up and the PM judged, oldest first.
+ *
+ * Accepted and rejected both count: both are decisions the PM made, and the
+ * receipt in the chat reports the sitting, not only what survived it. Withdrawn
+ * and stale cards are left out: nobody decided those.
+ */
+export function resolvedProposals(ctx: UseCaseContext, sessionId: string): ProposalRecord[] {
+  return ctx.proposals
+    .list()
+    .filter(
+      (rec) =>
+        rec.sessionId === sessionId && (rec.status === 'accepted' || rec.status === 'rejected'),
+    )
+    .sort((a, b) => a.created - b.created);
 }
 
 /** One card a session put in front of the PM, as it stands right now. */
@@ -260,6 +278,16 @@ export async function previewProposal(
     const payload = rec.payload as { body?: string };
     return { before: '', after: payload.body ?? '', stale: false };
   }
+  // A delete shows the page as it reads now, going. `after` is empty because
+  // that is what approving leaves: the diff strikes the whole body through, and
+  // an empty file previews as nothing at all, which is the honest picture of an
+  // empty file.
+  if (rec.kind === 'delete') {
+    const payload = rec.payload as { path: string };
+    const note = await ctx.vault.readNote(payload.path);
+    if (!note) return { before: '', after: '', stale: true, staleReason: 'missing' };
+    return { before: note.body, after: '', stale: false };
+  }
   if (rec.kind === 'update') {
     const payload = rec.payload as BodyChange & {
       path: string;
@@ -293,11 +321,15 @@ export function rejectProposal(ctx: UseCaseContext, id: string): { ok: boolean }
 export interface AcceptResult {
   ok: boolean;
   stale?: boolean;
-  /** For a stale refusal, the same vocabulary the preview uses. */
-  staleReason?: PlacementFailure;
+  /** For a stale refusal, the same vocabulary the preview uses. `missing` is a
+   *  delete card's only way to go stale: the file is already gone. */
+  staleReason?: PlacementFailure | 'missing';
   error?: string;
   /** Deterministic link produced by an outbound write, if any. */
   url?: string;
+  /** The vault note this accept wrote, after any rename it also made. The PM
+   *  approved it, so the rail pins it — see docs/autopinning.md. */
+  path?: string;
 }
 
 /**
@@ -325,6 +357,7 @@ export async function acceptProposal(
     else if (rec.kind === 'update') result = await acceptUpdate(ctx, rec, edited);
     else if (rec.kind === 'decision') result = await acceptDecision(ctx, rec, edited);
     else if (rec.kind === 'outbound') result = await acceptOutbound(ctx, rec, edited);
+    else if (rec.kind === 'delete') result = await acceptDelete(ctx, rec);
     else return { ok: false };
     // A deferral is a run's note to itself that a note is not covered yet
     // (OW6). An approved card against that note IS the coverage, so the entry
@@ -361,7 +394,7 @@ async function acceptNote(
   await ctx.git.commitPaths([path], `note: ${written.slug}`);
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
   await markCitedSourcesProcessed(ctx, fm.data, rec);
-  return { ok: true };
+  return { ok: true, path: written.path };
 }
 
 /**
@@ -477,6 +510,9 @@ async function acceptUpdate(
     : await ctx.vault.writeBody(path, applied);
   ctx.index.reindex(written);
   await ctx.git.commitPaths([path], `update: ${written.slug}`);
+  // Where the change landed. A rename below moves the file, so this is settled
+  // after the retitle, not before it.
+  let landed = written.path;
   if (title?.trim()) {
     // Best-effort: an immutable-title type refuses the rename, but the body
     // change above already landed — the card must not fail over its garnish.
@@ -484,14 +520,37 @@ async function acceptUpdate(
     // be the containment guard catching a slug we built wrong, and that must not
     // look identical to "decisions cannot be retitled".
     try {
-      await renameNote(ctx, { path, title });
+      const renamed = await renameNote(ctx, { path, title });
+      landed = renamed.path;
     } catch (err) {
       logError(
-        '[qale] update card: retitle failed (the body change stands):',
+        '[qale] update proposal: retitle failed (the body change stands):',
         err instanceof Error ? err.message : err,
       );
     }
   }
+  ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
+  return { ok: true, path: landed };
+}
+
+/**
+ * Accept a delete card: remove the file, drop it from the index, commit.
+ *
+ * No `path` in the result. That field is what pins a note to the rail after the
+ * PO approves it, and pinning a file that has just stopped existing puts a dead
+ * row in the sidebar. A card whose note is already gone reports `stale` rather
+ * than an error: somebody deleted it by hand, which is the outcome the card was
+ * asking for, but it is still not a thing that happened here.
+ */
+async function acceptDelete(ctx: UseCaseContext, rec: ProposalRecord): Promise<AcceptResult> {
+  const parsed = zDeletePayload.safeParse(rec.payload);
+  if (!parsed.success) return { ok: false, error: 'invalid delete payload' };
+  const { path } = parsed.data;
+  if (!(await ctx.vault.readNote(path))) {
+    ctx.proposals.setStatus(rec.id, 'stale', Date.now());
+    return { ok: false, stale: true, staleReason: 'missing' };
+  }
+  await deleteNote(ctx, path);
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
   return { ok: true };
 }
@@ -563,7 +622,7 @@ async function acceptDecision(
   );
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
   await markCitedSourcesProcessed(ctx, newFm, rec);
-  return { ok: true };
+  return { ok: true, path: written.path };
 }
 
 /**

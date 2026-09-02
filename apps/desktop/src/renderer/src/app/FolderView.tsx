@@ -49,7 +49,7 @@ const EMPTY_TEACH: Partial<Record<NoteType, string>> = {
     'No sources yet. Dumped raw material (article links, screenshots, pasted threads) lands here, never edited, only analyzed.',
   meeting: 'No meetings yet. Drop a transcript (or paste one with ⇧⌘N) and it gets filed here.',
   decision:
-    'No decisions yet. Approve a decision card from a meeting and the spine starts here, and superseded ones keep their place in the chain.',
+    'No decisions yet. Approve a decision proposal from a meeting and the spine starts here, and superseded ones keep their place in the chain.',
   insight:
     'No insights yet. Claims the agent extracts from meetings land here, each citing its evidence.',
   customer: 'No customers yet. They appear as meetings and insights start naming them.',
@@ -226,7 +226,7 @@ export function FolderView({ dir }: { dir: string }) {
   // The same "+" the Memory shelf offers, on the page the shelf opens: someone
   // browsing themes who wants one more should not have to walk back up to
   // Memory to start it. Only the four types a person authors get it — the rest
-  // arrive as material or as a card to approve (see HAND_CREATABLE_TYPES).
+  // arrive as a source or as a card to approve (see HAND_CREATABLE_TYPES).
   const startable = group && isHandCreatable(group.type) ? (group.type as HandCreatableType) : null;
   const newLabel = startable ? `New ${noteTypeLabel(startable).toLowerCase()}` : '';
   const newAction = startable && (
@@ -310,43 +310,69 @@ export function FolderView({ dir }: { dir: string }) {
 
       {!altMode && notes.length > 0 && (
         <div className="shrink-0 border-b border-border/70 px-4 py-2">
-          <div className="mx-auto flex w-full max-w-2xl flex-wrap items-center gap-x-3 gap-y-1.5">
-            {viewToggle}
-            <div className="flex h-7 min-w-40 flex-1 items-center gap-1.5 rounded-lg border border-border bg-card px-2 transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
-              <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              <input
-                ref={filterRef}
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                onKeyDown={(e) => {
-                  // Escape clears the innermost thing that has anything to
-                  // clear: the filter first, and only then the selection (which
-                  // the page handles once this stops swallowing the key).
-                  if (e.key === 'Escape' && filter) {
-                    e.stopPropagation();
-                    setFilter('');
-                  } else if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    listRef.current?.querySelector<HTMLButtonElement>('[data-note-row]')?.focus();
-                  }
-                }}
-                placeholder={`Filter ${dir}…  ( / )`}
-                className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                aria-label={`Filter ${dir}`}
-                autoFocus
-              />
-              {filter && (
-                <button
-                  className="rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                  onClick={() => {
-                    setFilter('');
-                    filterRef.current?.focus();
+          {/* Two fixed rows, never one wrapping one: the controls keep their
+              places as a folder grows tags, and the facets get the width they
+              need without pushing the toggles onto a line of their own. */}
+          <div className="mx-auto flex w-full max-w-2xl flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              {viewToggle}
+              <div className="flex h-7 min-w-40 flex-1 items-center gap-1.5 rounded-lg border border-border bg-card px-2 transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
+                <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                <input
+                  ref={filterRef}
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Escape clears the innermost thing that has anything to
+                    // clear: the filter first, and only then the selection (which
+                    // the page handles once this stops swallowing the key).
+                    if (e.key === 'Escape' && filter) {
+                      e.stopPropagation();
+                      setFilter('');
+                    } else if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      listRef.current?.querySelector<HTMLButtonElement>('[data-note-row]')?.focus();
+                    }
                   }}
-                  aria-label="Clear filter"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
+                  placeholder={`Filter ${dir}…  ( / )`}
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  aria-label={`Filter ${dir}`}
+                  autoFocus
+                />
+                {filter && (
+                  <button
+                    className="rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    onClick={() => {
+                      setFilter('');
+                      filterRef.current?.focus();
+                    }}
+                    aria-label="Clear filter"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div
+                className="flex shrink-0 items-center rounded-lg bg-muted p-0.5"
+                role="group"
+                aria-label="Group by"
+              >
+                {(['date', 'none'] as const).map((g) => (
+                  <button
+                    key={g}
+                    className={`rounded-md px-2 py-0.5 text-xs font-medium capitalize transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
+                      groupBy === g
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                    onClick={() => setGroupBy(g)}
+                    aria-pressed={groupBy === g}
+                  >
+                    {g === 'none' ? 'flat' : g}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {(allTags.length > 0 || lifecycles.length > 0) && (
@@ -369,27 +395,6 @@ export function FolderView({ dir }: { dir: string }) {
                 ))}
               </div>
             )}
-
-            <div
-              className="ml-auto flex items-center rounded-lg bg-muted p-0.5"
-              role="group"
-              aria-label="Group by"
-            >
-              {(['date', 'none'] as const).map((g) => (
-                <button
-                  key={g}
-                  className={`rounded-md px-2 py-0.5 text-xs font-medium capitalize transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
-                    groupBy === g
-                      ? 'bg-card text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  onClick={() => setGroupBy(g)}
-                  aria-pressed={groupBy === g}
-                >
-                  {g === 'none' ? 'flat' : g}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       )}
@@ -431,7 +436,10 @@ export function FolderView({ dir }: { dir: string }) {
                 {sections.map((s) => (
                   <section key={s.key}>
                     {s.heading && (
-                      <div className="mb-0.5 flex items-baseline gap-2 px-2">
+                      // `pl-8` lands the month on the title column, past the
+                      // row's checkbox gutter (see NoteList). A section label
+                      // that starts where the titles start reads as one table.
+                      <div className="mb-1 flex items-baseline gap-2 pl-8">
                         <span className="text-xs font-medium text-muted-foreground">
                           {s.heading.label}
                         </span>

@@ -25,7 +25,7 @@ export function ResultItem({
       tabIndex={-1}
       onClick={onFocus}
       onFocus={onFocus}
-      className={`group flex items-center gap-2 rounded-lg bg-card py-2 pr-2 pl-3 ${rowFocusClass(focused)}`}
+      className={`group flex items-center gap-2 rounded-lg bg-card py-2 pr-2 pl-3 ${rowFocusClass()}`}
     >
       <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-hidden />
       <button className="min-w-0 flex-1 text-left focus-visible:outline-none" onClick={onOpen}>

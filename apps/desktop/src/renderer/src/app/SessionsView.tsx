@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Spinner } from '@qale/ui';
 import type { SessionLifecycle } from '@qale/ipc';
 import {
-  Archive,
   Check,
   History,
   MessageSquare,
   MessageSquarePlus,
-  RotateCcw,
+  Pin,
+  PinOff,
   Trash2,
   type LucideIcon,
 } from 'lucide-react';
@@ -32,14 +32,14 @@ export function SessionsView() {
     setSessionLifecycle,
   } = useApp();
   const [loaded, setLoaded] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
+  const [showUnpinned, setShowUnpinned] = useState(false);
 
   useEffect(() => {
     void refreshSessions().finally(() => setLoaded(true));
   }, [refreshSessions]);
 
   // A running session is always on the active shelf, whatever its stored state.
-  const archivedCount = useMemo(
+  const unpinnedCount = useMemo(
     () => sessions.filter((s) => s.lifecycle !== 'active' && !s.running).length,
     [sessions],
   );
@@ -47,11 +47,11 @@ export function SessionsView() {
   const rows = useMemo(
     () =>
       sessions.filter((s) =>
-        showArchived
+        showUnpinned
           ? s.lifecycle !== 'active' && !s.running
           : s.lifecycle === 'active' || s.running,
       ),
-    [sessions, showArchived],
+    [sessions, showUnpinned],
   );
 
   return (
@@ -68,7 +68,7 @@ export function SessionsView() {
 
       <div className="flex-1 overflow-y-auto px-6">
         <div className="mx-auto max-w-2xl py-4">
-          {archivedCount > 0 && (
+          {unpinnedCount > 0 && (
             <div
               className="mb-3 flex flex-wrap items-center gap-1"
               role="group"
@@ -76,9 +76,9 @@ export function SessionsView() {
             >
               <span className="ml-auto">
                 <FilterChip
-                  label={`Archived (${archivedCount})`}
-                  active={showArchived}
-                  onClick={() => setShowArchived((v) => !v)}
+                  label={`Unpinned (${unpinnedCount})`}
+                  active={showUnpinned}
+                  onClick={() => setShowUnpinned((v) => !v)}
                 />
               </span>
             </div>
@@ -90,8 +90,8 @@ export function SessionsView() {
             </div>
           ) : rows.length === 0 ? (
             <p className="mt-16 text-center text-sm text-muted-foreground">
-              {showArchived
-                ? 'Nothing archived. Mark a session done (or dismiss it) to shelve it here.'
+              {showUnpinned
+                ? 'Nothing unpinned. Unpin a session to shelve it here.'
                 : 'No sessions yet. A session is saved here once it gets its first reply.'}
             </p>
           ) : (
@@ -151,8 +151,8 @@ function SessionRow({
   onDelete: () => void;
   onSetLifecycle: (lifecycle: SessionLifecycle) => void;
 }) {
-  const archived = s.lifecycle !== 'active' && !s.running;
-  const needsYou = !archived && (s.pendingCards > 0 || s.unread);
+  const unpinned = s.lifecycle !== 'active' && !s.running;
+  const needsYou = !unpinned && (s.pendingCards > 0 || s.unread);
   // Deleting a transcript is permanent and the icon sits beside Reopen —
   // one misclick must not destroy a session. Same confirm as NoteView.
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -172,19 +172,15 @@ function SessionRow({
             <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
               <Spinner className="size-3" /> working
             </span>
-          ) : archived ? (
+          ) : unpinned ? (
             <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground/70">
-              {s.lifecycle === 'done' ? (
-                <Check className="size-3" aria-hidden />
-              ) : (
-                <Archive className="size-3" aria-hidden />
-              )}
-              {s.lifecycle === 'done' ? 'done' : 'dismissed'}
+              <PinOff className="size-3" aria-hidden />
+              unpinned
             </span>
           ) : s.pendingCards > 0 ? (
             <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-brand">
               <span className="size-1.5 rounded-full bg-brand" aria-hidden />
-              {s.pendingCards} card{s.pendingCards === 1 ? '' : 's'}
+              {s.pendingCards} proposal{s.pendingCards === 1 ? '' : 's'}
             </span>
           ) : s.unread ? (
             <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-brand">
@@ -232,26 +228,18 @@ function SessionRow({
         ) : (
           <>
             {!s.running && s.lifecycle === 'active' && (
-              <>
-                <RowAction
-                  Icon={Check}
-                  label={`Mark "${s.title}" done`}
-                  title="Mark done"
-                  onClick={() => onSetLifecycle('done')}
-                />
-                <RowAction
-                  Icon={Archive}
-                  label={`Dismiss "${s.title}"`}
-                  title="Dismiss: won't be useful"
-                  onClick={() => onSetLifecycle('dismissed')}
-                />
-              </>
-            )}
-            {archived && (
               <RowAction
-                Icon={RotateCcw}
-                label={`Reopen "${s.title}"`}
-                title="Reopen"
+                Icon={PinOff}
+                label={`Unpin "${s.title}"`}
+                title="Unpin: not relevant right now"
+                onClick={() => onSetLifecycle('unpinned')}
+              />
+            )}
+            {unpinned && (
+              <RowAction
+                Icon={Pin}
+                label={`Pin "${s.title}"`}
+                title="Pin: back on the active list"
                 onClick={() => onSetLifecycle('active')}
               />
             )}

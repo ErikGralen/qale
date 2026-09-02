@@ -25,7 +25,7 @@ export interface RestoreNoteVersionInput {
  * Body only, on purpose. The history view shows prose, so prose is what the
  * person is choosing; the properties underneath carry live state the old
  * version knows nothing about (whether a commitment is closed, which calendar
- * event or ticket the note mirrors, whether the material has been read).
+ * event or ticket the note mirrors, whether the source has been read).
  * Dragging those backwards would quietly re-open finished work and re-point
  * live links, none of it visible in what was previewed. `writeBody` keeps the
  * current block byte for byte.

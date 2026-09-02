@@ -121,6 +121,17 @@ export function providerModels(id: string | null | undefined): LlmModel[] {
 }
 
 /**
+ * What reads a batch of dropped sources (docs/critical-mass.md CM-2). Filing a
+ * backlog is long, shallow work over many files, so the tray starts on the
+ * faster and cheaper model rather than the strongest one. That is the second
+ * row of each provider's list; a provider with one model uses it.
+ */
+export function sourceModelId(id: string | null | undefined): string {
+  const models = providerModels(id);
+  return (models[1] ?? models[0]!).id;
+}
+
+/**
  * Which provider a model id belongs to, or null for an id we do not offer. A
  * settings file carried over from an older build names a model that may now be
  * gone, and "gone" has to be tellable from "the other provider's".

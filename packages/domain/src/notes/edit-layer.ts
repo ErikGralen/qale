@@ -19,7 +19,7 @@ import { TYPE_RULES } from './invariant.js';
  *
  * - `open` — the human owns it, type away (no sentence to show);
  * - `mirror` — a connector owns it, the real page lives in Jira/Confluence;
- * - `raw` — dumped material, kept as it arrived;
+ * - `raw` — a dropped source, kept as it arrived;
  * - `receipt` — a filed record of something that already happened;
  * - `spine` — append-only, superseded rather than rewritten.
  *
@@ -87,7 +87,7 @@ export function editLayerForType(type: NoteType): EditLayer {
  * to it instead of editing.
  */
 const LAYER_SENTENCE: Record<Exclude<EditLayer, 'open' | 'mirror'>, string> = {
-  raw: 'Raw material. Never rewritten.',
+  raw: 'Raw source. Never rewritten.',
   receipt: 'A record of what happened. Kept exactly as it was filed.',
   spine: 'Superseded, never edited. Write a new one to change course.',
 };
@@ -113,8 +113,8 @@ export function readOnlyReason(
  * should offer them. Being editable is not enough to be here, and the four that
  * are missing are the point:
  *
- * - `meeting` and `source` arrive as material — a transcript, a calendar event —
- *   and the memory proposes the page from it. A blank one has no provenance to
+ * - `meeting` and `source` arrive from something handed over — a transcript, a
+ *   calendar event — and the memory proposes the page from it. A blank one has no provenance to
  *   stand on, and its date and participants freeze at creation.
  * - `decision` is the append-only spine: the body is final the moment it is
  *   written, so a blank one could never be filled in. Decisions arrive as cards.

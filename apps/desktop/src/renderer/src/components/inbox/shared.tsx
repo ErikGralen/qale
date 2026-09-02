@@ -10,7 +10,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { OutboundPayloadDTO } from '@qale/ipc';
-import { normalizeLinkTarget, rsvpAnswer } from '@qale/domain';
+import { normalizeLinkTarget, outboundVerb } from '@qale/domain';
 import { invoke } from '../../lib/ipc';
 import { isExternalRef, providerLabelOf } from '../../lib/connections';
 import { ExternalRefChip } from '../ExternalRef';
@@ -41,9 +41,12 @@ export function useQueueFocus<T extends HTMLElement>(focused: boolean) {
 }
 
 /** Shared shell classes for a queue row — the ring is the focus indicator, so
- *  the row suppresses the browser's own outline and never paints two. */
-export function rowFocusClass(focused: boolean): string {
-  return `outline-none ring-1 transition-shadow ${focused ? 'ring-2 ring-ring/60' : 'ring-foreground/10'}`;
+ *  the row suppresses the browser's own outline and never paints two. It shows
+ *  only for keyboard focus (:focus-visible): the roving cursor lands real DOM
+ *  focus on the row, so a keyboard pass always sees its place, and a mouse
+ *  click never paints a "selected" border on a card the PO is just reading. */
+export function rowFocusClass(): string {
+  return 'outline-none ring-1 ring-foreground/10 transition-shadow focus-visible:ring-2 focus-visible:ring-ring/60';
 }
 
 /**
@@ -52,7 +55,9 @@ export function rowFocusClass(focused: boolean): string {
  * the only sentence about it the PM ever sees — it has to say what happened and
  * where the way out is (opening the card, which carries "Fix this").
  */
-export function staleAcceptMessage(reason?: 'unanchored' | 'duplicate'): string {
+export function staleAcceptMessage(reason?: 'unanchored' | 'duplicate' | 'missing'): string {
+  if (reason === 'missing')
+    return 'The page this card is about is already gone, so nothing happened. Discard the card.';
   if (reason === 'duplicate')
     return 'What this adds is already in the note word for word, so nothing was written. Open it to see.';
   return "The text this edit was pointing at isn't in the note any more. Open it to send it back to be redone.";
@@ -122,14 +127,10 @@ export function providerName(ob: OutboundPayloadDTO): string | null {
 
 /**
  * What a card actually does, said once and reused everywhere it appears: the
- * approve button's verb, the glyph on the card, and the receipt line after it
- * lands. Every action names its own act: an `update_page` rewrites a page that
- * already exists, and calling that "send" would invent a delivery that never
- * happens while hiding the edit that does.
- *
- * Every action in the payload schema has a case below. The defaults are for a
- * payload that names an action this build does not know, which is a card that
- * cannot be applied at all, so they say nothing about what would happen.
+ * approve button's verb and the glyph on the card. The verb comes from the
+ * domain, where the rest of the card's words live, so the button and the
+ * receipt can never drift apart. Only the glyph needs lucide, which is the one
+ * reason this stays in the renderer.
  */
 export interface OutboundAct {
   /** Completes "Approve & …" — an imperative the PO would say out loud. */
@@ -138,75 +139,23 @@ export interface OutboundAct {
   Icon: LucideIcon;
 }
 
+/** Every action in the payload schema has a glyph below. A payload naming an
+ *  action this build does not know cannot be applied at all, so it falls back
+ *  to the plain check and claims nothing. */
+const ACTION_ICON: Record<string, LucideIcon> = {
+  update_page: FilePen,
+  comment_ticket: MessageSquarePlus,
+  create_ticket: TicketPlus,
+  create_event: CalendarPlus,
+  update_event: CalendarClock,
+  respond_to_event: CalendarCheck,
+};
+
 export function outboundAct(ob: OutboundPayloadDTO): OutboundAct {
-  switch (ob.action) {
-    case 'update_page':
-      return { verb: 'update the page', Icon: FilePen };
-    case 'comment_ticket':
-      return { verb: 'post the comment', Icon: MessageSquarePlus };
-    case 'create_ticket':
-      return { verb: 'create the ticket', Icon: TicketPlus };
-    case 'create_event':
-      return { verb: 'create the event', Icon: CalendarPlus };
-    case 'update_event':
-      return { verb: 'change the event', Icon: CalendarClock };
-    case 'respond_to_event':
-      return { verb: 'reply', Icon: CalendarCheck };
-    default:
-      return { verb: 'apply it', Icon: Check };
-  }
+  return { verb: outboundVerb(ob.action), Icon: ACTION_ICON[ob.action] ?? Check };
 }
 
-/**
- * The whole outbound act as the PO says it, in plain text: "Comment on PAY-142",
- * "File a ticket in PAY: SCIM group-mapping", "Add “Erik x Daniel: sync” to your
- * calendar". The reference itself renders as a live chip in the card (see
- * CardItem's target line); this string is the flat fallback for headlines and
- * aria labels, so it names the thing itself — a calendar event reading "Send an
- * update" told the PO about a delivery that never happens.
- */
-export function outboundTarget(ob: OutboundPayloadDTO): string {
-  const named = (s: string): string => `“${s}”`;
-  switch (ob.action) {
-    case 'comment_ticket':
-      return ob.targetId ? `Comment on ${ob.targetId}` : 'Comment on a ticket';
-    case 'create_ticket': {
-      const file = `File a ${ob.issueType?.toLowerCase() ?? 'ticket'}${ob.container ? ` in ${ob.container}` : ''}`;
-      return ob.title ? `${file}: ${ob.title}` : file;
-    }
-    case 'update_page':
-      return ob.title ? `Update ${named(ob.title)}` : 'Update a page';
-    case 'create_event':
-      return `Add ${ob.title ? named(ob.title) : 'an event'} to your calendar`;
-    case 'update_event':
-      return ob.title ? `Change ${named(ob.title)}` : 'Change an event';
-    case 'respond_to_event':
-      return `Reply ${rsvpAnswer(ob.responseStatus)} to ${ob.title ? named(ob.title) : 'an invite'}`;
-    default:
-      return ob.title ? `Apply ${named(ob.title)}` : 'Apply this change';
-  }
-}
-
-/**
- * The receipt line after a card lands — past tense, and naming the thing it
- * touched. "Update a page" told the PO nothing about which page just changed
- * under their name.
- */
-export function outboundReceipt(ob: OutboundPayloadDTO): string {
-  switch (ob.action) {
-    case 'update_page':
-      return `Updated ${ob.title ?? 'a page'}`;
-    case 'comment_ticket':
-      return `Commented on ${ob.targetId ?? 'a ticket'}`;
-    case 'create_ticket':
-      return `Created a ${ob.issueType?.toLowerCase() ?? 'ticket'}${ob.container ? ` in ${ob.container}` : ''}`;
-    case 'create_event':
-      return `Added ${ob.title ?? 'an event'} to your calendar`;
-    case 'update_event':
-      return `Changed ${ob.title ?? 'an event'} in your calendar`;
-    case 'respond_to_event':
-      return `Replied ${rsvpAnswer(ob.responseStatus)} to ${ob.title ?? 'an invite'}`;
-    default:
-      return `Applied ${ob.title ?? 'the change'}`;
-  }
-}
+// The outbound sentences live with the rest of the card vocabulary now, so the
+// Inbox and the main process say the same thing. Re-exported here because every
+// call site in the Inbox already reads its card words from this file.
+export { outboundReceipt, outboundTarget } from '@qale/domain';

@@ -288,16 +288,16 @@ export interface CaptureTodoInputDTO {
 }
 
 // ---------------------------------------------------------------------------
-// Arrival — the one door material comes in through (docs/arrival-agentic.md).
+// Arrival — the one door sources come in through (docs/arrival-agentic.md).
 //
 // The tray used to carry a plan: what each file was, where it would land, how
 // many reads would start. All of that was guesswork done before anything had
-// read the material, and it is gone. What crosses the wire now is bytes going
+// read the sources, and it is gone. What crosses the wire now is bytes going
 // in and one session id coming back.
 // ---------------------------------------------------------------------------
 
 /**
- * One piece of material. Either a `path` the OS picker returned — main reads
+ * One source. Either a `path` the OS picker returned — main reads
  * it, so fifty files never cross IPC — or content the renderer already holds
  * from a drop or a paste.
  */
@@ -321,21 +321,43 @@ export interface ArrivalCheckDTO {
   empty: boolean;
 }
 
-/** What the tray gets back: the session now holding the material. */
+/** What the tray gets back: the session now holding the sources. */
 export interface ArrivalHandoffDTO {
   /** The session the files were written into, and that is reading them. */
   sessionId: string;
-  /** How many pieces of material landed in it. */
+  /** How many sources landed in it. */
   landed: number;
   /** Files that could not be read, so never made it in. */
   refused: { name: string; error: string }[];
   /**
-   * The session is running. False means the material landed but nothing is
-   * reading it (no API key, or the skill is switched off) — the files are safe
+   * The session is running. False means the sources landed but nothing is
+   * reading them (no API key, or the skill is switched off) — the files are safe
    * in the session folder and `reason` says what to fix.
    */
   started: boolean;
   reason?: string;
+}
+
+/**
+ * How a batch of dropped sources is going (docs/critical-mass.md CM-2). A pile
+ * takes minutes, so the one line the PM is watching counts instead of spinning.
+ *
+ * Every number here is something that happened, not something expected: `filed`
+ * and `matched` are counted from the filing calls the run actually made. What
+ * the run read but chose not to file is `total - filed`, and nothing here says
+ * why it skipped a piece. That is the session's own reply to make.
+ */
+export interface ArrivalProgressDTO {
+  /** The arrival session reading the batch. */
+  sessionId: string;
+  /** Sources handed over with the drop. */
+  total: number;
+  /** Pieces filed into the memory so far. */
+  filed: number;
+  /** Of those, the ones attached to a meeting the calendar already held. */
+  matched: number;
+  /** The run has settled, so these numbers are final. */
+  done: boolean;
 }
 
 export interface SaveNoteInput {
@@ -379,7 +401,7 @@ export interface ProposalPreviewDTO {
 // Proposals (approval cards) — the only write path for the agent.
 // ---------------------------------------------------------------------------
 
-export type ProposalKind = 'note' | 'update' | 'decision' | 'outbound';
+export type ProposalKind = 'note' | 'update' | 'decision' | 'outbound' | 'delete';
 export type ProposalStatus = 'pending' | 'accepted' | 'rejected' | 'stale';
 export type OutboundProvider = 'jira' | 'confluence' | 'google-calendar';
 /** @deprecated legacy name for {@link OutboundProvider}. */
@@ -432,6 +454,13 @@ export interface UpdatePayloadDTO {
   title?: string;
 }
 
+/** A delete card: the file and the reason, and nothing else. What the page says
+ *  is read off the page itself in the preview, never written out here. */
+export interface DeletePayloadDTO {
+  path: string;
+  rationale: string;
+}
+
 export interface OutboundPayloadDTO {
   provider: OutboundProvider;
   /** @deprecated mirror of `provider` (main normalizes both onto every payload). */
@@ -474,12 +503,14 @@ export interface ProposalDTO {
   /** The skill in force when this card was produced — its provenance. */
   skill: string | null;
   targetPath: string | null;
-  payload: NotePayloadDTO | DecisionPayloadDTO | UpdatePayloadDTO | OutboundPayloadDTO;
+  payload:
+    NotePayloadDTO | DecisionPayloadDTO | UpdatePayloadDTO | OutboundPayloadDTO | DeletePayloadDTO;
   /**
-   * Agent-authored, plain-language statement of the change — the scannable line
-   * the PO reads to know what they're approving. No paths, slugs, or jargon;
-   * wraps, never clipped. Absent on older cards, where the renderer derives a
-   * human headline mechanically instead.
+   * The rare authored headline. No propose tool takes one as a parameter, and
+   * only `propose_instruction` writes one internally, so nearly every card
+   * arrives without it. The scannable line the PO reads is composed in code
+   * from the payload (`proposalHeadline`), and this field wins where it exists.
+   * Plain language either way: no paths, no slugs, no jargon.
    */
   headline?: string;
   /**
@@ -490,11 +521,14 @@ export interface ProposalDTO {
    */
   selfStarted?: string;
   /**
-   * Outbound cards only: one composed sentence pair saying what approving DOES
-   * and who it reaches ("Posts a comment on PAY-142. Anyone watching the ticket
-   * is notified."). Built from the payload and what the app already knows, never
-   * written by the agent — `rationale` is where its own words go. Absent on
-   * vault-only cards, where the diff is the effect.
+   * What approving DOES, and where the change lands. Every card carries one.
+   * An outbound card says who the write reaches ("Posts a comment on PAY-142.
+   * Anyone watching the ticket is notified."); a card that stays in the
+   * workspace names the folder ("Creates a page in Meetings. It records a
+   * meeting that already happened; nothing is booked."). Built from the payload
+   * and what the app already knows, never written by the agent: `rationale` is
+   * where its own words go. Absent only when the payload says too little to
+   * make a true sentence.
    */
   effect?: string;
   rationale: string;
@@ -566,7 +600,7 @@ export interface AgentRunInput {
    * the one Settings names.
    */
   modelId?: string;
-  /** Tier the arrival gets, when a triggered binding named one for this material. */
+  /** Tier the arrival gets, when a triggered binding named one for this source. */
   tier?: 'observe' | 'suggest' | 'outbound';
 }
 
@@ -576,11 +610,11 @@ export interface AgentRunHandle {
 }
 
 /**
- * User-set shelf state for a conversation. `active` is the default; `done`
- * means the outcome landed, `dismissed` means it won't be useful. Both closed
- * states leave the active list but keep the transcript; a new message reopens.
+ * User-set shelf state for a conversation. `active` is the default; `unpinned`
+ * means it's not relevant right now. Unpinned leaves the active list but
+ * keeps the transcript; a new message reopens it.
  */
-export type SessionLifecycle = 'active' | 'done' | 'dismissed';
+export type SessionLifecycle = 'active' | 'unpinned';
 
 /** A stored conversation (pi JSONL) — what the chat history list shows. */
 export interface ChatRefDTO {
@@ -681,6 +715,9 @@ export interface CodebaseRequestDTO {
 export interface AskOptionDTO {
   label: string;
   description?: string;
+  /** The row arrives ticked, so the card is a batch to review rather than a
+   *  choice to make. Multi-select only, and never without a description. */
+  checked?: boolean;
 }
 
 /** One question on the card. */
@@ -744,6 +781,12 @@ export interface AskRequestDTO {
    * Main works this out; the renderer only reads it.
    */
   offered: boolean;
+  /**
+   * Which skill asked. It lets a surface outside the session reach the run
+   * that is already waiting instead of starting a second one on the same work
+   * (First steps and the first-look knock are two doors to one interview).
+   */
+  skill: string | null;
 }
 
 /**
@@ -970,7 +1013,7 @@ export type StartDTO =
 
 /** What a runnable may do beyond reading the memory and proposing cards. */
 export type CapabilityDTO =
-  'draft-outbound' | 'draft-calendar' | 'keep-working-files' | 'file-material' | 'track-external';
+  'draft-outbound' | 'draft-calendar' | 'keep-working-files' | 'file-source' | 'track-external';
 
 /**
  * An agent as the Agents view sees it. Every agent IS a file (`agents/<name>/AGENT.md`):
@@ -1221,14 +1264,4 @@ export interface AtRiskLinkDTO {
   changedAt: string;
   /** Vault note paths whose truth depends on this item. */
   linked: string[];
-}
-
-/** One "since last time" line for a meeting brief's delivery delta. */
-export interface DeliveryDeltaDTO {
-  externalId: string;
-  slug: string;
-  title: string;
-  /** e.g. "In Review → Blocked" or "shipped". */
-  line: string;
-  stateCategory: StateCategory;
 }

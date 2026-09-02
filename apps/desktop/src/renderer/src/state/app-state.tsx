@@ -18,6 +18,7 @@ import type {
   ArrivalCheckDTO,
   ArrivalHandoffDTO,
   ArrivalItemInputDTO,
+  ArrivalProgressDTO,
   LiveSessionDTO,
   MeetingReviewAskDTO,
   NoteDTO,
@@ -44,10 +45,10 @@ import type {
   VaultTreeDTO,
   VIEW_KINDS,
 } from '@qale/ipc';
-import { isFolderIndex, titleFromSlug, type HandCreatableType } from '@qale/domain';
+import { isFolderIndex, titleFromSlug, typeForDir, type HandCreatableType } from '@qale/domain';
 import { invoke, onEvent } from '../lib/ipc';
 import { requestCapture } from '../lib/capture-event';
-import { meetingRailHorizon, qualifiesForRail } from '../lib/note-status';
+import { isPinnable, qualifiesForRail } from '../lib/note-status';
 import { buildAttention, waitingOnYou, type AttentionItem } from '../lib/attention';
 import type { NavOpts } from '../lib/nav';
 import { isSettingsSection, type SettingsSection } from '../lib/settings-sections';
@@ -224,26 +225,28 @@ interface AppState {
   enableGit: () => Promise<void>;
   /**
    * Every note on the sidebar rail, per workspace — this set *is* what the rail
-   * shows. Both the PO's hand-pins and the system's auto-pins live here; there is
-   * no separate "pinned" shelf. Ordering/grouping by type happens at render.
+   * shows. Three things put a path here and there is no separate "pinned" shelf:
+   * the PO's own pin, the work they do (make a note, approve a card, write in a
+   * page), and the one auto-pin left, for a source nobody has read yet. Only the
+   * PO ever takes a path out (docs/autopinning.md). Grouping happens at render.
    */
   favorites: string[];
   /**
    * Pin ⇄ unpin a note (exact opposites). Pin adds it to the rail under its type
-   * and clears any prior unpin; unpin removes it and records the path so the
-   * auto-pinner won't drag it back. Used by the note-view toggle and the rail's X.
+   * and clears any prior unpin; unpin removes it and records the path so nothing
+   * drags it back. Used by the note-view toggle and the rail's X.
    */
   toggleFavorite: (path: string) => void;
   /**
-   * Paths the PO has unpinned. View-only state (never a vault write). Its sole job
-   * is to stop the auto-pinner from re-adding something the PO deliberately cleared
-   * — `favorites ∪ dismissed` is the "already decided, hands off" set.
+   * Paths the PO has unpinned. View-only state (never a vault write). Its job is
+   * to stop anything but their own pin from re-adding a note they cleared — so
+   * unpinning an open note is not undone by the next keystroke.
    */
   dismissed: string[];
   /**
-   * Paths the auto-pinner put on the rail that the PO hasn't opened from there
-   * yet — they carry a quiet mark until first contact. Only the system's
-   * additions land here; a hand-pin is never marked.
+   * Paths the system put on the rail that the PO hasn't opened from there yet —
+   * they carry a quiet mark until first contact. Only an unread source lands here
+   * now; a pin that followed their own hand is never marked.
    */
   autoPinNew: Set<string>;
   /** Acknowledge an auto-pinned row (clears its mark). */
@@ -325,11 +328,19 @@ interface AppState {
    * otherwise just looks dead.
    */
   blockedBy: string | null;
+  /** Takes the banner down by hand, for when a stray settle re-armed it after the fix already landed. */
+  dismissBlockedBy: () => void;
   /**
    * Cards a running turn is parked on, keyed by session id. Two kinds ride on
    * one shape: a question to answer, and a round file to write in (`comments`).
    */
   askRequests: Record<string, AskRequestDTO>;
+  /**
+   * Dropped batches and how far they have got, by session id
+   * (docs/critical-mass.md CM-2). A row stays after the run settles: it is what
+   * the closing sentence is built from.
+   */
+  arrivalProgress: Record<string, ArrivalProgressDTO>;
   /**
    * Settle one. `answers: null` with no `comments` is a skip, for both kinds:
    * the turn un-parks and the agent decides for itself. A sent round passes
@@ -385,11 +396,16 @@ interface AppState {
   loadDoc: (path: string) => Promise<NoteDTO | null>;
   query: (q: NoteQueryDTO) => Promise<NoteRefDTO[]>;
   /** Native picker (files and folders); returns items ready for the tray. */
-  pickMaterial: () => Promise<ArrivalItemInputDTO[]>;
+  pickSource: () => Promise<ArrivalItemInputDTO[]>;
   /** Which of these bytes we can read at all — the tray's only remaining guess. */
   checkArrival: (items: ArrivalItemInputDTO[]) => Promise<ArrivalCheckDTO>;
   /** Hand a batch to a session: the files land in its folder and it reads them. */
-  ingestArrival: (items: ArrivalItemInputDTO[], instruction?: string) => Promise<ArrivalHandoffDTO>;
+  ingestArrival: (
+    items: ArrivalItemInputDTO[],
+    instruction?: string,
+    /** Which model reads the batch. The tray sends the one it is showing. */
+    modelId?: string,
+  ) => Promise<ArrivalHandoffDTO>;
   previewProposal: (id: string) => Promise<{
     before: string;
     after: string;
@@ -406,7 +422,7 @@ interface AppState {
   ) => Promise<{
     ok: boolean;
     stale?: boolean;
-    staleReason?: 'unanchored' | 'duplicate';
+    staleReason?: 'unanchored' | 'duplicate' | 'missing';
     error?: string;
     url?: string;
     review?: MeetingReviewAskDTO;
@@ -427,6 +443,9 @@ interface AppState {
   /** Put a note back to an earlier version, saved forward as the newest one. */
   restoreVersion: (path: string, hash: string) => Promise<void>;
   saveFrontmatter: (path: string, frontmatter: Record<string, unknown>) => Promise<void>;
+  /** Vouch for a note ("Mark as checked"). Its own write path — `verified` is
+   *  frozen on the types worth vouching for — and its own pin, like any edit. */
+  markChecked: (path: string, type?: NoteType) => Promise<void>;
   /** Retitle a note; the file may move, so open tabs/favourites follow the new path. */
   renameNote: (path: string, title: string) => Promise<NoteDTO>;
   /** Delete a note: close open tabs, drop from favourites, purge docData, remove file. */
@@ -650,6 +669,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [chats, setChats] = useState<ChatRefDTO[]>([]);
   const [live, setLive] = useState<Record<string, LiveSessionDTO>>({});
   const [blockedBy, setBlockedBy] = useState<string | null>(null);
+  const dismissBlockedBy = useCallback(() => setBlockedBy(null), []);
   /** Capture nudges the PO has already waved off — null until it is read, so
    *  the list never flashes a row that was dismissed weeks ago. */
   const [captureNudge, setCaptureNudge] = useState<CaptureNudgeStateDTO | null>(null);
@@ -669,6 +689,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [codebaseRequests, setCodebaseRequests] = useState<Record<string, CodebaseRequestDTO>>({});
   /** Questions the agent is parked on, by session id. One per session at a time. */
   const [askRequests, setAskRequests] = useState<Record<string, AskRequestDTO>>({});
+  /** Dropped batches, by session id: running ones counting down, settled ones
+   *  holding their final numbers. */
+  const [arrivalProgress, setArrivalProgress] = useState<Record<string, ArrivalProgressDTO>>({});
   /**
    * A turn waiting to be typed into a conversation that already exists, by
    * session id. The Inbox uses it to hand a card that can no longer be applied
@@ -1241,33 +1264,44 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [vault, favorites, markPinSeen],
   );
 
-  // Liveness for meetings is a fact about the clock, not just the vault: a meeting
-  // enters the rail's horizon when its day arrives (or when mid-afternoon turns the
-  // rail toward tomorrow), with no file change to trigger it. Tick every five
-  // minutes so an app left open overnight still picks up the new day's meetings.
-  const [clockTick, setClockTick] = useState(0);
-  useEffect(() => {
-    const t = window.setInterval(() => setClockTick((n) => n + 1), 5 * 60_000);
-    return () => window.clearInterval(t);
-  }, []);
+  /**
+   * Pin what the PO just worked on. Anything they make, approve, or write in goes
+   * on the rail and stays there until they take it off (docs/autopinning.md).
+   *
+   * One thing it will not do, and that is theirs too: a note they have already
+   * unpinned stays unpinned. Otherwise X-ing an open note would undo itself on the
+   * next keystroke. Only the pin control takes an unpin back — see toggleFavorite.
+   *
+   * The type is what the note says it is when the caller has the note in hand, and
+   * the folder otherwise: an accepted card knows the path it wrote, not the type.
+   */
+  const pinForWork = useCallback(
+    (path: string, type?: NoteType) => {
+      if (!vault || isFolderIndex(path)) return;
+      const kind = type ?? typeForDir(path.split('/')[0] ?? '');
+      if (kind && !isPinnable(kind)) return;
+      if (dismissed.includes(path)) return;
+      setFavorites((prev) => {
+        if (prev.includes(path)) return prev;
+        const next = [...prev, path];
+        persistFavorites(vault.path, next);
+        return next;
+      });
+    },
+    [vault, dismissed],
+  );
 
-  // The auto-pinner: when the memory (or the clock) changes, ADD any note that has
-  // newly become live to the rail — but only if it's in neither set, so each note is
-  // auto-pinned at most once, ever. It never removes; a reviewed meeting stays until
-  // the PO clears it, and an unpinned note is never dragged back. See qualifiesForRail.
+  // The auto-pinner: when the memory changes, ADD any note that qualifies on its
+  // own — a dropped-in source nobody has read, and nothing else. Only if the note
+  // is in neither set, so each one is auto-pinned at most once, ever. It never
+  // removes; a row leaves the rail when the PO takes it off. See qualifiesForRail.
   useEffect(() => {
     if (!vault || !tree) return;
-    const openThemes = new Set(themes.filter((p) => p.stance !== 'wont-do').map((p) => p.path));
     const decided = new Set([...favorites, ...dismissed]);
-    const horizon = meetingRailHorizon(tree.groups.flatMap((g) => g.notes));
     const additions: string[] = [];
     for (const g of tree.groups)
       for (const n of g.notes)
-        if (
-          !isFolderIndex(n.path) &&
-          !decided.has(n.path) &&
-          qualifiesForRail(n, openThemes, horizon)
-        )
+        if (!isFolderIndex(n.path) && !decided.has(n.path) && qualifiesForRail(n))
           additions.push(n.path);
     if (additions.length === 0) return;
     setFavorites((prev) => {
@@ -1285,11 +1319,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     // favorites/dismissed intentionally omitted: the guard is recomputed from the
     // freshest sets inside the loop, and listing them would re-run on every pin.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vault, tree, themes, clockTick]);
+  }, [vault, tree]);
 
   const query = useCallback((q: NoteQueryDTO) => invoke['vault:query'](q), []);
 
-  const pickMaterial = useCallback(() => invoke['arrival:pick'](), []);
+  const pickSource = useCallback(() => invoke['arrival:pick'](), []);
   const checkArrival = useCallback(
     (items: ArrivalItemInputDTO[]) => invoke['arrival:check'](items),
     [],
@@ -1303,9 +1337,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
    * screen when the session actually asks something.
    */
   const ingestArrival = useCallback(
-    async (items: ArrivalItemInputDTO[], instruction?: string) => {
-      const result = await invoke['arrival:ingest'](items, instruction);
+    async (items: ArrivalItemInputDTO[], instruction?: string, modelId?: string) => {
+      const result = await invoke['arrival:ingest'](items, instruction, modelId);
       await refreshTree();
+      // The batch starts counting from the moment it is handed over, so the
+      // line the PM lands on has its total before the first filing lands.
+      if (result.started)
+        setArrivalProgress((prev) => ({
+          ...prev,
+          [result.sessionId]: {
+            sessionId: result.sessionId,
+            total: result.landed,
+            filed: 0,
+            matched: 0,
+            done: false,
+          },
+        }));
       return result;
     },
     [refreshTree],
@@ -1511,10 +1558,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const acceptProposal = useCallback(
     async (id: string, edited?: unknown) => {
       const result = await invoke['proposals:accept'](id, edited);
+      // Approving is the PM's own hand on the note, so it lands on the rail like
+      // anything else they make or write in. Outbound cards write to Jira or
+      // Confluence and carry no vault path, so they pin nothing.
+      if (result.ok && result.path) pinForWork(result.path);
       await Promise.all([refreshProposals(), refreshTree(), refreshThemes()]);
       return result;
     },
-    [refreshProposals, refreshTree, refreshThemes],
+    [refreshProposals, refreshTree, refreshThemes, pinForWork],
   );
 
   const rejectProposal = useCallback(
@@ -1629,19 +1680,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const captureNote = useCallback(
     async (input: CaptureNoteInput) => {
       const note = await invoke['note:capture'](input);
+      pinForWork(note.path, note.type);
       await refreshTree();
       return note;
     },
-    [refreshTree],
+    [refreshTree, pinForWork],
   );
 
   const createNote = useCallback(
     async (type: HandCreatableType, title?: string) => {
       const note = await invoke['note:create']({ type, ...(title ? { title } : {}) });
+      pinForWork(note.path, note.type);
       await refreshTree();
       return note;
     },
-    [refreshTree],
+    [refreshTree, pinForWork],
   );
 
   const captureTodo = useCallback(
@@ -1676,9 +1729,25 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // clobber the cursor mid-autosave.
       const note = await invoke['note:save']({ path, body });
       setDocData((d) => ({ ...d, [path]: { note, backlinks: d[path]?.backlinks ?? [] } }));
+      // Writing in a note is the plainest statement that it's being worked on.
+      pinForWork(path, note.type);
       await refreshTree();
     },
-    [refreshTree],
+    [refreshTree, pinForWork],
+  );
+
+  /**
+   * Vouch for a note: the trust write is its own IPC call because `verified` is
+   * frozen on the types most worth vouching for. Reading a note closely enough to
+   * say it is right is work on it, so it lands on the rail like any other edit.
+   */
+  const markChecked = useCallback(
+    async (path: string, type?: NoteType) => {
+      await invoke['note:markChecked'](path).catch(() => {});
+      pinForWork(path, type);
+      await refreshTree();
+    },
+    [refreshTree, pinForWork],
   );
 
   const restoreVersion = useCallback(
@@ -1687,17 +1756,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // the open editor shows the restored text without a reload race.
       const note = await invoke['note:restoreVersion']({ path, hash });
       setDocData((d) => ({ ...d, [path]: { note, backlinks: d[path]?.backlinks ?? [] } }));
+      pinForWork(path, note.type);
       await refreshTree();
     },
-    [refreshTree],
+    [refreshTree, pinForWork],
   );
 
   const saveFrontmatter = useCallback(
     async (path: string, frontmatter: Record<string, unknown>) => {
-      await invoke['note:saveFrontmatter']({ path, frontmatter });
+      const note = await invoke['note:saveFrontmatter']({ path, frontmatter });
+      // Editing the properties counts as writing in it. Skills and agents save
+      // through here too, and pinForWork turns those away on type.
+      pinForWork(path, note.type);
       await Promise.all([refreshTree(), refreshThemes(), loadDoc(path)]);
     },
-    [refreshTree, refreshThemes, loadDoc],
+    [refreshTree, refreshThemes, loadDoc, pinForWork],
   );
 
   const renameNote = useCallback(
@@ -1858,6 +1931,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     void refreshSettings();
   }, [refreshSettings]);
 
+  // Batches main is already reading, for a window that reloaded mid-drop. The
+  // pushes carry it from here on.
+  useEffect(() => {
+    void invoke['arrival:batches']()
+      .then((batches) =>
+        setArrivalProgress(Object.fromEntries(batches.map((b) => [b.sessionId, b]))),
+      )
+      .catch(() => undefined);
+  }, []);
+
   // Initial load: any workspace opened on startup by main.
   useEffect(() => {
     void invoke['vault:current']().then(async (info) => {
@@ -1976,6 +2059,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           else delete next[event.sessionId];
           return next;
         });
+      } else if (event.channel === 'arrival:progress') {
+        setArrivalProgress((prev) => ({ ...prev, [event.progress.sessionId]: event.progress }));
       } else if (event.channel === 'session:focus') {
         // OS notification click — land the PO in that conversation.
         openChat({ id: event.sessionId, title: event.title });
@@ -2113,7 +2198,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       codebaseRequests,
       resolveCodebase,
       blockedBy,
+      dismissBlockedBy,
       askRequests,
+      arrivalProgress,
       resolveAsk,
       sessionFiles,
       refreshSessionFiles,
@@ -2143,7 +2230,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setActiveTab,
       loadDoc,
       query,
-      pickMaterial,
+      pickSource,
       checkArrival,
       ingestArrival,
       previewProposal,
@@ -2161,6 +2248,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       saveNote,
       restoreVersion,
       saveFrontmatter,
+      markChecked,
       renameNote,
       deleteNote,
       deleteNotes,
@@ -2213,7 +2301,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       codebaseRequests,
       resolveCodebase,
       blockedBy,
+      dismissBlockedBy,
       askRequests,
+      arrivalProgress,
       resolveAsk,
       sessionFiles,
       refreshSessionFiles,
@@ -2242,7 +2332,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       moveTab,
       setActiveTab,
       query,
-      pickMaterial,
+      pickSource,
       checkArrival,
       ingestArrival,
       previewProposal,
@@ -2260,6 +2350,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       saveNote,
       restoreVersion,
       saveFrontmatter,
+      markChecked,
       renameNote,
       deleteNote,
       deleteNotes,

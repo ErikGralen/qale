@@ -1,8 +1,8 @@
 import type { ArrivalItemInputDTO } from '@qale/ipc';
-import type { MaterialAim } from './material-aim';
+import type { SourceAim } from './source-aim';
 
 /**
- * Cross-surface "open the Add material tray" signal (Home, meeting pages, deep
+ * Cross-surface "open the Add source tray" signal (Home, meeting pages, deep
  * links). The tray lives in the Shell; anything else dispatches this event.
  *
  * The optional draft is the same shape the Shell's drop handler builds, so a
@@ -14,17 +14,17 @@ export const CAPTURE_EVENT = 'qale:capture';
 export interface CaptureRequest {
   text?: string;
   fileName?: string;
-  /** Material already gathered by the caller — a multi-file drop. */
+  /** Sources already gathered by the caller — a multi-file drop. */
   files?: ArrivalItemInputDTO[];
   /**
    * Where this was aimed (docs/arrival-agentic.md, rung 2): a meeting page's
    * "Add transcript", a drop on a folder. It reaches the agent as a sentence.
    */
-  aim?: MaterialAim;
+  aim?: SourceAim;
 }
 
 /**
- * Long enough that it is material, not something someone typed — a pasted
+ * Long enough that it is a source, not something someone typed — a pasted
  * transcript is a file, wherever it was pasted. Home's bar uses this to send a
  * wall of text to the tray instead of asking the agent about it, and the tray
  * uses it to keep one out of its instruction field (AR-5).

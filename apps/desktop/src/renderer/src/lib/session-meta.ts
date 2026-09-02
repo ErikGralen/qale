@@ -1,5 +1,7 @@
-export function timeAgo(ms: number): string {
-  const diff = Date.now() - ms;
+/** How long ago, in words. `now` is injectable so a derivation can date a whole
+ *  list against one clock (and so a test can state its own). */
+export function timeAgo(ms: number, now: number = Date.now()): string {
+  const diff = now - ms;
   const min = Math.floor(diff / 60_000);
   if (min < 1) return 'just now';
   if (min < 60) return `${min}m ago`;

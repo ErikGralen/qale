@@ -28,17 +28,17 @@ import {
  * were one recording. Every one of those rules answered "what is this?" without
  * looking, and every edge of every rule was a bug.
  *
- * So the rules are gone and the judgment moved. Material lands in the session
+ * So the rules are gone and the judgment moved. A source lands in the session
  * folder as bytes, and the agent reads it, decides, and calls the two functions
- * here: {@link fileMaterial} to put it where it belongs, {@link refileMaterial}
+ * here: {@link fileSource} to put it where it belongs, {@link refileSource}
  * to move it when that turns out to be wrong. Both are ordinary vault writes,
  * not approval cards, and the reason is the same one that makes them safe: the
  * PM handed the file over, so filing it carries out an instruction rather than
  * proposing one, and a wrong shelf is fixed by moving it. Everything DERIVED
- * from the material is still a card.
+ * from the source is still a card.
  *
  * Which is why nothing here creates a page in `meetings/` any more. A meeting
- * page is not the material; it is what we make of it, and it used to be written
+ * page is not the source; it is what we make of it, and it used to be written
  * the moment a transcript arrived — an empty scaffold saying "not read yet",
  * which the agent then patched with a summary through a second card. The PM saw
  * a note appear that they never approved, and then a card editing it. Now the
@@ -47,7 +47,7 @@ import {
  * the raw recording is on the shelf.
  */
 
-/** One file of material, already read out of the session folder. */
+/** One file from a source, already read out of the session folder. */
 export interface ArrivalPart {
   /** The file name it arrived as — provenance, and the label on a split recording. */
   name: string;
@@ -59,7 +59,7 @@ export interface ArrivalPart {
   label?: string;
 }
 
-export interface FileMaterialInput {
+export interface FileSourceInput {
   /**
    * The files that make up ONE thing. More than one means a recording delivered
    * in pieces: one meeting, one source note per piece, never several meetings.
@@ -74,17 +74,22 @@ export interface FileMaterialInput {
    */
   as: 'meeting' | 'source';
   title: string;
-  /** The day the material is about (YYYY-MM-DD), where the material says so. */
+  /** The day the source is about (YYYY-MM-DD), where the source says so. */
   date?: string;
   /** Attach to a meeting page that already exists (a synced calendar slot). */
   attachTo?: string;
-  /** Whose meeting it was, on a transcript the PM was not in. */
+  /**
+   * Whose source this is: whose meeting a transcript was when the PM was not
+   * in it, or the PM's own name on a note or draft they wrote themselves (CM-4).
+   * Free text, written straight to frontmatter. Nothing branches on it; it is
+   * there so a citation can say "your note from March".
+   */
   origin?: string;
   /** Screenshot only: what the picture shows, which is the note's whole body. */
   caption?: string;
 }
 
-export interface FileMaterialResult {
+export interface FileSourceResult {
   /** The page to cite from here on: the meeting it joined, or the first source. */
   path: string;
   /** Every note this call created, so the agent can cite them straight away. */
@@ -100,14 +105,14 @@ export interface FileMaterialResult {
  * File one thing. Everything about WHAT it is has already been decided by the
  * agent that read it; this only carries that decision out.
  */
-export async function fileMaterial(
+export async function fileSource(
   ctx: UseCaseContext,
-  input: FileMaterialInput,
-): Promise<FileMaterialResult> {
+  input: FileSourceInput,
+): Promise<FileSourceResult> {
   const parts = input.parts;
   if (parts.length === 0) throw new Error('nothing to file: no files were named');
   const title = input.title.trim();
-  if (!title) throw new Error('file_material needs a title — it is what the page is called');
+  if (!title) throw new Error('file_source needs a title — it is what the page is called');
 
   if (input.as === 'meeting') {
     const image = parts.find((p) => p.image);
@@ -170,11 +175,11 @@ export async function fileMaterial(
   return { path: wrote[0]!, wrote };
 }
 
-export interface RefileMaterialInput {
+export interface RefileSourceInput {
   /** The page that was filed wrong: a meeting, or a source. */
   path: string;
   /**
-   * The meeting this material actually belongs to, as a note path. The literal
+   * The meeting this source actually belongs to, as a note path. The literal
    * string `none` means it belongs to no meeting of the PM's at all, which is
    * how "that was Kranelund's call" is said.
    */
@@ -185,8 +190,8 @@ export interface RefileMaterialInput {
   title?: string;
 }
 
-export interface RefileMaterialResult {
-  /** Where the material lives now. */
+export interface RefileSourceResult {
+  /** Where the source lives now. */
   path: string;
   /** Transcripts that changed hands. */
   moved: string[];
@@ -266,12 +271,12 @@ async function setField(
  * at all, and this is called the wrong thing.
  *
  * Deliberately not an undo. Nothing is restored to a previous state; the
- * material is moved to where it should have gone, and git holds the trail.
+ * source is moved to where it should have gone, and git holds the trail.
  */
-export async function refileMaterial(
+export async function refileSource(
   ctx: UseCaseContext,
-  input: RefileMaterialInput,
-): Promise<RefileMaterialResult> {
+  input: RefileSourceInput,
+): Promise<RefileSourceResult> {
   const note = await ctx.vault.readNote(input.path);
   if (!note) throw new Error(`there is no note called “${titleFromSlug(input.path)}”`);
   const target = input.meeting?.trim();
@@ -293,7 +298,7 @@ export async function refileMaterial(
     if (!target) {
       if (!input.title) {
         throw new Error(
-          'refile_material on a meeting needs a `meeting` (the one it really belongs to, or "none") or a `title`.',
+          'refile_source on a meeting needs a `meeting` (the one it really belongs to, or "none") or a `title`.',
         );
       }
     } else {
@@ -328,7 +333,7 @@ export async function refileMaterial(
       if (holder) await unlinkTranscript(ctx, holder.path, `[[${note.slug}]]`);
       await attachExistingTranscript(ctx, target, note.path);
       moved.push(note.path);
-      // The page that OWNS the material now, which is what the agent should
+      // The page that OWNS the source now, which is what the agent should
       // cite from here on. The transcript itself never moves: it is evidence,
       // and evidence keeps its address.
       path = target;

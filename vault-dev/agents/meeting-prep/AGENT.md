@@ -19,7 +19,7 @@ people and the account, on the page, before they walk in.
 
 ## Produce
 
-One approval card: a `## Prep` section on the meeting page (propose_update). Keep it under a
+One proposal: a `## Prep` section on the meeting page (propose_update). Keep it under a
 screen; every line cites its source.
 
 - **Since last time**: what changed that these participants have not been told. Compare their

@@ -1,17 +1,17 @@
 import { useCallback, useState } from 'react';
 import type { ArrivalItemInputDTO } from '@qale/ipc';
 import { readableAs } from '@qale/domain';
-import type { MaterialAim } from './material-aim';
+import type { SourceAim } from './source-aim';
 import { requestCapture } from './capture-event';
 import { pathForFile } from './ipc';
 
 /**
- * A page that claims its own drops, with an aim attached (./material-aim).
+ * A page that claims its own drops, with an aim attached (./source-aim).
  *
  * The Shell catches every drop nobody else claims; this stops propagation, so a
  * page that aims a drop is the only one that handles it.
  */
-export function useAimedDrop(aim: MaterialAim | null): {
+export function useAimedDrop(aim: SourceAim | null): {
   over: boolean;
   handlers: {
     onDragOver: (e: React.DragEvent) => void;

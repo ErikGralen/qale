@@ -26,7 +26,7 @@ export {
   languagePreamble,
   selfPreamble,
 } from './prompts.js';
-export { createFilingTools, FILING_TOOL_NAMES } from './filing.js';
+export { createFilingTools, FILING_TOOL_NAMES, type SourceFiled } from './filing.js';
 export { createDeferralTool, DEFER_TOOL_NAME } from './deferrals.js';
 export {
   createEndQuietlyTool,

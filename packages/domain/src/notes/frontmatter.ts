@@ -170,24 +170,25 @@ const base = {
 };
 
 /**
- * Raw source material — transcripts, PDF articles, Slack threads, Confluence
- * pages. The body is never *edited* (by human or agent); it may be *updated*
- * wholesale when the upstream changes (re-sync), which resets `processing` to
- * `new` so analyses know to re-run. Humans rarely read these; derived notes cite them.
+ * A source, exactly as it arrived — transcripts, PDF articles, Slack threads,
+ * Confluence pages. The body is never *edited* (by human or agent); it may be
+ * *updated* wholesale when the upstream changes (re-sync), which resets
+ * `processing` to `new` so analyses know to re-run. Humans rarely read these;
+ * derived notes cite them.
  */
 export const zSourceNote = z.object({
   type: z.literal('source'),
   ...base,
   processing: z.enum(PROCESSING_STATES).default('new'),
   source: zSource.optional(),
-  /** When the material was first captured. */
+  /** When the source was first captured. */
   captured: z.string().optional(),
   /** When the body was last re-synced from upstream. */
   updated: z.string().optional(),
   /**
-   * Where the material came from when the PO wasn't in the room — e.g. the
-   * colleague whose sales call this transcript records. External meetings are
-   * sources, not meetings: the PO is a reader, not a participant.
+   * Where it came from when the PO wasn't in the room — e.g. the colleague
+   * whose sales call this transcript records. External meetings are sources,
+   * not meetings: the PO is a reader, not a participant.
    */
   origin: z.string().optional(),
   customer: zRef.optional(),

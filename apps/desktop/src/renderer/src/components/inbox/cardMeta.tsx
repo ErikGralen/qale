@@ -8,21 +8,38 @@ import {
   Mic,
   Pencil,
   Ticket,
+  Trash2,
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { titleFromSlug, typeForDir } from '@qale/domain';
+import {
+  bareRef,
+  isNewSkill,
+  nounForDir,
+  proposalHeadline,
+  titleForRef,
+  titleFromSlug,
+  typeForDir,
+} from '@qale/domain';
 import type { OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
 import { isExternalRef } from '../../lib/connections';
-import { noteTypeIcon } from '../../lib/note-icons';
-import { outboundAct, outboundTarget, providerLabel } from './shared';
+import { NOTE_TYPE_ICON, noteTypeIcon } from '../../lib/note-icons';
+import { outboundAct, outboundReceipt, providerLabel } from './shared';
+
+// Both read a note reference the way the whole app reads one. They live in the
+// domain now; the Inbox keeps reading them from here.
+export { bareRef, titleForRef };
 
 /**
- * Turns a raw proposal into the one thing the PO reads to decide: a plain-language
- * headline of what changed in their product memory — a full sentence, no paths,
- * slugs, or jargon. The agent authors it (`proposal.headline`); everything below
- * is the mechanical fallback for older cards. The dense rationale becomes the
- * expandable "why", never the scannable line.
+ * Turns a raw proposal into the one thing the PO reads to decide: a
+ * plain-language line saying what the app will do, plus the pieces the card
+ * draws around it (the glyph, the note chip, the name a create card files
+ * under). No paths, slugs, or jargon.
+ *
+ * The app composes that line, it does not ask for one. No `propose_*` tool takes
+ * a headline except `propose_instruction`, so on every other card the composed
+ * line is what the PO reads. The dense rationale stays the expandable "why",
+ * never the scannable line.
  */
 export interface CardHeadline {
   Icon: LucideIcon;
@@ -30,7 +47,8 @@ export interface CardHeadline {
   headline: string;
   /** Short human noun for the kind (aria + the "why" prompt), e.g. "decision". */
   kind: string;
-  /** Whether the agent authored the headline (vs. a mechanical fallback). */
+  /** Whether the agent wrote the headline itself. Only a standing instruction
+   *  does; every other card carries the composed line. */
   authored: boolean;
   /** Lead verb for update cards, so the note reference can render distinctly. */
   verb: string;
@@ -50,19 +68,6 @@ export interface CardHeadline {
   retitle?: string;
 }
 
-/** dir segment (plural) → singular noun for the fallback "Update <noun>". */
-const NOUN_FOR_DIR: Record<string, string> = {
-  meetings: 'the meeting notes',
-  decisions: 'a decision',
-  insights: 'an insight',
-  themes: 'a theme',
-  customers: 'a customer',
-  people: 'a person',
-  sources: 'a source',
-  notes: 'a note',
-  todos: 'a to-do',
-};
-
 const dirOf = (path?: string | null): string => (path ? (path.split('/')[0] ?? '') : '');
 
 /** The file a card writes to — `targetPath` where there is one, else the path
@@ -78,32 +83,20 @@ function targetOf(p: ProposalDTO): string {
  * rules) or, where no house-rules file exists yet, as the `note` that creates
  * `skills/house-rules/SKILL.md` — the same rule either way, so the card must
  * not read differently depending on which.
+ *
+ * The headline says the rule itself; this is here for the glyph and the rank,
+ * which the domain vocabulary knows nothing about.
  */
 function isInstruction(p: ProposalDTO): boolean {
   const dir = dirOf(targetOf(p));
-  return dir === 'skills' || dir === 'agents';
+  return (dir === 'skills' || dir === 'agents') && !isSkill(p);
 }
 
-/** The rule such a card teaches, best-effort: the last bullet of the appended
- *  text, or of the body a new rules file is filed with. */
-function instructionRule(p: ProposalDTO): string {
-  const payload = p.payload as { append?: string; body?: string };
-  const lines = (payload.append ?? payload.body ?? '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith('- '));
-  return lines.at(-1)?.slice(2).trim() ?? '';
-}
-
-/** Strip wikilink brackets + alias, hand back the bare target slug/ref. */
-export function bareRef(ref: string): string {
-  return ref.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.trim();
-}
-
-/** Human title from a note path/slug: drops the dir + date prefix, de-slugs the rest. */
-export function titleForRef(ref?: string | null): string {
-  if (!ref) return '';
-  return titleFromSlug(bareRef(ref));
+/** A card that writes a whole new skill (`propose_skill`) rather than a rule
+ *  into one. It lands in the same folder, so the domain tells them apart and
+ *  the Inbox asks it the same question. */
+function isSkill(p: ProposalDTO): boolean {
+  return isNewSkill(p.kind, targetOf(p));
 }
 
 /** The note-type glyph for an evidence ref — derived from its dir segment, so a
@@ -123,41 +116,39 @@ function frontmatter(p: ProposalDTO): Record<string, unknown> {
   return (p.payload as { frontmatter?: Record<string, unknown> }).frontmatter ?? {};
 }
 
-/** An authored title/summary from the payload, when the note carries one. */
+/** An authored title/summary from the payload, when the note carries one. Only
+ *  the receipt needs it now; the headline reads the frontmatter in the domain. */
 function payloadTitle(p: ProposalDTO): string {
   const fm = frontmatter(p);
   const title = fm['title'] ?? fm['summary'];
   return typeof title === 'string' && title.trim() ? title.trim() : '';
 }
 
-/** An explicit `title` from the payload — the name as written, diacritics intact. */
-function payloadName(p: ProposalDTO): string {
-  const title = frontmatter(p)['title'];
-  return typeof title === 'string' && title.trim() ? title.trim() : '';
-}
-
-/** Note types whose subject is a proper name rather than a claim. */
-const NAMED_TYPES = new Set(['person', 'customer']);
-
-/**
- * Whose commitment a todo card tracks: the other person's name when they owe it,
- * null when it's the PO's own. The ledger already splits these into lanes, but
- * the card that files them read the same either way — "To do: Send Erik the
- * draft" over a line Daniel spoke, which is the opposite of what it says.
- */
-export function todoOwner(p: ProposalDTO): string | null {
-  const fm = frontmatter(p);
-  if (fm['type'] !== 'todo') return null;
-  const owner = fm['owner'];
-  if (typeof owner !== 'string' || !owner.trim()) return null;
-  // Either a "[[people/…]]" ref or a bare name — both read as a person here.
-  return titleForRef(owner.trim()) || null;
+/** The card's line, composed from what the card already carries: the path, the
+ *  frontmatter, and the text an update adds. Same vocabulary as the effect line
+ *  and the receipt, so one card never says two things. */
+function composedHeadline(p: ProposalDTO): string {
+  const payload = p.payload as { append?: string; body?: string };
+  return proposalHeadline({
+    kind: p.kind,
+    targetPath: targetOf(p),
+    frontmatter: frontmatter(p),
+    append: payload.append,
+    body: payload.body,
+    outbound: p.kind === 'outbound' ? (p.payload as OutboundPayloadDTO) : undefined,
+  });
 }
 
 function iconFor(p: ProposalDTO): LucideIcon {
   // An outbound card wears its action's glyph, not a blanket paper plane —
   // the same one the approve button carries, so the card reads as one act.
   if (p.kind === 'outbound') return outboundAct(p.payload as OutboundPayloadDTO).Icon;
+  // The one card that takes a page away wears the one glyph nothing else uses,
+  // so it can never be mistaken for the edit it sits next to in the queue.
+  if (p.kind === 'delete') return Trash2;
+  // A new skill wears the glyph every skill wears, in the sidebar and on the
+  // Skills page. The card is the file, so it should look like the file.
+  if (isSkill(p)) return NOTE_TYPE_ICON.skill;
   // A rule for the house, not a note in the memory — so neither the generic
   // pencil an update wears nor a note-type glyph. The open book is the wiki
   // page's already, so a rule takes the marked one.
@@ -175,59 +166,14 @@ function iconFor(p: ProposalDTO): LucideIcon {
 
 function kindNoun(p: ProposalDTO): string {
   if (p.kind === 'outbound') return providerLabel(p.payload as OutboundPayloadDTO);
+  if (p.kind === 'delete') return 'deletion';
+  if (isSkill(p)) return 'skill';
   if (isInstruction(p)) return 'standing instruction';
   if (p.kind === 'decision') return 'decision';
-  if (p.kind === 'update')
-    return NOUN_FOR_DIR[dirOf(p.targetPath)]?.replace(/^(a|an|the) /, '') ?? 'note';
+  if (p.kind === 'update') return nounForDir(dirOf(p.targetPath)).replace(/^(a|an|the) /, '');
   const type =
     typeof frontmatter(p)['type'] === 'string' ? (frontmatter(p)['type'] as string) : 'note';
   return type;
-}
-
-/** Mechanical fallback headline — only used when the agent didn't author one. */
-function fallbackHeadline(p: ProposalDTO): string {
-  const target = targetOf(p);
-
-  // The rule in the PO's own words, since a card saying "Update Your rules"
-  // never says which rule it is. Nothing to quote ⇒ say the plain thing.
-  if (isInstruction(p)) {
-    const rule = instructionRule(p);
-    return rule ? `Remember this: ${rule}` : 'A new standing instruction';
-  }
-
-  // "Comment on PAY-142" / "File a ticket in PAY: SCIM group-mapping" / "Add
-  // “Erik x Daniel: sync” to your calendar" — outboundTarget already folds the
-  // title in where the act has one, so appending it here doubled it.
-  if (p.kind === 'outbound') return outboundTarget(p.payload as OutboundPayloadDTO);
-
-  if (p.kind === 'decision') {
-    return `Decided: ${payloadTitle(p) || titleForRef(target)}`;
-  }
-
-  if (p.kind === 'note') {
-    const type =
-      typeof frontmatter(p)['type'] === 'string' ? (frontmatter(p)['type'] as string) : 'note';
-    const subject = payloadTitle(p) || titleForRef(target);
-    if (type === 'insight') return `Learned: ${subject}`;
-    // "To do" is the PO's own; someone else's commitment leads with who owes
-    // it, in the ledger's own words, so the two never look like one another.
-    if (type === 'todo') {
-      const owner = todoOwner(p);
-      return owner ? `Waiting on ${owner}: ${subject}` : `To do: ${subject}`;
-    }
-    // A person or a customer is a name, not a claim. Their summary describes
-    // them ("Product owner, first real user"), so leading with it leaves the
-    // card never saying who it is about. Their file IS their name; an explicit
-    // `title` wins where it exists, since the slug folds away diacritics.
-    if (NAMED_TYPES.has(type))
-      return `New ${type}: ${payloadName(p) || titleForRef(target) || subject}`;
-    return `New ${type}: ${subject}`;
-  }
-
-  // update
-  const noun = NOUN_FOR_DIR[dirOf(target)] ?? 'a note';
-  const title = titleForRef(target);
-  return title ? `Update ${title}` : `Update ${noun}`;
 }
 
 export function cardHeadline(p: ProposalDTO): CardHeadline {
@@ -240,6 +186,20 @@ export function cardHeadline(p: ProposalDTO): CardHeadline {
     replaces: supersedes ? titleForRef(supersedes) : undefined,
   };
 
+  // A deletion reads like an update — verb plus the page as an openable chip —
+  // because the PO has to be able to go and look at what is about to go before
+  // they agree to lose it.
+  if (p.kind === 'delete') {
+    const path = targetOf(p);
+    const title = titleForRef(path) || 'this note';
+    return {
+      ...base,
+      verb: 'Delete',
+      headline: p.headline?.trim() || `Delete ${title}`,
+      note: path ? { title, path } : undefined,
+    };
+  }
+
   // A standing instruction says itself in full ("Remember this: …"), so the
   // headline is the whole sentence and never "Update <file>" — the rule is the
   // subject, the file it lands in is only where. Once the agent has authored
@@ -251,7 +211,7 @@ export function cardHeadline(p: ProposalDTO): CardHeadline {
     return {
       ...base,
       verb: '',
-      headline: p.headline?.trim() || fallbackHeadline(p),
+      headline: p.headline?.trim() || composedHeadline(p),
       note:
         authored && p.kind === 'update' && path ? { title: titleForRef(path), path } : undefined,
     };
@@ -275,7 +235,7 @@ export function cardHeadline(p: ProposalDTO): CardHeadline {
   // Everything left creates something: a note, a decision, or (outbound) a
   // record somewhere else, which has no vault path and names its target in its
   // own head line.
-  const headline = p.headline?.trim() || fallbackHeadline(p);
+  const headline = p.headline?.trim() || composedHeadline(p);
   const path = p.kind === 'note' || p.kind === 'decision' ? targetOf(p) : '';
   const created = titleForRef(path);
   return {
@@ -287,6 +247,101 @@ export function cardHeadline(p: ProposalDTO): CardHeadline {
         ? { title: created, path }
         : undefined,
   };
+}
+
+// ---------------------------------------------------------------------------
+// The receipt: the same card, in the past tense (docs/closing-beat.md)
+// ---------------------------------------------------------------------------
+
+/** What one approved card did. The card says what will happen; this says what
+ *  happened, in the same nouns. */
+export interface ReceiptEntry {
+  id: string;
+  /** The one verb for what landed. */
+  verb: 'Created' | 'Updated' | 'Decided' | 'Sent' | 'Deleted';
+  /** The note it touched, when it touched one. It is the receipt's link. */
+  note?: { title: string; path: string };
+  /** Outbound only: the sentence for what left the workspace. */
+  sent?: string;
+  /** A deletion only: the name of the page that is gone. Its own field rather
+   *  than a note, because there is nothing left to open. */
+  gone?: string;
+}
+
+/** One accepted card, in the past tense. An outbound card touches nothing in
+ *  the vault, so it carries its own sentence instead of a note to open. */
+export function receiptEntry(p: ProposalDTO): ReceiptEntry {
+  if (p.kind === 'outbound') {
+    return { id: p.id, verb: 'Sent', sent: outboundReceipt(p.payload as OutboundPayloadDTO) };
+  }
+  const path = targetOf(p);
+  const title = titleForRef(path) || payloadTitle(p) || 'a note';
+  const verb =
+    p.kind === 'update'
+      ? 'Updated'
+      : p.kind === 'decision'
+        ? 'Decided'
+        : p.kind === 'delete'
+          ? 'Deleted'
+          : 'Created';
+  // A deleted page has no page to open, so the receipt says its name and stops
+  // there. A link to a file that is gone is a dead end wearing a link's clothes.
+  if (p.kind === 'delete') return { id: p.id, verb, gone: title };
+  return { id: p.id, verb, note: path ? { title, path } : undefined };
+}
+
+/** What a set of judged cards adds up to. */
+export interface Receipt {
+  accepted: number;
+  rejected: number;
+  /** One line per accepted card, oldest first: the order they were proposed in. */
+  entries: ReceiptEntry[];
+}
+
+/**
+ * The receipt for cards the PO has already judged. Accepted and rejected both
+ * count in the tally; only accepted ones set anything in motion, so only they
+ * get a consequence line. Anything withdrawn or gone stale was never a decision
+ * of theirs and is left out of both.
+ */
+export function receiptOf(resolved: readonly ProposalDTO[]): Receipt {
+  const judged = [...resolved]
+    .filter((p) => p.status === 'accepted' || p.status === 'rejected')
+    .sort((a, b) => a.created - b.created);
+  return {
+    accepted: judged.filter((p) => p.status === 'accepted').length,
+    rejected: judged.filter((p) => p.status === 'rejected').length,
+    entries: judged.filter((p) => p.status === 'accepted').map(receiptEntry),
+  };
+}
+
+/** What an empty Inbox is this time: the moment, or the state. */
+export type ClearedState =
+  /** They just judged something, so the page reports it. */
+  | { mode: 'receipt' }
+  /** Nothing happened here this sitting. `explain` is true only until the PO
+   *  has ever judged a card, and then never again. */
+  | { mode: 'quiet'; explain: boolean };
+
+/**
+ * Which of the two an empty Inbox shows (docs/closing-beat.md). "You just
+ * cleared it" is a moment and earns the receipt; "it is empty" is a state and
+ * stays near silent. The old zero said both at once, to everybody, forever.
+ */
+export function clearedInbox(
+  receipt: { accepted: number; rejected: number },
+  judgedBefore: boolean,
+): ClearedState {
+  if (receipt.accepted + receipt.rejected > 0) return { mode: 'receipt' };
+  return { mode: 'quiet', explain: !judgedBefore };
+}
+
+/** The receipt's head line: what the PO just did, in the buttons' own words. */
+export function receiptSummary(receipt: { accepted: number; rejected: number }): string {
+  const { accepted, rejected } = receipt;
+  if (rejected === 0) return `Approved ${accepted}`;
+  if (accepted === 0) return `Discarded ${rejected}`;
+  return `Approved ${accepted}, discarded ${rejected}`;
 }
 
 /**
@@ -311,6 +366,10 @@ export function sourceHint(p: ProposalDTO): string | null {
  */
 export function cardRank(p: ProposalDTO): number {
   if (p.kind === 'outbound') return 4;
+  // Never housekeeping. Everything in that fold collapses to a one-line row
+  // labelled "glance and go", and a page being removed is the one change in the
+  // queue that nobody should approve at a glance.
+  if (p.kind === 'delete') return 2;
   // A rule changes how every session behaves from here on, so it never folds
   // into the housekeeping tail. It also must not read louder or quieter
   // depending on whether the rules file happened to exist yet (update vs note).

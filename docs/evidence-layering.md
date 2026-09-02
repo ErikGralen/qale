@@ -9,7 +9,7 @@ and how it differs from this plan is at the end, under "What shipped".
 ## The problem
 
 A theme built over ten interviews currently arrives as a collage of block
-quotes. The quotes prove the model read the material, but the note fails at its
+quotes. The quotes prove the model read the sources, but the note fails at its
 actual job: saying what the theme is, how it shows up, and why it matters, in
 one voice. And this is not a themes problem. The same skills write every note
 type, so whatever rule fixes themes has to be the general rule for how the

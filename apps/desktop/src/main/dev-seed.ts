@@ -5,9 +5,9 @@ import { createProposal, type UseCaseContext } from '@qale/application';
  * review is demoable without an API key. One arrival review (a new
  * insight, a decision that replaces an earlier one, a note on the meeting
  * summary, an exec update to send) plus a supersede sweep (one decision changed,
- * so a couple of notes still point at the old plan — the cause block). Every
- * card carries an agent-style human `headline` so the redesign renders exactly
- * as it will in production. Gated behind QALE_SEED_PROPOSAL.
+ * so a couple of notes still point at the old plan: the cause block). Most cards
+ * carry an authored `headline`, and one deliberately does not, so both paths
+ * render as they will in production. Gated behind QALE_SEED_PROPOSAL.
  */
 export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
   try {
@@ -38,7 +38,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
           'Learned: Sara says SSO must be live before August, or the Nordkap rollout slips.',
       },
       rationale:
-        'Sara raised this as a hard gate on the rollout — worth remembering as its own insight.',
+        'Sara raised this as a hard gate on the rollout, worth remembering as its own insight.',
       evidence: ev,
       inference: false,
     });
@@ -46,32 +46,32 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
     // A note the PM asked for in the chat. There is no meeting behind it and
     // nothing to cite, so it carries the `asked` basis: the card says they asked
     // rather than flagging their own words as an unsourced guess. No authored
-    // headline either, so the mechanical "New note: <summary>" runs long and the
-    // "Files as" line under it is the only thing naming the file.
+    // headline either, so the composed "Write a note: <summary>" line runs long
+    // and the effect line under it is the only thing naming the folder.
     createProposal(ctx, {
       kind: 'note',
       sessionId: 'seed',
-      targetPath: 'notes/dropped-material-tags.md',
+      targetPath: 'notes/dropped-source-tags.md',
       baseHash: null,
       payload: {
-        path: 'notes/dropped-material-tags.md',
+        path: 'notes/dropped-source-tags.md',
         frontmatter: {
           type: 'note',
           summary:
-            'Convention for dropped external material: tag competitors `competitor` and analyses of comparable systems `prior-art`, on the source note and on anything derived from it.',
+            'Convention for dropped external sources: tag competitors `competitor` and analyses of comparable systems `prior-art`, on the source note and on anything derived from it.',
           tags: ['research'],
         },
-        body: '## The two tags\n\n`competitor`: material about a product that competes with Qale for the same buyer and the same job.\n\n`prior-art`: analysis of a system that is not a competitor but is worth learning from.\n',
-        rationale: 'You asked for two standing tags for the material you are about to drop in.',
+        body: '## The two tags\n\n`competitor`: a source about a product that competes with Qale for the same buyer and the same job.\n\n`prior-art`: analysis of a system that is not a competitor but is worth learning from.\n',
+        rationale: 'You asked for two standing tags for the sources you are about to drop in.',
       },
-      rationale: 'You asked for two standing tags for the material you are about to drop in.',
+      rationale: 'You asked for two standing tags for the sources you are about to drop in.',
       evidence: [],
       inference: false,
       asked: true,
     });
 
-    // A new decision that replaces an earlier one — shows the "replaces …" line
-    // (by human title) and the rendered Markdown preview.
+    // A new decision that replaces an earlier one. It shows the "replaces …"
+    // line (by human title) and the rendered Markdown preview.
     createProposal(ctx, {
       kind: 'decision',
       sessionId: 'seed',
@@ -90,16 +90,16 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
         body: '# Commit SCIM dates for Nordkap\n\nSCIM provisioning ships **in September**, with SSO already live in staging. This replaces the earlier "defer to Q3, no date inside the month" position now that engineering has committed.\n\n- **Owner:** Product\n- **Because:** the Nordkap renewal is gated on a firm date.\n',
         rationale: 'Record the decision to commit SCIM dates, pointing past the deferred one.',
         supersedes: 'decisions/2026-04-15-defer-scim-to-q3',
-        headline: 'Decided: commit SCIM dates for September — replaces the earlier “defer to Q3”.',
+        headline: 'Decided: commit SCIM dates for September, replacing “defer to Q3”.',
       },
       rationale:
-        'Engineering committed to a September ship, so the earlier "defer to Q3" call no longer holds — recording the new one keeps the memory current.',
+        'Engineering committed to a September ship, so the earlier "defer to Q3" call no longer holds. Recording the new one keeps the memory current.',
       evidence: ev,
       inference: false,
     });
 
-    // An edit to the meeting page — a real, matching patch so the diff preview
-    // renders with removed/added content (the change the demo actually shows).
+    // An edit to the meeting page, with a real matching patch so the diff
+    // preview renders removed/added content (the change the demo actually shows).
     const note = await ctx.vault.readNote(meeting.path);
     const anchor = note?.body
       .split('\n')
@@ -117,7 +117,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
           patch: [
             {
               search: anchor,
-              replace: `${anchor}\n\n> **Decision:** SCIM dates committed for September — see the new decision.`,
+              replace: `${anchor}\n\n> **Decision:** SCIM dates committed for September. See the new decision.`,
             },
           ],
           rationale: 'Note the committed SCIM dates on the meeting page.',
@@ -146,13 +146,13 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
           action: 'comment_ticket',
           targetId: 'PAY-142',
           title: 'Nordkap confirms first-tenant go-live Jul 28',
-          body: 'Nordkap confirms first-tenant go-live **Jul 28**. SCIM group-mapping is required before the September rollout — tracked separately.\n\n— from the Nordkap check-in, Jul 14',
+          body: 'Nordkap confirms first-tenant go-live **Jul 28**. SCIM group-mapping is required before the September rollout, and is tracked separately.\n\nFrom the Nordkap check-in, Jul 14',
           linkBackPath: meeting.path,
           rationale: 'Put the confirmed go-live date on the epic where engineering will see it.',
           headline: 'Comment on the SSO epic: Nordkap confirms first-tenant go-live Jul 28.',
         },
         rationale:
-          'Sara confirmed the date in the check-in — the epic should say so before standup.',
+          'Sara confirmed the date in the check-in. The epic should say so before standup.',
         evidence: ev,
         inference: false,
       },
@@ -160,7 +160,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
     );
 
     // A wikipage edit (Area D): renders as a redline against the page's current
-    // text — the "Confluence stewardship" scenario from the integration plan.
+    // text. This is the "Confluence stewardship" scenario from the integration plan.
     createProposal(ctx, {
       kind: 'outbound',
       sessionId: 'seed',
@@ -187,7 +187,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
           '- Written go-live confirmation to the customer security contact',
         ].join('\n'),
         rationale: 'The page still promises SCIM in Q2; the committed decision says September.',
-        headline: 'Fix the Enterprise Onboarding page — it still says SCIM ships in Q2.',
+        headline: 'Fix the Enterprise Onboarding page: it still says SCIM ships in Q2.',
       },
       rationale:
         'This page contradicts the SCIM decision: it still tells readers SCIM ships in Q2 with automatic group mapping.',
@@ -195,7 +195,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
       inference: false,
     });
 
-    // A supersede sweep — one decision changed, so notes that still cite the old
+    // A supersede sweep. One decision changed, so notes that still cite the old
     // plan are stale. Grouped in the Inbox as one cause block ("Because you
     // decided …, N notes still point at the old plan") with a batch approve.
     const decisionRef = `[[${decisionSlug}]]`;
@@ -226,7 +226,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
           patch: [
             {
               search: canchor,
-              replace: `${canchor}\n\n> Updated: SCIM dates are committed for September — the earlier "defer to Q3" plan no longer applies.`,
+              replace: `${canchor}\n\n> Updated: SCIM dates are committed for September. The earlier "defer to Q3" plan no longer applies.`,
             },
           ],
           rationale: 'This still describes the deferred plan; repoint it at the committed dates.',

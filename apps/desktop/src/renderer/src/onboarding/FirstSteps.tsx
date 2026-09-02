@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarClock,
   Check,
+  ChevronRight,
   FileUp,
   Inbox,
   KeyRound,
@@ -15,6 +16,8 @@ import {
 import type { ConnectionProgress, OnboardingDTO, SettingsDTO } from '@qale/ipc';
 import { connections, type ProviderDescriptorDTO } from '../lib/connections';
 import { requestCapture } from '../lib/capture-event';
+import { MEETING_TOOLS, firstStepsTally, stepRank } from '../lib/first-steps';
+import { invoke } from '../lib/ipc';
 import type { SettingsSection } from '../lib/settings-sections';
 import { useApp } from '../state/app-state';
 
@@ -32,6 +35,11 @@ import { useApp } from '../state/app-state';
  * the opening because on day one they have no reason to trust a new app with
  * their work systems, and the honest answer to that is to ask again once the
  * product has proved itself on a transcript.
+ *
+ * The rows stand in an arc (docs/critical-mass.md CM-6): the calendar puts a
+ * month of meetings on the shelf, the backlog drop fills them in, the trackers
+ * add the work around them, and the last row briefs a meeting from all of it.
+ * Each step makes the next one better. None of them blocks another.
  */
 
 /**
@@ -57,14 +65,32 @@ interface Row {
   cta: string;
 }
 
-/** Ticked rows sink; the order otherwise is the order they unblock each other. */
+/**
+ * Ticked rows sink; the rest stand in the arc (docs/critical-mass.md CM-6),
+ * where each step makes the next one better. It is a suggestion of order, not a
+ * lock: no row blocks another, and someone who starts in the middle loses
+ * nothing.
+ */
 function rank(r: Row): number {
-  return r.done ? 1 : 0;
+  return (r.done ? 100 : 0) + stepRank(r.id);
 }
 
+/** The row that folds open into "where do your meetings live". */
+const BACKLOG_ROW = 'transcript';
+
 export function FirstSteps() {
-  const { settings, patchOnboarding, openSettings, openInbox, openSession, openFolder, tree } =
-    useApp();
+  const {
+    settings,
+    patchOnboarding,
+    openSettings,
+    openInbox,
+    openSession,
+    openFolder,
+    openChat,
+    tree,
+    askRequests,
+    sessions,
+  } = useApp();
   const onboarding = settings?.onboarding;
   /** A meeting to be briefed on has to exist before that row can go anywhere. */
   const hasMeetings = !!tree?.groups.find((g) => g.type === 'meeting')?.notes.length;
@@ -87,6 +113,21 @@ export function FirstSteps() {
     };
   }, []);
 
+  /**
+   * An interview already waiting on an answer. A connection's first read ends
+   * in one (docs/first-look-debrief.md), and that session has read the whole
+   * synced index, so this row must open THAT one rather than a blank second
+   * conversation about the same thing. Two doors, one session.
+   */
+  const waitingInterview = useMemo(() => {
+    for (const request of Object.values(askRequests)) {
+      if (request.skill !== 'tell-qale') continue;
+      const session = sessions.find((s) => s.id === request.sessionId);
+      if (session) return { id: session.id, title: session.title };
+    }
+    return null;
+  }, [askRequests, sessions]);
+
   const rows = useMemo<Row[]>(() => {
     if (!settings || !onboarding) return [];
     return buildRows(settings, onboarding, providers, {
@@ -94,7 +135,7 @@ export function FirstSteps() {
       openSettings: (section) => openSettings(section),
       openInbox: () => openInbox(),
       openMeetings: () => openFolder('meetings'),
-      addMaterial: () => requestCapture(),
+      addSource: () => requestCapture(),
       ask: () => openSession('ask'),
       // The interview, not a file to edit (docs/product-understanding.md U-4).
       // It opens in its own tab and starts talking, because the whole lesson of
@@ -103,25 +144,33 @@ export function FirstSteps() {
       // The skill takes any topic (SK-11), so the topic is what this hands in:
       // the first prompt IS the argument, and the tab is named for it.
       learnProduct: () =>
-        openSession('tell-qale', {
-          initialPrompt: 'Let me tell you about the product.',
-          title: 'Tell Qale about the product',
-          fresh: true,
-        }),
+        waitingInterview
+          ? openChat(waitingInterview)
+          : openSession('tell-qale', {
+              initialPrompt: 'Let me tell you about the product.',
+              title: 'Tell Qale about the product',
+              fresh: true,
+            }),
+      waiting: !!waitingInterview,
     });
   }, [
     settings,
     onboarding,
     providers,
     hasMeetings,
+    waitingInterview,
     openSettings,
     openInbox,
     openFolder,
     openSession,
+    openChat,
   ]);
 
   const remaining = rows.filter((r) => !r.done).length;
   const finished = rows.length > 0 && remaining === 0;
+
+  /** What the workspace holds, for the card's last showing (CM-7). */
+  const tally = finished ? firstStepsTally(tree) : null;
 
   /**
    * Everything done: the card shows once with every row ticked — that glance
@@ -158,37 +207,118 @@ export function FirstSteps() {
           <X className="size-3.5" aria-hidden />
         </button>
       </div>
-      <ul>
-        {sorted.map((row) => (
-          <li key={row.id}>
-            <button
-              className="group/step flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors duration-150 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none"
-              onClick={row.go}
-            >
-              {row.done ? (
-                <Check className="size-4 shrink-0 text-success" aria-hidden />
-              ) : (
-                <row.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-              )}
-              <span className="min-w-0 flex-1">
-                <span
-                  className={`block truncate text-sm ${row.done ? 'text-muted-foreground line-through decoration-muted-foreground/40' : ''}`}
-                >
-                  {row.label}
+      {/* The last showing says what the steps built instead of that they are
+          done (CM-7). The ticks answered "what is left", and nothing is left;
+          the counts answer the question that replaced it. Read off the tree as
+          it renders, so the sentence is true when it is read, and never again
+          after the card retires. */}
+      {tally ? (
+        <p className="px-2.5 pt-1 pb-2.5 text-sm text-muted-foreground">{tally}</p>
+      ) : (
+        <ul>
+          {sorted.map((row) => (
+            <li key={row.id}>
+              <button
+                className="group/step flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors duration-150 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none"
+                onClick={row.go}
+              >
+                {row.done ? (
+                  <Check className="size-4 shrink-0 text-success" aria-hidden />
+                ) : (
+                  <row.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                )}
+                <span className="min-w-0 flex-1">
+                  <span
+                    className={`block truncate text-sm ${row.done ? 'text-muted-foreground line-through decoration-muted-foreground/40' : ''}`}
+                  >
+                    {row.label}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {row.done ? row.line : row.hint}
+                  </span>
                 </span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {row.done ? row.line : row.hint}
-                </span>
-              </span>
-              {!row.done && (
-                <span className="shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors group-hover/step:text-foreground">
-                  {row.cta}
-                </span>
-              )}
-            </button>
-          </li>
-        ))}
-      </ul>
+                {!row.done && (
+                  <span className="shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors group-hover/step:text-foreground">
+                    {row.cta}
+                  </span>
+                )}
+              </button>
+              {row.id === BACKLOG_ROW && !row.done && <ToolGuides />}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * "Where do your meetings live?" (docs/critical-mass.md CM-1).
+ *
+ * The row asks for last month's meetings, and the honest objection to that ask
+ * is "I don't have a folder of transcripts". Usually they do, in whatever tool
+ * recorded the meetings, and they have never had a reason to look. So the row
+ * folds open into the short version per tool, and the last option is for the
+ * people who have nothing recorded anywhere: their own notes still count.
+ *
+ * Folded by default, because someone who already has the folder should not have
+ * to read past six tools to drop it in.
+ */
+function ToolGuides() {
+  const [open, setOpen] = useState(false);
+  const [tool, setTool] = useState<string | null>(null);
+  /**
+   * Which tools have been reported. One event per tool per sitting: opening
+   * the same guide twice is the same fact, and what we want to know is which
+   * tools people use, not how often they click.
+   */
+  const reported = useRef(new Set<string>());
+
+  const pick = (id: string): void => {
+    setTool((current) => (current === id ? null : id));
+    if (reported.current.has(id)) return;
+    reported.current.add(id);
+    // Fire and forget. Whether it goes anywhere is the consent switch's call,
+    // main-side, which is the only place that knows the answer.
+    void invoke['telemetry:meetingTool'](id).catch(() => undefined);
+  };
+
+  const guide = MEETING_TOOLS.find((t) => t.id === tool);
+
+  return (
+    <div className="pr-2.5 pb-1.5 pl-9">
+      <button
+        className="flex items-center gap-1 rounded text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        <ChevronRight
+          className={`size-3 transition-transform motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
+          aria-hidden
+        />
+        Where do your meetings live?
+      </button>
+      {open && (
+        <div className="mt-1.5">
+          <div className="flex flex-wrap gap-1">
+            {MEETING_TOOLS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => pick(t.id)}
+                aria-pressed={tool === t.id}
+                className={`rounded-md px-2 py-0.5 text-xs ring-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none ${
+                  tool === t.id
+                    ? 'bg-accent text-foreground ring-border'
+                    : 'text-muted-foreground ring-transparent hover:bg-accent hover:text-foreground'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {guide && <p className="mt-1.5 text-xs text-muted-foreground">{guide.guide}</p>}
+        </div>
+      )}
     </div>
   );
 }
@@ -211,9 +341,11 @@ function buildRows(
     openSettings: (section: SettingsSection) => void;
     openInbox: () => void;
     openMeetings: () => void;
-    addMaterial: () => void;
+    addSource: () => void;
     ask: () => void;
     learnProduct: () => void;
+    /** An interview is already open and waiting on an answer. */
+    waiting: boolean;
   },
 ): Row[] {
   const stamped = onboarding.checklist;
@@ -230,23 +362,25 @@ function buildRows(
       cta: 'Settings',
     },
     {
-      // First, and the one that unblocks most of the others: the workspace
-      // starts empty, so until something real is in it the rest can't happen.
+      // The ask is the backlog, not the next meeting (CM-1). One transcript
+      // proves the loop works; a month of them makes the memory worth asking.
+      // The folder trick is said out loud because nobody tries it unless told,
+      // and notes are named because their old notes count as a source too (CM-4).
       id: 'transcript',
-      label: 'Drop in a meeting transcript',
-      hint: 'A .txt, .md or .vtt export, or just paste the text',
+      label: "Add last month's meetings",
+      hint: 'Transcripts, notes, exports. Drop the whole folder in one go.',
       icon: FileUp,
       done: !!stamped.transcript,
       line: stamped.transcript?.line,
-      go: go.addMaterial,
+      go: go.addSource,
       cta: 'Add',
     },
     {
-      // "Suggestion", not "card" (clarity review area 10): before the first
+      // "Proposal", not "card" (clarity review area 10): before the first
       // one exists, "card" is an internal word pointing at nothing.
       id: 'proposal',
-      label: 'Approve or reject its first suggestion',
-      hint: 'After it reads something, suggestions wait in the Inbox',
+      label: 'Decide on a proposal',
+      hint: 'Nothing is written to your workspace until you say yes',
       icon: Inbox,
       done: !!stamped.proposal,
       line: stamped.proposal?.line,
@@ -255,11 +389,13 @@ function buildRows(
     },
     {
       id: 'prep',
-      label: 'Get a meeting prepped for you',
-      // Two honest hints, because the move is different depending on whether
-      // there is a meeting to be briefed on at all.
+      label: 'Prep for a meeting',
+      // Last, because it is the row that pays for the others: the brief is
+      // drawn from everything the workspace has read by then, which is why the
+      // arc puts the reading first. Two honest hints, because the move is
+      // different depending on whether there is a meeting to be briefed on.
       hint: go.hasMeetings
-        ? 'Open one and ask for a brief, or let it prep the next one itself'
+        ? 'It briefs you from everything it has read so far'
         : 'Connect a calendar, or add a meeting, and it briefs you before the next one',
       icon: CalendarClock,
       done: !!stamped.prep,
@@ -280,7 +416,12 @@ function buildRows(
     {
       id: 'understanding',
       label: 'Tell it about your product',
-      hint: 'It asks, you talk, and it writes down what you said',
+      // Two hints, because the move is different once a connection's first read
+      // has already asked (docs/first-look-debrief.md): that session has read
+      // the whole index, and this row opens it rather than starting a blank one.
+      hint: go.waiting
+        ? 'It read your projects and has a question waiting'
+        : 'It asks, you talk, and it writes down what you said',
       icon: PenLine,
       // The row this replaced asked people to edit a skill file by hand. Anyone
       // who did that has still told it about their product, so their tick
@@ -288,7 +429,7 @@ function buildRows(
       done: !!stamped.understanding || !!stamped['about-us'],
       line: stamped.understanding?.line ?? stamped['about-us']?.line,
       go: go.learnProduct,
-      cta: 'Start',
+      cta: go.waiting ? 'Open' : 'Start',
     },
   ];
 
@@ -321,14 +462,14 @@ const CONNECT_COPY: Record<
   'google-calendar': {
     label: 'Connect your calendar',
     icon: CalendarClock,
-    hint: 'Your meetings arrive as notes by themselves',
+    hint: 'Your meetings appear, a month back and two ahead',
     half: 'Connected, but no calendar picked yet',
     line: 'Your calendar is in, so meetings arrive on their own',
   },
   atlassian: {
     label: 'Connect Jira or Confluence',
     icon: Ticket,
-    hint: 'Tickets and pages you link stay current',
+    hint: 'It reads your projects, then tells you what it found',
     half: 'Connected, but no project or space picked yet',
     line: 'Jira and Confluence are in, so linked work stays current',
   },

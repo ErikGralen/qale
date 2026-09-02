@@ -9,6 +9,7 @@ import {
   Clock,
   MessageSquare,
   Pencil,
+  Trash2,
   Wrench,
   X,
 } from 'lucide-react';
@@ -178,12 +179,12 @@ export function HousekeepingItem(props: CardItemProps) {
       tabIndex={-1}
       onClick={onFocus}
       onFocus={onFocus}
-      className={`group flex items-center gap-2 rounded-lg bg-card py-1.5 pr-1.5 pl-3 ${rowFocusClass(focused)}`}
+      className={`flex items-center gap-2 rounded-lg bg-card px-4 py-1.5 ${rowFocusClass()}`}
     >
       <button
         className="min-w-0 flex-1 truncate text-left text-sm text-foreground/85 focus-visible:outline-none"
         onClick={() => setExpanded(true)}
-        title="Show the full change"
+        title="Show detail"
       >
         {headline}
       </button>
@@ -196,26 +197,40 @@ export function HousekeepingItem(props: CardItemProps) {
           {noteTitle}
         </button>
       )}
-      <button
-        className="rounded p-1 text-muted-foreground opacity-0 group-focus-within:opacity-70 group-hover:opacity-70 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-        onClick={() => setExpanded(true)}
-        aria-label="Show the full change"
-        title="Show the full change"
-      >
-        <Pencil className="size-3.5" />
-      </button>
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={() => onAccept()}
-        disabled={busy}
-        aria-label="Approve"
-      >
-        <Check className="size-3.5" />
-      </Button>
-      <Button size="sm" variant="ghost" onClick={onReject} disabled={busy} aria-label="Discard">
-        <X className="size-3.5" />
-      </Button>
+      {/* The same three controls as the full card, in the same order, at the
+          same size and weight. A row is a card said shorter, not a second
+          vocabulary: as a ghost Button pair the check and the X carried 10px of
+          padding each and drifted apart from the card's own. The detail control
+          is the card's chevron, always on screen. As a hover-only pencil it
+          read as "edit", and most of the time it read as nothing at all. */}
+      <div className="flex shrink-0 items-center gap-0.5">
+        <button
+          className="rounded-md p-1.5 text-brand transition-colors hover:bg-brand/10 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={() => onAccept()}
+          disabled={busy}
+          aria-label="Approve"
+          title="Approve"
+        >
+          <Check className="size-4" />
+        </button>
+        <button
+          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={onReject}
+          disabled={busy}
+          aria-label="Discard"
+          title="Discard"
+        >
+          <X className="size-4" />
+        </button>
+        <button
+          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={() => setExpanded(true)}
+          aria-label="Show detail"
+          title="Show detail"
+        >
+          <ChevronDown className="size-4" />
+        </button>
+      </div>
     </li>
   );
 }
@@ -248,10 +263,13 @@ export function CardItem({
   const [draftPatch, setDraftPatch] = useState<{ search: string; replace: string }[]>([]);
   // null = this card has no append lever, so editing must not add one.
   const [draftAppend, setDraftAppend] = useState<string | null>(null);
-  const [whyOpen, setWhyOpen] = useState(false);
   const ref = useQueueFocus<HTMLLIElement>(focused);
 
   const outbound = proposal.kind === 'outbound' ? (proposal.payload as OutboundPayloadDTO) : null;
+  // A card that takes a page away. It has no text to edit and its button names
+  // the act, because "Approve" on a card that removes something is the one
+  // label a person can click without knowing what they agreed to.
+  const removes = proposal.kind === 'delete';
   // What this card does, in one vocabulary: the button's verb and the glyph.
   const act = outbound ? outboundAct(outbound) : null;
   // An outbound send is the review's own last decision — never a one-line row.
@@ -273,25 +291,42 @@ export function CardItem({
 
   const { Icon, headline, authored, verb, note, creates, replaces, retitle } =
     cardHeadline(proposal);
-  // Provenance is stated once. Closed, it is this line — the only thing telling
-  // the PO where a change came from. Open, the evidence chips below say it
-  // better (they open), so the line goes rather than sit above its own echo.
+  // What approving DOES, and where it lands. Composed in main from the payload,
+  // never written by the agent, so every card of a kind says the same sentence
+  // and the renderer never gets a second chance to word it differently.
+  const effect = proposal.effect;
+  // The one source worth a glance, named in the head: "from your Nordkap
+  // check-in". It stays whether the card is open or shut, so opening one never
+  // takes a fact away. The full list is behind the fold at the bottom, and only
+  // ever repeats this line for a reader who went looking for it.
   const source = (() => {
     const s = sourceHint(proposal);
-    return s && s !== note?.title && !open ? s : null;
+    return s && s !== note?.title ? s : null;
   })();
 
-  // The record a send writes to is the card's subject, not its reasoning, so it
-  // never doubles as its own citation — "Based on" is for what made this true.
+  // The record a card writes to is its subject, not its reasoning, so it never
+  // doubles as its own citation. "Based on" is for what made this true, and the
+  // note being written is already named, and openable, in the head line above.
+  // One source cited twice is one chip: a session can reach the same note by two
+  // routes, and the reader learns nothing from seeing it land twice.
   const target = useOutboundRefMeta(outbound);
-  const evidence = proposal.evidence.filter((e) => {
-    if (!outbound) return true;
-    const bare = bareRef(e.ref);
-    const id = outboundRef(outbound);
-    // The same item can be linked bare or under its tracker; the id is the last
-    // segment either way.
-    return bare !== target?.slug && (!id || basename(bare) !== id);
-  });
+  const written = bareRef(
+    proposal.targetPath ?? (proposal.payload as { path?: string }).path ?? '',
+  );
+  const evidence = [
+    ...new Set(
+      proposal.evidence
+        .map((e) => bareRef(e.ref))
+        .filter((bare) => {
+          if (!bare) return false;
+          if (!outbound) return !written || bare !== written;
+          const id = outboundRef(outbound);
+          // The same item can be linked bare or under its tracker; the id is the
+          // last segment either way.
+          return bare !== target?.slug && (!id || basename(bare) !== id);
+        }),
+    ),
+  ];
 
   // Fetch the preview lazily — only once the card is open, so a 24-card review
   // doesn't fire two dozen preview reads up front.
@@ -316,34 +351,6 @@ export function CardItem({
     setEditing(true);
   };
 
-  // The escape hatch: talk the card through in a seeded session. The card stays
-  // pending — the session can end in approval here or a revised card.
-  const discuss = () => {
-    const prompt = [
-      "I'm looking at a pending approval card and want to talk it through before deciding. Don't apply anything. The card stays pending until I act on it.",
-      '',
-      `Change: ${headline}`,
-      `Why: ${proposal.rationale}`,
-      proposal.evidence.length > 0
-        ? `Sources: ${proposal.evidence.map((e) => e.ref).join(', ')}`
-        : null,
-      '',
-      'Proposed payload:',
-      '```json',
-      JSON.stringify(proposal.payload, null, 2).slice(0, 4000),
-      '```',
-      '',
-      "Briefly explain why this was proposed and what approving would change, citing sources. Then ask what I'd like to adjust. If I want changes, propose a revised card.",
-    ]
-      .filter((line) => line !== null)
-      .join('\n');
-    openSession(undefined, {
-      initialPrompt: prompt,
-      title: `About: ${headline.slice(0, 48)}`,
-      fresh: true,
-    });
-  };
-
   // Why this edit has nowhere to go, in one sentence — the card's own words for
   // it, reused by the banner and by the message the session gets.
   const placementProblem = (() => {
@@ -363,16 +370,16 @@ export function CardItem({
     const payload = proposal.payload as UpdatePayloadDTO;
     const anchors = (payload.patch ?? []).map((p) => p.search).filter(Boolean);
     const prompt = [
-      `A card you put in front of me can't be applied any more: ${placementProblem}.`,
+      `A proposal you put in front of me can't be applied any more: ${placementProblem}.`,
       '',
-      `Card: ${proposal.id}`,
+      `Proposal: ${proposal.id}`,
       `Note: ${payload.path}`,
       `What it was for: ${proposal.rationale}`,
       anchors.length > 0 ? ['', 'The text it was anchored to:', '```', ...anchors, '```'] : null,
       '',
       owningSession
         ? `Read ${payload.path} as it stands now, then withdraw_proposal ${proposal.id} and propose the edit again against the note's current text. If what it wanted is already there, or no longer needed, withdraw it and say so in one line. Don't touch anything else.`
-        : `Read ${payload.path} as it stands now, then propose this edit again against the note's current text. The card came from a session that is gone, so I'll discard the old one myself. If what it wanted is already there, or no longer needed, say so in one line. Don't touch anything else.`,
+        : `Read ${payload.path} as it stands now, then propose this edit again against the note's current text. The proposal came from a session that is gone, so I'll discard the old one myself. If what it wanted is already there, or no longer needed, say so in one line. Don't touch anything else.`,
     ]
       .flat()
       .filter((line) => line !== null)
@@ -410,8 +417,8 @@ export function CardItem({
       tabIndex={-1}
       onClick={onFocus}
       onFocus={onFocus}
-      className={`overflow-hidden rounded-xl bg-card ${rowFocusClass(focused)} ${
-        outbound && !focused ? 'ring-brand/30' : ''
+      className={`overflow-hidden rounded-xl bg-card ${rowFocusClass()} ${
+        outbound ? 'ring-brand/30' : ''
       }`}
     >
       {/* A send's head is one statement, not a banner stacked on a headline:
@@ -429,13 +436,21 @@ export function CardItem({
               the head named the event and the system and never once said which
               day or hour, which is the only thing a person checks. */}
           <EventWhenLine payload={outbound} />
-          {/* The target line names the record; this names the change. Full ink,
-              regular weight — the longest line in the head shouldn't also be
-              the faintest one. 4px binds the label to its target, 8px separates
-              the pair from the sentence: one beat, not three even ones. Only an
-              agent-authored headline earns the line: the mechanical fallback is
-              built from the same payload as the target line, so it can only
-              ever restate it. */}
+          {/* What approving does, and who it reaches — but only where it adds
+              a fact the target line above doesn't already state. A calendar
+              card's line carries the guest list and the no-email rule; a page
+              edit or ticket comment is already fully said by the target line,
+              and restating it made the head a paragraph. */}
+          {effect && outbound.action.endsWith('_event') && (
+            <p className="mt-2 text-sm leading-snug text-balance break-words text-foreground/80">
+              {effect}
+            </p>
+          )}
+          {/* The agent's own words for the change, when it wrote any. Full ink,
+              regular weight: the longest line in the head shouldn't also be the
+              faintest one. Only an authored headline earns the line. The
+              composed one is built from the same payload as the target and
+              effect lines above, so it could only ever restate them. */}
           {authored && (
             <p className="mt-2 text-sm leading-snug text-balance break-words text-foreground">
               {headline}
@@ -471,6 +486,13 @@ export function CardItem({
                 headline
               )}
             </span>
+            {/* The line above names what gets written; this one names what
+                approving does and where it lands. A card that says neither
+                leaves the reader to supply the rest, and they supply the worst:
+                a page about a meeting reads as a meeting booked. It stays
+                readable with the card shut, which is where most cards are
+                judged. */}
+            {effect && <p className="mt-1 text-xs text-muted-foreground">{effect}</p>}
             {(replaces ||
               retitle ||
               (note && authored) ||
@@ -555,90 +577,6 @@ export function CardItem({
 
       {open && (
         <div className="border-t border-border/60 px-4 pt-3 pb-4">
-          {/* What approving DOES, and who it reaches — composed from the payload
-              in the main process, so it is the same sentence on every card of a
-              kind. It sits above the "why" and carries full ink: the reason is
-              the agent's, the consequence is the PO's. Outbound cards only. */}
-          {proposal.effect && (
-            <p className="mb-2 text-sm leading-relaxed text-foreground">{proposal.effect}</p>
-          )}
-          {/* The human "why" — clamped to two lines so a long agent rationale
-              never becomes a wall; the change itself is the point, not the essay. */}
-          {proposal.rationale && (
-            <div className="text-sm leading-relaxed text-foreground/80">
-              <p className={whyOpen ? '' : 'line-clamp-2'}>
-                <WikiText text={proposal.rationale} onOpen={onOpen} />
-              </p>
-              {proposal.rationale.length > 150 && (
-                <button
-                  className="mt-1 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                  onClick={() => setWhyOpen((v) => !v)}
-                >
-                  {whyOpen ? 'Show less' : 'Show more'}
-                </button>
-              )}
-            </div>
-          )}
-
-          {evidence.length > 0 && (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">Based on</span>
-              {evidence.map((e) => {
-                // Evidence refs are wikilink slugs — resolve through the index
-                // like every other link surface, but show the human title only.
-                const { target: evTarget } = normalizeLinkTarget(
-                  e.ref.replace(/^\[\[/, '').replace(/\]\]$/, ''),
-                );
-                // An external source is the same object here as anywhere else,
-                // so it renders as the same chip: typed, hover-carded, and
-                // honest about being a local copy. Rolling our own button drew
-                // a wiki page with a ticket's glyph.
-                if (isExternalRef(evTarget))
-                  return (
-                    <ExternalRefChip
-                      key={e.ref}
-                      target={evTarget}
-                      onOpen={onOpen}
-                      kind={evidenceChipKind(evTarget)}
-                    />
-                  );
-                const EvIcon = iconForRef(e.ref);
-                // Resolve then open, honoring browser-style modifiers so ⌘/middle
-                // click drops the note into a background tab. Snapshot the intent
-                // before the await — the event is pooled and gone by then.
-                const openEvidence = async (ev: {
-                  metaKey: boolean;
-                  ctrlKey: boolean;
-                  shiftKey: boolean;
-                  button?: number;
-                }) => {
-                  const opts = navFromEvent(ev);
-                  const path = await invoke['note:resolveLink'](evTarget);
-                  if (path) onOpen(path, opts);
-                };
-                return (
-                  <button
-                    key={e.ref}
-                    className="inline-flex items-center gap-1 rounded bg-brand/8 px-1.5 py-0.5 text-xs text-brand hover:bg-brand/15 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      void openEvidence(ev);
-                    }}
-                    onAuxClick={(ev) => {
-                      if (ev.button !== 1) return;
-                      ev.stopPropagation();
-                      void openEvidence(ev);
-                    }}
-                    title={`Open ${titleForRef(e.ref)}`}
-                  >
-                    <EvIcon className="size-3 shrink-0 opacity-70" aria-hidden />
-                    {titleForRef(e.ref)}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
           {editing ? (
             <EditFields
               kind={proposal.kind}
@@ -654,11 +592,17 @@ export function CardItem({
           ) : preview ? (
             <ChangePreview kind={proposal.kind} preview={preview} onOpen={onOpen} />
           ) : (
-            // The preview is read on open, so the card would otherwise sit with
-            // its "why" and no change under it — the one thing being approved,
-            // absent. Shaped like the diff it becomes, per the reader skeleton.
+            // The preview is read on open, so the card would otherwise sit
+            // empty: the one thing being approved, absent. Shaped like the lines
+            // it becomes, per the reader skeleton.
             <PreviewSkeleton />
           )}
+
+          {/* Why it was written, and what it was written from. Both behind one
+              row, under the change rather than over it: the decision is the file
+              and the diff, and a reader who has decided never scrolls past the
+              agent's reasoning to reach the button. */}
+          <WhyFold rationale={proposal.rationale} refs={evidence} onOpen={onOpen} />
 
           {preview?.stale ? (
             <div
@@ -668,8 +612,9 @@ export function CardItem({
               {preview.staleReason === 'missing' ? (
                 // Nothing to redo it against, so there is no repair to offer.
                 <span className="flex-1">
-                  The note this edit belongs to is gone, so there is nothing to change. Discard the
-                  card.
+                  {removes
+                    ? 'This page is already gone, so there is nothing left to delete. Discard the proposal.'
+                    : 'The note this edit belongs to is gone, so there is nothing to change. Discard the proposal.'}
                 </span>
               ) : (
                 <>
@@ -754,26 +699,33 @@ export function CardItem({
                   onClick={() => onAccept()}
                   disabled={busy || preview?.stale}
                 >
-                  {act ? <act.Icon className="size-3.5" /> : <Check className="size-3.5" />}
-                  {act ? `Approve & ${act.verb}` : 'Approve'}
+                  {act ? (
+                    <act.Icon className="size-3.5" />
+                  ) : removes ? (
+                    <Trash2 className="size-3.5" />
+                  ) : (
+                    <Check className="size-3.5" />
+                  )}
+                  {act ? `Approve & ${act.verb}` : removes ? 'Approve & delete' : 'Approve'}
                 </Button>
                 {/* One filled control on the row. Edit and Discard were two
                     identical outlines flanking it, so three buttons competed at
-                    the same weight; as ghosts they read as what they are —
+                    the same weight; as ghosts they read as what they are:
                     adjuncts to the one decision the card is asking for. */}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={startEdit}
-                  disabled={busy || preview?.stale}
-                >
-                  <Pencil className="size-3.5" /> Edit
-                </Button>
+                {/* A deletion has no text to edit: the card is a path and a
+                    reason. The two answers are yes and no. */}
+                {!removes && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={startEdit}
+                    disabled={busy || preview?.stale}
+                  >
+                    <Pencil className="size-3.5" /> Edit
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" onClick={onReject} disabled={busy}>
                   <X className="size-3.5" /> Discard
-                </Button>
-                <Button size="sm" variant="ghost" className="ml-auto" onClick={discuss}>
-                  <MessageSquare className="size-3.5" /> Ask about this
                 </Button>
               </>
             )}
@@ -781,6 +733,119 @@ export function CardItem({
         </div>
       )}
     </li>
+  );
+}
+
+/** One source the card was written from, as the openable chip that kind of
+ *  thing wears everywhere else in the app. */
+function EvidenceChip({
+  source: raw,
+  onOpen,
+}: {
+  source: string;
+  onOpen: CardItemProps['onOpen'];
+}) {
+  // Evidence refs are wikilink slugs — resolve through the index like every
+  // other link surface, but show the human title only.
+  const { target } = normalizeLinkTarget(raw.replace(/^\[\[/, '').replace(/\]\]$/, ''));
+  // An external source is the same object here as anywhere else, so it renders
+  // as the same chip: typed, hover-carded, and honest about being a local copy.
+  // Rolling our own button drew a wiki page with a ticket's glyph.
+  if (isExternalRef(target))
+    return <ExternalRefChip target={target} onOpen={onOpen} kind={evidenceChipKind(target)} />;
+  const Icon = iconForRef(raw);
+  // Resolve then open, honoring browser-style modifiers so ⌘/middle click drops
+  // the note into a background tab. Snapshot the intent before the await — the
+  // event is pooled and gone by then.
+  const open = async (ev: {
+    metaKey: boolean;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    button?: number;
+  }) => {
+    const opts = navFromEvent(ev);
+    const path = await invoke['note:resolveLink'](target);
+    if (path) onOpen(path, opts);
+  };
+  return (
+    <button
+      className="inline-flex items-center gap-1 rounded bg-brand/8 px-1.5 py-0.5 text-xs text-brand hover:bg-brand/15 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      onClick={(ev) => {
+        ev.stopPropagation();
+        void open(ev);
+      }}
+      onAuxClick={(ev) => {
+        if (ev.button !== 1) return;
+        ev.stopPropagation();
+        void open(ev);
+      }}
+      title={`Open ${titleForRef(raw)}`}
+    >
+      <Icon className="size-3 shrink-0 opacity-70" aria-hidden />
+      {titleForRef(raw)}
+    </button>
+  );
+}
+
+/**
+ * The agent's own account of the change: why it wrote this, and what it read to
+ * write it. Both sit behind one row, because the decision the card is asking for
+ * is the file and the diff. A session that read twelve things cites twelve, and
+ * that list took more of the card than the change did while pushing the buttons
+ * off the screen. It is a trust question, asked once, by a reader who already
+ * doubts what is in front of them.
+ *
+ * The row says which of the two it holds. "Why this" over a card with no
+ * rationale is a promise the fold can't keep.
+ */
+function WhyFold({
+  rationale,
+  refs,
+  onOpen,
+}: {
+  rationale: string;
+  refs: string[];
+  onOpen: CardItemProps['onOpen'];
+}) {
+  const [open, setOpen] = useState(false);
+  const why = rationale.trim();
+  if (!why && refs.length === 0) return null;
+  const label = why
+    ? refs.length > 0
+      ? 'Why this, and where it came from'
+      : 'Why this'
+    : 'Where it came from';
+  return (
+    <div className="mt-3">
+      <button
+        className="-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        aria-expanded={open}
+      >
+        <ChevronDown className={`size-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+        {label}
+      </button>
+      {open && (
+        <div className="mt-2">
+          {why && (
+            <p className="text-sm leading-relaxed text-foreground/80">
+              <WikiText text={why} onOpen={onOpen} />
+            </p>
+          )}
+          {refs.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Based on</span>
+              {refs.map((r) => (
+                <EvidenceChip key={r} source={r} onOpen={onOpen} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -807,7 +872,7 @@ function EditFields({
   onAppend: (v: string) => void;
 }) {
   return (
-    <div className="mt-3 flex flex-col gap-2">
+    <div className="flex flex-col gap-2">
       {kind === 'update' ? (
         <>
           {draftPatch.map((blk, i) => (
@@ -1124,7 +1189,7 @@ function OutboundDetail({
       : meta?.externalId;
 
   return (
-    <div className="mt-3">
+    <div>
       {changedSince && (
         <div className="mb-3 flex items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
@@ -1169,7 +1234,7 @@ function OutboundDetail({
  *  the middle of the card. */
 function PreviewSkeleton() {
   return (
-    <div className="mt-4" role="status" aria-label="Loading the change">
+    <div role="status" aria-label="Loading the change">
       <div className="mb-2 h-3 w-24 animate-pulse rounded bg-muted motion-reduce:animate-none" />
       <div className="flex flex-col gap-2.5 rounded-lg bg-muted/30 px-4 py-3">
         {[92, 76, 84].map((w, i) => (
@@ -1286,10 +1351,18 @@ function ChangePreview({
   const fmChanges = preview.frontmatterChanges ?? [];
   // A frontmatter-only card leaves the body untouched — don't render an empty diff.
   const bodyChanged = kind === 'update' && preview.before !== preview.after;
+  // What a deletion takes: the page as it reads now, struck through. An empty
+  // file previews as nothing at all, so it says so in words instead — that is
+  // the whole case for the card, and a blank box makes it in one line.
+  const empty = kind === 'delete' && !stripFrontmatter(preview.before).trim();
   return (
-    <div className="mt-3">
+    <div>
       <div className="mb-2 text-xs font-medium text-muted-foreground">
-        {kind === 'update' ? 'What this changes' : 'What gets filed'}
+        {kind === 'update'
+          ? 'What this changes'
+          : kind === 'delete'
+            ? 'What goes'
+            : 'What gets filed'}
       </div>
       <PreviewSurface>
         {kind === 'update' ? (
@@ -1299,6 +1372,12 @@ function ChangePreview({
               <RenderedDiff before={preview.before} after={preview.after} onOpen={onOpen} />
             )}
           </div>
+        ) : kind === 'delete' ? (
+          empty ? (
+            <p className="text-sm text-muted-foreground">This page is empty.</p>
+          ) : (
+            <RenderedDiff before={preview.before} after="" onOpen={onOpen} />
+          )
         ) : (
           <Markdown content={stripFrontmatter(preview.after)} onOpenNote={onOpen} />
         )}

@@ -1,4 +1,4 @@
-import { isFolderIndex } from '@qale/domain';
+import { isFolderIndex, proposalHeadline, type OutboundCopyInput } from '@qale/domain';
 import type {
   AskRequestDTO,
   CaptureNudgeStateDTO,
@@ -8,7 +8,13 @@ import type {
   VaultTreeDTO,
 } from '@qale/ipc';
 import { localDateStr } from './dates';
-import { isUpcomingMeeting, meetingStart, needsCapture, needsReview } from './note-status';
+import {
+  isLiveMeeting,
+  isUpcomingMeeting,
+  meetingStart,
+  needsCapture,
+  needsReview,
+} from './note-status';
 
 /**
  * The attention list — the ONE answer to "what is waiting on me".
@@ -34,7 +40,7 @@ export type AttentionKind =
   | 'card'
   /** A session that finished while the PO was elsewhere, unread. */
   | 'result'
-  /** The next meeting, while it is still ahead. */
+  /** The next meeting, while it is still ahead, or the one happening now. */
   | 'meeting'
   /** A meeting that happened and was never filed. */
   | 'review'
@@ -50,7 +56,7 @@ export type AttentionTarget =
   | { open: 'inbox' }
   | { open: 'todos' }
   | { open: 'folder'; dir: string }
-  /** Add material, attached to this meeting — the row IS the way to fill it. */
+  /** Add a source, attached to this meeting — the row IS the way to fill it. */
   | { open: 'capture'; path: string; title: string }
   /** Not a place: a group row that unfolds its own rows where it stands. */
   | { open: 'expand' };
@@ -144,6 +150,22 @@ export function waitingOnYou(items: readonly AttentionItem[]): AttentionItem[] {
   return items.filter((i) => WAITING_KINDS.has(i.kind) && !i.quiet);
 }
 
+/**
+ * What is waiting on the PO somewhere other than one session. It is the count on a
+ * session's own door into the Inbox ("3 more waiting", docs/closing-beat.md).
+ *
+ * The same filter as {@link waitingOnYou}, minus the cards this session put up
+ * itself: a door that counted a session's own cards would send the PO to the
+ * Inbox to judge what is on the screen in front of them.
+ */
+export function waitingElsewhere(
+  items: readonly AttentionItem[],
+  ownCardIds: readonly string[],
+): number {
+  const own = new Set(ownCardIds.map((id) => `card:${id}`));
+  return waitingOnYou(items).filter((i) => !own.has(i.id)).length;
+}
+
 /** How many of one kind the list holds — the shape every "N of these" label
  *  uses, so no surface ever re-derives a count of its own. */
 export function countOf(items: readonly AttentionItem[], kind: AttentionKind): number {
@@ -159,6 +181,31 @@ export function ofKind(items: readonly AttentionItem[], kind: AttentionKind): At
 function notesOfType(tree: VaultTreeDTO | null, type: NoteRefDTO['type']): NoteRefDTO[] {
   const group = tree?.groups.find((g) => g.type === type);
   return (group?.notes ?? []).filter((n) => !isFolderIndex(n.path));
+}
+
+/**
+ * A pending card, in the words the card itself uses. Almost no card carries an
+ * agent-written headline, so Home used to show the agent's reasoning while the
+ * Inbox showed the composed line, and the same card read as two different jobs.
+ * The rationale is the last resort: a payload too thin to compose from still has
+ * to say something.
+ */
+function cardLabel(p: ProposalDTO): string {
+  const payload = p.payload as {
+    path?: string;
+    frontmatter?: Record<string, unknown>;
+    append?: string;
+    body?: string;
+  };
+  const composed = proposalHeadline({
+    kind: p.kind,
+    targetPath: p.targetPath ?? payload.path,
+    frontmatter: payload.frontmatter,
+    append: payload.append,
+    body: payload.body,
+    outbound: p.kind === 'outbound' ? (p.payload as OutboundCopyInput) : undefined,
+  });
+  return p.headline?.trim() || composed.trim() || p.rationale;
 }
 
 /**
@@ -207,7 +254,7 @@ export function buildAttention(input: AttentionInput, now: number = Date.now()):
     items.push({
       id: `card:${p.id}`,
       kind: 'card',
-      label: p.headline ?? p.rationale,
+      label: cardLabel(p),
       meta: 'to approve',
       tone: 'brand',
       target: { open: 'inbox' },
@@ -215,8 +262,8 @@ export function buildAttention(input: AttentionInput, now: number = Date.now()):
     });
   }
 
-  // 3. Sessions that finished while the PO was elsewhere. A session they shelved
-  //    (done/dismissed) is off the active surfaces, unread or not.
+  // 3. Sessions that finished while the PO was elsewhere. A session they
+  //    unpinned is off the active surfaces, unread or not.
   const results = sessions
     .filter(
       (s) =>
@@ -242,16 +289,34 @@ export function buildAttention(input: AttentionInput, now: number = Date.now()):
   // A cancelled meeting never happened: it needs no prep and no review.
   const meetings = notesOfType(tree, 'meeting').filter((n) => n.eventStatus !== 'cancelled');
 
-  // 4. The next meeting, while it is still ahead and close enough to matter.
+  // 4. The next meeting, while it is still ahead and close enough to matter, or
+  //    the one happening right now. The row used to stop at the start time,
+  //    which is the minute it becomes useful: the PO is in the room, and the one
+  //    place that would hand them the page has just dropped it.
+  //
+  //    An all-day entry never holds the row: `isLiveMeeting` leaves it out, so
+  //    an offsite or a holiday cannot read as a call in progress all day.
   const next = meetings
-    .filter((n) => isUpcomingMeeting(n, now) && meetingStart(n) - now < NEXT_MEETING_MS)
-    .sort((a, b) => meetingStart(a) - meetingStart(b))[0];
+    .filter(
+      (n) =>
+        isLiveMeeting(n, now) ||
+        (isUpcomingMeeting(n, now) && meetingStart(n) - now < NEXT_MEETING_MS),
+    )
+    // A meeting in progress IS the row, so it beats one that has not started.
+    .sort(
+      (a, b) =>
+        Number(isLiveMeeting(b, now)) - Number(isLiveMeeting(a, now)) ||
+        meetingStart(a) - meetingStart(b),
+    )[0];
   if (next) {
+    const live = isLiveMeeting(next, now);
     items.push({
       id: `meeting:${next.path}`,
       kind: 'meeting',
-      label: next.title,
-      meta: next.time ?? 'today',
+      // While it runs the row is a door to the notes, not a clock: naming the
+      // meeting again says nothing the PO does not already know.
+      label: live ? `Take notes in ${next.title}` : next.title,
+      meta: live ? 'now' : (next.time ?? 'today'),
       tone: 'muted',
       target: { open: 'doc', path: next.path },
       when: meetingStart(next),
@@ -451,7 +516,7 @@ function door(first: AttentionItem, items: readonly AttentionItem[], now: number
       return {
         id: 'cards',
         kind: 'card',
-        label: `${plural(n, 'card')} waiting for your approval`,
+        label: `${plural(n, 'proposal')} waiting for your approval`,
         meta: 'Inbox',
         tone: 'brand',
         target: { open: 'inbox' },

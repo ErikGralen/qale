@@ -5,12 +5,12 @@ import type {
   ArrivalCheckDTO,
   ArrivalHandoffDTO,
   ArrivalItemInputDTO,
+  ArrivalProgressDTO,
   AtRiskLinkDTO,
   BacklinkDTO,
   ConnectionDTO,
   ConnectResultDTO,
   ContainerRecommendationDTO,
-  DeliveryDeltaDTO,
   ExternalRefMetaDTO,
   ProviderDescriptorDTO,
   ShallowIndexItemDTO,
@@ -204,20 +204,34 @@ export interface InvokeMap {
   'note:capture': { args: [input: CaptureNoteInput]; result: NoteDTO };
 
   // Arrival (docs/arrival-agentic.md) — pick files, check we can read them, hand
-  // the batch to a session. Nothing here decides what the material IS: `check`
+  // the batch to a session. Nothing here decides what the sources ARE: `check`
   // answers "can these bytes be read at all", which is the only question left in
   // the tray, and `ingest` writes the files into a session folder and starts the
   // agent that files them.
   'arrival:pick': { args: []; result: ArrivalItemInputDTO[] };
   'arrival:check': { args: [items: ArrivalItemInputDTO[]]; result: ArrivalCheckDTO };
   'arrival:ingest': {
-    args: [items: ArrivalItemInputDTO[], instruction?: string];
+    args: [items: ArrivalItemInputDTO[], instruction?: string, modelId?: string];
     result: ArrivalHandoffDTO;
   };
+  /**
+   * Batches that are still being read, or that settled while this window was
+   * away (docs/critical-mass.md CM-2). The counts arrive as pushes; this is the
+   * cold read a reopened tab needs so a run in flight is not a blank line.
+   */
+  'arrival:batches': { args: []; result: ArrivalProgressDTO[] };
   'search:query': { args: [query: string, limit?: number]; result: SearchHitDTO[] };
 
   // Proposals
   'proposals:list': { args: [status?: string]; result: ProposalDTO[] };
+  /**
+   * The cards one session already had judged: accepted and rejected, oldest
+   * first. The chat's receipt is built from these rather than from hook state,
+   * so reopening a session next week still shows what it changed
+   * (docs/closing-beat.md). Scoped to the session on purpose: the whole
+   * history of every resolved card is not something a surface should carry.
+   */
+  'proposals:resolved': { args: [sessionId: string]; result: ProposalDTO[] };
   'proposals:preview': { args: [id: string]; result: ProposalPreviewDTO | null };
   // `review` rides along on the resolve that empties a session: the question to
   // put to the PO when their cards were all discarded (see MeetingReviewAskDTO).
@@ -226,11 +240,15 @@ export interface InvokeMap {
     result: {
       ok: boolean;
       stale?: boolean;
-      /** Why a stale refusal refused, in the preview's vocabulary. */
-      staleReason?: 'unanchored' | 'duplicate';
+      /** Why a stale refusal refused, in the preview's vocabulary. `missing` is
+       *  a delete card's only way to go stale: the file is already gone. */
+      staleReason?: 'unanchored' | 'duplicate' | 'missing';
       error?: string;
       url?: string;
       review?: MeetingReviewAskDTO;
+      /** The vault note the accept wrote, after any rename it also made — the
+       *  rail pins what the PM approves (docs/autopinning.md). */
+      path?: string;
     };
   };
   'proposals:reject': { args: [id: string]; result: { ok: boolean; review?: MeetingReviewAskDTO } };
@@ -346,13 +364,18 @@ export interface InvokeMap {
    * never carry a note title. Fire and forget, like the other void channels.
    */
   'telemetry:view': { args: [view: string, tabs: number]; result: void };
+  /**
+   * Which meeting tool's guide got opened in First steps (CM-1). Same rule as
+   * the view above: one word from a list we wrote, folded away main-side if it
+   * is not one of ours, so the channel can carry nothing else. Fire and forget.
+   */
+  'telemetry:meetingTool': { args: [tool: string]; result: void };
   'connections:searchIndex': {
     args: [query: string, limit?: number];
     result: ShallowIndexItemDTO[];
   };
   'connections:refMeta': { args: [slug: string]; result: ExternalRefMetaDTO | null };
   'connections:atRisk': { args: []; result: AtRiskLinkDTO[] };
-  'connections:deliveryDelta': { args: [meetingPath: string]; result: DeliveryDeltaDTO[] };
   /** Current mirrored body of a wikipage — the "before" of a redline preview. */
   'connections:pageBody': { args: [externalIdOrSlug: string]; result: string | null };
 
@@ -431,8 +454,10 @@ export const INVOKE_CHANNELS = [
   'arrival:pick',
   'arrival:check',
   'arrival:ingest',
+  'arrival:batches',
   'search:query',
   'proposals:list',
+  'proposals:resolved',
   'proposals:preview',
   'proposals:accept',
   'proposals:reject',
@@ -467,10 +492,10 @@ export const INVOKE_CHANNELS = [
   'connections:syncNow',
   'connections:recommend',
   'telemetry:view',
+  'telemetry:meetingTool',
   'connections:searchIndex',
   'connections:refMeta',
   'connections:atRisk',
-  'connections:deliveryDelta',
   'connections:pageBody',
   'codebase:get',
   'codebase:set',

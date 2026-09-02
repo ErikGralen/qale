@@ -8,6 +8,22 @@ export { outboundEffect, type OutboundEffectFacts } from './effect.js';
 /** When a calendar card lands, said the same way everywhere it is shown. */
 export { describeEventWhen, rsvpAnswer, type EventWhen } from './event-time.js';
 
+/** The words on a card: what it will write, and what approving it does. */
+export {
+  proposalHeadline,
+  vaultEffect,
+  isNewSkill,
+  outboundTarget,
+  outboundReceipt,
+  outboundVerb,
+  bareRef,
+  titleForRef,
+  nounForDir,
+  type HeadlineInput,
+  type VaultEffectInput,
+  type OutboundCopyInput,
+} from './card-copy.js';
+
 /** Whether a card repeats one already waiting on the PM. */
 export {
   contentTokens,
@@ -24,7 +40,7 @@ export {
  * grow per phase: note/update now, decision/outbound land in Phases 3 & 5.
  */
 
-export const PROPOSAL_KINDS = ['note', 'update', 'decision', 'outbound'] as const;
+export const PROPOSAL_KINDS = ['note', 'update', 'decision', 'outbound', 'delete'] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 
 /**
@@ -253,6 +269,22 @@ export const zUpdatePayload = z
     },
   );
 export type UpdatePayload = z.infer<typeof zUpdatePayload>;
+
+/**
+ * A delete card: the file, and why it should go. Nothing else.
+ *
+ * The payload deliberately carries no description of what is in the file. The
+ * card shows the page as it reads right now, so a written-out summary beside it
+ * would be a second, worse copy of the thing the PO is already looking at —
+ * which is exactly what happened while `propose_update` was the only lever:
+ * "delete this" arrived as a paragraph appended to the note saying the PM
+ * should delete it.
+ */
+export const zDeletePayload = z.object({
+  path: z.string().min(1),
+  rationale: z.string().min(1),
+});
+export type DeletePayload = z.infer<typeof zDeletePayload>;
 
 /** A decision card carries the new decision plus an optional supersede target. */
 export const zDecisionPayload = z.object({

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  isMirrorType,
   lifecycleValue,
   lifecycleValueLabel,
   noteTypeLabel,
@@ -13,6 +12,7 @@ import {
   CalendarDays,
   CheckCheck,
   ChevronRight,
+  Copy,
   Link2,
   Lock,
   MessageSquare,
@@ -29,7 +29,6 @@ import { navFromEvent, type NavOpts } from '../lib/nav';
 import { noteTypeIcon } from '../lib/note-icons';
 import { Markdown } from '../components/Markdown';
 import { HeaderAction, HeaderActions, HeaderMenu, PageHeader } from '../components/PageHeader';
-import { MeetingDelivery } from '../components/DeliveryStrip';
 import { NoteEditor } from '../components/NoteEditor';
 import { NoteHistory } from '../components/NoteHistory';
 import { PropertiesBlock } from '../components/PropertiesBlock';
@@ -42,19 +41,17 @@ import {
   processNoteSeed,
   readMeetingSeed,
 } from '../lib/agent-nudges';
+import { isLiveWindow, isUnreadMeeting, meetingWindowOf } from '../lib/note-status';
 import { localDateStr } from '../lib/dates';
 
-/** "today 14:00" / "tomorrow" / "in 3d" — when the meeting starts, or null if past. */
-function upcomingLabel(frontmatter: Record<string, unknown>): string | null {
-  const date = typeof frontmatter['date'] === 'string' ? frontmatter['date'] : null;
-  if (!date) return null;
-  const time = typeof frontmatter['time'] === 'string' ? frontmatter['time'] : null;
-  const iso = time && !date.includes('T') ? `${date}T${time}` : date;
-  const t = Date.parse(iso);
-  if (Number.isNaN(t) || t <= Date.now()) return null;
-  if (new Date(t).toDateString() === new Date().toDateString())
+/** "today 14:00" / "tomorrow" / "in 3 days": how far off the start is, or null
+ *  once it has passed. */
+function upcomingLabel(start: number, time: string | null): string | null {
+  const now = Date.now();
+  if (start <= now) return null;
+  if (new Date(start).toDateString() === new Date(now).toDateString())
     return time ? `today ${time}` : 'today';
-  const days = Math.ceil((t - Date.now()) / 86_400_000);
+  const days = Math.ceil((start - now) / 86_400_000);
   return days === 1 ? 'tomorrow' : `in ${days} days`;
 }
 
@@ -155,7 +152,7 @@ function LinksSection({
             <div className="flex flex-col gap-3 pt-2 pb-1">
               {groups.map(({ label, items }) => (
                 <div key={label}>
-                  <div className="px-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
+                  <div className="px-1 text-xs tracking-wide text-muted-foreground/70 uppercase">
                     {label}
                   </div>
                   <ul className="mt-0.5">
@@ -288,11 +285,11 @@ export function NoteView({ path }: { path: string }) {
   }
 
   const editable = currentNote.bodyEditable;
-  // A mirror's read-only line ends in a door: "edits happen there" is only
-  // useful next to the way there, and the URL property row is a collapse away.
-  const mirrorUrl =
-    isMirrorType(currentNote.type) && typeof currentNote.frontmatter['url'] === 'string'
-      ? currentNote.frontmatter['url']
+  // The ticket's key upstream (PAY-142) — what a PO pastes into standups and
+  // Slack, so the ⋯ menu offers it without a trip to the tracker.
+  const ticketKey =
+    currentNote.type === 'ticket' && typeof currentNote.frontmatter['external_id'] === 'string'
+      ? currentNote.frontmatter['external_id']
       : null;
   // The note's own lifecycle value ('wont-do', 'superseded', …), read under
   // whatever key its type calls it. Only themes and superseded decisions wear it
@@ -314,20 +311,32 @@ export function NoteView({ path }: { path: string }) {
     syncedMeeting && typeof currentNote.frontmatter['url'] === 'string'
       ? currentNote.frontmatter['url']
       : null;
-  const upcoming =
+  // When this meeting runs, parsed once. The lists use the same parser, so the
+  // page and Home never disagree about whether the call has started.
+  const when =
     currentNote.type === 'meeting' && !eventCancelled
-      ? upcomingLabel(currentNote.frontmatter)
+      ? meetingWindowOf(currentNote.frontmatter)
       : null;
+  const meetingTime =
+    typeof currentNote.frontmatter['time'] === 'string' ? currentNote.frontmatter['time'] : null;
+  const upcoming = when ? upcomingLabel(when.start, meetingTime) : null;
   const offerBrief = upcoming !== null && !/^## Prep\b/m.test(currentNote.body);
+  // The meeting is happening. Before it the PO wants the brief, during it they
+  // want the cursor, so the two share one slot. They cannot both show:
+  // `upcoming` is null the moment the start passes, which is when this turns on.
+  const liveMeeting = when !== null && isLiveWindow(when);
   // A meeting the calendar made, that has already happened, and that holds
   // nothing at all. Without this the page is machine frontmatter over a blank
   // sheet, with no hint that dropping the transcript here is the whole point
   // (docs/capture-nudge.md). Part of the empty state, so it needs no dismiss:
-  // the first word typed takes it away.
+  // the first word typed takes it away. Never while the meeting runs: the live
+  // block says the same thing in better words, and two blocks stacked read as
+  // two different asks.
   const emptyMeeting =
     syncedMeeting &&
     !eventCancelled &&
     upcoming === null &&
+    !liveMeeting &&
     typeof currentNote.frontmatter['date'] === 'string' &&
     transcriptRefs(currentNote.frontmatter).length === 0 &&
     !currentNote.body.trim();
@@ -340,8 +349,33 @@ export function NoteView({ path }: { path: string }) {
   const pastMeeting = currentNote.type === 'meeting' && !eventCancelled && upcoming === null;
   const meetingTranscripts =
     currentNote.type === 'meeting' ? transcriptRefs(currentNote.frontmatter) : [];
-  const unreadMeeting = pastMeeting && meetingTranscripts.length > 0;
-  /** The material's own door back into the tray, with the meeting preset. */
+  const unreadMeeting = isUnreadMeeting({
+    past: pastMeeting,
+    processing: currentNote.frontmatter['processing'],
+    transcripts: meetingTranscripts.length,
+    body: currentNote.body,
+  });
+  /**
+   * Put the cursor in the body, under a `## Notes` heading, seeding the heading
+   * when the page has none.
+   *
+   * On the click only. `captured` is `hasBody || transcripts` and `has_body` is
+   * `body.trim().length > 0`, so seeding on render would mark every live meeting
+   * captured and silence the capture nudge on meetings nobody wrote in.
+   *
+   * The heading goes at the end, so a brief already on the page keeps `## Prep`
+   * first: that is what the PO reads while the call runs.
+   */
+  const takeNotes = async () => {
+    if (!/^## Notes\b/m.test(currentNote.body)) {
+      const body = currentNote.body.replace(/\s+$/, '');
+      await saveNote(currentNote.path, body ? `${body}\n\n## Notes\n` : '## Notes\n');
+    }
+    // After the save has rendered, not with it: the editor takes a new body in
+    // an effect, and that effect resets the selection to the top of the doc.
+    requestAnimationFrame(() => editorFocus.current?.());
+  };
+  /** This note's own door back into the tray, with the meeting preset. */
   const addTranscript = () =>
     requestCapture({
       aim: { kind: 'meeting', path: currentNote.path, title: currentNote.title },
@@ -405,7 +439,7 @@ export function NoteView({ path }: { path: string }) {
                   fresh: true,
                 })
               }
-              title="Work this note into the memory: clean it up, update the pages it touches, file what it implies, all as approval cards. Re-run anytime after adding more."
+              title="Work this note into the memory: clean it up, update the pages it touches, file what it implies, all as proposals. Re-run anytime after adding more."
             >
               <Sparkles className="size-3.5" /> Go through this note
             </Button>
@@ -428,17 +462,20 @@ export function NoteView({ path }: { path: string }) {
               size="sm"
               onClick={() =>
                 openSession('arrival', {
-                  initialPrompt: readMeetingSeed(currentNote.path),
+                  initialPrompt: readMeetingSeed(currentNote.path, {
+                    transcripts: meetingTranscripts.length,
+                    typed: currentNote.body.trim().length > 0,
+                  }),
                   title: `Go through: ${currentNote.title}`,
                   fresh: true,
                 })
               }
-              title="Go through this meeting's transcripts and propose what they change, as approval cards."
+              title="Go through what this meeting holds, typed notes and recordings alike, and turn what it changes into proposals."
             >
-              <Sparkles className="size-3.5" />{' '}
-              {meetingTranscripts.length > 1
-                ? 'Go through the transcripts'
-                : 'Go through the transcript'}
+              {/* One label for both, because from the PO's side it is one act:
+                  read this meeting. Whether they typed it or recorded it is the
+                  run's business. */}
+              <Sparkles className="size-3.5" /> Go through this meeting
             </Button>
           )}
           {todoOpen && (
@@ -465,7 +502,7 @@ export function NoteView({ path }: { path: string }) {
                   fresh: true,
                 })
               }
-              title="Help me handle this commitment: the memory proposes a plan, a close, or a reschedule as approval cards."
+              title="Help me handle this commitment: the memory proposes a plan, a close, or a reschedule as proposals."
             >
               <Sparkles className="size-3.5" /> Help me handle this
             </Button>
@@ -500,12 +537,23 @@ export function NoteView({ path }: { path: string }) {
                 items={[
                   // A meeting nobody is going to read: settle it by hand rather
                   // than leave it sitting in the attention list for good (AR-3).
-                  ...(unreadMeeting && currentNote.frontmatter['processing'] !== 'processed'
+                  // `processed` is already part of `unreadMeeting`, so the item
+                  // and the button open and close together.
+                  ...(unreadMeeting
                     ? [
                         {
                           label: 'Mark as filed',
                           icon: CheckCheck,
                           action: () => void markMeetingReviewed(currentNote.path),
+                        },
+                      ]
+                    : []),
+                  ...(ticketKey
+                    ? [
+                        {
+                          label: `Copy ${ticketKey}`,
+                          icon: Copy,
+                          action: () => void navigator.clipboard.writeText(ticketKey),
                         },
                       ]
                     : []),
@@ -575,18 +623,12 @@ export function NoteView({ path }: { path: string }) {
           )}
           <PropertiesBlock key={currentNote.path} note={currentNote} />
 
-          {/* Delivery truth for this meeting's series — the "since last time"
-              deltas from the mirror live here, on the page they brief. */}
-          {currentNote.type === 'meeting' && (
-            <MeetingDelivery path={currentNote.path} onOpen={(p) => void openDoc(p)} />
-          )}
-
           {offerBrief && (
             <div className="mb-4 flex items-center gap-2.5 rounded-lg bg-brand/6 px-3 py-2 ring-1 ring-brand/20">
               <Sparkles className="size-4 shrink-0 text-brand" aria-hidden />
               <p className="min-w-0 flex-1 text-sm">
                 Happening {upcoming}. The memory can brief you: what changed since these people were
-                last told, open questions, loose ends. One approval card writes it here.
+                last told, open questions, loose ends. One proposal writes it here.
               </p>
               <Button
                 size="sm"
@@ -600,6 +642,20 @@ export function NoteView({ path }: { path: string }) {
               >
                 Get the brief
               </Button>
+            </div>
+          )}
+
+          {/* The same slot as the prep offer above, and the same shape as the
+              empty-meeting block below: one object, three states. While the call
+              runs the page has one job, which is the cursor. */}
+          {liveMeeting && (
+            <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-muted/50 px-3 py-2.5">
+              <p className="min-w-0 flex-1 text-sm text-muted-foreground">Happening now.</p>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Button size="sm" variant="secondary" onClick={() => void takeNotes()}>
+                  Take notes
+                </Button>
+              </div>
             </div>
           )}
 
@@ -625,23 +681,15 @@ export function NoteView({ path }: { path: string }) {
           {/* Why there is no cursor here, one line, right where the eye lands
               when the click does nothing. A box would read as a warning; this
               is orientation. The sentence is the domain's (@qale/domain
-              readOnlyReason), so every read-only surface says the same thing. */}
+              readOnlyReason), so every read-only surface says the same thing.
+              The way there is the fact strip's "Open in Jira" door above — the
+              sentence does not repeat it. */}
           {!editable && (
             <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <Lock className="size-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
                 {readOnlyReason(currentNote.type, currentNote.frontmatter)}
               </span>
-              {mirrorUrl && (
-                <a
-                  href={mirrorUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                >
-                  Open the original
-                </a>
-              )}
             </p>
           )}
 

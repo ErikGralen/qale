@@ -5,22 +5,13 @@ import {
   Clock,
   CornerDownRight,
   ListTodo,
-  Plus,
   RotateCcw,
   Sparkles,
   TriangleAlert,
   User,
   X,
 } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  Spinner,
-  cn,
-} from '@qale/ui';
+import { Button, Spinner, cn } from '@qale/ui';
 import type { NoteRefDTO } from '@qale/ipc';
 import { byDue, todoLane, type TodoLane, isFolderIndex } from '@qale/domain';
 import { useApp } from '../state/app-state';
@@ -29,6 +20,8 @@ import { useToast } from '../components/toast';
 import { PageHeader } from '../components/PageHeader';
 import { AtRiskMarker, riskFor, useAtRisk } from '../components/ExternalRef';
 import { localDateStr } from '../lib/dates';
+import { addDays, dueLabel } from '../lib/due-date';
+import { DatePicker } from '../components/DatePicker';
 import { parseTodoInput } from '../lib/todo-parse';
 import { handleTodoSeed } from '../lib/agent-nudges';
 import type { AtRiskLinkDTO } from '../lib/connections';
@@ -51,43 +44,11 @@ const LANE_LABEL: Record<TodoLane, string> = {
   closed: 'Done',
 };
 
-const dueFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
-const dueFmtYear = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-});
 const todayHeadFmt = new Intl.DateTimeFormat('en-GB', {
   weekday: 'short',
   day: 'numeric',
   month: 'short',
 });
-
-/** today + n days as a local YYYY-MM-DD string — the this-week / later cutoff. */
-function addDays(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00`);
-  d.setDate(d.getDate() + days);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-/** "today" / "tomorrow" / "18 Jul" — compact, relative where it reads faster. */
-function dueLabel(due: string, today: string): string {
-  if (due === today) return 'today';
-  const d = new Date(`${due}T00:00`);
-  const t = new Date(`${today}T00:00`);
-  const days = Math.round((d.getTime() - t.getTime()) / 86400000);
-  if (days === 1) return 'tomorrow';
-  return (d.getFullYear() === t.getFullYear() ? dueFmt : dueFmtYear).format(d);
-}
-
-/** The next Monday strictly after `today` — the "start of next week" snooze. */
-function nextMonday(today: string): string {
-  const dow = new Date(`${today}T00:00`).getDay();
-  return addDays(today, (8 - dow) % 7 || 7);
-}
 
 /** "[[people/jonas]]" or "people/jonas" → slug; plain names return null. */
 function refSlug(ref: string): string | null {
@@ -99,29 +60,18 @@ function refSlug(ref: string): string | null {
 const ROW_ACTION =
   'flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:border-brand/40 hover:text-brand focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50';
 
-/** Snooze steps, in the order a PO reaches for them. */
-const SNOOZE_STEPS: { label: string; due: (today: string) => string }[] = [
-  { label: 'Tomorrow', due: (t) => addDays(t, 1) },
-  { label: 'Next Monday', due: nextMonday },
-  { label: 'In a week', due: (t) => addDays(t, 7) },
-  { label: 'In two weeks', due: (t) => addDays(t, 14) },
-];
-
-/**
- * The steps as dates, minus the collisions — on a Friday "next Monday" and "in
- * three days" are the same day, and offering it twice makes the menu look broken.
- */
-function snoozeChoices(today: string): { label: string; due: string }[] {
-  const all = SNOOZE_STEPS.map((s) => ({ label: s.label, due: s.due(today) }));
-  return all.filter((s, i) => all.findIndex((o) => o.due === s.due) === i);
-}
-
 interface TodoRow {
   note: NoteRefDTO;
   lane: TodoLane;
   overdue: boolean;
 }
 
+/**
+ * Quick add, dressed as the todo it creates. The old bar (lone glyph, long
+ * placeholder, no button) carried every search-bar signal, and users read it
+ * as one. The row costume — the same empty circle the rows wear, a short
+ * invitation, a labelled Add button — is what says "this makes a todo".
+ */
 function QuickAdd() {
   const { captureTodo } = useApp();
   const [value, setValue] = useState('');
@@ -131,6 +81,7 @@ function QuickAdd() {
 
   const parsed = useMemo(() => parseTodoInput(value), [value]);
   const showChips = value.trim().length > 0 && (parsed.due || parsed.owner);
+  const ready = !!parsed.title && !busy;
 
   const submit = async () => {
     if (!parsed.title || busy) return;
@@ -149,16 +100,22 @@ function QuickAdd() {
 
   return (
     <div className="mb-4">
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 transition-colors focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand/20">
+      {/* Quiet focus (DESIGN: the composer rule): the bar is focused from page
+          load, so an accent ring would glow permanently. The hairline darkens
+          one step; the caret and the Add button carry the affordance. */}
+      <div className="flex items-center gap-2.5 rounded-lg border border-border bg-card py-1 pr-1.5 pl-3 transition-colors focus-within:border-foreground/20">
         {busy ? (
           <Spinner className="size-4 shrink-0 text-muted-foreground" />
         ) : (
-          <Plus className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span
+            className="size-4 shrink-0 rounded-full border border-border"
+            aria-hidden
+          />
         )}
         <input
           ref={inputRef}
-          className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/80"
-          placeholder="Add a todo, try “email Åsa tomorrow” or “@Jonas update the docs”"
+          className="h-9 min-w-32 flex-1 bg-transparent text-sm outline-none placeholder:text-foreground/70"
+          placeholder="Add a todo"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
@@ -172,6 +129,14 @@ function QuickAdd() {
           aria-label="Add a todo"
           autoFocus
         />
+        {!value.trim() && (
+          // The input holds its floor (min-w-32, flex-basis 0) while this
+          // truncates: at the 900px minimum window the example gives way, the
+          // field never does.
+          <span className="hidden min-w-0 truncate text-xs text-muted-foreground/70 md:block">
+            try “email Åsa tomorrow” or “@Jonas update the docs”
+          </span>
+        )}
         {showChips && (
           <span className="flex shrink-0 items-center gap-1.5" aria-live="polite">
             {parsed.due && (
@@ -188,9 +153,19 @@ function QuickAdd() {
             )}
           </span>
         )}
-        {value.trim() && !busy && (
-          <span className="shrink-0 text-xs text-muted-foreground/70">↵ add</span>
-        )}
+        {/* Ink blue arrives only once there is something to add (DESIGN §6);
+            the resting state is a steel fill at full opacity, never a
+            washed-out primary. */}
+        <Button
+          size="sm"
+          variant={ready ? 'default' : 'secondary'}
+          className="shrink-0 disabled:opacity-100 disabled:text-muted-foreground"
+          disabled={!ready}
+          onClick={() => void submit()}
+          title="Add (↵)"
+        >
+          Add
+        </Button>
       </div>
       {error && <p className="mt-1 px-1 text-xs text-destructive">{error}</p>}
     </div>
@@ -372,48 +347,28 @@ function TodoRowItem({
               snoozeOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
             )}
           >
-            <DropdownMenu open={snoozeOpen} onOpenChange={setSnoozeOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className={ROW_ACTION}
-                  disabled={busy}
-                  aria-label={`${n.due ? 'Snooze' : 'Set a date for'} "${n.title}"`}
-                  title={
-                    n.due
-                      ? 'Snooze: move the due date and bring it back later'
-                      : 'Give it a date so it comes back on the day'
-                  }
-                >
-                  <Clock className="size-3.5" aria-hidden />
-                  {n.due ? 'Snooze' : 'Set a date'}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" sideOffset={6} className="w-56">
-                {snoozeChoices(today).map((step) => (
-                  <DropdownMenuItem
-                    key={step.label}
-                    className="gap-3 px-2 py-1.5"
-                    onClick={() => onSnooze(step.due)}
-                  >
-                    <span className="min-w-0">{step.label}</span>
-                    <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
-                      {dueLabel(step.due, today)}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-                {n.due && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem className="gap-3 px-2 py-1.5" onClick={() => onSnooze(null)}>
-                      <span className="min-w-0">No date</span>
-                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                        someday
-                      </span>
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <DatePicker
+              value={n.due ?? null}
+              today={today}
+              open={snoozeOpen}
+              onOpenChange={setSnoozeOpen}
+              onPick={onSnooze}
+              clearHint="someday"
+            >
+              <button
+                className={ROW_ACTION}
+                disabled={busy}
+                aria-label={`${n.due ? 'Change the date on' : 'Set a date for'} "${n.title}"`}
+                title={
+                  n.due
+                    ? 'Move the due date: presets, a typed date, or the calendar'
+                    : 'Give it a date so it comes back on the day'
+                }
+              >
+                <Clock className="size-3.5" aria-hidden />
+                {n.due ? 'Change date' : 'Set a date'}
+              </button>
+            </DatePicker>
 
             <button
               className={ROW_ACTION}
@@ -428,7 +383,7 @@ function TodoRowItem({
                 })
               }
               aria-label={`Help me handle "${n.title}"`}
-              title="Help me handle this: reads the todo, where it came from and what's on the calendar, then proposes what to do as cards you approve"
+              title="Help me handle this: reads the todo, where it came from and what's on the calendar, then turns what to do into proposals you approve"
             >
               <Sparkles className="size-3.5" aria-hidden />
               Help me
@@ -671,8 +626,8 @@ export function TodosView() {
             </div>
             <h2 className="text-lg font-semibold">Nothing tracked yet</h2>
             <p className="max-w-sm text-sm text-muted-foreground">
-              Type a commitment above, yours or one you're waiting on. Material you hand over gets
-              read, and every promise in it comes back as a card citing where it was said.
+              Type a commitment above, yours or one you're waiting on. A source you hand over gets
+              read, and every promise in it comes back as a proposal citing where it was said.
             </p>
           </div>
         ) : allClear ? (
@@ -688,9 +643,11 @@ export function TodosView() {
             </div>
           </section>
         ) : (
-          <div className="flex flex-col gap-4">
-            {/* NOW — the raised worklist to clear today; overdue folded in and flagged. */}
-            <section className="rounded-xl bg-card p-3 ring-1 ring-border sm:p-4">
+          <div className="flex flex-col gap-5">
+            {/* NOW — the worklist to clear today; overdue folded in and flagged. No card:
+                the row actions are hidden until hover, so a filled panel only drew a wide
+                empty block on the right. The dot and the dark label carry the emphasis. */}
+            <section>
               <LaneHead
                 label="Now"
                 count={nowRows.length}
@@ -717,7 +674,7 @@ export function TodosView() {
 
             {/* HORIZON — full-width lanes below the fold so titles never truncate. */}
             {upcomingRows.length + somedayRows.length + waitingRows.length > 0 && (
-              <div className="flex flex-col gap-6 border-t border-border/60 pt-4">
+              <div className="flex flex-col gap-6 border-t border-border/60 pt-5">
                 {upcomingRows.length > 0 && (
                   <section>
                     <LaneHead label="Upcoming" count={upcomingRows.length} />

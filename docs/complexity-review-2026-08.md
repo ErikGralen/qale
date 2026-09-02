@@ -393,6 +393,6 @@ A mapped skill whose file is gone degrades to seeding text, silently.
   deleted. Finding 5 only targets the group labels.
 - **Onboarding copy.** Covered by `docs/onboarding-clarity-review.md`, including the open
   card-versus-suggestion rename.
-- **Many doors to one room.** Add material has six entry points, Settings has four. Where every
+- **Many doors to one room.** Add source has six entry points, Settings has four. Where every
   door opens the same room, this is convention, not complexity. Flagged only where the doors
   open different rooms (finding 2) or carry different meanings (finding 14).

@@ -155,14 +155,31 @@ export const CRASH_ORIGINS = ['main', 'promise', 'renderer', 'child'] as const;
 export const CARD_DECISIONS = ['accepted', 'rejected'] as const;
 
 /** The kinds a card can be (`ProposalKind` in dtos, repeated as words we send). */
-export const CARD_KINDS = ['note', 'update', 'decision', 'outbound'] as const;
+export const CARD_KINDS = ['note', 'update', 'decision', 'outbound', 'delete'] as const;
 
 /**
- * How material reached the tray, which is all we know at that point. What it
+ * How a source reached the tray, which is all we know at that point. What it
  * turns out to BE (a transcript, a spec, a colleague's call) is the agent's
  * judgment now and is never reported: it would be a fact about the PM's work.
  */
-export const MATERIAL_KINDS = ['file', 'text', 'image'] as const;
+export const SOURCE_KINDS = ['file', 'text', 'image'] as const;
+
+/**
+ * The tools a PM's meeting transcripts come out of (docs/critical-mass.md
+ * CM-1). The First steps row folds open into a guide per tool, and which guide
+ * gets opened is the one fact worth having: it says which export path to build
+ * next. The list is closed and written by us, `other` covers everything else,
+ * and no meeting, title or file name is anywhere near this. `MEETING_TOOLS` in
+ * the renderer holds the same ids; a desktop test holds the two together.
+ */
+export const MEETING_TOOL_WORDS = [
+  'granola',
+  'zoom',
+  'google-meet',
+  'otter',
+  'teams',
+  'other',
+] as const;
 
 /**
  * The shape an id must have to be sent: lower-case letters, digits and dashes,
@@ -276,7 +293,7 @@ export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
   },
   {
     id: 'card.decided',
-    says: 'A card was approved or passed on, never what was in it',
+    says: 'A proposal was approved or passed on, never what was in it',
     props: {
       decision: { kind: 'word', values: CARD_DECISIONS },
       kind: { kind: 'word', values: CARD_KINDS },
@@ -285,12 +302,19 @@ export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
     },
   },
   {
-    id: 'material.added',
-    says: 'Material was added, and how many pieces',
+    id: 'source.added',
+    says: 'Sources were added, and how many',
     props: {
-      kind: { kind: 'word', values: MATERIAL_KINDS },
+      kind: { kind: 'word', values: SOURCE_KINDS },
       count: { kind: 'word', values: COUNT_BANDS },
       startedSession: { kind: 'flag' },
+    },
+  },
+  {
+    id: 'source.tool',
+    says: 'Which meeting tool you opened the guide for, from our own short list, never a meeting or a file',
+    props: {
+      tool: { kind: 'word', values: MEETING_TOOL_WORDS },
     },
   },
   {

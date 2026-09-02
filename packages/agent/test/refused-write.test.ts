@@ -17,8 +17,8 @@ import { createFilingTools } from '../src/filing.js';
 
 function sessionRoot(): string {
   const root = join(mkdtempSync(join(tmpdir(), 'pm-file-')), 'sessions/.files/s1');
-  mkdirSync(join(root, 'material'), { recursive: true });
-  writeFileSync(join(root, 'material/nordkap.txt'), 'they said the thing');
+  mkdirSync(join(root, 'source'), { recursive: true });
+  writeFileSync(join(root, 'source/nordkap.txt'), 'they said the thing');
   return root;
 }
 
@@ -51,7 +51,7 @@ function refusingCtx(): UseCaseContext {
   } as unknown as UseCaseContext;
 }
 
-const harness = { fileMaterial: true, recordRead: () => {} } as unknown as SessionHarness;
+const harness = { fileSource: true, recordRead: () => {} } as unknown as SessionHarness;
 
 const run = (tool: { execute: (...a: never[]) => unknown }, params: unknown) =>
   (
@@ -62,12 +62,12 @@ const run = (tool: { execute: (...a: never[]) => unknown }, params: unknown) =>
     ) => Promise<{ content: { text: string }[] }>
   )('call-1', params, undefined);
 
-test('file_material never reports a filing the vault refused', async () => {
+test('file_source never reports a filing the vault refused', async () => {
   const root = sessionRoot();
   const [file] = createFilingTools(refusingCtx(), harness, root);
 
   const outcome = await run(file!, {
-    files: ['material/nordkap.txt'],
+    files: ['source/nordkap.txt'],
     as: 'source',
     title: 'Nordkap QBR',
   }).then(

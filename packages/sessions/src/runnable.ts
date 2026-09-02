@@ -76,13 +76,13 @@ export type Capability =
   /** Keep working files under `sessions/.files/<id>/`, and fan out into them. */
   | 'keep-working-files'
   /**
-   * Put material that has already arrived where it belongs, and correct that
+   * Put a source that has already arrived where it belongs, and correct that
    * later. The one write that is not a card, because it is not a claim: the PM
    * handed the file over, so filing it is carrying out an instruction rather
    * than proposing one, and a wrong shelf is fixed by moving it. Everything
-   * DERIVED from the material is still a card.
+   * DERIVED from the source is still a card.
    */
-  | 'file-material'
+  | 'file-source'
   /**
    * Start watching a ticket or a wiki page, and record what the PM said about a
    * whole project or space. Nothing is written upstream, so this takes no
@@ -97,7 +97,7 @@ const CAPABILITIES: Capability[] = [
   'draft-outbound',
   'draft-calendar',
   'keep-working-files',
-  'file-material',
+  'file-source',
   'track-external',
 ];
 
@@ -112,7 +112,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   'draft-outbound': 'Drafts outgoing updates',
   'draft-calendar': 'Drafts calendar changes',
   'keep-working-files': 'Keeps working files',
-  'file-material': 'Files what you hand over',
+  'file-source': 'Files what you hand over',
   'track-external': 'Watches your tracker and wiki',
 };
 

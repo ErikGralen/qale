@@ -34,6 +34,9 @@ export function ModelPicker({
   onPick,
   onClosed,
   disabled,
+  describe,
+  scope = 'this session',
+  note = 'Applies to your next message. Nothing already here changes.',
 }: {
   /** The model this session was moved to, or null when it follows Settings. */
   pinned: string | null;
@@ -41,6 +44,16 @@ export function ModelPicker({
   /** Hand focus back to the composer when the menu closes. */
   onClosed?: () => void;
   disabled?: boolean;
+  /**
+   * The tooltip, given the model in force. The Add source tray borrows this
+   * control for a batch of dropped files, and a batch is not a session, so the
+   * three sentences that name what the pick governs are the caller's to write.
+   */
+  describe?: (label: string) => string;
+  /** What the pick governs, for the trigger's label ("this session"). */
+  scope?: string;
+  /** The sentence under the list: when the pick takes effect. */
+  note?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<ModelInfoDTO[]>([]);
@@ -84,8 +97,11 @@ export function ModelPicker({
         <button
           className="flex h-7 shrink-0 items-center gap-1 rounded-md pr-1.5 pl-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
           disabled={disabled}
-          title={`${current?.label ?? currentId ?? 'Model'} answers in this session. Pick another for this session on its own.`}
-          aria-label={`Model: ${current?.label ?? currentId ?? 'default'}. Change it for this session`}
+          title={
+            describe?.(current?.label ?? currentId ?? 'Model') ??
+            `${current?.label ?? currentId ?? 'Model'} answers in this session. Pick another for this session on its own.`
+          }
+          aria-label={`Model: ${current?.label ?? currentId ?? 'default'}. Change it for ${scope}`}
         >
           <span className="max-w-28 truncate">{shortLabel(current?.label ?? currentId)}</span>
           <ChevronDown className="size-3 shrink-0" aria-hidden />
@@ -136,12 +152,10 @@ export function ModelPicker({
             ))}
           </CommandList>
           {/* When it takes effect, said plainly. A model change cannot rewrite
-              what the session already answered, and the menu is the only place
-              that moment is in front of the PM. */}
+              what already happened, and the menu is the only place that moment
+              is in front of the PM. */}
           <div className="border-t border-border px-3 py-2">
-            <p className="text-xs text-muted-foreground">
-              Applies to your next message. Nothing already here changes.
-            </p>
+            <p className="text-xs text-muted-foreground">{note}</p>
           </div>
         </Command>
       </PopoverContent>

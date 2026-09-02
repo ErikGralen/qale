@@ -34,7 +34,7 @@ import { useApp } from '../state/app-state';
  * in a fixed-height strip that prints the HIGHLIGHTED skill's summary — the
  * sentence follows the keyboard cursor, so it is never hover-only. The full
  * story stays one click away in the Skills view, and nothing a skill produces
- * reaches the world without an approval card.
+ * reaches the world without a proposal.
  */
 
 /**

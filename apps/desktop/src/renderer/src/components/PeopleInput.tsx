@@ -17,10 +17,13 @@ export function PeopleInput({
   value,
   onChange,
   placeholder,
+  ariaLabel,
 }: {
   value: string[];
   onChange: (next: string[]) => void;
   placeholder?: string;
+  /** Names the input for screen readers — the visual label sits outside it. */
+  ariaLabel?: string;
 }) {
   const { people, createPerson } = useApp();
   const [token, setToken] = useState('');
@@ -127,6 +130,7 @@ export function PeopleInput({
           className="min-w-20 flex-1 bg-transparent py-px text-sm outline-none placeholder:text-muted-foreground/50"
           value={token}
           placeholder={value.length === 0 ? placeholder : undefined}
+          aria-label={ariaLabel}
           role="combobox"
           aria-expanded={showList}
           aria-activedescendant={showList ? `person-option-${highlight}` : undefined}

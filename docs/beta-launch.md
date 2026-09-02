@@ -205,7 +205,7 @@ Events worth having for a beta:
 
 - app opened, app version, platform
 - workspace opened, with a note-count bucket (not a name, not a path)
-- material captured, by kind
+- source captured, by kind
 - session started, with the skill name and what triggered it (manual, scheduled, arrival)
 - session finished, with a duration bucket and the outcome
 - proposal created, by kind
@@ -592,7 +592,7 @@ runs, so the index, the watcher and the open tab all follow, and the restore lan
 ("restored an earlier version") on top of everything that came before it. Nothing is rewound;
 the undo is itself undoable. Body only, deliberately: the preview shows prose, while the properties
 underneath carry live state (a closed commitment, the calendar event or ticket a note mirrors,
-whether material has been read) that an old version knows nothing about. `writeBody` keeps the
+whether a source has been read) that an old version knows nothing about. `writeBody` keeps the
 current block byte for byte. The control never renders without history, so the no-git notice and
 this feature agree.
 
@@ -803,7 +803,7 @@ and it parses with no flags the moment it lands (`newSkillFile` in `defaults.ts`
 
 ## 31. What else belongs in the pack
 
-**Today's coverage:** material arrives (arrival), a rough note gets tidied (process-note), a stack of
+**Today's coverage:** a source arrives (arrival), a rough note gets tidied (process-note), a stack of
 interviews gets read (synthesis), the week gets written up (weekly-update), a slipping promise gets
 chased (commitment-check), the memory gets tidied (librarian), a meeting gets prepped (meeting-prep),
 filing and two voices are always on. That is a genuinely decent spread for a starter library.

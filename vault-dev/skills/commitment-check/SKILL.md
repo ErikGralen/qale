@@ -54,7 +54,7 @@ Then the memory it touches:
 
 ## Produce: a commitment of yours
 
-The right handling for this one commitment, each option as its own approval card. Pick what fits;
+The right handling for this one commitment, each option as its own proposal. Pick what fits;
 do not produce all of them.
 - **A plan**, the default when it is live and just needs doing: a short `## Plan` section on the
   todo (propose_update, body patch) with 2-4 concrete next steps grounded in the memory. A
@@ -72,11 +72,11 @@ do not produce all of them.
   line on that meeting page (propose_update, body patch), citing the todo and the meeting. Prefer
   this over a cold nudge whenever the meeting exists.
 - **Nudge**, when it waits on someone else and no meeting is coming: a draft_text you can copy and
-  send yourself, citing where the commitment was made. It is not a card, and nothing sends it.
+  send yourself, citing where the commitment was made. It is not a proposal, and nothing sends it.
 
 ## Produce: a request that came in
 
-One card, the decode (propose_note, type `note`, path `notes/YYYY-MM-DD-<sender>-<ask>.md`), with
+One proposal, the decode (propose_note, type `note`, path `notes/YYYY-MM-DD-<sender>-<ask>.md`), with
 `sources` citing every note it rests on. Where the pasted message is genuinely all there is, set
 `asked`.
 
@@ -95,21 +95,21 @@ Then what the ask actually forces, and only that:
 - **A signal worth keeping**: where the ask is evidence for a theme or a customer, extend that
   page (propose_update) and say what the addition changes.
 - **A collision**: where the ask runs into a live decision or something already promised, that is
-  its own card.
+  its own proposal.
 
-Saying no is a posture like any other and forces no card by itself. Recommend it plainly, with the
+Saying no is a posture like any other and forces no proposal by itself. Recommend it plainly, with the
 decision it rests on, and draft the reply only where it has to be said out loud.
 
 ## Then
 
-Approved cards update this one commitment: the plan lands on the todo, a close flips
+Approved proposals update this one commitment: the plan lands on the todo, a close flips
 `commitment`, a reschedule moves `due`. Nothing else in the memory is touched.
 
 An approved decode sits in `notes/` as the record of what was asked and what we said back, so the
 same ask arriving next month from somebody else lands on something. Approved todos join the
 commitment ledger.
 
-A nudge and a reply are not cards. Both wait in the chat for you to copy and send yourself.
+A nudge and a reply are not proposals. Both wait in the chat for you to copy and send yourself.
 
 ## The shape of the decode
 

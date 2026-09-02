@@ -134,7 +134,7 @@ per-type rules. The real rule is the layer (raw / derived / authored / sync-owne
 in code but is never shown.
 
 **Proposal:** One-line explanation on every read-only surface ("Mirrored from Jira — edits happen
-there", "Raw material — never rewritten"). Present `ticket`/`wikipage` as **mirrors**, not memory
+there", "Raw source — never rewritten"). Present `ticket`/`wikipage` as **mirrors**, not memory
 types.
 
 **Decision:**
@@ -142,7 +142,7 @@ Yes good, but really think about how to present this in an intuitive way that is
 
 **Implementation notes:**
 Done. The single mapping is `packages/domain/src/notes/edit-layer.ts` (exported from `@qale/domain`), which _derives_ one ownership layer per type from the rules that already exist (`TYPE_RULES` + `NOTE_TYPE_META`) instead of keeping a second list: `open` (body editable), `mirror` (type is bound to a provider enum), `spine` (`appendOnly`), `raw` (frozen body, raw layer), `receipt` (frozen body, derived layer). `readOnlyReason(type, frontmatter?)` returns the one sentence, null when the note takes a cursor.
-The sentences: mirror = "Mirrored from Jira. Edits happen there." (source read from the note's own `provider`, so Linear/Notion need no new copy); raw = "Raw material. Never rewritten."; receipt = "A record of what happened. Kept exactly as it was filed."; spine = "Superseded, never edited. Write a new one to change course."
+The sentences: mirror = "Mirrored from Jira. Edits happen there." (source read from the note's own `provider`, so Linear/Notion need no new copy); raw = "Raw source. Never rewritten."; receipt = "A record of what happened. Kept exactly as it was filed."; spine = "Superseded, never edited. Write a new one to change course."
 It renders as one quiet muted line with a small lock glyph directly above the read-only body in `NoteView.tsx` (the old bordered `bg-muted/40` callout is gone), plus a trailing "Open the original" link on mirrors since the URL row is a collapse away. Same sentence reused in the Memory shelf subtitles for the two mirror shelves.
 `ticket`/`wikipage` now label as **"Jira mirror" / "Confluence mirror"** via `noteTypeLabel(type, frontmatter?)`, used by the NoteView type badge (the `capitalize` class is gone, labels are sentence case at source), `NoteList`, `QuickSwitcher` hits, and the ContextView section headings ("Jira mirrors"). FolderView empty states for both folders now open with "No mirrors yet."
 Covered by `packages/domain/test/edit-layer.test.ts`, including an invariant test that a sentence exists for exactly the types `isBodyEditable` says are frozen, and a copy test (no em dashes, no semicolons, ≤70 chars). Ticket 8 is unblocked: this module is about editability only and says nothing about what a type _is_.
@@ -453,7 +453,7 @@ Not sure what you mean by this, what do you mean? examples
 
 **Implementation notes:**
 
-**What `extras` are.** When material lands, `boundFollowUps`
+**What `extras` are.** When a source lands, `boundFollowUps`
 (`packages/application/src/use-cases/notes.ts:307`) asks `skillsForEvent` which skills bind to
 `capture.transcript` / `capture.ingested`. The FIRST hit becomes `followUp` (the session you get
 opened into); every further hit becomes `extras`, marked `background: true`. Both capture entry points
@@ -476,7 +476,7 @@ the Skills view actively invites.
 **Constructed example** (constructed, not observed). Add to `vault-dev/skills/commitment-check.md` a
 binding `mode: triggered, event: capture.transcript, when: {origin: po}`, then drop
 `demo-samples/nordkap-post-sso-checkin-transcript.txt` into the app. Two sessions start: "Handle new
-material" (`arrival`) as the foreground one, and the commitment check headlessly. The receipt says
+source" (`arrival`) as the foreground one, and the commitment check headlessly. The receipt says
 "1 review started" and lands you in the arrival session. The commitment check runs invisibly; its
 cards turn up in the Inbox minutes later with no explanation of where they came from, and if it dies
 you get an OS notification (`handlers.ts:307`) while the receipt still reads as if all was well.

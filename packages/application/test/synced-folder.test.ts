@@ -105,8 +105,8 @@ test('the budget leaves room for the longest path the app mints', () => {
   // worst cases have to fit in what is left of MAX_PATH under a root that sits
   // right on the limit, or the warning is drawing the line in the wrong place.
   const worst = [
-    // Dropped material: the session folder plus a 72-character filename.
-    `sessions/.files/${'0'.repeat(36)}/material/${'x'.repeat(72)}`,
+    // A dropped source: the session folder plus a 72-character filename.
+    `sessions/.files/${'0'.repeat(36)}/source/${'x'.repeat(72)}`,
     // A session's own working file.
     `sessions/.files/${'0'.repeat(36)}/per-item/${'x'.repeat(48)}.md`,
     // A session receipt, and an ordinary note under the longest folder name.

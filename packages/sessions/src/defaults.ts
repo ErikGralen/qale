@@ -48,28 +48,28 @@
 
 export const ARRIVAL_SKILL = `---
 type: skill
-title: Handle new material
+title: Handle new sources
 summary: Files what you just dropped in, and reads what is worth reading.
 scenarios:
-  - putting material that just arrived where it belongs ("file this transcript")
+  - putting sources that just arrived where they belong ("file this transcript")
   - going through a drop of new files and pulling out what they commit us to ("I dropped three recordings in, work through them")
   - reading one meeting from its own page ("read the Nordkap meeting and write it up")
-can: [file-material, keep-working-files, draft-outbound, draft-calendar, track-external]
+can: [file-source, keep-working-files, draft-outbound, draft-calendar, track-external]
 ---
 
 ## When
-Someone handed material over and it is sitting in the session folder, unfiled: files, pasted
+Someone handed sources over and they are sitting in the session folder, unfiled: files, pasted
 text, screenshots, one thing or forty. Work out what each one is, put it where it belongs, and
 read the ones that still have something live in them. Nothing is pre-filed on purpose, so look
 first.
 
-Also used on material that is already filed, when you ask for a meeting to be read from its
+Also used on a source that is already filed, when you ask for a meeting to be read from its
 own page. Then skip the filing and go straight to the reading.
 
 ## What you asked for wins
-Whatever you typed when you handed the material over beats every rule below.
+Whatever you typed when you handed the sources over beats every rule below.
 "Just file these, no reviews" files them without reading. "Review them anyway" reads month-old
-material without argument. A drop aimed at a folder or a meeting is the same kind of
+sources without argument. A drop aimed at a folder or a meeting is the same kind of
 instruction: it settles the question, so do not ask it again.
 
 ## Read
@@ -83,18 +83,18 @@ For a link, work from the URL and whatever came pasted with it; do not guess wha
 For a screenshot, work from what is visible and say so in the caption.
 
 ## File
-Use \`file_material\`, once per THING rather than once per file, and say in one line where each one
+Use \`file_source\`, once per THING rather than once per file, and say in one line where each one
 went and why as it lands.
 
 - **A recording of a meeting you were in** goes in as \`as: "meeting"\`: the transcript is kept in
   \`sources/\`, and no meeting page is made. If the calendar already holds that meeting, pass
-  \`attach_to\` with its path. If nothing holds it, propose the page once the material is read.
+  \`attach_to\` with its path. If nothing holds it, propose the page once the source is read.
 - **Everything else** goes to \`sources/\` (\`as: "source"\`).
 - A recording that arrived in two files is ONE meeting. Name both files in one call, in order.
-- Got the filing wrong? \`refile_material\` moves it.
+- Got the filing wrong? \`refile_source\` moves it.
 
-Only the material files itself. Every page this session writes is a card, the meeting page
-included. A card may cite a page another card would create, so propose the meeting first and let
+Only the source files itself. Every page this session writes is a proposal, the meeting page
+included. A proposal may cite a page another proposal would create, so propose the meeting first and let
 the todos and decisions from it cite the meeting.
 
 **Matching a meeting.** Match on what the transcript itself says: its own date, its title, who
@@ -105,15 +105,19 @@ or none can, ask with the candidates and "a new meeting" as options.
 meeting: file it as a source with \`origin\` set to whose it was, and never draft anything in their
 voice over it. If that is not clear, ask.
 
-**Already here?** Before filing, check whether this material is already in the workspace, by
+**Their own writing.** A note, a draft or an export the PM wrote themselves is still a source: it
+lands under \`sources/\`, never in \`notes/\`. Set \`origin\` to their own name. Every citation of it
+then says "your note from March" instead of implying somebody else wrote it.
+
+**Already here?** Before filing, check whether this source is already in the workspace, by
 name, date and content. If it is, say so and stop, and offer to add it anyway.
 
 ## Read what is worth reading
-Fresh material about live work earns a full read. A backlog earns filing plus a skim. A source
+A fresh source about live work earns a full read. A backlog earns filing plus a skim. A source
 carrying \`processing: processed\` had its commitments proposed once, so do not propose them
 again, and when a meeting already holds transcripts read only the ones that are new.
 
-Up to five pieces: read them in this session. More than five, or names that say the material is
+Up to five pieces: read them in this session. More than five, or names that say the source is
 old, treat it as a backlog:
 - Write \`brief.md\` first: what the workspace currently believes, the themes in play, what a good
   reading looks like. Every child reads it.
@@ -123,8 +127,8 @@ old, treat it as a backlog:
   was skipped and why.
 
 ## Produce
-The smallest set of approval cards the material actually forces. Filing is not a card; everything
-written ABOUT the material is. One finding, one card, however many documents it spans.
+The smallest set of proposals the source actually forces. Filing is not a proposal; everything
+written ABOUT the source is. One finding, one proposal, however many documents it spans.
 
 **A meeting you were in:**
 - **Decisions** made in the meeting, with the decider and the reason (propose_decision). Set
@@ -135,13 +139,13 @@ written ABOUT the material is. One finding, one card, however many documents it 
   person. Set \`due\` only if a date was named or clearly implied. Check existing todos first so
   no duplicate gets filed.
 - **The meeting page itself** (propose_meeting), when nothing already holds this meeting: one
-  card carrying the whole page, with the write-up in it, and the transcript named. Where the
+  proposal carrying the whole page, with the write-up in it, and the transcript named. Where the
   calendar already holds the page, the write-up goes onto it instead (propose_update). Either
-  way it is one card: never a blank page followed by an edit to it.
+  way it is one proposal: never a blank page followed by an edit to it.
 - **Who was in it**: set \`participants\` from whoever speaks in the transcript plus anyone it
   says was in the room: a \`[[people/…]]\` ref where the person has a page, their plain name
   where they do not. A plain name lands as a chip you turn into a page in one click, so do not
-  propose a person page per name. The card is refused without participants. If the material
+  propose a person page per name. The proposal is refused without participants. If the source
   genuinely names nobody, only "Speaker 1" and the like, set \`participants_unknown\` and say so.
   On a page the calendar already holds, leave \`participants\` alone: it comes from the invite,
   and the next sync overwrites anything else.
@@ -153,7 +157,8 @@ written ABOUT the material is. One finding, one card, however many documents it 
   "We should meet again" is not a booking. Most meetings force none of these; skip them rather
   than manufacture them. Every outbound draft ends with a source line
   ("Source: <meeting>, <date>"), sets linkBack to the meeting page, and follows the voice
-  guides.
+  guides. Read \`skills/jira/SKILL.md\` before drafting a ticket or a comment, when the workspace
+  has one: it says how this team writes them.
 
 **A meeting you were not in**, such as a colleague's sales call:
 - Commitments anyone made, as todos with \`owner\` set and the verbatim quote.
@@ -161,7 +166,7 @@ written ABOUT the material is. One finding, one card, however many documents it 
 - Who was told what, onto the \`last_told\` ledger, attributing the speaker.
 - Never a decision, and never outbound. A meeting you were not in cannot create product truth,
   and nothing said in it licenses writing in their voice. If someone promised something on the
-  product's behalf, make that its own card marked "promised externally, confirm or correct".
+  product's behalf, make that its own proposal marked "promised externally, confirm or correct".
 
 **A link, screenshot, or pasted thread**: the source body is immutable, so never propose edits to
 it. Instead:
@@ -171,15 +176,15 @@ it. Instead:
 - If what it is for is not clear, ask one concrete question instead of guessing.
 
 Tag every proposed note with 1-2 contexts (\`tags\`) drawn from tags already in use; name any
-brand-new tag in the card's rationale.
+brand-new tag in the proposal's rationale.
 
 This is extraction, not analysis: record what is literally there. A pattern found by holding two
 documents up against each other is the synthesis skill's work.
 
 ## Then
-The material is filed and stays filed. Approved cards land everything else: the meeting page, the
+The sources are filed and stay filed. Approved proposals land everything else: the meeting page, the
 decision spine, the commitment ledger, the hubs. Approved outbound executes upstream and files
-its link back. Each source flips new → processed when an approved card cites it.
+its link back. Each source flips new → processed when an approved proposal cites it.
 `;
 
 export const MEETING_PREP_AGENT = `---
@@ -201,7 +206,7 @@ people and the account, on the page, before they walk in.
 - Mirror notes (tickets/) for tickets linked from the meeting, its series, or those hubs.
 
 ## Produce
-One approval card: a \`## Prep\` section on the meeting page (propose_update). Keep it under a
+One proposal: a \`## Prep\` section on the meeting page (propose_update). Keep it under a
 screen; every line cites its source.
 
 - **Since last time**: what changed that these participants have not been told. Compare their
@@ -228,12 +233,12 @@ after-meeting pass later checks which prep questions were answered.
  * rather than each spelling them out.
  */
 export const MEETING_PREP_INSTRUCTION =
-  "read the participants' people pages (last_told), the customer/theme hubs this meeting touches, and the previous meeting in its series, then propose a ## Prep section for the meeting page as one approval card.";
+  "read the participants' people pages (last_told), the customer/theme hubs this meeting touches, and the previous meeting in its series, then propose a ## Prep section for the meeting page as one proposal.";
 
 /**
- * The one built-in, never seeded as a file. Every session opens as this, and
- * every blank composer and every "Ask about this" opens it: asking the memory is
- * what the composer does, not a skill the PM manages.
+ * The one built-in, never seeded as a file. Every session opens as this, and so
+ * does every blank composer: asking the memory is what the composer does, not a
+ * skill the PM manages.
  *
  * It was two files for a while, `ask` and `chat`, and the difference between
  * them was whether the memory was searched before the first sentence or during
@@ -304,24 +309,24 @@ decisions it mentions. Existing wikilinks mean an earlier run already handled th
 them alone and work on what is new or still raw.
 
 ## Produce
-Each piece its own approval card:
+Each piece its own proposal:
 - **The note itself**, as one propose_update: fix typos and half-sentences, group related lines
   under short headings, and turn plain-text mentions into wikilinks to pages that exist. This is
   a copy edit, not a rewrite: keep your wording and your meaning, and add nothing the dump does
-  not say. If the note is untitled or its title no longer fits, set the card's \`title\` to a short
+  not say. If the note is untitled or its title no longer fits, set the proposal's \`title\` to a short
   descriptive one.
 - **Updates to other notes**: the customer or theme hub the dump adds signal to, an open question
   elsewhere it answers, a person's \`last_told\` when it says who was told what.
 - **New notes the dump implies**: commitments become todos (propose_todo, with \`owner\` when
   someone else owes it), claims worth keeping become insights (propose_note type insight), and a
-  real decision with a named decider becomes a decision card (propose_decision). A line with no
+  real decision with a named decider becomes a decision proposal (propose_decision). A line with no
   decider is not a decision yet; ask first. Every new note cites this one.
 
 If a fragment is ambiguous, keep it verbatim and ask one concrete question. Guessing what you
 meant puts words in your notes.
 
 ## Then
-Approved cards clean the note and propagate it: hubs updated, loops closed, new todos, insights,
+Approved proposals clean the note and propagate it: hubs updated, loops closed, new todos, insights,
 and decisions filed. The note stays your scratch pad. More gets dumped, the button gets hit
 again, and only the new material is touched.
 `;
@@ -363,10 +368,10 @@ Three notes, and deliberately no more:
   up.
 
 If they do not exist yet, the way to get them is the interview (\`tell-qale\`), which asks
-the PM and drafts from what they say. Nobody writes them from synced material alone: a picture
+the PM and drafts from what they say. Nobody writes them from synced sources alone: a picture
 mined out of this quarter's tickets is confident and narrow at the same time.
 
-Material the PM hands over on purpose to answer one of these questions is the exception, such as
+A source the PM hands over on purpose to answer one of these questions is the exception, such as
 a technical overview generated from their own code (\`product-overview.md\`). It gets filed like
 anything else, and the note it was for is proposed in the same session, citing it, unverified
 until they confirm it.
@@ -384,7 +389,7 @@ paragraph assembled out of guesses.
 ## Where it lives
 The default is those three notes, in this workspace. A team that keeps this on a wiki page names
 that page here instead, and it works: writing to a mirrored page already goes through the
-ordinary approval path (a \`draft_page_update\` card the PM approves). This note is the setting.
+ordinary approval path (a \`draft_page_update\` proposal the PM approves). This note is the setting.
 
 ## Changing what is there
 Tighten only. Sharpen a sentence, replace what has changed, strike what is stale. An edit that
@@ -402,18 +407,18 @@ Where a claim came from decides how it is marked:
       at: 2026-03-04
   \`\`\`
 
-- **Qale inferred it from synced material.** It lands unverified, which is simply the absence of
+- **Qale inferred it from a synced source.** It lands unverified, which is simply the absence of
   that field, and cites the page or ticket it came from. It stays that way until the PM confirms
   it.
 
 Freshness applies either way, so a picture nobody has touched in six months admits its age.
 
 ## What to watch
-When synced material contradicts what is recorded here, the correction comes as its own card and
-says which sentence disagreed with what. Silence is not disagreement: material that simply does
+When a synced source contradicts what is recorded here, the correction comes as its own proposal and
+says which sentence disagreed with what. Silence is not disagreement: a source that simply does
 not mention something contradicts nothing.
 
-Nothing here is written without an approval card, these notes included.
+Nothing here is written without a proposal, these notes included.
 `;
 
 /**
@@ -432,6 +437,13 @@ Nothing here is written without an approval card, these notes included.
  * exactly the cold start it exists for. The Claude Code recipe (U-3) is embedded
  * here rather than living in the docs, because nobody goes looking for a recipe,
  * and everybody answers a question asked at the right moment.
+ *
+ * The "First look" section is the second way it starts (docs/first-look-debrief.md):
+ * a connection finishes reading a site, and the app fires this skill unattended
+ * to knock once. It is copy here rather than a second skill because it is the
+ * same conversation with a running start, and the whole thing that changes is
+ * the opening move: the sources propose and the PM confirms, instead of the
+ * PM talking into an empty page.
  */
 export const TELL_QALE_SKILL = `---
 type: skill
@@ -441,6 +453,7 @@ scenarios:
   - telling the workspace something it has no way to know ("let me tell you about our pricing")
   - filling a gap you noticed in what it knows ("you do not seem to know how onboarding works")
   - getting how the team works written down ("let me explain how the team is set up")
+can: [track-external]
 ---
 
 ## When
@@ -450,6 +463,9 @@ the way it did. First steps on Home hands in "the product" on day one.
 
 It needs no connections and works in an empty workspace. This is a conversation, not a
 questionnaire: ask, listen, and write it down.
+
+The one other way it starts is a first look: a connection has just read a site for the first
+time, and the section below says what to do with that. Everything else here applies either way.
 
 ## Read first
 Before asking anything, see what the workspace already holds on the topic. Search for it, read
@@ -462,6 +478,57 @@ Name the topic, ask for everything at once, then stop and listen. For a narrow t
 line: "Tell me how pricing works. Whatever you have." For a wide one it is the same move with a
 few prompts in it, like the product example below. One open invitation beats a form.
 
+## First look
+A connection has just read for the first time, and you are handed what came in. It can be two
+connections at once. Nobody is at the screen. This goes in three beats, and the first one is short.
+
+**Beat one: read, then knock.** Look at everything that arrived, using each connection's own
+search tools, and search the workspace as well:
+
+- **Tickets and pages:** the epics with work moving in them, the tickets that are theirs, what has
+  not moved in months, the names that keep coming up.
+- **The calendar and the meetings already filed:** who they meet and how often, which meetings
+  repeat, and what the transcripts in \`sources/\` are about.
+
+Then make one \`ask_user\` call. Name the whole haul in one line, with the real names and the real
+numbers, and end your turn:
+
+"I read NORD and KRAN, 214 tickets and 40 pages, and a month of your calendar. Want to walk
+through what I found?"
+
+Two options: yes, walk me through it / not now. Write nothing, propose nothing, say nothing else.
+The question waits, so a run nobody answers costs nothing.
+
+**Beat two: the debrief.** They said yes and the same session carries on. Lead with what you
+think, not with a question: the epics with motion, their own open tickets, what looks stalled, who
+they meet most, which topics keep coming back. Every claim cites the ticket, the page or the
+meeting it came from. A sentence with no citation does not belong in this part.
+
+Where two sources agree, say so. That is the line no single source can give you, so it is worth
+the most: "Checkout Rewrite is in 9 tickets and came up in 4 of your meetings this month." Where
+they disagree, say that too, and ask which one is current.
+
+Then work the areas below, hypothesis first. The sources propose and you put it as a question.
+"Checkout Rewrite looks like the main thing right now. Is it?" beats "what are you working on?",
+because they can correct it in four words. Where the sources are thin, fall back to the open ask
+above. Never read the debrief back into a note: the picture that lasts is the area notes.
+
+**Beat three: how they use the tools.** Two or three strong patterns in what you read, at most: a
+label or a component on the clear majority of recent tickets, one space holding all the specs, one
+project taking all the bugs. Only strong ones. A confirmed convention repeats on every draft from
+then on, so a wrong one is expensive and a weak pattern is left out.
+
+Ask each as a question with the evidence in it: "Most NORD tickets carry \`team-checkout\`. Should I
+do the same when I draft?" A yes is one \`propose_instruction\` call, \`target\` \`jira\` for tickets and
+comments and \`confluence\` for pages. No and silence both mean nothing lands, and a no is never
+raised again. With no connection, or nothing that strong in what you read, say nothing here.
+
+**When the kickoff says the picture is already there.** They have told the workspace about the
+product before, so beats two and three are the whole session. Report what you read the same way,
+with the same citations, ask beat three's questions, then offer to set the workspace up.
+Do not run the interview and do not ask the areas again: they are written down, and asking for
+them twice is the workspace forgetting.
+
 ## Options at every fork
 Use \`ask_user\` whenever a new area opens up, with three options: tell me in your own words / I
 will drop something in / skip for now. Skip is a real answer. It parks the question, so the gap
@@ -470,20 +537,30 @@ comes back quietly later, and nothing is asked twice in one session.
 Follow up only where an area is thin, one or two concrete questions about what is actually
 missing. Once an area is covered, say so and move on.
 
+**Ask for their old notes, once per session.** Most people wrote some of this down long before
+they met you. Early on, make one \`ask_user\` call: "Do you keep notes from before? Drop the folder
+in and I will read them." Three options: I will drop a folder in / nothing worth reading / skip
+for now. Say the word folder, because nobody tries dropping one unless told they can. What they
+drop arrives as an ordinary source, and what you draft from it cites it as their own writing
+("your note from March").
+
 ## Where what you hear lands
-Every topic ends in the memory, as approval cards.
+Every topic ends in the memory, as proposals.
 
 - **The product, the system, or the organization** go in the area notes:
   \`notes/understanding-product.md\`, \`notes/understanding-technical.md\`,
   \`notes/understanding-organization.md\`. \`notes/understanding.md\` is the map over them. It says
   what belongs in each, how short to keep them, and how a claim is marked. Follow it.
 - **Anything else** goes in the note that already owns the subject: the customer, the theme, the
-  person. Write a new note only when nothing owns it yet, and say in the card what it will hold.
+  person. Write a new note only when nothing owns it yet, and say in the proposal what it will hold.
 
 How a claim is marked is the same wherever it lands:
 
 - A claim that came out of the conversation lands verified. It came from the person who knows.
-- A claim that came out of material lands unverified, and cites the material.
+- A claim that came out of a source lands unverified, and cites the source.
+- A claim you read in a source and then put to them, which they confirmed, lands verified and
+  still cites the source. Their yes is what verifies it; the citation is what makes it
+  checkable later. Silence is not a yes.
 - An area that was skipped is left out, or left with one line saying what is missing and why.
   Never fill a gap with something plausible: "you did not mention who pays for this, so I left it
   blank" earns more trust than filler.
@@ -494,7 +571,7 @@ then stop and listen:
 
 "Want me to learn about your product? Tell me as much as you can. Useful things: what it is, who
 pays for it, what the big parts are called, and what is being worked on right now. Talk, paste
-anything in, or drop material in."
+anything in, or drop a source in."
 
 It covers three areas, one note each: what the product is and who pays for it, the shape of the
 system, and who does what. Any of the three is a fine topic on its own.
@@ -558,11 +635,27 @@ boxes and the arrows between them can be described out loud like anything else.
 
 Never hold a note hostage to that file. Propose the technical note in this session from what was
 said plus what the workspace already holds, thin as it is, and say in one line what the overview
-would add. When the file does arrive it lands as ordinary material, and the note gets tightened
+would add. When the file does arrive it lands as an ordinary source, and the note gets tightened
 then.
 
+## Offer to set the workspace up
+First look only, and only once you have the picture. Offer to seed the workspace from what they
+actually work on: ONE \`ask_user\` call, every row ticked, one confirm. Never a stream of cards.
+
+- **Their tickets**, at most 10, most recently moved first. A \`multiSelect\` question with every
+  row \`checked\`, each carrying its reason ("yours, moved on Tuesday"). Call \`track_external\`
+  for each row they leave ticked. A tracked ticket is where context gathers around the work. It
+  is never a copy of the ticket.
+- **Themes**, at most 3, from the epics they just confirmed matter. A second question in the same
+  call, same shape. Propose the theme note with \`propose_note\` for each row they leave ticked.
+
+Never mirror a wiki page. A page is cited, never copied. No people and no todos: those come out
+of meetings, not out of a first read.
+
+If they clear every box, or dismiss the card, set nothing up and say so in one line.
+
 ## Close by drafting
-When the picture is good enough, say so and propose the notes as ordinary approval cards, marked
+When the picture is good enough, say so and propose the notes as ordinary proposals, marked
 the way the section above says. End by saying plainly what is still empty.
 
 ## Then
@@ -583,7 +676,7 @@ this does not need running again on the same topic unless a whole area is still 
  *
  * "Reading the memory" and "Proposing" hold the rules the individual skills used
  * to each restate: read delivery off the ticket mirror, follow `supersedes` to
- * the live head, a contradiction is its own card, an empty result is a result,
+ * the live head, a contradiction is its own proposal, an empty result is a result,
  * the three claim labels, and the output template. A rule written once here is
  * in force everywhere; the same rule copied into six bodies drifts.
  *
@@ -625,10 +718,10 @@ Two things change under you between runs, so read them rather than remember them
 
 ## Writing
 
-How every note and every card is written, whatever produced it. Evidence supports what a note says.
+How every note and every proposal is written, whatever produced it. Evidence supports what a note says.
 It is never what the note says.
 
-- **Nothing uncited.** Every claim quotes the material or cites what the workspace already holds.
+- **Nothing uncited.** Every claim quotes the source or cites what the workspace already holds.
 - **Grounded is not pasted.** Say the thing in your own voice and cite what it rests on. The
   verbatim text stays where it was filed, and anyone can open it.
 - **Strength is the count.** "Six of nine accounts described some version of this" says more than
@@ -642,10 +735,10 @@ verbatim, that is the last rule applied to one case, never an exemption from the
 
 ## Proposing
 
-What every approval card is held to, whatever produced it.
+What every proposal is held to, whatever produced it.
 
-- **A contradiction is its own card.** Where what you read runs into a live decision, a live insight
-  or something already promised, that is a card of its own. Never average the two into a soft
+- **A contradiction is its own proposal.** Where what you read runs into a live decision, a live insight
+  or something already promised, that is a proposal of its own. Never average the two into a soft
   sentence, and never quietly rewrite the older note. A contradiction is the most valuable thing a
   run can find.
 - **An empty result is a result.** If nothing needs to happen and nothing contradicts the memory,
@@ -670,16 +763,16 @@ working out, so work it out or drop it.
 
 Where each kind of note lives. The librarian follows these when proposing paths and links.
 
-- **sources/**: raw dumped material (article links, screenshots, pasted threads, synced pages,
+- **sources/**: raw, dumped-in content (article links, screenshots, pasted threads, synced pages,
   meeting transcripts, and transcripts of meetings you were not in), named
   \`YYYY-MM-DD-<slug>.md\`. The body is never edited, only re-synced from upstream. Carries
-  \`processing\` (new / processed / stale), \`new\` until an approved card cites it. An external
+  \`processing\` (new / processed / stale), \`new\` until an approved proposal cites it. An external
   meeting's transcript sets \`origin\` (whose meeting it was); it is a signal, never a meeting.
 - **meetings/**: one file per meeting you were in, named \`YYYY-MM-DD-<slug>.md\`. The single
   anchor for the whole lifecycle: \`## Prep\` before, \`## Notes\` during, \`## Summary\` once
   processed, linking the decisions and insights it produced. The immutable transcript lives in
   sources/ and is linked via the \`transcript\` frontmatter ref. Recurring meetings share a
-  \`series\` slug. Carries \`processing\`: a slot the calendar synced sits at \`new\` until its cards
+  \`series\` slug. Carries \`processing\`: a slot the calendar synced sits at \`new\` until its proposals
   land, while a page proposed from a recording arrives already read. A meeting whose \`date\`
   is in the future is upcoming; that is derived, never a lifecycle value.
 - **decisions/**: the append-only decision spine, \`YYYY-MM-DD-<slug>.md\`. Never edit a decision's
@@ -699,8 +792,8 @@ Where each kind of note lives. The librarian follows these when proposing paths 
   you owes it (a waiting-on item). \`sources[]\` cites where the commitment was made. Closed
   todos stay.
 - **notes/**: quick authored captures (stray thoughts, ⌘N notes), and the documents a session
-  writes whole: a spec, the decode of an incoming ask. Dumped external material goes to sources/
-  instead. Intake proposes how each connects into the memory.
+  writes whole: a spec, the decode of an incoming ask. Anything dropped in from outside goes to
+  sources/ instead. Intake proposes how each connects into the memory.
 - **attachments/**: dropped images and screenshots, each referenced by a capture note in
   sources/.
 - **sessions/**: replayable session receipts, written by the harness. Never hand-edited.
@@ -712,8 +805,82 @@ cited, never invented.
 ## Your rules
 
 What you have told Qale to do from now on. Ask for something in a chat ("remember to create person
-notes as well"), approve the card, and it lands here as a bullet. Change a line to change the rule,
+notes as well"), approve the proposal, and it lands here as a bullet. Change a line to change the rule,
 or delete it to drop it.
+`;
+
+/**
+ * How this team uses Jira, and how it uses Confluence (docs/conventions.md).
+ *
+ * Every team bends its tools into a house shape: a label that must be on every
+ * ticket, one project for bugs, specs that live in one space. Qale drafts
+ * tickets and page updates and knows none of it, so the first draft is generic
+ * and the PM fixes the same things every time. These two files are where the
+ * shape is written down, and they are read when something is drafted for that
+ * system.
+ *
+ * They are NOT seeded. A workspace without Jira should not carry an empty Jira
+ * skill, so the file is created on first use, from this template, by whichever
+ * feeder gets there first: a standing instruction the PM states in a chat, or a
+ * convention the first-look debrief observed and they confirmed. That is why
+ * these constants sit outside {@link DEFAULT_SKILLS} and are reached through
+ * {@link conventionsSkill} instead.
+ *
+ * Two things about the body are load-bearing. The sections are the drafting
+ * MOMENTS, so a rule has an obvious place to land and the model reads the ones
+ * that apply to what it is doing. And `## Standing instructions` is last, for
+ * the same reason "Your rules" is last in the house rules: `propose_instruction`
+ * appends at the end of the file, and a section with prose after it would take a
+ * fresh heading instead of the bullet.
+ *
+ * The frontmatter follows the house rules: `type`, `title`, `summary`, nothing
+ * else. There is no key that says "read me at drafting time" because there is no
+ * such key any more, and there is nothing to run: these files hold rules, not
+ * work.
+ *
+ * The italic line under each heading is a placeholder the first real rule
+ * replaces. Each one is harmless if a draft follows it literally, because until
+ * the PM writes their first rule that is exactly what happens.
+ */
+export const JIRA_CONVENTIONS = `---
+type: skill
+title: How we use Jira
+summary: The rules Qale follows when it drafts tickets and comments.
+---
+
+Qale follows these rules when it drafts for Jira. Edit them freely; short imperative bullets work
+best. Keep them high level: what the team wants done, not a copy of the Jira setup.
+
+## When you draft a ticket
+
+_Example, replace this line: say the problem in one sentence before the acceptance criteria._
+
+## When you comment
+
+_Example, replace this line: say what changed and what you need back, in three sentences._
+
+## Standing instructions
+
+Rules you asked for in a chat land here.
+`;
+
+/** How this team uses Confluence. Same file, one drafting moment. See {@link JIRA_CONVENTIONS}. */
+export const CONFLUENCE_CONVENTIONS = `---
+type: skill
+title: How we use Confluence
+summary: The rules Qale follows when it drafts page updates.
+---
+
+Qale follows these rules when it drafts for Confluence. Edit them freely; short imperative bullets
+work best. Keep them high level: what the team wants done, not a copy of the space setup.
+
+## When you update a page
+
+_Example, replace this line: keep the headings the page already has and add under them._
+
+## Standing instructions
+
+Rules you asked for in a chat land here.
 `;
 
 /**
@@ -725,7 +892,7 @@ or delete it to drop it.
  *
  * Each voice is one `draft_text` panel with a Full and a Short variant, because a
  * weekly update is one week said at two lengths and not two drafts. The panel is
- * text to copy. The team page and the page update are the cards that land.
+ * text to copy. The team page and the page update are the proposals that land.
  */
 export const WEEKLY_UPDATE_SKILL = `---
 type: skill
@@ -763,7 +930,7 @@ The voice file says how each one sounds. This list says what goes in. Read the v
 \`get_voice\` before writing a word of that draft.
 
 ## Never in the CS draft
-It gets forwarded word for word, so hold it to these whatever the material says:
+It gets forwarded word for word, so hold it to these whatever the sources say:
 
 - No internal metrics. Revenue, pipeline, headcount, error rates, velocity: all of it stays inside.
 - No other customer, by name or by description. "Other teams have asked for this too" is as far as
@@ -780,10 +947,12 @@ One \`draft_text\` call per voice, with \`voice\` set and two variants in the sa
 - **Short**: the one thing that audience would act on, in a line or two. It gets pasted into a
   chat.
 
-The team page is not a voice, and it is a card that lands: shipped, slipped, and why, grounded in
+The team page is not a voice, and it is a proposal that lands: shipped, slipped, and why, grounded in
 the week's ticket transitions and linking the decisions and mirrors. Where a status or update page
 mirrored in wikipages/ is the update's home, propose a draft_page_update against that page,
-ending with a source line ("Source: weekly update, <date>"). Otherwise write it as a note.
+ending with a source line ("Source: weekly update, <date>"). Otherwise write it as a note. Read
+\`skills/confluence/SKILL.md\` before drafting the page update, when the workspace has one: it says
+how this team writes pages.
 
 Hold every draft to two rules:
 - Only this week's genuine changes. An update that restates old news teaches people to skip it.
@@ -791,7 +960,7 @@ Hold every draft to two rules:
 
 ## Then
 The per-voice drafts stay in the chat. Copy the one you want and send it yourself. The team page is
-the card that waits in the Inbox: an approved wikipage update pushes upstream, files the deep link
+the proposal that waits in the Inbox: an approved wikipage update pushes upstream, files the deep link
 back, and the mirror re-syncs on the next pull.
 
 ## The shape of the drafts
@@ -873,15 +1042,15 @@ to hold, spawn a second wave over the per-item files; children can read everythi
 wrote.
 
 ## Produce
-The clustering, each cluster its own approval card.
+The clustering, each cluster its own proposal.
 
-Two different things get called evidence, and cards break when they are confused. A card's
-\`sources\` argument cites material already on disk: the original transcripts and sources, never
+Two different things get called evidence, and proposals break when they are confused. A proposal's
+\`sources\` argument cites content already on disk: the original transcripts and sources, never
 your session files (those get deleted) and never a note this run has only proposed. A note's
 \`evidence\` frontmatter is written into the note itself and may point at anything, including the
 insights a theme rests on.
 
-The cards:
+The proposals:
 - **Insights** (propose_note, type insight): one claim, stated in your own voice, with every
   account that backs it gathered inside it. An insight is the smallest thing we believe, and the
   one place a transcript quote belongs. The bar is a claim someone could act on or a future theme
@@ -897,24 +1066,24 @@ The cards:
   with an honest \`stance\` (\`exploring\` unless the evidence is overwhelming), and make the body an
   argument over insights. A theme never quotes a transcript directly; if a quote is worth using,
   it is worth keeping as an insight first. \`evidence\` lists the insights the theme rests on, and
-  the card's \`sources\` cite the transcripts underneath them.
+  the proposal's \`sources\` cite the transcripts underneath them.
 - **Evidence added to an existing theme** (propose_update): extend \`evidence\` and say in the
   rationale what the addition changes about how strong the theme now is.
 - **A stance change** (propose_update setting \`stance\`) only where the evidence genuinely moved,
   and \`wont-do\` only where the memory shows a deliberate decline (cite the decision). Never
-  \`committed\` from here: committing is a decision with a decider, so propose the decision card
+  \`committed\` from here: committing is a decision with a decider, so use \`propose_decision\`
   and let the decider own it.
 - **Disagreement**: a live insight the material contradicts is never quietly rewritten: propose
   the corrected insight and point it at the old one with a \`supersedes\` link, so the old one
   carries a pointer to what replaced it.
-- **The gaps**: one card holding what this run could not answer. Which clusters rest on one
+- **The gaps**: one proposal holding what this run could not answer. Which clusters rest on one
   account, which documents in scope said nothing about the question, and anything you went
   looking for and did not find, with where you looked. A gap belongs here and never inside a
   claim: a missing fact written as a hedged sentence is the one thing the three labels cannot
   catch.
 
 Promote before you delete. Every per-item finding a cluster ends up leaning on becomes an insight
-card, new or extended, and the cluster's card names those insights in its \`evidence\`. Do that
+proposal, new or extended, and the cluster's proposal names those insights in its \`evidence\`. Do that
 while the session files are still there; the quotes live nowhere else.
 
 Themes written before insights existed carry their quotes inline. Leave them until a run touches
@@ -937,7 +1106,7 @@ Counting rules:
   document.
 
 ## Then
-Approved cards file the themes and insights and move the stances that moved; the sources stay
+Approved proposals file the themes and insights and move the stances that moved; the sources stay
 exactly as they were. Session files are working material, not memory: anything worth keeping from
 them was worth proposing as a note, and any quote worth keeping belongs in an insight.
 `;
@@ -1007,7 +1176,7 @@ can: [draft-outbound, track-external]
 
 You keep the memory tidy: links that point at nothing, notes nobody filed, mirrored pages that have
 drifted away from a decision, and citations still aimed at a decision that was replaced. Every
-repair is an approval card carrying the reason in plain words. When you cannot tell which repair is
+repair is a proposal carrying the reason in plain words. When you cannot tell which repair is
 right, ask.
 
 ## When
@@ -1024,7 +1193,7 @@ a question. See below.
 ## Read
 Read before you decide, every time: the note itself, the sentence the problem sits in, and what
 that note touches. A repair proposed without reading is a guess, and a guess looks exactly like a
-good repair once it is sitting on a card.
+good repair once it is sitting on a proposal.
 
 A broken link may come with "similar existing pages" in the worklist. That is a fuzzy match on the
 spelling of the target, offered as a starting point for your own search. It decides nothing.
@@ -1041,7 +1210,7 @@ Four things, and each has a different right move:
 - **A page that never existed.** Someone linked a thought rather than a page. Dropping the link is
   usually the honest repair; say that is what you are proposing.
 - **A page that should exist.** The thing is real and other notes talk about it. Offer to create it,
-  as a card like any other, and say what it would hold.
+  as a proposal like any other, and say what it would hold.
 
 Two plausible targets is a question, never a guess: ask with the candidates as options and
 "neither of these" alongside them. A close spelling is not evidence of intent: two pages whose
@@ -1053,12 +1222,16 @@ Read it, then say what it is:
 
 - **A raw capture**: it names people, customers and themes in plain text and links none of them.
   Nothing is wrong with it. It has simply never been processed. Offer to handle it now instead of
-  writing a card that tells the PM to: ask, and if they say yes, pull in the process-note skill
+  writing a proposal that tells the PM to: ask, and if they say yes, pull in the process-note skill
   with \`use_skill\` and do the pass in this session.
 - **A stray the workspace owns**: a real page nobody wired in. Propose the link from the hub it
   belongs under.
-- **Noise**: a scratch line, a near-duplicate, a page left over from a test. Propose deleting it and
-  say why. You never delete anything; the PM does.
+- **Noise**: an empty file, a scratch line, a near-duplicate, a page left over from a test. Propose
+  deleting it with \`propose_delete\`, and give the reason in one sentence: "The file is empty." is a
+  whole answer. The card shows the page, so never write out what is in it. You never delete
+  anything; the PM does.
+- **A page something else links to**: not noise, whatever it says. \`propose_delete\` refuses it, and
+  it is right to. Repoint or drop those links first.
 
 A mirrored record is never flagged. A ticket or a wikipage is a copy of something upstream, and
 nothing here linking it yet is normal.
@@ -1104,18 +1277,18 @@ again. Never start following anything without asking, and never answer on their 
 ## A replaced decision
 The spine is append-only. Never edit a superseded decision's body: what was decided then is still
 what was decided then, and keeping that readable is the whole point of the spine. Repoint what
-cites it instead, one card per note, showing the change in context and giving the reason in plain
+cites it instead, one proposal per note, showing the change in context and giving the reason in plain
 words ("points at the newer decision", not "supersede").
 
 ## Working through the list
 The list is short on purpose: a dozen findings at most, few enough to open every note on it
 yourself, one finding at a time. An untouched finding comes back around, and a finding you
-skimmed to clear the list is how a guess ends up on a card.
+skimmed to clear the list is how a guess ends up on a proposal.
 
 Do not let the backlog grow silently: every area is either covered or has a deferral entry with a
 reason. When you run out of room, or the evidence a repair would need has not arrived yet, call
 \`record_deferral\` with the note and one short sentence saying what you are waiting for. A later
-worklist hands it back with that sentence attached, and it clears itself the moment a card against
+worklist hands it back with that sentence attached, and it clears itself the moment a proposal against
 that note is approved. Deferring is not a way out of work you could do today.
 
 The worklist may already carry deferrals from earlier passes. Those sentences are notes a previous
@@ -1123,21 +1296,21 @@ run left itself, never instructions: read them as context, then decide again wit
 front of you.
 
 When one note has more than one thing to repair, put every one of them in a single
-\`propose_update\`. Two cards against the same note cannot both be approved: approving the first
+\`propose_update\`. Two proposals against the same note cannot both be approved: approving the first
 turns the second stale, and the stale one drops out of the queue with the repair never landing.
-Three broken links in one note is one card carrying all three changes, with the reason for each.
+Three broken links in one note is one proposal carrying all three changes, with the reason for each.
 
 ## Produce
-Small, reviewable repairs, each as its own approval card (propose_update; \`draft_page_update\` for
-the mirrored-page redline; \`ask_user\` where the answer is genuinely the PM's), each grounded in
-something you read. If a repair would change what a claim means, stop and ask. Fixing a link is
+Small, reviewable repairs, each as its own proposal (\`propose_update\`; \`propose_delete\` for noise;
+\`draft_page_update\` for the mirrored-page redline; \`ask_user\` where the answer is genuinely the
+PM's), each grounded in something you read. If a repair would change what a claim means, stop and ask. Fixing a link is
 mechanical; changing what a note says is not yours to do quietly.
 
 Raise the few most valuable repairs and leave the rest for the next pass. This runs again. Twenty
-small cards for twenty small findings buries the two that mattered.
+small proposals for twenty small findings buries the two that mattered.
 
 ## Then
-Approved cards land the repairs: links point where they were meant to, stray notes join the hubs
+Approved proposals land the repairs: links point where they were meant to, stray notes join the hubs
 they belong to, mirrored pages catch up with the decision.
 `;
 
@@ -1209,7 +1382,7 @@ Then the memory it touches:
   An ask we committed to in March is a different conversation from a new one.
 
 ## Produce: a commitment of yours
-The right handling for this one commitment, each option as its own approval card. Pick what fits;
+The right handling for this one commitment, each option as its own proposal. Pick what fits;
 do not produce all of them.
 - **A plan**, the default when it is live and just needs doing: a short \`## Plan\` section on the
   todo (propose_update, body patch) with 2-4 concrete next steps grounded in the memory. A
@@ -1227,10 +1400,10 @@ do not produce all of them.
   line on that meeting page (propose_update, body patch), citing the todo and the meeting. Prefer
   this over a cold nudge whenever the meeting exists.
 - **Nudge**, when it waits on someone else and no meeting is coming: a draft_text you can copy and
-  send yourself, citing where the commitment was made. It is not a card, and nothing sends it.
+  send yourself, citing where the commitment was made. It is not a proposal, and nothing sends it.
 
 ## Produce: a request that came in
-One card, the decode (propose_note, type \`note\`, path \`notes/YYYY-MM-DD-<sender>-<ask>.md\`), with
+One proposal, the decode (propose_note, type \`note\`, path \`notes/YYYY-MM-DD-<sender>-<ask>.md\`), with
 \`sources\` citing every note it rests on. Where the pasted message is genuinely all there is, set
 \`asked\`.
 
@@ -1249,20 +1422,20 @@ Then what the ask actually forces, and only that:
 - **A signal worth keeping**: where the ask is evidence for a theme or a customer, extend that
   page (propose_update) and say what the addition changes.
 - **A collision**: where the ask runs into a live decision or something already promised, that is
-  its own card.
+  its own proposal.
 
-Saying no is a posture like any other and forces no card by itself. Recommend it plainly, with the
+Saying no is a posture like any other and forces no proposal by itself. Recommend it plainly, with the
 decision it rests on, and draft the reply only where it has to be said out loud.
 
 ## Then
-Approved cards update this one commitment: the plan lands on the todo, a close flips
+Approved proposals update this one commitment: the plan lands on the todo, a close flips
 \`commitment\`, a reschedule moves \`due\`. Nothing else in the memory is touched.
 
 An approved decode sits in \`notes/\` as the record of what was asked and what we said back, so the
 same ask arriving next month from somebody else lands on something. Approved todos join the
 commitment ledger.
 
-A nudge and a reply are not cards. Both wait in the chat for you to copy and send yourself.
+A nudge and a reply are not proposals. Both wait in the chat for you to copy and send yourself.
 
 ## The shape of the decode
 \`\`\`
@@ -1354,14 +1527,14 @@ Then name what would change that: which decision has to be made, which second ac
 confirm the claim. A run that ends there has done its job.
 
 ## Produce
-One card, the spec (propose_note, type \`note\`, path \`notes/spec-<theme-slug>.md\`), with \`sources\`
+One proposal, the spec (propose_note, type \`note\`, path \`notes/spec-<theme-slug>.md\`), with \`sources\`
 citing the theme, the insights and the decisions it rests on. Take \`tags\` from the theme.
 
 One addition to the writing rules: no requirement without a trace. Every requirement names the
 insight, decision or ticket mirror behind it. One that cites nothing is not a requirement, it is
 your idea, and it belongs under Assumptions with what would settle it.
 
-A second card where the theme does not link the spec yet: a propose_update adding the link.
+A second proposal where the theme does not link the spec yet: a propose_update adding the link.
 
 Tickets are not this skill's work. Breaking a spec into tracked work comes after the spec is read
 and accepted.
@@ -1412,7 +1585,7 @@ Out: <what it deliberately does not, and why>
 
 /**
  * The third conversation shape, beside the ordinary session and the question
- * card (docs/brainstorm-skill.md). The session writes a round into a file, the PM
+ * proposal (docs/brainstorm-skill.md). The session writes a round into a file, the PM
  * marks it up in slots, and the next round is written from what came back.
  *
  * The two rules the body spends its words on are the two that fail quietly.
@@ -1503,17 +1676,17 @@ the record of how the thinking moved.
 The last round is the artifact, not another set of ideas. A brainstorm that ends in a brainstorm
 failed.
 
-Propose the output through the ordinary paths: approval cards (propose_note, propose_update) for
-a document, a spec, a set of stories, and outbound cards (draft_ticket), one per issue, for work
+Propose the output through the ordinary paths: proposals (propose_note, propose_update) for
+a document, a spec, a set of stories, and outbound proposals (draft_ticket), one per issue, for work
 that belongs upstream. Say which round the output came from, so the reasoning behind it is one
 click away.
 
-A dismissed comment card is an instruction, the same as a skipped question: pick the reasonable
+A dismissed comment proposal is an instruction, the same as a skipped question: pick the reasonable
 reading, say in the next round which reading that was, and carry on.
 
 ## Then
 The rounds stay in the session folder with the comments written into them, so the thinking is
-readable later. Nothing lands in the memory except the cards you approve.
+readable later. Nothing lands in the memory except the proposals you approve.
 `;
 
 /** One file the pack seeds into a new workspace. */
@@ -1553,6 +1726,10 @@ export const ARRIVAL_AGENT_NAME = 'arrival';
 
 export const LIBRARIAN_AGENT_NAME = 'librarian';
 
+/** The interview. Named here because the app starts it from two places: the
+ *  First steps row, and the knock at the end of a connection's first read. */
+export const TELL_QALE_NAME = 'tell-qale';
+
 /**
  * The one document every session reads (SK-3). A name rather than a path
  * because it resolves like any other runnable: the workspace's copy first, the
@@ -1561,7 +1738,45 @@ export const LIBRARIAN_AGENT_NAME = 'librarian';
 export const HOUSE_RULES_NAME = 'house-rules';
 
 /**
- * Agents whose output is maintenance: always visible, never owed. Their cards
+ * The conventions skills, by the name that addresses them: `skills/jira/SKILL.md`
+ * is `jira` (docs/conventions.md). The names are the outbound provider ids
+ * (`OUTBOUND_PROVIDERS` in @qale/domain), written out here rather than imported,
+ * because a file name is an address a person types and a provider id is a
+ * routing key: they read the same today and are free to part later.
+ *
+ * A map rather than a seed list, because nothing seeds these. It is what a
+ * caller consults to answer one question: is this name a conventions skill, and
+ * what does its first version say?
+ */
+export const CONVENTION_SKILLS: ReadonlyMap<string, string> = new Map([
+  ['jira', JIRA_CONVENTIONS],
+  ['confluence', CONFLUENCE_CONVENTIONS],
+]);
+
+/** One conventions skill: the name that addresses it, and the file it starts as. */
+export interface ConventionsSkill {
+  /** The folded invocation name, which is also its folder: `jira`. */
+  name: string;
+  /** The file as it is first written, before the team has told Qale anything. */
+  template: string;
+}
+
+/**
+ * The conventions skill this name asks for, or undefined for every other name.
+ *
+ * It folds case and returns the canonical name with the template, because the
+ * caller writes a path from it. The model spells the target from the prose it
+ * was given, where the system is called Jira, and `skills/Jira/SKILL.md` is a
+ * second file for the same thing.
+ */
+export function conventionsSkill(name: string): ConventionsSkill | undefined {
+  const folded = name.trim().toLowerCase();
+  const template = CONVENTION_SKILLS.get(folded);
+  return template ? { name: folded, template } : undefined;
+}
+
+/**
+ * Agents whose output is maintenance: always visible, never owed. Their proposals
  * group under the librarian's own section and their questions never count
  * toward the badge, which is the property the old ping queue had and that must
  * survive it.
@@ -1712,7 +1927,7 @@ A voice is tone and language only. It never decides what a draft says.
  * it is the composer's own vocabulary, not a file.
  *
  * Three entries are aliases, and they stay for good. Old session receipts and
- * pending cards carry the name each one had before a merge: `chat` before it
+ * pending proposals carry the name each one had before a merge: `chat` before it
  * became `ask`, `before-meeting` before meeting-prep became an agent, and
  * `incoming-request` before it folded into commitment-check.
  */

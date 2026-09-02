@@ -11,7 +11,7 @@ import { recordDeferral, type UseCaseContext } from '@qale/application';
  * run meets "this was left, and here is why" instead of rediscovering the same
  * area or never seeing it again. That is why it needs no approval card, and why
  * it is registered on every session rather than earned by a capability the way
- * `file_material` is: a session that can already put a card in front of the PM
+ * `file_source` is: a session that can already put a card in front of the PM
  * loses nothing by also being able to say "not this one, because".
  *
  * The reason is read back into a LATER prompt (the librarian's next worklist),
@@ -43,7 +43,7 @@ export function createDeferralTool(
       'reason ("waiting on the Q3 interviews", "two plausible targets, needs the PM"). It writes ' +
       'nothing to the memory and proposes nothing, so it needs no approval. It is not a substitute for ' +
       'doing the work, and it is not a place to leave a message for yourself: the entry disappears on ' +
-      'its own once a card against that note is approved.',
+      'its own once a proposal against that note is approved.',
     parameters: Type.Object({
       note: Type.String({
         description: 'The note this is about, as a path or slug (e.g. "notes/rollout-plan.md").',

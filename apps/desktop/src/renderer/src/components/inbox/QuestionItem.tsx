@@ -31,7 +31,7 @@ export function QuestionItem({
       tabIndex={-1}
       onClick={onFocus}
       onFocus={onFocus}
-      className={`flex items-center gap-2 rounded-lg bg-card py-2 pr-2 pl-3 ${rowFocusClass(focused)}`}
+      className={`flex items-center gap-2 rounded-lg bg-card py-2 pr-2 pl-3 ${rowFocusClass()}`}
     >
       <CircleHelp
         className={`size-4 shrink-0 ${item.quiet ? 'text-muted-foreground' : 'text-brand'}`}

@@ -204,8 +204,8 @@ export function NoteHistory({
             <div className="flex min-w-0 flex-1 flex-col">
               {/* The action sits above the version you are reading, so "this
                   one" is never ambiguous. Nothing renders for a note whose body
-                  the workspace won't let anyone rewrite (a piece of material, a
-                  session's record): there would be no way to honour the click. */}
+                  the workspace won't let anyone rewrite (a source, a session's
+                  record): there would be no way to honour the click. */}
               {typeof body === 'string' && current?.bodyEditable && (
                 <div className="mb-2 flex min-h-8 items-center gap-2 border-b border-border pb-2">
                   {!canRestore ? (

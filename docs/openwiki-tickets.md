@@ -295,7 +295,7 @@ write access to the conversation-history mount even though the summarizer can st
 covered everything the other tickets added.
 
 **Notes:** Eighteen artifacts traced (write → read-back point → protection). Four holes fixed:
-`files_read` now returns session files inside the standard envelope (covers dropped material,
+`files_read` now returns session files inside the standard envelope (covers dropped sources,
 child `write_result` files, the whole parent folder a child reads); the `spawn` rollup is wrapped
 and framed as the children's report, not instructions; every interpolation in the librarian
 worklist kickoff goes through a shared `oneLine` (flatten, defang `<<<`/`>>>`, cap); `ask_user`

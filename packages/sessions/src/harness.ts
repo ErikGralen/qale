@@ -144,9 +144,9 @@ export class SessionHarness {
     return this.grants('draft-calendar');
   }
 
-  /** Whether the session may file arrived material into the vault, and refile it. */
-  get fileMaterial(): boolean {
-    return this.grants('file-material');
+  /** Whether the session may file arrived sources into the vault, and refile them. */
+  get fileSource(): boolean {
+    return this.grants('file-source');
   }
 
   /**

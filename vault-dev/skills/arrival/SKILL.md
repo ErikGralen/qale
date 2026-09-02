@@ -1,29 +1,29 @@
 ---
 type: skill
-title: Handle new material
+title: Handle new sources
 summary: Files what you just dropped in, and reads what is worth reading.
 scenarios:
-  - putting material that just arrived where it belongs ("file this transcript")
+  - putting sources that just arrived where they belong ("file this transcript")
   - going through a drop of new files and pulling out what they commit us to ("I dropped three recordings in, work through them")
   - reading one meeting from its own page ("read the Nordkap meeting and write it up")
-can: [file-material, keep-working-files, draft-outbound, draft-calendar, track-external]
+can: [file-source, keep-working-files, draft-outbound, draft-calendar, track-external]
 ---
 
 ## When
 
-Someone handed material over and it is sitting in the session folder, unfiled: files, pasted
+Someone handed sources over and they are sitting in the session folder, unfiled: files, pasted
 text, screenshots, one thing or forty. Work out what each one is, put it where it belongs, and
 read the ones that still have something live in them. Nothing is pre-filed on purpose, so look
 first.
 
-Also used on material that is already filed, when you ask for a meeting to be read from its
+Also used on a source that is already filed, when you ask for a meeting to be read from its
 own page. Then skip the filing and go straight to the reading.
 
 ## What you asked for wins
 
-Whatever you typed when you handed the material over beats every rule below.
+Whatever you typed when you handed the sources over beats every rule below.
 "Just file these, no reviews" files them without reading. "Review them anyway" reads month-old
-material without argument. A drop aimed at a folder or a meeting is the same kind of
+sources without argument. A drop aimed at a folder or a meeting is the same kind of
 instruction: it settles the question, so do not ask it again.
 
 ## Read
@@ -39,18 +39,18 @@ For a screenshot, work from what is visible and say so in the caption.
 
 ## File
 
-Use `file_material`, once per THING rather than once per file, and say in one line where each one
+Use `file_source`, once per THING rather than once per file, and say in one line where each one
 went and why as it lands.
 
 - **A recording of a meeting you were in** goes in as `as: "meeting"`: the transcript is kept in
   `sources/`, and no meeting page is made. If the calendar already holds that meeting, pass
-  `attach_to` with its path. If nothing holds it, propose the page once the material is read.
+  `attach_to` with its path. If nothing holds it, propose the page once the source is read.
 - **Everything else** goes to `sources/` (`as: "source"`).
 - A recording that arrived in two files is ONE meeting. Name both files in one call, in order.
-- Got the filing wrong? `refile_material` moves it.
+- Got the filing wrong? `refile_source` moves it.
 
-Only the material files itself. Every page this session writes is a card, the meeting page
-included. A card may cite a page another card would create, so propose the meeting first and let
+Only the source files itself. Every page this session writes is a proposal, the meeting page
+included. A proposal may cite a page another proposal would create, so propose the meeting first and let
 the todos and decisions from it cite the meeting.
 
 **Matching a meeting.** Match on what the transcript itself says: its own date, its title, who
@@ -61,16 +61,20 @@ or none can, ask with the candidates and "a new meeting" as options.
 meeting: file it as a source with `origin` set to whose it was, and never draft anything in their
 voice over it. If that is not clear, ask.
 
-**Already here?** Before filing, check whether this material is already in the workspace, by
+**Their own writing.** A note, a draft or an export the PM wrote themselves is still a source: it
+lands under `sources/`, never in `notes/`. Set `origin` to their own name. Every citation of it
+then says "your note from March" instead of implying somebody else wrote it.
+
+**Already here?** Before filing, check whether this source is already in the workspace, by
 name, date and content. If it is, say so and stop, and offer to add it anyway.
 
 ## Read what is worth reading
 
-Fresh material about live work earns a full read. A backlog earns filing plus a skim. A source
+A fresh source about live work earns a full read. A backlog earns filing plus a skim. A source
 carrying `processing: processed` had its commitments proposed once, so do not propose them
 again, and when a meeting already holds transcripts read only the ones that are new.
 
-Up to five pieces: read them in this session. More than five, or names that say the material is
+Up to five pieces: read them in this session. More than five, or names that say the source is
 old, treat it as a backlog:
 - Write `brief.md` first: what the workspace currently believes, the themes in play, what a good
   reading looks like. Every child reads it.
@@ -81,8 +85,8 @@ old, treat it as a backlog:
 
 ## Produce
 
-The smallest set of approval cards the material actually forces. Filing is not a card; everything
-written ABOUT the material is. One finding, one card, however many documents it spans.
+The smallest set of proposals the source actually forces. Filing is not a proposal; everything
+written ABOUT the source is. One finding, one proposal, however many documents it spans.
 
 **A meeting you were in:**
 - **Decisions** made in the meeting, with the decider and the reason (propose_decision). Set
@@ -93,13 +97,13 @@ written ABOUT the material is. One finding, one card, however many documents it 
   person. Set `due` only if a date was named or clearly implied. Check existing todos first so
   no duplicate gets filed.
 - **The meeting page itself** (propose_meeting), when nothing already holds this meeting: one
-  card carrying the whole page, with the write-up in it, and the transcript named. Where the
+  proposal carrying the whole page, with the write-up in it, and the transcript named. Where the
   calendar already holds the page, the write-up goes onto it instead (propose_update). Either
-  way it is one card: never a blank page followed by an edit to it.
+  way it is one proposal: never a blank page followed by an edit to it.
 - **Who was in it**: set `participants` from whoever speaks in the transcript plus anyone it
   says was in the room: a `[[people/…]]` ref where the person has a page, their plain name
   where they do not. A plain name lands as a chip you turn into a page in one click, so do not
-  propose a person page per name. The card is refused without participants. If the material
+  propose a person page per name. The proposal is refused without participants. If the source
   genuinely names nobody, only "Speaker 1" and the like, set `participants_unknown` and say so.
   On a page the calendar already holds, leave `participants` alone: it comes from the invite,
   and the next sync overwrites anything else.
@@ -111,7 +115,8 @@ written ABOUT the material is. One finding, one card, however many documents it 
   "We should meet again" is not a booking. Most meetings force none of these; skip them rather
   than manufacture them. Every outbound draft ends with a source line
   ("Source: <meeting>, <date>"), sets linkBack to the meeting page, and follows the voice
-  guides.
+  guides. Read `skills/jira/SKILL.md` before drafting a ticket or a comment, when the workspace
+  has one: it says how this team writes them.
 
 **A meeting you were not in**, such as a colleague's sales call:
 - Commitments anyone made, as todos with `owner` set and the verbatim quote.
@@ -119,7 +124,7 @@ written ABOUT the material is. One finding, one card, however many documents it 
 - Who was told what, onto the `last_told` ledger, attributing the speaker.
 - Never a decision, and never outbound. A meeting you were not in cannot create product truth,
   and nothing said in it licenses writing in their voice. If someone promised something on the
-  product's behalf, make that its own card marked "promised externally, confirm or correct".
+  product's behalf, make that its own proposal marked "promised externally, confirm or correct".
 
 **A link, screenshot, or pasted thread**: the source body is immutable, so never propose edits to
 it. Instead:
@@ -129,13 +134,13 @@ it. Instead:
 - If what it is for is not clear, ask one concrete question instead of guessing.
 
 Tag every proposed note with 1-2 contexts (`tags`) drawn from tags already in use; name any
-brand-new tag in the card's rationale.
+brand-new tag in the proposal's rationale.
 
 This is extraction, not analysis: record what is literally there. A pattern found by holding two
 documents up against each other is the synthesis skill's work.
 
 ## Then
 
-The material is filed and stays filed. Approved cards land everything else: the meeting page, the
+The sources are filed and stay filed. Approved proposals land everything else: the meeting page, the
 decision spine, the commitment ledger, the hubs. Approved outbound executes upstream and files
-its link back. Each source flips new → processed when an approved card cites it.
+its link back. Each source flips new → processed when an approved proposal cites it.

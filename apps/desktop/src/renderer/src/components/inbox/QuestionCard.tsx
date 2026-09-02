@@ -33,6 +33,12 @@ import { stripWikilinks, WikiText } from './shared';
  *   "Something else" adds to the answer rather than replacing it — "Åsa, the
  *   PAY channel, and also Henrik" is one answer, not a choice between ticking
  *   and typing.
+ *
+ * One question can arrive with its rows already ticked
+ * (docs/first-look-debrief.md). That turns the step from a choice into a batch
+ * to review, the same posture the follow picker takes on the connections
+ * screen, and it changes two things here: the boxes start ticked, and clearing
+ * every one of them is an answer ("none of these") rather than a skip.
  */
 export function QuestionCard({ request }: { request: AskRequestDTO }) {
   const { resolveAsk, openDoc } = useApp();
@@ -43,8 +49,9 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
   const total = request.questions.length;
   const [step, setStep] = useState(0);
   // Per question: the option labels ticked, whether the write row is open, and
-  // what was typed into it.
-  const [picked, setPicked] = useState<Record<number, string[]>>({});
+  // what was typed into it. A question whose rows arrive ticked starts with
+  // those rows in here, so the first render already shows what will happen.
+  const [picked, setPicked] = useState<Record<number, string[]>>(() => preticked(request));
   const [writing, setWriting] = useState<Record<number, boolean>>({});
   const [written, setWritten] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
@@ -67,6 +74,19 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
     card.current?.scrollIntoView({ block: 'nearest' });
   }, [request.id, step]);
 
+  // A second card in the same session replaces the first in place, so start it
+  // clean and with its own ticks rather than on the answers to a question that
+  // is no longer on screen.
+  const drawn = useRef(request.id);
+  useEffect(() => {
+    if (drawn.current === request.id) return;
+    drawn.current = request.id;
+    setStep(0);
+    setPicked(preticked(request));
+    setWriting({});
+    setWritten({});
+  }, [request]);
+
   const answerFor = (qi: number): AskAnswerDTO => {
     const text = writing[qi] ? written[qi]?.trim() : '';
     return { selected: picked[qi] ?? [], ...(text ? { written: text } : {}) };
@@ -74,7 +94,11 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
 
   const isAnswered = (qi: number): boolean => {
     const a = answerFor(qi);
-    return a.selected.length > 0 || !!a.written;
+    if (a.selected.length > 0 || !!a.written) return true;
+    // Clearing every box on a batch is a decision, so the confirm stays live.
+    // Forcing "none of these" out through Skip would tell the agent to decide
+    // for itself, which is the opposite of what they just did.
+    return isBatch(request.questions[qi]!);
   };
 
   const question = request.questions[step]!;
@@ -86,8 +110,11 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
     setBusy(true);
     // Every question skipped is a dismissal in all but name — send it as one so
     // the agent gets the clearer instruction ("decide it yourself, don't re-ask")
-    // rather than a list of blanks.
-    const anything = answers.some((a) => a.selected.length > 0 || a.written);
+    // rather than a list of blanks. A card carrying a batch never dismisses that
+    // way: an empty answer there says "do none of this", and that has to reach
+    // the agent as an answer.
+    const anything =
+      answers.some((a) => a.selected.length > 0 || a.written) || request.questions.some(isBatch);
     void resolveAsk(request, anything ? answers : null);
   };
 
@@ -191,9 +218,13 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
             variant="ghost"
             disabled={busy}
             title={
-              last
-                ? 'Leave this one to the agent: it carries on and says what it assumed'
-                : 'Leave this one to the agent and move to the next question'
+              // On a batch, clearing the boxes IS the answer, so Skip means
+              // "none of these" rather than "you decide".
+              isBatch(question)
+                ? 'None of these: it does none of this and carries on'
+                : last
+                  ? 'Leave this one to the agent: it carries on and says what it assumed'
+                  : 'Leave this one to the agent and move to the next question'
             }
             onClick={() => {
               if (busy) return;
@@ -208,7 +239,7 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
                 );
             }}
           >
-            Skip
+            {isBatch(question) ? 'None of these' : 'Skip'}
           </Button>
           {/* An inactive control never wears the accent (DESIGN §6): the accent
               arrives the moment the step is answered, and that arrival is the
@@ -225,6 +256,25 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Is this question a batch to review rather than a choice to make? One ticked
+ * row is enough: the agent is saying "here is what I would do", and the whole
+ * step reads differently from that point on.
+ */
+function isBatch(question: AskQuestionDTO): boolean {
+  return question.options.some((o) => o.checked);
+}
+
+/** What each question starts with ticked, by question index. */
+function preticked(request: AskRequestDTO): Record<number, string[]> {
+  const out: Record<number, string[]> = {};
+  request.questions.forEach((q, qi) => {
+    const on = q.options.filter((o) => o.checked).map((o) => o.label);
+    if (on.length > 0) out[qi] = on;
+  });
+  return out;
 }
 
 /**
@@ -344,7 +394,9 @@ function QuestionStep({
           <WikiText text={question.question} onOpen={onOpen} />
         </span>
         {question.multiSelect && (
-          <span className="ml-1.5 text-xs text-muted-foreground">pick any</span>
+          <span className="ml-1.5 text-xs text-muted-foreground">
+            {isBatch(question) ? 'untick anything you do not want' : 'pick any'}
+          </span>
         )}
       </p>
 

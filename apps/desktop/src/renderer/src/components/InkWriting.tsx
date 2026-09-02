@@ -7,7 +7,7 @@
  * "the agent is touching this".
  *
  * Decorative to a screen reader on purpose: the mark never stands alone, the
- * words beside it ("Reading the memory…", "… is working") carry the state.
+ * words beside it ("Reading the memory…", "Working on …") carry the state.
  */
 export function InkWriting({ small, className }: { small?: boolean; className?: string }) {
   return (

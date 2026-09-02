@@ -8,7 +8,7 @@ against the code as it stands. Two halves:
    key from memory.
 2. **The understanding.** What the system writes down about the product, high level only, governed
    by a skill the user can edit. The picture comes from the user in an interview; the synced
-   material checks it rather than writes it. This replaces the about-us skill.
+   sources check it rather than write it. This replaces the about-us skill.
 
 **How to use this doc.** Same convention as onboarding and beta-launch: one ticket per thing, write
 your call under **Decision**, fill **Notes** as each one lands.
@@ -207,8 +207,8 @@ High level only, everywhere. The understanding records the shape; the detail sta
 them.
 
 One assumption to get right: the sources are the check, not the author. Most teams have no page
-that says what the product is and who it is for, so mining the synced material for that picture
-drafts confident mush. The picture comes from the user (U-2); the material's job is to catch the
+that says what the product is and who it is for, so mining the synced sources for that picture
+drafts confident mush. The picture comes from the user (U-2); the sources' job is to catch the
 recorded picture drifting from reality (U-1's watch clause), which is the job it is actually good
 at.
 
@@ -233,9 +233,9 @@ where the picture lives and what it may do to it. The body covers:
   that preference lives; no settings surface, no new machinery.
 - **How to change it**: tighten only. Sharpen, update, strike what is stale; never balloon.
   Claims the user stated themselves land verified, because the user is the source; claims
-  inferred from synced material land unverified until confirmed (the trust marks that already
+  inferred from synced sources land unverified until confirmed (the trust marks that already
   exist). The freshness machinery applies either way, so an old understanding admits its age.
-- **What to watch**: when synced material contradicts the recorded picture, propose the
+- **What to watch**: when synced sources contradict the recorded picture, propose the
   correction rather than silently absorbing either side.
 
 Naming needs a pass (ONB-10 discipline): "Qale's understanding" is close but slightly mystical.
@@ -261,10 +261,10 @@ default location plus the out-loud invitation to point it at a Confluence page i
 through the existing `draft_confluence_update` approval path; tighten-only, with the rule that an
 edit which lengthens a note without making it truer is the wrong edit; verified for what the PM
 said (concretely: set `verified` with a `human:` actor, which is what a note's Trust row renders)
-and unverified for anything inferred from material; and the watch clause for contradictions,
+and unverified for anything inferred from a source; and the watch clause for contradictions,
 including the line that silence is not disagreement.
 
-One thing it says that the ticket did not ask for: do not write these notes from synced material on
+One thing it says that the ticket did not ask for: do not write these notes from synced sources on
 your own, go through the interview. That is the assumption Part 2 rests on, and without it in this
 file an always-on skill naming three empty notes reads as an invitation to fill them.
 
@@ -287,7 +287,7 @@ also fixes the cold start for people who skipped Atlassian entirely.
 
 - **One big invitation first.** "Want me to learn about your product? Tell me as much as you can.
   Useful things: what it is, who pays for it, what the big parts are called, what is being worked
-  on right now. Talk, paste anything, or drop material in." A brain-dump ask beats a form; pasted
+  on right now. Talk, paste anything, or drop a source in." A brain-dump ask beats a form; pasted
   or dropped artifacts go through arrival as usual and the draft cites them.
 - **Options at every fork**, through the existing ask_user cards: tell me in your own words / drop
   something in / skip for now. Skip parks the question (parked questions survive a quit) and the
@@ -302,7 +302,7 @@ also fixes the cold start for people who skipped Atlassian entirely.
   filler.
 - **Close by drafting.** "I think I have a good picture now" and the understanding notes per U-1
   land as normal proposal cards. What the user said lands verified; anything inferred from
-  material lands unverified.
+  a source lands unverified.
 
 The interview is itself a default skill, next to synthesis, so the invitation and the question
 list are copy the user can edit, and it runs as an ordinary skill-run session (arrival never
@@ -338,6 +338,19 @@ librarian rather than through another interview.
 Unverified: the conversation itself has never been run. That needs a live key and a person to talk
 to, and nothing about it can be fixture-tested honestly.
 
+**Amended 2026-08-30 by docs/first-look-debrief.md.** Two things in this ticket have moved.
+
+The skill is `tell-qale` now, not `learn-the-product`: SK-11 generalized it to take any topic, and
+the product is one example inside its body. The rename is docs/skills-rethink.md R4-1.
+
+And the assumption this whole part rests on, "the sources are the check, not the author", has an
+exception. Once a connection has read a site, the source may propose, provided it proposes as a
+question the PM answers: "Checkout Rewrite looks like the main thing right now. Is it?" A claim
+they confirm that way lands verified and still cites the source, because their yes is what
+verifies it and the citation is what makes it checkable later. What has not moved is the rule
+underneath: nothing lands from a source alone, and silence is not a yes. The old rule was written
+against mining a wiki for a picture nobody stated, and that is still what it forbids.
+
 ---
 
 ### U-3. The Claude Code recipe
@@ -350,7 +363,7 @@ looking for a recipe in the docs, but everyone answers "do you have access to th
 interview asks at the right moment (U-2's technical fork). The prompt asks Claude Code, run inside
 their product's repo, to write a high-level technical overview as a markdown file: what the system
 is, the major components, the constraints, in prose a non-engineer can read. The user drops the
-file into Qale, arrival files it as material like anything else, and the understanding's technical
+file into Qale, arrival files it as a source like anything else, and the understanding's technical
 section gets drafted from it, citing it.
 
 Secondary surfaces for people who skipped the interview: the docs, and one line on the

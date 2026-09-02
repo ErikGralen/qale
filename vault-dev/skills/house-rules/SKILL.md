@@ -32,10 +32,10 @@ Two things change under you between runs, so read them rather than remember them
 
 ## Writing
 
-How every note and every card is written, whatever produced it. Evidence supports what a note says.
+How every note and every proposal is written, whatever produced it. Evidence supports what a note says.
 It is never what the note says.
 
-- **Nothing uncited.** Every claim quotes the material or cites what the workspace already holds.
+- **Nothing uncited.** Every claim quotes the source or cites what the workspace already holds.
 - **Grounded is not pasted.** Say the thing in your own voice and cite what it rests on. The
   verbatim text stays where it was filed, and anyone can open it.
 - **Strength is the count.** "Six of nine accounts described some version of this" says more than
@@ -49,10 +49,10 @@ verbatim, that is the last rule applied to one case, never an exemption from the
 
 ## Proposing
 
-What every approval card is held to, whatever produced it.
+What every proposal is held to, whatever produced it.
 
-- **A contradiction is its own card.** Where what you read runs into a live decision, a live insight
-  or something already promised, that is a card of its own. Never average the two into a soft
+- **A contradiction is its own proposal.** Where what you read runs into a live decision, a live insight
+  or something already promised, that is a proposal of its own. Never average the two into a soft
   sentence, and never quietly rewrite the older note. A contradiction is the most valuable thing a
   run can find.
 - **An empty result is a result.** If nothing needs to happen and nothing contradicts the memory,
@@ -77,16 +77,16 @@ working out, so work it out or drop it.
 
 Where each kind of note lives. The librarian follows these when proposing paths and links.
 
-- **sources/**: raw dumped material (article links, screenshots, pasted threads, synced pages,
+- **sources/**: raw, dumped-in content (article links, screenshots, pasted threads, synced pages,
   meeting transcripts, and transcripts of meetings you were not in), named
   `YYYY-MM-DD-<slug>.md`. The body is never edited, only re-synced from upstream. Carries
-  `processing` (new / processed / stale), `new` until an approved card cites it. An external
+  `processing` (new / processed / stale), `new` until an approved proposal cites it. An external
   meeting's transcript sets `origin` (whose meeting it was); it is a signal, never a meeting.
 - **meetings/**: one file per meeting you were in, named `YYYY-MM-DD-<slug>.md`. The single
   anchor for the whole lifecycle: `## Prep` before, `## Notes` during, `## Summary` once
   processed, linking the decisions and insights it produced. The immutable transcript lives in
   sources/ and is linked via the `transcript` frontmatter ref. Recurring meetings share a
-  `series` slug. Carries `processing`: a slot the calendar synced sits at `new` until its cards
+  `series` slug. Carries `processing`: a slot the calendar synced sits at `new` until its proposals
   land, while a page proposed from a recording arrives already read. A meeting whose `date`
   is in the future is upcoming; that is derived, never a lifecycle value.
 - **decisions/**: the append-only decision spine, `YYYY-MM-DD-<slug>.md`. Never edit a decision's
@@ -106,8 +106,8 @@ Where each kind of note lives. The librarian follows these when proposing paths 
   you owes it (a waiting-on item). `sources[]` cites where the commitment was made. Closed
   todos stay.
 - **notes/**: quick authored captures (stray thoughts, ⌘N notes), and the documents a session
-  writes whole: a spec, the decode of an incoming ask. Dumped external material goes to sources/
-  instead. Intake proposes how each connects into the memory.
+  writes whole: a spec, the decode of an incoming ask. Anything dropped in from outside goes to
+  sources/ instead. Intake proposes how each connects into the memory.
 - **attachments/**: dropped images and screenshots, each referenced by a capture note in
   sources/.
 - **sessions/**: replayable session receipts, written by the harness. Never hand-edited.
@@ -119,8 +119,8 @@ cited, never invented.
 ## Your rules
 
 What you have told Qale to do from now on. Ask for something in a chat ("remember to create person
-notes as well"), approve the card, and it lands here as a bullet. Change a line to change the rule,
+notes as well"), approve the proposal, and it lands here as a bullet. Change a line to change the rule,
 or delete it to drop it.
 
-- When filing material that mentions a person, create their person note too.
+- When filing a source that mentions a person, create their person note too.
 - Articles with no obvious project land with the tag `inspiration`.

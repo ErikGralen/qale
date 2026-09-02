@@ -30,11 +30,11 @@ The problems, as you put them:
 
 Stop sorting by what _starts_ a file. Sort by what the thing _is_ to the PM.
 
-1. **Moments.** Work the product does at a defined point: new material
+1. **Moments.** Work the product does at a defined point: a new source
    arrives, a meeting is coming up, a commitment slips, the librarian ticks.
    The PM never "runs" these. They should not sit in a generic list at all.
-   Show each one attached to its moment: "When material arrives → Handle new
-   material". Today: arrival, meeting-prep, commitment-check, librarian.
+   Show each one attached to its moment: "When a source arrives → Handle new
+   source". Today: arrival, meeting-prep, commitment-check, librarian.
 2. **Requests.** Work the PM asks for: weekly update, find the pattern, tidy
    a note. These keep the composer picker and the model pickup. No slash
    commands, ever. Surfaced as chips where they apply (the Home composer
@@ -137,7 +137,7 @@ points this direction.
 
 If moments are first-class, the natural extension point is: "when X happens,
 also do Y". The user writes a small skill and attaches it to a moment. "When
-material arrives, also check it against the roadmap." "Before a meeting,
+a source arrives, also check it against the roadmap." "Before a meeting,
 also pull the account's open tickets."
 
 This is the hooks idea, in product clothes. It is also the strongest version
@@ -219,8 +219,8 @@ file format, it just stops being the interface.
 
 If librarian and meeting-prep sit on the Moments tab next to arrival and
 commitment-check, the skills-vs-agents split stops being a thing the user
-sees. Every row reads the same way: "When material arrives → Handle new
-material", "Every few hours → Librarian tidies the memory", "Before a
+sees. Every row reads the same way: "When a source arrives → Handle new
+source", "Every few hours → Librarian tidies the memory", "Before a
 meeting → Prep brief". The trigger text comes from code, so it cannot lie.
 
 The `skills/` vs `agents/` folder split stays on disk (it is filing, and the
@@ -337,7 +337,7 @@ Five tabs: **Skills, House rules, Moments, Voices, Agents**.
 | ----------- | ---------------------------------------------------------------------------------------------------- |
 | Skills      | weekly-update, synthesis, process-note, plus everything the user creates                             |
 | House rules | the one document                                                                                     |
-| Moments     | arrival ("When material arrives"), commitment-check ("When a commitment slips and you ask for help") |
+| Moments     | arrival ("When a source arrives"), commitment-check ("When a commitment slips and you ask for help") |
 | Voices      | exec, cs, whatever the user adds                                                                     |
 | Agents      | librarian, meeting-prep, with their clocks and the only off switches                                 |
 

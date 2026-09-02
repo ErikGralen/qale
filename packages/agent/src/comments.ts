@@ -39,6 +39,10 @@ export const COMMENTS_MAX_SLOTS = 20;
  * Ceiling on the prompt above one box, and the reason is OW9 rather than layout.
  * A parked request outlives the turn that made it and is read back off `app.db`
  * by a later run, so what may be parked is kept to the size of a prompt.
+ *
+ * Over it the round is refused rather than cut, the same rule the question card
+ * holds (`ask.ts`): the PM reads this line, and a line that stops mid-word reads
+ * as a bug in the app.
  */
 export const SLOT_PROMPT_MAX = 200;
 
@@ -84,12 +88,19 @@ export function planComments(
       error: `${path} has ${parsed.slots.length} slots; at most ${COMMENTS_MAX_SLOTS}. Ask about the parts where their answer changes the next round, not about every line.`,
     };
   }
-  const slots = parsed.slots.map((slot) => {
-    // Flattened and capped on the way IN, so the box, the row in `app.db` and a
-    // later run's replay all carry the same bounded line.
-    const prompt = slot.prompt ? oneLine(slot.prompt, SLOT_PROMPT_MAX) : '';
-    return { id: slot.id, ...(prompt ? { prompt } : {}) };
-  });
+  const slots: CommentPlan['slots'] = [];
+  for (const slot of parsed.slots) {
+    // Flattened on the way IN, so the box, the row in `app.db` and a later run's
+    // replay all carry the same line. Over the ceiling it comes back as an edit
+    // to make rather than as half a sentence over the box.
+    const prompt = slot.prompt ? oneLine(slot.prompt, Number.MAX_SAFE_INTEGER) : '';
+    if (prompt.length > SLOT_PROMPT_MAX) {
+      return {
+        error: `${path}: the prompt on slot "${slot.id}" is ${prompt.length} characters; keep it under ${SLOT_PROMPT_MAX}. Say what you want their take on in a line — the round itself carries the detail.`,
+      };
+    }
+    slots.push({ id: slot.id, ...(prompt ? { prompt } : {}) });
+  }
   return { plan: { path, slots } };
 }
 

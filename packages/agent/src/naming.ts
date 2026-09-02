@@ -17,7 +17,7 @@ import { languageName } from '@qale/domain';
  *    immediately; the model's answer replaces it a second later or never. No
  *    turn waits on this, and nothing breaks without a key.
  * 2. **What comes back is display text, not an instruction.** The first message
- *    can be material the PM never read (a kickoff over a dropped transcript), so
+ *    can be a source the PM never read (a kickoff over a dropped transcript), so
  *    the reply is cleaned to one short line before it is allowed anywhere near
  *    the UI ({@link cleanTitle}) and is never fed back to an agent.
  * 3. **Cheap means priced, not guessed.** {@link cheapestModel} ranks what pi

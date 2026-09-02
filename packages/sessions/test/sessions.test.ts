@@ -116,11 +116,24 @@ test('can: capabilities are a list, and the floor is empty', () => {
   );
 });
 
+/**
+ * CM-4: a PM's own notes arrive through the received-sources door, so nothing
+ * about the door says who wrote them. The skill sets `origin` to their own name,
+ * which is what lets a citation say "your note from March" a year later.
+ */
+test('arrival marks the PM own writing as theirs', () => {
+  const c = parseRunnable(ARRIVAL_SKILL, 'arrival');
+  assert.match(c.body, /\*\*Their own writing\.\*\*/);
+  assert.match(c.body, /your note from March/);
+  // Still a source: their own writing does not get to walk into notes/.
+  assert.match(c.body, /lands under `sources\/`, never in `notes\/`/);
+});
+
 test('the two files that need the narrow capabilities declare them', () => {
   // Only these two. A capability granted to a file that never uses it is the
   // thing this split was for.
   assert.deepEqual(parseRunnable(ARRIVAL_SKILL, 'arrival').can, [
-    'file-material',
+    'file-source',
     'keep-working-files',
     'draft-outbound',
     'draft-calendar',
@@ -723,6 +736,26 @@ test('the weekly update lists its voices, and holds the CS draft to what it may 
 });
 
 /**
+ * CV-2 (docs/conventions.md): the two skills that draft for a connected system
+ * name the conventions file at the step where they draft. The tool descriptions
+ * say it too, but a session reads its skill first, and these are the two paths
+ * most drafts come out of.
+ *
+ * A pointer, never a gate. Neither file is seeded, so both lines say "when the
+ * workspace has one" and a missing file costs nothing.
+ */
+test('the drafting skills point at the conventions file, and do not require it', () => {
+  const meeting = parseRunnable(ARRIVAL_SKILL, 'arrival');
+  assert.deepEqual(meeting.errors, []);
+  assert.ok(meeting.body.includes('`skills/jira/SKILL.md`'));
+  assert.match(meeting.body, /when the workspace\n?\s*has one/);
+
+  const weekly = parseRunnable(WEEKLY_UPDATE_SKILL, 'weekly-update');
+  assert.ok(weekly.body.includes('`skills/confluence/SKILL.md`'));
+  assert.match(weekly.body, /when the workspace has one/);
+});
+
+/**
  * SK-11: one interview skill, any topic. The address matters as much as the
  * title — `interview` was the obvious slug and the wrong one, because a
  * workspace full of customer interviews would send everyone holding transcripts
@@ -753,10 +786,66 @@ test('the interview takes a topic, and ships under a name that is not the produc
     assert.ok(c.body.includes(`notes/understanding-${area}.md`), `${area} is not a landing place`);
   }
   assert.ok(c.body.includes('notes/understanding.md'));
+  // CM-4: the interview asks for the notes they already wrote, and says the word
+  // folder, because nobody drops one unless told they can.
+  assert.match(c.body, /Do you keep notes from before\? Drop the folder/);
 });
 
 /** The orientation note points at the interview by its address, so it has to move with it. */
 test('the orientation note names the interview by the name that resolves', () => {
   assert.ok(UNDERSTANDING_NOTE.includes('`tell-qale`'));
   assert.ok(!UNDERSTANDING_NOTE.includes('learn-the-product'));
+});
+
+/**
+ * The first look (docs/first-look-debrief.md): the second way the interview
+ * starts. The app fires it unattended when a connection finishes reading a site
+ * for the first time, and the kickoff points at one section by name, so that
+ * heading is a contract between the code and the copy.
+ */
+test('the interview knows how to open on what a connection just read', () => {
+  const seed = DEFAULT_SKILLS.find((s) => s.file === 'skills/tell-qale/SKILL.md');
+  assert.ok(seed);
+  const c = parseRunnable(seed.content, 'tell-qale');
+  assert.deepEqual(c.errors, []);
+
+  // The heading the kickoff names. Rename it and the unattended run is handed a
+  // pointer to nothing.
+  assert.match(c.body, /^## First look$/m);
+  // Three beats, and the first one ends the turn: nothing is written before they
+  // have said they want it.
+  assert.match(c.body, /Write nothing, propose nothing/);
+  // Hypothesis first, which is the rule that supersedes "sources are the
+  // check, not the author" (docs/product-understanding.md U-2).
+  assert.ok(c.body.includes('hypothesis first'));
+  // The calendar is a source too (CM-5). The trigger arms on any connection, so
+  // a copy that speaks only of epics and tickets leaves a calendar debrief with
+  // nothing to say.
+  assert.ok(c.body.includes('The calendar and the meetings already filed'));
+  assert.match(c.body, /Where two sources agree, say so/);
+  // The knock now fires for a workspace that has already been told about the
+  // product too (2026-08-31). The kickoff says so, and this branch is the only
+  // thing that stops it interviewing them a second time.
+  assert.match(c.body, /When the kickoff says the picture is already there/);
+  assert.match(c.body, /Do not run the interview/);
+  // The conventions beat (docs/conventions.md CV-4). It observes and the PM
+  // confirms; the yes goes through the tool that already writes those files, so
+  // a body naming any other route would be inventing machinery.
+  assert.match(c.body, /^\*\*Beat three: how they use the tools\.\*\*/m);
+  assert.ok(c.body.includes('`propose_instruction`'));
+  // The bar and the two silences. Without them the beat mines conventions out of
+  // sources, which is the one thing this whole design refuses.
+  assert.match(c.body, /Only strong ones/);
+  assert.match(c.body, /No and silence both mean nothing lands/);
+  assert.ok(
+    c.body.includes('which they confirmed, lands verified'),
+    'the confirmed-hypothesis marking rule is gone',
+  );
+
+  // The seeds: one card, and the two things it may set up.
+  assert.ok(c.body.includes('`track_external`'), 'tracked tickets go through the existing tool');
+  assert.ok(c.body.includes('`propose_note`'), 'a theme is still a proposal');
+  assert.match(c.body, /Never mirror a wiki page/);
+  // Tracking writes sync state, so the file has to claim it by name.
+  assert.deepEqual(c.can, ['track-external']);
 });

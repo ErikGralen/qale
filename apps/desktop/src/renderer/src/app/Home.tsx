@@ -17,6 +17,7 @@ import {
   PenLine,
   Search,
   SquarePen,
+  Target,
   TriangleAlert,
   X,
 } from 'lucide-react';
@@ -49,6 +50,7 @@ import {
   type AttentionTarget,
   type AttentionTone,
 } from '../lib/attention';
+import { whereThingsStand, type StandKind } from '../lib/where-things-stand';
 
 /**
  * Home — the gateway (⇧⌘H, ⌘T, the sidebar's first row, and what an empty
@@ -189,7 +191,7 @@ function Greeting() {
 // ---------------------------------------------------------------------------
 
 /**
- * New note and Add material, opposite the greeting. These are the app's two
+ * New note and Add source, opposite the greeting. These are the app's two
  * ways of putting something *in* (the bar below only asks), and they sit up
  * here rather than inside the composer strip so a new user sees both verbs
  * before they ever focus the bar. Same instruments as ⌘N and ⇧⌘N — the
@@ -215,7 +217,7 @@ function QuickActions() {
         title="Add a transcript, link or screenshot (⇧⌘N)"
         onClick={() => requestCapture()}
       >
-        <FileUp className="size-3.5 text-muted-foreground" aria-hidden /> Add material
+        <FileUp className="size-3.5 text-muted-foreground" aria-hidden /> Add source
       </Button>
     </div>
   );
@@ -228,7 +230,7 @@ function QuickActions() {
 /**
  * The app's front door for questions: the same composer shell as the session and the
  * browse pages. Typing asks the memory; a pasted transcript or screenshot
- * still routes to capture (material is material wherever it lands), but the
+ * still routes to capture (a source is a source wherever it lands), but the
  * standing "put something in" affordances live in QuickActions above, so the
  * strip here stays about the question. Nothing is written anywhere either way
  * — the question opens a session, the paste opens the capture card.
@@ -312,7 +314,7 @@ function HomeComposer({
             reader.readAsDataURL(image);
             return;
           }
-          // A wall of text pasted into an empty bar is material, not a question.
+          // A wall of text pasted into an empty bar is a source, not a question.
           const text = e.clipboardData.getData('text/plain');
           if (!ask.trim() && isBulkPaste(text)) {
             e.preventDefault();
@@ -733,7 +735,7 @@ const MAX_ROWS = 4;
 
 /**
  * Home's "Waiting on you": `homeRows` over the app's one attention list — the
- * top four, with cards, unfiled meetings and due commitments each behind one
+ * top four, with proposals, unfiled meetings and due commitments each behind one
  * door. Home computes no count of its own; every number here is a filter over
  * the same list the sidebar badge and the Inbox read (lib/attention.ts).
  */
@@ -811,8 +813,8 @@ function Waiting() {
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium">Start with a meeting you already have</span>
             <span className="mt-0.5 block text-sm text-muted-foreground">
-              Drop a transcript anywhere in the window. The memory files it and proposes the
-              follow-ups as cards you approve.
+              Drop a transcript anywhere in the window. The memory files it and turns the
+              follow-ups into proposals you approve.
             </span>
           </span>
           <span className="mt-0.5 shrink-0 text-xs text-muted-foreground tabular-nums">⇧⌘N</span>
@@ -821,7 +823,10 @@ function Waiting() {
     );
   }
 
-  if (rows.length === 0 && !muted) return null;
+  // Nothing waiting is the one moment the PO is free, and a blank page was the
+  // app's worst answer to it. The strip says where the work stands instead:
+  // facts only, no ask, and only while this list is empty (docs/closing-beat.md).
+  if (rows.length === 0 && !muted) return <WhereThingsStand now={now} openRow={openRow} />;
 
   // A flat list, not a panel: the rows sit straight on the paper with a hover
   // pill for affordance, so the composer below stays the only card on the
@@ -987,6 +992,64 @@ function WaitingRow({
         </button>
       )}
     </li>
+  );
+}
+
+/** One glyph per fact the strip states, from the same vocabulary as the rows. */
+const STAND_ICON: Record<StandKind, LucideIcon> = {
+  meeting: CalendarClock,
+  waiting: ListTodo,
+  theme: Target,
+};
+
+/**
+ * "Where things stand": what Home shows in the waiting list's place when
+ * nothing is waiting (docs/closing-beat.md).
+ *
+ * The same rows, one tone quieter: this is orientation, not work. It states up
+ * to three facts the tree already holds and lets the PO go to any of them. Only
+ * Home is allowed to say "you're done", so this is where the Inbox's door and
+ * the chat receipt both point.
+ */
+function WhereThingsStand({
+  now,
+  openRow,
+}: {
+  now: number;
+  openRow: (target: AttentionTarget, opts?: NavOpts) => void;
+}) {
+  const { tree } = useApp();
+  const lines = useMemo(() => whereThingsStand(tree, now), [tree, now]);
+  if (lines.length === 0) return null;
+
+  return (
+    <div>
+      <h2 className="mb-1 text-dense font-semibold text-muted-foreground">Where things stand</h2>
+      <ul className="-mx-2.5">
+        {lines.map((line) => {
+          const Icon = STAND_ICON[line.kind];
+          const open = (e: MouseEvent<HTMLElement>) => openRow(line.target, navFromEvent(e));
+          return (
+            <li key={line.id}>
+              <button
+                className={`${ROW_SHELL} ${FOCUS_RING}`}
+                onClick={open}
+                onAuxClick={(e: MouseEvent<HTMLButtonElement>) => e.button === 1 && open(e)}
+              >
+                <Icon className="size-4 shrink-0 text-muted-foreground/70" aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                  {line.label}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                  {line.meta}
+                </span>
+                <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50" aria-hidden />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

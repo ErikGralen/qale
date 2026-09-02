@@ -58,7 +58,7 @@ const isMac = navigator.userAgent.includes('Macintosh');
 type UndoOffer = { label: string; title: string; undo: () => void };
 
 /**
- * `asking` is the set of sessions parked on a question card. It counts as
+ * `asking` is the set of sessions parked on a question. It counts as
  * needing the PO even though the run is technically still going: a turn that
  * asked something and got no answer looks exactly like a turn that is working,
  * and the difference is that this one will wait forever.
@@ -150,7 +150,7 @@ function Section({
  * has dealt with it. Running rows spin quietly; rows needing a decision carry the
  * ink-blue dot (the one accent = "action lives here"); finished-and-seen rows
  * keep a check for an hour, then decay off the rail — or leave the moment you
- * mark them done, which is the sessions' answer to unpinning a note.
+ * unpin them.
  */
 function SessionsSection({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
   const { sessions, openChat, openChats, askRequests, setSessionLifecycle } = useApp();
@@ -186,7 +186,7 @@ function SessionsSection({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
                 ? 'comments'
                 : 'question'
               : s.pendingCards > 0
-                ? `${s.pendingCards} card${s.pendingCards === 1 ? '' : 's'}`
+                ? `${s.pendingCards} proposal${s.pendingCards === 1 ? '' : 's'}`
                 : s.unread
                   ? 'ready'
                   : s.running
@@ -250,25 +250,25 @@ function SessionsSection({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
                           : ', done'}
                   </span>
                 </button>
-                {/* Same gesture as unpinning a note: the row you are done with
-                    leaves the rail on one click. A running row has no button —
-                    it would keep spinning here either way, so answering it or
-                    letting it finish is the only honest next step. */}
+                {/* Same gesture as unpinning a note: the row leaves the rail on
+                    one click. A running row has no button — it would keep
+                    spinning here either way, so answering it or letting it
+                    finish is the only honest next step. */}
                 {!s.running && (
                   <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-md bg-gradient-to-l from-sidebar-accent from-65% to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover/session:opacity-100 group-focus-within/session:opacity-100">
                     <button
                       className="pointer-events-auto rounded p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                       onClick={(e) => {
                         e.stopPropagation();
-                        void setSessionLifecycle(s.id, 'done');
+                        void setSessionLifecycle(s.id, 'unpinned');
                         onUndo({
-                          label: 'Marked done',
+                          label: 'Unpinned',
                           title: s.title,
                           undo: () => void setSessionLifecycle(s.id, 'active'),
                         });
                       }}
-                      aria-label={`Mark ${s.title} done`}
-                      title="Mark done: remove from the sidebar (a new message reopens it)"
+                      aria-label={`Unpin ${s.title}`}
+                      title="Unpin: remove from the sidebar (a new message reopens it)"
                     >
                       <X className="size-3" />
                     </button>
@@ -835,7 +835,7 @@ export function Sidebar({
               onClick={onNewNote}
             />
             <ToolbarButton
-              label="Add material"
+              label="Add source"
               keys={['⇧', '⌘', 'N']}
               icon={FileUp}
               onClick={onIngest}

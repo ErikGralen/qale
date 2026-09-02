@@ -46,7 +46,7 @@ Minimal. The authored `payload.headline` already carries the card. In `apps/desk
 
 ### Demo vault
 
-`vault-dev/skills/_your-rules/SKILL.md` with `starts: [always]`, title "Your rules", and two example bullets that match the Tavla scenario (for example: "When filing material that mentions a person, create their person note too." and "Articles with no obvious project land with the tag inspiration."). This shows the feature in the skills list and in every session's house rules. No dev-seed card.
+`vault-dev/skills/_your-rules/SKILL.md` with `starts: [always]`, title "Your rules", and two example bullets that match the Tavla scenario (for example: "When filing a source that mentions a person, create their person note too." and "Articles with no obvious project land with the tag inspiration."). This shows the feature in the skills list and in every session's house rules. No dev-seed card.
 
 ## Not in v1 (decided, not forgotten)
 

@@ -9,6 +9,13 @@ reset puts the files back and moves every date to today. Jira and Confluence are
 
 The work lives on a branch (`demo`). Nothing here lands on `main`.
 
+Two stages. **Stage 1** is the machinery: the build flag, the replay server, the fake tracker,
+Reset. It is scenario-free and can be built and verified now, with a throwaway recording of
+the existing `demo-samples/` drops. **Stage 2** is the demo scenario itself: the walkthrough,
+possibly a re-cut vault, the real recordings, the tweaks. Stage 2 is not prepared yet and is
+not part of this draft beyond the runbook in DM-10. Nothing in stage 1 depends on what the
+scenario turns out to be.
+
 The facts below come from one code pass on 2026-09-05 over the uncommitted working tree.
 
 Write your call under **Decision** ("build", "skip", "discuss…"). **Notes** is for anything the
@@ -275,9 +282,11 @@ files" button.
 
 ## E. The recording workflow
 
-### DM-10. Record once, tweak, commit
+### DM-10. Record once, tweak, commit (stage 2)
 
-**What:** How the recordings get made, and how they stay honest.
+**What:** How the recordings get made, and how they stay honest. This is the stage 2 work. The
+script below uses the current `demo-samples/` as a stand-in; the real walkthrough replaces it
+when the scenario is prepared.
 
 **Change:** A runbook, in this doc once decided:
 
@@ -293,6 +302,10 @@ files" button.
 5. `pnpm test`, then a full replay run with the clock pinned to another day to prove the date
    shift holds: `QALE_DEMO=1 QALE_DEMO_TODAY=2026-10-01 pnpm desktop`.
 6. Commit recordings + fixture on `demo`. Build the dmg.
+
+For stage 1, steps 2 to 5 run once with whatever the current vault and samples produce, and
+those recordings are thrown away. They exist to prove the matcher, the pacing, the date shift
+and Reset, not to be shown to anyone.
 
 **Decision:**
 
@@ -336,6 +349,12 @@ small `isDemoBuild()` branch at a seam, so a merge from `main` rarely conflicts.
   vault and a second recordings folder, later.
 
 ## Open questions
+
+0. What the scenario is. The vault, the drops, the prompts and the cards the audience should
+   see are stage 2 and undecided. Stage 1 assumes only that the scenario is a vault folder plus
+   a set of files to drop plus a set of prompts, which is what `vault-dev/` and `demo-samples/`
+   already are. If the real scenario needs something else (a second tracker, calendar events),
+   DM-8's "not mocked" list is where that shows up.
 
 1. How far off-script does he need to go? If he will take audience questions in the chat, DM-6
    needs the live fallback and he needs a key. If he runs the script, the fixed answer is

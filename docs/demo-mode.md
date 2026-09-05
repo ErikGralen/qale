@@ -1,6 +1,7 @@
 # Demo mode: a build that answers the same way every time
 
-First draft, 2026-09-05. Not decided.
+First draft 2026-09-05. Stage 1 BUILT the same day on branch `demo` (commit ebc13a0), per Erik's
+"start implementation". Stage 2 (the Brevik scenario, docs/demo-flows.md) is not started.
 
 The cofounder needs a Qale he can install and demo without a key, a network, or a good day at
 the model. He drops a transcript, the app waits a few seconds, and the same answer comes out
@@ -83,9 +84,9 @@ changes nothing in the real Qale.
 dmg bundles `vault-dev/`, `demo-samples/`, the recordings and the Atlassian fixture as
 `extraResources`.
 
-**Decision:**
+**Decision:** build (Erik, 2026-09-05)
 
-**Notes:**
+**Notes:** Built. `electron-builder.demo.yml` extends the main config (`Qale Demo`, `ai.qale.demo`, extraResources → `demo-assets/`). Scripts `dmg:demo`, `package:demo`, `dev:demo`. Dev name is `Qale Demo Dev`. The dmg itself has NOT been built; `process.resourcesPath` resolution is untested.
 
 ---
 
@@ -100,9 +101,9 @@ write settings: `vaultPath` = the demo workspace (`<userData>/workspace`), provi
 and token `demo`, onboarding `finishedAt` set, telemetry off, the PM's identity set to the
 scenario's PM. The Home page opens on the Tavla vault.
 
-**Decision:**
+**Decision:** build (Erik, 2026-09-05)
 
-**Notes:** Telemetry stays off in demo, always. A demo in front of a customer must not send
+**Notes:** Built in `demo/demo-service.ts` `firstLaunch()`. Identity left unset (the vault has no PM person note). Telemetry forced off in `telemetry.ts`. Live-verified once on scratch userData: no opening, workspace open, Jira/Confluence rails present. Telemetry stays off in demo, always. A demo in front of a customer must not send
 events under the cofounder's install id.
 
 ---
@@ -124,9 +125,9 @@ resolves. Two modes, picked at startup:
   `api.anthropic.com`, stream the answer back, and write the request and the full response to
   the recordings folder.
 
-**Decision:**
+**Decision:** build (Erik, 2026-09-05)
 
-**Notes:** The server also has to answer `/v1/models` so `verifyProviderKey` passes if it
+**Notes:** Built: `demo/replay-server.ts` + `replay-*.ts`. Pi's anthropic provider uses the official SDK with `baseURL: model.baseUrl`, so the runtime spreads `{ ...model, baseUrl }` in `resolveModel` and the cheap path (`AgentRuntimeConfig.baseUrl`). `verifyProviderKey` short-circuits in demo. Record mode (`QALE_DEMO_RECORD=1`) is built but NOT exercised. The server also has to answer `/v1/models` so `verifyProviderKey` passes if it
 ever runs. Bind to `127.0.0.1` only.
 
 ---
@@ -154,9 +155,9 @@ Recorded responses are stored anchored to 2026-07-17 like the vault. At replay, 
 token in a response is slid by the same offset Reset used. A recorded todo due "2026-07-25"
 comes out due eight days from the demo day, the same day the vault says.
 
-**Decision:**
+**Decision:** build (Erik, 2026-09-05)
 
-**Notes:** A single-turn `completeSimple` call (naming, a summary, a claim check) is a
+**Notes:** Built (`replay-matcher.ts`). Eligible when the turn index exists, the first user message matches, and the user side matches fully or the first mismatch is a tool result with ≥50% matched (`MIN_PREFIX_RATIO`). A mismatch on typed text is never tolerated. `_fallback.json` shipped. A single-turn `completeSimple` call (naming, a summary, a claim check) is a
 conversation of length one. Same mechanism. One recording file per conversation under
 `demo/recordings/<short-key>.json`, where the key is the first user line, slugged, so the
 folder reads like the demo script.
@@ -173,9 +174,9 @@ byte of a conversation's first turn, `TURN_DELAY_MS = 1200` before every later t
 text stream rate of roughly 400 characters per second. Tool-call turns get the turn delay and
 then emit whole. The recording carries no timing.
 
-**Decision:**
+**Decision:** build (Erik, 2026-09-05)
 
-**Notes:**
+**Notes:** Built with the three constants as written (`DEFAULT_PACING`).
 
 ---
 
@@ -193,9 +194,9 @@ recording file (`demo/recordings/_fallback.json`) so it can be edited like the r
 Alternative: if the demo build also has a real key on file, forward unmatched requests live.
 Costs a key on his machine and a network. Not in this draft.
 
-**Decision:**
+**Decision:** build (Erik, 2026-09-05)
 
-**Notes:**
+**Notes:** Built: `demo/recordings/_fallback.json`, editable. No live fallback.
 
 ---
 
@@ -210,9 +211,9 @@ run the launch catch-up. "Run now" still works, so a librarian run can be demoed
 one. Connector sync runs once at launch and once after any Jira/Confluence write, called
 directly, so the fake tracker's changes still show up.
 
-**Decision:**
+**Decision:** build (Erik, 2026-09-05)
 
-**Notes:** If we want the "Qale tidied up while you were away" moment in the demo, record one
+**Notes:** Built: `scheduler.start()` skipped in demo; one `syncService.tick()` at launch and after each accepted proposal. If we want the "Qale tidied up while you were away" moment in the demo, record one
 librarian run and add a "Run librarian" step to the script.
 
 ---
@@ -238,9 +239,9 @@ and slid at load, like everything else.
 `SyncService.credentialFor()` calls `provider.create(fields, { fetchImpl: demoFetch })` when
 the build is a demo build. One branch, one file.
 
-**Decision:**
+**Decision:** build (Erik, 2026-09-05)
 
-**Notes:** The static mirrors already carry `tavla.atlassian.net` and the `PAY-*` keys, so no
+**Notes:** Built: `demo/fake-atlassian.ts` (735 lines), fixture from `scripts/build-demo-fixture.ts` (re-run after cast or mirror changes; nothing runs it for you), cast moved to `scripts/lib/atlassian-cast.ts`. `SyncService` takes `fetchImplFor` as its 7th constructor arg. Steps come from the fixture (`pay-161-done` for Tavla). Tests drive the real connector against the fake. The static mirrors already carry `tavla.atlassian.net` and the `PAY-*` keys, so no
 reconcile step is needed. That is the whole reason to fake the API instead of pointing at the
 live demo site. Google Calendar is not mocked: the demo build has no Google client baked in,
 and the scenario's meetings are already notes in the vault.
@@ -272,9 +273,9 @@ It does, in order:
 The same routine runs on first launch (DM-2). A confirm dialog first, since it throws away
 whatever he did in the last demo.
 
-**Decision:**
+**Decision:** build (Erik, 2026-09-05)
 
-**Notes:** The demo files he drags in have to be somewhere he can find them. Reset also copies
+**Notes:** Built: `DemoService.reset()`; Settings → Demo tab (`DemoSettings.tsx`) with Reset (inline confirm), Open demo files (`~/Desktop/Qale demo files/`), step buttons. Shift logic now lives in `@qale/domain/demo` (`packages/domain/src/demo/shift.ts`), shared with `refresh-demo.ts` (dry output byte-identical). Unit-tested against temp dirs; the button was NOT clicked in a live window. Open point: the reset workspace has no `.git`, so "put it back" is unavailable during a demo. The demo files he drags in have to be somewhere he can find them. Reset also copies
 `demo-samples/` to `~/Desktop/Qale demo files/`, and the Demo section has an "Open demo
 files" button.
 
@@ -330,9 +331,9 @@ cherry-picked back to `main` on its own. The `demo/` folder (recordings, fixture
 `apps/desktop/src/main/demo/` exist only on `demo`. Everything else the branch touches is a
 small `isDemoBuild()` branch at a seam, so a merge from `main` rarely conflicts.
 
-**Decision:**
+**Decision:** build (Erik, 2026-09-05)
 
-**Notes:**
+**Notes:** Done: `main` committed first (da950b2), `demo` cut from it.
 
 ---
 

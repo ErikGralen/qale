@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react';
 import { Folder, Hash } from 'lucide-react';
+import type { SessionScopeDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { useChatMentions } from '../app/ChatMentions';
 import { SkillPicker } from '../app/SkillPicker';
@@ -22,6 +23,13 @@ export interface AskScope {
   kind: 'context' | 'folder';
   /** The tag (without `#`) or the folder name. */
   label: string;
+  /**
+   * The same scope as a filter, for the session (IM-13). The prefix sentence
+   * tells the reader what the session is about; this tells the agent, and it
+   * opens with the matching notes already listed. A page that cannot name its
+   * filter passes none, and the sentence is all the session gets.
+   */
+  filter?: SessionScopeDTO;
 }
 
 /**
@@ -100,7 +108,11 @@ export function ScopedAskComposer({
     const title = skill
       ? `${skill.title} · ${scope.kind === 'context' ? scopeName : scope.label}`
       : sessionTitle;
-    openSession(pickedSkill ?? 'ask', { title, initialPrompt: `${scopePrefix} ${q}` });
+    openSession(pickedSkill ?? 'ask', {
+      title,
+      initialPrompt: `${scopePrefix} ${q}`,
+      ...(scope.filter ? { scope: scope.filter } : {}),
+    });
   };
 
   return (

@@ -3,7 +3,6 @@ import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { oneLine, type AskPort, type AskRecord } from '@qale/application';
 import { MAINTENANCE_AGENTS } from '@qale/sessions';
-import type { CommentAnswers, CommentPlan } from './slots.js';
 
 /**
  * Asking the PM a question mid-turn — the same primitive Claude Code exposes as
@@ -39,11 +38,26 @@ import type { CommentAnswers, CommentPlan } from './slots.js';
 
 export const ASK_TOOL_NAME = 'ask_user';
 
-/** Claude Code's ceiling, and a good one: past four the card is a form. */
-export const ASK_MAX_QUESTIONS = 4;
+/**
+ * A ceiling, not a target. The target lives in prose: the tool description says
+ * "usually one to four", and a skill that works in rounds (Iterate) says two to
+ * six ideas plus a closing question. A hard cap at four made a round impossible
+ * and a soft cap in the schema is not a cap at all, so the number here is the
+ * one past which a card is a form whatever the skill says.
+ */
+export const ASK_MAX_QUESTIONS = 20;
 
 /** Options per question. Two is a decision; five is a menu nobody reads. */
 export const ASK_MAX_OPTIONS = 4;
+
+/**
+ * The paragraphs under a question, when it carries any (docs/iterate-in-chat.md).
+ * An idea in a round is argued in a few paragraphs and read on the card, so the
+ * card has to hold them. Markdown, never flattened, and NOT replayed after a
+ * quit (see {@link formatAnswers}), which is why this can be roomier than the
+ * question line without the OW9 concern below: it is drawn, never promoted.
+ */
+export const ASK_BODY_MAX = 4000;
 
 /**
  * The ceiling when the options arrive ticked and the PM is unticking what they
@@ -103,6 +117,17 @@ export interface AskQuestion {
   /** Short chip label ("Scope", "Tone") — never a sentence. */
   header: string;
   question: string;
+  /**
+   * Paragraphs under the question line, markdown. A round's idea is argued
+   * here, cost and all, so the PM reads the case on the card rather than
+   * scrolling up to find it.
+   */
+  body?: string;
+  /**
+   * The choices. Empty means a written question: the card draws the question
+   * and a box, and the answer is whatever the PM types. Every question with
+   * options offers the box too, so "B, but smaller" is one answer.
+   */
   options: AskOption[];
   /** Options are not mutually exclusive (checkboxes rather than radios). */
   multiSelect: boolean;
@@ -133,13 +158,6 @@ export interface AskAnswer {
 export interface AskDecision {
   answers: AskAnswer[] | null;
   /**
-   * What the PM wrote in a round file, when the card was a comment request
-   * rather than a question (see ./comments.ts). Absent on every other path, so
-   * `answers: null` with nothing here reads as a dismissal for both kinds and
-   * neither kind needs its own cancel.
-   */
-  comments?: CommentAnswers;
-  /**
    * The card was never shown, because a clock started this run and there is
    * nobody at the screen (QM ticket 9). Not a dismissal: a dismissal is a person
    * saying "decide it yourself", and this is the opposite instruction.
@@ -150,20 +168,11 @@ export interface AskDecision {
 /**
  * A card waiting on the PM, as the renderer draws it. The questions are exactly
  * what the tool validated, and the card never re-derives them.
- *
- * Two kinds ride on this one shape. A question card carries `questions` and
- * nothing else. A comment request carries `comments` and an empty `questions`,
- * and the renderer draws the round file instead (see ./comments.ts). One shape
- * because everything downstream of the park treats them identically: the row,
- * the badge, the replay, the cancel. A parallel twin would be four places to
- * keep in step.
  */
 export interface AskRequestInfo {
   id: string;
   sessionId: string;
   questions: AskQuestion[];
-  /** Set when this is a round to write in rather than a question to answer. */
-  comments?: CommentPlan;
   /**
    * Offered rather than owed (see {@link isOffered}). The card carries the
    * answer rather than the facts behind it, so no surface downstream has to
@@ -241,7 +250,7 @@ export function planAsk(input: unknown): { plan: AskPlan } | { error: string } {
   }
   if (questions.length > ASK_MAX_QUESTIONS) {
     return {
-      error: `ask_user takes at most ${ASK_MAX_QUESTIONS} questions; you asked ${questions.length}. Ask the ones that actually change what you do next.`,
+      error: `ask_user takes at most ${ASK_MAX_QUESTIONS} questions; you asked ${questions.length}. Past that the card is a form nobody finishes. Ask the ones that change what you do next.`,
     };
   }
   const out: AskQuestion[] = [];
@@ -250,30 +259,39 @@ export function planAsk(input: unknown): { plan: AskPlan } | { error: string } {
     const q = raw as {
       header?: string;
       question?: string;
+      body?: unknown;
       options?: unknown;
       multiSelect?: boolean;
     };
     if (!q?.question?.trim()) return { error: `${at}: question is required.` };
     if (!q.header?.trim())
       return { error: `${at}: header is required (a short chip label like "Scope").` };
-    if (!Array.isArray(q.options) || q.options.length < 2) {
+    // No options is a question answered in writing. One option is neither a
+    // choice nor a written question, so it is the one shape refused here.
+    const rawOptions: unknown[] = Array.isArray(q.options) ? q.options : [];
+    if (rawOptions.length === 1) {
       return {
-        error: `${at}: give at least 2 concrete options. A question with no options is just a question — end your turn and ask it in prose instead.`,
+        error: `${at}: one option is not a choice. Give at least 2, or leave options out to ask for a written answer.`,
       };
     }
     const multiSelect = q.multiSelect === true;
+    if (rawOptions.length === 0 && multiSelect) {
+      return {
+        error: `${at}: multiSelect needs options. A written question has none, so leave multiSelect off.`,
+      };
+    }
     // A ticked list is reviewed, not chosen from, so it earns the wider cap.
     const anyChecked =
-      multiSelect && q.options.some((o) => (o as { checked?: boolean } | null)?.checked === true);
+      multiSelect && rawOptions.some((o) => (o as { checked?: boolean } | null)?.checked === true);
     const cap = anyChecked ? ASK_MAX_OPTIONS_TICKED : ASK_MAX_OPTIONS;
-    if (q.options.length > cap) {
+    if (rawOptions.length > cap) {
       return {
         error: `${at}: at most ${cap} options (the PM can always write their own answer).`,
       };
     }
     const options: AskOption[] = [];
     const seen = new Set<string>();
-    for (const [j, rawOpt] of q.options.entries()) {
+    for (const [j, rawOpt] of rawOptions.entries()) {
       const opt = rawOpt as { label?: string; description?: string; checked?: boolean };
       const bare = bounded(opt?.label ?? '', ASK_LABEL_MAX);
       if ('tooLong' in bare) {
@@ -319,12 +337,22 @@ export function planAsk(input: unknown): { plan: AskPlan } | { error: string } {
     const asked = bounded(q.question, ASK_QUESTION_MAX);
     if ('tooLong' in asked) {
       return {
-        error: `${at}: the question is ${asked.tooLong} characters; keep it under ${ASK_QUESTION_MAX}. Ask the thing you are blocked on and leave the recap out — name the notes as wikilinks and the PM can open them.`,
+        error: `${at}: the question is ${asked.tooLong} characters; keep it under ${ASK_QUESTION_MAX}. Ask the thing you are blocked on and leave the recap out — name the notes as wikilinks and the PM can open them, or put the case in body.`,
+      };
+    }
+    // The body keeps its paragraphs: it is rendered as markdown on the card,
+    // and it is never replayed, so the flattening the question line needs
+    // would only cost it its shape.
+    const body = typeof q.body === 'string' ? q.body.trim() : '';
+    if (body.length > ASK_BODY_MAX) {
+      return {
+        error: `${at}: the body is ${body.length} characters; keep it under ${ASK_BODY_MAX}. A body is the case for one idea in a few paragraphs. Anything longer goes in a session file with files_write, named in the question as a link.`,
       };
     }
     out.push({
       header: chip(q.header),
       question: asked.text,
+      ...(body ? { body } : {}),
       options,
       multiSelect,
     });
@@ -336,6 +364,11 @@ export function planAsk(input: unknown): { plan: AskPlan } | { error: string } {
  * Render the answer back to the model. Plain text, question by question, because
  * the model reads this as a tool result and has to be able to act on it without
  * re-asking. A skipped question is stated as skipped rather than omitted.
+ *
+ * The question line comes back, the body does not. The model wrote the body
+ * and has it in its transcript; repeating four paragraphs per idea would be the
+ * round-file re-read this shape exists to avoid, and after a quit it would
+ * promote the model's own prose to a user message (see {@link ASK_QUESTION_MAX}).
  */
 export function formatAnswers(plan: AskPlan, answers: AskAnswer[]): string {
   const lines: string[] = ['The PM answered:'];
@@ -344,7 +377,11 @@ export function formatAnswers(plan: AskPlan, answers: AskAnswer[]): string {
     const chosen = a?.selected.filter((s) => s.trim()) ?? [];
     const written = a?.written?.trim();
     lines.push('', `Q (${q.header}): ${q.question}`);
-    if (chosen.length === 0 && !written) {
+    if (q.options.length === 0 && written) {
+      // A written question has no ticks to tell the text apart from, so the
+      // text is the answer, plainly.
+      lines.push(`A: ${written}`);
+    } else if (chosen.length === 0 && !written) {
       // On a ticked list an empty answer is a decision, not a shrug: they read
       // the rows and took every one of them out. Reporting that as "skipped"
       // would tell the model to go ahead and pick for itself, which is the one
@@ -357,8 +394,8 @@ export function formatAnswers(plan: AskPlan, answers: AskAnswer[]): string {
     } else if (chosen.length === 0) {
       lines.push(`A: (wrote) ${written}`);
     } else if (written) {
-      // A multi-select answer can be ticks AND their own addition; reporting
-      // only one half would drop something the PM deliberately said.
+      // An answer can be a pick AND their own words ("Keep, but smaller");
+      // reporting only one half would drop something the PM deliberately said.
       lines.push(`A: ${chosen.join(', ')} — and wrote: ${written}`);
     } else {
       lines.push(`A: ${chosen.join(', ')}`);
@@ -389,15 +426,21 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
     name: ASK_TOOL_NAME,
     label: 'Ask the PM',
     description:
-      'Ask the PM a question and wait for their answer, without ending your turn. Use this ONLY when you are ' +
+      'Ask the PM a question and wait for their answer, without ending your turn. Use this when you are ' +
       'blocked on a decision that is genuinely theirs: one you cannot settle from the workspace, from what they ' +
       'asked for, or from a sensible default — and where different answers would lead to materially different ' +
       'work. Typical cases: which of two readings of an ambiguous request to follow, which scope to propose ' +
-      'cards for, whose framing to use when two notes contradict each other. Do NOT use it to check whether you ' +
+      'cards for, whose framing to use when two notes contradict each other. A skill that works in rounds ' +
+      '(Iterate) uses it as the round itself: one question per idea, the case for the idea in body, and the PM ' +
+      'reacts to each. Do NOT use it to check whether you ' +
       'may proceed, to confirm a plan, to pick something with an obvious default, or to ask something the ' +
-      'workspace already answers — read the note instead. Every question needs 2-4 concrete options with short ' +
-      'descriptions of what each one means; the PM can always write their own answer instead. Ask everything ' +
-      'you need in ONE call (up to 4 questions) rather than one card after another. If you can do useful work ' +
+      'workspace already answers — read the note instead. Ask it the way you would say it out loud: "What date ' +
+      'was this meeting?", not a paragraph recapping what you read and why it matters — that reasoning goes in ' +
+      "the options' descriptions or in body, where the PM reads it only if they want to. Give 2-4 concrete " +
+      'options whenever the answer is one of a few things you can name; leave options out when you want their ' +
+      'words (a reaction to a draft, a name, a sentence). The PM can always write beside the options, so never ' +
+      'add an "Other" option yourself. Ask everything ' +
+      'you need in ONE call, usually one to four questions, rather than one card after another. If you can do useful work ' +
       'without the answer, do that work first and ask at the point it actually matters. Name any note you ' +
       'mention as a wikilink ([[notes/2026-07-17-friday-scratch]]), in the question and in the options alike: ' +
       'the card renders them, so the PM can open the note before they answer. A bare path is dead text on a ' +
@@ -409,29 +452,36 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
             description: `Short chip label for this question, max ${ASK_HEADER_MAX} characters, e.g. "Scope" or "Which theme".`,
           }),
           question: Type.String({
-            description: `The question, in full. State what is unclear and why it changes what you would do. Under ${ASK_QUESTION_MAX} characters, or the call is refused — a few sentences, not a recap of what you read.`,
+            description: `The question, plainly asked, the way you would say it out loud: "What date was this meeting?" Under ${ASK_QUESTION_MAX} characters, or the call is refused. Leave out the recap of what you read and the reasoning behind it — that goes in the options' descriptions, or in body.`,
           }),
-          options: Type.Array(
-            Type.Object({
-              label: Type.String({
-                description: `The choice, in a few words. Under ${ASK_LABEL_MAX} characters.`,
-              }),
-              description: Type.Optional(
-                Type.String({
-                  description: `What picking this means or leads to. One short sentence, under ${ASK_DESCRIPTION_MAX} characters.`,
-                }),
-              ),
-              checked: Type.Optional(
-                Type.Boolean({
-                  description:
-                    'Start this row ticked. multiSelect only, and only when you are proposing a batch you would carry out: "here is what I would set up, take out what you do not want". Every ticked row needs a description saying why it is ticked. Ticking lets one question carry up to ' +
-                    `${ASK_MAX_OPTIONS_TICKED} rows instead of ${ASK_MAX_OPTIONS}.`,
-                }),
-              ),
+          body: Type.Optional(
+            Type.String({
+              description: `Paragraphs under the question, markdown, under ${ASK_BODY_MAX} characters. For a round: the case for this idea and its cost, a few short paragraphs. Leave it out on a plain question.`,
             }),
-            {
-              description: `The choices. 2-${ASK_MAX_OPTIONS} of them, concrete and mutually distinct (up to ${ASK_MAX_OPTIONS_TICKED} when they arrive ticked). Put your recommendation first.`,
-            },
+          ),
+          options: Type.Optional(
+            Type.Array(
+              Type.Object({
+                label: Type.String({
+                  description: `The choice, in a few words. Under ${ASK_LABEL_MAX} characters.`,
+                }),
+                description: Type.Optional(
+                  Type.String({
+                    description: `What picking this means or leads to. One short sentence, under ${ASK_DESCRIPTION_MAX} characters.`,
+                  }),
+                ),
+                checked: Type.Optional(
+                  Type.Boolean({
+                    description:
+                      'Start this row ticked. multiSelect only, and only when you are proposing a batch you would carry out: "here is what I would set up, take out what you do not want". Every ticked row needs a description saying why it is ticked. Ticking lets one question carry up to ' +
+                      `${ASK_MAX_OPTIONS_TICKED} rows instead of ${ASK_MAX_OPTIONS}.`,
+                  }),
+                ),
+              }),
+              {
+                description: `The choices. 2-${ASK_MAX_OPTIONS} of them, concrete and mutually distinct (up to ${ASK_MAX_OPTIONS_TICKED} when they arrive ticked). Put your recommendation first. Leave the whole list out to ask for a written answer.`,
+              },
+            ),
           ),
           multiSelect: Type.Optional(
             Type.Boolean({
@@ -441,7 +491,7 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
           ),
         }),
         {
-          description: `The questions, at most ${ASK_MAX_QUESTIONS}. One card, answered in one go.`,
+          description: `The questions. One card, answered in one go. Usually one to four; a round of ideas runs to six or seven. Never more than ${ASK_MAX_QUESTIONS}.`,
         },
       ),
     }),
@@ -489,7 +539,8 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
  * left to settle.
  *
  * The ticks count as part of the shape (the `*` below): the same rows offered
- * ticked and offered clear are two different questions.
+ * ticked and offered clear are two different questions. So does the body: two
+ * rounds can ask "Keep or cut?" about two different ideas.
  */
 export function askRequestId(sessionId: string, plan: AskPlan): string {
   const shape = plan.questions
@@ -497,6 +548,7 @@ export function askRequestId(sessionId: string, plan: AskPlan): string {
       [
         q.header,
         q.question,
+        q.body ?? '',
         q.multiSelect,
         ...q.options.map((o) => `${o.label}${o.checked ? '*' : ''}`),
       ].join(' '),
@@ -533,8 +585,6 @@ export interface StoredAsk {
   id: string;
   sessionId: string;
   questions: AskQuestion[];
-  /** The round it asked for comments on, when that is what it was. */
-  comments: CommentPlan | null;
   /** The skill in force when it asked — the footing a replayed turn resumes on. */
   skill: string | null;
   outbound: boolean;
@@ -547,7 +597,6 @@ function decode(record: AskRecord): StoredAsk {
     id: record.id,
     sessionId: record.sessionId,
     questions: (record.questions ?? []) as AskQuestion[],
-    comments: (record.comments as CommentPlan | undefined) ?? null,
     skill: record.skill,
     outbound: record.outbound,
     unattended: record.unattended,
@@ -560,7 +609,6 @@ function toRequest(asked: StoredAsk): AskRequestInfo {
     id: asked.id,
     sessionId: asked.sessionId,
     questions: asked.questions,
-    ...(asked.comments ? { comments: asked.comments } : {}),
     offered: isOffered(asked.skill, asked.unattended),
     skill: asked.skill,
   };
@@ -586,11 +634,6 @@ export interface AskParkingDeps {
  * An answer takes the first layer if it is there and the second if it is not.
  * The second is a REPLAY: the session is reopened and the answer arrives as a
  * message rather than as the tool result nobody is holding any more.
- *
- * Both kinds of card park here, a question and a round to write in, because
- * everything in this class is about the waiting rather than the asking. What
- * differs between them is what the renderer draws and which replay prompt the
- * runtime picks; nothing below has to know which it is holding.
  */
 export class AskParking {
   /** requestId → the card in flight and the promise `ask_user` is parked on. */
@@ -639,7 +682,6 @@ export class AskParking {
         id: asked.id,
         sessionId: asked.sessionId,
         questions: asked.questions,
-        comments: asked.comments ?? null,
         skill: context.skill ?? null,
         outbound: !!context.outbound,
         unattended,
@@ -725,7 +767,6 @@ export class AskParking {
             id: asked.id,
             sessionId: asked.sessionId,
             questions: asked.questions,
-            comments: asked.comments,
             skill: asked.skill,
             outbound: asked.outbound,
             unattended: asked.unattended,

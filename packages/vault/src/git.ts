@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { SESSION_FILES_DIR } from '@qale/domain';
-import type { GitCommit, GitPort } from '@qale/application';
+import type { GitCommit, GitPort, GitTouch } from '@qale/application';
 
 /**
  * Seeded into every vault's `.gitignore`: OS junk, plus session working files —
@@ -199,7 +199,10 @@ export class GitAdapter implements GitPort {
         author: c.author_name,
       }));
     } catch (err) {
-      console.error(`[git] history failed for ${relPath}:`, err instanceof Error ? err.message : err);
+      console.error(
+        `[git] history failed for ${relPath}:`,
+        err instanceof Error ? err.message : err,
+      );
       return [];
     }
   }
@@ -258,6 +261,56 @@ export class GitAdapter implements GitPort {
         err instanceof Error ? err.message : err,
       );
       return [];
+    }
+  }
+
+  /**
+   * The last `days` days of history, path by path (IM-15).
+   *
+   * One `git log` for the whole window, not one per note: the caller wants to
+   * rank the whole workspace, and a log per path would spawn a process for
+   * every note in it. Each commit prints one header line, then the paths it
+   * touched, so the parser walks the output once.
+   *
+   * The header starts with a NUL byte. A commit message can hold anything a
+   * person types, including a line that looks exactly like a path, but a path
+   * on disk can never hold a NUL, so the mark cannot be forged.
+   */
+  async changedSince(days: number): Promise<Map<string, GitTouch[]>> {
+    const touched = new Map<string, GitTouch[]>();
+    if (!(await this.available()) || !(await this.isRepo())) return touched;
+    try {
+      const out = await this.git.raw([
+        'log',
+        `--since=${days}.days`,
+        '--name-only',
+        '--date=short',
+        '--format=%x00%ad %s',
+      ]);
+      let day = '';
+      let prefix = '';
+      for (const line of out.split('\n')) {
+        if (line.startsWith('\0')) {
+          const head = line.slice(1);
+          day = head.slice(0, 10);
+          const message = head.slice(11);
+          const colon = message.indexOf(':');
+          prefix = colon === -1 ? '' : message.slice(0, colon).trim().toLowerCase();
+          continue;
+        }
+        const path = line.trim();
+        if (!path || !day) continue;
+        const list = touched.get(path);
+        if (list) list.push({ day, prefix });
+        else touched.set(path, [{ day, prefix }]);
+      }
+      return touched;
+    } catch (err) {
+      console.error(
+        `[git] could not read the last ${days} days:`,
+        err instanceof Error ? err.message : err,
+      );
+      return touched;
     }
   }
 

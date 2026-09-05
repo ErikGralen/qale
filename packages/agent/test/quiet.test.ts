@@ -72,7 +72,7 @@ test('the backstop stays out of runs it was not asked about', () => {
 
 test('a run that produced a card is never silent, however it signed off', () => {
   // Both doors closed by the same fact: the model called the tool, AND its last
-  // line reads as a shrug. A card in the Inbox outranks both.
+  // line reads as a shrug. A card waiting for approval outranks both.
   assert.equal(ranSilent(outcome({ produced: true, ended: true })), false);
   assert.equal(ranSilent(outcome({ produced: true, finalText: 'Nothing to report.' })), false);
   assert.equal(

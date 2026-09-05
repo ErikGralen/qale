@@ -16,14 +16,14 @@ import { isExternalRef, providerLabelOf } from '../../lib/connections';
 import { ExternalRefChip } from '../ExternalRef';
 
 /**
- * Real focus for the queue's roving cursor. The Inbox drives selection with an
+ * Real focus for the queue's roving cursor. The review drives selection with an
  * index, but a painted ring is a lie to anyone not looking at it: a screen
  * reader announces nothing, and ⌫ acts on a row the AT never named. So the
  * selected row takes DOM focus too, and the ring is only ever a picture of
  * where focus actually is.
  *
  * Two guards keep that from being rude. Focus moves only while the queue
- * already holds it — arriving in the Inbox must never yank the caret out of
+ * already holds it — arriving in a session must never yank the caret out of
  * whatever the PO was doing — and never out of a control inside the row, so
  * tabbing to a card's own button is not undone by the cursor catching up.
  */
@@ -156,6 +156,6 @@ export function outboundAct(ob: OutboundPayloadDTO): OutboundAct {
 }
 
 // The outbound sentences live with the rest of the card vocabulary now, so the
-// Inbox and the main process say the same thing. Re-exported here because every
-// call site in the Inbox already reads its card words from this file.
+// review and the main process say the same thing. Re-exported here because every
+// call site in the review already reads its card words from this file.
 export { outboundReceipt, outboundTarget } from '@qale/domain';

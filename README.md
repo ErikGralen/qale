@@ -1,6 +1,6 @@
 # Qale — a workspace OS for product managers
 
-An Electron desktop app that turns a plain-markdown vault (notes, meetings, decisions, people, themes, insights) into a product memory with an embedded AI agent. Everything the agent wants to change arrives as a **proposal card** in an approval inbox — nothing is written to your notes without review. The vault is git-backed for history, indexed into SQLite for search/links, and exposed over MCP so external agents can read it too.
+An Electron desktop app that turns a plain-markdown vault (notes, meetings, decisions, people, themes, insights) into a product memory with an embedded AI agent. Everything the agent wants to change arrives as a **proposal card** in the session that made it — nothing is written to your notes without review. The vault is git-backed for history, indexed into SQLite for search/links, and exposed over MCP so external agents can read it too.
 
 ## Features
 
@@ -8,7 +8,7 @@ An Electron desktop app that turns a plain-markdown vault (notes, meetings, deci
 - **Editor** — TipTap-based: selection toolbar, `/` block commands, `[[` wikilink autocomplete, drag block handles, structured properties block.
 - **Version history** — git-backed per-note history: a consent-gated `git init` per workspace, then a read-only history viewer on every note.
 - **Agent sessions** — driven by markdown files whose body IS the instructions, verbatim; frontmatter carries `title`, `summary`, `scenarios` (what the model matches on) and `can` (what it may do). Each one is a folder (`skills/<name>/SKILL.md`, `agents/<name>/AGENT.md`) and anything beside the entry file is read only when the instructions name it. `skills/` is what you reach for, `agents/` what reaches for itself. `skills/house-rules/SKILL.md` is the one file every session reads, and `voices/` holds tone briefs applied when something is drafted.
-- **Inbox** — the approval queue for agent proposals (with diffs and staleness checks), with the librarian's tidy-ups and its open questions in their own quiet section at the bottom.
+- **Session review** — the approval queue for a session's own proposals (with diffs and staleness checks), plus the librarian's tidy-ups and its open questions.
 - **Todos & commitments** — own todos and waiting-on ledger, parsed from notes plus quick-add.
 - **Scheduler** — recurring sessions (e.g. weekly commitment check).
 - **Outbound** — Slack/Jira drafts behind an approval floor.

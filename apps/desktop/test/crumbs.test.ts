@@ -34,6 +34,32 @@ test('a memory page reads its shelf and opens the folder', () => {
   ]);
 });
 
+test('a mirror reads its system and its kind, never Memory', () => {
+  // The system opens its own folder, the one the rail row opens. The kind after
+  // it only says what that folder holds, so it is text.
+  assert.deepEqual(locationCrumbs('tickets/jira/PAY-142.md', 'ticket'), [
+    { label: 'Jira', target: { kind: 'folder', dir: 'tickets/jira' } },
+    { label: 'Tickets' },
+  ]);
+  assert.deepEqual(locationCrumbs('wikipages/confluence/scim.md', 'wikipage'), [
+    { label: 'Confluence', target: { kind: 'folder', dir: 'wikipages/confluence' } },
+    { label: 'Pages' },
+  ]);
+});
+
+test('a system nobody has a name for keeps its folder name, capitalised', () => {
+  assert.deepEqual(locationCrumbs('tickets/linear/PAY-142.md', 'ticket'), [
+    { label: 'Linear', target: { kind: 'folder', dir: 'tickets/linear' } },
+    { label: 'Tickets' },
+  ]);
+});
+
+test('a flat mirror names no system, so the kind is all the crumb says', () => {
+  assert.deepEqual(locationCrumbs('tickets/PAY-142.md', 'ticket'), [
+    { label: 'Tickets', target: { kind: 'folder', dir: 'tickets' } },
+  ]);
+});
+
 test('an understanding file carries type note but never claims Documents', () => {
   assert.deepEqual(locationCrumbs('understanding/product.md', 'note'), [
     { label: 'Understanding', target: { kind: 'folder', dir: 'understanding' } },

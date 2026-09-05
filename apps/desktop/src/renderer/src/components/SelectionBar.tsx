@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { FolderInput, Pin, PinOff, Trash2, X } from 'lucide-react';
+import { typeForDir } from '@qale/domain';
 import { Button, Spinner } from '@qale/ui';
 import { useApp } from '../state/app-state';
+import { isPinnable } from '../lib/note-status';
 import { useToast } from './toast';
 import { FolderPickerMenu } from './FolderPickerMenu';
 import type { DocumentFolder } from '../lib/documents';
@@ -66,6 +68,14 @@ export function SelectionBar({
   const { paths, count } = selection;
   const allPinned = count > 0 && paths.every((p) => favorites.includes(p));
   const nouns = count === 1 ? noun : `${noun}s`;
+  // The button says one thing, so it only shows when it can do that one thing
+  // to every row taken. A theme, a person or a meeting cannot be pinned at all
+  // (docs/memory-placement.md), and a control that does nothing is worse than
+  // no control.
+  const pinnable = paths.every((p) => {
+    const kind = typeForDir(p.split('/')[0] ?? '');
+    return !kind || isPinnable(kind);
+  });
 
   if (count === 0) return null;
 
@@ -119,17 +129,19 @@ export function SelectionBar({
           </div>
         ) : (
           <div className="ml-auto flex items-center gap-0.5">
-            <BarAction
-              icon={allPinned ? PinOff : Pin}
-              label={allPinned ? 'Unpin' : 'Pin'}
-              title={
-                allPinned
-                  ? `Take these ${count} off the sidebar`
-                  : `Keep these ${count} on the sidebar`
-              }
-              onClick={pin}
-              disabled={busy}
-            />
+            {pinnable && (
+              <BarAction
+                icon={allPinned ? PinOff : Pin}
+                label={allPinned ? 'Unpin' : 'Pin'}
+                title={
+                  allPinned
+                    ? `Take these ${count} off the sidebar`
+                    : `Keep these ${count} on the sidebar`
+                }
+                onClick={pin}
+                disabled={busy}
+              />
+            )}
             {moveTo && (
               <FolderPickerMenu
                 folders={moveTo.folders}

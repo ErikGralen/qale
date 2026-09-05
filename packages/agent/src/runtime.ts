@@ -15,11 +15,15 @@ import {
   markRunnableUsed,
   normalizeNoteFrontmatter,
   sessionCards,
+  type GitTouch,
+  type IndexedNote,
+  type IndexPort,
   type UseCaseContext,
 } from '@qale/application';
 import {
   DEFAULT_LANGUAGE,
   DEFAULT_PROVIDER,
+  isReservedFile,
   providerModels,
   providerName,
   runnableCandidates,
@@ -50,6 +54,8 @@ import {
   type AnswerContainerOffer,
   type ListOutboundContainers,
   type TrackExternal,
+  noteDay,
+  noteTags,
 } from './tools.js';
 import { listVoices } from './voices.js';
 import { providerFault, type ProviderFault } from './api-errors.js';
@@ -107,13 +113,6 @@ import {
   type CodebaseDecision,
 } from './codebase.js';
 import { CODEBASE_MODELS, isCodebaseModel } from './codebase-models.js';
-import {
-  createCommentsTool,
-  commentRequestId,
-  commentsReplayPrompt,
-  COMMENTS_TOOL_NAME,
-} from './comments.js';
-import type { CommentPlan } from './slots.js';
 import { createFilingTools, FILING_TOOL_NAMES, type SourceFiled } from './filing.js';
 import { createDeferralTool, DEFER_TOOL_NAME } from './deferrals.js';
 import { createEndQuietlyTool, ranSilent, END_QUIETLY_TOOL_NAME } from './quiet.js';
@@ -146,6 +145,226 @@ import { entriesToUiMessages, type UiMessage } from './history.js';
 
 /** The file every child reads before starting. One write, N smarter readers. */
 const BRIEF_FILE = 'brief.md';
+
+/** How far back "what moved this week" looks (IM-15). */
+const MOVED_WINDOW_DAYS = 7;
+
+/** How many notes that block names. Ten lines, and the label keeps it in place. */
+const MOVED_LIMIT = 10;
+
+/**
+ * Who a commit came from, read off the prefix of its message.
+ *
+ * The git author cannot answer this: every commit the app makes carries the
+ * same identity. The prefix can, because each write path sets its own. But it
+ * only separates two things, not three: `note:` and `update:` cover a card the
+ * PM approved AND a write the PM asked for in chat, so the second label says
+ * "approved or asked" and nothing here ever says a note moved on its own.
+ */
+const MOVED_BY_YOU = [
+  'edit',
+  'properties',
+  'create',
+  'capture',
+  'rename',
+  'move',
+  // Material the PM dropped in, a check the PM clicked, a revert the PM chose.
+  'source',
+  'transcript',
+  'verified',
+  'undo',
+];
+const MOVED_ON_APPROVAL = [
+  'note',
+  'update',
+  'decision',
+  'todo',
+  'processing',
+  'pushed',
+  // A refile lands through file-material, a delete through its card.
+  'refile',
+  'delete',
+];
+
+/**
+ * Housekeeping, not work: index maps, calendar and ticket sync, the starter
+ * pack, session receipts. A note that only these touched did not move.
+ */
+const MOVED_IGNORED = [
+  'sync',
+  'librarian',
+  'workspace',
+  'session',
+  'skills',
+  'voices',
+  'qale',
+  'create folder',
+  'rename folder',
+  'delete folder',
+];
+
+/**
+ * The tag line under the vault map (IM-12): every tag in the workspace with the
+ * number of notes on it, most used first. Empty when nothing is tagged yet.
+ *
+ * `tags` is list-or-single in the schema (`tags: pricing` is legal), so both
+ * shapes are read here, and anything else is skipped rather than guessed at.
+ */
+export function tagsInUse(notes: readonly { frontmatter: Record<string, unknown> }[]): string {
+  const counts = new Map<string, number>();
+  for (const note of notes) {
+    const raw = note.frontmatter?.['tags'];
+    const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
+    for (const entry of list) {
+      const tag = typeof entry === 'string' ? entry.trim() : '';
+      if (!tag) continue;
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+  if (counts.size === 0) return '';
+  const line = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([tag, count]) => `${tag} (${count})`)
+    .join(', ');
+  return [
+    '\n\n## Tags in use',
+    line,
+    '',
+    'Take the tags for anything you propose from this list. If a note needs a tag that is not here yet, name it in the rationale.',
+  ].join('\n');
+}
+
+/**
+ * "What moved this week" (IM-15): the notes touched on the most days in the
+ * last week, with who touched them.
+ *
+ * Days, not commits. The editor saves 1.5 seconds after typing stops and every
+ * save is its own commit, so ten minutes of writing would otherwise beat a week
+ * of real work on another note.
+ *
+ * Recent is not relevant, and the block says so in its own text: a session that
+ * leans on this over-weights whatever the PM touched yesterday.
+ */
+export function whatMoved(
+  touched: ReadonlyMap<string, readonly GitTouch[]>,
+  index: Pick<IndexPort, 'get'>,
+  limit: number = MOVED_LIMIT,
+): string {
+  const rows: { path: string; summary: string; days: number; who: string }[] = [];
+  for (const [path, all] of touched) {
+    if (isReservedFile(path)) continue;
+    const note = index.get(path);
+    if (!note) continue; // an asset, a mirror, a file the index does not hold
+    const days = new Set<string>();
+    let byYou = false;
+    let onApproval = false;
+    for (const touch of all) {
+      if (MOVED_IGNORED.includes(touch.prefix)) continue;
+      days.add(touch.day);
+      if (MOVED_BY_YOU.includes(touch.prefix)) byYou = true;
+      if (MOVED_ON_APPROVAL.includes(touch.prefix)) onApproval = true;
+    }
+    if (days.size === 0) continue;
+    // A prefix in neither list still counts as a day, but it names nobody.
+    const who =
+      byYou && onApproval ? 'you and Qale' : byYou ? 'you' : onApproval ? 'approved or asked' : '';
+    rows.push({ path, summary: note.summary?.trim() ?? '', days: days.size, who });
+  }
+  if (rows.length === 0) return '';
+  rows.sort((a, b) => b.days - a.days || a.path.localeCompare(b.path));
+  const lines = rows.slice(0, limit).map((row) => {
+    const parts = [row.path];
+    if (row.summary) parts.push(row.summary);
+    parts.push(`${row.days} day${row.days === 1 ? '' : 's'}`);
+    if (row.who) parts.push(row.who);
+    return `- ${parts.join(' · ')}`;
+  });
+  return [
+    `\n\n## What moved this week`,
+    'A hint about what is in play, not the way in. These are the notes touched on the most days in the last week. What moved recently is not the same as what matters: go through the maps and the tools as usual, and use this only to notice what the PM has had open.',
+    '',
+    lines.join('\n'),
+  ].join('\n');
+}
+
+/**
+ * Where a question was asked from, as a filter (IM-13). The scoped Ask composer
+ * on a tag page or a Documents folder sends it beside the prompt.
+ */
+export interface SessionScope {
+  /** Notes carrying any one of these tags. */
+  tags?: string[];
+  /** Notes under `notes/<folder>/`. An empty string means the notes root. */
+  folder?: string;
+}
+
+/** How many notes the scope block lists before it points at the tool instead. */
+const SCOPE_LIMIT = 40;
+
+/**
+ * The notes the question was asked from (IM-13).
+ *
+ * A scoped Ask used to open with a sentence and nothing else: "Scoped to notes
+ * tagged pricing." The session then had to find them, and a tag is the one
+ * thing the maps do not list, so the scope was a wish. Here it is the list.
+ *
+ * The row shape is `vault_list`'s, so a follow-up call inside the session hands
+ * back rows the agent has already read once.
+ */
+export function scopedNotes(
+  scope: SessionScope,
+  notes: readonly IndexedNote[],
+  limit: number = SCOPE_LIMIT,
+): string {
+  const wanted = (scope.tags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean);
+  const folder = scope.folder?.replace(/^\/+|\/+$/g, '');
+  // Tags win when both arrive: one page asked, so one filter answers.
+  const byTag = wanted.length > 0;
+  if (!byTag && folder === undefined) return '';
+  const prefix = `notes/${folder ? `${folder}/` : ''}`;
+  const matched = notes.filter((n) => {
+    if (isReservedFile(n.path)) return false;
+    if (byTag) return noteTags(n).some((t) => wanted.includes(t.toLowerCase()));
+    return n.path.startsWith(prefix);
+  });
+  // Newest first, undated last: an undated note has no place on a timeline.
+  matched.sort((a, b) => {
+    const x = noteDay(a);
+    const y = noteDay(b);
+    if (x && y) return y.localeCompare(x) || a.path.localeCompare(b.path);
+    if (x) return -1;
+    if (y) return 1;
+    return a.path.localeCompare(b.path);
+  });
+
+  const asked = byTag
+    ? `The PM asked this from the ${wanted.map((t) => `#${t}`).join(' and ')} page${wanted.length > 1 ? 's' : ''}.`
+    : `The PM asked this from the Documents folder ${prefix}.`;
+  if (matched.length === 0) {
+    return ['\n\n## Scope', `${asked} Nothing in the workspace matches it yet.`].join('\n');
+  }
+
+  const rows = matched.slice(0, limit).map((n) => {
+    const day = noteDay(n);
+    const lifecycle = n.lifecycle ? `/${n.lifecycle}` : '';
+    return `- ${n.path} [${n.type}${lifecycle}]${day ? ` ${day}` : ''} — ${n.summary}`;
+  });
+  const rest = matched.length - rows.length;
+  const more =
+    rest > 0
+      ? byTag
+        ? `\n\n${rest} more note${rest === 1 ? '' : 's'} carry ${wanted.length > 1 ? 'these tags' : 'this tag'}. Call vault_list with tags ${JSON.stringify(wanted)} for the whole list.`
+        : `\n\n${rest} more note${rest === 1 ? ' is' : 's are'} in this folder. Call vault_list and keep the rows whose path starts with ${prefix} for the whole list.`
+      : '';
+  return [
+    '\n\n## Scope',
+    asked,
+    '',
+    rows.join('\n') + more,
+    '',
+    'Start from these notes, and say so if the answer needs notes outside this scope.',
+  ].join('\n');
+}
 
 /** Structural slice of a pi assistant message — enough to pull its closing text. */
 interface PiLikeMessage {
@@ -316,6 +535,12 @@ export interface RunInput {
    * be pure filing must not cost a notification, a row and a receipt.
    */
   unattended?: boolean;
+  /**
+   * The page this session was started from (IM-13). Read once, when the session
+   * is built: it seeds the scope block in the system prompt. A turn on a
+   * session that already exists carries none.
+   */
+  scope?: SessionScope;
 }
 
 export interface RunHandle {
@@ -648,11 +873,8 @@ export function toolNamesFor(
   if (harness.fileSource) names.push(...FILING_TOOL_NAMES);
   if (canInvokeSkills) names.push(USE_SKILL_TOOL_NAME);
   // Fan-out rides with session files: children write into the folder, and
-  // reading their output back is the whole point of having one. Asking for
-  // comments rides with them too, and by the same reading: it hands the PM a
-  // file from that folder, so without one there is nothing it could point at.
-  if (harness.sessionFiles)
-    names.push(...SESSION_FILE_TOOL_NAMES, SPAWN_TOOL_NAME, COMMENTS_TOOL_NAME);
+  // reading their output back is the whole point of having one.
+  if (harness.sessionFiles) names.push(...SESSION_FILE_TOOL_NAMES, SPAWN_TOOL_NAME);
   // Reading an external system rides on the connection alone. A plain chat
   // opens on the base skill, which declares no capabilities, so a capability
   // here would mean "what is the status of PAY-142?" could not be answered in
@@ -905,6 +1127,16 @@ export class AgentRuntime {
   }
 
   /**
+   * One line of model text for a machinery pass with nobody at the screen (the
+   * summary pass, docs/index-maps.md IM-6). Same picker as the claim lookup: a
+   * small model that can still read a page and hold a rule. Null when there is
+   * no key, no model, or the call failed, and the caller leaves the note alone.
+   */
+  async summarise(systemPrompt: string, prompt: string): Promise<string | null> {
+    return this.completeCheaply(systemPrompt, prompt, matchModel);
+  }
+
+  /**
    * Resolve an invocation by NAME. A skill (or agent) IS its folder, so the name
    * is the folder name: the workspace's `skills/<name>/SKILL.md` wins (a
    * customised copy beats the shipped one), then `agents/<name>/AGENT.md` — a
@@ -1023,6 +1255,61 @@ export class AgentRuntime {
     return `\n\n## Vault map (root index.md)\nYour orientation layer. Each folder also has its own index.md; read the relevant one, then vault_read the notes it points to.\n\n${raw.trim()}`;
   }
 
+  /**
+   * Every tag already in use, with its count, most used first (IM-12).
+   *
+   * "Drawn from tags already in use" was an instruction no session could
+   * follow: it saw the tags on the notes it happened to read, and guessed the
+   * rest. The demo showed the result, one tag on ten notes and the others on
+   * one. Twenty tags is one short line, so the whole vocabulary rides along
+   * instead of a sample of it.
+   */
+  private tagsSeed(ctx: UseCaseContext): string {
+    try {
+      return tagsInUse(ctx.index.all());
+    } catch (err) {
+      console.error('[session] tags seed skipped:', err instanceof Error ? err.message : err);
+      return '';
+    }
+  }
+
+  /**
+   * What the PM has been working on this week (IM-15).
+   *
+   * Git, not mtime: mtime says when a file was last written, and one write
+   * looks the same as fifty. Every write here is already a path-scoped commit
+   * with a prefix on the message, so one call covers the week.
+   *
+   * Nothing in here may break a session start. Git can be missing, the vault
+   * can be no repo at all, and the answer then is simply no block.
+   */
+  private async movedSeed(ctx: UseCaseContext): Promise<string> {
+    try {
+      const touched = await ctx.git.changedSince?.(MOVED_WINDOW_DAYS);
+      if (!touched || touched.size === 0) return '';
+      return whatMoved(touched, ctx.index);
+    } catch (err) {
+      console.error('[session] recency seed skipped:', err instanceof Error ? err.message : err);
+      return '';
+    }
+  }
+
+  /**
+   * The notes the scoped Ask was asked over (IM-13).
+   *
+   * Nothing in here may break a session start: a scope that matches nothing, or
+   * an index that throws, is simply no block.
+   */
+  private scopeSeed(ctx: UseCaseContext, scope?: SessionScope): string {
+    if (!scope) return '';
+    try {
+      return scopedNotes(scope, ctx.index.all());
+    } catch (err) {
+      console.error('[session] scope seed skipped:', err instanceof Error ? err.message : err);
+      return '';
+    }
+  }
+
   /** Where the pi JSONL transcripts live — the machine replay store (off the vault). */
   private sessionsDir(): string {
     if (!this.config) throw new Error('agent runtime not configured');
@@ -1134,6 +1421,8 @@ export class AgentRuntime {
     scheduled: boolean,
     /** Whether the person who opened it walked away — the quieter preamble. */
     unattended: boolean,
+    /** The page a scoped Ask was started from, seeded as a note list (IM-13). */
+    scope?: SessionScope,
   ): Promise<SessionState> {
     if (!this.config) throw new Error('agent runtime not configured');
     const modelRuntime = await this.models();
@@ -1158,6 +1447,13 @@ export class AgentRuntime {
     const voices = await listVoices(ctx);
     const voiceGate = createVoiceGate(ctx, voices, harness);
     const vaultMap = await this.vaultMap(ctx);
+    // Two hints that ride under the map: the tag vocabulary a proposal draws
+    // from (IM-12) and what the PM has been working on (IM-15). Both are built
+    // once, here, like everything else in the system prompt.
+    const tags = this.tagsSeed(ctx);
+    const moved = await this.movedSeed(ctx);
+    // And the page the question came from, when it came from one (IM-13).
+    const scopeBlock = this.scopeSeed(ctx, scope);
     const filesRoot = sessionFilesRoot(this.config.vaultDir, id);
     const files = harness.sessionFiles ? sessionFilesPrompt(sessionFilesRelRoot(id)) : '';
     // The repo names have to be in the prompt, so they are fetched here rather
@@ -1185,6 +1481,9 @@ export class AgentRuntime {
       files +
       codebase +
       vaultMap +
+      tags +
+      moved +
+      scopeBlock +
       scheduledNote;
 
     // The tracker seam is available whenever a connection is configured. It used
@@ -1227,7 +1526,6 @@ export class AgentRuntime {
       ...(canInvokeSkills ? [USE_SKILL_TOOL_NAME] : []),
       ...SESSION_FILE_TOOL_NAMES,
       SPAWN_TOOL_NAME,
-      COMMENTS_TOOL_NAME,
       CODEBASE_TOOL_NAME,
       ...readToolNames(connections),
       ...(canTrack(connections) ? TRACK_TOOL_NAMES : []),
@@ -1252,7 +1550,12 @@ export class AgentRuntime {
         },
       }),
       createDeferralTool(ctx),
-      ...createProposeTools(ctx, id, harness),
+      // The rail only ever adds a row to what the PM sees, never removes one
+      // on its own (docs/remove-inbox.md RI-5): a card that lands in a session
+      // the PM had unpinned puts it back on the active list.
+      ...createProposeTools(ctx, id, harness, () => {
+        if (this.getLifecycle(id) === 'unpinned') this.setLifecycle(id, 'active');
+      }),
       createWithdrawTool(ctx, id, harness),
       // One voice gate per session, shared: `get_voice` is one tool, and the
       // set of voices it has handed over is what every drafting tool checks.
@@ -1267,10 +1570,6 @@ export class AgentRuntime {
       ...createFilingTools(ctx, harness, filesRoot, (filed) => this.onSourceFiled?.(id, filed)),
       ...(canInvokeSkills ? [createUseSkillTool(ctx, harness, () => applyActivation())] : []),
       ...createSessionFileTools(filesRoot, () => this.onFilesChanged?.(id)),
-      createCommentsTool({
-        read: (path) => readSessionFile(filesRoot, path),
-        requestComments: (plan, signal) => this.askForComments(id, ctx, plan, signal),
-      }),
       createSpawnTool({
         readBrief: () => readSessionFile(filesRoot, BRIEF_FILE),
         requestApproval: (plan, brief) => this.askToSpawn(id, plan, brief),
@@ -1544,11 +1843,15 @@ export class AgentRuntime {
     if (!state) {
       let pending = this.creating.get(sessionId);
       if (!pending) {
-        pending = this.createSession(sessionId, ctx, !!input.scheduled, !!input.unattended).finally(
-          () => {
-            this.creating.delete(sessionId);
-          },
-        );
+        pending = this.createSession(
+          sessionId,
+          ctx,
+          !!input.scheduled,
+          !!input.unattended,
+          input.scope,
+        ).finally(() => {
+          this.creating.delete(sessionId);
+        });
         this.creating.set(sessionId, pending);
       }
       state = await pending;
@@ -1869,34 +2172,7 @@ export class AgentRuntime {
     );
   }
 
-  /**
-   * Park `request_comments` on a round file and wait. Everything that makes it
-   * work is {@link askThePm}'s: the same parking, the same refusal on a run a
-   * clock started, the same stamps. What differs is what the PM is handed, and
-   * that is a difference the renderer settles.
-   */
-  private askForComments(
-    sessionId: string,
-    ctx: UseCaseContext,
-    plan: CommentPlan,
-    signal?: AbortSignal,
-  ): Promise<AskDecision> {
-    return this.parkCard(
-      sessionId,
-      ctx,
-      {
-        id: commentRequestId(sessionId, plan),
-        sessionId,
-        // A round asks for comments, never for an answer to a question. The
-        // empty list is what says which of the two the renderer is drawing.
-        questions: [],
-        comments: plan,
-      },
-      signal,
-    );
-  }
-
-  /** The park both cards share: the run's own facts, stamped once. */
+  /** The park itself: the run's own facts, stamped once. */
   private parkCard(
     sessionId: string,
     ctx: UseCaseContext,
@@ -1970,7 +2246,7 @@ export class AgentRuntime {
    * Answer a question whose turn is gone: reopen the session and say it as a
    * message. What the turn had already done is not re-done — pi persisted every
    * tool result as it happened, so reopening hands the model its own reading
-   * back, and any card it proposed before asking is still in the Inbox. What it
+   * back, and any card it proposed before asking is still waiting. What it
    * cannot have back is the tool call it was parked on, so the answer comes in
    * through the front door instead of that one.
    */
@@ -1983,12 +2259,7 @@ export class AgentRuntime {
     await this.run(
       {
         sessionId: asked.sessionId,
-        // Which card it was decides which prompt says so. Both open the same
-        // way ("you asked this in an earlier run"); only one of them can read
-        // back what the PM wrote.
-        prompt: asked.comments
-          ? commentsReplayPrompt(asked.comments, decision.comments ?? null)
-          : askReplayPrompt({ questions: asked.questions }, decision.answers),
+        prompt: askReplayPrompt({ questions: asked.questions }, decision.answers),
         ...(asked.skill ? { skill: asked.skill } : {}),
         ...(asked.outbound ? { outbound: true } : {}),
       },
@@ -2220,6 +2491,19 @@ export class AgentRuntime {
     } catch {
       return fallback;
     }
+  }
+
+  /**
+   * Write a one-message stored session under a chosen id, with no live run
+   * behind it. Dev-seed only (RI-6): the demo drops cards under fixed session
+   * ids, and this gives each one a real row in `listChats()` to land on,
+   * the same as a run would leave.
+   */
+  seedStoredSession(id: string, title: string, text: string): void {
+    if (!this.config) return;
+    const manager = SessionManager.create(this.config.vaultDir, this.sessionsDir(), { id });
+    manager.appendMessage({ role: 'user', content: text, timestamp: Date.now() } as never);
+    manager.appendSessionInfo(title);
   }
 
   /** All stored conversations for this vault, newest first. */

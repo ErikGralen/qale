@@ -643,7 +643,7 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
             <TabsContent value="agents">
               <p className="mb-2 text-dense text-muted-foreground">
                 Agents start themselves, on a clock the app keeps. Everything they produce waits in
-                the Inbox for your approval. These are the only switches on this page.
+                Sessions for your approval. These are the only switches on this page.
               </p>
               {agents.length === 0 ? (
                 <p className="px-1 py-8 text-center text-sm text-muted-foreground">

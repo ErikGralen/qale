@@ -43,7 +43,7 @@ import {
   processNoteSeed,
   readMeetingSeed,
 } from '../lib/agent-nudges';
-import { isLiveWindow, isUnreadMeeting, meetingWindowOf } from '../lib/note-status';
+import { isLiveWindow, isPinnable, isUnreadMeeting, meetingWindowOf } from '../lib/note-status';
 import { splitSource } from '../lib/source-body';
 import { localDateStr } from '../lib/dates';
 
@@ -354,7 +354,7 @@ export function NoteView({ path }: { path: string }) {
   const supersededBadge =
     lifecycle === 'superseded' ? lifecycleValueLabel(currentNote.type, lifecycle) : null;
   // An upcoming meeting without prep gets the brief offer here,
-  // on the page it would write to — never as an inbox item.
+  // on the page it would write to — never as a queued item.
   // Synced-meeting chrome (google-calendar mirror): a quiet glyph + open link,
   // and cancelled renders as state, never as a nudge.
   const syncedMeeting =
@@ -456,13 +456,16 @@ export function NoteView({ path }: { path: string }) {
   // answers the only question the path was standing in for.
   const crumbs = locationCrumbs(currentNote.path, currentNote.type).map((crumb) => ({
     label: crumb.label,
-    onClick: (e: MouseEvent<HTMLButtonElement>) => {
-      const nav = navFromEvent(e);
-      const target = crumb.target;
-      if (target.kind === 'documents') openDocuments(target.folder, nav);
-      else if (target.kind === 'calendar') openCalendar(nav);
-      else openFolder(target.dir, nav);
-    },
+    // A crumb with nowhere to go names an ancestor and stays text.
+    onClick: crumb.target
+      ? (e: MouseEvent<HTMLButtonElement>) => {
+          const nav = navFromEvent(e);
+          const target = crumb.target!;
+          if (target.kind === 'documents') openDocuments(target.folder, nav);
+          else if (target.kind === 'calendar') openCalendar(nav);
+          else openFolder(target.dir, nav);
+        }
+      : undefined,
   }));
   const TypeIcon = noteTypeIcon(currentNote.type);
 
@@ -583,16 +586,24 @@ export function NoteView({ path }: { path: string }) {
             </div>
           ) : (
             <HeaderActions>
-              <HeaderAction
-                icon={Pin}
-                label={favorites.includes(currentNote.path) ? 'Unpin' : 'Pin'}
-                title={favorites.includes(currentNote.path) ? 'Unpin' : 'Pin: keep on the sidebar'}
-                onClick={() => toggleFavorite(currentNote.path)}
-                pressed={favorites.includes(currentNote.path)}
-                iconClassName={
-                  favorites.includes(currentNote.path) ? 'fill-brand text-brand' : undefined
-                }
-              />
+              {/* Only a type the rail can hold gets the button. A page whose
+                  home is the Calendar, the Memory footer or a page of its own
+                  would wear a control that does nothing
+                  (docs/memory-placement.md). */}
+              {isPinnable(currentNote.type) && (
+                <HeaderAction
+                  icon={Pin}
+                  label={favorites.includes(currentNote.path) ? 'Unpin' : 'Pin'}
+                  title={
+                    favorites.includes(currentNote.path) ? 'Unpin' : 'Pin: keep on the sidebar'
+                  }
+                  onClick={() => toggleFavorite(currentNote.path)}
+                  pressed={favorites.includes(currentNote.path)}
+                  iconClassName={
+                    favorites.includes(currentNote.path) ? 'fill-brand text-brand' : undefined
+                  }
+                />
+              )}
               <HeaderMenu
                 items={[
                   // A meeting nobody is going to read: settle it by hand rather

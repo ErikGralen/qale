@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { BacklinkDTO, NoteRefDTO, ProposalDTO, VaultTreeDTO } from '@qale/ipc';
+import type { BacklinkDTO, NoteRefDTO } from '@qale/ipc';
 import {
   calendarSections,
   durationText,
@@ -8,7 +8,6 @@ import {
   meetingStanding,
   promiseState,
 } from '../src/renderer/src/lib/meeting-read.js';
-import { buildAttention, homeRows } from '../src/renderer/src/lib/attention.js';
 
 /** Local-clock instants: the calendar reads the PO's day, not UTC. */
 const at = (day: number, hour: number, minute = 0): number =>
@@ -187,34 +186,3 @@ test('duration reads as a person would say it', () => {
   assert.equal(durationText(0), null);
 });
 
-// ---------------------------------------------------------------------------
-// The door Home offers
-// ---------------------------------------------------------------------------
-
-test('home: the review backlog opens the Calendar, not the meetings folder', () => {
-  const tree: VaultTreeDTO = {
-    groups: [
-      {
-        type: 'meeting',
-        notes: [
-          meeting('a', { date: '2026-07-26', lifecycle: 'new' }),
-          meeting('b', { date: '2026-07-27', lifecycle: 'new' }),
-        ],
-      },
-    ] as VaultTreeDTO['groups'],
-  };
-  const items = buildAttention(
-    {
-      proposals: [] as ProposalDTO[],
-      sessions: [],
-      askRequests: {},
-      tree,
-      captureNudge: { dismissed: [], mutedSeries: [] },
-    },
-    NOW,
-  );
-  const door = homeRows(items, 4, NOW).find((r) => r.id === 'reviews');
-  assert.ok(door, 'the two unfiled meetings collapse behind one door');
-  assert.deepEqual(door.target, { open: 'calendar' });
-  assert.equal(door.meta, 'Calendar');
-});

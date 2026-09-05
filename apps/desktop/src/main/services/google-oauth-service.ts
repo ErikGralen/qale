@@ -17,7 +17,7 @@ import type { SettingsService } from './settings-service.js';
  * refresh token (safeStorage-encrypted via SettingsService); access tokens are
  * ephemeral, refreshed in memory, never written anywhere. A revoked/expired
  * grant surfaces as {@link CalendarAuthError}, which the sync engine renders as
- * the quiet `auth-expired` health state — never a modal, never an Inbox card.
+ * the quiet `auth-expired` health state — never a modal, never a card.
  */
 
 /** v1 scope: read-only. Write scope arrives with outbound events (phase 4) via

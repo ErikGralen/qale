@@ -23,7 +23,7 @@ const INTERVAL = 30 * 60 * 1000;
 const QUIET = 7 * 24 * 60 * 60 * 1000;
 const OPTS = { settleMs: SETTLE, intervalMs: INTERVAL, quietMs: QUIET };
 
-/** A broken link with one plausible target, and one note nothing touches. */
+/** A broken link with one plausible target, and one Memory page nothing touches. */
 function linkWorld() {
   return fakeDriftWorld({
     notes: [
@@ -39,7 +39,7 @@ function linkWorld() {
         title: 'Nordkap Shipping',
         links: ['notes/plan'],
       }),
-      inote({ path: 'notes/scratch.md', type: 'note', title: 'Scratch pad', mtime: 500 }),
+      inote({ path: 'insights/scratch.md', type: 'insight', title: 'Scratch pad', mtime: 500 }),
     ],
   });
 }
@@ -97,9 +97,9 @@ test('a finding is only noted on the first tick, and handed over on the second',
   // Noted, not acted on: the settle window is exactly this row existing.
   assert.deepEqual([...w.checks.keys()].sort(), [
     'librarian:link:notes/plan.md → customers/nordkap-shiping',
-    'librarian:orphan:notes/scratch.md',
+    'librarian:orphan:insights/scratch.md',
   ]);
-  assert.match(w.checks.get('librarian:orphan:notes/scratch.md')!, /^seen\|500\|/);
+  assert.match(w.checks.get('librarian:orphan:insights/scratch.md')!, /^seen\|500\|/);
 
   assert.equal(await planLibrarianSweep(w.ctx, T0 + 60_000, OPTS), null);
 
@@ -125,7 +125,7 @@ test('a broken-link line carries its similar pages, said to be a hint', async ()
   assert.match(work.worklist, /they decide nothing/);
   assert.equal(
     work.findings[1]!.line,
-    '- Unlinked note: "Scratch pad" ([[notes/scratch]]). Nothing links it and it links nothing.',
+    '- Unlinked note: "Scratch pad" ([[insights/scratch]]). Nothing links it and it links nothing.',
   );
 });
 
@@ -170,13 +170,15 @@ test('a handled finding still there a week later gets one more look', async () =
 
 test('a row from before the sweep was agentic starts its quiet week at the upgrade', async () => {
   const w = fakeDriftWorld({
-    notes: [inote({ path: 'notes/scratch.md', type: 'note', title: 'Scratch pad', mtime: 500 })],
+    notes: [
+      inote({ path: 'insights/scratch.md', type: 'insight', title: 'Scratch pad', mtime: 500 }),
+    ],
   });
   // What the old sweep wrote: a bare revision, no state and no stamp.
-  w.checks.set('librarian:orphan:notes/scratch.md', '500');
+  w.checks.set('librarian:orphan:insights/scratch.md', '500');
 
   assert.equal(await planLibrarianSweep(w.ctx, T0, OPTS), null);
-  assert.match(w.checks.get('librarian:orphan:notes/scratch.md')!, /^handled\|500\|/);
+  assert.match(w.checks.get('librarian:orphan:insights/scratch.md')!, /^handled\|500\|/);
   // Not re-raised on the first tick after an upgrade, which is the whole point
   // of reading those rows as handled at all.
   assert.equal(await planLibrarianSweep(w.ctx, T0 + SETTLE, OPTS), null);
@@ -198,7 +200,7 @@ test("the workspace's own machinery is never an unlinked note", async () => {
       inote({ path: 'skills/arrival/SKILL.md', type: 'skill', title: 'Arrival' }),
       inote({ path: 'sessions/2026-08-05-0900.md', type: 'session', title: 'Chat' }),
       inote({ path: 'todos/email-asa.md', type: 'todo', title: 'Email Åsa about rollout' }),
-      inote({ path: 'notes/scratch.md', type: 'note', title: 'Scratch pad' }),
+      inote({ path: 'insights/scratch.md', type: 'insight', title: 'Scratch pad' }),
     ],
   });
 
@@ -206,8 +208,55 @@ test("the workspace's own machinery is never an unlinked note", async () => {
   const work = (await planLibrarianSweep(w.ctx, T0 + SETTLE, OPTS))!;
   assert.deepEqual(
     work.findings.map((f) => f.key),
-    ['librarian:orphan:notes/scratch.md'],
+    ['librarian:orphan:insights/scratch.md'],
   );
+});
+
+/**
+ * docs/background-system.md ticket 1. "Nothing links it and it links nothing"
+ * is a fact about a Memory page and a filing error there. In `notes/` it is not
+ * a fact about anything: the PM writes a document for their own reasons, and a
+ * page they never linked is what a folder of your own is for.
+ */
+test('a document nobody linked is never an unlinked note', async () => {
+  const w = fakeDriftWorld({
+    notes: [
+      inote({ path: 'notes/scratch.md', type: 'note', title: 'Scratch pad', mtime: 500 }),
+      inote({ path: 'notes/q3/brief.md', type: 'note', title: 'Q3 brief', mtime: 500 }),
+      // Same shape, in Memory: still the hygiene case, so the sweep is not just
+      // asleep in this world.
+      inote({ path: 'insights/anchor.md', type: 'insight', title: 'Price is an anchor' }),
+    ],
+  });
+
+  await planLibrarianSweep(w.ctx, T0, OPTS);
+  const work = (await planLibrarianSweep(w.ctx, T0 + SETTLE, OPTS))!;
+  assert.deepEqual(
+    work.findings.map((f) => f.key),
+    ['librarian:orphan:insights/anchor.md'],
+  );
+});
+
+/** The other half stays: a link out of a document is broken wherever it sits. */
+test("a document's broken link is still handed over", async () => {
+  const w = fakeDriftWorld({
+    notes: [
+      inote({
+        path: 'notes/scratch.md',
+        type: 'note',
+        title: 'Scratch pad',
+        links: ['customers/nordkap-shiping'],
+      }),
+    ],
+  });
+
+  await planLibrarianSweep(w.ctx, T0, OPTS);
+  const work = (await planLibrarianSweep(w.ctx, T0 + SETTLE, OPTS))!;
+  assert.deepEqual(
+    work.findings.map((f) => f.kind),
+    ['broken-link'],
+  );
+  assert.match(work.findings[0]!.line, /Broken link in \[\[notes\/scratch\]\]/);
 });
 
 test('the similar-pages hint never points at machinery', async () => {
@@ -302,7 +351,7 @@ test("the card cap holds a session back, counting only the librarian's own cards
 test('a long worklist truncates and says how many are waiting', async () => {
   const w = fakeDriftWorld({
     notes: [1, 2, 3, 4, 5].map((n) =>
-      inote({ path: `notes/stray-${n}.md`, type: 'note', title: `Stray ${n}` }),
+      inote({ path: `insights/stray-${n}.md`, type: 'insight', title: `Stray ${n}` }),
     ),
   });
   await planLibrarianSweep(w.ctx, T0, OPTS);

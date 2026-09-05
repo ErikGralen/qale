@@ -58,6 +58,12 @@ const MACHINE_OWNED = new Set([
   'source',
   'needs_summary',
   'broken_frontmatter',
+  // The summary pass's own marker (IM-6): when it wrote, and over which body.
+  'summary_at',
+  'summary_of',
+  // The folder-purpose marker (IM-7): which documents the purpose was written
+  // from. It only ever sits in a folder's index.md, which is in the index too.
+  'purpose_of',
 ]);
 
 /** Everything on every note, rendered once instead of on all eight types. */

@@ -53,7 +53,7 @@ import { TagInput } from './TagInput';
 import { TagChip } from './TagChip';
 import { PeopleInput } from './PeopleInput';
 import { PersonChip } from './PersonChip';
-import { titleForRef } from './inbox/cardMeta';
+import { titleForRef } from './review/cardMeta';
 
 /** A linked page as its name. An external key (PAY-142) IS the name upstream,
  *  so it stays; anything else would be our folder showing through. */
@@ -174,8 +174,7 @@ function TrustRow({
   const detail = who ? `${who.id}${when ? ` · ${when}` : ''}` : null;
   // A human check is provenance, so it speaks in ink (One Voice Rule); the
   // machine tier and the default stay muted — the label carries the difference.
-  const pill =
-    tier === 'human' ? 'bg-brand/12 text-brand' : 'bg-muted text-muted-foreground';
+  const pill = tier === 'human' ? 'bg-brand/12 text-brand' : 'bg-muted text-muted-foreground';
   return (
     <PropertyRow icon={BadgeCheck} label="Trust">
       <div className="flex min-h-[26px] flex-wrap items-center gap-1.5 px-1.5 py-0.5 text-sm">
@@ -474,7 +473,9 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
                 <PropertyValue
                   spec={spec}
                   value={note.frontmatter[spec.key]}
-                  readOnly={!canEdit(spec.key) || spec.agentOwned === true}
+                  readOnly={
+                    !canEdit(spec.key) || ((spec.owner ?? 'user') !== 'user' && !spec.keepsCursor)
+                  }
                   onCommit={(v) => commit(spec.key, v)}
                 />
               </PropertyRow>

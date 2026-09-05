@@ -1,5 +1,4 @@
 import { useCallback, useMemo } from 'react';
-import { noteTypeLabel, HAND_CREATABLE_TYPES, NEW_NOTE_PURPOSE } from '@qale/domain';
 import {
   Button,
   DropdownMenu,
@@ -11,7 +10,6 @@ import {
 } from '@qale/ui';
 import {
   FolderOpen,
-  Sparkles,
   Check,
   Wand2,
   Bot,
@@ -25,7 +23,6 @@ import {
   Search,
   Settings,
   SquarePen,
-  Inbox,
   ListTodo,
   Plus,
   ScrollText,
@@ -35,9 +32,10 @@ import { useApp, type SessionOverview } from '../state/app-state';
 import { countToday } from '../lib/activity';
 import { countOf } from '../lib/attention';
 import { navFromEvent } from '../lib/nav';
-import { useNewNote } from '../lib/new-note';
 import { noteTypeIcon } from '../lib/note-icons';
-import { documentPins, memoryPins } from '../lib/pins';
+import { unprocessedSourceCount } from '../lib/note-status';
+import { documentPins, mirrorPins } from '../lib/pins';
+import { providerRows, type ProviderRow } from '../lib/providers';
 import { timeAgo } from '../lib/session-meta';
 import { tabForFile } from '../lib/skills-tabs';
 import { ToolbarButton } from '../components/ToolbarButton';
@@ -74,9 +72,9 @@ function sessionRows(sessions: SessionOverview[], asking: ReadonlySet<string>): 
 }
 
 /**
- * One row vocabulary for the whole rail (E-11). Seven places, one after the
- * other, and the row for the place you are standing in carries the same accent
- * tint a pinned note does.
+ * One row vocabulary for the whole rail (E-11). Five places and a row per
+ * connected system, one after the other, and the row for the place you are
+ * standing in carries the same accent tint a pinned note does.
  */
 const PLACE_ROW =
   'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground motion-reduce:transition-none';
@@ -84,10 +82,10 @@ const PLACE_ROW =
 /**
  * A rail place: icon, name, at most one number, at most one thing it can start.
  *
- * Three of the seven carry live rows underneath: the sessions in flight, the
- * pinned documents, and the pinned memory pages. Those rows never fold away.
- * They are the live work, and a rail that can hide it is a rail you have to
- * remember to unhide.
+ * Three carry live rows underneath: the sessions in flight, the pinned
+ * documents, and each system's pinned mirrors. Those rows never fold away. They
+ * are the live work, and a rail that can hide it is a rail you have to remember
+ * to unhide.
  */
 function PlaceRow({
   icon: Icon,
@@ -146,17 +144,6 @@ function PlaceRow({
 function SessionRows({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
   const { sessions, openChat, openChats, askRequests, setSessionLifecycle } = useApp();
   const asking = useMemo(() => new Set(Object.keys(askRequests)), [askRequests]);
-  // Sessions parked on a round to write in rather than on a question. They wait
-  // the same way and sort the same way; only the word on the row changes.
-  const writingIn = useMemo(
-    () =>
-      new Set(
-        Object.entries(askRequests)
-          .filter(([, r]) => r.comments)
-          .map(([id]) => id),
-      ),
-    [askRequests],
-  );
   const rows = sessionRows(sessions, asking);
   // Nothing live is its own answer: the Sessions row alone stands in, rather
   // than a row of prose saying so.
@@ -168,9 +155,7 @@ function SessionRows({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
         const wants = needsYou(s, asking);
         const waitingOnAnswer = asking.has(s.id);
         const reason = waitingOnAnswer
-          ? writingIn.has(s.id)
-            ? 'comments'
-            : 'question'
+          ? 'question'
           : s.pendingCards > 0
             ? `${s.pendingCards} proposal${s.pendingCards === 1 ? '' : 's'}`
             : s.unread
@@ -187,9 +172,7 @@ function SessionRows({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
               onClick={(e) => openChat({ id: s.id, title: s.title }, navFromEvent(e))}
               title={`${s.title}: ${
                 waitingOnAnswer
-                  ? writingIn.has(s.id)
-                    ? 'waiting on your comments'
-                    : 'waiting on your answer'
+                  ? 'waiting on your answer'
                   : s.running
                     ? 'running'
                     : wants
@@ -243,7 +226,8 @@ function SessionRows({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
             {!s.running && (
               <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-md bg-gradient-to-l from-sidebar-accent from-65% to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover/session:opacity-100 group-focus-within/session:opacity-100">
                 <button
-                  className="pointer-events-auto rounded p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  className="pointer-events-auto rounded p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
+                  disabled={s.pendingCards > 0}
                   onClick={(e) => {
                     e.stopPropagation();
                     void setSessionLifecycle(s.id, 'unpinned');
@@ -253,8 +237,16 @@ function SessionRows({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
                       undo: () => void setSessionLifecycle(s.id, 'active'),
                     });
                   }}
-                  aria-label={`Unpin ${s.title}`}
-                  title="Unpin: remove from the sidebar (a new message reopens it)"
+                  aria-label={
+                    s.pendingCards > 0
+                      ? `Decide on its ${s.pendingCards} proposal${s.pendingCards === 1 ? '' : 's'} first`
+                      : `Unpin ${s.title}`
+                  }
+                  title={
+                    s.pendingCards > 0
+                      ? `Decide on its ${s.pendingCards} proposal${s.pendingCards === 1 ? '' : 's'} first`
+                      : 'Unpin: remove from the sidebar (a new message reopens it)'
+                  }
                 >
                   <X className="size-3" />
                 </button>
@@ -274,6 +266,43 @@ function SessionRows({ onUndo }: { onUndo: (a: UndoOffer) => void }) {
         </li>
       )}
     </ul>
+  );
+}
+
+/**
+ * Memory in the footer, above Activity (docs/memory-placement.md). What Qale
+ * knows is the proof the product works, so it stays on screen; it is not the
+ * working set, so it stays quiet and holds nothing under it.
+ *
+ * The one number it carries is the sources nobody has read yet. That count used
+ * to be a row per source on the rail, pinned by the app and left there.
+ */
+function MemoryRow() {
+  const { tree, activeTab, openMemory } = useApp();
+  const unprocessed = useMemo(() => unprocessedSourceCount(tree), [tree]);
+  const active = activeTab?.kind === 'memory';
+  return (
+    <button
+      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-dense transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
+        active
+          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+          : 'text-muted-foreground hover:text-foreground'
+      }`}
+      onClick={(e) => openMemory(navFromEvent(e))}
+      onAuxClick={(e) => e.button === 1 && openMemory(navFromEvent(e))}
+      title="Memory: what Qale knows, and where it got it."
+    >
+      <Library className="size-3.5 shrink-0 text-muted-foreground/80" aria-hidden />
+      <span className="min-w-0 flex-1 truncate">Memory</span>
+      {unprocessed > 0 && (
+        <span
+          className="shrink-0 rounded-full bg-brand/15 px-1.5 text-xs font-semibold text-brand"
+          title={`${unprocessed} source${unprocessed === 1 ? '' : 's'} nobody has read yet`}
+        >
+          {unprocessed}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -311,26 +340,51 @@ function ActivityRow() {
 }
 
 /**
+ * One connected system on the rail: Jira, Confluence (docs/memory-placement.md).
+ *
+ * Qale copies these pages and never edits them, so they are not Memory and they
+ * are not Documents. The row is the system's own name, because that is the name
+ * the PO already uses for them. No `+`: nothing here is made in Qale.
+ */
+function ProviderPlaceRow({
+  row,
+  onUnpin,
+}: {
+  row: ProviderRow;
+  onUnpin: (n: NoteRefDTO) => void;
+}) {
+  const { tree, favorites, activeTab, openFolder } = useApp();
+  const pins = useMemo(() => mirrorPins(tree, favorites, row.dir), [tree, favorites, row.dir]);
+  const page = row.kind === 'wikipage' ? 'page' : 'ticket';
+  const system = row.kind === 'wikipage' ? 'wiki' : 'tracker';
+  // The folder itself, or any mirror inside it: both are this row's place.
+  const active =
+    (activeTab?.kind === 'folder' && activeTab.dir === row.dir) ||
+    (activeTab?.kind === 'doc' && activeTab.path.startsWith(`${row.dir}/`));
+  return (
+    <PlaceRow
+      icon={noteTypeIcon(row.kind)}
+      label={row.label}
+      title={`${row.label}: what Qale copied from your ${system}. It never edits these. Pinned ${page}s show underneath.`}
+      active={active}
+      onOpen={(e) => openFolder(row.dir, navFromEvent(e))}
+    >
+      <PinRows notes={pins} onUnpin={onUnpin} />
+    </PlaceRow>
+  );
+}
+
+/**
  * The pinned rows under a place: one flat list, most recent first, no sections
  * and no cap (docs/sidebar-ia.md, SB-1). A row under a place is a pinned item
- * of that place, so the same component serves Documents and Memory and only the
- * leading glyph differs.
+ * of that place. Every row is one type, so no glyph leads it: the place above
+ * already says what these are.
  *
  * Each row carries one action: the X that unpins it, which leaves the Undo
  * strip at the foot of the rail.
  */
-function PinRows({
-  notes,
-  showType = false,
-  onUnpin,
-}: {
-  notes: NoteRefDTO[];
-  /** Memory holds many types, so its rows carry the type icon. Documents are
-   *  all one type, so a glyph there would say nothing. */
-  showType?: boolean;
-  onUnpin: (n: NoteRefDTO) => void;
-}) {
-  const { openDoc, activeTab, autoPinNew, markPinSeen } = useApp();
+function PinRows({ notes, onUnpin }: { notes: NoteRefDTO[]; onUnpin: (n: NoteRefDTO) => void }) {
+  const { openDoc, activeTab } = useApp();
   // Nothing pinned is its own answer: the place row alone stands in.
   if (notes.length === 0) return null;
 
@@ -338,13 +392,7 @@ function PinRows({
     <ul className="flex flex-col">
       {notes.map((n) => {
         const active = activeTab?.kind === 'doc' && activeTab.path === n.path;
-        // A row the system pinned on its own, not yet opened from here.
-        const newPin = autoPinNew.has(n.path);
-        const Icon = noteTypeIcon(n.type);
-        const openRow = (e: React.MouseEvent) => {
-          if (newPin) markPinSeen(n.path);
-          void openDoc(n.path, navFromEvent(e));
-        };
+        const openRow = (e: React.MouseEvent) => void openDoc(n.path, navFromEvent(e));
         return (
           <li key={n.path} className="group/note relative">
             <button
@@ -357,21 +405,10 @@ function PinRows({
               onAuxClick={(e) => e.button === 1 && openRow(e)}
               title={n.title}
             >
-              {/* One glyph column, like the session rows above. The rail added
-                  this row itself, so the dot says so — once, and it takes the
-                  column until you open it. */}
-              <span className="flex size-3.5 shrink-0 items-center justify-center" aria-hidden>
-                {newPin ? (
-                  <span
-                    className="size-1.5 rounded-full bg-brand"
-                    title="Pinned for you, not opened yet"
-                  />
-                ) : showType ? (
-                  <Icon className="size-3.5 text-muted-foreground/80" />
-                ) : null}
-              </span>
+              {/* The glyph column the session rows above use, held empty so the
+                  two lists line up. */}
+              <span className="size-3.5 shrink-0" aria-hidden />
               <span className="truncate">{n.title}</span>
-              {newPin && <span className="sr-only">, newly pinned for you</span>}
             </button>
             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-r-md bg-gradient-to-l from-sidebar-accent from-65% to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover/note:opacity-100 group-focus-within/note:opacity-100">
               <button
@@ -390,58 +427,6 @@ function PinRows({
         );
       })}
     </ul>
-  );
-}
-
-/**
- * The types the Memory "+" can start. Notes are Documents' now (E-14), and the
- * Documents row has its own "+" for them, so offering a note here would be the
- * same page behind two doors.
- */
-const MEMORY_NEW_TYPES = HAND_CREATABLE_TYPES.filter((t) => t !== 'note');
-
-/**
- * The "+" on the Memory row: start a page of any type the PM authors, without
- * first finding the shelf it belongs on. A menu rather than three rows, because
- * none of the three is a daily thing. Each row says what the type is for, so
- * the choice is about the work rather than about our vocabulary.
- */
-function NewNoteMenu() {
-  const { create, busy } = useNewNote();
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="inline-grid size-5 place-items-center rounded text-muted-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none aria-expanded:bg-sidebar-accent aria-expanded:text-foreground disabled:opacity-50"
-          title="Start a new page: theme, customer, person"
-          aria-label="New page"
-          disabled={busy}
-        >
-          <Plus className="size-3.5" aria-hidden />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6} className="w-72 motion-reduce:animate-none">
-        {MEMORY_NEW_TYPES.map((type) => {
-          const Icon = noteTypeIcon(type);
-          return (
-            <DropdownMenuItem
-              key={type}
-              className="gap-2 px-2 py-1.5"
-              onClick={() => void create(type)}
-            >
-              <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-              <span className="min-w-0">
-                <span className="block">New {noteTypeLabel(type).toLowerCase()}</span>
-                <span className="block text-xs text-muted-foreground">
-                  {NEW_NOTE_PURPOSE[type]}
-                </span>
-              </span>
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -610,8 +595,9 @@ function RowAction({
 
 /**
  * The left rail: a header of always-available actions (28px hit areas, quiet
- * until hovered) over search and the seven places. Nothing below them — the
- * rail ends where the work does.
+ * until hovered) over search, the six places, and a row for each connected
+ * system. Under them, on a rule of their own, the two quiet rows: Memory and
+ * Activity.
  */
 export function Sidebar({
   onSearch,
@@ -628,23 +614,22 @@ export function Sidebar({
     openVaultDialog,
     openSession,
     openHome,
-    openInbox,
     openTodos,
     openCalendar,
     openDocuments,
-    openMemory,
     openChats,
     attention,
     waitingCount,
     toggleFavorite,
     tree,
     favorites,
+    connections,
   } = useApp();
 
-  // One pin set, two lists: what you write sits under Documents, what Qale
-  // knows sits under Memory.
+  // One pin set, split by place: what you write under Documents, and each
+  // system's mirrors under that system's own row.
   const docPins = useMemo(() => documentPins(tree, favorites), [tree, favorites]);
-  const memPins = useMemo(() => memoryPins(tree, favorites), [tree, favorites]);
+  const systems = useMemo(() => providerRows(connections, tree), [connections, tree]);
 
   // Every way of clearing a row off the rail — unpinning a note, marking a
   // session done — is reversible: it leaves a one-tap Undo strip for a few
@@ -659,7 +644,8 @@ export function Sidebar({
     [toggleFavorite, offerUndo],
   );
 
-  // Both badges are filters over the one attention list — never their own sums.
+  // Both badges (Sessions, Todos) are filters over the one attention list,
+  // never their own sums.
   const todosDue = countOf(attention, 'todo');
 
   return (
@@ -711,9 +697,9 @@ export function Sidebar({
         </div>
       ) : (
         <>
-          {/* The four places that never move. They sit above the scroll so a
+          {/* The three places that never move. They sit above the scroll so a
               busy week of sessions can never push Home out of reach. */}
-          <ul className="flex flex-col gap-0.5 px-2 pb-1.5">
+          <ul className="flex flex-col gap-0.5 border-b border-sidebar-border px-2 pb-1.5">
             {/* Home leads: it is the one row every other place is reachable
                 from, and the only one with two keyboard paths (⇧⌘H here, ⌘T for
                 a fresh tab). */}
@@ -727,24 +713,6 @@ export function Sidebar({
               // marked.
               active={activeTab?.kind === 'home' || !activeTab}
               onOpen={(e) => openHome(navFromEvent(e))}
-            />
-            <PlaceRow
-              icon={Inbox}
-              label="Inbox"
-              title="Inbox: everything waiting for your answer"
-              active={activeTab?.kind === 'inbox'}
-              onOpen={(e) => openInbox(navFromEvent(e))}
-              // The accent means "something is waiting" — an empty queue keeps
-              // the glyph muted like its neighbours (The Inactive-Never-Accent
-              // Rule).
-              iconClassName={waitingCount > 0 ? 'text-brand' : undefined}
-              badge={
-                waitingCount > 0 ? (
-                  <span className="shrink-0 rounded-full bg-brand/15 px-1.5 text-xs font-semibold text-brand">
-                    {waitingCount}
-                  </span>
-                ) : undefined
-              }
             />
             <PlaceRow
               icon={CalendarDays}
@@ -769,18 +737,29 @@ export function Sidebar({
             />
           </ul>
 
-          {/* The three that carry live rows under them. They scroll, because
+          {/* The two that carry live rows under them. They scroll, because
               what hangs off them has no fixed height. */}
           <ul className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
             <PlaceRow
               icon={History}
               label="Sessions"
-              title="Sessions: running, waiting on you, and finished"
+              title="Sessions: what's waiting on you, running, and finished"
               active={activeTab?.kind === 'chats'}
               onOpen={(e) => openChats(navFromEvent(e))}
+              // The accent means "something is waiting" — nothing waiting keeps
+              // the glyph muted like its neighbours (The Inactive-Never-Accent
+              // Rule).
+              iconClassName={waitingCount > 0 ? 'text-brand' : undefined}
+              badge={
+                waitingCount > 0 ? (
+                  <span className="shrink-0 rounded-full bg-brand/15 px-1.5 text-xs font-semibold text-brand">
+                    {waitingCount}
+                  </span>
+                ) : undefined
+              }
               action={
                 <RowAction
-                  icon={Sparkles}
+                  icon={Plus}
                   label="New session"
                   title="New session (⌘↵): ask a question, or hand over a piece of work"
                   onClick={(e) => openSession('ask', navFromEvent(e))}
@@ -806,21 +785,19 @@ export function Sidebar({
             >
               <PinRows notes={docPins} onUnpin={unpinNote} />
             </PlaceRow>
-            <PlaceRow
-              icon={Library}
-              label="Memory"
-              title="Memory: what Qale knows, and where it got it. Pinned memory pages show underneath."
-              active={activeTab?.kind === 'memory'}
-              onOpen={(e) => openMemory(navFromEvent(e))}
-              action={<NewNoteMenu />}
-            >
-              <PinRows notes={memPins} showType onUnpin={unpinNote} />
-            </PlaceRow>
+            {/* Then the systems Qale reads, one row each, in name order. They
+                come and go with the connections, so nothing is here to explain
+                itself on a workspace that has none. */}
+            {systems.map((row) => (
+              <ProviderPlaceRow key={row.dir} row={row} onUnpin={unpinNote} />
+            ))}
           </ul>
 
-          {/* Below the scroll, on a rule of its own: the log of what the agent
-              did while nobody was watching. Last, and always in view. */}
-          <div className="border-t border-sidebar-border px-2 py-1.5">
+          {/* Below the scroll, on a rule of its own: what Qale knows, and the
+              log of what it did while nobody was watching. Last, and always in
+              view. */}
+          <div className="flex flex-col gap-0.5 border-t border-sidebar-border px-2 py-1.5">
+            <MemoryRow />
             <ActivityRow />
           </div>
 

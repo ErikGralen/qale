@@ -7,8 +7,6 @@ import type {
   AgentDTO,
   ArrivalItemInputDTO,
   ArrivalProgressDTO,
-  AskCommentAnswersDTO,
-  AskCommentPlanDTO,
   ConnectionProgress,
   FirstStepId,
   MeetingReviewAskDTO,
@@ -21,13 +19,12 @@ import { ageBand, countBand, durationBand, providerWord, skillWord } from '@qale
 import {
   AgentRuntime,
   isOffered,
-  readSessionFile,
   sessionFilesRoot,
+  summaryPrompt,
   writeSessionBinary,
   writeSessionFile,
   type SessionStatus,
 } from '@qale/agent';
-import { applyComments } from './comment-writeback.js';
 import {
   acceptProposal,
   completeMeetingReview,
@@ -60,6 +57,7 @@ import {
   listAgentFiles,
   migrateRunnableFolders,
   normalizeVaultFrontmatter,
+  runSummaryPass,
   retireDefaultSkills,
   runnableEnabled,
   markMeetingReviewed,
@@ -87,7 +85,6 @@ import {
   searchNotes,
   setTodoDue,
   setTodoStatus,
-  type AskRecord,
   type UseCaseContext,
 } from '@qale/application';
 import { detectSyncedFolder, isWindowsPathTooDeep } from '@qale/application';
@@ -492,6 +489,26 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
           agentLastChecked.set('librarian', Date.now());
         }
       }
+      // The summary pass (docs/index-maps.md IM-6, and ticket 3 of
+      // docs/background-system.md): one line per document from a cheap model,
+      // plus the tags a note with none should carry, written straight to the
+      // file the way normalize writes its fields. Gated on a key exactly as the librarian is: without one
+      // nothing can answer, so the pass is skipped quietly. It runs before the
+      // maps below so what it wrote lands in them. A failure joins the pass
+      // report like a refused map does; the tick never throws over it.
+      if (settings.getActiveKey()) {
+        const summaries = await runSummaryPass(ctx, {
+          summarise: (c) => {
+            const p = summaryPrompt(c);
+            return agent.summarise(p.system, p.user);
+          },
+        }).catch((err) => {
+          failures.push({ item: 'summaries', reason: err });
+          return null;
+        });
+        if (summaries && summaries.written.length > 0)
+          pushEvent(getWindow(), { channel: 'vault:changed', paths: summaries.written });
+      }
       // Refresh the OKF index.md orientation maps from the (now reconciled)
       // index. Idempotent — no write, no commit when nothing changed.
       //
@@ -517,7 +534,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       .finally(() => {
         // One line, at the end, already scrubbed — or no line at all when the
         // pass went through clean (OW3).
-        const report = failureReport('librarian', failures);
+        const report = failureReport('maintenance', failures);
         if (report) console.error(report);
         maintenanceInFlight = null;
         // Also the badge's heartbeat: the 5-minute tick is what carries a todo
@@ -843,8 +860,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   /**
    * One Agents list — every agent is a file. Main merges on what only it
    * knows: the code-clocked facts (CODE_RUN_FACTS), whether a key exists to
-   * judge with, when each last ran, and how many of its cards wait in the
-   * Inbox.
+   * judge with, when each last ran, and how many of its cards are still
+   * waiting.
    */
   const agentsDTO = async (): Promise<AgentDTO[]> => {
     const ctx = vaultService.context();
@@ -1370,7 +1387,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       markFirstStep(
         'prep',
         pendingCards > 0
-          ? `Prepped a meeting, and the brief waits in the Inbox`
+          ? `Prepped a meeting, and the brief waits in its session`
           : `Prepped a meeting and found nothing worth briefing`,
       );
       // The base skill by either name: `chat` is what a session opened with
@@ -1385,7 +1402,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // A tidy pass that DID find something is not quiet, and still says nothing
     // here: a notification is the loudest thing the app can do, and what the
     // librarian leaves behind is the one kind of work that is never owed. It
-    // waits in the Inbox, where it costs nothing to find later.
+    // waits in its session, where it costs nothing to find later.
     if (s.quiet || MAINTENANCE_AGENTS.has(s.skill ?? '')) return;
     const win = getWindow();
     if ((win && win.isFocused()) || !Notification.isSupported()) return;
@@ -2285,7 +2302,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   // Resolving the last card a session produced closes the review it was doing:
   // the meeting flips new → processed, as long as something was kept. When every
   // card was discarded nothing here knows the meeting was read, so it stays put
-  // and the question comes back for the Inbox to ask. Best-effort: it never
+  // and the question comes back for the review to ask. Best-effort: it never
   // blocks the resolve.
   const afterCardResolved = async (id: string): Promise<MeetingReviewAskDTO | undefined> => {
     const ctx = vaultService.context();
@@ -2500,60 +2517,16 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     agent.pendingAsk(sessionId, vaultService.context() ?? undefined),
   );
   handle('sessions:pendingAsks', () => agent.listPendingAsks(vaultService.context() ?? undefined));
-  handle('sessions:resolveAsk', async (requestId, answers, comments) => {
+  handle('sessions:resolveAsk', async (requestId, answers) => {
     const ctx = vaultService.context() ?? undefined;
-    // Read while the request is still parked: resolving clears the row, and
-    // after that nothing here can say which round the PM was writing in.
-    const parked = comments ? (ctx?.asks?.get(requestId) ?? null) : null;
-    if (ctx && parked?.comments) await recordComments(ctx, parked, comments!);
     // The context and the emitter are what let an answer reach a question whose
     // turn died with the last app run: without a live promise to resolve, the
     // session is reopened and the answer replayed into it (QM ticket 9).
-    await agent.resolveAsk(
-      requestId,
-      { answers, ...(comments ? { comments } : {}) },
-      ctx,
-      (streamId, chunk) => {
-        pushEvent(getWindow(), { channel: 'agent:event', streamId, chunk });
-      },
-    );
+    await agent.resolveAsk(requestId, { answers }, ctx, (streamId, chunk) => {
+      pushEvent(getWindow(), { channel: 'agent:event', streamId, chunk });
+    });
     return { ok: true };
   });
-
-  /**
-   * A sent round, written into the file it came from and counted once (IT-4,
-   * IT-6). Both halves are for people rather than for the model: the model gets
-   * the answers as its tool result and is never shown the rewrite.
-   *
-   * Nothing in here may cost the PM their comments. A round file that was
-   * deleted, moved or edited into something that no longer parses is left
-   * alone, and the answers still reach the session that is waiting for them.
-   */
-  async function recordComments(
-    ctx: UseCaseContext,
-    parked: AskRecord,
-    comments: AskCommentAnswersDTO,
-  ): Promise<void> {
-    const round = parked.comments as AskCommentPlanDTO;
-    try {
-      const root = sessionFilesRoot(ctx.vault.root(), parked.sessionId);
-      const text = await readSessionFile(root, round.path);
-      const rewritten = text === null ? null : applyComments(text, comments);
-      if (rewritten !== null && rewritten !== text) {
-        await writeSessionFile(root, round.path, rewritten);
-        pushEvent(getWindow(), { channel: 'session:files', sessionId: parked.sessionId });
-      }
-    } catch (err) {
-      console.error('[qale] writing your comments back into the round failed:', err);
-    }
-    const answered = round.slots.filter((s) => comments.answers[s.id]?.trim()).length;
-    telemetry.send('round.sent', {
-      skill: skillWord(parked.skill),
-      slots: countBand(round.slots.length),
-      answered: countBand(answered),
-      general: !!comments.general?.trim(),
-    });
-  }
 
   // Chats that touched this note: session receipts link reads/writes as
   // wikilinks, so the note's backlinks from sessions/ name the conversations.
@@ -2609,7 +2582,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
           // Not the workspace name: this line is captured for diagnostics, and
           // the folder someone names their product memory after is theirs.
           console.log(`[qale] opened workspace: ${info.noteCount} notes, git=${info.git}`);
-          if (devEnv('QALE_SEED_PROPOSAL')) void seedDemoProposal(vaultService.requireContext());
+          if (devEnv('QALE_SEED_PROPOSAL'))
+            void seedDemoProposal(vaultService.requireContext(), (id, title, text) =>
+              agent.seedStoredSession(id, title, text),
+            );
         } catch (err) {
           console.error('[qale] failed to open workspace:', err);
         }

@@ -1,4 +1,5 @@
 import type { ChatTransport, UIMessage, UIMessageChunk } from 'ai';
+import type { SessionScopeDTO } from '@qale/ipc';
 import { invoke, onEvent } from './ipc';
 
 /**
@@ -45,6 +46,12 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
      * along with every message until they pick another one.
      */
     private readonly pickedModel?: () => string | undefined,
+    /**
+     * The page this conversation was started from, when a scoped Ask opened it
+     * (IM-13). Spent on the first turn that starts, for the same reason the
+     * opening skill is: the runtime reads it once, when it builds the session.
+     */
+    private openingScope?: SessionScopeDTO,
   ) {
     this.sessionId = initialSessionId;
   }
@@ -91,11 +98,13 @@ export class IpcChatTransport implements ChatTransport<UIMessage> {
             prompt,
             ...(skill ? { skill } : {}),
             ...(modelId ? { modelId } : {}),
+            ...(this.openingScope ? { scope: this.openingScope } : {}),
           });
           // Spent once the run has actually started, not once it has been asked
           // for: a first turn refused before there was a session (no key yet)
           // keeps its skill so the retry opens on it.
           this.openingSkill = undefined;
+          this.openingScope = undefined;
           this.sessionId = handle.sessionId;
           // Reported on every run, not just id changes — the shell also uses
           // this as the "conversation has real content" signal for tabs.

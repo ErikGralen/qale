@@ -5,6 +5,8 @@ import { AtlassianTokenHelp } from '../components/AtlassianTokenHelp';
 import { FollowPicker } from '../components/FollowPicker';
 import { Setting } from '../components/Setting';
 import { relativeTime } from '../lib/dates';
+import { navFromEvent } from '../lib/nav';
+import { providerRows } from '../lib/providers';
 import { followReceipt } from '../lib/follow-receipt';
 import { siteUrlPreview } from '../lib/site-url';
 import { useApp } from '../state/app-state';
@@ -27,17 +29,20 @@ import {
  */
 
 export function ConnectionsSettings() {
+  // The connection list lives in the app state, because the rail draws a row
+  // per connected system from it (docs/memory-placement.md). This panel reads
+  // the same list rather than fetching its own, so a connect made here puts the
+  // row on the rail in the same beat.
+  const { connections: conns, refreshConnections } = useApp();
   const [providers, setProviders] = useState<ProviderDescriptorDTO[]>([]);
-  const [conns, setConns] = useState<ConnectionDTO[]>([]);
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
 
   const reload = async () => {
     try {
-      const [p, c] = await Promise.all([connections.providers(), connections.list()]);
+      const [p] = await Promise.all([connections.providers(), refreshConnections()]);
       setProviders(p);
-      setConns(c);
       setLoadFailed(false);
     } catch {
       // An IPC failure is not "nothing connected" — say so quietly instead of
@@ -50,6 +55,7 @@ export function ConnectionsSettings() {
 
   useEffect(() => {
     void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -121,8 +127,11 @@ function ConnectionCard({
   providers: ProviderDescriptorDTO[];
   onChanged: () => Promise<void>;
 }) {
-  const { settings, openHome } = useApp();
+  const { settings, openHome, openFolder } = useApp();
   const provider = providers.find((p) => p.id === conn.providerId);
+  // The rail rows this one connection puts up, so the panel that configures a
+  // system also has the door to what it copied (docs/memory-placement.md).
+  const browsable = providerRows([conn], null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [busyContainer, setBusyContainer] = useState<string | null>(null);
@@ -237,17 +246,31 @@ function ConnectionCard({
       )}
 
       <div className="mt-2 flex items-center justify-end gap-2">
-        {!picking && conn.containers.length > 0 && (
-          <button
-            className="mr-auto rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={() => {
-              setReceipt(null);
-              setPicking(true);
-            }}
-          >
-            Change what it reads
-          </button>
-        )}
+        {/* What this connection reads, and what it has already copied. Both are
+            quiet links: the loud button on this card is Disconnect. */}
+        <div className="mr-auto flex flex-wrap items-center gap-x-2 gap-y-1">
+          {!picking && conn.containers.length > 0 && (
+            <button
+              className="rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              onClick={() => {
+                setReceipt(null);
+                setPicking(true);
+              }}
+            >
+              Change what it reads
+            </button>
+          )}
+          {browsable.map((row) => (
+            <button
+              key={row.dir}
+              className="rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              onClick={(e) => openFolder(row.dir, navFromEvent(e))}
+              title={`Read what Qale copied from ${row.label}, without leaving`}
+            >
+              Browse {row.label}
+            </button>
+          ))}
+        </div>
         {confirmRemove ? (
           <>
             <span className="text-xs text-destructive">

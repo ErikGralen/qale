@@ -14,8 +14,8 @@ import {
   FileText,
   Files,
   Hash,
+  History,
   House,
-  Inbox,
   Library,
   ListTodo,
   MessageSquare,
@@ -30,6 +30,8 @@ import type { LucideIcon } from 'lucide-react';
 import { noteTypeLabel } from '@qale/domain';
 import type { SearchHitDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
+import { noteTypeIcon } from '../lib/note-icons';
+import { providerRows } from '../lib/providers';
 import { SETTINGS_SECTIONS } from '../lib/settings-sections';
 import { collectContexts } from '../lib/contexts';
 
@@ -63,7 +65,7 @@ export function QuickSwitcher({
     search,
     openDoc,
     openHome,
-    openInbox,
+    openChats,
     openTodos,
     openCalendar,
     openDocuments,
@@ -73,6 +75,8 @@ export function QuickSwitcher({
     openSettings,
     openSkills,
     openContext,
+    openFolder,
+    connections,
     tree,
     tabs,
     waitingCount,
@@ -109,15 +113,16 @@ export function QuickSwitcher({
         run: openHome,
       },
       {
-        id: 'inbox',
-        // The same number the sidebar badge and the Inbox header print, in the
-        // same words: one attention list, one count (lib/attention.ts).
+        id: 'chats',
+        // The same number the sidebar badge prints, in the same words: one
+        // attention list, one count (lib/attention.ts).
         label:
           waitingCount > 0
-            ? `Open Inbox: ${waitingCount} need${waitingCount === 1 ? 's' : ''} you`
-            : 'Open Inbox',
-        icon: Inbox,
-        run: openInbox,
+            ? `Open Sessions: ${waitingCount} need${waitingCount === 1 ? 's' : ''} you`
+            : 'Open Sessions',
+        keywords: 'chats runs proposals questions',
+        icon: History,
+        run: openChats,
       },
       { id: 'new-note', label: 'New document', hint: '⌘N', icon: SquarePen, run: onNewNote },
       {
@@ -150,7 +155,7 @@ export function QuickSwitcher({
       {
         id: 'memory',
         label: 'Open Memory: what Qale knows, and where it got it',
-        keywords: 'sources decisions insights themes customers people tickets',
+        keywords: 'sources decisions insights themes customers people',
         icon: Library,
         run: openMemory,
       },
@@ -205,7 +210,7 @@ export function QuickSwitcher({
     [
       waitingCount,
       openHome,
-      openInbox,
+      openChats,
       openTodos,
       openCalendar,
       openDocuments,
@@ -217,6 +222,26 @@ export function QuickSwitcher({
       onOpenCapture,
       onNewNote,
     ],
+  );
+
+  /**
+   * One row per connected system, the same rows the rail draws
+   * (docs/memory-placement.md). ⌘K reaches every place, so a place that only
+   * exists while a connection does still has to be typeable.
+   */
+  const systemCommands = useMemo<CommandSpec[]>(
+    () =>
+      providerRows(connections, tree).map((row) => ({
+        id: `provider:${row.dir}`,
+        label:
+          row.kind === 'wikipage'
+            ? `Open ${row.label}: pages Qale copied from your wiki`
+            : `Open ${row.label}: tickets Qale copied from your tracker`,
+        keywords: row.providerId,
+        icon: noteTypeIcon(row.kind),
+        run: () => openFolder(row.dir),
+      })),
+    [connections, tree, openFolder],
   );
 
   /**
@@ -240,10 +265,10 @@ export function QuickSwitcher({
 
   const q = query.trim().toLowerCase();
   const matchedCommands = q
-    ? [...commands, ...settingsCommands].filter((c) =>
+    ? [...commands, ...systemCommands, ...settingsCommands].filter((c) =>
         `${c.label} ${c.keywords ?? ''}`.toLowerCase().includes(q),
       )
-    : commands;
+    : [...commands, ...systemCommands];
   const openDocs = q ? [] : tabs.filter((t) => t.kind === 'doc');
   // Contexts are first-class results: `#pricing` or just `pricing` finds the page.
   const contexts = useMemo(() => collectContexts(tree), [tree]);

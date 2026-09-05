@@ -2,10 +2,10 @@ import { useState } from 'react';
 import type { NoteDTO } from '@qale/ipc';
 import { isVoicePath } from '@qale/domain';
 import { Badge, Button } from '@qale/ui';
-import { Bot, Pin, Play, Trash2, TriangleAlert, Wand2 } from 'lucide-react';
+import { Bot, Play, Trash2, TriangleAlert, Wand2 } from 'lucide-react';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
-import { HeaderAction, HeaderActions, HeaderMenu, PageHeader } from '../components/PageHeader';
+import { HeaderActions, HeaderMenu, PageHeader } from '../components/PageHeader';
 import { NoteEditor } from '../components/NoteEditor';
 import { TitleEditor } from '../components/TitleEditor';
 import { AgentSwitch } from '../components/AgentSwitch';
@@ -71,8 +71,6 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
     setAgentEnabled,
     search,
     deleteNote,
-    favorites,
-    toggleFavorite,
   } = useApp();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -154,15 +152,9 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
               </Button>
             </div>
           ) : (
+            // No Pin here: the Skills page owns a skill and an agent, and the
+            // rail never holds one (see isPinnable).
             <HeaderActions>
-              <HeaderAction
-                icon={Pin}
-                label={favorites.includes(note.path) ? 'Unpin' : 'Pin'}
-                title={favorites.includes(note.path) ? 'Unpin' : 'Pin: keep on the sidebar'}
-                onClick={() => toggleFavorite(note.path)}
-                pressed={favorites.includes(note.path)}
-                iconClassName={favorites.includes(note.path) ? 'fill-brand text-brand' : undefined}
-              />
               <HeaderMenu
                 items={[
                   {

@@ -173,7 +173,7 @@ export function ExternalRefChip({
 }
 
 // ---------------------------------------------------------------------------
-// At-risk surfacing — markers in the owning views, never Inbox rows
+// At-risk surfacing — markers in the owning views, never card rows
 // ---------------------------------------------------------------------------
 
 /** The current at-risk external items (blocked tickets, stale dependents). */

@@ -557,6 +557,21 @@ test('a meeting with no recording, or a recording that is not there, is refused'
   assert.equal(filed.length, 0);
 });
 
+test('a filed card notifies the caller, so a session the PM unpinned can be re-pinned (RI-5)', async () => {
+  const filed: Record<string, unknown>[] = [];
+  let notified = 0;
+  const tool = createProposeTools(meetingCtx(filed), 'session-1', undefined, () => {
+    notified++;
+  }).find((t) => t.name === 'propose_meeting')!;
+
+  await out(tool, { ...MEETING, participants: ['[[people/asa-lind]]'] });
+  assert.equal(notified, 1);
+
+  // A card that is refused never reaches `fileProposal`, so nothing fires.
+  await out(tool, { ...MEETING, transcript: [] });
+  assert.equal(notified, 1);
+});
+
 /**
  * The field was optional and nothing asked for it, so real transcripts landed as
  * meeting pages with nobody on them — and an empty `participants` shows no chips,
@@ -705,8 +720,8 @@ test('a page nobody has written and nobody has proposed is still refused', async
 
 /**
  * An update card that can never be applied. A patch whose anchor is not in the
- * note is not a card that applies badly — it is one the Inbox can only show as a
- * red box with the work trapped inside it, long after the session that could
+ * note is not a card that applies badly — it is one the review can only show as
+ * a red box with the work trapped inside it, long after the session that could
  * have fixed it ended. And the note this bit hardest is the one the flow points
  * at: a meeting page mirrored from the calendar is frontmatter and NO body, so
  * search/replace had nothing to match and the write-up had nowhere to go.

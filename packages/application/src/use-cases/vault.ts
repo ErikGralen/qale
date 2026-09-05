@@ -7,6 +7,7 @@ import {
   refToSlug,
   SESSION_FILES_DIR,
   titleFromSlug,
+  USER_DOCUMENTS_DIR,
   type NoteType,
 } from '@qale/domain';
 import type { GitCommit, IndexedNote, UseCaseContext } from '../ports.js';
@@ -296,8 +297,10 @@ export async function getVaultTree(ctx: UseCaseContext): Promise<VaultTreeGroup[
   const groups: VaultTreeGroup[] = [];
   for (const type of Object.keys(NOTE_TYPE_META) as NoteType[]) {
     const meta = NOTE_TYPE_META[type];
-    const notes = [...all.filter((n) => n.type === type), ...(type === 'note' ? folderRows : [])]
-      .sort((a, b) => b.mtime - a.mtime);
+    const notes = [
+      ...all.filter((n) => n.type === type),
+      ...(type === 'note' ? folderRows : []),
+    ].sort((a, b) => b.mtime - a.mtime);
     if (notes.length > 0) {
       groups.push({ dir: meta.dir, type, layer: meta.layer, notes });
     }
@@ -371,11 +374,11 @@ export function queryNotes(ctx: UseCaseContext, q: NoteQuery): IndexedNote[] {
 }
 
 /**
- * One workspace-owned note with no links. "Has no links" is a symptom with
- * several causes that do NOT share an answer: a scratch pad is unconnected
- * because nobody has worked it yet, a page nothing cites is the hygiene case.
- * Which one this is only shows in the note itself, so the librarian reads it
- * before offering anything.
+ * One Memory page with no links. "Has no links" is a symptom with several
+ * causes that do NOT share an answer: a raw capture is unconnected because
+ * nobody has worked it yet, a page nothing cites is the hygiene case. Which one
+ * this is only shows in the note itself, so the librarian reads it before
+ * offering anything. Documents never appear here at all; see the scan below.
  */
 export interface OrphanCandidate {
   path: string;
@@ -446,6 +449,15 @@ function isOrientationTarget(target: string): boolean {
 }
 
 /**
+ * A file in the PM's own Documents folder. The path says it, which is the same
+ * test the write policy uses (`USER_DOCUMENTS_DIR`), so the two halves of the
+ * split never disagree about where a file sits.
+ */
+function isDocumentPath(path: string): boolean {
+  return path.startsWith(USER_DOCUMENTS_DIR);
+}
+
+/**
  * Librarian maintenance scan (PLAN-V2 §3.5): orphans + dangling links.
  *
  * Machinery is out of both halves. It was already exempt from "nothing links
@@ -455,6 +467,13 @@ function isOrientationTarget(target: string): boolean {
  * the next librarian pass to look at, and each of those passes filed a receipt
  * of its own. The scan is for what the team wrote, not for what the app leaves
  * behind.
+ *
+ * Documents are out of the orphan half only (docs/background-system.md, ticket
+ * 1). "Nothing links it and it links nothing" is a fact about a Memory page: a
+ * theme nobody wired in is a filing error. It is not a fact about a document.
+ * The PM writes a document for their own reasons, and a scratch page they never
+ * linked is what a folder of your own is for, so reporting it is noise. Their
+ * links OUT still count: a broken link is broken wherever it was written.
  */
 export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
   const all = ctx.index.all().filter((n) => !isFolderIndex(n.path));
@@ -463,7 +482,7 @@ export function getMaintenanceReport(ctx: UseCaseContext): MaintenanceReport {
   for (const n of all) {
     const hasOut = n.links.length > 0;
     const hasIn = ctx.index.backlinks(n.slug).length > 0;
-    if (!hasOut && !hasIn && !NEVER_ORPHAN.has(n.type) && !isMirror(n)) {
+    if (!hasOut && !hasIn && !NEVER_ORPHAN.has(n.type) && !isMirror(n) && !isDocumentPath(n.path)) {
       orphans.push({ path: n.path, title: n.title });
     }
     if (isWorkspaceMachinery(n.type)) continue;

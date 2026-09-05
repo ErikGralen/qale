@@ -17,6 +17,7 @@ function inote(
   type: NoteType,
   summary: string,
   lifecycle: string | null = null,
+  frontmatter: Record<string, unknown> = {},
 ): IndexedNote {
   const slug = path.replace(/\.md$/, '');
   return {
@@ -29,14 +30,16 @@ function inote(
     lifecycle,
     hasBody: true,
     mtime: 1,
-    frontmatter: { type, summary },
+    frontmatter: { type, summary, ...frontmatter },
     links: [],
   };
 }
 
 /**
  * A minimal in-memory ctx: file store + a fixed note set + a commit recorder.
- * `refuse` stands in for the containment guard turning a path down.
+ * `refuse` stands in for the containment guard turning a path down. Files
+ * seeded into the store also show up in `vault.list`, the way a folder's stub
+ * index.md does on disk.
  */
 function fakeCtx(notes: IndexedNote[], refuse?: (path: string) => boolean) {
   const files = new Map<string, string>();
@@ -48,14 +51,22 @@ function fakeCtx(notes: IndexedNote[], refuse?: (path: string) => boolean) {
       if (refuse?.(p)) throw new VaultBoundaryError(p);
       files.set(p, content);
     },
+    list: async () => [
+      ...notes.map((n) => ({ path: n.path, mtime: n.mtime })),
+      ...[...files.keys()].map((path) => ({ path, mtime: 1 })),
+    ],
   } as unknown as VaultPort;
+  const byPath = new Map(notes.map((n) => [n.path, n]));
   const index = {
     all: () => notes,
+    get: (p: string) => byPath.get(p) ?? null,
+    resolve: (target: string) => (byPath.has(`${target}.md`) ? `${target}.md` : null),
   } as unknown as IndexPort;
   const git = {
     commitPaths: async (paths: string[], message: string) => void commits.push({ paths, message }),
   } as unknown as UseCaseContext['git'];
-  const ctx = { vault, index, git } as unknown as UseCaseContext;
+  const clock = { now: () => '2026-09-05T10:00:00.000Z' };
+  const ctx = { vault, index, git, clock } as unknown as UseCaseContext;
   return { ctx, files, commits };
 }
 
@@ -84,7 +95,12 @@ test('generateIndexFiles maps content folders, skips sessions, stamps root, comm
 });
 
 test('generateIndexFiles is idempotent — a second pass writes nothing and does not commit', async () => {
-  const notes = [inote('notes/a.md', 'note', 'A note.')];
+  const notes = [
+    inote('notes/a.md', 'note', 'A note.'),
+    inote('notes/specs/b.md', 'note', 'A spec.'),
+    inote('meetings/2026-09-01-x.md', 'meeting', 'm', null, { date: '2026-09-01' }),
+    inote('meetings/2026-03-01-y.md', 'meeting', 'm', null, { date: '2026-03-01' }),
+  ];
   const { ctx, commits } = fakeCtx(notes);
   const first = await generateIndexFiles(ctx);
   assert.ok(first.written.length > 0);
@@ -114,6 +130,93 @@ test('a refused map is raised by name, and the maps that landed still commit', a
   assert.ok(files.has('decisions/index.md'), 'the folder that could be written still landed');
   assert.equal(files.has('insights/index.md'), false);
   assert.equal(commits.length, 1, 'what landed is committed before the refusal is raised');
+});
+
+test('the meetings map carries the date, the resolved customer and the series, collapsed by month', async () => {
+  const notes = [
+    inote('customers/nordkap.md', 'customer', 'Nordkap Payments AB', 'active'),
+    inote('meetings/2026-09-01-checkin.md', 'meeting', 'SSO date confirmed.', null, {
+      date: '2026-09-01',
+      customer: '[[customers/nordkap]]',
+      series: 'nordkap-checkin',
+    }),
+    inote('meetings/2026-03-04-kickoff.md', 'meeting', 'Kickoff.', null, {
+      date: '2026-03-04',
+      customer: '[[customers/nordkap]]',
+    }),
+    inote('meetings/someday.md', 'meeting', 'No date yet.', null, { date: 'next week' }),
+  ];
+  const { ctx, files } = fakeCtx(notes);
+  await generateIndexFiles(ctx);
+  const map = files.get('meetings/index.md')!;
+  assert.ok(
+    map.includes(
+      '## 2026-09\n\n* 2026-09-01 [2026-09-01-checkin](meetings/2026-09-01-checkin.md) — SSO date confirmed. (customer: [nordkap](customers/nordkap.md)) (series: nordkap-checkin)\n',
+    ),
+    map,
+  );
+  assert.match(map, /^## 2026-03 \(1 meeting, use vault_list since\/until\)$/m);
+  assert.match(map, /## Undated\n\n\* \[someday\]/, 'a day field that is not a day is undated');
+  assert.doesNotMatch(map, /\[\[/);
+});
+
+test('the todos map resolves the owner and treats a due that is not a day as undated', async () => {
+  const notes = [
+    inote('people/sara-lindqvist.md', 'person', 'VP Eng at Nordkap.'),
+    inote('todos/scope.md', 'todo', 'Send the scope.', 'open', {
+      due: '2026-07-16',
+      owner: '[[people/sara-lindqvist]]',
+    }),
+    inote('todos/friday.md', 'todo', 'Sometime.', 'open', { due: 'next Friday' }),
+    inote('todos/later.md', 'todo', 'Later.', 'open', { due: '2026-08-01' }),
+  ];
+  const { ctx, files } = fakeCtx(notes);
+  await generateIndexFiles(ctx);
+  const map = files.get('todos/index.md')!;
+  const open = map.slice(map.indexOf('## Open')).trim().split('\n').slice(2);
+  assert.deepEqual(open, [
+    '* due 2026-07-16 · [sara-lindqvist](people/sara-lindqvist.md) — [scope](todos/scope.md) — Send the scope.',
+    '* due 2026-08-01 — [later](todos/later.md) — Later.',
+    '* undated — [friday](todos/friday.md) — Sometime.',
+  ]);
+});
+
+test('the Documents tree gets one map per folder, and a folder keeps its description', async () => {
+  const notes = [
+    inote('notes/scratch.md', 'note', 'Loose ends.'),
+    inote('notes/specs/sso.md', 'note', 'The SSO spec.'),
+    inote('notes/specs/2026/roadmap.md', 'note', 'Next year.'),
+    inote('understanding/product.md', 'note', 'What the product is.'),
+  ];
+  const { ctx, files } = fakeCtx(notes);
+  // An empty folder exists because its stub is on disk; a filled one has a
+  // purpose somebody wrote.
+  files.set('notes/briefs/index.md', '---\ndescription: Briefs, a folder of your documents\n---\n\n# Briefs\n');
+  files.set('notes/specs/index.md', '---\ndescription: what we are building, one page each\n---\n\n# Specs\n');
+
+  await generateIndexFiles(ctx);
+
+  const root = files.get('notes/index.md')!;
+  assert.match(root, /## Folders\n\n/);
+  assert.match(root, /\* \[Briefs\]\(notes\/briefs\/index\.md\) — Briefs, a folder of your documents \(0\)/);
+  assert.match(root, /\* \[Specs\]\(notes\/specs\/index\.md\) — what we are building, one page each \(2\)/);
+  assert.match(root, /## Documents\n\n\* \[scratch\]\(notes\/scratch\.md\) — Loose ends\.\n/);
+  assert.doesNotMatch(root, /sso\.md|roadmap\.md|product\.md/, 'only this level, never understanding');
+
+  const specs = files.get('notes/specs/index.md')!;
+  assert.match(specs, /^---\ndescription: what we are building, one page each\n---\n/, 'kept');
+  assert.match(specs, /\* \[2026\]\(notes\/specs\/2026\/index\.md\) — 2026, a folder of your documents \(1\)/);
+  assert.match(specs, /## Documents\n\n\* \[sso\]\(notes\/specs\/sso\.md\)/);
+
+  const deep = files.get('notes/specs/2026/index.md')!;
+  assert.match(deep, /# 2026\n\n2026, a folder of your documents\n\n\* \[roadmap\]/);
+  assert.match(files.get('notes/briefs/index.md')!, /# Briefs\n\nBriefs, a folder of your documents\n$/);
+  assert.match(files.get('understanding/index.md')!, /product\.md/, 'understanding has its own map');
+  assert.match(files.get('index.md')!, /\* \[Notes\]\(notes\/index\.md\) — .* \(3\)/, 'root counts every document');
+
+  // A second pass keeps the written purpose and changes nothing.
+  const again = await generateIndexFiles(ctx);
+  assert.deepEqual(again.written, []);
 });
 
 test('searchNotes drops reserved orientation files from results', () => {

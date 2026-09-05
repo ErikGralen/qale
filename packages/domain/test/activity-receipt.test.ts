@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { activityAction, activityLine, appliedReceipt, readAppliedReceipt } from '../src/index.js';
+import {
+  activityAction,
+  activityLine,
+  appliedReceipt,
+  labelLine,
+  readAppliedReceipt,
+} from '../src/index.js';
 
 // The receipt for a write that needed no card: the Activity row's sentence, and
 // the quiet line the chat shows. Both are written once, here, because the tool
@@ -102,4 +108,23 @@ test('a write still waiting on the PM reads back as nothing', () => {
   assert.equal(readAppliedReceipt(undefined), null);
   // The tag alone, with no verb behind it, is not a receipt either.
   assert.equal(readAppliedReceipt('Applied: something else entirely'), null);
+});
+
+test('a label row says what the page now carries, and names the tags', () => {
+  assert.equal(
+    labelLine({ title: 'Q3 plan', summary: 'One line about the plan.', tags: ['pricing'] }),
+    'I added a summary and a tag to Q3 plan: pricing.',
+  );
+  assert.equal(
+    labelLine({ title: 'Renewals', summary: 'One line.', tags: ['pricing', 'checkout'] }),
+    'I added a summary and 2 tags to Renewals: pricing, checkout.',
+  );
+  assert.equal(
+    labelLine({ title: 'Renewals', summary: 'One line.', tags: [] }),
+    'I added a summary to Renewals.',
+  );
+  assert.equal(
+    labelLine({ title: 'Renewal risk', summary: null, tags: ['pricing'] }),
+    'I tagged Renewal risk: pricing.',
+  );
 });

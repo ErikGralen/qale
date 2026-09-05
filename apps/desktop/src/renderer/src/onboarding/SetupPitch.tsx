@@ -16,11 +16,10 @@ import { setupPitch, type PitchPlan } from './setup-pitch';
  * says what it found and what it has set itself up to do about it. Nothing is
  * asked. There is no next step, no primary button, and no tour.
  *
- * It sits on Home rather than in the Inbox or in a session. The Inbox is the
- * queue of things that need a decision and this needs none; a session would be
- * a conversation the PM has to start, which is the ask this card exists to
- * remove. Home is the page everybody lands on, and this is the slot day-one
- * orientation already had.
+ * It sits on Home rather than in a session. A session holds what needs a
+ * decision and this needs none; starting one is a conversation the PM has to
+ * begin, which is the ask this card exists to remove. Home is the page
+ * everybody lands on, and this is the slot day-one orientation already had.
  *
  * Every line is a promise, so `setup-pitch.ts` builds them from what the
  * workspace actually holds and returns nothing when it would have to guess.

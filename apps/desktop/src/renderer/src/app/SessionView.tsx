@@ -18,7 +18,7 @@ import {
   RotateCcw,
   Wand2,
 } from 'lucide-react';
-import type { NoteRefDTO, SessionFileDTO } from '@qale/ipc';
+import type { NoteRefDTO, SessionFileDTO, SessionScopeDTO } from '@qale/ipc';
 import { readAppliedReceipt, titleFromSlug } from '@qale/domain';
 import { parseKickoff, type Kickoff } from '@qale/sessions';
 import { IpcChatTransport } from '../lib/ipc-transport';
@@ -31,11 +31,10 @@ import { HeaderAction, HeaderActions, PageHeader } from '../components/PageHeade
 import { InkWriting } from '../components/InkWriting';
 import { Markdown } from '../components/Markdown';
 import { DraftTextPanel } from '../components/DraftTextPanel';
-import { SessionReview } from '../components/inbox/SessionReview';
-import { SpawnCard } from '../components/inbox/SpawnCard';
-import { CodebaseCard } from '../components/inbox/CodebaseCard';
-import { CommentsCard } from '../components/inbox/CommentsCard';
-import { QuestionCard } from '../components/inbox/QuestionCard';
+import { SessionReview } from '../components/review/SessionReview';
+import { SpawnCard } from '../components/review/SpawnCard';
+import { CodebaseCard } from '../components/review/CodebaseCard';
+import { QuestionCard } from '../components/review/QuestionCard';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { useChatMentions } from './ChatMentions';
@@ -191,6 +190,8 @@ function doneLabel(part: AnyPart): { verb: string; detail?: string } {
       return { verb: 'Searched', detail: str('query') && `“${str('query')}”` };
     case 'vault_grep':
       return { verb: 'Scanned for', detail: str('pattern') && `“${str('pattern')}”` };
+    case 'vault_backlinks':
+      return { verb: 'Followed links to', detail: str('path') && titleFromSlug(str('path')!) };
     case 'vault_list':
       return {
         verb: 'Listed notes',
@@ -302,6 +303,8 @@ function liveLabel(part: AnyPart | undefined): string {
       return str('query') ? `Searching “${str('query')}”` : 'Searching the memory…';
     case 'vault_grep':
       return str('pattern') ? `Scanning for “${str('pattern')}”` : 'Scanning the memory…';
+    case 'vault_backlinks':
+      return str('path') ? `Following links to ${titleFromSlug(str('path')!)}` : 'Following links…';
     case 'vault_list':
       return 'Listing notes…';
     case 'draft_text':
@@ -452,6 +455,7 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
       [
         'search_vault',
         'vault_grep',
+        'vault_backlinks',
         'vault_list',
         'vault_outline',
         'jira_search',
@@ -546,7 +550,8 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
  * chips exactly like vault targets show as page links — a run is never "on"
  * nothing when there was a something. The skill's own one-line summary sits
  * beneath, because a title like "Handle new sources" names the skill without
- * saying what it does.
+ * saying what it does. The raw instruction text stops there: it is machine
+ * prose composed for the model, not for the PM to read.
  */
 function RunRow({
   kickoff,
@@ -572,10 +577,6 @@ function RunRow({
   /** Opens a source chip in the session-file reader. */
   onOpenFile?: (path: string, opts?: NavOpts) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const instruction = kickoff.instruction
-    ? kickoff.instruction.charAt(0).toUpperCase() + kickoff.instruction.slice(1)
-    : '';
   const targets = kickoff.targets ?? [];
   const hasObjects = targets.length > 0 || sources.length > 0;
   return (
@@ -647,28 +648,7 @@ function RunRow({
             })}
           </div>
           {skillSummary && <p className="mt-0.5 text-xs text-muted-foreground">{skillSummary}</p>}
-          {open && instruction && (
-            // Kept as it was written. These instructions are composed as lines —
-            // a sentence, then one bullet per thing the run was handed — and a
-            // plain paragraph collapsed all of it into a single grey wall that
-            // nobody could find anything in.
-            <p className="mt-2 border-t border-border pt-2 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
-              {instruction}
-            </p>
-          )}
         </div>
-        {instruction && (
-          <button
-            className="mt-1 flex shrink-0 items-center gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-          >
-            Instructions
-            <ChevronDown
-              className={`size-3 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
-            />
-          </button>
-        )}
       </div>
     </div>
   );
@@ -697,6 +677,12 @@ interface SessionViewProps {
   /** Shows a "New session" button in the header wired to this. */
   onNewSession?: () => void;
   initialPrompt?: string;
+  /**
+   * The page a scoped Ask was started from, as a filter (IM-13). It travels as
+   * data, not as words: the session is built with the matching notes listed in
+   * its system prompt. Spent on the first turn, like the opening skill.
+   */
+  scope?: SessionScopeDTO;
   /** Prepended to the first user message to scope the read (side session). */
   scopeHint?: string;
   /**
@@ -795,6 +781,7 @@ function SessionThread({
   onSessionId,
   onNewSession,
   initialPrompt,
+  scope,
   scopeHint,
   embedded,
   backgroundStreamId,
@@ -870,8 +857,9 @@ function SessionThread({
           return name;
         },
         () => pickedModelRef.current ?? undefined,
+        scope,
       ),
-    [skill, initialSessionId],
+    [skill, initialSessionId, scope],
   );
   const { messages, sendMessage, regenerate, status, stop, error } = useChat({
     transport,
@@ -989,8 +977,8 @@ function SessionThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt]);
 
-  // A turn handed to this conversation from somewhere else — the Inbox asking
-  // the session that proposed a card to fix one that can no longer be applied.
+  // A turn handed to this conversation from somewhere else — a card surface
+  // asking the session that proposed a card to fix one that cannot be applied.
   // It waits for a run in flight rather than being dropped into it, and it is
   // claimed before sending so two open views of one session send it once.
   const seeded = boundSessionId ? sessionSeeds[boundSessionId] : undefined;
@@ -1001,7 +989,7 @@ function SessionThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seeded, boundSessionId, busy, backgroundBusy, askPending]);
 
-  // After a settled turn, refresh the Inbox — any session may now have proposed.
+  // After a settled turn, refresh the cards — any session may now have proposed.
   useEffect(() => {
     if (status === 'ready') void refreshProposals();
   }, [status, refreshProposals]);
@@ -1279,18 +1267,10 @@ function SessionThread({
 
             {/* The turn is parked on the PM. First of everything below the
               transcript: the agent is holding its whole reading open waiting
-              for this, and nothing else here can move until it settles.
-
-              Which card depends on what it parked on, and `comments` is read
-              first: a round carries no questions, so the question card drawn
-              from one would be an empty card. */}
-            {boundSessionId &&
-              askRequests[boundSessionId] &&
-              (askRequests[boundSessionId]!.comments ? (
-                <CommentsCard request={askRequests[boundSessionId]!} />
-              ) : (
-                <QuestionCard request={askRequests[boundSessionId]!} />
-              ))}
+              for this, and nothing else here can move until it settles. */}
+            {boundSessionId && askRequests[boundSessionId] && (
+              <QuestionCard request={askRequests[boundSessionId]!} />
+            )}
 
             {/* A fan-out waiting on approval. Above the proposal cards: nothing
               else in this session can move until it settles. */}
@@ -1305,7 +1285,7 @@ function SessionThread({
             )}
 
             {/* The cards this session proposed — approvable right here, so the PO
-              never has to hop to the Inbox to close out a meeting. */}
+              never has to leave the session to close out a meeting. */}
             {boundSessionId && <SessionReview sessionId={boundSessionId} />}
           </div>
         </div>

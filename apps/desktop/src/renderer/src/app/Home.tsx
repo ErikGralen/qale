@@ -1,23 +1,15 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import type { MouseEvent, ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   CalendarClock,
-  ChevronRight,
-  CircleHelp,
-  FileClock,
   FileUp,
   FolderOpen,
   FolderTree,
   House,
-  Inbox,
   Layers,
-  ListTodo,
-  MessageSquare,
-  Mic,
   PenLine,
   Search,
   SquarePen,
-  Target,
   TriangleAlert,
   X,
 } from 'lucide-react';
@@ -38,34 +30,23 @@ import {
   SendButton,
   useAutoGrow,
 } from '../components/Composer';
-import { firstStepsShowing } from '../onboarding/FirstSteps';
 import { SetupPitch } from '../onboarding/SetupPitch';
 import { contentNotes } from '../lib/contexts';
 import { isBulkPaste, requestCapture } from '../lib/capture-event';
-import { navFromEvent, type NavOpts } from '../lib/nav';
 import { localDateStr } from '../lib/dates';
-import {
-  homeRows,
-  type AttentionKind,
-  type AttentionRow,
-  type AttentionTarget,
-  type AttentionTone,
-} from '../lib/attention';
-import { whereThingsStand, type StandKind } from '../lib/where-things-stand';
 
 /**
  * Home — the gateway (⇧⌘H, ⌘T, the sidebar's first row, and what an empty
  * workbench falls back to).
  *
  * Shaped for the ninety seconds between meetings, in one column, in reading
- * order: who and when you are (with the two creation verbs at hand) → what is
- * actually waiting on you → the bar that asks, with its starter verbs touching
- * it (they seed the bar; apart they read as unrelated furniture). The work
- * still comes first in reading order, but the bar is the page's centerpiece:
- * the waiting list is a quiet flat list, the starters are borderless chips
- * centered under the bar, and the composer is the only card on the page — one
- * open field on a page of ink. Nothing below the fold, no dashboard, no
- * metrics: every line is either an action or a fact with a destination.
+ * order: who and when you are (with the two creation verbs at hand) → the bar
+ * that asks, with its starter verbs touching it (they seed the bar; apart they
+ * read as unrelated furniture). The bar is the page's centerpiece: the
+ * starters are borderless chips centered under it, and the composer is the
+ * only card on the page — one open field on a page of ink. Nothing below the
+ * fold, no dashboard, no metrics: every line is either an action or a fact
+ * with a destination.
  */
 export function Home() {
   const { vault, openVaultDialog, skills } = useApp();
@@ -105,13 +86,7 @@ export function Home() {
             <QuickActions />
           </div>
           <Notices />
-          {/* Above the waiting list on purpose: on day one there is nothing
-              waiting, and this is what changes that. It is the pitch once the
-              agent has seen enough to make one (E-24), the first-steps
-              checklist until then, and nothing at all once either is put
-              away. */}
           <SetupPitch onChange={seed} />
-          <Waiting />
           {/* Extra air on top of the column gap: the pause before the page's
               centerpiece is part of what makes it the centerpiece. */}
           <div className="mt-4 flex flex-col gap-3">
@@ -479,7 +454,7 @@ const CATEGORIES: Category[] = [
  * can see rather than watching a session start on a guess. Where the sentence
  * carries an obvious skill, that lands in the bar's skill chip too, the same
  * as picking it by hand. Last on the page, so the stack grows downward into
- * free space instead of shoving the waiting list around.
+ * free space instead of shoving the rest of the page around.
  */
 function Starters({ onPick }: { onPick: (text: string, skillName?: string) => void }) {
   const { tree } = useApp();
@@ -567,10 +542,11 @@ const isMac = navigator.userAgent.includes('Macintosh');
 const isWindows = navigator.userAgent.includes('Windows');
 /** Where the Windows installer lives. Opens in the browser, like every link here. */
 const GIT_FOR_WINDOWS = 'https://git-scm.com/download/win';
+const FOCUS_RING = 'focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none';
 
 /**
  * Dismissed notices, per workspace: `qale.homeNotices.v1:<workspace path>` → ids.
- * View-only state, like the Inbox's review asks — the answer is "I know, leave
+ * View-only state, like the session's review asks — the answer is "I know, leave
  * me alone", which is about this person and this machine, not about the memory,
  * so it never goes near the workspace itself.
  */
@@ -706,355 +682,6 @@ function Notices() {
           </button>
         </div>
       ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Waiting — Home's view of the one attention list
-// ---------------------------------------------------------------------------
-
-const TONE_CLASS: Record<AttentionTone, string> = {
-  brand: 'text-brand',
-  warning: 'text-warning',
-  muted: 'text-muted-foreground',
-};
-
-/** One glyph per kind of attention — the same vocabulary the rest of the app
- *  uses for these places. */
-const KIND_ICON: Record<AttentionKind, LucideIcon> = {
-  question: CircleHelp,
-  card: Inbox,
-  result: MessageSquare,
-  meeting: CalendarClock,
-  review: FileClock,
-  capture: Mic,
-  todo: ListTodo,
-};
-
-/** How many rows Home will show before it stops — the rest live in the views
- *  they belong to, and a list you scroll is not a ninety-second read. */
-const MAX_ROWS = 4;
-
-/**
- * Home's "Waiting on you": `homeRows` over the app's one attention list — the
- * top four, with proposals, unfiled meetings and due commitments each behind one
- * door. Home computes no count of its own; every number here is a filter over
- * the same list the sidebar badge and the Inbox read (lib/attention.ts).
- */
-function Waiting() {
-  const {
-    tree,
-    settings,
-    attention,
-    openInbox,
-    openTodos,
-    openCalendar,
-    openDoc,
-    openChat,
-    openFolder,
-    dismissCapture,
-    undoCapture,
-  } = useApp();
-  const now = useNow();
-  /**
-   * The series that just went quiet, if one did. Dismissing two meetings from
-   * the same recurring sync stops it asking for good, which is a bigger thing
-   * than the click looked like — so the row's place says what happened and
-   * offers the way back, until the PO leaves the page.
-   */
-  const [muted, setMuted] = useState<{ path: string; series: string } | null>(null);
-  /** Whether the folded group of empty meetings is open. Nothing else folds. */
-  const [unfolded, setUnfolded] = useState(false);
-
-  const rows = useMemo(() => homeRows(attention, MAX_ROWS, now), [attention, now]);
-
-  /** The row's destination, in this app's navigation verbs. */
-  const openRow = (target: AttentionTarget, opts?: NavOpts) => {
-    switch (target.open) {
-      case 'doc':
-        return void openDoc(target.path, opts);
-      case 'session':
-        return openChat({ id: target.sessionId, title: target.title }, opts);
-      case 'inbox':
-        return openInbox(opts);
-      case 'todos':
-        return openTodos(opts);
-      case 'calendar':
-        return openCalendar(opts);
-      case 'folder':
-        return openFolder(target.dir, opts);
-      case 'capture':
-        // The row IS the way to fill the meeting: the tray opens already
-        // attached to it, so nothing has to be picked twice.
-        return requestCapture({ aim: { kind: 'meeting', path: target.path, title: target.title } });
-      case 'expand':
-        // Not a place. The group unfolds where it stands, so the meetings it
-        // holds are read and dealt with without leaving the page.
-        return setUnfolded((v) => !v);
-    }
-  };
-
-  /** Wave off one empty meeting for good. */
-  const dismiss = (path: string) => {
-    void dismissCapture(path).then((series) => series && setMuted({ path, series }));
-  };
-
-  // Day one is about the PO's own material: a fresh workspace still ships the
-  // skill pack and its folder index files, and neither is something they wrote.
-  const empty = contentNotes(tree).length === 0;
-
-  // Day one: the memory has nothing to wait on, so the space teaches the one
-  // move that starts everything instead of sitting blank. Unless First steps
-  // is above, which teaches the same move with the rest of the sequence around
-  // it — then this would be the second card on the page saying it.
-  if (empty && !firstStepsShowing(settings)) {
-    return (
-      <div className="rounded-xl border border-dashed border-border px-4 py-3.5">
-        <button
-          className="flex w-full items-start gap-3 text-left focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-          onClick={() => requestCapture()}
-        >
-          <FileUp className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium">Start with a meeting you already have</span>
-            <span className="mt-0.5 block text-sm text-muted-foreground">
-              Drop a transcript anywhere in the window. The memory files it and turns the follow-ups
-              into proposals you approve.
-            </span>
-          </span>
-          <span className="mt-0.5 shrink-0 text-xs text-muted-foreground tabular-nums">⇧⌘N</span>
-        </button>
-      </div>
-    );
-  }
-
-  // Nothing waiting is the one moment the PO is free, and a blank page was the
-  // app's worst answer to it. The strip says where the work stands instead:
-  // facts only, no ask, and only while this list is empty (docs/closing-beat.md).
-  if (rows.length === 0 && !muted) return <WhereThingsStand now={now} openRow={openRow} />;
-
-  // A flat list, not a panel: the rows sit straight on the paper with a hover
-  // pill for affordance, so the composer below stays the only card on the
-  // page. The negative margin lets the pill breathe past the text column while
-  // the content keeps the greeting's left edge.
-  return (
-    <div>
-      <h2 className="mb-1 text-dense font-semibold text-muted-foreground">Waiting on you</h2>
-      <ul className="-mx-2.5">
-        {rows.map((row) => (
-          <Fragment key={row.id}>
-            <WaitingRow
-              row={row}
-              unfolded={unfolded}
-              openRow={openRow}
-              openDoc={openDoc}
-              dismiss={dismiss}
-            />
-            {row.children &&
-              unfolded &&
-              row.children.map((child) => (
-                <WaitingRow
-                  key={child.id}
-                  row={child}
-                  nested
-                  unfolded={unfolded}
-                  openRow={openRow}
-                  openDoc={openDoc}
-                  dismiss={dismiss}
-                />
-              ))}
-          </Fragment>
-        ))}
-        {muted && (
-          <li className="flex items-center gap-2.5 px-2.5 py-2">
-            <Mic className="size-4 shrink-0 text-muted-foreground/50" aria-hidden />
-            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-              Okay, no more reminders for this series.
-            </span>
-            <button
-              className="shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none"
-              onClick={() => {
-                void undoCapture(muted.path, muted.series);
-                setMuted(null);
-              }}
-            >
-              Undo
-            </button>
-          </li>
-        )}
-      </ul>
-    </div>
-  );
-}
-
-/** The shared shape of a waiting row: icon, sentence, short fact, chevron. */
-const ROW_SHELL =
-  'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors duration-150 hover:bg-accent motion-reduce:transition-none';
-const FOCUS_RING = 'focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none';
-
-/**
- * One row of the waiting list.
- *
- * Most rows are a single button: one thing to look at, one place it goes. An
- * empty-meeting row is two things at once — the meeting, and the move that
- * fills it — so it is a plain element carrying the click, with the meeting's
- * name and the "add a transcript" fact as real buttons inside it. That keeps
- * both reachable by keyboard, which a link nested in a button could not be.
- */
-function WaitingRow({
-  row,
-  nested,
-  unfolded,
-  openRow,
-  openDoc,
-  dismiss,
-}: {
-  row: AttentionRow;
-  nested?: boolean;
-  unfolded: boolean;
-  openRow: (target: AttentionTarget, opts?: NavOpts) => void;
-  openDoc: (path: string, opts?: NavOpts) => unknown;
-  dismiss: (path: string) => void;
-}) {
-  const Icon = KIND_ICON[row.kind];
-  // One named meeting can be waved off; the group standing for several cannot,
-  // because it is not about any one of them.
-  const waveOff = row.target.open === 'capture' ? row.target.path : null;
-  const group = !!row.children;
-  const open = (e: MouseEvent<HTMLElement>) => openRow(row.target, navFromEvent(e));
-
-  const icon = <Icon className={`size-4 shrink-0 ${TONE_CLASS[row.tone]}`} aria-hidden />;
-  // The trailing slot is the dismiss on a row that can be waved off, so the
-  // column stays one column and the chevrons on the other rows keep their line.
-  // A group's chevron points down at what it holds, and turns when it opens.
-  const chevron = (
-    <ChevronRight
-      className={`size-3.5 shrink-0 text-muted-foreground/50 transition-transform duration-150 motion-reduce:transition-none ${
-        waveOff ? 'invisible' : ''
-      } ${group ? (unfolded ? '-rotate-90' : 'rotate-90') : ''}`}
-      aria-hidden
-    />
-  );
-
-  return (
-    <li className={`group/row relative ${nested ? 'pl-6' : ''}`}>
-      {row.link ? (
-        <div
-          className={`${ROW_SHELL} cursor-pointer`}
-          onClick={open}
-          onAuxClick={(e: MouseEvent<HTMLDivElement>) => e.button === 1 && open(e)}
-        >
-          {icon}
-          <span className="min-w-0 flex-1 truncate text-sm">
-            {row.link.before}
-            <button
-              className={`rounded-sm text-brand underline-offset-2 hover:underline ${FOCUS_RING}`}
-              onClick={(e: MouseEvent<HTMLButtonElement>) => {
-                e.stopPropagation();
-                void openDoc(row.link!.path, navFromEvent(e));
-              }}
-            >
-              {row.link.text}
-            </button>
-            {row.link.after}
-          </span>
-          <button
-            className={`shrink-0 rounded-sm text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline ${FOCUS_RING}`}
-            onClick={(e: MouseEvent<HTMLButtonElement>) => {
-              e.stopPropagation();
-              open(e);
-            }}
-          >
-            {row.meta}
-          </button>
-          {chevron}
-        </div>
-      ) : (
-        <button
-          className={`${ROW_SHELL} ${FOCUS_RING}`}
-          onClick={open}
-          onAuxClick={(e: MouseEvent<HTMLButtonElement>) => e.button === 1 && open(e)}
-          aria-expanded={group ? unfolded : undefined}
-        >
-          {icon}
-          <span className="min-w-0 flex-1 truncate text-sm">{row.label}</span>
-          <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-            {group && unfolded ? 'hide' : row.meta}
-          </span>
-          {chevron}
-        </button>
-      )}
-      {waveOff && (
-        /* Quiet but always there — a control you can only find by hovering is a
-           control most people never find. */
-        <button
-          className={`absolute top-1/2 right-1.5 -translate-y-1/2 rounded-md p-1 text-muted-foreground/40 transition-colors duration-150 hover:bg-accent hover:text-foreground group-hover/row:text-muted-foreground motion-reduce:transition-none ${FOCUS_RING}`}
-          onClick={() => dismiss(waveOff)}
-          aria-label="Don’t ask about this meeting again"
-          title="Don’t ask about this meeting again"
-        >
-          <X className="size-3.5" aria-hidden />
-        </button>
-      )}
-    </li>
-  );
-}
-
-/** One glyph per fact the strip states, from the same vocabulary as the rows. */
-const STAND_ICON: Record<StandKind, LucideIcon> = {
-  meeting: CalendarClock,
-  waiting: ListTodo,
-  theme: Target,
-};
-
-/**
- * "Where things stand": what Home shows in the waiting list's place when
- * nothing is waiting (docs/closing-beat.md).
- *
- * The same rows, one tone quieter: this is orientation, not work. It states up
- * to three facts the tree already holds and lets the PO go to any of them. Only
- * Home is allowed to say "you're done", so this is where the Inbox's door and
- * the chat receipt both point.
- */
-function WhereThingsStand({
-  now,
-  openRow,
-}: {
-  now: number;
-  openRow: (target: AttentionTarget, opts?: NavOpts) => void;
-}) {
-  const { tree } = useApp();
-  const lines = useMemo(() => whereThingsStand(tree, now), [tree, now]);
-  if (lines.length === 0) return null;
-
-  return (
-    <div>
-      <h2 className="mb-1 text-dense font-semibold text-muted-foreground">Where things stand</h2>
-      <ul className="-mx-2.5">
-        {lines.map((line) => {
-          const Icon = STAND_ICON[line.kind];
-          const open = (e: MouseEvent<HTMLElement>) => openRow(line.target, navFromEvent(e));
-          return (
-            <li key={line.id}>
-              <button
-                className={`${ROW_SHELL} ${FOCUS_RING}`}
-                onClick={open}
-                onAuxClick={(e: MouseEvent<HTMLButtonElement>) => e.button === 1 && open(e)}
-              >
-                <Icon className="size-4 shrink-0 text-muted-foreground/70" aria-hidden />
-                <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-                  {line.label}
-                </span>
-                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                  {line.meta}
-                </span>
-                <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50" aria-hidden />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
     </div>
   );
 }

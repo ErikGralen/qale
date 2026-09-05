@@ -6,6 +6,7 @@ import {
   FilePlus2,
   MessageSquare,
   ScrollText,
+  Tags,
   Trash2,
   Undo2,
   type LucideIcon,
@@ -25,6 +26,7 @@ const ACTION_ICON: Record<string, LucideIcon> = {
   updated: FilePen,
   remembered: BookMarked,
   deleted: Trash2,
+  labelled: Tags,
 };
 
 /**
@@ -33,7 +35,7 @@ const ACTION_ICON: Record<string, LucideIcon> = {
  * The proof that the silence was earned. Each row is the agent's own sentence
  * about one write, in the first person and the past tense, next to the day it
  * happened and the way back. Nothing here asks for a decision: the decisions
- * are in the Inbox, and mixing the two would turn a receipt into a queue.
+ * are in the sessions, and mixing the two would turn a receipt into a queue.
  */
 export function ActivityView() {
   const { activity, refreshActivity, revertActivity, openDoc, openChat, sessions } = useApp();
@@ -106,7 +108,7 @@ export function ActivityView() {
                       onOpenSession={(e) =>
                         openChat(
                           {
-                            id: row.sessionId,
+                            id: row.sessionId ?? '',
                             // The stored session names itself; the fallback
                             // only ever shows for a run whose row has aged out.
                             title: sessions.find((s) => s.id === row.sessionId)?.title ?? 'Session',
@@ -169,16 +171,21 @@ function Row({
               </button>
             </>
           )}
-          <span aria-hidden>·</span>
-          <button
-            className="inline-flex items-center gap-1 rounded px-0.5 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={onOpenSession}
-            onAuxClick={(e) => e.button === 1 && onOpenSession(e)}
-            title="Open the session this came from"
-          >
-            <MessageSquare className="size-3" aria-hidden />
-            the session
-          </button>
+          {/* A maintenance pass has no chat behind it, so the row names none. */}
+          {row.sessionId && (
+            <>
+              <span aria-hidden>·</span>
+              <button
+                className="inline-flex items-center gap-1 rounded px-0.5 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                onClick={onOpenSession}
+                onAuxClick={(e) => e.button === 1 && onOpenSession(e)}
+                title="Open the session this came from"
+              >
+                <MessageSquare className="size-3" aria-hidden />
+                the session
+              </button>
+            </>
+          )}
           {/* The policy's own words for why this needed no card. Behind the
               hover, because the row is the point and this is the footnote. */}
           {row.reason && (

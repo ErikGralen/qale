@@ -260,3 +260,69 @@ test('ensureIgnored is additive and idempotent — a vault that predates a rule 
   ignore = await readFile(join(vault, '.gitignore'), 'utf8');
   assert.equal(ignore.match(/sessions\/\.files\//g)?.length, 1);
 });
+
+test('changedSince groups the window by path, with the day and the message prefix', async () => {
+  const vault = await tmp();
+  const git = new GitAdapter(vault);
+  await git.init();
+  await writeFile(join(vault, 'a.md'), 'v1\n');
+  await writeFile(join(vault, 'b.md'), 'other\n');
+  await git.commitPaths(['a.md', 'b.md'], 'create: a and b');
+  await writeFile(join(vault, 'a.md'), 'v2\n');
+  await git.commitPaths(['a.md'], 'edit: a');
+  await writeFile(join(vault, 'index.md'), 'map\n');
+  await git.commitPaths(['index.md'], 'librarian: refresh index.md orientation maps');
+
+  const touched = await git.changedSince(7);
+  const today = new Date().toISOString().slice(0, 10);
+
+  assert.deepEqual(
+    (touched.get('a.md') ?? []).map((t) => t.prefix).sort(),
+    ['create', 'edit'],
+    'both commits that touched a.md come back, newest first',
+  );
+  assert.deepEqual(touched.get('b.md'), [{ day: today, prefix: 'create' }]);
+  // The caller filters the noise; the adapter reports it as it is.
+  assert.deepEqual(touched.get('index.md'), [{ day: today, prefix: 'librarian' }]);
+  for (const list of touched.values()) {
+    for (const t of list) assert.match(t.day, /^\d{4}-\d{2}-\d{2}$/);
+  }
+});
+
+test('changedSince reads a message with no colon, and one that looks like a path', async () => {
+  const vault = await tmp();
+  const git = new GitAdapter(vault);
+  await git.init();
+  await writeFile(join(vault, 'a.md'), 'v1\n');
+  await git.commitPaths(['a.md'], 'no prefix here');
+  await writeFile(join(vault, 'a.md'), 'v2\n');
+  await git.commitPaths(['a.md'], 'b.md');
+
+  const touched = await git.changedSince(7);
+  assert.deepEqual(
+    (touched.get('a.md') ?? []).map((t) => t.prefix).sort(),
+    ['', ''],
+    'a message with no colon carries no prefix',
+  );
+  assert.equal(touched.get('b.md'), undefined, 'a message that reads like a path is not one');
+});
+
+test('changedSince stops at the window, and answers empty outside a repo', async () => {
+  const vault = await tmp();
+  const git = new GitAdapter(vault);
+  await git.init();
+  await writeFile(join(vault, 'old.md'), 'v1\n');
+  await simpleGit(vault).add('old.md');
+  // Backdate the commit itself, so the window is what excludes it.
+  process.env['GIT_AUTHOR_DATE'] = '2020-01-02T10:00:00';
+  process.env['GIT_COMMITTER_DATE'] = '2020-01-02T10:00:00';
+  try {
+    await simpleGit(vault).commit('edit: old');
+  } finally {
+    delete process.env['GIT_AUTHOR_DATE'];
+    delete process.env['GIT_COMMITTER_DATE'];
+  }
+
+  assert.equal((await git.changedSince(7)).size, 0, 'a commit older than the window is out');
+  assert.equal((await new GitAdapter(await tmp()).changedSince(7)).size, 0, 'no repo, no answer');
+});

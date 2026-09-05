@@ -2,6 +2,12 @@
 
 Date: 2026-09-05. Status: spec, being built.
 
+> Superseded in part 2026-09-05 by `docs/memory-placement-plan.md`. Two
+> statements below no longer hold: SB-1's "a pinned memory page renders under
+> the Memory row" (no memory page pins any more, only tickets and wiki pages
+> pin) and "Memory holds what Qale knows" as a rail place (Memory moved to the
+> footer; it is no longer a place on the rail).
+
 ## The problem
 
 The rail says Documents and Memory are two places, but the pins ignore the

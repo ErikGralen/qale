@@ -68,10 +68,9 @@ export interface CardRowsProps {
 }
 
 /**
- * The rows a group of cards renders as — the same component in the Inbox and in
- * the session that proposed them. There is one card, one approve path and one
- * set of rows; the session's review block is the Inbox's rows in another place,
- * never a second implementation of them.
+ * The rows a group of cards renders as. There is one card, one approve path and
+ * one set of rows, so every surface that draws cards draws these, never a second
+ * implementation of them.
  */
 export function CardRows({
   cards,

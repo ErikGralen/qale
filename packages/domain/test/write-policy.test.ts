@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writePolicy, appliesSilently } from '../src/index.js';
+import {
+  writePolicy,
+  appliesSilently,
+  describeWritePolicy,
+  isMachineryField,
+  type WriteFacts,
+} from '../src/index.js';
 
 // The write policy, one case per row of the table in docs/easier-tickets.md E-3.
 // This is the whole argument for the build: a write is graded by the damage it
@@ -153,4 +159,111 @@ test('appliesSilently agrees with the ruling', () => {
   assert.equal(appliesSilently({ kind: 'note' }), true);
   assert.equal(appliesSilently({ kind: 'outbound' }), false);
   assert.equal(appliesSilently({ kind: 'update' }), false);
+});
+
+// Place is the first axis of the policy (docs/background-system.md ticket 2).
+// These cases pin the two places against each other, one write at a time.
+
+test('the same write reads differently in the two places', () => {
+  for (const [kind, memory] of [
+    ['note', 'silent'],
+    ['update', 'grouped'],
+    ['decision', 'grouped'],
+  ] as const) {
+    assert.equal(writePolicy({ kind, targetPath: 'notes/brief.md' }).disposition, 'ask', kind);
+    assert.equal(writePolicy({ kind, targetPath: 'themes/pricing.md' }).disposition, memory, kind);
+  }
+});
+
+test('the rules that hold everywhere hold in both places', () => {
+  for (const targetPath of ['notes/brief.md', 'themes/pricing.md']) {
+    assert.equal(writePolicy({ kind: 'outbound', targetPath }).disposition, 'ask', targetPath);
+    assert.equal(writePolicy({ kind: 'delete', targetPath }).disposition, 'ask', targetPath);
+    assert.equal(
+      writePolicy({ kind: 'note', noteType: 'todo', targetPath }).disposition,
+      'ask',
+      targetPath,
+    );
+    assert.equal(
+      writePolicy({ kind: 'note', noteType: 'skill', asked: true, targetPath }).disposition,
+      'silent',
+      targetPath,
+    );
+    assert.equal(
+      writePolicy({ kind: 'note', noteType: 'skill', targetPath }).disposition,
+      'ask',
+      targetPath,
+    );
+    assert.equal(writePolicy({ kind: 'note', asked: true, targetPath }).disposition, 'silent');
+  }
+});
+
+// The machinery exception: the fields a maintenance pass writes on its own.
+
+test('the derived labels and the tags are known to the policy file', () => {
+  for (const field of ['summary', 'summary_at', 'purpose_of', 'type', 'captured', 'tags']) {
+    assert.equal(isMachineryField(field), true, field);
+  }
+  for (const field of ['title', 'due', 'status', 'participants']) {
+    assert.equal(isMachineryField(field), false, field);
+  }
+});
+
+// The Settings section reads the policy, so it can never say something the
+// policy does not do (docs/background-system.md ticket 6).
+
+test('the description covers both places, and says which is which', () => {
+  const places = describeWritePolicy();
+  assert.deepEqual(
+    places.map((p) => p.place),
+    ['documents', 'memory'],
+  );
+  assert.deepEqual(
+    places.map((p) => p.title),
+    ['In your documents', 'In its memory'],
+  );
+});
+
+test('every row of the description is the policy answering for that place', () => {
+  // The same list the description walks, in the same order. Two rows follow it:
+  // the labels and the tags, which no pass asks the policy about.
+  const writes: WriteFacts[] = [
+    { kind: 'outbound' },
+    { kind: 'delete' },
+    { kind: 'note', noteType: 'todo' },
+    { kind: 'update', noteType: 'skill', appendOnly: true, asked: true },
+    { kind: 'note', noteType: 'skill' },
+    { kind: 'note', asked: true },
+    { kind: 'note' },
+    { kind: 'update', appendOnly: true },
+    { kind: 'update' },
+    { kind: 'decision' },
+  ];
+  const paths = { documents: 'notes/pricing-brief.md', memory: 'themes/pricing.md' };
+
+  for (const place of describeWritePolicy()) {
+    assert.equal(place.rows.length, writes.length + 2, place.place);
+    writes.forEach((facts, i) => {
+      const row = place.rows[i]!;
+      const ruling = writePolicy({ ...facts, targetPath: paths[place.place] });
+      assert.equal(row.reason, ruling.reason, `${place.place} row ${i}`);
+      assert.equal(row.disposition, ruling.disposition, `${place.place} row ${i}`);
+    });
+    for (const row of place.rows.slice(writes.length)) {
+      assert.equal(row.disposition, 'silent', row.what);
+    }
+  }
+});
+
+test('every row of the description reads as one plain sentence', () => {
+  for (const place of describeWritePolicy()) {
+    for (const row of place.rows) {
+      assert.ok(row.what.length > 0, 'a row says nothing');
+      assert.ok(row.reason.endsWith('.'), `${row.what} has no sentence`);
+      assert.ok(!row.what.includes('—') && !row.reason.includes('—'), `${row.what}: em dash`);
+      for (const word of ['outbound', 'vault', 'frontmatter', 'proposal card', 'kind']) {
+        assert.ok(!row.what.toLowerCase().includes(word), `${row.what} says "${word}"`);
+      }
+    }
+  }
 });

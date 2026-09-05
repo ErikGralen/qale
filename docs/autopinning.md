@@ -7,6 +7,12 @@
 > Narrowed 2026-09-05 by `docs/sidebar-ia.md` (SB-2): writing in a page no
 > longer pins it, and neither does approving a card. Everything below still
 > holds, minus those two acts.
+>
+> Superseded 2026-09-05 by `docs/memory-placement-plan.md`: the auto-pin of
+> an unprocessed source (`qualifiesForRail`) is gone. A count on the footer
+> Memory row replaces it. No memory page pins any more; only tickets and wiki
+> pages pin, under their provider row. The rest of this doc describes the
+> auto-pin as it stood before that change.
 
 ## The rule, in one sentence
 
@@ -35,8 +41,12 @@ on what the PM does.
 
 | Act | Where |
 | --- | --- |
-| Make a page (⌘N, the "+" menu, the Memory shelf) | `captureNote`, `createNote` in `app-state.tsx` |
-| Hand a source over (drag-in, `file_source`) | the auto-pinner, via `qualifiesForRail` |
+| Make a document (⌘N, the "+" menu) | `captureNote`, `createNote` in `app-state.tsx` |
+| ~~Hand a source over (drag-in, `file_source`)~~ | ~~the auto-pinner, via `qualifiesForRail`~~ — gone 2026-09-05; see the note at the top |
+
+Memory pages (source, decision, insight, theme, customer, person) no longer
+pin at all, by hand or on creation. Only documents, tickets and wiki pages
+pin.
 
 The first goes through `pinForWork(path, type?)`. It adds the path to
 `favorites` and does nothing else: no mark, no removal, no reordering.
@@ -74,8 +84,10 @@ clears `dismissed` when it pins, exactly as before.
   now.
 - The `themes` dependency on the auto-pin effect.
 
-`qualifiesForRail` kept its name and now takes one argument. It answers one
-question: is this an unread source the PM handed over?
+~~`qualifiesForRail` kept its name and now takes one argument. It answers one
+question: is this an unread source the PM handed over?~~ `qualifiesForRail`
+is deleted as of 2026-09-05. The unprocessed-source count moved to the footer
+Memory row instead.
 
 ## What the code gained
 
@@ -85,8 +97,8 @@ no way to know what a card created, and diffing the tree would have been a guess
 
 ## Consequences worth knowing
 
-- Dropping a transcript for yesterday's meeting pins the **source**, not the
-  meeting page. The source is the thing that arrived, and it is the row you
-  click through from.
+- ~~Dropping a transcript for yesterday's meeting pins the **source**, not the
+  meeting page.~~ No longer true: sources do not pin. A dropped transcript
+  shows up in the footer Memory row's count instead.
 - The rail stays short. A day of reading, editing and approving adds no rows at
   all, so what is there is what you put there.

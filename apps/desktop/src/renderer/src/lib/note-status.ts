@@ -1,4 +1,5 @@
-import type { NoteRefDTO } from '@qale/ipc';
+import { isFolderIndex } from '@qale/domain';
+import type { NoteRefDTO, VaultTreeDTO } from '@qale/ipc';
 import { timeAgo } from './session-meta';
 
 /** When a note was last relevant: its frontmatter date, falling back to mtime. */
@@ -223,6 +224,11 @@ export function isUnreadMeeting(m: {
  *
  * Calendar is a meeting's home, so a meeting never holds a rail row. Calendar
  * shows what is coming and Home shows today (docs/sidebar-ia.md, SB-1).
+ *
+ * The six memory types are here too (docs/memory-placement.md). Memory is a
+ * quiet row in the footer now, and nothing hangs under it: a theme or a person
+ * is agent output, and a rail full of it is not a working set. What the PO
+ * writes pins under Documents, and a mirror pins under the system it came from.
  */
 const UNPINNABLE: ReadonlySet<string> = new Set([
   'todo',
@@ -230,26 +236,36 @@ const UNPINNABLE: ReadonlySet<string> = new Set([
   'agent',
   'session',
   'meeting',
+  'source',
+  'decision',
+  'insight',
+  'theme',
+  'customer',
+  'person',
 ]);
 
-/** Whether the rail may hold this type at all. See {@link UNPINNABLE}. */
+/** Whether the rail may hold this type at all. Only `note`, `ticket` and
+ *  `wikipage` are left. See {@link UNPINNABLE}. */
 export function isPinnable(type: string): boolean {
   return !UNPINNABLE.has(type);
 }
 
 /**
- * Whether the system may put a note on the rail by itself. One thing qualifies:
- * a source the PO handed over that nobody has read yet. Handing a file to the app
- * is an act, and the row is the app answering it.
+ * How many sources nobody has read yet. The Memory row in the footer and the
+ * Memory page's source shelf both print this, so the two numbers cannot
+ * disagree.
  *
- * Nothing else auto-pins. The rail holds what the PO made, approved, or wrote in,
- * and it loses a row only to their own hand (docs/autopinning.md). A rule that
- * reached for today's meetings or every open ticket added rows on the clock's say
- * so, and since nothing is ever removed for them, the rail filled with a calendar
- * instead of a working set.
+ * It replaces the old auto-pin, which put every unread source on the rail and
+ * left it there (docs/autopinning.md). A count says the same thing in one
+ * character and takes nothing back from the PO.
  */
-export function qualifiesForRail(n: NoteRefDTO): boolean {
-  return n.type === 'source' && isUnprocessedSource(n);
+export function unprocessedSourceCount(tree: VaultTreeDTO | null): number {
+  if (!tree) return 0;
+  let n = 0;
+  for (const group of tree.groups)
+    for (const note of group.notes)
+      if (note.type === 'source' && !isFolderIndex(note.path) && isUnprocessedSource(note)) n += 1;
+  return n;
 }
 
 /** The meeting's time summary: clock time when it's today, else how long ago.

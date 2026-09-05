@@ -3,8 +3,8 @@ import {
   CalendarClock,
   Check,
   ChevronRight,
+  ClipboardCheck,
   FileUp,
-  Inbox,
   KeyRound,
   MessageSquare,
   PenLine,
@@ -42,16 +42,6 @@ import { useApp } from '../state/app-state';
  * Each step makes the next one better. None of them blocks another.
  */
 
-/**
- * Is the card on the page? Home asks before drawing its own day-one
- * invitation, which teaches the same move: two cards saying "drop a
- * transcript" is one card too many, and the row here says it with the rest of
- * the sequence around it.
- */
-export function firstStepsShowing(settings: SettingsDTO | null): boolean {
-  return !!settings && !settings.onboarding.dismissed;
-}
-
 interface Row {
   id: string;
   label: string;
@@ -83,10 +73,11 @@ export function FirstSteps() {
     settings,
     patchOnboarding,
     openSettings,
-    openInbox,
     openSession,
     openCalendar,
     openChat,
+    openChats,
+    proposals,
     tree,
     askRequests,
     sessions,
@@ -128,12 +119,25 @@ export function FirstSteps() {
     return null;
   }, [askRequests, sessions]);
 
+  /**
+   * The newest session still holding a card. That is where a proposal is
+   * decided now, so the row opens it rather than a queue of its own.
+   */
+  const waitingCard = useMemo(() => {
+    const card = [...proposals]
+      .filter((p) => p.status === 'pending')
+      .sort((a, b) => b.created - a.created)[0];
+    if (!card) return null;
+    const session = sessions.find((s) => s.id === card.sessionId);
+    return { id: card.sessionId, title: session?.title ?? 'Session' };
+  }, [proposals, sessions]);
+
   const rows = useMemo<Row[]>(() => {
     if (!settings || !onboarding) return [];
     return buildRows(settings, onboarding, providers, {
       hasMeetings,
       openSettings: (section) => openSettings(section),
-      openInbox: () => openInbox(),
+      openProposal: () => (waitingCard ? openChat(waitingCard) : openChats()),
       // The Calendar is its own screen now (E-12), so the row that wants a
       // meeting to brief goes there, not into the folder underneath it.
       openCalendar: () => openCalendar(),
@@ -160,10 +164,11 @@ export function FirstSteps() {
     onboarding,
     providers,
     hasMeetings,
+    waitingCard,
     waitingInterview,
     openSettings,
-    openInbox,
     openCalendar,
+    openChats,
     openSession,
     openChat,
   ]);
@@ -341,7 +346,7 @@ function buildRows(
   go: {
     hasMeetings: boolean;
     openSettings: (section: SettingsSection) => void;
-    openInbox: () => void;
+    openProposal: () => void;
     openCalendar: () => void;
     addSource: () => void;
     ask: () => void;
@@ -383,11 +388,11 @@ function buildRows(
       id: 'proposal',
       label: 'Decide on a proposal',
       hint: 'Nothing is written to your workspace until you say yes',
-      icon: Inbox,
+      icon: ClipboardCheck,
       done: !!stamped.proposal,
       line: stamped.proposal?.line,
-      go: go.openInbox,
-      cta: 'Inbox',
+      go: go.openProposal,
+      cta: 'Open',
     },
     {
       id: 'prep',

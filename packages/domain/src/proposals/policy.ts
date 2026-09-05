@@ -1,6 +1,6 @@
 /**
  * The write policy: how much of the PM's attention one write is worth
- * (docs/easier-tickets.md E-3).
+ * (docs/easier-tickets.md E-3, docs/background-system.md ticket 2).
  *
  * Every write the agent makes used to cost a card, and a card costs a reading, a
  * judgement and a click. An ordinary week ran to an estimated 30 to 70 of them,
@@ -15,6 +15,12 @@
  *             one of its own. Workstream B1 builds that card; until it exists a
  *             grouped write behaves exactly like `ask`.
  * - `ask`     one card, on its own, every time.
+ *
+ * Place is the first axis. The workspace has two of them and they are not the
+ * same kind of thing. `notes/` is Documents, the folder the PM writes in. The
+ * rest is Memory, what Qale knows and keeps for them. A page the agent files for
+ * itself costs the PM nothing; a page in their own folder is a page they did not
+ * put there.
  *
  * Nothing here is new data. A proposal already carries its kind, the note type it
  * writes, the file it aims at, and whether the PM asked for it.
@@ -80,8 +86,51 @@ function inDocuments(facts: WriteFacts): boolean {
 }
 
 /**
- * What happens to one write. First rule that matches wins, and the order is the
- * argument:
+ * The machinery exception, stated once (docs/background-system.md ticket 2).
+ *
+ * A derived label is not authorship. `summary`, `summary_at`, `summary_of`,
+ * `purpose_of`, and the fields the normalizer fills (`type` from the folder,
+ * `captured` from the file date) all restate what the file and its folder
+ * already say. Nobody reads them as a claim. So the maintenance passes write
+ * them straight to the file, everywhere, Documents included, with no card. The
+ * git commit is the receipt and history is the revert.
+ *
+ * `tags` are Qale's too (docs/background-system.md ticket 3). The PM reads them
+ * and never edits them, so the same pass writes them the same silent way. A tag
+ * files a page; it says nothing the page does not.
+ *
+ * These fields never reach {@link writePolicy}, because a pass is not a proposal.
+ * This list is here so the exception has a footprint in the policy and not only
+ * in prose. Which tier each field belongs to is stated in
+ * `apps/desktop/src/renderer/src/state/properties-schema.ts` (`owner`), and the
+ * passes keep their own lists pointing back at it. The domain must not import a
+ * renderer module, so this stays a pointer.
+ */
+export const DERIVED_LABEL_FIELDS = [
+  'summary',
+  'summary_at',
+  'summary_of',
+  'purpose_of',
+  'type',
+  'captured',
+] as const;
+
+/** Fields Qale owns and fills for the PM to read. See {@link DERIVED_LABEL_FIELDS}. */
+export const QALE_OWNED_FIELDS = ['tags'] as const;
+
+/**
+ * Does a maintenance pass write this field on its own, in either place? Such a
+ * field goes straight to the file and never becomes a card.
+ */
+export function isMachineryField(field: string): boolean {
+  return (
+    (DERIVED_LABEL_FIELDS as readonly string[]).includes(field) ||
+    (QALE_OWNED_FIELDS as readonly string[]).includes(field)
+  );
+}
+
+/**
+ * The rules that hold in both places. First rule that matches wins.
  *
  * 1. Outbound goes to Jira, Confluence or a calendar, and the code has no
  *    compensating action for a send. It always asks, one card per send, and it
@@ -95,17 +144,8 @@ function inDocuments(facts: WriteFacts): boolean {
  *    (E-25) is a whole file nobody watched being made.
  * 5. What the PM asked for in the chat applies on the spot. The card was asking
  *    them to confirm their own instruction (E-4).
- * 6. Anything else landing in `notes/` asks. That folder is the PM's own
- *    Documents, and nothing writes there unless they said so in the chat
- *    (E-14). Where a page goes is part of what the write does: a page the agent
- *    files for itself costs the PM nothing, and a page in their folder is a
- *    page they did not put there.
- * 7. A new note, or text added at the end of one, applies silently. Both add;
- *    neither rewrites what is already there (E-5).
- * 8. A patch over existing text, and a decision, still need a human. They belong
- *    in one grouped card per intent (E-6, B1's work).
  */
-export function writePolicy(facts: WriteFacts): WriteRuling {
+function rulingEverywhere(facts: WriteFacts): WriteRuling | null {
   if (facts.kind === 'outbound') {
     return {
       disposition: 'ask',
@@ -129,9 +169,28 @@ export function writePolicy(facts: WriteFacts): WriteRuling {
   if (facts.asked) {
     return { disposition: 'silent', reason: 'You asked for this in the chat.' };
   }
-  if (inDocuments(facts)) {
-    return { disposition: 'ask', reason: 'Documents is your folder, so you say what goes in it.' };
-  }
+  return null;
+}
+
+/**
+ * Documents, the PM's own folder. Nothing else lands. Whatever it is, it asks
+ * (E-14). Derived labels are the one exception, and they never come through here
+ * (see {@link DERIVED_LABEL_FIELDS}).
+ */
+function rulingInDocuments(): WriteRuling {
+  return { disposition: 'ask', reason: 'Documents is your folder, so you say what goes in it.' };
+}
+
+/**
+ * Memory, what Qale keeps for the PM.
+ *
+ * 1. A new page, or text added at the end of one, applies silently. Both add;
+ *    neither rewrites what is already there (E-5).
+ * 2. A patch over existing text, and a decision, still need a human. They belong
+ *    in one grouped card per intent (E-6, B1's work).
+ * 3. A kind nobody has graded yet asks.
+ */
+function rulingInMemory(facts: WriteFacts): WriteRuling {
   if (facts.kind === 'note') {
     return { disposition: 'silent', reason: 'A new page takes nothing away.' };
   }
@@ -149,7 +208,126 @@ export function writePolicy(facts: WriteFacts): WriteRuling {
   return { disposition: 'ask', reason: 'This kind of write always asks.' };
 }
 
+/**
+ * What happens to one write. The rules that hold everywhere run first, then the
+ * place decides the rest.
+ */
+export function writePolicy(facts: WriteFacts): WriteRuling {
+  const everywhere = rulingEverywhere(facts);
+  if (everywhere) return everywhere;
+  return inDocuments(facts) ? rulingInDocuments() : rulingInMemory(facts);
+}
+
 /** Shorthand: does this write land without a card? */
 export function appliesSilently(facts: WriteFacts): boolean {
   return writePolicy(facts).disposition === 'silent';
+}
+
+/** One line of the policy, as a person reads it. */
+export interface WritePolicyRow {
+  /** The write, in plain words. */
+  what: string;
+  disposition: WriteDisposition;
+  /** The policy's own sentence for why. */
+  reason: string;
+}
+
+/** The policy for one place, ready to render. */
+export interface WritePolicyPlace {
+  /** Which place. For keys and tests, never shown. */
+  place: 'documents' | 'memory';
+  /** The heading a person reads. */
+  title: string;
+  rows: WritePolicyRow[];
+}
+
+/** A page in the PM's Documents folder, for asking the policy about that place. */
+const A_DOCUMENT = `${USER_DOCUMENTS_DIR}pricing-brief.md`;
+
+/** A page in Memory, for the same question. */
+const A_MEMORY_PAGE = 'themes/pricing.md';
+
+/**
+ * The writes the screen explains, in the order it lists them. Each one is a real
+ * set of facts, so the answer beside it comes from the policy and not from a
+ * copy of it.
+ */
+const EXPLAINED_WRITES: readonly { what: string; facts: Omit<WriteFacts, 'targetPath'> }[] = [
+  {
+    what: 'Anything sent to Jira, Confluence or the calendar',
+    facts: { kind: 'outbound' },
+  },
+  { what: 'Deleting a page', facts: { kind: 'delete' } },
+  {
+    what: 'A promise you owe somebody, made or changed',
+    facts: { kind: 'note', noteType: 'todo' },
+  },
+  {
+    what: 'A rule you stated in the chat',
+    facts: { kind: 'update', noteType: 'skill', appendOnly: true, asked: true },
+  },
+  {
+    what: 'A rule Qale wrote up on its own',
+    facts: { kind: 'note', noteType: 'skill' },
+  },
+  {
+    what: 'A page or an edit you asked for in the chat',
+    facts: { kind: 'note', asked: true },
+  },
+  { what: 'A new page Qale writes on its own', facts: { kind: 'note' } },
+  {
+    what: 'Text Qale adds at the end of a page',
+    facts: { kind: 'update', appendOnly: true },
+  },
+  { what: 'An edit over text a page already has', facts: { kind: 'update' } },
+  { what: 'A decision written down', facts: { kind: 'decision' } },
+];
+
+/**
+ * Why a derived label needs no card. The Settings section says this, and so
+ * does the Activity row the summary pass leaves, so it is written once here.
+ */
+export const DERIVED_LABEL_REASON = 'A label for finding the page, never a claim.';
+
+/** Why a tag needs no card. Same two readers as {@link DERIVED_LABEL_REASON}. */
+export const TAG_REASON = 'A tag files the page, so it says nothing new.';
+
+/**
+ * The two rows the policy never sees. A maintenance pass writes these fields
+ * straight to the file, in both places. See {@link DERIVED_LABEL_FIELDS}.
+ */
+const MACHINERY_ROWS: readonly WritePolicyRow[] = [
+  {
+    what: 'The summary line and the other labels Qale fills in',
+    disposition: 'silent',
+    reason: DERIVED_LABEL_REASON,
+  },
+  {
+    what: 'The tags on a page',
+    disposition: 'silent',
+    reason: TAG_REASON,
+  },
+];
+
+/**
+ * The policy as two readable lists, one per place, for the Settings section that
+ * says what Qale does on its own (docs/background-system.md ticket 6).
+ *
+ * Every row asks {@link writePolicy} the question it stands for, so the screen
+ * cannot drift from the rule. The two label rows are the stated exception: no
+ * pass consults the policy, so their sentences are written here in the same
+ * voice.
+ */
+export function describeWritePolicy(): WritePolicyPlace[] {
+  const rowsFor = (targetPath: string): WritePolicyRow[] => [
+    ...EXPLAINED_WRITES.map(({ what, facts }) => {
+      const { disposition, reason } = writePolicy({ ...facts, targetPath });
+      return { what, disposition, reason };
+    }),
+    ...MACHINERY_ROWS.map((row) => ({ ...row })),
+  ];
+  return [
+    { place: 'documents', title: 'In your documents', rows: rowsFor(A_DOCUMENT) },
+    { place: 'memory', title: 'In its memory', rows: rowsFor(A_MEMORY_PAGE) },
+  ];
 }

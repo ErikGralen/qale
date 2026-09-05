@@ -15,7 +15,6 @@ import { SessionsView } from './app/SessionsView';
 import { SessionFileView } from './app/SessionFileView';
 import { SettingsView } from './app/SettingsView';
 import { SkillsView } from './app/SkillsView';
-import { InboxView } from './app/InboxView';
 import { TodosView } from './app/TodosView';
 import { MemoryView } from './app/MemoryView';
 import { ActivityView } from './app/ActivityView';
@@ -49,6 +48,7 @@ function Center() {
           sessionId={activeTab.sessionId}
           draftKey={activeTab.key}
           initialPrompt={activeTab.initialPrompt}
+          scope={activeTab.scope}
           onSessionId={(sessionId) => bindTabSession(activeTab.key, sessionId)}
           onNewSession={() => openSession(activeTab.skill, { fresh: true })}
         />
@@ -63,8 +63,6 @@ function Center() {
       );
     case 'chats':
       return <SessionsView />;
-    case 'inbox':
-      return <InboxView />;
     case 'todos':
       return <TodosView />;
     // Calendar and Documents are rail places before they are screens. The
@@ -124,11 +122,21 @@ function Shell() {
       return true;
     }
   });
-  const [rightOpen, setRightOpen] = useState(() => {
+  // Two rails, two memories. The note's session corner opens by default, the
+  // same as it always has. The session's file tree does not: opening a chat
+  // and dropping a file in it must never pop a panel the PM didn't ask for.
+  const [docPanelOpen, setDocPanelOpen] = useState(() => {
     try {
-      return localStorage.getItem('qale.rightPanel.visible') !== '0';
+      return localStorage.getItem('qale.rightPanel.doc.visible') !== '0';
     } catch {
       return true;
+    }
+  });
+  const [sessionFilesOpen, setSessionFilesOpen] = useState(() => {
+    try {
+      return localStorage.getItem('qale.rightPanel.session.visible') === '1';
+    } catch {
+      return false;
     }
   });
   const dragDepth = useRef(0);
@@ -179,19 +187,23 @@ function Shell() {
     });
   }, []);
 
-  // The right rail hides like the sidebar does: one workbench-wide preference,
-  // remembered across launches, so a session's file tree never takes the window
-  // back after the PM has pushed it away.
+  // Each rail hides on its own preference, remembered across launches, so
+  // pushing one away never affects the other.
   const toggleRightPanel = useCallback(() => {
-    setRightOpen((o) => {
+    const setOpen = activeTab?.kind === 'session' ? setSessionFilesOpen : setDocPanelOpen;
+    const key =
+      activeTab?.kind === 'session'
+        ? 'qale.rightPanel.session.visible'
+        : 'qale.rightPanel.doc.visible';
+    setOpen((o) => {
       try {
-        localStorage.setItem('qale.rightPanel.visible', o ? '0' : '1');
+        localStorage.setItem(key, o ? '0' : '1');
       } catch {
         /* ignore quota */
       }
       return !o;
     });
-  }, []);
+  }, [activeTab?.kind]);
 
   const openCapture = useCallback((draft?: SourceDraft) => {
     setCaptureDraft(draft ?? null);
@@ -405,7 +417,6 @@ function Shell() {
       ? (sessionFiles[activeTab.sessionId]?.length ?? 0)
       : 0;
   const rightAvailable = activeTab?.kind === 'doc' || sessionFileCount > 0;
-  const showRight = rightAvailable && rightOpen;
   // Two different rails, two different widths. The note's session corner is a
   // chat and needs room to read; the session's file tree is a column of short
   // filenames, and 420px of it was mostly empty space taken off the session.
@@ -413,6 +424,8 @@ function Shell() {
   // hand still holds for as long as that kind of rail stays up.
   const railKind = activeTab?.kind === 'session' ? 'files' : 'doc';
   const railWidth = railKind === 'files' ? '320px' : '420px';
+  const rightOpen = railKind === 'files' ? sessionFilesOpen : docPanelOpen;
+  const showRight = rightAvailable && rightOpen;
   // The toggle names what it would open — "session files", not "panel" — and
   // stays in the strip (disabled) on tabs that have no rail, so the cluster
   // beside it never reflows.

@@ -12,14 +12,13 @@ interface SentReceipt {
   target: string;
 }
 
-/** How many consequence lines the Inbox's receipt keeps. Past five it is a log
- *  of the sitting rather than what the last few taps did. */
+/** How many consequence lines a receipt keeps. Past five it is a log of the
+ *  sitting rather than what the last few taps did. */
 const TOUCHED_MAX = 5;
 
 /**
- * The one approve path. Every surface that shows a card — the Inbox and the
- * session's own review block — drives it through this hook, so a card behaves
- * the same wherever it is read.
+ * The one approve path. Every surface that shows a card drives it through this
+ * hook, so a card behaves the same wherever it is read.
  *
  * The stale check rides on the path itself, never on the surface. Main refuses
  * a stale write and hands back `stale`; the refusal becomes an error on the
@@ -36,8 +35,8 @@ export interface Approvals {
   receipt: { accepted: number; rejected: number };
   sent: SentReceipt[];
   /**
-   * What this sitting's approvals touched, oldest dropped past five. The Inbox
-   * reads it to say what clearing the queue set in motion, so that surface needs
+   * What this sitting's approvals touched, oldest dropped past five. The review
+   * reads it to say what clearing the cards set in motion, so that surface needs
    * no second query: the hook already knows, because it did the writes.
    */
   touched: ReceiptEntry[];
@@ -122,7 +121,6 @@ export function useApprovals(): Approvals {
         if (r.ok) {
           setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
           setTouched((t) => [...t, receiptEntry(p)].slice(-TOUCHED_MAX));
-          markJudged(vaultPath);
           setStaleSends((s) => {
             const next = { ...s };
             delete next[p.id];
@@ -162,7 +160,7 @@ export function useApprovals(): Approvals {
         release();
       }
     },
-    [acceptProposal, noteReviewAsk, vaultPath],
+    [acceptProposal, noteReviewAsk],
   );
 
   const rejectOne = useCallback(
@@ -172,7 +170,6 @@ export function useApprovals(): Approvals {
       try {
         noteReviewAsk((await rejectProposal(p.id)).review);
         setReceipt((x) => ({ ...x, rejected: x.rejected + 1 }));
-        markJudged(vaultPath);
         return true;
       } catch (err) {
         setError(
@@ -184,7 +181,7 @@ export function useApprovals(): Approvals {
         release();
       }
     },
-    [rejectProposal, noteReviewAsk, vaultPath],
+    [rejectProposal, noteReviewAsk],
   );
 
   const acceptAll = useCallback(
@@ -326,30 +323,3 @@ function persistDismissedReviewAsk(vaultPath: string, path: string): void {
   }
 }
 
-/**
- * Whether the PO has ever judged a card in this workspace. Per workspace and
- * view-only, like the dismissed asks above: it is a fact about what they have
- * seen, not about the vault.
- *
- * The empty Inbox explains what the Inbox is for. That sentence is worth a lot
- * on day one and nothing at all in week three, and the one moment it becomes
- * furniture is the first tap on Approve or Discard. So the first tap sets this,
- * and the explainer never comes back (docs/closing-beat.md).
- */
-const JUDGED_KEY = 'qale.cardJudged.v1';
-
-export function hasJudgedACard(vaultPath: string): boolean {
-  try {
-    return localStorage.getItem(`${JUDGED_KEY}:${vaultPath}`) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function markJudged(vaultPath: string): void {
-  try {
-    localStorage.setItem(`${JUDGED_KEY}:${vaultPath}`, '1');
-  } catch {
-    /* ignore quota */
-  }
-}

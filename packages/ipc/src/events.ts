@@ -42,7 +42,7 @@ export interface ProposalsChangedEvent {
 /**
  * Session lifecycle push — fired when a run starts and when it settles, whether
  * or not its tab is open. This is what makes background agents visible: the
- * sidebar rail, badges, and Inbox all derive from it (nothing silent).
+ * sidebar rail, badges, and Sessions page all derive from it (nothing silent).
  */
 export interface SessionStatusEvent {
   channel: 'session:status';

@@ -4,7 +4,13 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { restoreNoteVersion, revertNoteChange, type UseCaseContext } from '@qale/application';
+import {
+  restoreNoteVersion,
+  revertNoteChange,
+  runSummaryPass,
+  type UseCaseContext,
+} from '@qale/application';
+import type { ActivityRecord, CreateActivityInput } from '@qale/domain';
 import { FsVault } from '../src/fs-vault.js';
 import { GitAdapter } from '../src/git.js';
 
@@ -262,4 +268,81 @@ test('there is nothing to restore when the note did not exist in that version', 
   );
   // And the note on disk is untouched.
   assert.ok((await readFile(join(dir, 'notes/b.md'), 'utf8')).includes('B.'));
+});
+
+// ---------------------------------------------------------------------------
+// A label the summary pass wrote (docs/background-system.md ticket 3). The row
+// it leaves has no proposal behind it, so this is the whole way back: the pass
+// writes, the pass commits, the row carries that commit, and the undo runs on a
+// real repo.
+// ---------------------------------------------------------------------------
+
+/** The index entry the pass reads before it opens a file. */
+function entry(path: string, title: string) {
+  return {
+    path,
+    slug: path.replace(/\.md$/, ''),
+    type: 'note',
+    layer: 'authored',
+    title,
+    summary: title,
+    lifecycle: null,
+    hasBody: true,
+    mtime: Date.UTC(2026, 7, 1),
+    frontmatter: {},
+    links: [],
+  };
+}
+
+test('a label the pass wrote can be put back from its Activity row', async () => {
+  const { dir, ctx, git } = await workspace();
+  const plan = 'notes/q3-plan.md';
+  const renewals = 'notes/renewals.md';
+  const planRaw = '---\ntype: note\ntitle: Q3 plan\nsummary: Q3 plan\n---\n\nShip SCIM first.\n';
+  const renewalsRaw =
+    '---\ntype: note\ntitle: Renewals\nsummary: Renewals\n---\n\nNovember is heavy.\n';
+  await writeFile(join(dir, plan), planRaw);
+  await writeFile(join(dir, renewals), renewalsRaw);
+  await git.commitPaths([plan, renewals], 'create: the two notes');
+
+  const rows: ActivityRecord[] = [];
+  const notes = [entry(plan, 'Q3 plan'), entry(renewals, 'Renewals')];
+  const passCtx = {
+    ...ctx,
+    index: {
+      ...NOOP_INDEX,
+      all: () => notes,
+      get: (p: string) => notes.find((n) => n.path === p) ?? null,
+    },
+    activity: {
+      record: (input: CreateActivityInput, now: number) => {
+        const row = { ...input, id: `a_${rows.length + 1}`, at: now, reverted: null };
+        rows.push(row);
+        return row;
+      },
+      list: () => [...rows].reverse(),
+      get: (id: string) => rows.find((r) => r.id === id) ?? null,
+      markReverted: () => {},
+    },
+  } as unknown as UseCaseContext;
+
+  await runSummaryPass(passCtx, {
+    summarise: async () => 'One line about the note.\ntags: pricing',
+  });
+
+  const commit = (await git.history(plan))[0]!;
+  assert.equal(commit.message, 'maintenance: labels');
+  assert.equal(rows.length, 2);
+  const row = rows.find((r) => r.path === plan)!;
+  assert.equal(row.proposalId, null);
+  assert.deepEqual(row.revert, { commit: commit.hash, undo: 'restore' });
+  assert.ok((await readFile(join(dir, plan), 'utf8')).includes('tags:'), 'the label landed');
+
+  const result = await revertNoteChange(ctx, { path: row.path!, hash: row.revert.commit! });
+
+  assert.deepEqual(result, { path: plan, outcome: 'restored' });
+  assert.equal(await readFile(join(dir, plan), 'utf8'), planRaw, 'byte for byte, labels gone');
+  // One row, one note. The pass commit touched both, and the undo asked about
+  // one, so the other keeps what the pass wrote.
+  assert.ok((await readFile(join(dir, renewals), 'utf8')).includes('tags:'));
 });

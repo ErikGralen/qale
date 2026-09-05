@@ -70,7 +70,7 @@ Hold every draft to two rules:
 ## Then
 
 The per-voice drafts stay in the chat. Copy the one you want and send it yourself. The team page is
-the proposal that waits in the Inbox: an approved wikipage update pushes upstream, files the deep link
+the proposal that waits in the session: an approved wikipage update pushes upstream, files the deep link
 back, and the mirror re-syncs on the next pull.
 
 ## The shape of the drafts

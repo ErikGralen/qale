@@ -156,7 +156,7 @@ class GoogleCalendarConnector implements Connector {
 
   /** Write request (outbound events, phase 4) — POST/PATCH with a JSON body.
    *  Same 401 → auth-expired mapping as reads; surfaces the API error body so a
-   *  failed card returns to the Inbox with something the PM can act on. */
+   *  failed card returns to its session with something the PM can act on. */
   private async mutate(
     method: 'POST' | 'PATCH',
     path: string,

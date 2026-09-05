@@ -9,15 +9,23 @@ import type { UseCaseContext } from '../ports.js';
 import { logError } from './proposals.js';
 
 /**
- * The frontmatter normalization pass (OW4) — the pre-run twin of
+ * The frontmatter normalization pass (OW4), the pre-run twin of
  * {@link ./index-files.ts}.
  *
  * Same split, same reasoning: the deterministic part of getting a note into
  * shape happens by rule and writes straight to disk, because filling in a `type`
  * the folder already states is machinery and not authorship. What CANNOT be
- * derived — a summary that says what the note is about — is left as a marked
- * placeholder, and replacing it is the model's work, going through the ordinary
- * approval card like every other thing it writes.
+ * derived, a summary that says what the note is about, is left as a marked
+ * placeholder for the summary pass to fill.
+ *
+ * Both fields are named in the write policy's machinery exception
+ * (`DERIVED_LABEL_FIELDS` in packages/domain/src/proposals/policy.ts): a derived
+ * label lands straight in the file, in both places, with the git commit as the
+ * receipt. So neither this pass nor the summary pass makes a card, in `notes/`
+ * or anywhere else. Which fields are derived is stated once, in
+ * apps/desktop/src/renderer/src/state/properties-schema.ts (`owner`); this pass keeps
+ * its own list and points there. The summary used to go through the ordinary approval card;
+ * IM-6 (docs/index-maps.md) made it silent.
  *
  * Cheap by construction. A note whose frontmatter already passes is read and not
  * written, so a settled workspace makes no writes and no commit at all; the rule
@@ -32,7 +40,7 @@ export interface NormalizePassResult {
   marked: string[];
 }
 
-/** The file's own date as "YYYY-MM-DD" — the fallback for a source's `captured`. */
+/** The file's own date as "YYYY-MM-DD": the fallback for a source's `captured`. */
 function fileDateOf(ctx: UseCaseContext, path: string): string {
   const mtime = ctx.index.get(path)?.mtime;
   return mtime ? new Date(mtime).toISOString().slice(0, 10) : ctx.clock.now().slice(0, 10);

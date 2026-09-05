@@ -1,19 +1,26 @@
 import { createProposal, type UseCaseContext } from '@qale/application';
 
 /**
- * Dev-only: seed a spread of approval cards so the whole Inbox / in-session
- * review is demoable without an API key. One arrival review (a new
- * insight, a decision that replaces an earlier one, a note on the meeting
- * summary, an exec update to send) plus a supersede sweep (one decision changed,
- * so a couple of notes still point at the old plan: the cause block). Most cards
- * carry an authored `headline`, and one deliberately does not, so both paths
- * render as they will in production. Gated behind QALE_SEED_PROPOSAL.
+ * Dev-only: seed a spread of approval cards so the whole in-session review is
+ * demoable without an API key. One arrival review (a new insight, a decision
+ * that replaces an earlier one, a note on the meeting summary, an exec update
+ * to send) plus a supersede sweep (one decision changed, so a couple of notes
+ * still point at the old plan: the cause block). Most cards carry an authored
+ * `headline`, and one deliberately does not, so both paths render as they
+ * will in production. Gated behind QALE_SEED_PROPOSAL.
  */
-export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
+export async function seedDemoProposal(
+  ctx: UseCaseContext,
+  /** Writes the stored session row a card's `sessionId` needs (RI-6): without
+   *  one, a card filed under 'seed' or 'seed-sweep' has nowhere to open. */
+  seedSession: (id: string, title: string, text: string) => void,
+): Promise<void> {
   try {
     if (ctx.proposals.pendingCount() > 0) return;
     const meeting = ctx.index.listByType('meeting')[0];
     if (!meeting) return;
+    seedSession('seed', 'Demo meeting', `Go through ${meeting.slug}.`);
+    seedSession('seed-sweep', 'Demo sweep', 'Sweep notes that still cite the superseded decision.');
     const ev = [{ ref: `[[${meeting.slug}]]`, resolved: true }];
     const decisionSlug = 'decisions/2026-07-20-commit-scim-dates-nordkap';
 
@@ -196,7 +203,7 @@ export async function seedDemoProposal(ctx: UseCaseContext): Promise<void> {
     });
 
     // A supersede sweep. One decision changed, so notes that still cite the old
-    // plan are stale. Grouped in the Inbox as one cause block ("Because you
+    // plan are stale. Grouped in the review as one cause block ("Because you
     // decided …, N notes still point at the old plan") with a batch approve.
     const decisionRef = `[[${decisionSlug}]]`;
     const sweepTargets = [

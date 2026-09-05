@@ -42,7 +42,7 @@ function world() {
         title: 'Nordkap Shipping',
         links: ['notes/plan'],
       }),
-      inote({ path: 'notes/scratch.md', type: 'note', title: 'Scratch pad', mtime: 500 }),
+      inote({ path: 'insights/scratch.md', type: 'insight', title: 'Scratch pad', mtime: 500 }),
       inote({ path: 'themes/pricing.md', type: 'theme', title: 'Pricing', links: ['notes/plan'] }),
     ],
     bodies: { 'themes/pricing.md': 'What we know about pricing.\n' },
@@ -118,7 +118,7 @@ test('an area already on the list as a finding is not also reminded about', asyn
   const w = world();
   recordDeferral(
     w.ctx,
-    { note: 'notes/scratch.md', reason: 'looks like a scratch file, ask first' },
+    { note: 'insights/scratch.md', reason: 'looks like a scratch file, ask first' },
     T0,
   );
 

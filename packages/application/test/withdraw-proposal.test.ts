@@ -60,8 +60,8 @@ test('a session takes back its own waiting card, and nothing is written', () => 
   const ctx = worldWith([card('Register kale.ai')]);
   assert.deepEqual(withdrawProposal(ctx, 'p1', 's1'), { ok: true });
   assert.equal(ctx.rows[0]!.status, 'withdrawn');
-  // Withdrawn is not pending, so it leaves the Inbox and the session's own card
-  // list by the same read every surface already does.
+  // Withdrawn is not pending, so it leaves the session's own card list by the
+  // same read every surface already does.
   assert.equal(ctx.proposals.list('pending').length, 0);
 });
 

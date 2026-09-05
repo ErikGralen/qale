@@ -1,6 +1,6 @@
 /**
  * Line diffing, shared by every surface that shows a change before it happens:
- * the Inbox's redline of a proposed edit, and the Skills page's "here is what
+ * a card's redline of a proposed edit, and the Skills page's "here is what
  * moved in our version". Rendering is the caller's business — a proposal
  * renders prose, a skill file renders text — but the rows underneath are the
  * same rows.

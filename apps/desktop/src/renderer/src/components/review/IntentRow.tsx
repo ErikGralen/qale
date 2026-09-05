@@ -9,7 +9,7 @@ import { rowFocusClass, useQueueFocus } from './shared';
 import type { Approvals } from './approvals';
 
 /** How many item names the shut row lists before it counts the rest. Three fits
- *  one line at the Inbox's width; past that the row is a list, not a sentence. */
+ *  one line at the review's width; past that the row is a list, not a sentence. */
 const NAMED = 3;
 
 /** What one card in the group is called, in one or two words. */

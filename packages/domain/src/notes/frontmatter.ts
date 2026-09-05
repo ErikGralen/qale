@@ -157,6 +157,26 @@ export const NEEDS_SUMMARY_FIELD = 'needs_summary';
 export const BROKEN_FRONTMATTER_FIELD = 'broken_frontmatter';
 export const NORMALIZER_MARKERS = [NEEDS_SUMMARY_FIELD, BROKEN_FRONTMATTER_FIELD] as const;
 
+/**
+ * The marker the summary pass leaves behind (IM-6, see @qale/application
+ * `summaries.ts`): the day it wrote `summary`, and a short hash of the body it
+ * read. Together they answer "did the body change since the summary was
+ * written" in one comparison. Hidden in the app: both are the pass talking to
+ * itself, and neither means anything to the PM.
+ */
+export const SUMMARY_AT_FIELD = 'summary_at';
+export const SUMMARY_OF_FIELD = 'summary_of';
+
+/**
+ * The marker the folder-purpose pass leaves in a Documents folder's `index.md`
+ * (IM-7, see @qale/application `folder-purposes.ts`): one short hash per
+ * document the model was shown, sorted, space separated. The pass compares it
+ * with the folder's documents today to answer "did the contents change by more
+ * than half since the purpose was written". Hidden in the app, like the summary
+ * markers: it is the pass talking to itself.
+ */
+export const FOLDER_PURPOSE_OF_FIELD = 'purpose_of';
+
 /** Every note carries a one-line summary — the token-cheap retrieval index. */
 const base = {
   summary: z.string().min(1, 'summary is mandatory — it is the retrieval index'),
@@ -167,6 +187,9 @@ const base = {
   /** See {@link NORMALIZER_MARKERS} — set by the deterministic pass, cleared by a session. */
   [NEEDS_SUMMARY_FIELD]: z.boolean().optional(),
   [BROKEN_FRONTMATTER_FIELD]: z.string().optional(),
+  /** See {@link SUMMARY_AT_FIELD}: written by the summary pass, read by nobody else. */
+  [SUMMARY_AT_FIELD]: z.string().optional(),
+  [SUMMARY_OF_FIELD]: z.string().optional(),
 };
 
 /**

@@ -29,7 +29,7 @@ import { NOTE_TYPE_ICON, noteTypeIcon } from '../../lib/note-icons';
 import { outboundAct, outboundReceipt, providerLabel } from './shared';
 
 // Both read a note reference the way the whole app reads one. They live in the
-// domain now; the Inbox keeps reading them from here.
+// domain now; the card surfaces keep reading them from here.
 export { bareRef, titleForRef };
 
 /**
@@ -88,7 +88,7 @@ function isInstruction(p: ProposalDTO): boolean {
 
 /** A card that writes a whole new skill (`propose_skill`) rather than a rule
  *  into one. It lands in the same folder, so the domain tells them apart and
- *  the Inbox asks it the same question. */
+ *  the review asks it the same question. */
 function isSkill(p: ProposalDTO): boolean {
   return isNewSkill(p.kind, targetOf(p));
 }
@@ -303,25 +303,27 @@ export function receiptOf(resolved: readonly ProposalDTO[]): Receipt {
   };
 }
 
-/** What an empty Inbox is this time: the moment, or the state. */
-export type ClearedState =
-  /** They just judged something, so the page reports it. */
-  | { mode: 'receipt' }
-  /** Nothing happened here this sitting. `explain` is true only until the PO
-   *  has ever judged a card, and then never again. */
-  | { mode: 'quiet'; explain: boolean };
-
 /**
- * Which of the two an empty Inbox shows (docs/closing-beat.md). "You just
- * cleared it" is a moment and earns the receipt; "it is empty" is a state and
- * stays near silent. The old zero said both at once, to everybody, forever.
+ * The one decision behind a set of cards that are all consequences of it: a
+ * decision changed, and several notes still point at the old plan. True only
+ * when every card is an update citing the SAME decision, which is what a
+ * librarian sweep produces and what an ordinary pile of cards never does.
  */
-export function clearedInbox(
-  receipt: { accepted: number; rejected: number },
-  judgedBefore: boolean,
-): ClearedState {
-  if (receipt.accepted + receipt.rejected > 0) return { mode: 'receipt' };
-  return { mode: 'quiet', explain: !judgedBefore };
+export function groupCause(cards: ProposalDTO[]): string | null {
+  if (cards.length === 0 || !cards.every((c) => c.kind === 'update')) return null;
+  const cause = cards[0]!.evidence
+    .map((e) => bareRef(e.ref))
+    .find((r) => r.startsWith('decisions/'));
+  if (!cause) return null;
+  return cards.every((c) => c.evidence.some((e) => bareRef(e.ref) === cause)) ? cause : null;
+}
+
+/** The cause behind a sweep: one decision changed and N notes still cite the old
+ *  one. Stated as the PO thinks it, cause first, effect second. */
+export function causeSentence(cause: string, n: number): string {
+  const notes = `${n} note${n === 1 ? '' : 's'}`;
+  const point = n === 1 ? 'points' : 'point';
+  return `Because you decided “${titleForRef(cause)}”, ${notes} still ${point} at the old plan`;
 }
 
 /** The receipt's head line: what the PO just did, in the buttons' own words. */
@@ -349,7 +351,7 @@ export function sourceHint(p: ProposalDTO): string | null {
  * Narrative order for a meeting review — stakes descending: the meeting summary
  * sets context, decisions are highest-stakes, then insights/todos; mechanical
  * hub/ledger updates are housekeeping; outbound (externally visible) is always
- * its own last decision. Shared by the Inbox and the in-session review so both
+ * its own last decision. Shared by every surface that draws cards, so they all
  * read the same way.
  */
 /**

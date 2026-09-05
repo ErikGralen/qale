@@ -7,7 +7,7 @@ import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../src
 // Meeting-review closure: the LAST card of a session resolving is what closes
 // the review. Keeping something means the PO looked, so the meeting flips to
 // `processed` silently. Discarding everything means nothing was kept and nothing
-// here knows they looked, so the meeting stays put and the Inbox gets a question.
+// here knows they looked, so the meeting stays put and the review asks about it.
 
 interface Stored {
   frontmatter: Frontmatter;

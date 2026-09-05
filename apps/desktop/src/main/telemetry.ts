@@ -202,9 +202,9 @@ export class Telemetry {
   /**
    * Which part of the app is open right now. The renderer reports it through
    * `telemetry:view`, and it is remembered here so every later event says where
-   * it happened: a card decided in the Inbox and one decided from a session
-   * review are different facts about the product. Only words from the closed
-   * set are kept; a stray string is dropped, never stamped.
+   * it happened: a card decided on Home and one decided in a session review
+   * are different facts about the product. Only words from the closed set are
+   * kept; a stray string is dropped, never stamped.
    */
   setView(view: string): void {
     if ((VIEW_KINDS as readonly string[]).includes(view)) this.view = view;

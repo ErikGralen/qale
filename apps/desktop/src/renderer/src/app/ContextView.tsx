@@ -109,7 +109,7 @@ export function ContextView({ tag }: { tag: string }) {
       </div>
 
       <ScopedAskComposer
-        scope={{ kind: 'context', label: tag }}
+        scope={{ kind: 'context', label: tag, filter: { tags: [tag] } }}
         sessionTitle={`Ask · #${tag}`}
         scopePrefix={`Scoped to notes tagged "${tag}".`}
       />

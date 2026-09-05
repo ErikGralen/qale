@@ -13,7 +13,14 @@ import { titleForRef } from './card-copy.js';
  */
 
 /** What the agent did, in one word. */
-export const ACTIVITY_ACTIONS = ['created', 'updated', 'remembered', 'deleted'] as const;
+export const ACTIVITY_ACTIONS = [
+  'created',
+  'updated',
+  'remembered',
+  'deleted',
+  /** A maintenance pass put a retrieval label on a page: a summary, tags, or both. */
+  'labelled',
+] as const;
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
 
 /** How a row is put back. */
@@ -39,8 +46,12 @@ export interface ActivityRevert {
 /** One thing the agent did on its own. */
 export interface ActivityRecord {
   id: string;
-  /** The proposal this applied. Its payload is still the record of what changed. */
-  proposalId: string;
+  /**
+   * The proposal this applied. Its payload is still the record of what changed.
+   * Null when no proposal made the write: a maintenance pass writes retrieval
+   * labels straight to the file, so there is no card behind the row.
+   */
+  proposalId: string | null;
   action: ActivityAction;
   /** First person, past tense, one line: "I created the Nordkap SSO write-up." */
   line: string;
@@ -48,8 +59,11 @@ export interface ActivityRecord {
   reason: string;
   /** The note it wrote, as a vault path. Null when nothing landed in the vault. */
   path: string | null;
-  /** The session that did it, so the row can open the chat it came from. */
-  sessionId: string;
+  /**
+   * The session that did it, so the row can open the chat it came from. Null
+   * when a maintenance pass wrote it, because no chat was running.
+   */
+  sessionId: string | null;
   /** The skill in force when it happened. */
   skill: string | null;
   /** When, in unix ms. */
@@ -126,6 +140,34 @@ export function activityLine(input: ActivityLineInput): string {
   }
 }
 
+/** What one pass wrote on one page. */
+export interface LabelLineInput {
+  /** The page's title, as the row names it. */
+  title: string;
+  /** The summary line the pass wrote, or null when it wrote none. */
+  summary: string | null;
+  /** The tags the pass wrote. Empty when it wrote none. */
+  tags: readonly string[];
+}
+
+/**
+ * The Activity row for a retrieval label. Same voice as {@link activityLine}:
+ * first person, past tense, one line.
+ *
+ * Tags are named, a summary is not. A tag is one word the PM can weigh at a
+ * glance, and it is what decides whether the page is found. The summary line is
+ * a sentence, and the page itself says it better than a receipt can.
+ */
+export function labelLine(input: LabelLineInput): string {
+  const tags = input.tags.filter((t) => t.trim().length > 0);
+  const count = tags.length === 1 ? 'a tag' : `${tags.length} tags`;
+  if (input.summary && tags.length > 0) {
+    return `I added a summary and ${count} to ${input.title}: ${tags.join(', ')}.`;
+  }
+  if (input.summary) return `I added a summary to ${input.title}.`;
+  return `I tagged ${input.title}: ${tags.join(', ')}.`;
+}
+
 /**
  * The quiet line the chat shows for a write that applied on its own.
  *
@@ -138,6 +180,7 @@ const APPLIED_VERB: Record<ActivityAction, string> = {
   updated: 'Updated',
   remembered: 'Added to rules',
   deleted: 'Deleted',
+  labelled: 'Labelled',
 };
 
 const APPLIED_TAG = 'Applied:';

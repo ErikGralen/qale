@@ -54,7 +54,7 @@ test('refuses an ambiguous fuzzy anchor rather than guessing a location', () => 
 // the calendar mirrors is frontmatter and no body, and that is exactly where a
 // write-up goes — search/replace could never land there, so the whole documented
 // path (attach the transcript, write onto the page that exists) used to dead-end
-// in a card the Inbox could only report as unanchored.
+// in a card the review could only report as unanchored.
 
 test('appending onto an empty body writes just the appended text', () => {
   assert.equal(

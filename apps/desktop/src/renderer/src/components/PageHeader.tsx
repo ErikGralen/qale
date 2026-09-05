@@ -4,7 +4,7 @@ import { ChevronRight, MoreHorizontal } from 'lucide-react';
 import { cn } from '@qale/ui';
 
 /**
- * The one header every view wears (docs, sessions, Inbox, Todos, folders,
+ * The one header every view wears (docs, sessions, Todos, folders,
  * Settings…). It is a location bar, not a page title: a 40px chrome rail that
  * says where you are in the smallest type the app uses, then gets out of the
  * way. The tab strip above it already carries the loud name; a second loud
@@ -99,7 +99,7 @@ export function PageHeader({
         )}
       </nav>
       {/* Actions hold their width; the location truncates. Never the reverse —
-          a header that shortens "Inbox" to "In…" to fit a hint has its
+          a header that shortens "Todos" to "To…" to fit a hint has its
           priorities backwards. Anything long in here (a keyboard hint) caps
           its own width and hides at narrow viewports. */}
       {children && (

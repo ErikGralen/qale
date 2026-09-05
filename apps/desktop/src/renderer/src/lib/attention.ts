@@ -19,12 +19,11 @@ import {
 /**
  * The attention list — the ONE answer to "what is waiting on me".
  *
- * Home's waiting list, the sidebar's Inbox badge, the ⌘K entry and the Inbox
- * header each used to compute that answer their own way, and the three
- * arithmetics disagreed (a parked question counted nowhere, a card counted
- * everywhere, a dismissed-but-unread session counted only on Home). The
- * product's own arrival vision names "two inboxes" as a failure signal, so
- * there is now one ranked list and every surface is a named filter over it.
+ * The sidebar badge, the ⌘K entry and Home each used to compute that answer
+ * their own way, and the arithmetics disagreed (a parked question counted
+ * nowhere, a card counted everywhere). The product's own arrival vision names
+ * "two inboxes" as a failure signal, so there is now one ranked list and every
+ * surface is a named filter over it.
  *
  * Build it once (`buildAttention`), rank it once (the push order below IS the
  * ranking), and count it with `waitingOnYou` or `countOf` — never with a fresh
@@ -53,7 +52,6 @@ export type AttentionKind =
 export type AttentionTarget =
   | { open: 'doc'; path: string }
   | { open: 'session'; sessionId: string; title: string }
-  | { open: 'inbox' }
   | { open: 'todos' }
   | { open: 'calendar' }
   | { open: 'folder'; dir: string }
@@ -95,10 +93,10 @@ export interface AttentionItem {
    *  date, a card's creation. Surfaces that count down format this themselves. */
   when?: number;
   /**
-   * Offered, not owed. A quiet item is always visible in the Inbox, but it
-   * never counts toward a badge and never reaches Home: maintenance can wait
-   * as long as the PO likes. This is the one property the old suggestion queue
-   * had that had to survive it becoming ordinary cards and questions.
+   * Offered, not owed. A quiet item still shows in its session, but it never
+   * counts toward a badge and never reaches Home: maintenance can wait as long
+   * as the PO likes. This is the one property the old suggestion queue had that
+   * had to survive it becoming ordinary cards and questions.
    */
   quiet?: boolean;
 }
@@ -131,14 +129,14 @@ export interface AttentionInput {
 const NEXT_MEETING_MS = 12 * 3_600_000;
 
 /**
- * The kinds that count as waiting on the PO — the one number the sidebar badge,
- * the ⌘K entry and the Inbox header all print.
+ * The kinds that count as waiting on the PO: the one number the sidebar badge
+ * and the ⌘K entry both print.
  *
- * These are the Inbox's items, minus whatever is `quiet`. Unfiled meetings, due
- * commitments and the next meeting are attention too — they are in the list and
- * Home shows them — but they are deliberately NOT in this count, because the
- * badge sits on the Inbox row and the Inbox is not where they get dealt with.
- * The Todos row carries its own count, read from this same list.
+ * These are the session items, minus whatever is `quiet`. Unfiled meetings, due
+ * commitments and the next meeting are attention too (they are in the list and
+ * Home shows them), but they are deliberately NOT in this count, because the
+ * badge sits on the Sessions row and a meeting is not dealt with there. The
+ * Todos row carries its own count, read from this same list.
  */
 const WAITING_KINDS: ReadonlySet<AttentionKind> = new Set<AttentionKind>([
   'question',
@@ -153,11 +151,11 @@ export function waitingOnYou(items: readonly AttentionItem[]): AttentionItem[] {
 
 /**
  * What is waiting on the PO somewhere other than one session. It is the count on a
- * session's own door into the Inbox ("3 more waiting", docs/closing-beat.md).
+ * session's own door into Sessions ("3 more waiting", docs/closing-beat.md).
  *
  * The same filter as {@link waitingOnYou}, minus the cards this session put up
- * itself: a door that counted a session's own cards would send the PO to the
- * Inbox to judge what is on the screen in front of them.
+ * itself: a door that counted a session's own cards would send the PO away to
+ * judge what is on the screen in front of them.
  */
 export function waitingElsewhere(
   items: readonly AttentionItem[],
@@ -187,7 +185,7 @@ function notesOfType(tree: VaultTreeDTO | null, type: NoteRefDTO['type']): NoteR
 /**
  * A pending card, in the words the card itself uses. Almost no card carries an
  * agent-written headline, so Home used to show the agent's reasoning while the
- * Inbox showed the composed line, and the same card read as two different jobs.
+ * card rows showed the composed line, and one card read as two different jobs.
  * The rationale is the last resort: a payload too thin to compose from still has
  * to say something.
  */
@@ -226,7 +224,7 @@ export function buildAttention(input: AttentionInput, now: number = Date.now()):
   //
   //    An offered question is the exception: the librarian tidying up in the
   //    background is never something the PO owes an answer to, so its question
-  //    goes quiet and waits in the Inbox for as long as it takes. Main decides
+  //    goes quiet and waits in its session for as long as it takes. Main decides
   //    that (it knows who started the run); this only reads the answer.
   for (const [sessionId, request] of Object.entries(askRequests)) {
     const session = sessions.find((s) => s.id === sessionId);
@@ -236,9 +234,7 @@ export function buildAttention(input: AttentionInput, now: number = Date.now()):
       id: `question:${sessionId}`,
       kind: 'question',
       label: session.title,
-      // A round to write in waits exactly as a question waits, and ranks the
-      // same; the only difference the list carries is the word for it.
-      meta: request.comments ? 'comments' : 'question',
+      meta: 'question',
       tone: quiet ? 'muted' : 'brand',
       target: { open: 'session', sessionId, title: session.title },
       when: session.updated,
@@ -246,19 +242,22 @@ export function buildAttention(input: AttentionInput, now: number = Date.now()):
     });
   }
 
-  // 2. Everything drafted and waiting for approval, newest first — the same set
-  //    the Inbox renders, librarian fixes included.
+  // 2. Everything drafted and waiting for approval, newest first, librarian
+  //    fixes included. A card is judged where it was written, so the row opens
+  //    the session that put it up. A session row can be missing (a card from an
+  //    outside client), and then the tab gets a plain name.
   const pending = [...proposals]
     .filter((p) => p.status === 'pending')
     .sort((a, b) => b.created - a.created);
   for (const p of pending) {
+    const session = sessions.find((s) => s.id === p.sessionId);
     items.push({
       id: `card:${p.id}`,
       kind: 'card',
       label: cardLabel(p),
       meta: 'to approve',
       tone: 'brand',
-      target: { open: 'inbox' },
+      target: { open: 'session', sessionId: p.sessionId, title: session?.title ?? 'Session' },
       when: p.created,
     });
   }
@@ -391,44 +390,6 @@ export function buildAttention(input: AttentionInput, now: number = Date.now()):
   return items;
 }
 
-// ---------------------------------------------------------------------------
-// Home's view: the top few, with the repetitive kinds behind one door
-// ---------------------------------------------------------------------------
-
-/** One row of Home's waiting list — an item, or a door standing for several. */
-export interface AttentionRow {
-  id: string;
-  kind: AttentionKind;
-  label: string;
-  meta: string;
-  tone: AttentionTone;
-  target: AttentionTarget;
-  link?: AttentionLink;
-  /** How many list items this row stands for. 1 unless the row is a door. */
-  count: number;
-  /** The rows a group folds away. Present only on a group row; the surface
-   *  shows them under it when the PO unfolds it, and never navigates away. */
-  children?: AttentionRow[];
-}
-
-/**
- * Kinds Home never lists one by one: four cards would fill the page and say
- * nothing four times. They collapse into a single door to the view that holds
- * them — the count on that door is `countOf(items, kind)`, not a second sum.
- *
- * `capture` is deliberately NOT in here. A door reading "2 meetings have
- * nothing in them" drops the PO in the calendar with no idea which two, and
- * the one move that fills a meeting (the tray, already attached to it) only
- * exists on the named row. So empty meetings stay named — see CAPTURE_MAX.
- */
-const COLLAPSED: ReadonlySet<AttentionKind> = new Set<AttentionKind>(['card', 'review', 'todo']);
-
-/** How many empty meetings Home will name flat. Past three it is a backlog
- *  rather than a few specific things, so they fold into one row that unfolds. */
-const CAPTURE_MAX = 3;
-
-const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? '' : 's'}`;
-
 /** "Today's", "Yesterday's", "Monday's" — how a person names the day a meeting
  *  sat on. Only ever used inside a few days, so a weekday name is unambiguous. */
 function dayPossessive(when: number, now: number): string {
@@ -437,120 +398,4 @@ function dayPossessive(when: number, now: number): string {
   if (days <= 0) return "Today's";
   if (days === 1) return "Yesterday's";
   return `${new Date(when).toLocaleDateString(undefined, { weekday: 'long' })}'s`;
-}
-
-/** "in 20m" while the meeting is nearly on top of the PO, else its own clock. */
-function startsIn(when: number, fallback: string, now: number): string {
-  const mins = Math.round((when - now) / 60_000);
-  if (mins > 90) return fallback;
-  return mins <= 1 ? 'now' : `in ${mins}m`;
-}
-
-/**
- * Home's named view over the list: the top `max` entries, quiet items dropped
- * (Home is the ninety-second read and maintenance can always wait), and the
- * collapsible kinds behind one door each. A door takes the rank of its first
- * item, so the ordering is still the list's.
- *
- * `max` counts entries, not lines: the empty meetings are one entry however
- * many of them there are, so a bad week of unfilled meetings can never push
- * commitments off the bottom of the page.
- */
-export function homeRows(
-  items: readonly AttentionItem[],
-  max: number,
-  now: number = Date.now(),
-): AttentionRow[] {
-  const entries: AttentionRow[][] = [];
-  const doorsDone = new Set<AttentionKind>();
-  const captures: AttentionRow[] = [];
-  let captureAt = -1;
-  for (const item of items) {
-    if (item.quiet) continue;
-    if (item.kind === 'capture') {
-      // All of them in one entry, holding the rank of the first.
-      if (captureAt < 0) captureAt = entries.push(captures) - 1;
-      captures.push({ ...item, count: 1 });
-      continue;
-    }
-    if (COLLAPSED.has(item.kind)) {
-      if (doorsDone.has(item.kind)) continue;
-      doorsDone.add(item.kind);
-      entries.push([door(item, items, now)]);
-      continue;
-    }
-    entries.push([
-      {
-        ...item,
-        count: 1,
-        meta:
-          item.kind === 'meeting' && item.when ? startsIn(item.when, item.meta, now) : item.meta,
-      },
-    ]);
-  }
-  // Past three, the named rows are a list to work through rather than a few
-  // things to notice — so they fold, and unfold in place. They never become a
-  // count pointing at the calendar: the name is the whole point of the row.
-  if (captures.length > CAPTURE_MAX) entries[captureAt] = [captureGroup(captures)];
-  return entries.slice(0, max).flat();
-}
-
-/** The one row every empty meeting folds into, carrying them all. */
-function captureGroup(captures: readonly AttentionRow[]): AttentionRow {
-  return {
-    id: 'captures',
-    kind: 'capture',
-    label: `${captures.length} meetings have nothing in them yet`,
-    meta: 'show',
-    tone: 'muted',
-    target: { open: 'expand' },
-    count: captures.length,
-    children: [...captures],
-  };
-}
-
-/** The one row standing for every item of a collapsible kind. */
-function door(first: AttentionItem, items: readonly AttentionItem[], now: number): AttentionRow {
-  const n = countOf(items, first.kind);
-  switch (first.kind) {
-    case 'card':
-      return {
-        id: 'cards',
-        kind: 'card',
-        label: `${plural(n, 'proposal')} waiting for your approval`,
-        meta: 'Inbox',
-        tone: 'brand',
-        target: { open: 'inbox' },
-        count: n,
-      };
-    case 'todo': {
-      const todayMs = Date.parse(localDateStr(new Date(now)));
-      const slipped = items.filter(
-        (i) => i.kind === 'todo' && i.when !== undefined && i.when < todayMs,
-      ).length;
-      return {
-        id: 'todos',
-        kind: 'todo',
-        label: `${plural(n, 'commitment')} due`,
-        meta: slipped > 0 ? `${slipped} overdue` : 'today',
-        tone: 'warning',
-        target: { open: 'todos' },
-        count: n,
-      };
-    }
-    default:
-      // One unfiled meeting is worth naming; several are a backlog, and the
-      // Calendar is the place to work through them (E-12).
-      return n === 1
-        ? { ...first, count: 1 }
-        : {
-            id: 'reviews',
-            kind: 'review',
-            label: `${n} meetings still to review`,
-            meta: 'Calendar',
-            tone: 'warning',
-            target: { open: 'calendar' },
-            count: n,
-          };
-  }
 }

@@ -1,6 +1,8 @@
 import { dirForType, isMirrorType, noteTypeLabel, typeForDir } from '@qale/domain';
 import type { NoteType } from '@qale/ipc';
+import { providerLabelOf } from './connections';
 import { surfaceForType } from './nav';
+import { mirrorFolder } from './providers';
 
 /**
  * Where a location crumb goes when you click it. One shape per surface, so the
@@ -10,10 +12,11 @@ import { surfaceForType } from './nav';
 export type CrumbTarget =
   { kind: 'documents'; folder: string } | { kind: 'calendar' } | { kind: 'folder'; dir: string };
 
-/** One segment of the location line: what it says, and where it goes. */
+/** One segment of the location line: what it says, and where it goes. A
+ *  segment with no target names an ancestor without opening it. */
 export interface LocationCrumb {
   label: string;
-  target: CrumbTarget;
+  target?: CrumbTarget;
 }
 
 const NOTES_DIR = dirForType('note');
@@ -87,5 +90,19 @@ export function locationCrumbs(path: string, type?: NoteType | null): LocationCr
     ];
   }
   if (surface === 'calendar') return [{ label: 'Calendar', target: { kind: 'calendar' } }];
+  // A mirror belongs to the system it came from, not to Memory. The system
+  // leads and opens its own folder, the rail row's folder; the kind after it
+  // only says what that folder holds, so it is text (docs/memory-placement.md).
+  if (surface === 'synced') {
+    const kindLabel = resolved === 'wikipage' ? 'Pages' : 'Tickets';
+    const folder = mirrorFolder(dir);
+    // A flat mirror, written before PD-10, names no system. The kind alone is
+    // all there is to say, and the folder it opens holds every system's.
+    if (!folder) return [{ label: kindLabel, target: { kind: 'folder', dir } }];
+    return [
+      { label: providerLabelOf(folder.providerId), target: { kind: 'folder', dir } },
+      { label: kindLabel },
+    ];
+  }
   return [{ label: shelfLabel(dir), target: { kind: 'folder', dir } }];
 }

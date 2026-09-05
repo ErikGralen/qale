@@ -16,6 +16,8 @@ import {
   writePolicy,
   activityAction,
   activityLine,
+  type ActivityUndo,
+  type CreateActivityInput,
   type WriteDisposition,
   type WriteFacts,
   type DecisionNode,
@@ -30,8 +32,8 @@ import { deleteNote, renameNote } from './notes.js';
 
 /**
  * Proposals (approval cards) are the only write path for the agent (PLAN-V2 §3.3).
- * Tools persist card rows here; the Inbox applies accepted ones through these use
- * cases, which write files + git-commit. Accept is staleness-safe by re-placing
+ * Tools persist card rows here; the review applies accepted ones through these
+ * use cases, which write files + git-commit. Accept is staleness-safe by re-placing
  * the edit in the note as it reads at that moment (see {@link placeBodyChange});
  * decisions supersede rather than overwrite.
  */
@@ -120,59 +122,114 @@ export async function fileProposal(
   };
 }
 
+/** What applying a write outside the policy came to. */
+export interface AppliedWrite {
+  rec: ProposalRecord;
+  ok: boolean;
+  /** The note it wrote, once it applied. */
+  path?: string;
+  /** The Activity row it left, once it applied. */
+  activityId?: string;
+  /** Why the write did not apply. The record is rejected, not left pending. */
+  error?: string;
+}
+
 /**
- * The receipt one silent write leaves (E-9). Best-effort throughout: a log entry
- * that failed must never turn a landed write into an error the model retries.
+ * File a write and apply it at once, for a caller whose own approval already
+ * happened elsewhere (RI-4: the MCP server's `log_decision`, where the other
+ * end is Claude Code or Claude Desktop with its own review step). The row is
+ * still the record of what changed, and the Activity line still points back
+ * at it; the write policy is not consulted, because there is no PM turn here
+ * for it to grade.
  *
- * The commit is read back from the note's own history, straight after the write,
- * so the row carries a real handle for putting it back. Workstream A1 owns what
- * happens next: `revert.commit` names where the change landed, and `revert.undo`
- * says whether putting it back means removing the file or restoring its parent.
+ * A failed apply does not sit in the queue looking like a card nobody has
+ * decided on: the record is rejected on the spot, and the caller gets the
+ * error to relay.
  */
+export async function applyAndRecord(
+  ctx: UseCaseContext,
+  input: CreateProposalInput,
+  reason: string,
+): Promise<AppliedWrite> {
+  const rec = ctx.proposals.create(input, Date.now());
+  const result = await acceptProposal(ctx, rec.id);
+  if (!result.ok) {
+    rejectProposal(ctx, rec.id);
+    return { rec, ok: false, error: result.error ?? 'the change could not be applied' };
+  }
+  const activityId = await recordActivity(ctx, rec, reason, result.path);
+  return {
+    rec,
+    ok: true,
+    ...(result.path ? { path: result.path } : {}),
+    ...(activityId ? { activityId } : {}),
+  };
+}
+
+/**
+ * One row in the Activity log, for any writer that earned its silence: a
+ * proposal the policy let through (below), and the maintenance pass that writes
+ * retrieval labels (`summaries.ts`).
+ *
+ * Best-effort throughout: a log entry that failed must never turn a landed
+ * write into an error the model retries. The commit is read back from the
+ * note's own history, straight after the write, so the row carries a real
+ * handle for putting it back. `revert.commit` names where the change landed,
+ * and `undo` says whether putting it back means removing the file or restoring
+ * its previous contents.
+ */
+export async function recordActivityRow(
+  ctx: UseCaseContext,
+  row: Omit<CreateActivityInput, 'revert'>,
+  undo: ActivityUndo,
+): Promise<string | undefined> {
+  if (!ctx.activity) return undefined;
+  try {
+    const commit = row.path ? await headCommit(ctx, row.path) : null;
+    return ctx.activity.record({ ...row, revert: { commit, undo } }, Date.now()).id;
+  } catch (err) {
+    logError('[qale] the Activity row for a silent write failed:', err);
+    return undefined;
+  }
+}
+
+/** The receipt one silent write leaves (E-9). See {@link recordActivityRow}. */
 async function recordActivity(
   ctx: UseCaseContext,
   rec: ProposalRecord,
   reason: string,
   landed?: string,
 ): Promise<string | undefined> {
-  if (!ctx.activity) return undefined;
-  try {
-    const payload = (rec.payload ?? {}) as {
-      frontmatter?: Record<string, unknown>;
-      append?: string;
-      body?: string;
-    };
-    const path = landed ?? rec.targetPath;
-    const lineInput = {
-      kind: rec.kind,
-      targetPath: path,
-      frontmatter: payload.frontmatter,
-      append: payload.append,
-      body: payload.body,
-    };
-    // An update edits a file that was already there, so putting it back means
-    // its previous contents. Everything else made the file, so putting it back
-    // means removing it.
-    const undo = rec.kind === 'update' ? 'restore' : 'delete';
-    const commit = path ? await headCommit(ctx, path) : null;
-    const row = ctx.activity.record(
-      {
-        proposalId: rec.id,
-        action: activityAction(lineInput),
-        line: activityLine(lineInput),
-        reason,
-        path: path ?? null,
-        sessionId: rec.sessionId,
-        skill: rec.skill,
-        revert: { commit, undo },
-      },
-      Date.now(),
-    );
-    return row.id;
-  } catch (err) {
-    logError('[qale] the Activity row for a silent write failed:', err);
-    return undefined;
-  }
+  const payload = (rec.payload ?? {}) as {
+    frontmatter?: Record<string, unknown>;
+    append?: string;
+    body?: string;
+  };
+  const path = landed ?? rec.targetPath;
+  const lineInput = {
+    kind: rec.kind,
+    targetPath: path,
+    frontmatter: payload.frontmatter,
+    append: payload.append,
+    body: payload.body,
+  };
+  // An update edits a file that was already there, so putting it back means
+  // its previous contents. Everything else made the file, so putting it back
+  // means removing it.
+  const undo = rec.kind === 'update' ? 'restore' : 'delete';
+  return recordActivityRow(
+    ctx,
+    {
+      proposalId: rec.id,
+      action: activityAction(lineInput),
+      line: activityLine(lineInput),
+      reason,
+      path: path ?? null,
+      sessionId: rec.sessionId,
+      skill: rec.skill,
+    },
+    undo,
+  );
 }
 
 /** The commit the write just landed in, or null when the vault is not a repo. */
@@ -791,7 +848,7 @@ async function acceptDecision(
 /**
  * Accept an outbound card (PLAN-V2 §3.4): write to Jira/Confluence via the
  * outbound port on approval, never before. On failure the card stays pending (it
- * returns to the Inbox with the error — nothing half-applied). The deterministic
+ * stays on the page with the error — nothing half-applied). The deterministic
  * link is appended to the workspace note that spawned it.
  */
 async function acceptOutbound(
@@ -901,7 +958,7 @@ function findOutboundMirror(
 }
 
 /** The meeting a closed-with-nothing-kept session leaves behind, for the one
- *  question the Inbox puts to the PO ("Mark it reviewed?"). */
+ *  question the review puts to the PO ("Mark it reviewed?"). */
 export interface MeetingReviewAsk {
   path: string;
   title: string;
@@ -916,7 +973,7 @@ export interface MeetingReviewResult {
 
 /**
  * Take a meeting out of "needs review": `new`/`stale` → `processed`. The write
- * behind both the silent close below and the PO answering the Inbox's question.
+ * behind both the silent close below and the PO answering the review's question.
  * `ok: false` when the note is gone or was already processed, so a caller with
  * nothing to report stays quiet.
  */
@@ -947,7 +1004,7 @@ export async function markMeetingReviewed(
  *
  * Discarding EVERY card is not a review: nothing was kept, so nothing here knows
  * whether the PO read the meeting or swept the pile away. That case flips
- * nothing and hands back an `ask` instead, which the Inbox puts to them in one
+ * nothing and hands back an `ask` instead, which the review puts to them in one
  * line; until they answer, the meeting stays in "needs review". Best-effort.
  */
 export async function completeMeetingReview(

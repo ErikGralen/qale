@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { TriangleAlert } from 'lucide-react';
 import type { AgentDTO } from '@qale/ipc';
 import { cn } from '@qale/ui';
@@ -17,7 +18,20 @@ import { StartChips, CanChips, visibleStarts } from './RunnableConfig';
  * separate questions — an agent can have a clock and still have never fired.
  */
 export function AgentLifeSigns({ agent, className }: { agent: AgentDTO; className?: string }) {
-  const { openInbox } = useApp();
+  const { openChat, openChats, proposals, sessions } = useApp();
+  // The newest session this agent still has a card waiting in. Same match main
+  // counts `pendingCards` with: a sweep's cards carry the agent's name as their
+  // session, a fired session's carry it as their skill.
+  const waiting = useMemo(() => {
+    const mine = proposals
+      .filter((p) => p.status === 'pending' && (p.skill === agent.id || p.sessionId === agent.id))
+      .sort((a, b) => b.created - a.created)[0];
+    if (!mine) return null;
+    return {
+      id: mine.sessionId,
+      title: sessions.find((s) => s.id === mine.sessionId)?.title ?? 'Session',
+    };
+  }, [agent.id, proposals, sessions]);
   // An agent with no clock is one the app never begins by itself. That is the
   // whole point of the page, so it is said in words rather than left as a gap.
   const selfStarting = visibleStarts(agent.starts).length > 0;
@@ -71,9 +85,13 @@ export function AgentLifeSigns({ agent, className }: { agent: AgentDTO; classNam
             {/* `relative` lifts the link above AgentRow's whole-row click overlay. */}
             <button
               className="relative rounded font-medium text-brand underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-              onClick={(e) => openInbox(navFromEvent(e))}
+              onClick={(e) =>
+                waiting
+                  ? openChat({ id: waiting.id, title: waiting.title }, navFromEvent(e))
+                  : openChats(navFromEvent(e))
+              }
             >
-              {agent.pendingCards} proposal{agent.pendingCards === 1 ? '' : 's'} in the Inbox
+              {agent.pendingCards} proposal{agent.pendingCards === 1 ? '' : 's'}
             </button>
           </>
         )}

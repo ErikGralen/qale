@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { NoteRefDTO, NoteType, VaultTreeDTO } from '@qale/ipc';
-import { documentPins, memoryPins } from '../src/renderer/src/lib/pins.js';
+import { documentPins, mirrorPins } from '../src/renderer/src/lib/pins.js';
 
 const DAY = 86_400_000;
 const NOW = new Date(2026, 8, 5, 9).getTime();
@@ -40,6 +40,10 @@ const UNDERSTANDING = note('understanding/product.md', 'note');
 const PERSON = note('people/lina-berg.md', 'person');
 const THEME = note('themes/checkout-drop-off.md', 'theme', { mtime: NOW - DAY });
 const TICKET = note('tickets/jira/PAY-142.md', 'ticket', { mtime: NOW - 2 * DAY });
+const OTHER_TICKET = note('tickets/jira/PAY-9.md', 'ticket', { mtime: NOW });
+const FLAT_TICKET = note('tickets/PAY-1.md', 'ticket');
+const TICKET_INDEX = note('tickets/jira/index.md', 'ticket');
+const PAGE = note('wikipages/confluence/scim.md', 'wikipage');
 const MEETING = note('meetings/2026-09-04-kranelund.md', 'meeting');
 const TODO = note('todos/send-the-brief.md', 'todo');
 const SESSION = note('sessions/2026-09-04-read.md', 'session');
@@ -58,22 +62,23 @@ const ALL = [
 ];
 const EVERY_PATH = ALL.map((n) => n.path);
 
-test('a pin goes to its own place: documents under Documents, memory under Memory', () => {
+test('a pin goes to its own place: documents under Documents', () => {
   const t = tree(ALL);
   assert.deepEqual(
     documentPins(t, EVERY_PATH).map((n) => n.path),
     [DOC.path, DOC_IN_FOLDER.path],
   );
-  assert.deepEqual(
-    memoryPins(t, EVERY_PATH).map((n) => n.path),
-    [PERSON.path, THEME.path, TICKET.path],
-  );
+});
+
+test('nothing else lands under Documents: not a memory page, not a mirror', () => {
+  const shown = documentPins(tree(ALL), EVERY_PATH).map((n) => n.path);
+  for (const other of [PERSON, THEME, TICKET, MEETING, TODO, SESSION])
+    assert.ok(!shown.includes(other.path), other.path);
 });
 
 test('an understanding note is not a document: the path says so, not the type', () => {
   const paths = documentPins(tree(ALL), EVERY_PATH).map((n) => n.path);
   assert.ok(!paths.includes(UNDERSTANDING.path));
-  assert.ok(!memoryPins(tree(ALL), EVERY_PATH).some((n) => n.path === UNDERSTANDING.path));
 });
 
 test('a folder index is navigation, so it never holds a row', () => {
@@ -84,15 +89,12 @@ test('a folder index is navigation, so it never holds a row', () => {
   );
 });
 
-test('Calendar owns a meeting, so it shows in neither list', () => {
-  const t = tree(ALL);
-  assert.ok(!documentPins(t, EVERY_PATH).some((n) => n.type === 'meeting'));
-  assert.ok(!memoryPins(t, EVERY_PATH).some((n) => n.type === 'meeting'));
+test('Calendar owns a meeting, so it never holds a row here', () => {
+  assert.ok(!documentPins(tree(ALL), EVERY_PATH).some((n) => n.type === 'meeting'));
 });
 
 test('todos, sessions, skills and agents stay in the places that own them', () => {
-  const t = tree(ALL);
-  const shown = [...documentPins(t, EVERY_PATH), ...memoryPins(t, EVERY_PATH)].map((n) => n.type);
+  const shown = documentPins(tree(ALL), EVERY_PATH).map((n) => n.type);
   for (const type of ['todo', 'session'] as const) assert.ok(!shown.includes(type), type);
 });
 
@@ -108,32 +110,66 @@ test('each list is flat and most recent first', () => {
 });
 
 test('the frontmatter date wins over mtime when a page carries one', () => {
-  const dated = note('themes/dated.md', 'theme', {
+  const old = note('notes/old.md', 'note', { mtime: NOW - DAY });
+  const dated = note('notes/dated.md', 'note', {
     mtime: NOW - 10 * DAY,
     date: new Date(NOW).toISOString(),
   });
-  const rows = memoryPins(tree([THEME, dated]), [THEME.path, dated.path]);
+  const rows = documentPins(tree([old, dated]), [old.path, dated.path]);
   assert.deepEqual(
     rows.map((n) => n.path),
-    [dated.path, THEME.path],
+    [dated.path, old.path],
   );
 });
 
 test('nothing pinned, or no tree yet, is an empty list rather than a throw', () => {
   assert.deepEqual(documentPins(null, EVERY_PATH), []);
-  assert.deepEqual(memoryPins(null, EVERY_PATH), []);
   assert.deepEqual(documentPins(tree(ALL), []), []);
-  assert.deepEqual(memoryPins(tree(ALL), []), []);
 });
 
-test('a favourite the tree no longer holds drops out of both lists', () => {
+test('a favourite the tree no longer holds drops out of the list', () => {
   const t = tree([DOC, PERSON]);
   assert.deepEqual(
     documentPins(t, [DOC.path, 'notes/deleted.md']).map((n) => n.path),
     [DOC.path],
   );
+});
+
+test('a mirror pins under the system it was copied from', () => {
+  const t = tree([TICKET, PAGE, DOC]);
+  const every = [TICKET.path, PAGE.path, DOC.path];
   assert.deepEqual(
-    memoryPins(t, [PERSON.path, 'people/gone.md']).map((n) => n.path),
-    [PERSON.path],
+    mirrorPins(t, every, 'tickets/jira').map((n) => n.path),
+    [TICKET.path],
+  );
+  assert.deepEqual(
+    mirrorPins(t, every, 'wikipages/confluence').map((n) => n.path),
+    [PAGE.path],
+  );
+});
+
+test('a flat mirror names no system, so no system row holds it', () => {
+  // `tickets/PAY-1.md` was written before the provider folders (PD-10). Every
+  // row on the rail is one system's folder, and this file is under none.
+  const t = tree([TICKET, FLAT_TICKET]);
+  assert.deepEqual(
+    mirrorPins(t, [TICKET.path, FLAT_TICKET.path], 'tickets/jira').map((n) => n.path),
+    [TICKET.path],
+  );
+});
+
+test('a folder index is navigation here too, so it never holds a row', () => {
+  const t = tree([TICKET, TICKET_INDEX]);
+  assert.deepEqual(
+    mirrorPins(t, [TICKET.path, TICKET_INDEX.path], 'tickets/jira').map((n) => n.path),
+    [TICKET.path],
+  );
+});
+
+test('the mirrors under a system read most recent first', () => {
+  const t = tree([TICKET, OTHER_TICKET]);
+  assert.deepEqual(
+    mirrorPins(t, [TICKET.path, OTHER_TICKET.path], 'tickets/jira').map((n) => n.path),
+    [OTHER_TICKET.path, TICKET.path],
   );
 });

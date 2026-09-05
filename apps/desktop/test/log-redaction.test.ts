@@ -145,7 +145,7 @@ test('console is captured, scrubbed, and kept in order', () => {
  */
 test('every failure a pass hit comes out as one scrubbed line', () => {
   resetSecretsForTest();
-  const line = failureReport('librarian', [
+  const line = failureReport('maintenance', [
     { item: 'connector sync', reason: new Error('pull failed for ada@northwind.example') },
     { item: 'orientation maps', reason: new Error('could not write /Users/ada/w/themes/index.md') },
     { item: 'new-space survey', reason: 'timed out' },
@@ -153,18 +153,18 @@ test('every failure a pass hit comes out as one scrubbed line', () => {
 
   assert.equal(
     line,
-    '[qale] librarian: 3 items failed this pass — connector sync (pull failed for <email>);' +
+    '[qale] maintenance: 3 items failed this pass — connector sync (pull failed for <email>);' +
       ' orientation maps (could not write <path>); new-space survey (timed out)',
   );
 });
 
 test('a pass that went through clean has no line to write', () => {
-  assert.equal(failureReport('librarian', []), null);
+  assert.equal(failureReport('maintenance', []), null);
 });
 
 test('one failure is counted as one, not as "1 items"', () => {
   assert.equal(
-    failureReport('librarian', [{ item: 'connector sync', reason: new Error('offline') }]),
-    '[qale] librarian: 1 item failed this pass — connector sync (offline)',
+    failureReport('maintenance', [{ item: 'connector sync', reason: new Error('offline') }]),
+    '[qale] maintenance: 1 item failed this pass — connector sync (offline)',
   );
 });

@@ -163,6 +163,18 @@ export interface GitCommit {
   author: string;
 }
 
+/**
+ * One commit that touched a path, as the recency seed reads it (IM-15). The
+ * message prefix is the only thing that says who wrote the commit: git's author
+ * is the same identity for every write the app makes.
+ */
+export interface GitTouch {
+  /** The day of the commit, `YYYY-MM-DD`. */
+  day: string;
+  /** The text before the first colon in the message, lower case ('' if none). */
+  prefix: string;
+}
+
 /** Git layer — path-scoped commits only, never `add -A` (PLAN §3.5). */
 export interface GitPort {
   available(): Promise<boolean>;
@@ -184,6 +196,16 @@ export interface GitPort {
    * asks. The undo refuses outright when it is missing, rather than guessing.
    */
   pathsChangedWith?(hash: string, relPath: string): Promise<string[]>;
+  /**
+   * Every path a commit touched in the last `days` days, with the day and the
+   * message prefix of each of those commits. One call answers for the whole
+   * workspace, because the recency seed asks about the whole workspace once, at
+   * session start.
+   *
+   * Optional, like `pathsChangedWith`: a stand-in git in a test only has to
+   * answer what that test asks, and a caller that gets nothing shows nothing.
+   */
+  changedSince?(days: number): Promise<Map<string, GitTouch[]>>;
 }
 
 /** Injected clock — domain/use-cases stay pure of the ambient system clock. */
@@ -275,12 +297,6 @@ export interface AskRecord {
   id: string;
   sessionId: string;
   questions: unknown;
-  /**
-   * Set instead of `questions` when the session parked on a round file for the
-   * PM to write in rather than on a question card. Opaque for the same reason
-   * `questions` is: the shape belongs to the agent package.
-   */
-  comments?: unknown;
   /** The skill in force when it asked, so answering later resumes under it. */
   skill: string | null;
   /** Whether that skill was granted outbound by the trigger that fired it. */
@@ -298,7 +314,6 @@ export interface CreateAskInput {
   id: string;
   sessionId: string;
   questions: unknown;
-  comments?: unknown;
   skill?: string | null;
   outbound?: boolean;
   unattended?: boolean;

@@ -22,15 +22,8 @@ import { HeaderAction, HeaderActions, PageHeader } from '../components/PageHeade
  * carry the ink-blue dot and the reason, everything else rests with a check.
  */
 export function SessionsView() {
-  const {
-    sessions,
-    openChat,
-    openSession,
-    openInbox,
-    refreshSessions,
-    deleteSession,
-    setSessionLifecycle,
-  } = useApp();
+  const { sessions, openChat, openSession, refreshSessions, deleteSession, setSessionLifecycle } =
+    useApp();
   const [loaded, setLoaded] = useState(false);
   const [showUnpinned, setShowUnpinned] = useState(false);
 
@@ -101,7 +94,6 @@ export function SessionsView() {
                   key={s.id}
                   session={s}
                   onOpen={(e) => openChat({ id: s.id, title: s.title }, e && navFromEvent(e))}
-                  onOpenCards={() => openInbox()}
                   onDelete={() => void deleteSession(s.id)}
                   onSetLifecycle={(lc) => void setSessionLifecycle(s.id, lc)}
                 />
@@ -141,13 +133,11 @@ function FilterChip({
 function SessionRow({
   session: s,
   onOpen,
-  onOpenCards,
   onDelete,
   onSetLifecycle,
 }: {
   session: SessionOverview;
   onOpen: (e?: React.MouseEvent) => void;
-  onOpenCards: () => void;
   onDelete: () => void;
   onSetLifecycle: (lifecycle: SessionLifecycle) => void;
 }) {
@@ -203,9 +193,9 @@ function SessionRow({
       {s.pendingCards > 0 && (
         <button
           className="absolute right-8 bottom-2 rounded-md px-1.5 py-0.5 text-xs text-brand opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-brand/10 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-          onClick={onOpenCards}
+          onClick={(e) => onOpen(e)}
         >
-          Review in Inbox →
+          Review →
         </button>
       )}
       <span className="absolute top-2 right-2 flex items-center gap-0.5">
@@ -230,8 +220,17 @@ function SessionRow({
             {!s.running && s.lifecycle === 'active' && (
               <RowAction
                 Icon={PinOff}
-                label={`Unpin "${s.title}"`}
-                title="Unpin: not relevant right now"
+                label={
+                  s.pendingCards > 0
+                    ? `Decide on its ${s.pendingCards} proposal${s.pendingCards === 1 ? '' : 's'} first`
+                    : `Unpin "${s.title}"`
+                }
+                title={
+                  s.pendingCards > 0
+                    ? `Decide on its ${s.pendingCards} proposal${s.pendingCards === 1 ? '' : 's'} first`
+                    : 'Unpin: not relevant right now'
+                }
+                disabled={s.pendingCards > 0}
                 onClick={() => onSetLifecycle('unpinned')}
               />
             )}
@@ -263,21 +262,24 @@ function RowAction({
   title,
   onClick,
   destructive,
+  disabled,
 }: {
   Icon: LucideIcon;
   label: string;
   title: string;
   onClick: () => void;
   destructive?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
-      className={`rounded p-1 text-muted-foreground opacity-0 group-focus-within:opacity-70 group-hover:opacity-70 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
+      className={`rounded p-1 text-muted-foreground opacity-0 group-focus-within:opacity-70 group-hover:opacity-70 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-30 ${
         destructive
           ? 'hover:bg-destructive/10 hover:text-destructive'
           : 'hover:bg-accent hover:text-foreground'
       }`}
       onClick={onClick}
+      disabled={disabled}
       aria-label={label}
       title={title}
     >

@@ -5,8 +5,8 @@ import type { ReceiptEntry } from './cardMeta';
 
 /**
  * What the approvals set in motion, said once and rendered in both places that
- * report it: the Inbox after the PO clears it, and a session's chat after they
- * judge its last card (docs/closing-beat.md).
+ * report it: the session review after the PO clears it, and a session's chat
+ * after they judge its last card (docs/closing-beat.md).
  *
  * A column, not a sentence. Four approvals used to run together in one wrapping
  * paragraph — "Created A · Created B · Created" then a line break and the rest

@@ -44,7 +44,7 @@ test('a card knows the PM asked for it, and the answer survives a read back', { 
 /**
  * The column landed after v1, so every workspace already out there opens a table
  * without it. The migration has to be the thing that runs before the first read,
- * or the app comes up to an Inbox that throws on a card written last week.
+ * or the app comes up to a review that throws on a card written last week.
  */
 test('a queue written before the column reads back as asking nothing', { skip }, () => {
   const db = new Database(':memory:');

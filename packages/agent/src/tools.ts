@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
-import type { UseCaseContext } from '@qale/application';
+import type { IndexedNote, UseCaseContext } from '@qale/application';
 import {
   applyPatch,
   createProposal,
@@ -12,6 +12,7 @@ import {
   withdrawProposal,
 } from '@qale/application';
 import {
+  backlinkTypeLabel,
   badDayField,
   checkFrontmatterMutation,
   detectLanguage,
@@ -134,13 +135,67 @@ function mirrorFields(n: { type: string; frontmatter: Record<string, unknown> })
   return parts.length ? ` (${parts.join(', ')})` : '';
 }
 
+/** The only shape a day is written in anywhere in the workspace. */
+const DAY_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The day a note is filed under, for the list tool's time filters (IM-3).
+ *
+ * Each type keeps its day in its own field: a meeting or a decision in `date`,
+ * a todo in `due`. Nothing else has a day of its own, so the day the file last
+ * changed stands in for it.
+ *
+ * Day fields on old notes are unchecked strings, and a value like "next Friday"
+ * does not fail, it sorts: it is above every real date. So anything that is not
+ * exactly YYYY-MM-DD is undated here. An undated note matches no `since`/`until`
+ * filter and sorts last.
+ */
+export function noteDay(n: Pick<IndexedNote, 'type' | 'mtime' | 'frontmatter'>): string | null {
+  const field =
+    n.type === 'meeting' || n.type === 'decision' ? 'date' : n.type === 'todo' ? 'due' : null;
+  if (field) {
+    const value = n.frontmatter[field];
+    return typeof value === 'string' && DAY_SHAPE.test(value) ? value : null;
+  }
+  if (!Number.isFinite(n.mtime) || n.mtime <= 0) return null;
+  return new Date(n.mtime).toISOString().slice(0, 10);
+}
+
+/**
+ * A note's tags. Frontmatter carries them as a list, as one bare string, or not
+ * at all, and all three are written by hand, so all three are read here.
+ */
+export function noteTags(n: Pick<IndexedNote, 'frontmatter'>): string[] {
+  const raw = n.frontmatter['tags'];
+  if (typeof raw === 'string') return raw ? [raw] : [];
+  if (Array.isArray(raw)) return raw.filter((t): t is string => typeof t === 'string' && t !== '');
+  return [];
+}
+
+/**
+ * One listing row: the address, what kind of note it is, its day, and a hint.
+ * Shared so `vault_list` and `vault_backlinks` cannot drift into two formats
+ * for the same thing.
+ */
+function listRow(ctx: UseCaseContext, n: IndexedNote): string {
+  const day = noteDay(n);
+  const lifecycle = n.lifecycle ? `/${n.lifecycle}` : '';
+  // A raw note's summary is its own first line more often than not.
+  const summary = isExternalNote(ctx, n.path) ? fragment(n.summary) : n.summary;
+  return `- ${n.path} [${n.type}${lifecycle}]${mirrorFields(n)}${day ? ` ${day}` : ''} — ${summary}`;
+}
+
 export const VAULT_TOOL_NAMES = [
   'vault_read',
   'vault_outline',
   'vault_list',
   'vault_grep',
   'search_vault',
+  'vault_backlinks',
 ];
+
+/** Heading for links that name no relationship, in the note page's own words. */
+const UNTYPED_LINKS = 'Linked from';
 
 /**
  * How much of a note one `vault_read` may hand back (M3, `docs/mvp-strategy.md`).
@@ -460,11 +515,20 @@ export function createVaultTools(
     },
   });
 
+  /**
+   * The list tool, with the two filters the folder maps cannot carry (IM-3,
+   * IM-11). A map is orientation: it groups a folder by lifecycle and it says
+   * nothing about days or tags. So "what did we discuss with Nordkap in June"
+   * and "everything tagged pricing" had no tool, and the agent read a whole map
+   * or grepped. Both now come back as one call.
+   */
   const vaultList = defineTool({
     name: 'vault_list',
     label: 'List notes',
     description:
-      'List notes in the workspace, optionally filtered by type (meeting, decision, insight, customer, theme, person, …) and/or lifecycle. Each type has its OWN lifecycle field with its own values: sources/meetings/insights/notes/mirrors have `processing` (new/processed/stale), decisions have `standing` (active/superseded), customers have `relationship` (prospect/active/churned), themes have `stance` (exploring/watching/committed/wont-do), todos have `commitment` (open/done/dropped). Returns path, type, lifecycle value and one-line summary. For orienting on a whole folder, reading that folder\'s "index.md" (e.g. "insights/index.md") gives the same map grouped by lifecycle; use this when you need to filter across folders.',
+      'List notes in the workspace, filtered by any of type, lifecycle, day and tag. Each type has its OWN lifecycle field with its own values: sources/meetings/insights/notes/mirrors have `processing` (new/processed/stale), decisions have `standing` (active/superseded), customers have `relationship` (prospect/active/churned), themes have `stance` (exploring/watching/committed/wont-do), todos have `commitment` (open/done/dropped). Returns path, type, lifecycle value, day and one-line summary. ' +
+      'A folder\'s "index.md" map (e.g. "insights/index.md") is orientation only: it groups that one folder by lifecycle, and it shows neither days nor tags. Every time question comes here instead. `since` and `until` are days written YYYY-MM-DD and both bounds are inclusive; the day is the type\'s own field, `date` on a meeting or decision, `due` on a todo, and the day the file last changed on everything else. A day field written any other way counts as undated: it matches no filter and sorts last. `sort` gives `date` (newest day first), `title` (A to Z) or `modified` (newest change first). ' +
+      '`tags` matches a note carrying ANY of the tags you give. Tags cut across types (a project, a product, an area), one note can carry more than one, and the maps do not list them, so this is the only way to reach them.',
     parameters: Type.Object({
       type: Type.Optional(Type.String({ description: 'Filter by note type.' })),
       lifecycle: Type.Optional(
@@ -472,25 +536,74 @@ export function createVaultTools(
           description: 'Filter by the type\'s lifecycle value (e.g. "new", "superseded").',
         }),
       ),
+      since: Type.Optional(
+        Type.String({
+          description: 'Keep notes whose day is this day or later. Write it "2026-06-01".',
+        }),
+      ),
+      until: Type.Optional(
+        Type.String({
+          description: 'Keep notes whose day is this day or earlier. Write it "2026-06-30".',
+        }),
+      ),
+      tags: Type.Optional(
+        Type.Array(Type.String(), {
+          description: 'Keep notes carrying any one of these tags.',
+        }),
+      ),
+      sort: Type.Optional(
+        Type.String({
+          description: 'Order the rows: "date", "title" or "modified". Omit to keep index order.',
+        }),
+      ),
     }),
-    async execute(_id, params: { type?: string; lifecycle?: string }) {
-      const all = ctx.index.all();
-      const rows = all.filter(
-        (n) =>
-          !isFolderIndex(n.path) &&
-          (!params.type || n.type === params.type) &&
-          (!params.lifecycle || n.lifecycle === params.lifecycle),
-      );
+    async execute(
+      _id,
+      params: {
+        type?: string;
+        lifecycle?: string;
+        since?: string;
+        until?: string;
+        tags?: string[];
+        sort?: string;
+      },
+    ) {
+      const wanted = (params.tags ?? []).map((t) => t.toLowerCase());
+      const rows = ctx.index.all().filter((n) => {
+        if (isFolderIndex(n.path)) return false;
+        if (params.type && n.type !== params.type) return false;
+        if (params.lifecycle && n.lifecycle !== params.lifecycle) return false;
+        if (params.since || params.until) {
+          const day = noteDay(n);
+          if (!day) return false;
+          if (params.since && day < params.since) return false;
+          if (params.until && day > params.until) return false;
+        }
+        if (wanted.length > 0) {
+          const has = noteTags(n).map((t) => t.toLowerCase());
+          if (!wanted.some((t) => has.includes(t))) return false;
+        }
+        return true;
+      });
+      if (params.sort === 'title') {
+        rows.sort((a, b) => a.title.localeCompare(b.title));
+      } else if (params.sort === 'modified') {
+        rows.sort((a, b) => b.mtime - a.mtime);
+      } else if (params.sort === 'date') {
+        // An undated note goes last whichever way the dated ones run: it has no
+        // place on a timeline, and putting it at the top would read as the most
+        // recent thing there is.
+        rows.sort((a, b) => {
+          const x = noteDay(a);
+          const y = noteDay(b);
+          if (x && y) return y.localeCompare(x) || a.path.localeCompare(b.path);
+          if (x) return -1;
+          if (y) return 1;
+          return a.path.localeCompare(b.path);
+        });
+      }
       if (rows.length === 0) return text('No matching notes.');
-      const body = rows
-        .map(
-          (n) =>
-            `- ${n.path} [${n.type}${n.lifecycle ? `/${n.lifecycle}` : ''}]${mirrorFields(n)} — ` +
-            // A raw note's summary is its own first line more often than not.
-            `${isExternalNote(ctx, n.path) ? fragment(n.summary) : n.summary}`,
-        )
-        .join('\n');
-      return text(body);
+      return text(rows.map((n) => listRow(ctx, n)).join('\n'));
     },
   });
 
@@ -544,7 +657,54 @@ export function createVaultTools(
     },
   });
 
-  return [vaultRead, vaultOutline, vaultList, vaultGrep, searchVault];
+  /**
+   * The second way in (IM-9). The maps orient by folder, and a hub page carries
+   * only what somebody wrote on it, so "what links to Nordkap" had no tool at
+   * all. `ctx.index.backlinks` already resolves the slug and collapses repeats
+   * of one relationship, so the work here is the join for a title and a summary,
+   * and the grouping.
+   */
+  const vaultBacklinks = defineTool({
+    name: 'vault_backlinks',
+    label: 'List backlinks',
+    description:
+      'List the notes that link TO one note, grouped by relationship. Use this from a hub (customer, person, theme) to find the meetings, decisions and todos that mention it. It is the second way in after the folder maps. ' +
+      'Takes the note\'s path ("customers/nordkap.md") or its slug ("nordkap"). Rows read exactly like vault_list rows, so a vault_list with `since`/`until` narrows the same ground by day.',
+    parameters: Type.Object({
+      path: Type.String({ description: 'Workspace-relative path to the note, or its slug.' }),
+    }),
+    async execute(_id, params: { path: string }) {
+      const target = ctx.index.resolve(stripLink(params.path));
+      const note = target ? ctx.index.get(target) : null;
+      if (!note) return text(`Not found: ${params.path}`);
+      const groups = new Map<string, Map<string, string>>();
+      for (const row of ctx.index.backlinks(note.slug)) {
+        // An edge outlives the note that wrote it until the next reconcile, so a
+        // row with nothing behind it is dropped rather than listed as an address
+        // that cannot be read.
+        const from = ctx.index.get(row.fromPath);
+        if (!from) continue;
+        const label = row.type ? backlinkTypeLabel(row.type, row.reversed === true) : UNTYPED_LINKS;
+        const rows = groups.get(label) ?? new Map<string, string>();
+        // One row per note per group: a note that links here twice the same way
+        // is one relationship, not two.
+        if (!rows.has(from.path)) rows.set(from.path, listRow(ctx, from));
+        groups.set(label, rows);
+      }
+      if (groups.size === 0) return text(`Nothing links to ${note.path}.`);
+      const ordered = [...groups.entries()].sort(
+        (a, b) =>
+          Number(a[0] === UNTYPED_LINKS) - Number(b[0] === UNTYPED_LINKS) ||
+          a[0].localeCompare(b[0]),
+      );
+      const body = ordered
+        .map(([label, rows]) => `## ${label}\n${[...rows.values()].join('\n')}`)
+        .join('\n\n');
+      return text(`Notes linking to ${note.path}:\n${body}`);
+    },
+  });
+
+  return [vaultRead, vaultOutline, vaultList, vaultGrep, searchVault, vaultBacklinks];
 }
 
 export const PROPOSE_TOOL_NAMES = [
@@ -806,6 +966,14 @@ export function createProposeTools(
   ctx: UseCaseContext,
   sessionId: string,
   harness?: SessionHarness,
+  /**
+   * Runs once a card is filed for this session, whatever it decides. The
+   * rail's "system only ever adds, never silently removes" rule: a session the
+   * PM unpinned still has to hand back a card the moment one lands, so the
+   * caller re-pins it here rather than leaving a proposal stuck behind the
+   * Unpinned tab.
+   */
+  onProposed?: () => void,
 ): ToolDefinition[] {
   /**
    * Stop a card that repeats one already in the queue, and say so in words the
@@ -813,7 +981,7 @@ export function createProposeTools(
    *
    * Not silent, and not a hard refusal: it reports the card that already covers
    * this and leaves the judgement where it belongs. Two runs over one meeting
-   * used to fill the Inbox with pairs, and neither could see the other because
+   * used to fill the review with pairs, and neither could see the other because
    * a pending card is not a note on disk for `vault_list` to find.
    */
   const alreadyProposed = (candidate: {
@@ -853,6 +1021,16 @@ export function createProposeTools(
         'never be applied. If it needs to change, propose_update it instead.',
     );
   };
+
+  /** `fileProposal`, plus the re-pin hook every card here has to fire. */
+  const propose = (
+    input: Parameters<typeof fileProposal>[1],
+    facts?: Parameters<typeof fileProposal>[2],
+  ): ReturnType<typeof fileProposal> =>
+    fileProposal(ctx, input, facts).then((filed) => {
+      onProposed?.();
+      return filed;
+    });
 
   /**
    * The basis a card carries when the PM asked for it in the chat. Their
@@ -968,8 +1146,7 @@ export function createProposeTools(
           parsed.data.path,
       });
       if (dup) return dup;
-      const filed = await fileProposal(
-        ctx,
+      const filed = await propose(
         {
           kind: 'note',
           sessionId,
@@ -1144,7 +1321,7 @@ export function createProposeTools(
       // `## Notes` stays empty above the summary: it is the PM's half of the
       // page, and a meeting they open later has somewhere to write.
       const body = `## Notes\n\n## Summary\n\n${params.summary.trim()}\n`;
-      const filed = await fileProposal(ctx, {
+      const filed = await propose({
         kind: 'note',
         sessionId,
         skill: harness?.activeSkillName,
@@ -1240,8 +1417,7 @@ export function createProposeTools(
           parsed.data.path,
       });
       if (dup) return dup;
-      const filed = await fileProposal(
-        ctx,
+      const filed = await propose(
         {
           kind: 'decision',
           sessionId,
@@ -1385,8 +1561,7 @@ export function createProposeTools(
         !parsed.data.patch?.length &&
         !parsed.data.frontmatter &&
         !parsed.data.title?.trim();
-      const filed = await fileProposal(
-        ctx,
+      const filed = await propose(
         {
           kind: 'update',
           sessionId,
@@ -1485,8 +1660,7 @@ export function createProposeTools(
       // A delete always asks: the code has no undelete, so nothing here can put
       // the page back. It goes through the policy anyway, because there is one
       // place that grades a write and this is not an exception to it.
-      const filed = await fileProposal(
-        ctx,
+      const filed = await propose(
         {
           kind: 'delete',
           sessionId,
@@ -1574,8 +1748,7 @@ export function createProposeTools(
       const body = params.quote ? `> ${params.quote.trim()}\n> — ${sources[0] ?? 'source'}\n` : '';
       // A todo always asks, whoever asked for it. A promise is the PM's word to
       // somebody, and nothing else the agent writes is.
-      const filed = await fileProposal(
-        ctx,
+      const filed = await propose(
         {
           kind: 'note',
           sessionId,
@@ -1776,8 +1949,7 @@ export function createProposeTools(
         const append = rulesSectionIsLast(home.note.body, heading)
           ? `\n- ${rule}`
           : `\n\n${heading}\n\n- ${rule}`;
-        const filed = await fileProposal(
-          ctx,
+        const filed = await propose(
           {
             kind: 'update',
             sessionId,
@@ -1810,8 +1982,7 @@ export function createProposeTools(
         title: first.title,
       });
       if (dup) return dup;
-      const filed = await fileProposal(
-        ctx,
+      const filed = await propose(
         {
           kind: 'note',
           sessionId,
@@ -1980,8 +2151,7 @@ export function createProposeTools(
       if (dup) return dup;
 
       const rationale = `${params.why?.trim() || 'You asked for this in chat.'} Written from the work in this session.`;
-      const filed = await fileProposal(
-        ctx,
+      const filed = await propose(
         {
           kind: 'note',
           sessionId,

@@ -9,9 +9,10 @@ import { Screen } from '../Opening';
  * value-first draft read as a sales pitch to the person who already installed
  * the app. What they need before the next five screens is the mental model:
  * everything is a text file in a folder they own, this is where they work,
- * the AI drafts and they approve. The why (control) and the one boundary
- * (notes go to the AI service they pick) still get said, because someone who
- * reads only this screen should already know what they have installed.
+ * the AI adds and drafts, and it asks before anything it cannot take back.
+ * The why (control) and the one boundary (notes go to the AI service they
+ * pick) still get said, because someone who reads only this screen should
+ * already know what they have installed.
  */
 export function Hello({ onNext }: { onNext: () => void }) {
   return (
@@ -40,10 +41,19 @@ export function Hello({ onNext }: { onNext: () => void }) {
             decisions live in one folder that you pick, and you can open it with any other app,
             with Qale closed.
           </p>
+          {/* "You approve before anything counts" was the old last sentence,
+              and the write policy made it untrue: a new page or an added
+              paragraph in Qale's own memory lands on its own
+              (docs/background-system.md ticket 6). The screen says what asks
+              and what does not, in the same words as PRODUCT.md, because the
+              one thing worse than a surprise is a promise that broke. */}
           <p>
             That folder is where you work. Write notes, drop in transcripts, ask questions. The AI
-            reads what you give it, files it, and drafts the follow-ups. You approve before
-            anything counts.
+            reads what you give it, files it, and drafts the follow-ups. It never writes in your own
+            documents unless you ask. In its own memory, a new page or an added paragraph lands on
+            its own, listed in Activity, where one press puts it back. Anything that rewrites your
+            text, records a decision, makes or closes a promise, deletes, or leaves for Jira,
+            Confluence or a calendar asks you first.
           </p>
           {/* The why, then the limit of the promise in the same breath (OW10).
               "Nothing leaves" was never true of the model, and a boundary
@@ -51,9 +61,9 @@ export function Hello({ onNext }: { onNext: () => void }) {
               Plain "AI service" here: "model provider" and "agent" are our
               words, and this is the first screen anyone reads. */}
           <p>
-            We built it this way so you stay in control: files any app can open are never locked
-            in, and an AI that asks first never surprises you. When the AI reads your notes, they
-            go to the AI service you pick, and nothing reaches your team or your tools without
+            We built it this way so you stay in control: files any app can open are never locked in,
+            and what the AI does on its own can always be put back. When the AI reads your notes,
+            they go to the AI service you pick, and nothing reaches your team or your tools without
             your approval.
           </p>
         </div>

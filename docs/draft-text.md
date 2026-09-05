@@ -26,7 +26,7 @@ real approval cards because they really execute.
 
 A panel in the chat. The agent writes one or more variants, they render as tabs
 inside the conversation, and the conversation carries on underneath. It is not a
-proposal. It never reaches the Inbox. There is nothing to approve, discard, edit
+proposal. It never reaches the session's review. There is nothing to approve, discard, edit
 or ask about, because nothing is pending.
 
 A turn may draw several panels ("draft three different intros"). Each call is a

@@ -7,7 +7,7 @@ import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent
  * A session the PM started is cheap to end loudly: they are looking at it, and
  * a short "nothing changed" is the answer they asked for. A run a clock started
  * is not. It files a receipt into `sessions/`, adds a row to the Sessions list
- * and increments the badge on the Inbox, and it does all three whether or not
+ * and increments the badge on the rail, and it does all three whether or not
  * it found anything. A weekly synthesis with nothing to cluster costs the PM
  * three of those a month, and after the second one the badge has stopped
  * meaning "something needs you".

@@ -122,7 +122,7 @@ detection wired to the real event, each row a button that takes you to the right
 | -------------------------- | -------------------------------- | ---------------------------------------------------------------------------- |
 | Add your key               | (only if skipped in the opening) | `hasAnthropicKey` flips true                                                 |
 | Drop a meeting transcript  | capture, arrival, the receipt    | an arrival session completes on a transcript                                 |
-| Decide on a proposal       | the approval loop, the Inbox     | first accept or reject                                                       |
+| Decide on a proposal       | the approval loop, in the session | first accept or reject                                                     |
 | Prep for a meeting         | sessions working for you         | a meeting-prep session completes                                             |
 | Ask your memory a question | chat over your own notes         | a chat session with a user prompt completes                                  |
 | Tell it about your product | you talk, it drafts, you approve | the first understanding card is accepted (docs/product-understanding.md U-4) |
@@ -141,7 +141,7 @@ unchecked, with the line reading "Connected, but nothing picked to watch yet". O
 ends up with a green tick and an app that reads nothing.
 
 Rules: checks are quiet, a completed row shows one line of what happened ("Read your transcript,
-two proposals in the Inbox"). The card is dismissible as a whole at any time and never comes back.
+two proposals in the session"). The card is dismissible as a whole at any time and never comes back.
 When everything is done it retires itself after showing once in its finished state. Since the
 workspace starts empty, "drop a meeting transcript" is the row that unblocks most of the others,
 so it sits first and says what counts as a transcript. There is no sample file to fall back on by

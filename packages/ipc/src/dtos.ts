@@ -621,7 +621,7 @@ export interface ProposalDTO {
 /**
  * Comes back on the resolve that empties a session whose cards were ALL
  * discarded: nothing was kept, so nothing knows whether the meeting was read.
- * The Inbox asks in one line; the meeting stays in "needs review" until then.
+ * The review asks in one line; the meeting stays in "needs review" until then.
  */
 export interface MeetingReviewAskDTO {
   path: string;
@@ -650,6 +650,20 @@ export interface CaptureNudgeDismissDTO extends CaptureNudgeStateDTO {
 // Agent / chat / sessions
 // ---------------------------------------------------------------------------
 
+/**
+ * Where the question was asked from, as a filter (IM-13). The scoped Ask
+ * composer on a tag page or a Documents folder sends this beside the prompt,
+ * and the session opens with the matching notes already listed. The prompt
+ * keeps its own sentence about the scope: that one is for the person reading
+ * the chat, this one is for the agent.
+ */
+export interface SessionScopeDTO {
+  /** Notes carrying any one of these tags. */
+  tags?: string[];
+  /** Notes under `notes/<folder>/`. An empty string means the notes root. */
+  folder?: string;
+}
+
 export interface AgentRunInput {
   /** Existing pi session id to resume, or omit to start fresh. */
   sessionId?: string;
@@ -672,6 +686,12 @@ export interface AgentRunInput {
   modelId?: string;
   /** Tier the arrival gets, when a triggered binding named one for this source. */
   tier?: 'observe' | 'suggest' | 'outbound';
+  /**
+   * The page this session was started from (IM-13). Read once, when the session
+   * is built: it seeds the scope block in the system prompt. A turn on a
+   * session that already exists carries none.
+   */
+  scope?: SessionScopeDTO;
 }
 
 export interface AgentRunHandle {
@@ -795,35 +815,13 @@ export interface AskQuestionDTO {
   /** Short chip label ("Scope"), never a sentence. */
   header: string;
   question: string;
+  /** Paragraphs under the question line, markdown: the case for an idea in a
+   *  round (docs/iterate-in-chat.md). Absent on a plain question. */
+  body?: string;
+  /** Empty means a written question: no rows, just the box. */
   options: AskOptionDTO[];
   /** Options aren't mutually exclusive — checkboxes rather than radios. */
   multiSelect: boolean;
-}
-
-/** One place in a round file where the session wants the PM's take. */
-export interface AskCommentSlotDTO {
-  /** The id the answer is keyed by: the same id the fence carries in the file. */
-  id: string;
-  /** What the model wrote above the box, when it wrote anything. */
-  prompt?: string;
-}
-
-/**
- * A document handed to the PM to write in (docs/brainstorm-skill.md). The path
- * is relative to the session's own folder, so the reader that draws the boxes
- * opens the same file the session wrote.
- */
-export interface AskCommentPlanDTO {
-  path: string;
-  slots: AskCommentSlotDTO[];
-}
-
-/** What the PM wrote in a round, as Send posts it back. */
-export interface AskCommentAnswersDTO {
-  /** Slot id → what they typed. A box they left empty is simply absent. */
-  answers: Record<string, string>;
-  /** The general box at the foot of the document, if they used it. */
-  general?: string;
 }
 
 /**
@@ -835,15 +833,6 @@ export interface AskRequestDTO {
   id: string;
   sessionId: string;
   questions: AskQuestionDTO[];
-  /**
-   * Set when this is a round to write in rather than a question to answer
-   * (the request_comments tool). Both kinds ride on this one shape, because
-   * everything around them treats them the same: the badge, the sidebar row,
-   * the composer lock, the dismissal. Read `comments` BEFORE `questions`: a
-   * round carries an empty question list, and a question card drawn from it
-   * would be empty too.
-   */
-  comments?: AskCommentPlanDTO;
   /**
    * Offered, not owed: an agent that tidies the workspace asked it on a run
    * nobody was there for. Such a question renders in the quiet section and
@@ -1147,7 +1136,7 @@ export interface AgentDTO {
   can: CapabilityDTO[];
   /** Frontmatter problems, verbatim — the first one is the blocked reason. */
   errors: string[];
-  /** Pending Inbox cards this agent produced — the row's sign of life. */
+  /** Pending cards this agent produced — the row's sign of life. */
   pendingCards: number;
   /** Material beside its `AGENT.md`, same contract as a skill's. */
   files: string[];
@@ -1200,6 +1189,15 @@ export interface ConnectionContainerDTO {
   lastSync: number | null;
   /** Shallow-mirrored item count, when known. */
   itemCount?: number;
+  /**
+   * The folder segment this container's mirrors live under ("jira",
+   * "confluence"), from the connector. It is what gives the rail a row per
+   * system rather than per connection: one Atlassian connection is a Jira row
+   * and a Confluence row (docs/memory-placement.md). Absent for a kind the
+   * connector mirrors nowhere. A calendar names one too, and no folder holds
+   * it: an event is a meeting note, not a mirror.
+   */
+  provider?: string;
 }
 
 export interface ConnectionDTO {
@@ -1320,7 +1318,7 @@ export interface ExternalRefMetaDTO {
 }
 
 /** One at-risk external item and the vault notes its risk touches. Rendered in
- *  owning views (todo rows, meeting pages) — never as Inbox rows. */
+ *  owning views (todo rows, meeting pages) — never as card rows. */
 export interface AtRiskLinkDTO {
   externalId: string;
   slug: string;
@@ -1345,7 +1343,7 @@ export interface AtRiskLinkDTO {
  */
 export interface ActivityDTO {
   id: string;
-  /** created / updated / remembered / deleted. */
+  /** created / updated / remembered / deleted / labelled. */
   action: string;
   /** "I created the Nordkap SSO write-up." */
   line: string;
@@ -1353,10 +1351,12 @@ export interface ActivityDTO {
   reason: string;
   /** The note it wrote, so the row opens it. Null when nothing landed. */
   path: string | null;
-  /** The proposal it applied, for anything that needs the payload. */
-  proposalId: string;
-  /** The session it came from, so the row can open that chat. */
-  sessionId: string;
+  /** The proposal it applied, for anything that needs the payload. Null when a
+   *  maintenance pass wrote the row, which has no card behind it. */
+  proposalId: string | null;
+  /** The session it came from, so the row can open that chat. Null when a
+   *  maintenance pass wrote it, because no chat was running. */
+  sessionId: string | null;
   /** ISO timestamp. */
   at: string;
   /** False when the workspace is not a git repo, so nothing can be put back. */

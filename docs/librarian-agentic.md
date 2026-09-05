@@ -58,7 +58,7 @@ or Kranelund Logistics AB, which?" as a parked `ask_user` card with the candidat
 The whole ping pipeline (payload types, groups and floors, seed prompts, the tap-to-apply
 machinery) dissolves.
 
-**Quiet stays quiet.** Pings deliberately never counted toward the Inbox badge; maintenance
+**Quiet stays quiet.** Pings deliberately never counted toward the Sessions badge; maintenance
 can always wait. That property must survive the move: the librarian's parked questions render
 in the quiet maintenance section, not among the questions that mean "an agent you started is
 blocked on you". See decision 2.

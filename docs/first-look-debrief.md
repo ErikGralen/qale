@@ -189,7 +189,7 @@ What the skill then does with the answer is the existing path: `track_external` 
 
 The deviation: a theme still lands as its own proposal card. Nothing writes to the vault without
 one, a brand-new note is a write, and the seed card is what keeps that number at three instead of
-ten. Tracked tickets, which are the bulk of the batch, produce no Inbox cards at all.
+ten. Tracked tickets, which are the bulk of the batch, produce no cards at all.
 
 ---
 

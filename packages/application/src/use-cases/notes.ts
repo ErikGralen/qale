@@ -5,6 +5,7 @@ import {
   isBodyEditable,
   normalizeLinkTarget,
   dirForType,
+  documentFolderPurpose,
   fileSlug,
   isHandCreatable,
   slugify,
@@ -519,10 +520,12 @@ export async function moveNote(ctx: UseCaseContext, input: MoveNoteInput): Promi
  * The orientation stub a new folder starts with. Same shape as the folder maps
  * the librarian writes (`renderFolderIndex`): a `description` in frontmatter and
  * a heading, with nothing to list yet. Kept minimal on purpose: index.md is
- * orientation, not content, and every list already hides it.
+ * orientation, not content, and every list already hides it. The generator
+ * (index-files.ts) takes over from here: it keeps the `description` line and
+ * fills in the rest.
  */
 function folderIndexStub(title: string): string {
-  return `---\ndescription: ${title}, a folder of your documents\n---\n\n# ${title}\n`;
+  return `---\ndescription: ${documentFolderPurpose(title)}\n---\n\n# ${title}\n`;
 }
 
 export interface CreateDocumentFolderInput {

@@ -12,8 +12,10 @@ import { AlertTriangle, Folder, Plus, Search, X } from 'lucide-react';
 import type { NoteRefDTO, NoteType } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { useAimedDrop } from '../lib/aimed-drop';
+import { providerLabelOf } from '../lib/connections';
 import { shelfLabel } from '../lib/crumbs';
-import { navFromEvent } from '../lib/nav';
+import { mirrorFolder } from '../lib/providers';
+import { navFromEvent, surfaceForType } from '../lib/nav';
 import { useNewNote } from '../lib/new-note';
 import { PageHeader } from '../components/PageHeader';
 import { NoteList } from './NoteList';
@@ -31,10 +33,13 @@ type AltLayout = 'week' | 'board';
 type FolderView = AltLayout | 'list';
 
 /** Meetings read temporally (a week calendar); tickets read by flight (a board).
- *  Everything else is a list. The alt layout is the folder's default. */
-function altLayoutFor(dir: string): AltLayout | null {
-  if (dir === 'meetings') return 'week';
-  if (dir === 'tickets') return 'board';
+ *  Everything else is a list. The alt layout is the folder's default.
+ *
+ *  It matches on the top-level folder, so one system's tickets
+ *  (`tickets/jira`) open on the board like every other ticket folder. */
+function altLayoutFor(top: string): AltLayout | null {
+  if (top === 'meetings') return 'week';
+  if (top === 'tickets') return 'board';
   return null;
 }
 
@@ -139,9 +144,15 @@ function FacetChip({
 export function FolderView({ dir }: { dir: string }) {
   const { tree, openMemory } = useApp();
   const { create, busy: creating } = useNewNote();
+  // A mirror folder names one system: `tickets/jira` is Jira's tickets, and
+  // `tickets` is every tracker's at once (docs/memory-placement.md). The notes
+  // are grouped by the top-level folder either way, so the page finds its group
+  // there and narrows by the path.
+  const top = dir.split('/')[0] ?? dir;
+  const provider = mirrorFolder(dir);
   // Some folders default to a spatial layout (week calendar, ticket board),
   // with the flat list one click away.
-  const altLayout = altLayoutFor(dir);
+  const altLayout = altLayoutFor(top);
   const [view, setViewState] = useState<FolderView>(() => storedView(dir, altLayout));
   const setView = (v: FolderView) => {
     setViewState(v);
@@ -156,8 +167,14 @@ export function FolderView({ dir }: { dir: string }) {
   const filterRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const group = tree?.groups.find((g) => g.dir === dir);
-  const notes = useMemo(() => (group?.notes ?? []).filter((n) => !isFolderIndex(n.path)), [group]);
+  const group = tree?.groups.find((g) => g.dir === top);
+  const notes = useMemo(
+    () =>
+      (group?.notes ?? []).filter(
+        (n) => !isFolderIndex(n.path) && (dir === top || n.path.startsWith(`${dir}/`)),
+      ),
+    [group, dir, top],
+  );
 
   // A hidden lifecycle gets no chips at all: `active` belongs to a decision's
   // `standing` AND to a customer's `relationship`, so the value alone cannot
@@ -207,6 +224,14 @@ export function FolderView({ dir }: { dir: string }) {
   const filtersActive = filter.trim() !== '' || lifecycleFacet !== null;
   const emptyTeach = group ? (EMPTY_TEACH[group.type] ?? 'Nothing here yet.') : 'Nothing here yet.';
 
+  // What the page is called. A mirror folder wears the system's name, the same
+  // word the rail row wears, with what it holds said once in the count beside
+  // it: "Jira · 42 tickets".
+  const mirror = group ? surfaceForType(group.type) === 'synced' : provider !== null;
+  const pageLabel = provider ? providerLabelOf(provider.providerId) : shelfLabel(dir);
+  const noun = provider ? (provider.kind === 'wikipage' ? 'page' : 'ticket') : null;
+  const countMeta = noun ? `${notes.length} ${noun}${notes.length === 1 ? '' : 's'}` : notes.length;
+
   const clearFilters = () => {
     setFilter('');
     setLifecycleFacet(null);
@@ -216,12 +241,14 @@ export function FolderView({ dir }: { dir: string }) {
   const altMode = altLayout !== null && view === altLayout && notes.length > 0;
 
   // Dropping on a shelf says where it goes, so the agent never has to ask.
-  const aimed = useAimedDrop({ kind: 'folder', dir });
+  // A mirror folder claims no drop: Qale never writes one, so a file aimed here
+  // has nowhere to land. It falls through to the Shell, which asks.
+  const aimed = useAimedDrop(mirror ? null : { kind: 'folder', dir });
 
-  // The same "+" the Memory shelf offers, on the page the shelf opens: someone
-  // browsing themes who wants one more should not have to walk back up to
-  // Memory to start it. Only the four types a person authors get it — the rest
-  // arrive as a source or as a card to approve (see HAND_CREATABLE_TYPES).
+  // The one door left for a page made by hand: the shelf's own folder page,
+  // where you are already looking at that shelf (docs/memory-placement.md).
+  // Only the four types a person authors get it. The rest arrive as a source or
+  // as a card to approve (see HAND_CREATABLE_TYPES).
   const startable = group && isHandCreatable(group.type) ? (group.type as HandCreatableType) : null;
   const newLabel = startable ? `New ${noteTypeLabel(startable).toLowerCase()}` : '';
   const newAction = startable && (
@@ -239,7 +266,7 @@ export function FolderView({ dir }: { dir: string }) {
     <div
       className="flex items-center rounded-lg bg-muted p-0.5"
       role="group"
-      aria-label={`${dir} view`}
+      aria-label={`${pageLabel} view`}
     >
       {([altLayout, 'list'] as const).map((v) => (
         <button
@@ -275,11 +302,15 @@ export function FolderView({ dir }: { dir: string }) {
     >
       <PageHeader
         icon={Folder}
-        crumbs={[{ label: 'Memory', onClick: (e) => openMemory(navFromEvent(e)) }]}
+        // A mirror folder is not Memory's: it belongs to the system it was
+        // copied from, and that system is a row on the rail. So it names no
+        // parent above it (docs/memory-placement.md).
+        crumbs={mirror ? [] : [{ label: 'Memory', onClick: (e) => openMemory(navFromEvent(e)) }]}
         // The shelf's name, not the folder on disk: the page says what the rail
-        // and the Memory shelf say (SB-4).
-        label={shelfLabel(dir)}
-        meta={!altMode && filtersActive ? `${filtered.length} of ${notes.length}` : notes.length}
+        // and the Memory shelf say (SB-4). A mirror folder says the system's
+        // name, and leaves what it holds to the count beside it.
+        label={pageLabel}
+        meta={!altMode && filtersActive ? `${filtered.length} of ${notes.length}` : countMeta}
       >
         {newAction}
       </PageHeader>
@@ -314,9 +345,9 @@ export function FolderView({ dir }: { dir: string }) {
                       listRef.current?.querySelector<HTMLButtonElement>('[data-note-row]')?.focus();
                     }
                   }}
-                  placeholder={`Filter ${dir}…  ( / )`}
+                  placeholder={`Filter ${top}…  ( / )`}
                   className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                  aria-label={`Filter ${dir}`}
+                  aria-label={`Filter ${top}`}
                   autoFocus
                 />
                 {filter && (
@@ -398,7 +429,7 @@ export function FolderView({ dir }: { dir: string }) {
             ) : filtered.length === 0 ? (
               <div className="px-1 py-4 text-sm text-muted-foreground">
                 <p>
-                  No {dir} match{filter.trim() ? ` “${filter.trim()}”` : ' these filters'}. ⌘K
+                  No {top} match{filter.trim() ? ` “${filter.trim()}”` : ' these filters'}. ⌘K
                   searches the whole workspace.
                 </p>
                 <Button variant="outline" size="sm" className="mt-2" onClick={clearFilters}>
@@ -432,8 +463,10 @@ export function FolderView({ dir }: { dir: string }) {
       )}
 
       <ScopedAskComposer
-        scope={{ kind: 'folder', label: dir }}
-        sessionTitle={`Ask · ${dir}`}
+        scope={{ kind: 'folder', label: pageLabel }}
+        sessionTitle={`Ask · ${pageLabel}`}
+        // The path, not the name on screen: it is what tells the agent which
+        // notes are in scope, and one system's folder is not the whole shelf.
         scopePrefix={`Scoped to the ${dir} folder.`}
       />
     </div>

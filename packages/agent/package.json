@@ -5,8 +5,7 @@
   "type": "module",
   "comment:exports": "The slot parser is the one exception to \"the agent package is main-only\". The renderer has to draw a box exactly where the fence is (docs/brainstorm-skill.md), and two scanners would drift; this subpath is that one file, which imports nothing, so nothing else in here reaches the browser bundle.",
   "exports": {
-    ".": "./src/index.ts",
-    "./slots": "./src/slots.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit -p tsconfig.json",

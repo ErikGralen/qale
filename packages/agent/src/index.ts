@@ -12,6 +12,12 @@ export {
   type CodebaseRequestInfo,
 } from './runtime.js';
 export { entriesToUiMessages, type UiMessage } from './history.js';
+export {
+  summaryPrompt,
+  SUMMARY_SYSTEM_PROMPT,
+  FOLDER_PURPOSE_SYSTEM_PROMPT,
+  type SummarySubject,
+} from './summaries.js';
 export { decodeUnicodeEscapes, decodeArgs, withDecodedArgs } from './tool-args.js';
 export { PiUiBridge, type Chunk } from './bridge.js';
 export { apiErrorText, providerFault, type ProviderFault } from './api-errors.js';
@@ -127,24 +133,6 @@ export {
   type AskRequestInfo,
   type StoredAsk,
 } from './ask.js';
-export {
-  parseSlots,
-  type Slot,
-  type CommentSlot,
-  type CommentPlan,
-  type CommentAnswers,
-} from './slots.js';
-export {
-  createCommentsTool,
-  planComments,
-  formatComments,
-  commentRequestId,
-  commentsReplayPrompt,
-  COMMENTS_TOOL_NAME,
-  COMMENTS_MAX_SLOTS,
-  SLOT_PROMPT_MAX,
-  type CommentsDeps,
-} from './comments.js';
 export {
   createVaultTools,
   createProposeTools,

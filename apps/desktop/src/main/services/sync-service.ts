@@ -54,7 +54,7 @@ import type { GoogleOAuthService } from './google-oauth-service.js';
  * `ticket`/`wikipage` files — and, for calendar sync, the only writer of the
  * machine-owned fields on `meeting` notes (the ownership-split mirror).
  *
- * Hard rules (integration plan): reads are silent — no Inbox cards, no dialogs;
+ * Hard rules (integration plan): reads are silent — no cards, no dialogs;
  * health is a quiet DTO field. Offline/expired keeps serving the mirror.
  *
  * Every connection comes from the connector registry: one per registered
@@ -504,6 +504,10 @@ export class SyncService {
       followed: c.followed,
       lastSync: c.lastSync,
       itemCount: store?.countByContainer(id, c.containerId),
+      // The folder this container's mirrors land in ("jira", "confluence").
+      // The connector answers it, so the rail gets a row per system without
+      // hardcoding one (docs/memory-placement.md).
+      provider: state.connector?.providers[c.kind as ContainerKind] ?? undefined,
     }));
     const lastSync = containers.reduce<number | null>(
       (acc, c) => (c.lastSync !== null && (acc === null || c.lastSync > acc) ? c.lastSync : acc),

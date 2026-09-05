@@ -57,7 +57,6 @@ import type {
   SpawnRequestDTO,
   AskRequestDTO,
   AskAnswerDTO,
-  AskCommentAnswersDTO,
   LiveSessionDTO,
   SettingsDTO,
   SkillDTO,
@@ -349,20 +348,12 @@ export interface InvokeMap {
    */
   'sessions:pendingAsks': { args: []; result: AskRequestDTO[] };
   /**
-   * Answer a question card. `answers: null` is a skip — the run continues and
-   * the agent is told to decide for itself, rather than being left parked.
-   *
-   * A round to write in comes back through this same channel, as `answers:
-   * null` plus what was typed in the document. So a dismissal stays one shape
-   * for both kinds: no answers and no comments. Main writes the comments into
-   * the round file before it resolves; the model only ever sees the tool result.
+   * The PM answered a question card, or skipped it (`null`). A card whose turn
+   * is gone is replayed: the session reopens and the answer arrives as a
+   * message.
    */
   'sessions:resolveAsk': {
-    args: [
-      requestId: string,
-      answers: AskAnswerDTO[] | null,
-      comments?: AskCommentAnswersDTO | undefined,
-    ];
+    args: [requestId: string, answers: AskAnswerDTO[] | null];
     result: { ok: boolean };
   };
 

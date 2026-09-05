@@ -353,7 +353,7 @@ test('turning consent off stops a sender that was already sending', async () => 
   assert.equal(sent.length, 1);
 
   telemetry.setConsent(false, true);
-  telemetry.send('view.opened', { view: 'inbox' });
+  telemetry.send('view.opened', { view: 'chats' });
   await settle();
   assert.equal(sent.length, 1, 'kept sending after consent was withdrawn');
 });
@@ -475,12 +475,12 @@ test('once the renderer reports a view, every event carries it as context', asyn
   const { telemetry, sent } = live();
   // Before any report there is nothing to stamp, and nothing is guessed.
   telemetry.send('source.added', { kind: 'file', count: '1', startedSession: true });
-  telemetry.setView('inbox');
+  telemetry.setView('chats');
   telemetry.send('card.decided', { decision: 'accepted', kind: 'note', edited: false });
   await settle();
   assert.equal(sent.length, 2);
   assert.equal('view' in props(sent[0]), false);
-  assert.equal(props(sent[1])['view'], 'inbox');
+  assert.equal(props(sent[1])['view'], 'chats');
 });
 
 test('a view that is not one of ours is never remembered, let alone sent', async () => {
@@ -509,7 +509,7 @@ test('an event held for consent keeps the view it happened on', async () => {
 test("every event carries this run's id, and two runs are two sessions", async () => {
   const { telemetry, sent } = live();
   telemetry.send('view.opened', { view: 'home' });
-  telemetry.send('view.opened', { view: 'inbox' });
+  telemetry.send('view.opened', { view: 'chats' });
   await settle();
   const first = props(sent[0])['$session_id'];
   // The shape PostHog's session tools expect: a UUIDv7.

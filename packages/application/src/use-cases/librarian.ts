@@ -235,6 +235,10 @@ function driftLine(pair: DriftPair): string {
  * and unlike everything else here that is invisible on the page itself), then
  * drift (a mirrored page telling customers something the team no longer believes
  * is the costliest of the rest), then broken links, then unlinked notes.
+ *
+ * Tags are not on this list. They are a retrieval label, so the summary pass
+ * writes them with the summary and nobody is asked (docs/background-system.md
+ * ticket 3).
  */
 function scan(ctx: UseCaseContext): LibrarianFinding[] {
   const findings: LibrarianFinding[] = [];

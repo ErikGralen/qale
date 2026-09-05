@@ -1,30 +1,32 @@
 # The closing beat
 
-When work ends, the app goes mute. Three places fizzle:
+When work ends, the app goes mute. Two places fizzle:
 
 1. The PO judges the last card in a chat. `SessionReview` returns null and the
    cards vanish without a trace (SessionReview.tsx:27).
 2. The PO clears the Inbox. The empty state shows a checkmark and a paragraph
    that explains what the Inbox is, even to a PO who has used it for weeks
    (InboxView.tsx:374).
-3. Home has nothing waiting. `Waiting()` returns null (Home.tsx:824) and the
-   middle of the page silently disappears.
 
-The fix is one pattern in three places. A closing beat has three parts, in
+The fix is one pattern in both places. A closing beat has three parts, in
 order:
 
 1. **The receipt.** What the PO just did: "Approved 2".
 2. **The consequences.** What that set in motion, with links: "Updated
    [Pricing theme] · Left your workspace: comment on PAY-142".
 3. **One door onward.** It points to the nearest place with work, and it skips
-   empty rooms. Chat points to the Inbox only if the Inbox still has cards.
-   The Inbox points to Home. Home says where things stand and lets the PO go.
+   empty rooms. Chat points to Sessions only if another session still has
+   cards. Sessions points to Home.
 
-Only Home says "you're done". The other two hand off.
+Sessions says "you're done". Chat hands off to it.
+
+Home used to close its own waiting list with a "Where things stand" strip.
+That list is gone: the sidebar already shows what is waiting, so Home no
+longer keeps a second copy to close.
 
 Separate the moment from the state. "You just cleared it" is a moment and gets
-the receipt. "It is empty" is a state and stays near silent. The current Inbox
-zero conflates them.
+the receipt. "It is empty" is a state and stays near silent. The current
+empty-queue message conflates them.
 
 Never: suggested tasks, celebration animation, streaks, counts of past
 productivity. Every line is a fact the workspace already holds.
@@ -56,8 +58,8 @@ Layout, in the spot the cards vacated:
 
 Then the door, one line, only when there is somewhere to go:
 
-- Other sessions' cards still pending: "3 more waiting in Inbox" → opens the
-  Inbox. Count with `waitingOnYou`/`countOf` over the attention list, minus
+- Other sessions' cards still pending: "3 more waiting in Sessions" → opens
+  Sessions. Count with `waitingOnYou`/`countOf` over the attention list, minus
   this session's own cards. Never a fresh arithmetic.
 - Nothing pending anywhere: no door. The receipt is the ending.
 
@@ -98,47 +100,13 @@ that the explainer never returns.
 
 Keep the checkmark art or drop it; do not add anything new to the quiet state.
 
-## 3. Home: Where things stand
-
-Where: `Waiting()` in Home.tsx, the `rows.length === 0` branch that returns
-null (Home.tsx:824).
-
-When the waiting list is empty and the workspace has content, render a short
-strip in the same visual register as the waiting list (same row shape, muted
-tone), headed **Where things stand**. Up to three lines, all facts, all
-already in the tree:
-
-1. **The next meeting**, however far ahead: "{title} · Thursday 14:00", opens
-   the note. Source: meeting notes, `isUpcomingMeeting`, soonest first. The
-   waiting list already shows a meeting inside 12 hours, and the strip only
-   renders when that list is empty, so the two never collide.
-2. **Waiting on others**: "Waiting on {n} {people}, next: {owner} · {due}",
-   opens Todos. Source: open todo notes with an `owner` (attention.ts
-   deliberately excludes these from the PO's own count).
-3. **The last theme that moved**: "{title} · updated {relative time}", opens
-   the note. Source: theme notes by `mtime`, newest. Skip if older than 14
-   days; stale motion is not orientation.
-
-Rules:
-
-- A line with nothing behind it does not render. All three empty: render
-  nothing, as today.
-- No line is ever an ask. "You could review..." is banned. If a sentence
-  names something the PO should do, it belongs in the attention list, not
-  here.
-- The strip never carries a badge and never counts toward one.
-
-The day-one empty state (no content notes) stays exactly as it is.
-
 ## Order of work
 
-Home first (it is where the other two doors point), then the Inbox, then the
-chat receipt.
+The Inbox first (it is where the other door points), then the chat receipt.
 
 ## Verification
 
-Unit tests beside the existing attention/approvals tests: the strip's
-derivation (each line's source, the 14-day theme cutoff, the empty cases), the
-Inbox moment-vs-state branch, the chat receipt's verb mapping and door count.
-Run the full desktop test suite. All copy follows CLAUDE.md: STE + Zinsser, no
+Unit tests beside the existing attention/approvals tests: the Inbox
+moment-vs-state branch, the chat receipt's verb mapping and door count. Run
+the full desktop test suite. All copy follows CLAUDE.md: STE + Zinsser, no
 em dashes.

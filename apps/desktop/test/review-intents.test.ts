@@ -1,10 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ProposalDTO } from '@qale/ipc';
-import { cardIntents } from '../src/renderer/src/components/inbox/cardMeta.js';
+import {
+  cardIntents,
+  causeSentence,
+  groupCause,
+} from '../src/renderer/src/components/review/cardMeta.js';
 
 /**
- * One card per intent, as the Inbox reads it (docs/easier-tickets.md E-6).
+ * One card per intent, as the session review reads it (docs/easier-tickets.md E-6).
  *
  * The grouping itself is argued in the domain (packages/domain/test/intent.test.ts).
  * What is tested here is the seam: a stored card carries its evidence as rows,
@@ -100,4 +104,63 @@ test('the row keeps its key while its members are approved away', () => {
   const after = cardIntents(cards.slice(1))[0]!;
   assert.equal(before.key, after.key);
   assert.equal(after.sentence, 'Edit 2 insights, from Standup');
+});
+
+/**
+ * The cause line the session review heads a librarian sweep with (RI-3). It has
+ * to be true only for a sweep: every card an update, all citing the one
+ * decision. An ordinary pile of cards must never wear it, or the review claims
+ * a cause that is not there.
+ */
+function repointed(path: string, cause: string): ProposalDTO {
+  return card({
+    kind: 'update',
+    targetPath: path,
+    evidence: [
+      { ref: `[[${cause}]]`, resolved: true },
+      { ref: '[[meetings/2026-07-14-standup]]', resolved: true },
+    ],
+    payload: { path, patch: [{ search: 'old', replace: 'new' }], rationale: 'because' },
+  });
+}
+
+test('cards that all cite the same decision name it as their cause', () => {
+  const cause = 'decisions/2026-07-01-ship-in-august';
+  const cards = [repointed('insights/pricing.md', cause), repointed('themes/pricing.md', cause)];
+  assert.equal(groupCause(cards), cause);
+  assert.equal(
+    causeSentence(cause, cards.length),
+    'Because you decided “Ship in August”, 2 notes still point at the old plan',
+  );
+});
+
+test('one note reads as one note', () => {
+  const cause = 'decisions/2026-07-01-ship-in-august';
+  assert.equal(
+    causeSentence(cause, 1),
+    'Because you decided “Ship in August”, 1 note still points at the old plan',
+  );
+});
+
+test('an ordinary pile has no cause', () => {
+  const cause = 'decisions/2026-07-01-ship-in-august';
+  // A second decision behind one of the cards: the group is not one sweep.
+  assert.equal(
+    groupCause([
+      repointed('insights/pricing.md', cause),
+      repointed('themes/pricing.md', 'decisions/2026-06-02-hold-the-price'),
+    ]),
+    null,
+  );
+  // A card that creates rather than updates.
+  assert.equal(
+    groupCause([
+      repointed('insights/pricing.md', cause),
+      card({ kind: 'decision', targetPath: 'decisions/2026-07-20-new.md' }),
+    ]),
+    null,
+  );
+  // Updates with no decision behind them at all.
+  assert.equal(groupCause([patch('insights/pricing.md'), patch('themes/pricing.md')]), null);
+  assert.equal(groupCause([]), null);
 });

@@ -5,6 +5,7 @@ import {
   formatAnswers,
   planAsk,
   askReplayPrompt,
+  askRequestId,
   ASK_HEADER_MAX,
   ASK_QUESTION_MAX,
   type AskDecision,
@@ -54,21 +55,66 @@ test('a well-formed card survives planning with its options in order', () => {
   assert.equal(p.questions[0]!.options[0]!.description, 'Nordkap, Kranelund, Bergman & Falk');
 });
 
-test('a question with no options is refused — that is just ending the turn', () => {
-  assert.match(
-    err({ questions: [{ header: 'Scope', question: 'What should I do?', options: [] }] }),
-    /at least 2/,
-  );
+test('no options is a written question; one option is neither and is refused', () => {
+  const q = plan({
+    questions: [{ header: 'Name', question: 'What should we call it?' }],
+  }).questions[0]!;
+  assert.deepEqual(q.options, []);
+  assert.equal(q.multiSelect, false);
   assert.match(
     err({
       questions: [{ header: 'Scope', question: 'Narrow or wide?', options: [{ label: 'Narrow' }] }],
     }),
-    /at least 2/,
+    /one option is not a choice/,
+  );
+  // A written question has nothing to multi-select.
+  assert.match(
+    err({
+      questions: [{ header: 'Name', question: 'What should we call it?', multiSelect: true }],
+    }),
+    /multiSelect needs options/,
   );
 });
 
-test('the card is bounded: at most four questions, at most four options, no duplicate labels', () => {
-  assert.match(err({ questions: [scope, scope, scope, scope, scope] }), /at most 4 questions/);
+test('a written answer to a written question comes back as the answer, plainly', () => {
+  const p = plan({ questions: [{ header: 'Name', question: 'What should we call it?' }] });
+  assert.match(
+    formatAnswers(p, [{ selected: [], written: 'Tavla, rhymes with tabla' }]),
+    /A: Tavla, rhymes with tabla/,
+  );
+  assert.doesNotMatch(formatAnswers(p, [{ selected: [], written: 'Tavla' }]), /\(wrote\)/);
+  assert.match(formatAnswers(p, [{ selected: [] }]), /skipped/);
+});
+
+test('a body keeps its paragraphs on the card and stays out of the replay', () => {
+  const body = 'Two tiers, one switch.\n\nCost: the sync job grows a mode.\n\n- one\n- two';
+  const p = plan({
+    questions: [{ ...scope, header: 'Tiers', question: 'Keep or cut?', body: `  ${body}  ` }],
+  });
+  assert.equal(p.questions[0]!.body, body);
+  // The model wrote the body and has it; repeating it would be the round-file
+  // re-read this shape exists to avoid, and after a quit it would arrive as
+  // the PM's words.
+  const said = formatAnswers(p, [{ selected: ['The three enterprise accounts'] }]);
+  assert.doesNotMatch(said, /Two tiers/);
+  assert.doesNotMatch(askReplayPrompt(p, [{ selected: [] }]), /Two tiers/);
+  // Over the ceiling it is refused, not cut.
+  assert.match(
+    err({ questions: [{ ...scope, body: 'x '.repeat(3000) }] }),
+    /the body is \d+ characters; keep it under 4000/,
+  );
+  // And the same question about two different ideas is two cards.
+  const other = plan({
+    questions: [{ ...scope, header: 'Tiers', question: 'Keep or cut?', body: 'One tier.' }],
+  });
+  assert.notEqual(askRequestId('s1', p), askRequestId('s1', other));
+});
+
+test('the card is bounded: a ceiling on questions, at most four options, no duplicate labels', () => {
+  // Four was the cap; a round of six ideas plus a closing question has to fit.
+  // The ceiling is now where a card is a form whatever the skill says.
+  assert.equal(plan({ questions: Array(7).fill(scope) }).questions.length, 7);
+  assert.match(err({ questions: Array(21).fill(scope) }), /at most 20 questions/);
   assert.match(
     err({
       questions: [{ ...scope, options: ['a', 'b', 'c', 'd', 'e'].map((label) => ({ label })) }],
@@ -114,7 +160,7 @@ test('a malformed card comes back as tool text, so the model can fix it and carr
     },
   });
   const out = await run(tool, {
-    questions: [{ header: 'Scope', question: 'Which?', options: [] }],
+    questions: [{ header: 'Scope', question: 'Which?', options: [{ label: 'Only one' }] }],
   });
   assert.match(out.content[0]!.text, /^Rejected: /);
 });

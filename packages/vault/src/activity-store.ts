@@ -5,12 +5,17 @@ import { idHash } from './hash.js';
 
 /**
  * The Activity log: one row per write the policy let through without a card
- * (docs/easier-tickets.md E-9). Lives in the per-vault AppDb beside the proposal
- * queue, because it is the same kind of state: primary, never rebuilt, and the
- * only proof the silence was earned.
+ * (docs/easier-tickets.md E-9), plus one per note the summary pass labelled
+ * (docs/background-system.md ticket 3). Lives in the per-vault AppDb beside the
+ * proposal queue, because it is the same kind of state: primary, never rebuilt,
+ * and the only proof the silence was earned.
  *
  * Append-only from the agent's side. `reverted` is the one field that changes,
  * and only the PM putting the row back changes it.
+ *
+ * A pass row has no proposal and no session. Both columns are NOT NULL in
+ * databases that already exist, so an absent one is stored as the empty string
+ * and read back as null. That keeps the table as it stands, with no migration.
  */
 interface Row {
   id: string;
@@ -49,15 +54,18 @@ export class ActivityStore implements ActivityPort {
   }
 
   record(input: CreateActivityInput, now: number): ActivityRecord {
-    const id = `a_${now.toString(36)}_${Math.abs(idHash(input.proposalId)).toString(36)}`;
+    // What the id is made unique by. A pass has no proposal, so the path it
+    // wrote stands in: two rows from one pass name two different notes.
+    const seed = input.proposalId ?? input.path ?? input.line;
+    const id = `a_${now.toString(36)}_${Math.abs(idHash(seed)).toString(36)}`;
     const row: Row = {
       id,
-      proposal_id: input.proposalId,
+      proposal_id: input.proposalId ?? '',
       action: input.action,
       line: input.line,
       reason: input.reason,
       path: input.path,
-      session_id: input.sessionId,
+      session_id: input.sessionId ?? '',
       skill: input.skill,
       at: now,
       revert_commit: input.revert.commit,
@@ -94,12 +102,12 @@ export class ActivityStore implements ActivityPort {
   private toRecord(row: Row): ActivityRecord {
     return {
       id: row.id,
-      proposalId: row.proposal_id,
+      proposalId: row.proposal_id || null,
       action: row.action as ActivityRecord['action'],
       line: row.line,
       reason: row.reason,
       path: row.path,
-      sessionId: row.session_id,
+      sessionId: row.session_id || null,
       skill: row.skill,
       at: row.at,
       revert: {

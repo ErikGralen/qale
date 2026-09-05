@@ -824,7 +824,11 @@ export function DocumentsView({
 
       <ScopedAskComposer
         flat
-        scope={{ kind: 'folder', label: selected ? folderLabel(selected) : 'Documents' }}
+        scope={{
+          kind: 'folder',
+          label: selected ? folderLabel(selected) : 'Documents',
+          filter: { folder: selected },
+        }}
         sessionTitle={`Ask · ${selected || 'documents'}`}
         scopePrefix={
           selected

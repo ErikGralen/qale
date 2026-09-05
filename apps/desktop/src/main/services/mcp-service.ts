@@ -2,17 +2,17 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { createProposal, searchNotes, type UseCaseContext } from '@qale/application';
-import { zOutboundPayload, OUTBOUND_PROVIDERS } from '@qale/domain';
+import { applyAndRecord, searchNotes, type UseCaseContext } from '@qale/application';
 
 /**
  * The workspace as an MCP server (PLAN-V2 §3.5) — not just a client. A Claude-
- * forward team's existing AI queries the same verified memory and files drafts
- * through the SAME proposals. Localhost + bearer-token gated. Three tools:
- *   ask_product   — a cited, dated answer from the memory (read; deterministic)
- *   log_decision  — file a decision as a proposal (never writes silently)
- *   draft_writeback — file an outbound draft (Jira/Confluence/message) as a proposal
- * All three route through the same use cases and land in the Inbox.
+ * forward team's existing AI queries the same verified memory. Localhost +
+ * bearer-token gated. Two tools:
+ *   ask_product  — a cited, dated answer from the memory (read; deterministic)
+ *   log_decision — write a decision straight to the vault
+ * The other end (Claude Code, Claude Desktop) already ran its own approval
+ * step before calling `log_decision`, so Qale does not ask again: the write
+ * lands at once and a row appears in Activity, with the usual revert handle.
  */
 export class McpService {
   private http: Server | null = null;
@@ -129,7 +129,7 @@ export class McpService {
 
     mcp.tool(
       'log_decision',
-      'File a product decision as a proposal (the PM approves before it is written). Cite sources.',
+      'Write a product decision to the vault. Cite sources.',
       {
         summary: z.string(),
         body: z.string(),
@@ -147,77 +147,30 @@ export class McpService {
             .replace(/\s+/g, '-')
             .slice(0, 48) || 'decision';
         const path = `decisions/${ctx.clock.now().slice(0, 10)}-${slug}.md`;
-        const rec = createProposal(ctx, {
-          kind: 'decision',
-          sessionId: 'mcp',
-          skill: 'mcp',
-          targetPath: path,
-          baseHash: null,
-          payload: {
-            path,
-            frontmatter: { type: 'decision', summary, sources },
-            body,
+        const applied = await applyAndRecord(
+          ctx,
+          {
+            kind: 'decision',
+            sessionId: 'mcp',
+            skill: 'mcp',
+            targetPath: path,
+            baseHash: null,
+            payload: {
+              path,
+              frontmatter: { type: 'decision', summary, sources },
+              body,
+              rationale: `Logged via MCP: ${summary}`,
+              ...(supersedes ? { supersedes } : {}),
+            },
             rationale: `Logged via MCP: ${summary}`,
-            ...(supersedes ? { supersedes } : {}),
+            evidence: sources.map((s) => ({ ref: s, resolved: true })),
+            inference: sources.length === 0,
           },
-          rationale: `Logged via MCP: ${summary}`,
-          evidence: sources.map((s) => ({ ref: s, resolved: true })),
-          inference: sources.length === 0,
-        });
-        this.onChanged();
-        return textResult(`Decision proposal ${rec.id} filed to the Inbox for approval: ${path}`);
-      },
-    );
-
-    mcp.tool(
-      'draft_writeback',
-      'File an outbound draft as a proposal. Never sends; the PM approves. Actions: create_ticket (requires container, the project it goes in) | comment_ticket (requires targetId, the ticket key) | update_page (requires targetId, the page id).',
-      {
-        provider: z.enum(OUTBOUND_PROVIDERS).optional().describe('Where the draft is addressed.'),
-        /** Deprecated alias of `provider`, still accepted from older callers. */
-        system: z.enum(OUTBOUND_PROVIDERS).optional(),
-        action: z.string(),
-        title: z.string().optional(),
-        body: z.string(),
-        container: z.string().optional().describe('create_ticket: the project it goes in.'),
-        targetId: z
-          .string()
-          .optional()
-          .describe("The addressed item's own id: a ticket key, a page id."),
-        voice: z.string().optional().describe('A voice name from the workspace, e.g. "exec".'),
-        sources: z.array(z.string()).default([]),
-      },
-      async (args) => {
-        const ctx = this.getContext();
-        if (!ctx) return textResult('No workspace is open.');
-        // Normalize through the domain schema so the stored payload is always
-        // the generic shape (provider + generic action), whatever the caller sent.
-        const provider = args.provider ?? args.system;
-        const parsed = zOutboundPayload.safeParse({
-          ...args,
-          provider,
-          rationale: `Drafted via MCP for ${provider ?? 'unknown'}`,
-        });
-        if (!parsed.success) {
-          return textResult(
-            `Rejected: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
-          );
-        }
-        const rec = createProposal(ctx, {
-          kind: 'outbound',
-          sessionId: 'mcp',
-          skill: 'mcp',
-          targetPath: null,
-          baseHash: null,
-          payload: parsed.data,
-          rationale: parsed.data.rationale,
-          evidence: args.sources.map((s) => ({ ref: s, resolved: true })),
-          inference: false,
-        });
-        this.onChanged();
-        return textResult(
-          `Outbound draft proposal ${rec.id} filed to the Inbox for approval (${parsed.data.provider}).`,
+          'the MCP client approved it',
         );
+        this.onChanged();
+        if (!applied.ok) return textResult(`Could not write the decision: ${applied.error}`);
+        return textResult(`Decision written to ${applied.path ?? path}.`);
       },
     );
 

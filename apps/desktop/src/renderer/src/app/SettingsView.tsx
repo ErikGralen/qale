@@ -63,6 +63,7 @@ import { NewWorkspace } from '../components/NewWorkspace';
 import { CodebaseSettings } from './CodebaseSettings';
 import { ConnectionsSettings } from './ConnectionsSettings';
 import { Setting, SettingNotice, SettingPanel } from '../components/Setting';
+import { WritePolicySetting } from '../components/WritePolicySetting';
 import {
   DEFAULT_SETTINGS_SECTION,
   SETTINGS_SECTIONS,
@@ -606,7 +607,7 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
                     /* "Nothing is sent" only ever meant the outbound side. A scheduled
                        run still reads and still calls the model with nobody watching,
                        which is the part a schedule is easiest to be wrong about. */
-                    description={`Run while the app is open, and missed slots catch up on launch. Dry-run first: everything lands in the Inbox as proposals, and nothing goes out to your tracker, wiki or calendar. A run still reads your notes and sends them to ${providerInfo.name}, even when you are not at the machine.`}
+                    description={`Run while the app is open, and missed slots catch up on launch. Dry-run first: everything lands in the session as proposals, and nothing goes out to your tracker, wiki or calendar. A run still reads your notes and sends them to ${providerInfo.name}, even when you are not at the machine.`}
                   >
                     {settings.schedules.map((sc) => (
                       <div key={sc.skill} className="rounded-lg border border-border bg-card p-3">
@@ -672,6 +673,12 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
                     ))}
                   </Setting>
                 )}
+
+                {/* Last in the tab on purpose: the provider, the key and the
+                    model decide who runs, and this says what that agent is
+                    allowed to do without asking. It reads as the answer to the
+                    question the settings above it raise. */}
+                <WritePolicySetting />
               </SettingPanel>
             </TabsContent>
 
@@ -701,12 +708,13 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
                     }
                     description={
                       <>
-                        Let your own Claude or Cursor reach this memory through three tools:{' '}
-                        <code>ask_product</code>, <code>log_decision</code> and{' '}
-                        <code>draft_writeback</code>. Writes go through the same proposals, and
-                        the server only listens on this machine and only answers with the token.
-                        What that does not cover: whatever app you connect can read your notes, and
-                        it sends them on to its own model.
+                        Let your own Claude or Cursor reach this memory through two tools:{' '}
+                        <code>ask_product</code> answers from your notes, and{' '}
+                        <code>log_decision</code> writes a decision straight away. You approve it in
+                        that app, so Qale does not ask twice; the decision shows up in Activity,
+                        with the way back. The server only listens on this machine and only answers
+                        with the token. What that does not cover: whatever app you connect can read
+                        your notes, and it sends them on to its own model.
                       </>
                     }
                   >

@@ -270,6 +270,9 @@ and is now a `+` on the Sessions row (⌘↵); Documents has a `+` for a new not
 type only gets a pin section once it holds a pin. The pin model itself was not touched. 6 tests in
 `apps/desktop/test/rail-order.test.ts`. The layout has never been seen on screen.
 
+Superseded 2026-09-05, see `docs/memory-placement-plan.md`: Memory is no longer a rail row and
+carries no `+` or pins. The rail has six places; Jira and Confluence get their own rows.
+
 ---
 
 ### E-12. Calendar gets its own screen
@@ -680,6 +683,8 @@ Someone may want to browse decisions deliberately.
 
 Built as: one rail row called Memory, with the types kept apart inside it (source, decision,
 insight, theme, customer, person, plus a "Synced" group for tickets and wiki pages).
+Superseded 2026-09-05, see `docs/memory-placement-plan.md`: Memory moved to the footer, and
+tickets and wiki pages moved to their own provider rows.
 
 **2. Is a silent standing rule acceptable with only an Activity row behind it?**
 Cheapest to get wrong, hardest to notice later. Blocks E-8.

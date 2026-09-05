@@ -60,7 +60,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionInfo[] = [
     label: 'Agent',
     icon: Bot,
     keywords:
-      'provider anthropic claude google gemini api key model opus sonnet fable flash pro schedule scheduled sessions dry run',
+      'provider anthropic claude google gemini api key model opus sonnet fable flash pro schedule scheduled sessions dry run what qale does on its own write policy asks lands activity',
   },
   {
     id: 'connections',

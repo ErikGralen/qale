@@ -117,8 +117,11 @@ function sameWords(a: string, b: string): boolean {
  * already derives one. That equality is the point: normalizing a thin note
  * changes nothing the PM was being shown, it only makes the coercion real on
  * disk and marks it as owed a proper summary.
+ *
+ * Exported for the summary pass (IM-6), which has to recognise this line as a
+ * placeholder and not as a summary somebody wrote.
  */
-function derivedSummary(path: string, body: string): string {
+export function derivedSummary(path: string, body: string): string {
   for (const line of body.split('\n')) {
     const t = line
       .replace(/^#+\s*/, '')

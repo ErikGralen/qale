@@ -139,7 +139,6 @@ export const VIEW_KINDS = [
   'session',
   'sessionFile',
   'chats',
-  'inbox',
   'todos',
   'calendar',
   'documents',
@@ -277,21 +276,6 @@ export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
       // Whether the run parked a question for the PM. The flag only; the
       // question itself is the agent talking about their work and never leaves.
       asked: { kind: 'flag' },
-    },
-  },
-  {
-    id: 'round.sent',
-    says: 'You sent your comments on a working document back to a session, and how many boxes you filled in',
-    props: {
-      skill: { kind: 'word', values: KNOWN_SKILLS },
-      // How much of the round the PM answered, in bands. The question the two
-      // together answer is whether the shape works: a round where one box in
-      // ten gets a reply is asking about the wrong things. Neither the prompts
-      // nor a word of what was typed goes anywhere near this.
-      slots: { kind: 'word', values: COUNT_BANDS },
-      answered: { kind: 'word', values: COUNT_BANDS },
-      // Whether the general box at the foot of the document was used at all.
-      general: { kind: 'flag' },
     },
   },
   {

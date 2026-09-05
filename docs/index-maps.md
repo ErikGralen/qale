@@ -1,4 +1,16 @@
+
+
+
+
 # Index maps: tickets
+
+Status: IM-1..7 and IM-9..15 BUILT 2026-09-05 by seven subagents (IM-8 skipped, IM-10 the cheap
+version). Typecheck and tests green in every package (domain 251, application 227, agent 325,
+vault 49, sessions 51, desktop 398). The maps were rendered from a copy of the demo vault
+through the real generator and read right (month groups, collapse, todos by due, Documents
+subfolder with a kept description). NOT live-verified: the summary and folder-purpose passes
+against a real model, the seed blocks and the scoped Ask in a running app. NOT committed.
+Delete this doc when the work ships.
 
 How the agent finds files. Split out of the 2026-09-05 question: now that Documents has
 folders, how do the index files keep up, and what do we do about meetings and todos, where
@@ -62,6 +74,7 @@ can read a month heading. Time-relative views belong in the tool (IM-3), not in 
 **Decision:**
 yes
 **Notes:**
+Built. `renderFolderIndex` branches on `typeForDir`. Customer resolved in the application layer to a title with a path link; unresolved prints the bare target. Series slug appended (IM-10). Domain 239→250 tests.
 
 ---
 
@@ -85,6 +98,7 @@ old note can carry `due: next Friday`, which must sort as undated, not after eve
 **Decision:**
 yes
 **Notes:**
+Built. Open sorted by `due`, undated last; owner resolved from the wikilink; `dayOf()` accepts only YYYY-MM-DD.
 
 ---
 
@@ -109,6 +123,7 @@ anything else for this reason). Year folders would break the sync engine's write
 **Decision:**
 yes
 **Notes:**
+Built on `vault_list`: `since`, `until` (inclusive), `sort` (date | title | modified). Day is `date` for meeting/decision, `due` for todo, mtime day otherwise; malformed days are undated. Rows now show the day. Shared `listRow` with `vault_backlinks`.
 
 ---
 
@@ -148,6 +163,7 @@ never carry a relative bucket. Reasons, from the brainstorm and the review:
 would it be possible to make this dynamic instead? so we dont have to keep a file udpated. Please brainstorm this with me.
 → yes, build it as written above (files static, seed dynamic, month-snapped window). 2026-09-05.
 **Notes:**
+Built. `renderFolderIndex(folder, { today })`: this month and the two before in full plus upcoming, older months collapse to `## YYYY-MM (N meetings, use vault_list since/until)`. Only the month of `ctx.clock.now()` is used, so the file is stable within a month. First tick after this lands rewrites every map once.
 Brainstorm 2026-09-05. The renderer can run at read time instead of on the tick: the seed
 and every folder map rendered from the index when asked for, with today's date. Three cuts:
 
@@ -188,6 +204,7 @@ write. The stub helper stays as the seed for a new folder.
 **Decision:**
 yes
 **Notes:**
+Built. `collectFolders` is async and descends under `notes/`: subfolders first (purpose, recursive count), then documents; each `notes/**/index.md` generated one level down. Purpose read back from the file's `description` (and `purpose_of`, IM-7), else `documentFolderPurpose(title)`, which `folderIndexStub` now shares.
 
 ---
 
@@ -242,6 +259,7 @@ line per file, the one thing code cannot do.
 **Decision:**
 yes
 **Notes:**
+Built: `packages/application/src/use-cases/summaries.ts` (`planSummaries`, `applySummaries`, `runSummaryPass`), prompt in `packages/agent/src/summaries.ts`, public `AgentRuntime.summarise`. Runs on the tick after normalize and the librarian, before the maps, gated on an active key. Markers `summary_at` + `summary_of` (djb2 body hash), hidden in reference.ts and properties-schema.ts. `needs_summary` is deleted by the pass; the prompts.ts paragraph tells the agent to leave the key out of a proposal (an accept-time merge cannot delete a key). No live model run.
 
 ---
 
@@ -257,6 +275,7 @@ half. Needs IM-5 (the field has to survive regeneration) and IM-6 (the pass).
 **Decision:**
 yes
 **Notes:**
+Built inside `runSummaryPass`: folders with 3+ documents whose description is the stub or drifted (Jaccard distance over document-path hashes > 0.5, stored as `purpose_of`, a space-separated hash list). Prompt from titles and summaries only. Limit 5 per pass, same commit. Generator carries `purpose_of` through regeneration.
 
 ---
 
@@ -299,7 +318,9 @@ in after the folder maps." With IM-3 it composes: hub → backlinks → filter b
 
 **Decision:**
 yes
+→ skip: IM-6 is built, so this is dead by its own text. 2026-09-05.
 **Notes:**
+Built: `vault_backlinks` (path or slug), grouped by link type with "Linked from" last, `listRow` shape, missing sources skipped. Registered in `VAULT_TOOL_NAMES`, named in the prompts read-tools line, labelled in the session trail ("Followed links to").
 
 ---
 
@@ -315,7 +336,8 @@ type and a sync-engine change. I would not build the full version until a real u
 "show me every check-in".
 
 **Decision:**
-yes go cheap version
+yes
+→ the cheap version only: series slug on the meeting line (IM-1) and backlinks from the hub (IM-9). No series note type. 2026-09-05. go cheap version
 **Notes:**
 
 ---
@@ -345,6 +367,7 @@ knows tags cut across types and the maps do not show them.
 **Decision:**
 yes
 **Notes:**
+Built: `tags` on `vault_list`, match any, case-insensitive; array, string or absent frontmatter.
 
 ---
 
@@ -362,6 +385,7 @@ longer for a filter IM-11 does better.
 **Decision:**
 yes
 **Notes:**
+Built: `## Tags in use` seed block under the vault map (`tagsInUse` in runtime.ts), counts, most used first, with the "draw proposal tags from this list" sentence.
 
 ---
 
@@ -384,6 +408,7 @@ composer change.
 **Decision:**
 yes
 **Notes:**
+Built: `SessionScopeDTO { tags?, folder? }` on `AgentRunInput`, carried from `openSession` through App → SessionView → IpcChatTransport → `agent:run` → `createSession`. `## Scope` block lists matching rows (cap 40, overflow line points at vault_list). ContextView passes the tag, DocumentsView the folder; FolderView and CalendarView pass none (their labels are top-level type folders). Reuses `noteDay`/`noteTags` from tools.ts.
 
 ---
 
@@ -403,6 +428,9 @@ it at a few per pass.
 **Decision:**
 yes
 **Notes:**
+Built: `untagged` finding kind, content types only, mtime within 30 days, cap 3 per pass (applied after the ledger filter), plus a once-per-worklist "Tags already in use here" hint. Librarian body gained "A note with no tags" in defaults.ts and vault-dev/agents/librarian/AGENT.md.
+
+Replaced 2026-09-05 by ticket 3 of docs/background-system.md: the `untagged` finding kind is deleted and tagging is now part of the summary pass, which picks 1 or 2 tags in the same model call and writes them silently. No finding, no card.
 
 ---
 
@@ -455,6 +483,7 @@ the PM touched yesterday. Ten lines, seven days, and the label keeps it in its p
 **Decision:**
 yes
 **Notes:**
+Built: `GitPort.changedSince(days)` (one `git log --since --name-only` call, NUL-marked headers), `## What moved this week` seed block (`whatMoved` in runtime.ts): ten notes by distinct days touched, who = "you" / "approved or asked" / "you and Qale" from the commit prefix. Prefix tables: you = edit, properties, create, capture, rename, move, source, transcript, verified, undo; approved or asked = note, update, decision, todo, processing, pushed, refile, delete; excluded = sync, librarian, workspace, session, skills, voices, qale, create/rename/delete folder.
 
 ---
 

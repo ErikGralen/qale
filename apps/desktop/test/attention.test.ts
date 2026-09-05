@@ -4,7 +4,6 @@ import type { AskRequestDTO, NoteRefDTO, ProposalDTO, VaultTreeDTO } from '@qale
 import {
   buildAttention,
   countOf,
-  homeRows,
   waitingOnYou,
   type AttentionInput,
   type AttentionSession,
@@ -158,10 +157,8 @@ test('attention: a question from a background tidy pass is offered, never owed',
   assert.deepEqual(ids(items), ['question:session-1', 'question:session-2']);
   assert.equal(items.find((i) => i.id === 'question:session-1')!.quiet, false);
   assert.equal(items.find((i) => i.id === 'question:session-2')!.quiet, true);
-  // But only the one the PO's own session is blocked on counts, and only that
-  // one is worth a row on Home.
+  // But only the one the PO's own session is blocked on counts.
   assert.deepEqual(ids(waitingOnYou(items)), ['question:session-1']);
-  assert.deepEqual(ids(homeRows(items, 4, NOW)), ['question:session-1']);
 });
 
 test('attention: a librarian session the PO started themselves is owed like any other', () => {
@@ -182,30 +179,6 @@ test('attention: a librarian session the PO started themselves is owed like any 
   assert.equal(items.find((i) => i.id === 'question:by-hand')!.quiet, false);
   assert.equal(items.find((i) => i.id === 'question:by-the-clock')!.quiet, true);
   assert.deepEqual(ids(waitingOnYou(items)), ['question:by-hand']);
-  assert.deepEqual(ids(homeRows(items, 4, NOW)), ['question:by-hand']);
-});
-
-test('attention: a round to write in waits exactly as a question waits', () => {
-  // A comment request parks the turn the same way ask_user does, so it ranks
-  // first, counts toward the badge and reaches Home. All it says differently is
-  // the word on the row (docs/brainstorm-skill.md).
-  const round: AskRequestDTO = {
-    ...ask('session-1'),
-    comments: { path: 'round-1.md', slots: [{ id: 'idea-3', prompt: 'Keep? Cut?' }] },
-  };
-  const items = buildAttention(
-    input({
-      askRequests: { 'session-1': round },
-      proposals: [card('p1')],
-      sessions: [session('session-1', { running: true })],
-    }),
-    NOW,
-  );
-  assert.deepEqual(ids(items), ['question:session-1', 'card:p1']);
-  assert.equal(items[0]!.meta, 'comments');
-  assert.equal(items[0]!.quiet, false);
-  assert.deepEqual(ids(waitingOnYou(items)), ['question:session-1', 'card:p1']);
-  assert.equal(homeRows(items, 4, NOW)[0]!.id, 'question:session-1');
 });
 
 test('attention: a resolved card and an unpinned session leave the list', () => {
@@ -217,6 +190,23 @@ test('attention: a resolved card and an unpinned session leave the list', () => 
     NOW,
   );
   assert.deepEqual(items, []);
+});
+
+test('attention: a card opens the session that put it up (RI-7)', () => {
+  const items = buildAttention(
+    input({
+      proposals: [card('p1'), card('p2', { sessionId: 'mcp' })],
+      sessions: [session('session-1', { title: 'Nordkap review' })],
+    }),
+    NOW,
+  );
+  assert.deepEqual(items[0]!.target, {
+    open: 'session',
+    sessionId: 'session-1',
+    title: 'Nordkap review',
+  });
+  // A card from a client with no session row still has a door and a name.
+  assert.deepEqual(items[1]!.target, { open: 'session', sessionId: 'mcp', title: 'Session' });
 });
 
 test('attention: a running session, or one with cards of its own, is not an unread answer', () => {
@@ -268,7 +258,9 @@ test('attention: the meeting row survives the start time (LN-2)', () => {
   // start, so the row went away at the minute the PO walked into the room.
   const items = buildAttention(
     input({
-      tree: tree(note('meeting', 'nordkap', { date: '2026-07-28', time: '08:50', durationMin: 60 })),
+      tree: tree(
+        note('meeting', 'nordkap', { date: '2026-07-28', time: '08:50', durationMin: 60 }),
+      ),
     }),
     NOW,
   );
@@ -277,13 +269,14 @@ test('attention: the meeting row survives the start time (LN-2)', () => {
   assert.equal(items[0]!.meta, 'now');
   // Same door as before: the meeting page.
   assert.deepEqual(items[0]!.target, { open: 'doc', path: 'meetings/nordkap.md' });
-  assert.equal(homeRows(items, 4, NOW)[0]!.meta, 'now');
 });
 
 test('attention: the meeting row goes once the meeting ends', () => {
   const items = buildAttention(
     input({
-      tree: tree(note('meeting', 'nordkap', { date: '2026-07-28', time: '07:30', durationMin: 60 })),
+      tree: tree(
+        note('meeting', 'nordkap', { date: '2026-07-28', time: '07:30', durationMin: 60 }),
+      ),
     }),
     NOW,
   );
@@ -392,153 +385,4 @@ test('capture: a dismissed meeting, and a muted series, go quiet', () => {
     NOW,
   );
   assert.deepEqual(ids(items), ['capture:meetings/kranelund.md']);
-});
-
-test('home: empty meetings are named, and the name is a link to the meeting', () => {
-  const one = buildAttention(
-    input({ tree: tree(synced('nordkap', { date: '2026-07-27', time: '14:00' })) }),
-    NOW,
-  );
-  const row = homeRows(one, 4, NOW)[0]!;
-  assert.equal(row.label, "Yesterday's nordkap has nothing in it yet");
-  // The row fills the meeting; the title inside it opens the meeting.
-  assert.deepEqual(row.target, { open: 'capture', path: 'meetings/nordkap.md', title: 'nordkap' });
-  assert.deepEqual(row.link, {
-    before: "Yesterday's ",
-    text: 'nordkap',
-    after: ' has nothing in it yet',
-    path: 'meetings/nordkap.md',
-  });
-  // The parts and the flat sentence are the same sentence.
-  assert.equal(`${row.link!.before}${row.link!.text}${row.link!.after}`, row.label);
-
-  const several = buildAttention(
-    input({
-      tree: tree(
-        synced('a', { date: '2026-07-27', time: '09:00' }),
-        synced('b', { date: '2026-07-27', time: '11:00' }),
-        synced('c', { date: '2026-07-26', time: '11:00' }),
-      ),
-    }),
-    NOW,
-  );
-  // Three stay named, newest first — a count pointing at the calendar would
-  // send the PO hunting for which meetings it meant.
-  assert.deepEqual(
-    homeRows(several, 4, NOW).map((r) => [r.id, r.label, r.count]),
-    [
-      ['capture:meetings/b.md', "Yesterday's b has nothing in it yet", 1],
-      ['capture:meetings/a.md', "Yesterday's a has nothing in it yet", 1],
-      ['capture:meetings/c.md', "Sunday's c has nothing in it yet", 1],
-    ],
-  );
-});
-
-test('home: from the fourth on, empty meetings fold into one row that carries them', () => {
-  const items = buildAttention(
-    input({
-      tree: tree(
-        ...['a', 'b', 'c', 'd'].map((t, i) =>
-          synced(t, { date: '2026-07-27', time: `0${i + 1}:00` }),
-        ),
-        note('todo', 'ship', { lifecycle: 'open', due: '2026-07-20' }),
-      ),
-    }),
-    NOW,
-  );
-  const rows = homeRows(items, 4, NOW);
-  assert.deepEqual(
-    rows.map((r) => [r.id, r.label, r.count]),
-    [
-      ['captures', '4 meetings have nothing in them yet', 4],
-      ['todos', '1 commitment due', 1],
-    ],
-  );
-  // It unfolds where it stands rather than sending the PO anywhere.
-  assert.deepEqual(rows[0]!.target, { open: 'expand' });
-  // And it carries the named rows, each still fillable and still linked.
-  const children = rows[0]!.children!;
-  assert.equal(children.length, 4);
-  assert.equal(children[0]!.label, "Yesterday's d has nothing in it yet");
-  assert.deepEqual(children[0]!.target, { open: 'capture', path: 'meetings/d.md', title: 'd' });
-  assert.equal(children[0]!.link!.path, 'meetings/d.md');
-});
-
-test('home: a flood of empty meetings cannot push commitments off the page', () => {
-  const items = buildAttention(
-    input({
-      proposals: [card('p1')],
-      tree: tree(
-        ...['a', 'b', 'c'].map((t, i) => synced(t, { date: '2026-07-27', time: `0${i + 1}:00` })),
-        note('todo', 'ship', { lifecycle: 'open', due: '2026-07-20' }),
-      ),
-    }),
-    NOW,
-  );
-  // `max` counts entries, not lines: the named meetings are one entry, so the
-  // commitments door still makes the page.
-  const rows = homeRows(items, 2, NOW);
-  assert.deepEqual(
-    rows.map((r) => r.kind),
-    ['card', 'capture', 'capture', 'capture'],
-  );
-  assert.deepEqual(homeRows(items, 3, NOW).at(-1)!.id, 'todos');
-});
-
-test('home: cards, reviews and commitments each collapse behind one door', () => {
-  const items = buildAttention(
-    input({
-      proposals: [card('p1'), card('p2'), card('p3')],
-      tree: tree(
-        note('meeting', 'a', { date: '2026-07-26', lifecycle: 'new' }),
-        note('meeting', 'b', { date: '2026-07-27', lifecycle: 'new' }),
-        note('todo', 'overdue', { lifecycle: 'open', due: '2026-07-20' }),
-        note('todo', 'today', { lifecycle: 'open', due: '2026-07-28' }),
-      ),
-    }),
-    NOW,
-  );
-  const rows = homeRows(items, 4, NOW);
-  assert.deepEqual(
-    rows.map((r) => [r.label, r.meta, r.count]),
-    [
-      ['3 proposals waiting for your approval', 'Inbox', 3],
-      ['2 meetings still to review', 'Calendar', 2],
-      ['2 commitments due', '1 overdue', 2],
-    ],
-  );
-  // The door's count is the list's own count, never a second sum.
-  assert.equal(rows[0]!.count, countOf(items, 'card'));
-});
-
-test('home: a single unfiled meeting is named, not counted', () => {
-  const items = buildAttention(
-    input({ tree: tree(note('meeting', 'nordkap', { date: '2026-07-27', lifecycle: 'new' })) }),
-    NOW,
-  );
-  const rows = homeRows(items, 4, NOW);
-  assert.deepEqual(ids(rows), ['review:meetings/nordkap.md']);
-  assert.equal(rows[0]!.label, 'Review nordkap');
-});
-
-test('home: the next meeting counts down once it is nearly on top of you', () => {
-  const items = buildAttention(
-    input({ tree: tree(note('meeting', 'nordkap', { date: '2026-07-28', time: '09:20' })) }),
-    NOW,
-  );
-  assert.equal(homeRows(items, 4, NOW)[0]!.meta, 'in 20m');
-  // Further out it reads as its own clock time instead.
-  assert.equal(homeRows(items, 4, at(28, 7))[0]!.meta, '09:20');
-});
-
-test('home: the list is capped', () => {
-  const items = buildAttention(
-    input({
-      askRequests: { 'session-1': ask('session-1') },
-      sessions: [session('session-1', { running: true })],
-    }),
-    NOW,
-  );
-  assert.deepEqual(ids(homeRows(items, 4, NOW)), ['question:session-1']);
-  assert.equal(homeRows(items, 0, NOW).length, 0);
 });

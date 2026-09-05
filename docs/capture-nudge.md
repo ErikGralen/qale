@@ -48,7 +48,7 @@ The user opens the app, sees an empty-ish Home, and leaves. The habit never form
 
 1. **A row, not an interruption.** The nudge is a line in "Waiting on you" that exists while it is true and vanishes when it stops being true. No OS notification, no dock badge, no modal, no sound. Same doctrine as the librarian's maintenance rows (`refreshDockBadge` in `handlers.ts`).
 2. **Anchored to a real thing, not an interval.** We nudge about _this meeting_, never "you haven't added anything in a while". The overdue-todo interval sweep was deleted for exactly this reason: interval sweeps pile up duplicate, un-actioned nags (`scheduler-service.ts:74-78`).
-3. **Lives where its subject lives.** The primary home is the meeting note itself; Home gets one summary row. Never the Inbox's maintenance section, which is the librarian's and is for workspace upkeep only.
+3. **Lives where its subject lives.** The primary home is the meeting note itself; Home gets one summary row. Never the librarian session's maintenance section, which is for workspace upkeep only.
 4. **Dismissal is respected and remembered.** Dismiss a meeting's nudge once and it never comes back. Dismiss the same recurring series twice and the whole series goes quiet.
 5. **The ask carries the payoff.** Where we can, the copy says what the user gets, not what they owe: "Thursday's prep will be thin without this" beats "you forgot to upload".
 6. **Old guilt expires.** A meeting nobody captured within a few days is a lost cause. The nudge disappears on its own instead of accumulating.
@@ -128,7 +128,7 @@ No new telemetry. The approval-stats surface was removed on purpose (`89a79c6`);
 
 > **Note, 2026-08-05.** This part was written against the ping queue, which no longer exists (see `docs/librarian-agentic.md`). The drawer it wanted is now the Librarian section at the bottom of the Inbox, and the way into it is an `ask_user` question from a run the clock started, which is quiet by the same rule. The per-topic cooldown needs its own check-ledger row (`coach:<topic>`) the way the librarian's findings do; there is no ping dedupe left to lean on.
 
-At most **one** suggestion per run, in the Inbox's quiet maintenance section, plus a per-topic cooldown of a month so the same advice cannot recur monthly-nagging style. Examples of the register:
+At most **one** suggestion per run, in the session's quiet maintenance section, plus a per-topic cooldown of a month so the same advice cannot recur monthly-nagging style. Examples of the register:
 
 > You added notes to 2 of 6 meetings last week. The four empty ones are in the meetings folder if any are worth three lines.
 

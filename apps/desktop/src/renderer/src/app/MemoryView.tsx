@@ -1,54 +1,18 @@
 import { useMemo } from 'react';
-import {
-  dirForType,
-  isFolderIndex,
-  isHandCreatable,
-  layerForType,
-  noteTypeLabel,
-  readOnlyReason,
-  type HandCreatableType,
-} from '@qale/domain';
+import { dirForType, isFolderIndex, layerForType } from '@qale/domain';
 import { Button } from '@qale/ui';
-import { ChevronRight, FileUp, Library, Plus } from 'lucide-react';
-import type { NoteRefDTO, NoteType, VaultTreeGroupDTO } from '@qale/ipc';
+import { ChevronRight, FileUp, Library } from 'lucide-react';
+import type { NoteType, VaultTreeGroupDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
-import { MEMORY_SHELVES, MIRROR_SHELVES, navFromEvent } from '../lib/nav';
-import { useNewNote } from '../lib/new-note';
+import { MEMORY_SHELVES, navFromEvent } from '../lib/nav';
 import { requestCapture } from '../lib/capture-event';
 import { PageHeader } from '../components/PageHeader';
 import { noteTypeIcon } from '../lib/note-icons';
-import { isUnprocessedSource } from '../lib/note-status';
-
-/**
- * The one door to what Qale knows, with the types kept apart behind it (E-16).
- *
- * Every shelf renders from day one, empty or not: this page is the map of what
- * the workspace can hold, so nothing is drip-fed. The sidebar is the part that
- * stays small — a type only gets a rail section once one of its notes is
- * pinned.
- *
- * Meetings and notes are not here. A meeting belongs to the Calendar and a note
- * to Documents, and a type with two homes is a type the user has to guess
- * about. People are a shelf rather than a rail row (E-17): a person page earns
- * its keep, a People directory does not.
- *
- * Sessions are deliberately absent too: a session receipt is a record the user
- * never authors, and it already has a home in the Sessions rail. It stays
- * addressable ([[sessions/…]] links resolve, backlinks work) without costing
- * a shelf here.
- */
-const SYNCED_SHELVES: { label: string; subtitle: string; types: readonly NoteType[] } = {
-  label: 'Synced',
-  subtitle: 'Copied from your tracker and wiki. Qale never edits them.',
-  types: MIRROR_SHELVES,
-};
+import { unprocessedSourceCount } from '../lib/note-status';
 
 /**
  * What each shelf holds, in the words a person would use. One clause is the
- * budget: note titles here read as bloat, and the row truncates anyway. The two
- * mirror shelves lead with the domain's own sentence
- * (@qale/domain readOnlyReason) so the shelf and the note page name the source
- * the same way.
+ * budget: note titles here read as bloat, and the row truncates anyway.
  */
 const TYPE_DESC: Partial<Record<NoteType, string>> = {
   decision: 'What was decided, and what each call replaced.',
@@ -57,30 +21,20 @@ const TYPE_DESC: Partial<Record<NoteType, string>> = {
   insight: 'One claim per page, each with the quote it came from.',
   customer: 'The accounts Qale knows about.',
   person: 'The people you work with: what they care about, what they were last told.',
-  ticket: `${readOnlyReason('ticket')} The work your pages link to.`,
-  wikipage: `${readOnlyReason('wikipage')} The pages your updates land on.`,
 };
 
-/** The one number per shelf that means "waiting on you", in the flag voice. */
-function attentionFor(type: NoteType, notes: NoteRefDTO[]): string | null {
-  if (type === 'source') {
-    const n = notes.filter(isUnprocessedSource).length;
-    return n > 0 ? `${n} unprocessed` : null;
-  }
-  return null;
-}
-
-function ShelfRow({ group }: { group: VaultTreeGroupDTO }) {
+/**
+ * One shelf: what it holds, how much, and anything on it waiting for the PO.
+ *
+ * No "+" anywhere on this page. A decision is recorded by telling Qale, and
+ * customers and people arrive with the meetings they are in
+ * (docs/memory-placement.md). The one hand-made page left starts from the
+ * shelf's own folder page.
+ */
+function ShelfRow({ group, attention }: { group: VaultTreeGroupDTO; attention?: string | null }) {
   const { openFolder } = useApp();
-  const { create, busy } = useNewNote();
   const notes = useMemo(() => group.notes.filter((n) => !isFolderIndex(n.path)), [group]);
   const Icon = noteTypeIcon(group.type);
-  const attention = attentionFor(group.type, notes);
-  // Only the four the PM writes from scratch get a "+". A shelf without one is
-  // not locked: it is filled by a source arriving or a card being approved, and
-  // an empty page there would have nothing to stand on (see HAND_CREATABLE_TYPES).
-  const startable = isHandCreatable(group.type);
-  const what = noteTypeLabel(group.type).toLowerCase();
   return (
     <li className="flex items-center gap-0.5">
       <button
@@ -104,19 +58,6 @@ function ShelfRow({ group }: { group: VaultTreeGroupDTO }) {
           aria-hidden
         />
       </button>
-      {/* Quiet but always there: hiding the one action a shelf offers until the
-          pointer finds it is how a feature goes unused for six weeks. */}
-      {startable && (
-        <button
-          className="shrink-0 rounded-lg p-2 text-muted-foreground/50 transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
-          onClick={(e) => void create(group.type as HandCreatableType, navFromEvent(e))}
-          disabled={busy}
-          title={`New ${what}: a blank page, named as you type`}
-          aria-label={`New ${what}`}
-        >
-          <Plus className="size-4" aria-hidden />
-        </button>
-      )}
     </li>
   );
 }
@@ -146,11 +87,29 @@ function FirstRun() {
 }
 
 /**
- * One shelf per type, in a flat list, with one group at the end for the two
- * synced types. Each row: what the shelf holds, how much, and anything on it
- * waiting for the PO — never individual note titles, which read as inventory
- * bloat. Week 6 reads fuller than week 1 through the counts, not through rows
- * that appear out of nowhere.
+ * The one door to what Qale knows, with the types kept apart behind it (E-16):
+ * one shelf per type, in a flat list. Each row says what the shelf holds, how
+ * much, and anything on it waiting for the PO — never individual note titles,
+ * which read as inventory bloat. Week 6 reads fuller than week 1 through the
+ * counts, not through rows that appear out of nowhere.
+ *
+ * Every shelf renders from day one, empty or not: this page is the map of what
+ * the workspace can hold, so nothing is drip-fed. The rail stays small a
+ * different way: Memory is one quiet row in the footer, and nothing pins under
+ * it (docs/memory-placement.md).
+ *
+ * Meetings and notes are not here. A meeting belongs to the Calendar and a note
+ * to Documents, and a type with two homes is a type the user has to guess
+ * about. People are a shelf rather than a rail row (E-17): a person page earns
+ * its keep, a People directory does not.
+ *
+ * Sessions are deliberately absent too: a session receipt is a record the user
+ * never authors, and it already has a home in the Sessions rail. It stays
+ * addressable ([[sessions/…]] links resolve, backlinks work) without costing
+ * a shelf here.
+ *
+ * Tickets and wiki pages are not here either. Qale copies them and never writes
+ * them, so they belong to the system they came from.
  */
 export function MemoryView() {
   const { tree } = useApp();
@@ -166,11 +125,15 @@ export function MemoryView() {
 
   // The header count has to match what the shelves add up to, so it is summed
   // over exactly the shelves this page shows. Meetings, notes and todos live on
-  // their own rails and are counted there.
-  const total = [...MEMORY_SHELVES, ...MIRROR_SHELVES].reduce(
+  // their own rails and are counted there, and a mirror belongs to the system it
+  // came from.
+  const total = MEMORY_SHELVES.reduce(
     (sum, t) => sum + groupFor(t).notes.filter((n) => !isFolderIndex(n.path)).length,
     0,
   );
+  // The same number the Memory row in the rail prints, from the same selector,
+  // so the row and the shelf can never disagree.
+  const unprocessed = unprocessedSourceCount(tree);
 
   return (
     <div className="flex h-full flex-col">
@@ -183,21 +146,15 @@ export function MemoryView() {
           {total === 0 && <FirstRun />}
           <ul className={`flex flex-col gap-0.5 ${total === 0 ? 'mt-8' : ''}`}>
             {MEMORY_SHELVES.map((t) => (
-              <ShelfRow key={t} group={groupFor(t)} />
+              <ShelfRow
+                key={t}
+                group={groupFor(t)}
+                attention={
+                  t === 'source' && unprocessed > 0 ? `${unprocessed} unprocessed` : undefined
+                }
+              />
             ))}
           </ul>
-          {/* The one remaining group: types Qale mirrors, never authors. */}
-          <section className="mt-5">
-            <h2 className="px-3 pb-1 text-xs font-medium tracking-wide text-muted-foreground/80 uppercase">
-              {SYNCED_SHELVES.label}
-            </h2>
-            <p className="px-3 pb-1 text-xs text-muted-foreground/70">{SYNCED_SHELVES.subtitle}</p>
-            <ul className="flex flex-col gap-0.5">
-              {SYNCED_SHELVES.types.map((t) => (
-                <ShelfRow key={t} group={groupFor(t)} />
-              ))}
-            </ul>
-          </section>
         </div>
       </div>
     </div>

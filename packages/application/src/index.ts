@@ -8,6 +8,7 @@ export * from './use-cases/people.js';
 export * from './use-cases/search.js';
 export * from './use-cases/index-files.js';
 export * from './use-cases/normalize.js';
+export * from './use-cases/summaries.js';
 export * from './use-cases/proposals.js';
 export * from './use-cases/librarian.js';
 export * from './use-cases/deferrals.js';

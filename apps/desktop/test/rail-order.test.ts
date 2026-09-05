@@ -8,11 +8,13 @@ import {
   surfaceForType,
 } from '../src/renderer/src/lib/nav.js';
 
-test('the rail is seven places, in the order the PM asked for', () => {
-  assert.deepEqual(
-    [...RAIL_ORDER],
-    ['home', 'inbox', 'calendar', 'todos', 'chats', 'documents', 'memory'],
-  );
+test('the rail is five places, in the order the PM asked for', () => {
+  assert.deepEqual([...RAIL_ORDER], ['home', 'calendar', 'todos', 'chats', 'documents']);
+});
+
+test('Memory has no rail row: it is a footer row, beside Activity', () => {
+  assert.ok(!(RAIL_ORDER as readonly string[]).includes('memory'));
+  assert.equal(surfaceForType('theme'), 'memory');
 });
 
 test('Memory is one entry point holding six types, kept apart behind it', () => {
@@ -37,10 +39,14 @@ test('meetings and notes are not on the Memory page — they have their own rail
   assert.equal(surfaceForType('note'), 'documents');
 });
 
-test('the two mirrored types group under Memory, not beside it', () => {
+test('a mirror belongs to the system it came from, never to Memory', () => {
   assert.deepEqual([...MIRROR_SHELVES], ['ticket', 'wikipage']);
-  assert.equal(surfaceForType('ticket'), 'memory');
-  assert.equal(surfaceForType('wikipage'), 'memory');
+  assert.equal(surfaceForType('ticket'), 'synced');
+  assert.equal(surfaceForType('wikipage'), 'synced');
+});
+
+test('every Memory shelf answers memory, and nothing else does', () => {
+  for (const type of MEMORY_SHELVES) assert.equal(surfaceForType(type), 'memory', type);
 });
 
 test('every note type has one surface, or none, and never two', () => {

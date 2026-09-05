@@ -7,7 +7,7 @@ import type { SettingsService } from './settings-service.js';
  * The app-open scheduler (PLAN-V2 §3.5): fires scheduled sessions on their weekly
  * slot while the app runs, catching up missed slots on launch, and drives the two
  * per-tick sweeps (maintenance, before-meeting prep). Nothing here applies a card:
- * every proposal still goes through the Inbox. A desktop scheduler only runs while
+ * every proposal still waits for approval. A desktop scheduler only runs while
  * the app is open — catch-up-on-launch is the honest v1 (no "overnight" promise).
  */
 export class SchedulerService {

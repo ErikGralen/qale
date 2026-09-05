@@ -6,7 +6,6 @@ import {
   PanelLeft,
   PanelRight,
   House,
-  Inbox,
   History,
   MessageSquare,
   CalendarDays,
@@ -41,8 +40,6 @@ function iconFor(tab: Tab): LucideIcon {
       return FileCode;
     case 'chats':
       return History;
-    case 'inbox':
-      return Inbox;
     case 'todos':
       return ListTodo;
     case 'calendar':

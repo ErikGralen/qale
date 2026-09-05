@@ -994,7 +994,7 @@ Hold every draft to two rules:
 
 ## Then
 The per-voice drafts stay in the chat. Copy the one you want and send it yourself. The team page is
-the proposal that waits in the Inbox: an approved wikipage update pushes upstream, files the deep link
+the proposal that waits in the session: an approved wikipage update pushes upstream, files the deep link
 back, and the mirror re-syncs on the next pull.
 
 ## The shape of the drafts
@@ -1212,6 +1212,18 @@ You keep the memory tidy: links that point at nothing, notes nobody filed, mirro
 drifted away from a decision, and citations still aimed at a decision that was replaced. Every
 repair is a proposal carrying the reason in plain words. When you cannot tell which repair is
 right, ask.
+
+## Two places
+The workspace has two places, and your job is different in each.
+
+**Memory** is what Qale keeps: themes, insights, decisions, customers, people, and mirrored pages.
+Here you are the steward. You file a stray page, link it from the hub it belongs under, repoint what
+still cites a replaced decision, and propose a delete when a page is noise.
+
+**Documents** is the \`notes/\` folder, and it holds what the PM writes. Here you are a guest. You
+read a document, and the one repair you may propose is a link out of it aimed at a page that was
+renamed. Touch nothing else. A document is allowed to stand alone, so nothing about it is a filing
+error.
 
 ## When
 A run starts from a worklist. A scan walked the graph and listed what it found. The scan read none
@@ -1621,22 +1633,23 @@ Out: <what it deliberately does not, and why>
 `;
 
 /**
- * The third conversation shape, beside the ordinary session and the question
- * proposal (docs/brainstorm-skill.md). The session writes a round into a file, the PM
- * marks it up in slots, and the next round is written from what came back.
+ * Iterate (docs/iterate-in-chat.md): the draft-react-redraft loop, in the chat.
+ * A round is one ask_user call: one question per idea, the case for the idea
+ * in its body, "Keep it" / "Cut it" as the options, and a written question at
+ * the end for whatever the rows did not catch. The PM reacts to each idea where
+ * they read it, and the next round is written from what came back.
  *
  * The two rules the body spends its words on are the two that fail quietly.
- * Round one carries rough ideas as well as framing questions, because a framing
- * form on its own asks the PM to answer "what does done look like" cold, and
- * every round after it inherits that answer. And a round file is never read back
- * with `files_read`: the session wrote it, so it is in the transcript already,
- * and the answers arrive as the `request_comments` result instead. A session
- * that re-reads its own rounds pays for the whole document every turn.
+ * Round one carries rough ideas as well as framing, because a framing form on
+ * its own asks the PM to answer "what does done look like" cold, and every
+ * round after it inherits that answer. And the round is the card, not a file:
+ * a draft written to the session folder is the exception for a round that
+ * outgrows a card, and even then it is never read back.
  */
 export const ITERATE_SKILL = `---
 type: skill
 title: Iterate on something
-summary: Qale drafts something, you mark it up, and it takes another pass.
+summary: Qale drafts something, you react to each piece, and it takes another pass.
 scenarios:
   - breaking a big piece of work into smaller ones ("break this epic into user stories")
   - roughing out a plan in rounds ("help me rough out a roadmap")
@@ -1646,85 +1659,79 @@ can: [draft-outbound, keep-working-files]
 ---
 
 ## When
-Draft, react, redraft. You want to work something out on paper in rounds rather than in one
-answer: an epic broken into stories, a roadmap roughed out, a decision weighed, a name landed on.
-The shape is a working document, not a conversation: write a round into a file, ask for comments
-on it, write the next round from what comes back.
+
+Draft, react, redraft. You want to work something out in rounds rather than in one answer: an
+epic broken into stories, a roadmap roughed out, a decision weighed, a name landed on. The shape
+is a conversation in rounds: you put a set of ideas in front of the PM, they react to each one,
+and you write the next round from what comes back.
 
 Where the workspace already holds the conclusions and the job is the document, that is the spec
 skill. This one is for the thinking that has not happened yet.
 
 ## Round one
-Write \`round-1.md\` into the session folder with \`files_write\`. Open it with at most three framing
-questions:
 
-- What are we deciding?
-- What is out of scope?
-- What does done look like?
+Start with the framing, in the chat, and answer it yourself as far as you can: what are we
+deciding, what is out of scope, what does done look like. Three lines at most. Never ask the
+framing questions on their own: "what does done look like" is hard to answer cold and easy to
+answer beside three drafts. Your guess at the framing sits in the chat above the round, where it
+can be corrected like any other idea.
 
-Then put a first rough cut of ideas under them, in the same file, before any of the three is
-answered. Never send the framing questions on their own: "what does done look like" is hard to
-answer cold and easy to answer beside three drafts.
+Then ask for the round with ask_user. One call is one round.
 
 ## The ideas
-Two to six per round. One is not a round, and more than six is a list nobody reads to the end.
 
-Each idea argues for itself in a few sentences, and states its cost in the same breath: what it
-gives up, who has to do the work, what it makes harder later. An idea with no cost written down
-cannot be weighed against the one next to it.
+Two to six per round. One is not a round, and more than six is a card nobody finishes.
 
-Each idea ends with a slot, so there is somewhere to answer it.
+Each idea is one question on the card:
 
-## Slots
-A slot is a fenced block whose info string is \`slot\` and an id. Whatever the block holds is the
-prompt on the page:
+- header: the idea's short name, a word or two.
+- question: the idea in one line.
+- body: the case for it in a few short paragraphs, and its cost in the same breath: what it gives
+  up, who has to do the work, what it makes harder later. An idea with no cost written down cannot
+  be weighed against the one next to it.
+- options: "Keep it" and "Cut it". Add a third when the idea has a natural variant ("Keep, but
+  smaller"). The card offers a written answer beside the options on its own, so never add an
+  "Other" option.
 
-\`\`\`slot idea-3
-Keep? Cut? Smaller?
-\`\`\`
+Close the card with one written question, no options, header "Anything else": what is missing,
+what to merge, what you got wrong. That is where the reaction to the whole round lands.
 
-- Ids are short and about the thing: \`idea-3\`, \`scope\`, \`the-name\`. No two the same in one file.
-- The app draws each slot as a comment box, so every answer comes back under its own id.
-- The app also puts a general comment box at the bottom of every round, so never write a slot for
-  general reactions: a second one splits the same answer in two.
-
-## Ask for comments
-Once the round file is written, call \`request_comments\` with its path, and wait. The card on the
-screen opens the file, and the answers come back as the result of that call.
-
-Two rules hold for the whole session:
-
-- Never call \`ask_user\`. The round file is where the questions go, and a question card beside it
-  splits one conversation into two.
-- Never read a round file back with \`files_read\`. You wrote it, and the answers arrive with the
-  tool result. Re-reading a round costs the whole file and adds nothing.
+So a round is the ideas plus one: four to seven questions. Fewer is not worth a round, and more
+is a form.
 
 ## Later rounds
-A new file every round: \`round-2.md\`, \`round-3.md\`. Never rewrite an earlier one: the rounds are
-the record of how the thinking moved.
 
-- Compress what is settled into a line, and stop asking about it.
+Each round is a new call. Say in a line or two what changed since the last one, then ask.
+
+- Compress what is settled into a line in the chat, and stop asking about it.
 - Drop what was cut. A dead idea does not come back for a second vote.
 - Go down a level only once the level above is settled: the epic before the stories, the stories
   before the acceptance criteria. Detail written under an idea that then gets cut is work thrown
   away.
 
+A skipped question is an instruction, the same as a dismissed proposal: pick the reasonable
+reading, say in the next round which reading that was, and carry on.
+
+## When a round outgrows the card
+
+A whole roadmap or a spec draft is more than a body holds. Write it to the session folder with
+files_write, name the file in the chat, and ask about it with the card: one question per section,
+each body saying which part it is about. Never read that file back with files_read. You wrote it,
+and the answers arrive with the tool result.
+
 ## End with the thing itself
+
 The last round is the artifact, not another set of ideas. A brainstorm that ends in a brainstorm
 failed.
 
-Propose the output through the ordinary paths: proposals (propose_note, propose_update) for
-a document, a spec, a set of stories, and outbound proposals (draft_ticket), one per issue, for work
-that belongs upstream. Say which round the output came from, so the reasoning behind it is one
-click away.
-
-A dismissed comment proposal is an instruction, the same as a skipped question: pick the reasonable
-reading, say in the next round which reading that was, and carry on.
+Propose the output through the ordinary paths: proposals (propose_note, propose_update) for a
+document, a spec, a set of stories, and outbound proposals (draft_ticket), one per issue, for work
+that belongs upstream. Say that the reasoning is in this session, so it is one click away.
 
 ## Then
-The rounds stay in the session folder with the comments written into them, so the thinking is
-readable later. New pages land as they are written; a rewrite of something the memory already says
-waits for you.
+
+The rounds stay in this session with the answers, so the thinking is readable later. New pages
+land as they are written; a rewrite of something the memory already says waits for you.
 `;
 
 /** One file the pack seeds into a new workspace. */

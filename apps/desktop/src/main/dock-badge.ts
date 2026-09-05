@@ -3,7 +3,7 @@ import { app, BrowserWindow, nativeImage } from 'electron';
 /**
  * The dock badge — one bit: "something is waiting on you". Deliberately not a
  * count: a number on the dock invites triage-by-arithmetic from across the
- * room, and the honest answer to "how much?" lives in the Inbox and the Todos
+ * room, and the honest answer to "how much?" lives in Sessions and the Todos
  * view, where each item can say what it is.
  *
  * macOS and Windows say that bit in very different ways. macOS takes a string

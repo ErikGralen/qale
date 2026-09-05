@@ -62,6 +62,27 @@ function developerToolsPresent(): Promise<boolean> {
 }
 
 /**
+ * What to tell someone whose machine has no git, in one sentence they can act
+ * on. Every workspace is a repo from the moment it is made (E-1), so "no git"
+ * is not a setting they chose: it is history quietly off, and the only honest
+ * thing to do is name the one command that turns it back on.
+ *
+ * macOS needs no restart afterwards. The availability probe re-asks every few
+ * minutes (see {@link RECHECK_MISSING_MS}) precisely because `xcode-select
+ * --install` finishes while the app is open. Windows and Linux put git on PATH,
+ * which a running process does not re-read, so those two say to start again.
+ */
+export function gitInstallHint(platform: string = process.platform): string {
+  if (platform === 'darwin') {
+    return 'Open Terminal and run xcode-select --install. History starts working a few minutes later, with no restart.';
+  }
+  if (platform === 'win32') {
+    return 'Install Git for Windows from git-scm.com, then start Qale again.';
+  }
+  return 'Install git with your package manager, for example sudo apt install git, then start Qale again.';
+}
+
+/**
  * Git layer (PLAN §3.5): thin wrapper over system git via simple-git, with a
  * startup availability check. Commits are path-scoped to exactly the files a
  * save/accept touched — never `add -A`. Consent for `init` is handled by the
@@ -193,6 +214,53 @@ export class GitAdapter implements GitPort {
     }
   }
 
+  /**
+   * The paths one commit changed that concern this note: the note's own path,
+   * and the other side of a rename when the commit renamed it. Empty when the
+   * commit did not touch the note at all.
+   *
+   * This is what makes an undo safe (E-2). Reading the file at the parent
+   * commit answers "what did it say before", but not "did this commit touch it
+   * at all" — a hash from another note reads back a perfectly good older
+   * version, and undoing with it would overwrite work nobody asked about. An
+   * empty answer here is the refusal.
+   *
+   * The pathspec is deliberately left off the `git show`. Filtering by path can
+   * be applied before rename detection, which reports a rename as an add and a
+   * delete, and the undo would then leave a copy under the old name. Our
+   * commits are path-scoped to a handful of files, so scanning the whole diff
+   * costs nothing and always sees both sides.
+   */
+  async pathsChangedWith(hash: string, relPath: string): Promise<string[]> {
+    if (!(await this.available()) || !(await this.isRepo())) return [];
+    try {
+      const out = await this.git.raw([
+        'show',
+        '--name-status',
+        '--find-renames',
+        '--format=',
+        hash,
+      ]);
+      for (const line of out.split('\n')) {
+        const cols = line.trimEnd().split('\t');
+        if (cols.length < 2 || !cols[0]) continue;
+        // R100 / C75: a rename or a copy, written as `code<TAB>from<TAB>to`.
+        if ((cols[0][0] === 'R' || cols[0][0] === 'C') && cols.length >= 3) {
+          if (cols[1] === relPath || cols[2] === relPath) return [cols[1]!, cols[2]!];
+          continue;
+        }
+        if (cols[1] === relPath) return [relPath];
+      }
+      return [];
+    } catch (err) {
+      console.error(
+        `[git] could not read what ${hash} changed:`,
+        err instanceof Error ? err.message : err,
+      );
+      return [];
+    }
+  }
+
   async commitPaths(paths: string[], message: string): Promise<void> {
     if (paths.length === 0) return;
     if (!(await this.available()) || !(await this.isRepo())) return;
@@ -208,10 +276,19 @@ export class GitAdapter implements GitPort {
       if (status.files.length === 0) return; // nothing actually changed
       // Commit only the paths git recognizes — an unmatched pathspec (never-
       // tracked deletion) would abort the whole commit.
-      await this.git.commit(
-        message,
-        status.files.map((f) => f.path),
-      );
+      //
+      // Both ends of a rename, or the old name is left behind. git reports a
+      // rename as ONE row naming the new path, with the old one in `from`, and
+      // a commit is a partial commit: a path missing from this list keeps its
+      // change staged and out of the commit forever. Without `from`, every
+      // renamed note stayed in HEAD under its old name as well as its new one,
+      // and its removal sat in the index for good.
+      const spec = new Set<string>();
+      for (const f of status.files) {
+        spec.add(f.path);
+        if (f.from) spec.add(f.from);
+      }
+      await this.git.commit(message, [...spec]);
     } catch (err) {
       // Never let a git hiccup break a vault write; the file is already saved.
       // But never silently either — a broken setup would otherwise disable

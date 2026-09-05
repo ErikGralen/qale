@@ -3,10 +3,14 @@
 > Built 2026-08-30. Replaces the state-based auto-pinner described in
 > `docs/sidebar-pin-rework` (in git history). That doc's core rule survives
 > untouched: only the PM ever takes a row off the rail.
+>
+> Narrowed 2026-09-05 by `docs/sidebar-ia.md` (SB-2): writing in a page no
+> longer pins it, and neither does approving a card. Everything below still
+> holds, minus those two acts.
 
 ## The rule, in one sentence
 
-Make it, hand it over, or write in it, and it is pinned until you unpin it.
+Make it or hand it over, and it is pinned until you unpin it.
 
 ## The problem this fixed
 
@@ -31,27 +35,27 @@ on what the PM does.
 
 | Act | Where |
 | --- | --- |
-| Make a note (⌘N, the "+" menu, the Memory shelf) | `captureNote`, `createNote` in `app-state.tsx` |
-| Approve a card that writes a note | `acceptProposal`, from `AcceptResult.path` |
-| Write in a note (body autosave, properties, restore a version) | `saveNote`, `saveFrontmatter`, `restoreVersion` |
+| Make a page (⌘N, the "+" menu, the Memory shelf) | `captureNote`, `createNote` in `app-state.tsx` |
 | Hand a source over (drag-in, `file_source`) | the auto-pinner, via `qualifiesForRail` |
 
-All four go through one function, `pinForWork(path, type?)`. It adds the path to
+The first goes through `pinForWork(path, type?)`. It adds the path to
 `favorites` and does nothing else: no mark, no removal, no reordering.
 
 ## What does not pin
 
 - **Reading.** Opening a note is not working in it. Browsing would pin the whole
   workspace within a week.
+- **Editing, and approving a card.** You have the page open, and Activity and
+  the receipt already say what happened (SB-2).
 - **Today's meetings, open tickets, open themes.** The clock no longer puts
   anything on the rail. Today's meetings live on Home, in "Waiting on you", which
   is the first thing you see. A meeting joins the rail when you write in it, or
   when you approve a card against it.
 - **Bulk edits.** Tagging thirty notes from the selection bar pins none of them.
   One gesture is one intent, not thirty.
-- **Types with a home of their own.** Todos, skills, agents and sessions. See
-  `isPinnable` in `note-status.ts`. The rail would only repeat what those pages
-  already say.
+- **Types with a home of their own.** Todos, skills, agents, sessions and
+  meetings. See `isPinnable` in `note-status.ts`. The rail would only repeat
+  what those pages already say.
 - **Outbound cards.** They write to Jira or Confluence and carry no vault path.
 
 ## The one exception, and it is the PM's too
@@ -81,11 +85,8 @@ no way to know what a card created, and diffing the tree would have been a guess
 
 ## Consequences worth knowing
 
-- The Meetings section is empty on a fresh workspace until you write in a
-  meeting. The "Drop a transcript" invitation still shows while the memory holds
-  no meetings at all; after that the header alone is the browse affordance.
 - Dropping a transcript for yesterday's meeting pins the **source**, not the
   meeting page. The source is the thing that arrived, and it is the row you
   click through from.
-- Approving five librarian cards gives you five rows. That is the rule being
-  uniform, and each is one X away.
+- The rail stays short. A day of reading, editing and approving adds no rows at
+  all, so what is there is what you put there.

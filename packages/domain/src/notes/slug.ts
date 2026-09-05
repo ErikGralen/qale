@@ -80,6 +80,23 @@ export function voicePath(name: string): string {
   return `${VOICES_DIR}/${name}.md`;
 }
 
+/**
+ * Where the product understanding lives: `understanding/product.md` and its two
+ * siblings, plus the map over them.
+ *
+ * They are filed as plain notes, so without this folder they would sit in
+ * `notes/`, which is the Documents screen and belongs to the PM (E-14). Nobody
+ * asks for these: the interview drafts them from what the PM said, and a first
+ * look writes them from what a connection read. A folder of its own is what
+ * keeps the PM's own documents apart from what the agent keeps for itself.
+ */
+export const UNDERSTANDING_DIR = 'understanding';
+
+/** Is this file one of the understanding notes? Path only: the folder says it. */
+export function isUnderstandingPath(path: string): boolean {
+  return path.startsWith(`${UNDERSTANDING_DIR}/`) && path.toLowerCase().endsWith('.md');
+}
+
 const ENTRY_BASENAMES = Object.values(RUNNABLE_ENTRY).map((f) => f.toLowerCase());
 
 /** `skills/spec-review/checklist.md` → dir `skills`, name `spec-review`. Null when not inside one. */

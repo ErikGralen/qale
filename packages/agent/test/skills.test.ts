@@ -48,20 +48,49 @@ function skillCtx(
   pending: Pending[] = [],
 ): UseCaseContext & { filed: Filed[] } {
   const filed: Filed[] = [];
+  const rows = new Map<string, Record<string, unknown>>();
+  // The PM asked for the skill, so it lands as it is written
+  // (docs/easier-tickets.md E-4). What the card carries is still the subject
+  // here, and the fake writes so the accept behind it has somewhere to go.
+  const read = (p: string) =>
+    files[p]
+      ? {
+          path: p,
+          slug: p.replace(/\.md$/, ''),
+          type: 'skill',
+          frontmatter: { type: 'skill' },
+          body: files[p]!,
+        }
+      : null;
   return {
     vault: {
-      readNote: async (p: string) =>
-        files[p]
-          ? { path: p, type: 'skill', frontmatter: { type: 'skill' }, body: files[p] }
-          : null,
+      readNote: async (p: string) => read(p),
+      exists: async (p: string) => !!files[p],
+      writeNote: async (p: string, _fm: unknown, body: string) => {
+        files[p] = body;
+        return read(p)!;
+      },
+      writeBody: async (p: string, body: string) => {
+        files[p] = body;
+        return read(p)!;
+      },
     },
-    index: { resolve: () => null, get: () => null },
+    index: { resolve: () => null, get: () => null, reindex: () => {} },
+    git: { commitPaths: async () => {}, history: async () => [] },
+    clock: { now: () => '2026-09-02T09:00:00.000Z' },
     proposals: {
       create: (input: Filed) => {
+        const rec = { ...input, id: `p${filed.length + 1}`, status: 'pending', evidence: [] };
         filed.push(input);
-        return { id: `p${filed.length}` };
+        rows.set(rec.id, rec);
+        return rec;
       },
       list: (status?: string) => (status === 'pending' ? pending : []),
+      get: (id: string) => rows.get(id) ?? null,
+      setStatus: (id: string, status: string) => {
+        const rec = rows.get(id);
+        if (rec) rows.set(id, { ...rec, status });
+      },
     },
     filed,
   } as unknown as UseCaseContext & { filed: Filed[] };
@@ -93,14 +122,13 @@ const PATH = 'skills/weekly-roadmap-update/SKILL.md';
 const propose = (ctx: UseCaseContext, extra: Record<string, unknown> = {}) =>
   out(tool(ctx), { title: TITLE, summary: SUMMARY, body: BODY, ...extra });
 
-test('a skill lands as a note card at the entry path its name resolves to', async () => {
+test('a skill lands at the entry path its name resolves to', async () => {
   const ctx = skillCtx();
   const said = await propose(ctx);
 
-  assert.equal(
-    said,
-    `Proposed skill (p1): "${TITLE}" -> ${PATH}. Awaiting review, and nothing can run it until the PM approves it.`,
-  );
+  // The PM asked for it, so it landed rather than queued.
+  assert.match(said, new RegExp(`^Applied: Created the skill "${TITLE}"\\.`));
+  assert.match(said, new RegExp(`It is at ${PATH}`));
   const card = ctx.filed[0]!;
   // A file, so a `note` card. No sixth proposal kind was invented for it.
   assert.equal(card.kind, 'note');

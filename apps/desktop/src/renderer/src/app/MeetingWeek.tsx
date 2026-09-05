@@ -4,7 +4,6 @@ import { AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { NoteRefDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
-import { TagChip } from '../components/TagChip';
 import { needsReview } from '../lib/note-status';
 
 /**
@@ -207,17 +206,18 @@ function eventTooltip(e: CalEvent): string {
 
 export function MeetingWeek({
   notes,
-  allTags,
-  contextFacet,
-  onToggleContext,
   toolbarLead,
+  onOpen,
 }: {
   notes: NoteRefDTO[];
-  allTags: string[];
-  contextFacet: string | null;
-  onToggleContext: (tag: string) => void;
   /** The Week/List switch, owned by the folder page so both views share it. */
   toolbarLead?: ReactNode;
+  /**
+   * What pressing a block does. The Calendar hands the meeting to its own panel
+   * (E-12); without this the grid opens the markdown file, which is what every
+   * other list does.
+   */
+  onOpen?: (note: NoteRefDTO, click?: React.MouseEvent) => void;
 }) {
   const { openDoc } = useApp();
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
@@ -231,7 +231,6 @@ export function MeetingWeek({
 
   const events = useMemo((): CalEvent[] => {
     return notes
-      .filter((n) => !contextFacet || n.tags?.includes(contextFacet))
       .flatMap((n) => {
         if (!n.date) return [];
         const start = parseLocal(n.date, n.time ?? undefined);
@@ -241,7 +240,7 @@ export function MeetingWeek({
         return [{ note: n, start, end, timed }];
       })
       .sort((a, b) => a.start.getTime() - b.start.getTime());
-  }, [notes, contextFacet]);
+  }, [notes]);
 
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   // Overlap, not start-within: a multi-day event running in from last week
@@ -309,8 +308,10 @@ export function MeetingWeek({
   const nowTop = (now.getHours() + now.getMinutes() / 60 - startHour) * HOUR_PX;
   const gridCols = { gridTemplateColumns: `3.25rem repeat(${days.length}, minmax(0, 1fr))` };
 
-  const openEvent = (e: CalEvent, click?: React.MouseEvent) =>
+  const openEvent = (e: CalEvent, click?: React.MouseEvent) => {
+    if (onOpen) return onOpen(e.note, click);
     void openDoc(e.note.path, click && navFromEvent(click));
+  };
 
   const eventBody = (e: CalEvent, heightPx: number) => {
     const tone = eventTone(e, now);
@@ -397,18 +398,6 @@ export function MeetingWeek({
             W{isoWeek(weekStart)}
           </span>
         </span>
-        {allTags.length > 0 && (
-          <div className="ml-auto flex flex-wrap items-center gap-1">
-            {allTags.map((t) => (
-              <TagChip
-                key={t}
-                tag={t}
-                active={contextFacet === t}
-                onToggle={() => onToggleContext(t)}
-              />
-            ))}
-          </div>
-        )}
       </div>
 
       <div

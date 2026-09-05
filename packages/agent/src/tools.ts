@@ -4,6 +4,7 @@ import type { UseCaseContext } from '@qale/application';
 import {
   applyPatch,
   createProposal,
+  fileProposal,
   duplicatePending,
   oneLine,
   searchNotes,
@@ -28,6 +29,9 @@ import {
   refToSlug,
   runnableCandidates,
   runnableEntryPath,
+  appliedReceipt,
+  titleForRef,
+  type ActivityAction,
   slugify,
   sameLanguage,
   typeForDir,
@@ -858,6 +862,31 @@ export function createProposeTools(
    */
   const chatIsTheSource = { evidence: [], inference: false, asked: true };
 
+  /**
+   * What a write that needed no card reports back (docs/easier-tickets.md E-3).
+   *
+   * The first line is the receipt itself, written once in the domain, because
+   * the session view reads it straight back out of this result to draw the
+   * quiet "Created X" row in the trail. Everything after it is for the model,
+   * and it says the one thing the old "Awaiting review" sentence got wrong:
+   * this is done, nobody has to click, so do not talk about it as if it were
+   * pending.
+   */
+  const applied = (action: ActivityAction, subject: string, tail = ''): ReturnType<typeof text> =>
+    text(
+      `${appliedReceipt(action, subject)}.\n` +
+        'It is in the workspace now and nothing is waiting on the PM. Say what you did in one ' +
+        `short line and carry on.${tail}`,
+    );
+
+  /**
+   * The tail on the waiting line when a write the policy would have applied
+   * could not land after all. The card stays in the queue, so the model is told
+   * the truth: the work is not lost, and the PM decides it.
+   */
+  const notApplied = (error?: string): string =>
+    error ? ` It could not be applied on the spot (${error}), so the PM decides it.` : '';
+
   const { resolves, evidenceRows } = citations(ctx);
 
   /**
@@ -939,20 +968,33 @@ export function createProposeTools(
           parsed.data.path,
       });
       if (dup) return dup;
-      const rec = createProposal(ctx, {
-        kind: 'note',
-        sessionId,
-        skill: harness?.activeSkillName,
-        targetPath: parsed.data.path,
-        baseHash: null,
-        payload: parsed.data,
-        rationale: parsed.data.rationale,
-        evidence: evidenceRows(sources),
-        inference: !!p.inference,
-        asked: !!p.asked,
-      });
-      harness?.recordWrite(parsed.data.path, rec.id, 'note');
-      return text(`Proposed new note (${rec.id}): ${parsed.data.path}. Awaiting review.`);
+      const filed = await fileProposal(
+        ctx,
+        {
+          kind: 'note',
+          sessionId,
+          skill: harness?.activeSkillName,
+          targetPath: parsed.data.path,
+          baseHash: null,
+          payload: parsed.data,
+          rationale: parsed.data.rationale,
+          evidence: evidenceRows(sources),
+          inference: !!p.inference,
+          asked: !!p.asked,
+        },
+        { noteType: typeof fm['type'] === 'string' ? fm['type'] : undefined },
+      );
+      harness?.recordWrite(parsed.data.path, filed.rec.id, 'note');
+      if (filed.disposition === 'silent') {
+        const subject =
+          typeof fm['title'] === 'string' && fm['title']
+            ? fm['title']
+            : titleForRef(parsed.data.path);
+        return applied('created', subject, ` It is at ${parsed.data.path}.`);
+      }
+      return text(
+        `Proposed new note (${filed.rec.id}): ${parsed.data.path}. Awaiting review.${notApplied(filed.error)}`,
+      );
     },
   });
 
@@ -1102,7 +1144,7 @@ export function createProposeTools(
       // `## Notes` stays empty above the summary: it is the PM's half of the
       // page, and a meeting they open later has somewhere to write.
       const body = `## Notes\n\n## Summary\n\n${params.summary.trim()}\n`;
-      const rec = createProposal(ctx, {
+      const filed = await fileProposal(ctx, {
         kind: 'note',
         sessionId,
         skill: harness?.activeSkillName,
@@ -1130,14 +1172,19 @@ export function createProposeTools(
         evidence: evidenceRows(sources),
         inference: !!params.inference,
       });
-      harness?.recordWrite(path, rec.id, 'note');
+      harness?.recordWrite(path, filed.rec.id, 'note');
+      // Cite the page, not the recording, on everything else from this meeting.
+      // A proposal may rest on a page that is still waiting, so the address is
+      // the meeting either way.
+      const cite =
+        ` Cite it as "[[${path.replace(/\.md$/, '')}]]" on everything else from this meeting, so the ` +
+        'todos and decisions point at the meeting rather than at the raw recording.' +
+        (params.participants_unknown && !params.participants?.length
+          ? ' Nobody is on it: say so in your closing line, so the PM knows to add them.'
+          : '');
+      if (filed.disposition === 'silent') return applied('created', title, cite);
       return text(
-        `Proposed meeting (${rec.id}): ${path}, with the summary in it. Cite it as ` +
-          `"[[${path.replace(/\.md$/, '')}]]" on the other proposals from this meeting — a proposal may rest on one that is ` +
-          `still waiting, so the todos and decisions point at the meeting rather than at the raw recording.` +
-          (params.participants_unknown && !params.participants?.length
-            ? ' Nobody is on it: say so in your closing line, so the PM knows to add them.'
-            : ''),
+        `Proposed meeting (${filed.rec.id}): ${path}, with the summary in it.${cite}${notApplied(filed.error)}`,
       );
     },
   });
@@ -1193,23 +1240,36 @@ export function createProposeTools(
           parsed.data.path,
       });
       if (dup) return dup;
-      const rec = createProposal(ctx, {
-        kind: 'decision',
-        sessionId,
-        skill: harness?.activeSkillName,
-        targetPath: parsed.data.path,
-        baseHash: null,
-        payload: {
-          ...parsed.data,
-          ...(p.supersedes ? { supersedes: stripLink(p.supersedes) } : {}),
+      const filed = await fileProposal(
+        ctx,
+        {
+          kind: 'decision',
+          sessionId,
+          skill: harness?.activeSkillName,
+          targetPath: parsed.data.path,
+          baseHash: null,
+          payload: {
+            ...parsed.data,
+            ...(p.supersedes ? { supersedes: stripLink(p.supersedes) } : {}),
+          },
+          rationale: parsed.data.rationale,
+          evidence: evidenceRows(sources),
+          inference: !!p.inference,
+          asked: !!p.asked,
         },
-        rationale: parsed.data.rationale,
-        evidence: evidenceRows(sources),
-        inference: !!p.inference,
-        asked: !!p.asked,
-      });
-      harness?.recordWrite(parsed.data.path, rec.id, 'decision');
-      return text(`Proposed decision (${rec.id}): ${parsed.data.path}. Awaiting review.`);
+        { noteType: 'decision' },
+      );
+      harness?.recordWrite(parsed.data.path, filed.rec.id, 'decision');
+      if (filed.disposition === 'silent') {
+        const subject =
+          typeof fm['title'] === 'string' && fm['title']
+            ? fm['title']
+            : titleForRef(parsed.data.path);
+        return applied('created', subject, ` It is at ${parsed.data.path}.`);
+      }
+      return text(
+        `Proposed decision (${filed.rec.id}): ${parsed.data.path}. Awaiting review.${notApplied(filed.error)}`,
+      );
     },
   });
 
@@ -1317,20 +1377,37 @@ export function createProposeTools(
         title: parsed.data.title ?? parsed.data.rationale,
       });
       if (dup) return dup;
-      const rec = createProposal(ctx, {
-        kind: 'update',
-        sessionId,
-        skill: harness?.activeSkillName,
-        targetPath: target,
-        baseHash: contentHash(note.body),
-        payload: { ...parsed.data, path: target },
-        rationale: parsed.data.rationale,
-        evidence: evidenceRows(sources),
-        inference: !!p.inference,
-        asked: !!p.asked,
-      });
-      harness?.recordWrite(target, rec.id, 'update');
-      return text(`Proposed update (${rec.id}) to ${target}. Awaiting review.`);
+      // Adding at the end rewrites nothing the note already says, so the policy
+      // lets it through. Any patch, any frontmatter change and any retitle is a
+      // change to what is there, and that still goes to the PM.
+      const appendOnly =
+        !!parsed.data.append?.trim() &&
+        !parsed.data.patch?.length &&
+        !parsed.data.frontmatter &&
+        !parsed.data.title?.trim();
+      const filed = await fileProposal(
+        ctx,
+        {
+          kind: 'update',
+          sessionId,
+          skill: harness?.activeSkillName,
+          targetPath: target,
+          baseHash: contentHash(note.body),
+          payload: { ...parsed.data, path: target },
+          rationale: parsed.data.rationale,
+          evidence: evidenceRows(sources),
+          inference: !!p.inference,
+          asked: !!p.asked,
+        },
+        { noteType: note.type, appendOnly },
+      );
+      harness?.recordWrite(target, filed.rec.id, 'update');
+      if (filed.disposition === 'silent') {
+        return applied('updated', titleForRef(target), ` The note is ${target}.`);
+      }
+      return text(
+        `Proposed update (${filed.rec.id}) to ${target}. Awaiting review.${notApplied(filed.error)}`,
+      );
     },
   });
 
@@ -1405,20 +1482,27 @@ export function createProposeTools(
         title: parsed.data.rationale,
       });
       if (dup) return dup;
-      const rec = createProposal(ctx, {
-        kind: 'delete',
-        sessionId,
-        skill: harness?.activeSkillName,
-        targetPath: target,
-        baseHash: null,
-        payload: { ...parsed.data, path: target },
-        rationale: parsed.data.rationale,
-        evidence: evidenceRows(p.sources ?? []),
-        inference: !!p.inference,
-        asked: !!p.asked,
-      });
-      harness?.recordWrite(target, rec.id, 'delete');
-      return text(`Proposed deleting ${target} (${rec.id}). Awaiting review.`);
+      // A delete always asks: the code has no undelete, so nothing here can put
+      // the page back. It goes through the policy anyway, because there is one
+      // place that grades a write and this is not an exception to it.
+      const filed = await fileProposal(
+        ctx,
+        {
+          kind: 'delete',
+          sessionId,
+          skill: harness?.activeSkillName,
+          targetPath: target,
+          baseHash: null,
+          payload: { ...parsed.data, path: target },
+          rationale: parsed.data.rationale,
+          evidence: evidenceRows(p.sources ?? []),
+          inference: !!p.inference,
+          asked: !!p.asked,
+        },
+        { noteType: note.type },
+      );
+      harness?.recordWrite(target, filed.rec.id, 'delete');
+      return text(`Proposed deleting ${target} (${filed.rec.id}). Awaiting review.`);
     },
   });
 
@@ -1488,34 +1572,40 @@ export function createProposeTools(
       const dup = alreadyProposed({ kind: 'note', targetPath: path, noteType: 'todo', title });
       if (dup) return dup;
       const body = params.quote ? `> ${params.quote.trim()}\n> — ${sources[0] ?? 'source'}\n` : '';
-      const rec = createProposal(ctx, {
-        kind: 'note',
-        sessionId,
-        skill: harness?.activeSkillName,
-        targetPath: path,
-        baseHash: null,
-        payload: {
-          path,
-          frontmatter: {
-            type: 'todo',
-            summary: title.slice(0, 200),
-            title: title.slice(0, 200),
-            commitment: 'open',
-            sources,
-            ...(params.due ? { due: params.due } : {}),
-            ...(params.owner?.trim() ? { owner: params.owner.trim() } : {}),
+      // A todo always asks, whoever asked for it. A promise is the PM's word to
+      // somebody, and nothing else the agent writes is.
+      const filed = await fileProposal(
+        ctx,
+        {
+          kind: 'note',
+          sessionId,
+          skill: harness?.activeSkillName,
+          targetPath: path,
+          baseHash: null,
+          payload: {
+            path,
+            frontmatter: {
+              type: 'todo',
+              summary: title.slice(0, 200),
+              title: title.slice(0, 200),
+              commitment: 'open',
+              sources,
+              ...(params.due ? { due: params.due } : {}),
+              ...(params.owner?.trim() ? { owner: params.owner.trim() } : {}),
+            },
+            body,
+            rationale: params.rationale,
           },
-          body,
           rationale: params.rationale,
+          evidence: evidenceRows(sources),
+          inference: !!params.inference,
+          asked: !!params.asked,
         },
-        rationale: params.rationale,
-        evidence: evidenceRows(sources),
-        inference: !!params.inference,
-        asked: !!params.asked,
-      });
-      harness?.recordWrite(path, rec.id, 'note');
+        { noteType: 'todo' },
+      );
+      harness?.recordWrite(path, filed.rec.id, 'note');
       const who = params.owner?.trim() ? ` (waiting on ${params.owner.trim()})` : '';
-      return text(`Proposed todo (${rec.id}): ${title}${who}. Awaiting review.`);
+      return text(`Proposed todo (${filed.rec.id}): ${title}${who}. Awaiting review.`);
     },
   });
 
@@ -1634,13 +1724,23 @@ export function createProposeTools(
           : 'Goes into Your rules, in the house rules every session reads.';
       const rationale = `${params.why?.trim() || 'You asked for this in chat.'} ${lands}`;
       const headline = `Remember this: ${rule}`;
-      const receipt = (id: string) =>
-        text(
-          `Proposed instruction (${id}): "${rule}" -> ${name}. Awaiting review.` +
-            (missed
-              ? ` Nothing is called "${missed}" here, so it goes to the house rules instead of that file.`
-              : ''),
-        );
+      const misfiled = missed
+        ? ` Nothing is called "${missed}" here, so it went to the house rules instead of that file.`
+        : '';
+      // A rule the PM stated lands without a card (docs/easier-tickets.md E-8).
+      // The chat says "Added to rules" and the Activity row keeps the receipt,
+      // so it is reviewable without being a decision to make.
+      const receipt = (filed: { disposition: string; rec: { id: string }; error?: string }) =>
+        filed.disposition === 'silent'
+          ? text(
+              `${appliedReceipt('remembered', `"${rule}"`)}.\n` +
+                `It is in ${name} now, and every session that reads that file follows it. Nothing is ` +
+                `waiting on the PM: say you have noted it, in one short line, and carry on.${misfiled}`,
+            )
+          : text(
+              `Proposed instruction (${filed.rec.id}): "${rule}" -> ${name}. Awaiting review.` +
+                `${misfiled}${notApplied(filed.error)}`,
+            );
 
       if (home) {
         const already = existingRules(home.note.body, heading).find(
@@ -1676,18 +1776,22 @@ export function createProposeTools(
         const append = rulesSectionIsLast(home.note.body, heading)
           ? `\n- ${rule}`
           : `\n\n${heading}\n\n- ${rule}`;
-        const rec = createProposal(ctx, {
-          kind: 'update',
-          sessionId,
-          skill: harness?.activeSkillName,
-          targetPath: home.path,
-          baseHash: contentHash(home.note.body),
-          payload: { path: home.path, append, rationale, headline },
-          rationale,
-          ...chatIsTheSource,
-        });
-        harness?.recordWrite(home.path, rec.id, 'update');
-        return receipt(rec.id);
+        const filed = await fileProposal(
+          ctx,
+          {
+            kind: 'update',
+            sessionId,
+            skill: harness?.activeSkillName,
+            targetPath: home.path,
+            baseHash: contentHash(home.note.body),
+            payload: { path: home.path, append, rationale, headline },
+            rationale,
+            ...chatIsTheSource,
+          },
+          { noteType: home.note.type, appendOnly: true },
+        );
+        harness?.recordWrite(home.path, filed.rec.id, 'update');
+        return receipt(filed);
       }
 
       // Nothing to append to, so the card creates the file: the conventions
@@ -1706,28 +1810,32 @@ export function createProposeTools(
         title: first.title,
       });
       if (dup) return dup;
-      const rec = createProposal(ctx, {
-        kind: 'note',
-        sessionId,
-        skill: harness?.activeSkillName,
-        targetPath: path,
-        baseHash: null,
-        payload: {
-          path,
-          frontmatter: {
-            type: 'skill',
-            title: first.title,
-            summary: first.summary,
+      const filed = await fileProposal(
+        ctx,
+        {
+          kind: 'note',
+          sessionId,
+          skill: harness?.activeSkillName,
+          targetPath: path,
+          baseHash: null,
+          payload: {
+            path,
+            frontmatter: {
+              type: 'skill',
+              title: first.title,
+              summary: first.summary,
+            },
+            body: `${first.body.trim()}\n\n- ${rule}`,
+            rationale,
+            headline,
           },
-          body: `${first.body.trim()}\n\n- ${rule}`,
           rationale,
-          headline,
+          ...chatIsTheSource,
         },
-        rationale,
-        ...chatIsTheSource,
-      });
-      harness?.recordWrite(path, rec.id, 'note');
-      return receipt(rec.id);
+        { noteType: 'skill' },
+      );
+      harness?.recordWrite(path, filed.rec.id, 'note');
+      return receipt(filed);
     },
   });
 
@@ -1872,30 +1980,41 @@ export function createProposeTools(
       if (dup) return dup;
 
       const rationale = `${params.why?.trim() || 'You asked for this in chat.'} Written from the work in this session.`;
-      const rec = createProposal(ctx, {
-        kind: 'note',
-        sessionId,
-        skill: harness?.activeSkillName,
-        targetPath: path,
-        baseHash: null,
-        payload: {
-          path,
-          frontmatter: {
-            type: 'skill',
-            title,
-            summary,
-            ...(scenarios.length > 0 ? { scenarios } : {}),
-            ...(can.length > 0 ? { can } : {}),
+      const filed = await fileProposal(
+        ctx,
+        {
+          kind: 'note',
+          sessionId,
+          skill: harness?.activeSkillName,
+          targetPath: path,
+          baseHash: null,
+          payload: {
+            path,
+            frontmatter: {
+              type: 'skill',
+              title,
+              summary,
+              ...(scenarios.length > 0 ? { scenarios } : {}),
+              ...(can.length > 0 ? { can } : {}),
+            },
+            body: `${body}\n`,
+            rationale,
           },
-          body: `${body}\n`,
           rationale,
+          ...chatIsTheSource,
         },
-        rationale,
-        ...chatIsTheSource,
-      });
-      harness?.recordWrite(path, rec.id, 'note');
+        { noteType: 'skill' },
+      );
+      harness?.recordWrite(path, filed.rec.id, 'note');
+      if (filed.disposition === 'silent') {
+        return applied(
+          'created',
+          `the skill "${title}"`,
+          ` It is at ${path}, and the PM can read and change it there.`,
+        );
+      }
       return text(
-        `Proposed skill (${rec.id}): "${title}" -> ${path}. Awaiting review, and nothing can run it until the PM approves it.`,
+        `Proposed skill (${filed.rec.id}): "${title}" -> ${path}. Awaiting review, and nothing can run it until the PM approves it.${notApplied(filed.error)}`,
       );
     },
   });
@@ -2418,6 +2537,16 @@ export function createDraftTools(
       out.version = v;
     return out;
   };
+  /**
+   * One card per send, full text, never batched (docs/easier-tickets.md E-7).
+   *
+   * Outbound is the one kind the write policy grades `ask` unconditionally, and
+   * it is also the one kind that never groups: nothing sent to Jira, Confluence
+   * or a calendar can be taken back, so the PM reads each one whole. The card is
+   * created here rather than through `fileProposal` because the ruling can only
+   * be "ask" and this path is synchronous; the policy still owns the rule, and
+   * `writePolicy` is where it is written down.
+   */
   const mkCard = (
     payload: Record<string, unknown>,
     rationale: string,

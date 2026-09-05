@@ -10,13 +10,16 @@ import {
 } from '@qale/ui';
 import {
   Bot,
+  CalendarDays,
   FileText,
+  Files,
   Hash,
   House,
   Inbox,
   Library,
   ListTodo,
   MessageSquare,
+  ScrollText,
   Settings,
   Sparkles,
   SquarePen,
@@ -62,7 +65,10 @@ export function QuickSwitcher({
     openHome,
     openInbox,
     openTodos,
+    openCalendar,
+    openDocuments,
     openMemory,
+    openActivity,
     openSession,
     openSettings,
     openSkills,
@@ -113,7 +119,7 @@ export function QuickSwitcher({
         icon: Inbox,
         run: openInbox,
       },
-      { id: 'new-note', label: 'New note', hint: '⌘N', icon: SquarePen, run: onNewNote },
+      { id: 'new-note', label: 'New document', hint: '⌘N', icon: SquarePen, run: onNewNote },
       {
         id: 'capture',
         label: 'Capture anything: transcript, link, screenshot',
@@ -122,16 +128,38 @@ export function QuickSwitcher({
         run: onOpenCapture,
       },
       {
+        id: 'calendar',
+        label: 'Open Calendar: what is coming, and what happened',
+        keywords: 'meetings schedule week',
+        icon: CalendarDays,
+        run: openCalendar,
+      },
+      {
         id: 'todos',
         label: 'Open Todos: commitments, yours and theirs',
         icon: ListTodo,
         run: openTodos,
       },
       {
+        id: 'documents',
+        label: 'Open Documents: the pages you write',
+        keywords: 'notes briefs specs folders',
+        icon: Files,
+        run: () => openDocuments(''),
+      },
+      {
         id: 'memory',
-        label: 'Browse memory: sources, insights, customers, people',
+        label: 'Open Memory: what Qale knows, and where it got it',
+        keywords: 'sources decisions insights themes customers people tickets',
         icon: Library,
         run: openMemory,
+      },
+      {
+        id: 'activity',
+        label: 'Open Activity: every write I made on my own, and the way back',
+        keywords: 'activity history undo revert receipt changes silent',
+        icon: ScrollText,
+        run: openActivity,
       },
       // One entry, not two. "Ask the memory" and "New session" opened the same
       // blank composer by two names, which is the confusion this list is
@@ -179,7 +207,10 @@ export function QuickSwitcher({
       openHome,
       openInbox,
       openTodos,
+      openCalendar,
+      openDocuments,
       openMemory,
+      openActivity,
       openSession,
       openSkills,
       openSettings,
@@ -236,8 +267,10 @@ export function QuickSwitcher({
         <CommandList>
           <CommandEmpty>{q ? 'No matches.' : 'Type to search the workspace.'}</CommandEmpty>
 
+          {/* Search reaches every type, so the heading cannot name one of them.
+              "Documents" belongs to the `note` folder now (SB-3). */}
           {hits.length > 0 && (
-            <CommandGroup heading="Notes">
+            <CommandGroup heading="Pages">
               {hits.map((h) => (
                 <CommandItem
                   key={h.path}
@@ -257,7 +290,7 @@ export function QuickSwitcher({
           )}
 
           {matchedContexts.length > 0 && (
-            <CommandGroup heading="Contexts">
+            <CommandGroup heading="Tags">
               {matchedContexts.map((c) => (
                 <CommandItem
                   key={c.tag}

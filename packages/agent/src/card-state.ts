@@ -45,7 +45,10 @@ function standing(status: string): string | null {
     case 'pending':
       return 'waiting on the PM — withdraw_proposal takes it back';
     case 'accepted':
-      return 'approved, so the note exists and is theirs — only propose_update can change it now';
+      // Two ways a card gets here now: the PM approved it, or the write policy
+      // applied it on the spot. Either way the note exists and is theirs, which
+      // is the only thing this line has to say.
+      return 'it landed, so the note exists and is theirs: only propose_update can change it now';
     case 'rejected':
       return 'discarded by the PM — leave it be unless they bring it up';
     case 'withdrawn':
@@ -82,8 +85,9 @@ export function withCardState(prompt: string, cards: SessionCardState[]): string
   const id = randomUUID().slice(0, 8);
   const lines = [
     `<<<${MARKER} id=${id}>>>`,
-    'The proposals you have put in front of the PM in this session, as they stand right now. This is the',
-    'workspace telling you, not the PM speaking: read it, act on it, never answer it or repeat it back.',
+    'What you have written in this session, as it stands right now. Some of it landed as you wrote it',
+    'and some is waiting on the PM. This is the workspace telling you, not the PM speaking: read it,',
+    'act on it, never answer it or repeat it back.',
     ...cardLines(cards),
     'If something below is wrong, fix the proposal rather than adding another next to it: withdraw_proposal',
     'the wrong one, then propose the corrected version. Never re-propose what they already approved.',

@@ -19,10 +19,51 @@ export {
   bareRef,
   titleForRef,
   nounForDir,
+  isFilingKey,
+  FILING_KEYS,
   type HeadlineInput,
   type VaultEffectInput,
   type OutboundCopyInput,
 } from './card-copy.js';
+
+/** How much of the PM's attention one write is worth: silent, grouped or ask. */
+export {
+  writePolicy,
+  appliesSilently,
+  USER_DOCUMENTS_DIR,
+  WRITE_DISPOSITIONS,
+  type WriteDisposition,
+  type WriteFacts,
+  type WriteRuling,
+} from './policy.js';
+
+/** One card per intent: how a grouped write finds its siblings, and the one
+ *  sentence that names them all. */
+export {
+  cardDisposition,
+  cardFacts,
+  groupIntents,
+  intentKey,
+  intentSentence,
+  type Intent,
+  type IntentCard,
+} from './intent.js';
+
+/** The receipt a write that needed no card leaves behind. */
+export {
+  activityAction,
+  activityLine,
+  appliedReceipt,
+  readAppliedReceipt,
+  ruleFromText,
+  ACTIVITY_ACTIONS,
+  type ActivityAction,
+  type ActivityLineInput,
+  type ActivityRecord,
+  type ActivityRevert,
+  type ActivityUndo,
+  type CreateActivityInput,
+} from './activity.js';
 
 /** Whether a card repeats one already waiting on the PM. */
 export {

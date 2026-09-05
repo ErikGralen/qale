@@ -53,10 +53,13 @@ test('types with a home of their own never reach the rail', () => {
   }
 });
 
+test('a meeting belongs to the Calendar, so the rail never holds one', () => {
+  assert.equal(isPinnable('meeting'), false);
+});
+
 test('everything else the PM can work in is pinnable', () => {
   for (const type of [
     'note',
-    'meeting',
     'decision',
     'insight',
     'customer',

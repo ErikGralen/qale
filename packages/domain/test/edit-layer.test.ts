@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  NEW_NOTE_PURPOSE,
   NOTE_TYPES,
   editLayerForType,
   isBodyEditable,
@@ -58,6 +59,14 @@ test("a mirror's own provider field wins over the type default", () => {
   // A meeting synced from a calendar is not a mirror type — it stays editable,
   // so its provider must not turn it into one.
   assert.equal(mirrorSource('meeting', { provider: 'google-calendar' }), null);
+});
+
+test('a note calls itself a document, the word the rail and the menus use', () => {
+  assert.equal(noteTypeLabel('note'), 'Document');
+  assert.equal(NEW_NOTE_PURPOSE.note, 'A blank document for anything you write');
+  // Nothing else changes name: the map holds the one type we renamed.
+  assert.equal(noteTypeLabel('theme'), 'Theme');
+  assert.equal(noteTypeLabel('person'), 'Person');
 });
 
 test('provider labels read as their product names', () => {

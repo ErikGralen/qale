@@ -80,7 +80,7 @@ Where each kind of note lives. The librarian follows these when proposing paths 
 - **sources/**: raw, dumped-in content (article links, screenshots, pasted threads, synced pages,
   meeting transcripts, and transcripts of meetings you were not in), named
   `YYYY-MM-DD-<slug>.md`. The body is never edited, only re-synced from upstream. Carries
-  `processing` (new / processed / stale), `new` until an approved proposal cites it. An external
+  `processing` (new / processed / stale), `new` until a proposal citing it lands. An external
   meeting's transcript sets `origin` (whose meeting it was); it is a signal, never a meeting.
 - **meetings/**: one file per meeting you were in, named `YYYY-MM-DD-<slug>.md`. The single
   anchor for the whole lifecycle: `## Prep` before, `## Notes` during, `## Summary` once
@@ -105,9 +105,13 @@ Where each kind of note lives. The librarian follows these when proposing paths 
   `commitment` (open / done / dropped), optional `due`, and `owner` only when someone other than
   you owes it (a waiting-on item). `sources[]` cites where the commitment was made. Closed
   todos stay.
-- **notes/**: quick authored captures (stray thoughts, ⌘N notes), and the documents a session
-  writes whole: a spec, the decode of an incoming ask. Anything dropped in from outside goes to
-  sources/ instead. Intake proposes how each connects into the memory.
+- **notes/**: the PM's own folder, behind the Documents screen: scratch notes, briefs, PRDs,
+  specs, and every ⌘N capture. The folders in it are theirs, and they are the only structure in
+  the workspace that a person made. Write here only when they asked for the page in this
+  conversation, and send `asked` when you do. Everything else you write goes in the memory
+  folder that owns the subject. Anything dropped in from outside goes to sources/ instead.
+- **understanding/**: what the workspace knows about the product itself, in three area notes plus
+  the map over them. Nobody asks for these; the interview and the first look fill them.
 - **attachments/**: dropped images and screenshots, each referenced by a capture note in
   sources/.
 - **sessions/**: replayable session receipts, written by the harness. Never hand-edited.
@@ -119,8 +123,8 @@ cited, never invented.
 ## Your rules
 
 What you have told Qale to do from now on. Ask for something in a chat ("remember to create person
-notes as well"), approve the proposal, and it lands here as a bullet. Change a line to change the rule,
-or delete it to drop it.
+notes as well") and it lands here as a bullet straight away, with an "Added to rules" line in the
+chat. Change a line to change the rule, or delete it to drop it.
 
 - When filing a source that mentions a person, create their person note too.
 - Articles with no obvious project land with the tag `inspiration`.

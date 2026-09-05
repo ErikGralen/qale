@@ -20,6 +20,7 @@ import {
 import { ApproveAll, CardRows } from '../components/inbox/CardRows';
 import {
   bareRef,
+  cardIntents,
   clearedInbox,
   orderCards,
   receiptSummary,
@@ -96,11 +97,32 @@ interface LibrarianRun {
   newest: number;
 }
 
-/** The flattened attention queue — what ↑↓ walks, in visual order. */
+/** The flattened attention queue — what ↑↓ walks, in visual order. A grouped
+ *  intent is ONE stop with N cards behind it, because that is what it draws as:
+ *  a cursor that walked six cards nobody can see is a cursor that vanished. */
 type QueueItem =
   | { kind: 'question'; item: AttentionItem }
   | { kind: 'card'; proposal: ProposalDTO; session: SessionOverview | null }
+  | { kind: 'intent'; key: string; cards: ProposalDTO[]; session: SessionOverview | null }
   | { kind: 'result'; session: SessionOverview };
+
+/** What one row in the queue is called. The rows draw themselves by the same
+ *  id, so nothing here has to count positions and stay in step. */
+function rowId(it: QueueItem): string {
+  if (it.kind === 'card') return it.proposal.id;
+  if (it.kind === 'intent') return it.key;
+  if (it.kind === 'result') return `result:${it.session.id}`;
+  return it.item.id;
+}
+
+/** One session's cards as the rows they draw as: a grouped intent, or a card. */
+function rowsOf(cards: ProposalDTO[], session: SessionOverview | null): QueueItem[] {
+  return cardIntents(cards).map((g) =>
+    g.cards.length > 1
+      ? { kind: 'intent', key: g.key, cards: g.cards, session }
+      : { kind: 'card', proposal: g.cards[0]!, session },
+  );
+}
 
 /**
  * The Inbox (PLAN-V2 §3.3) — home, not a dashboard: the single queue of
@@ -131,7 +153,7 @@ export function InboxView() {
   // Every accept, discard and batch on this page runs the one approve path,
   // the same one the session's own review block runs.
   const approvals = useApprovals();
-  const { busy, accept, reject, rejectAll } = approvals;
+  const { busy, accept, reject, acceptAll, rejectAll } = approvals;
   const [focusIdx, setFocusIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -218,11 +240,11 @@ export function InboxView() {
   const items = useMemo<QueueItem[]>(
     () => [
       ...questions.map((item): QueueItem => ({ kind: 'question', item })),
-      ...sessionGroups.flatMap((g) =>
-        g.cards.map((proposal): QueueItem => ({ kind: 'card', proposal, session: g.session })),
-      ),
+      ...sessionGroups.flatMap((g) => rowsOf(g.cards, g.session)),
       ...results.map((session): QueueItem => ({ kind: 'result', session })),
       ...librarianRuns.flatMap((r): QueueItem[] => [
+        // The librarian's repairs stay one line each (`compact-updates`), so
+        // they are not grouped here either.
         ...r.cards.map((proposal): QueueItem => ({ kind: 'card', proposal, session: r.session })),
         ...r.questions.map((item): QueueItem => ({ kind: 'question', item })),
       ]),
@@ -242,16 +264,7 @@ export function InboxView() {
    */
   const focusIndex = useMemo(() => {
     const m = new Map<string, number>();
-    items.forEach((it, i) =>
-      m.set(
-        it.kind === 'card'
-          ? it.proposal.id
-          : it.kind === 'result'
-            ? `result:${it.session.id}`
-            : it.item.id,
-        i,
-      ),
-    );
+    items.forEach((it, i) => m.set(rowId(it), i));
     return m;
   }, [items]);
 
@@ -263,11 +276,11 @@ export function InboxView() {
     [focusIndex],
   );
 
-  /** The card under the cursor, or null when the cursor is on a question or a
-   *  finished session. */
-  const focusedCardId = (() => {
+  /** The row under the cursor, by the id the rows key themselves with — a card's
+   *  id, or an intent's key. Null on a question or a finished session. */
+  const focusedRowId = (() => {
     const cur = items[focusIdx];
-    return cur?.kind === 'card' ? cur.proposal.id : null;
+    return cur && (cur.kind === 'card' || cur.kind === 'intent') ? rowId(cur) : null;
   })();
 
   const openResult = useCallback(
@@ -283,7 +296,7 @@ export function InboxView() {
       if (item.kind === 'question') {
         const t = item.item.target;
         if (t.open === 'session') openChat({ id: t.sessionId, title: t.title });
-      } else if (item.kind === 'card' && item.session) {
+      } else if ((item.kind === 'card' || item.kind === 'intent') && item.session) {
         const s = item.session;
         openChat({ id: s.id, title: s.title });
       } else if (item.kind === 'result') {
@@ -324,7 +337,10 @@ export function InboxView() {
       // A send leaves the workspace, so the one-tap approve never fires one —
       // the same rule the batch path keeps. ↵ carries you to the send button;
       // pressing it there is the decision. Everything internal stays one tap.
-      if (current.kind !== 'card') openItemSession(current);
+      // A grouped row is one decision, so ↵ takes the whole group. That is what
+      // the row says it is, and what its "Approve all" button does.
+      if (current.kind === 'intent') acceptAll(current.cards);
+      else if (current.kind !== 'card') openItemSession(current);
       else if (current.proposal.kind === 'outbound') focusSend(current.proposal.id);
       else accept(current.proposal);
     } else if ((e.key === 'Backspace' || e.key === 'x') && current && !busy) {
@@ -332,6 +348,7 @@ export function InboxView() {
       // A question is answered, never dismissed — the key is a deliberate no-op
       // on an ask row rather than a way to lose the turn that is waiting.
       if (current.kind === 'card') reject(current.proposal);
+      else if (current.kind === 'intent') rejectAll(current.cards);
       else if (current.kind === 'result') markSessionSeen(current.session.id);
     } else if (e.key === 'o' && current) {
       e.preventDefault();
@@ -360,7 +377,7 @@ export function InboxView() {
               {waitingCount > 0 && `${waitingCount} need${waitingCount === 1 ? 's' : ''} you`}
               {waitingCount > 0 && quietQuestions.length > 0 && ' · '}
               {quietQuestions.length > 0 &&
-                `${quietQuestions.length} question${quietQuestions.length === 1 ? '' : 's'} from the librarian`}
+                `${quietQuestions.length} question${quietQuestions.length === 1 ? '' : 's'} from Qale`}
             </>
           ) : undefined
         }
@@ -492,7 +509,7 @@ export function InboxView() {
                   <CardRows
                     cards={g.cards}
                     approvals={approvals}
-                    focusedId={focusedCardId}
+                    focusedId={focusedRowId}
                     onFocus={focusRow}
                     onOpen={openDoc}
                   />
@@ -519,17 +536,17 @@ export function InboxView() {
             )}
 
             {librarianRuns.length > 0 && (
-              <section aria-label="Librarian">
+              <section aria-label="Tidying up">
                 {waitingCount === 0 && (
                   <p className="mb-3 flex items-center gap-2 px-0.5 text-sm text-muted-foreground">
                     <Check className="size-4 text-success" aria-hidden />
-                    Nothing needs you, just the librarian's tidy-ups below, whenever suits.
+                    Nothing needs you, just the tidy-ups below, whenever suits.
                   </p>
                 )}
                 <div className="mb-1.5 flex items-baseline gap-2 px-0.5">
-                  <h3 className="shrink-0 text-sm font-semibold">Librarian</h3>
+                  <h3 className="shrink-0 text-sm font-semibold">Tidying up</h3>
                   <span className="min-w-0 truncate text-xs text-muted-foreground">
-                    keeps the memory connected: a tap approves, nothing happens silently
+                    small fixes that keep your notes joined up: a tap approves, nothing happens silently
                   </span>
                 </div>
                 {/* One block per pass, each with the door into the session that
@@ -545,7 +562,11 @@ export function InboxView() {
                         <span className="ml-auto flex shrink-0 items-center gap-1">
                           {/* The batch sits on the run it applies to, and says
                               the same word as every other batch on the page. */}
-                          <ApproveAll cards={run.cards} approvals={approvals} />
+                          <ApproveAll
+                            cards={run.cards}
+                            approvals={approvals}
+                            variant="compact-updates"
+                          />
                           {run.session && (
                             <button
                               className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
@@ -564,7 +585,7 @@ export function InboxView() {
                       <CardRows
                         cards={run.cards}
                         approvals={approvals}
-                        focusedId={focusedCardId}
+                        focusedId={focusedRowId}
                         onFocus={focusRow}
                         onOpen={openDoc}
                         variant="compact-updates"
@@ -643,7 +664,7 @@ function Cleared({
           <h2 className="text-lg font-semibold">Nothing needs you.</h2>
           {state.explain && (
             <p className="max-w-sm text-sm text-muted-foreground">
-              Proposals, finished sessions, and the librarian's tidy-ups land here, judged in
+              Proposals, finished sessions, and small tidy-ups land here, judged in
               seconds, nothing written silently.
             </p>
           )}

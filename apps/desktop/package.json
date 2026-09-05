@@ -41,6 +41,7 @@
   },
   "devDependencies": {
     "@ai-sdk/react": "^4.0.23",
+    "@atlaskit/pragmatic-drag-and-drop": "^3.1.0",
     "@electron-toolkit/utils": "^4.0.0",
     "@floating-ui/dom": "^1.8.0",
     "@qale/eslint-config": "workspace:*",
@@ -72,8 +73,8 @@
     "react-markdown": "^10.1.0",
     "tailwindcss": "^4.3.2",
     "tsx": "^4.23.1",
-    "use-stick-to-bottom": "^1.1.6",
     "typescript": "~5.9.2",
+    "use-stick-to-bottom": "^1.1.6",
     "vite": "^7.3.0"
   }
 }

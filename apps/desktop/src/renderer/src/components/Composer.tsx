@@ -49,7 +49,7 @@ export function MentionHint({ show }: { show: boolean }) {
     >
       <span className="font-medium text-foreground/70">@</span> note
       <span className="px-1.5 text-muted-foreground/70">·</span>
-      <span className="font-medium text-foreground/70">#</span> context
+      <span className="font-medium text-foreground/70">#</span> tag
     </span>
   );
 }

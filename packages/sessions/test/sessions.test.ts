@@ -367,18 +367,20 @@ test('nothing underscore-prefixed ships any more', () => {
 });
 
 test('the product understanding ships as a note in the memory, not as a skill', () => {
-  const seed = DEFAULT_NOTES.find((n) => n.file === 'notes/understanding.md');
+  const seed = DEFAULT_NOTES.find((n) => n.file === 'understanding/what-goes-here.md');
   assert.ok(seed, 'the orientation note is not in the pack');
   assert.equal(seed.content, UNDERSTANDING_NOTE);
-  // A note, in `notes/`, with the frontmatter its type wants. Get this wrong and
-  // the file lands in the memory as a broken note rather than as orientation.
+  // A note, in `understanding/`, with the frontmatter its type wants. Get this
+  // wrong and the file lands in the memory as a broken note rather than as
+  // orientation. It is out of `notes/` because nobody asks for it, and `notes/`
+  // is the PM's own Documents folder (E-14).
   assert.match(seed.content, /^---\ntype: note\n/);
   assert.match(seed.content, /\ntitle: Product understanding\n/);
   assert.match(seed.content, /\nsummary: .+\n/);
   // It is the note the interview writes into, so it names the three area notes.
   for (const area of ['product', 'technical', 'organization']) {
     assert.ok(
-      seed.content.includes(`notes/understanding-${area}.md`),
+      seed.content.includes(`understanding/${area}.md`),
       `the orientation note does not name the ${area} note`,
     );
   }
@@ -783,9 +785,9 @@ test('the interview takes a topic, and ships under a name that is not the produc
   assert.match(c.body, /## Example topic: the product/);
   // What it learns lands in the memory, at the notes the orientation note maps.
   for (const area of ['product', 'technical', 'organization']) {
-    assert.ok(c.body.includes(`notes/understanding-${area}.md`), `${area} is not a landing place`);
+    assert.ok(c.body.includes(`understanding/${area}.md`), `${area} is not a landing place`);
   }
-  assert.ok(c.body.includes('notes/understanding.md'));
+  assert.ok(c.body.includes('understanding/what-goes-here.md'));
   // CM-4: the interview asks for the notes they already wrote, and says the word
   // folder, because nobody drops one unless told they can.
   assert.match(c.body, /Do you keep notes from before\? Drop the folder/);
@@ -812,7 +814,7 @@ test('the interview knows how to open on what a connection just read', () => {
   // The heading the kickoff names. Rename it and the unattended run is handed a
   // pointer to nothing.
   assert.match(c.body, /^## First look$/m);
-  // Three beats, and the first one ends the turn: nothing is written before they
+  // Two beats, and the first one ends the turn: nothing is written before they
   // have said they want it.
   assert.match(c.body, /Write nothing, propose nothing/);
   // Hypothesis first, which is the rule that supersedes "sources are the
@@ -828,15 +830,11 @@ test('the interview knows how to open on what a connection just read', () => {
   // thing that stops it interviewing them a second time.
   assert.match(c.body, /When the kickoff says the picture is already there/);
   assert.match(c.body, /Do not run the interview/);
-  // The conventions beat (docs/conventions.md CV-4). It observes and the PM
-  // confirms; the yes goes through the tool that already writes those files, so
-  // a body naming any other route would be inventing machinery.
-  assert.match(c.body, /^\*\*Beat three: how they use the tools\.\*\*/m);
-  assert.ok(c.body.includes('`propose_instruction`'));
-  // The bar and the two silences. Without them the beat mines conventions out of
-  // sources, which is the one thing this whole design refuses.
-  assert.match(c.body, /Only strong ones/);
-  assert.match(c.body, /No and silence both mean nothing lands/);
+  // Conventions are written up when the connection is made (docs/conventions.md
+  // CV-6), from the same read. The old beat three asked about them one rule at a
+  // time; it is cut, and the file has to say so or the model asks anyway.
+  assert.ok(!c.body.includes('Beat three'), 'the conventions beat is cut (E-25)');
+  assert.match(c.body, /Never ask how they use Jira or Confluence one rule at a time/);
   assert.ok(
     c.body.includes('which they confirmed, lands verified'),
     'the confirmed-hypothesis marking rule is gone',

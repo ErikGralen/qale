@@ -24,10 +24,12 @@ import {
   type Connector,
   type ConnectorProvider,
   type ContainerFootprint,
+  type ContainerKind,
   type EventChange,
   type ExternalContainer,
   type ShallowChange,
 } from '@qale/connectors';
+import { conventionsSkill, parseRunnable } from '@qale/sessions';
 import { isVaultBoundaryError, type IndexedNote, type UseCaseContext } from '@qale/application';
 import type { OutboundContainer } from '@qale/agent';
 import type { SyncItemRow, SyncStore } from '@qale/vault';
@@ -127,7 +129,117 @@ export interface FirstLookRead {
   providerLabel: string;
   /** The site or account, for the one line that names what was read. */
   siteLabel: string;
-  containers: { id: string; kind: string; name: string; count: number }[];
+  containers: {
+    id: string;
+    kind: string;
+    name: string;
+    count: number;
+    /**
+     * The domain provider this container's items mirror ("jira", "confluence"),
+     * from the connector. It is what says which conventions file the write-up
+     * below belongs in, so a second tracker lands in its own file rather than in
+     * Jira's. Absent for a kind the connector mirrors nowhere.
+     */
+    provider?: string;
+  }[];
+}
+
+/** One conventions file the first look would write, and what it is written from. */
+interface ConventionsJob {
+  path: string;
+  /** What the file is called on screen ("How we use Jira"). */
+  title: string;
+  /** The one line under the title, quoted so the file reads the same either way. */
+  summary: string;
+  /** The `##` headings of the shipped template, in file order. */
+  headings: string[];
+  /** The containers it is written from, named the way the rows above name them. */
+  from: string[];
+}
+
+/**
+ * What the first look writes up about the team's own house shape
+ * (docs/easier-tickets.md E-25, docs/conventions.md CV-6).
+ *
+ * Every team bends its tools into a shape: a title format, a description that
+ * always opens the same way, one project for bugs. The workspace could only
+ * learn it by being told, one rule at a time, so most workspaces never learned
+ * it at all. A connection's first read is the one moment the evidence is all
+ * there, so the write-up happens then.
+ *
+ * The headings and the title are quoted from the shipped template rather than
+ * typed again here: the write-up has to land in the shape the file keeps, and
+ * two copies of those headings would drift the first time one is renamed.
+ *
+ * A container the connector mirrors nowhere, an empty one, and a kind with no
+ * conventions file (a calendar) all drop out, so a Google-only first look says
+ * nothing about conventions.
+ */
+function conventionsJobs(reads: FirstLookRead[]): ConventionsJob[] {
+  const jobs = new Map<string, ConventionsJob>();
+  for (const read of reads) {
+    for (const container of read.containers) {
+      if (container.count === 0 || !container.provider) continue;
+      const skill = conventionsSkill(container.provider);
+      if (!skill) continue;
+      const shipped = parseRunnable(skill.template, skill.name);
+      const job = jobs.get(skill.name) ?? {
+        path: `skills/${skill.name}/SKILL.md`,
+        title: shipped.title,
+        summary: shipped.summary,
+        headings: [...skill.template.matchAll(/^## (.+)$/gm)].map((m) => m[1]!.trim()),
+        from: [],
+      };
+      job.from.push(`${container.name} (${container.id})`);
+      jobs.set(skill.name, job);
+    }
+  }
+  return [...jobs.values()];
+}
+
+/**
+ * The conventions half of the kickoff: read a sample of what just arrived and
+ * say how this team writes one, as one proposal per system.
+ *
+ * It is in the kickoff rather than in the skill, which is the one place this
+ * instruction departs from "facts only" above. The reason is that this job is
+ * not the interview: it runs whether or not the PM wants a walkthrough, it ends
+ * in a file rather than in a conversation, and only the caller knows a
+ * connection has just arrived with nothing written about it. The file it writes
+ * is the durable copy, and the PM edits that.
+ *
+ * The last sentence is doing real work. The skill used to ask about conventions
+ * one rule at a time, and a rule that lands silently is never checked. One
+ * write-up on one card is the thing the PM can read and correct.
+ */
+function conventionsBlock(jobs: ConventionsJob[]): string[] {
+  if (jobs.length === 0) return [];
+  const rows = jobs.map((job) =>
+    [
+      `- \`${job.path}\`, written from ${job.from.join(' and ')}.`,
+      `Frontmatter: \`type: skill\`, \`title: ${job.title}\`, \`summary: ${job.summary}\``,
+      `Headings, in this order: ${job.headings.map((h) => `"${h}"`).join(', ')}.`,
+    ].join(' '),
+  );
+  return [
+    [
+      'Before the knock, write up how this team uses its tools. Do this whether or not they want a',
+      'walkthrough. Beat one says to propose nothing; this write-up is the exception, and the only one.',
+    ].join(' '),
+    [
+      "Read a sample of what just arrived, with the connection's own search and fetch tools: about ten",
+      'recent tickets per project and five recent pages per space, and open a few of them in full. Then',
+      'say how this team writes one. What a good title looks like, what the description holds, the tone,',
+      'where things get filed, and anything else that repeats. Only what you can see in what you read.',
+    ].join(' '),
+    'Propose each write-up as one note, with `inference: true`, in the shape it is given here:',
+    rows.join('\n'),
+    [
+      'Leave the last heading empty: rules they state later land there. One proposal per file, and it is',
+      'how you ask, so say in the rationale that they should read it and change what is wrong. Leave a',
+      'file that already exists alone. Never ask about conventions one rule at a time.',
+    ].join(' '),
+  ];
 }
 
 /** What one container holds, said in the reader's words rather than the
@@ -144,10 +256,13 @@ function itemWords(kind: string, count: number): string {
 }
 
 /**
- * What the debrief session is handed (docs/first-look-debrief.md). Facts only:
+ * What the debrief session is handed (docs/first-look-debrief.md). Facts first:
  * which site, which containers, and how much is in each. What to DO with them
  * is the skill's own "First look" section, which the PM can read and edit, so
  * this names the section rather than repeating it.
+ *
+ * The conventions write-up is the one job stated here (E-25). See
+ * {@link conventionsBlock} for why it is not in the skill.
  *
  * It takes every read that is owed, not one (CM-5). Two connections made in the
  * same onboarding are one haul to the PM, and two knocks would be the app asking
@@ -175,6 +290,7 @@ export function firstLookInstruction(reads: FirstLookRead[], told = false): stri
     blocks.join('\n\n'),
     'This is a first look. Follow the "First look" section of the skill, and the topic is the product.',
     ...(told ? ['The workspace already holds the product picture, so skip the interview.'] : []),
+    ...conventionsBlock(conventionsJobs(reads)),
   ].join('\n\n');
 }
 
@@ -706,6 +822,10 @@ export class SyncService {
         kind: c.kind,
         name: c.name,
         count: store.countByContainer(connectionId, c.containerId),
+        // Which conventions file this container's items would be drafted by
+        // (E-25). The connector answers it, so a second tracker gets its own
+        // file instead of writing into Jira's.
+        provider: state.connector?.providers[c.kind as ContainerKind] ?? undefined,
       }));
       // Nothing read is nothing to report. It cannot happen on a clean first
       // pass over a project with work in it, and an empty site is not news.

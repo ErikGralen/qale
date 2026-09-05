@@ -1,12 +1,7 @@
 import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { readableAs } from '@qale/domain';
-import {
-  fileSource,
-  refileSource,
-  type ArrivalPart,
-  type UseCaseContext,
-} from '@qale/application';
+import { fileSource, refileSource, type ArrivalPart, type UseCaseContext } from '@qale/application';
 import type { SessionHarness } from '@qale/sessions';
 import { readSessionBinary, readSessionFile } from './session-files.js';
 
@@ -88,7 +83,8 @@ export function createFilingTools(
       'under sources/. It does NOT create a meeting page — propose that with propose_meeting, summary and all, ' +
       'unless the calendar already holds the meeting, in which case pass `attach_to` with its path and the ' +
       'transcript is linked onto the page that exists. `as: "source"` is everything else (a colleague\'s call, ' +
-      'an article, a spec, a pasted thread, a screenshot) and lands under sources/. Set `origin` to say whose ' +
+      'an article, a spec, a pasted thread, a screenshot) and lands under sources/, carrying the `summary` ' +
+      'you write for it. Set `origin` to say whose ' +
       "source this is: whose meeting a transcript was when the PM was not in it, or the PM's own name on " +
       'writing of theirs. Filing the source is not a proposal and needs no approval — ' +
       "it is the PM's own source going on a shelf. Every page you WRITE about it, " +
@@ -122,9 +118,14 @@ export function createFilingTools(
             '("Jonas Palm"), or the PM\'s own name on a note or draft they wrote themselves.',
         }),
       ),
-      caption: Type.Optional(
+      summary: Type.Optional(
         Type.String({
-          description: 'A screenshot only: what the picture shows and why it matters.',
+          description:
+            'What this source says, in your own words: markdown, a few lines. It sits at the top of ' +
+            'the source page and the original goes underneath, so the source is the one address for ' +
+            'both. Write it for `as: "source"`, one call per source. On a screenshot it is the caption: ' +
+            'what the picture shows and why it matters. Leave it out on `as: "meeting"` — a meeting is ' +
+            'written up on its own page.',
         }),
       ),
     }),
@@ -137,7 +138,7 @@ export function createFilingTools(
         date?: string;
         attach_to?: string;
         origin?: string;
-        caption?: string;
+        summary?: string;
       },
     ) {
       if (!harness.fileSource) {
@@ -151,7 +152,7 @@ export function createFilingTools(
         ...(params.date ? { date: params.date } : {}),
         ...(params.attach_to ? { attachTo: params.attach_to } : {}),
         ...(params.origin ? { origin: params.origin } : {}),
-        ...(params.caption ? { caption: params.caption } : {}),
+        ...(params.summary ? { summary: params.summary } : {}),
       });
       for (const path of result.wrote) harness.recordRead(path);
       // The pieces this call took off the pile, and whether they went to a

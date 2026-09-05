@@ -83,6 +83,7 @@ import {
   type SpawnDecision,
   type SpawnPlan,
 } from './spawn.js';
+import { createCheckClaimsTool, matchModel, CHECK_CLAIMS_TOOL_NAME } from './claims.js';
 import {
   createAskTool,
   askRequestId,
@@ -326,6 +327,13 @@ export interface ModelInfo {
   id: string;
   label: string;
 }
+
+/**
+ * One row of pi's own catalogue, as `completeCheaply` hands it to a picker. Taken
+ * off the runtime rather than written out, so a pi upgrade that adds a field
+ * cannot leave a second definition of a model behind in this file.
+ */
+type ModelChoice = ReturnType<ModelRuntime['getAvailableSnapshot']>[number];
 
 /**
  * User-set shelf state: `active` (default) or `unpinned` (not relevant right
@@ -605,9 +613,15 @@ export function toolNamesFor(
   // neither writes, so there is nothing for a capability to protect. Behind
   // `draft-outbound` they made a skill claim the right to reach Jira and
   // Confluence in order to write a paragraph nobody sends.
+  // Checking a claim is on everywhere too, and for the same reason the vault
+  // tools are: it reads the workspace and writes nothing. Gating it would put
+  // the one step that makes the product feel like it read the meeting behind a
+  // capability, and material lands in sessions that claim none (`process-note`
+  // declares no `can:` line at all).
   const names = [
     ...VAULT_TOOL_NAMES,
     ASK_TOOL_NAME,
+    CHECK_CLAIMS_TOOL_NAME,
     END_QUIETLY_TOOL_NAME,
     DEFER_TOOL_NAME,
     ...PROPOSE_TOOL_NAMES,
@@ -843,12 +857,22 @@ export class AgentRuntime {
   }
 
   /**
-   * One short non-streaming completion on the cheapest model this workspace can
-   * reach — for the small jobs that are not the conversation: naming it, so far.
+   * One short non-streaming completion on a small model — for the jobs that are
+   * not the conversation: naming it, and looking a claim up (claims.ts).
    * Strictly best-effort: no key, no model or any error returns null and the
    * caller keeps what it had. Never throws into a run.
+   *
+   * `pick` is how the two callers differ. Naming wants the cheapest thing that
+   * can write four words. A claim lookup wants a small model that can still read
+   * six excerpts and hold a rule, so it names one and falls back. Either way the
+   * catalogue is the chosen provider's, and either way a miss lands on the
+   * session's own model rather than giving up.
    */
-  private async completeCheaply(systemPrompt: string, prompt: string): Promise<string | null> {
+  private async completeCheaply(
+    systemPrompt: string,
+    prompt: string,
+    pick: (models: readonly ModelChoice[]) => ModelChoice | undefined = cheapestModel,
+  ): Promise<string | null> {
     try {
       const runtime = await this.models();
       // The chosen provider's catalogue, not the shortlist: the cheapest thing
@@ -859,7 +883,7 @@ export class AgentRuntime {
       const catalogue = runtime.getAvailableSnapshot().filter((m) => m.provider === provider);
       // Falls back to the session's own model rather than giving up: an
       // expensive name beats no name, and this is one sentence in either case.
-      const model = cheapestModel(catalogue) ?? (await this.resolveModel());
+      const model = pick(catalogue) ?? cheapestModel(catalogue) ?? (await this.resolveModel());
       // Through the runtime rather than the bare pi-ai helper: the helper falls
       // back to env vars, and a packaged build has no ANTHROPIC_API_KEY. The
       // runtime holds the key the PM pasted into Settings.
@@ -1190,6 +1214,7 @@ export class AgentRuntime {
     const registry = [
       ...VAULT_TOOL_NAMES,
       ASK_TOOL_NAME,
+      CHECK_CLAIMS_TOOL_NAME,
       END_QUIETLY_TOOL_NAME,
       DEFER_TOOL_NAME,
       ...PROPOSE_TOOL_NAMES,
@@ -1210,6 +1235,14 @@ export class AgentRuntime {
     const customTools = withDecodedArgs([
       ...createVaultTools(ctx, harness, this.config.language ?? DEFAULT_LANGUAGE),
       createAskTool({ requestAnswer: (plan, signal) => this.askThePm(id, ctx, plan, signal) }),
+      // The lookup runs on its own small model, not on the session's: matching a
+      // claim against six excerpts is lookup, and paying Opus rates per claim
+      // would make the step something a session avoids.
+      createCheckClaimsTool(
+        ctx,
+        { match: (system, prompt) => this.completeCheaply(system, prompt, matchModel) },
+        harness,
+      ),
       createEndQuietlyTool({
         // Both kinds of nobody-is-watching turn may end in silence; only the
         // scheduled one also loses `ask_user`.

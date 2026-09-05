@@ -59,8 +59,8 @@ export function isSkillsTab(value: string | undefined): value is SkillsTab {
 /**
  * A moment: a skill the product runs itself when something happens. The
  * roster is hard-coded because the dispatch sites are hard-coded. Arrival is
- * invoked by the ingest pipeline, process-note by "Go through this note" on a
- * note page, commitment-check by "Help me handle this" on a todo. A file
+ * invoked by the ingest pipeline, process-note by "Go through this document" on
+ * a document page, commitment-check by "Help me handle this" on a todo. A file
  * cannot join this list by declaring anything.
  */
 export interface Moment {
@@ -72,7 +72,7 @@ export interface Moment {
 
 export const MOMENTS: readonly Moment[] = [
   { name: ARRIVAL_AGENT_NAME, when: 'When a source arrives' },
-  { name: 'process-note', when: 'When you go through a note from its page' },
+  { name: 'process-note', when: 'When you go through a document from its page' },
   { name: 'commitment-check', when: 'When a commitment slips and you ask for help' },
 ];
 

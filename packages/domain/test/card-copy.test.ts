@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  nounForDir,
   outboundReceipt,
   outboundTarget,
   outboundVerb,
@@ -126,19 +127,19 @@ test('theme: recorded, not raised', () => {
   );
 });
 
-test('a plain note, and any type with no line of its own, says it writes a note', () => {
+test('a document, and any type with no line of its own, says it writes a document', () => {
   assert.equal(
     headline({
       kind: 'note',
       targetPath: 'notes/scim-rollout.md',
       frontmatter: { type: 'note', title: 'SCIM rollout' },
     }),
-    'Write a note: SCIM rollout',
+    'Write a document: SCIM rollout',
   );
   // No title in the payload ⇒ the path names it, wordmarks and all.
   assert.equal(
     headline({ kind: 'note', targetPath: 'notes/scim-rollout.md' }),
-    'Write a note: SCIM Rollout',
+    'Write a document: SCIM Rollout',
   );
 });
 
@@ -177,12 +178,14 @@ test('insight, decision and both todo lanes are unchanged', () => {
   );
 });
 
-test('update: the note title, or the folder noun when there is none', () => {
+test('update: the page title, or the folder noun when there is none', () => {
   assert.equal(
     headline({ kind: 'update', targetPath: 'meetings/2026-08-04-nordkap-qbr.md' }),
     'Update Nordkap QBR',
   );
-  assert.equal(headline({ kind: 'update' }), 'Update a note');
+  assert.equal(headline({ kind: 'update' }), 'Update a page');
+  // The `notes/` folder is Documents to the reader (docs/sidebar-ia.md, SB-3).
+  assert.equal(nounForDir('notes'), 'a document');
 });
 
 test('an instruction says the rule, whether it lands as an update or a new file', () => {
@@ -572,7 +575,7 @@ test('a deletion says the one word for what it does, and names the page', () => 
   assert.equal(headline({ kind: 'delete', targetPath: 'notes/untitled.md' }), 'Delete Untitled');
   assert.equal(
     effect({ kind: 'delete', targetPath: 'notes/untitled.md' }),
-    'Deletes the page from Notes. Nothing else changes.',
+    'Deletes the page from Documents. Nothing else changes.',
   );
 });
 
@@ -585,7 +588,7 @@ test('a deletion never borrows the standing-instruction line', () => {
 });
 
 test('a deletion with no path still says something true', () => {
-  assert.equal(headline({ kind: 'delete' }), 'Delete a note');
+  assert.equal(headline({ kind: 'delete' }), 'Delete a page');
   assert.equal(
     effect({ kind: 'delete' }),
     'Deletes the page from your workspace. Nothing else changes.',

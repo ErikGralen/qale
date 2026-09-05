@@ -70,7 +70,7 @@ export function Connections({ onNext, onSkip }: { onNext: () => void; onSkip: ()
   return (
     <Screen
       title="What may it read?"
-      why="The memory is only as good as the material it can see, and most of yours already lives in these. Connect what you want now, or later in Settings."
+      why="Qale is only as good as what it can read, and most of your work already lives in these. Connect what you want now, or later in Settings."
       footer={
         // One button, labelled honestly. With nothing followed this screen IS
         // a skip, and dressing it as "Continue" beside a second "Skip" link

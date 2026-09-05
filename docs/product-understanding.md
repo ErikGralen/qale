@@ -250,10 +250,13 @@ Working candidate: title "Product understanding", first line of each note it mai
 `shipped-versions.ts`.
 
 The three notes are named in the body so everything downstream agrees on where they are:
-`notes/understanding-product.md`, `notes/understanding-technical.md`,
-`notes/understanding-organization.md`. Flat files under `notes/` rather than a folder of their own,
-because the vault tree groups by note type and a fourth top-level folder would have been invisible
-in it anyway; the shared `understanding-` prefix is also what U-4 keys its First steps detection on.
+`understanding/product.md`, `understanding/technical.md`, `understanding/organization.md`, with
+`understanding/what-goes-here.md` as the map over them.
+
+They started as flat files under `notes/`, named `understanding-*.md`. They moved into their own
+folder on 2026-09-02, when `notes/` became the PM's own documents and nothing the agent writes
+unasked belongs there. `UNDERSTANDING_DIR` in `packages/domain/src/notes/slug.ts` is the one
+spelling of the folder, and the folder is what U-4 keys its First steps detection on.
 
 The body covers what the ticket asked for: the three areas with a line each on what belongs and
 what does not ("architecture means the five boxes and the arrows between them, not the code"); the
@@ -452,8 +455,8 @@ so about-us goes when U-1 lands.
   there. The row id is `understanding`; a workspace that already ticked `about-us` stays ticked,
   because somebody who filled in that file has still told it about their product.
 - Detection moved from `note:save` under `skills/_about-us/` to `proposals:accept` on a card whose
-  target starts with `notes/understanding-`. That is the same event this row is now about: the
-  approval, not a file save.
+  target sits under `understanding/` (written `notes/understanding-` until the 2026-09-02 move).
+  That is the same event this row is now about: the approval, not a file save.
 - `FirstStepId` in `packages/ipc` gains `understanding` and keeps `about-us` for the stamps that
   already exist.
 

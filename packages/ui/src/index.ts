@@ -50,6 +50,17 @@ export {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from './components/ui/dropdown-menu';
+export {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuLabel,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent,
+} from './components/ui/context-menu';
 export { Popover, PopoverTrigger, PopoverAnchor, PopoverContent } from './components/ui/popover';
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
 export { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './components/ui/resizable';

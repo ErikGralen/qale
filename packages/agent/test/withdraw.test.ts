@@ -76,6 +76,22 @@ const run = async (tool: unknown, params: unknown): Promise<string> => {
 const noteTool = (ctx: UseCaseContext, harness?: SessionHarness) =>
   createProposeTools(ctx, 's1', harness).find((t) => t.name === 'propose_note')!;
 
+/**
+ * The withdraw tests run on todos, because a todo is one of the three kinds
+ * that still waits on the PM (docs/easier-tickets.md E-3). A plain note lands
+ * as it is written now, and there is nothing to take back from a note that has
+ * already landed: that is a propose_update, which is what the refusal says.
+ */
+const todoTool = (ctx: UseCaseContext, harness?: SessionHarness) =>
+  createProposeTools(ctx, 's1', harness).find((t) => t.name === 'propose_todo')!;
+
+const TODO = {
+  title: 'Register kale.ai',
+  sources: [],
+  asked: true,
+  rationale: 'Erik said he wanted the domain.',
+};
+
 const NOTE = {
   path: 'notes/domain.md',
   frontmatter: { type: 'note', title: 'Register kale.ai', summary: 'the domain to buy' },
@@ -87,7 +103,7 @@ const NOTE = {
 test('a card can be taken back, and the corrected one takes its place', async () => {
   const ctx = world();
   const withdraw = createWithdrawTool(ctx, 's1');
-  await run(noteTool(ctx), NOTE);
+  await run(todoTool(ctx), TODO);
 
   const said = await run(withdraw, {
     ids: ['p1'],
@@ -98,19 +114,15 @@ test('a card can be taken back, and the corrected one takes its place', async ()
 
   // The replacement lands cleanly: the withdrawn card is not pending, so the
   // duplicate check does not read it as "already proposed".
-  const again = await run(noteTool(ctx), {
-    ...NOTE,
-    frontmatter: { ...NOTE.frontmatter, title: 'Register qale.ai' },
-    body: 'Buy qale.ai.',
-  });
-  assert.match(again, /Proposed new note/);
+  const again = await run(todoTool(ctx), { ...TODO, title: 'Register qale.ai' });
+  assert.match(again, /Proposed todo/);
   assert.equal(ctx.proposals.list('pending').length, 1, 'the PM is left holding one card, not two');
 });
 
 test('a card the PM approved is refused, and the refusal points at propose_update', async () => {
   const ctx = world();
   const withdraw = createWithdrawTool(ctx, 's1');
-  await run(noteTool(ctx), NOTE);
+  await run(todoTool(ctx), TODO);
   ctx.proposals.setStatus('p1', 'accepted', 0);
 
   const said = await run(withdraw, { ids: ['p1'], reason: 'wrong domain' });
@@ -121,12 +133,8 @@ test('a card the PM approved is refused, and the refusal points at propose_updat
 test('a mixed batch reports each card by name, never a bare count', async () => {
   const ctx = world();
   const withdraw = createWithdrawTool(ctx, 's1');
-  await run(noteTool(ctx), NOTE);
-  await run(noteTool(ctx), {
-    ...NOTE,
-    path: 'notes/second.md',
-    frontmatter: { ...NOTE.frontmatter, title: 'Tell Nordkap about kale.ai' },
-  });
+  await run(todoTool(ctx), TODO);
+  await run(todoTool(ctx), { ...TODO, title: 'Tell Nordkap about kale.ai' });
   ctx.proposals.setStatus('p2', 'accepted', 0);
 
   const said = await run(withdraw, { ids: ['p1', 'p2', 'p9'], reason: 'wrong domain' });
@@ -144,7 +152,7 @@ test('the receipt forgets a withdrawn card — a session that undid its work did
   );
   harness.beginTurn('write it up', '2026-08-07T09:00:00.000Z');
   const withdraw = createWithdrawTool(ctx, 's1', harness);
-  await run(noteTool(ctx, harness), NOTE);
+  await run(todoTool(ctx, harness), TODO);
   assert.equal(harness.writes.length, 1);
 
   await run(withdraw, { ids: ['p1'], reason: 'wrong domain' });
@@ -180,7 +188,7 @@ test('the card list rides in with the message and comes back off it for display'
     },
   ];
   const wrapped = withCardState("it's qale.ai not kale", cards);
-  assert.match(wrapped, /p1 \(approved/);
+  assert.match(wrapped, /p1 \(it landed/);
   assert.match(wrapped, /p2 \(waiting on the PM/);
   assert.match(wrapped, /withdraw_proposal/);
   assert.equal(

@@ -73,6 +73,7 @@ export class VaultService {
       git,
       clock,
       proposals: appDb.proposals,
+      activity: appDb.activity,
       asks: appDb.asks,
       checks: appDb.checks,
     };

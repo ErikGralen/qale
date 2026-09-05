@@ -1,4 +1,5 @@
 import { refToSlug } from '../notes/decisions.js';
+import { dirForType } from '../notes/frontmatter.js';
 import { titleFromSlug } from '../notes/slug.js';
 import { formatStamp, parseEventStamp, rsvpAnswer } from './event-time.js';
 
@@ -50,19 +51,43 @@ const NOUN_FOR_DIR: Record<string, string> = {
   customers: 'a customer',
   people: 'a person',
   sources: 'a source',
-  notes: 'a note',
+  notes: 'a document',
   todos: 'a to-do',
 };
 
-/** What an update card calls the note it touches when it has no title to use. */
+/** What an update card calls the page it touches when it has no title to use.
+ *  A folder with no noun of its own falls back to the word every effect line
+ *  here already uses for a file in the workspace. */
 export function nounForDir(dir: string): string {
-  return NOUN_FOR_DIR[dir] ?? 'a note';
+  return NOUN_FOR_DIR[dir] ?? 'a page';
+}
+
+/**
+ * Filing: the frontmatter the app decides for itself (E-6).
+ *
+ * A card used to show these as changes the PM was signing off on — "Tags: empty
+ * → nordkap, pricing" — on a field they cannot edit from the card, cannot see
+ * anywhere else, and never chose the vocabulary for. That is what makes a
+ * memory feel like a filing system somebody else expects you to keep. The app
+ * decides all four; the card shows what the page will SAY.
+ *
+ * The card's evidence is a different thing and stays: it is what the claim
+ * rests on, and the PM reads it to decide whether to believe the card.
+ */
+export const FILING_KEYS = ['type', 'tags', 'sources', 'path', 'slug'] as const;
+
+/** Whether a frontmatter key is the app's filing rather than the PM's business. */
+export function isFilingKey(key: string): boolean {
+  return (FILING_KEYS as readonly string[]).includes(key);
 }
 
 const dirOf = (path?: string | null): string => (path ? (path.split('/')[0] ?? '') : '');
 
-/** The folder as the app names it on screen: "insights" → "Insights". */
-const folderLabel = (dir: string): string => titleFromSlug(dir);
+/** The folder as the app names it on screen: "insights" → "Insights". `notes` is
+ *  the exception: the rail, the crumb and the type all call that folder
+ *  Documents (docs/sidebar-ia.md, SB-3). */
+const folderLabel = (dir: string): string =>
+  dir === dirForType('note') ? 'Documents' : titleFromSlug(dir);
 
 /** The fields the outbound strings read. The domain payload and the renderer's
  *  DTO both satisfy it, so this vocabulary needs no dependency on @qale/ipc. */
@@ -252,7 +277,7 @@ export function proposalHeadline(input: HeadlineInput): string {
       return `Add a page for ${fmString(fm, 'title') || titleForRef(target) || subject}`;
     }
     if (type === 'theme') return `Record a theme: ${subject}`;
-    return `Write a note: ${subject}`;
+    return `Write a document: ${subject}`;
   }
 
   const title = titleForRef(target);

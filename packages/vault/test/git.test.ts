@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rename, chmod } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rename, rm, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { simpleGit } from 'simple-git';
-import { GitAdapter, resetGitAvailability } from '../src/git.js';
+import { GitAdapter, gitInstallHint, resetGitAvailability } from '../src/git.js';
 
 // Isolate from the developer's global/system git config so identity-fallback
 // behavior is deterministic.
@@ -202,6 +202,52 @@ test(
     });
   },
 );
+
+test('the install hint names one command per platform, never a bare "not installed"', () => {
+  assert.match(gitInstallHint('darwin'), /xcode-select --install/);
+  assert.match(gitInstallHint('win32'), /git-scm\.com/);
+  assert.match(gitInstallHint('linux'), /package manager/);
+});
+
+test('pathsChangedWith answers what one commit did to one note', async () => {
+  const vault = await tmp();
+  const git = new GitAdapter(vault);
+  await git.init();
+  await writeFile(join(vault, 'a.md'), 'v1\n');
+  await writeFile(join(vault, 'b.md'), 'other\n');
+  await git.commitPaths(['a.md', 'b.md'], 'create: a and b');
+  await writeFile(join(vault, 'a.md'), 'v2\n');
+  await git.commitPaths(['a.md'], 'edit: a');
+
+  const log = await git.history('a.md');
+  const [edit, create] = log;
+  assert.deepEqual(await git.pathsChangedWith(edit!.hash, 'a.md'), ['a.md']);
+  assert.deepEqual(await git.pathsChangedWith(create!.hash, 'a.md'), ['a.md']);
+  // The commit that made b never touched a: this is the answer an undo refuses on.
+  assert.deepEqual(await git.pathsChangedWith(edit!.hash, 'b.md'), []);
+});
+
+test('pathsChangedWith reports a delete, and both sides of a rename', async () => {
+  const vault = await tmp();
+  const git = new GitAdapter(vault);
+  await git.init();
+  await writeFile(join(vault, 'gone.md'), 'text\n');
+  await writeFile(join(vault, 'old.md'), 'a longer body, so the rename is detected\n');
+  await git.commitPaths(['gone.md', 'old.md'], 'create: two');
+
+  await rm(join(vault, 'gone.md'));
+  await git.commitPaths(['gone.md'], 'delete: gone');
+  const deleted = (await git.history('gone.md'))[0]!;
+  assert.deepEqual(await git.pathsChangedWith(deleted.hash, 'gone.md'), ['gone.md']);
+
+  await rename(join(vault, 'old.md'), join(vault, 'new.md'));
+  await git.commitPaths(['old.md', 'new.md'], 'rename: old → new');
+  const renamed = (await git.history('new.md'))[0]!;
+  // Asked about either name, both come back, so an undo can put the file where
+  // it was instead of leaving a copy under each.
+  assert.deepEqual(await git.pathsChangedWith(renamed.hash, 'new.md'), ['old.md', 'new.md']);
+  assert.deepEqual(await git.pathsChangedWith(renamed.hash, 'old.md'), ['old.md', 'new.md']);
+});
 
 test('ensureIgnored is additive and idempotent — a vault that predates a rule catches up', async () => {
   const vault = await tmp();

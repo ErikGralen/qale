@@ -10,6 +10,7 @@ import type {
 } from '@qale/connectors';
 import type { SyncContainerRow, SyncItemRow, SyncStore } from '@qale/vault';
 import type { UseCaseContext } from '@qale/application';
+import { JIRA_CONVENTIONS, parseRunnable } from '@qale/sessions';
 import { firstLookInstruction, SyncService } from '../src/main/services/sync-service.js';
 import { createFirstLookKick } from '../src/main/services/first-look-kick.js';
 import { followReceipt } from '../src/renderer/src/lib/follow-receipt.js';
@@ -241,13 +242,13 @@ const TRACKER_READ = {
   providerLabel: 'Jira + Confluence',
   siteLabel: 'tavla.atlassian.net',
   containers: [
-    { id: 'NORD', kind: 'ticket', name: 'Nordkap Platform', count: 214 },
-    { id: 'KRAN', kind: 'wikipage', name: 'Kranelund', count: 1 },
-    { id: 'BERG', kind: 'ticket', name: 'Bergman & Falk', count: 0 },
+    { id: 'NORD', kind: 'ticket', name: 'Nordkap Platform', count: 214, provider: 'jira' },
+    { id: 'KRAN', kind: 'wikipage', name: 'Kranelund', count: 1, provider: 'confluence' },
+    { id: 'BERG', kind: 'ticket', name: 'Bergman & Falk', count: 0, provider: 'jira' },
   ],
 };
 
-test('the instruction hands over the names and the numbers, and nothing else', () => {
+test('the instruction hands over the names and the numbers', () => {
   const said = firstLookInstruction([TRACKER_READ]);
   assert.match(said, /A connection has finished its first read/);
   assert.match(said, /Jira \+ Confluence connection on tavla\.atlassian\.net/);
@@ -256,9 +257,74 @@ test('the instruction hands over the names and the numbers, and nothing else', (
   assert.match(said, /- Kranelund \(KRAN\): 1 page$/m);
   // A container that holds nothing is not a row: there is nothing to say about it.
   assert.doesNotMatch(said, /Bergman/);
-  // It names the section rather than repeating it: the behaviour is copy the PM
-  // can edit, and two copies of it would drift.
+  // The debrief itself is named rather than repeated: that behaviour is copy the
+  // PM can edit, and two copies of it would drift.
   assert.match(said, /"First look" section of the skill/);
+});
+
+/**
+ * The conventions write-up (docs/easier-tickets.md E-25). A connection's first
+ * read is the one moment the evidence is all there, so the house shape is
+ * written up then, once, as a card the PM can correct.
+ */
+test('the first read is also told to write up how the team uses its tools', () => {
+  const said = firstLookInstruction([TRACKER_READ]);
+  assert.match(said, /Before the knock, write up how this team uses its tools/);
+  // It runs whether or not they want a walkthrough, so it cannot sit behind
+  // beat one's "propose nothing".
+  assert.match(said, /whether or not they want a walkthrough/);
+  assert.match(said, /this write-up is the exception/);
+  // One file per system, each named with what it is written from.
+  assert.match(said, /`skills\/jira\/SKILL\.md`, written from Nordkap Platform \(NORD\)/);
+  assert.match(said, /`skills\/confluence\/SKILL\.md`, written from Kranelund \(KRAN\)/);
+  assert.match(said, /`title: How we use Jira`/);
+  assert.match(said, /`title: How we use Confluence`/);
+  // A container with nothing in it is not evidence of anything.
+  assert.doesNotMatch(said, /Bergman/);
+  // One proposal per file, and it is how the run asks. Rules asked one at a time
+  // land silently, which is the thing this replaces.
+  assert.match(said, /One proposal per file, and it is how you ask/);
+  assert.match(said, /Never ask about conventions one rule at a time/);
+});
+
+/**
+ * The headings are quoted from the shipped template, never typed again: the
+ * write-up has to land in the shape the file keeps, and renaming a heading in
+ * `defaults.ts` must not leave the kickoff pointing at the old one.
+ */
+test('the write-up is given the shipped headings, in file order', () => {
+  const said = firstLookInstruction([TRACKER_READ]);
+  const jira = parseRunnable(JIRA_CONVENTIONS, 'jira').body;
+  const headings = [...jira.matchAll(/^## (.+)$/gm)].map((m) => m[1]!.trim());
+  assert.deepEqual(headings, [
+    'When you draft a ticket',
+    'When you comment',
+    'Standing instructions',
+  ]);
+  assert.match(said, new RegExp(headings.map((h) => `"${h}"`).join(', ')));
+  // The last one stays empty: it is where a rule stated in a chat lands.
+  assert.match(said, /Leave the last heading empty/);
+});
+
+/** No tracker, no conventions: a calendar has no house shape to write up, and a
+ *  container the connector mirrors nowhere is not evidence either. */
+test('a first look with nothing to draft for says nothing about conventions', () => {
+  const calendarOnly = firstLookInstruction([
+    {
+      connectionId: 'google',
+      providerLabel: 'Google Calendar',
+      siteLabel: 'erik@leveret.io',
+      containers: [
+        { id: 'primary', kind: 'calendar', name: 'Work', count: 62, provider: 'google-calendar' },
+      ],
+    },
+  ]);
+  assert.doesNotMatch(calendarOnly, /write up how this team uses its tools/);
+  assert.match(calendarOnly, /"First look" section of the skill/);
+  const unmirrored = firstLookInstruction([
+    { ...TRACKER_READ, containers: [{ id: 'NORD', kind: 'ticket', name: 'Nordkap', count: 9 }] },
+  ]);
+  assert.doesNotMatch(unmirrored, /write up how this team uses its tools/);
 });
 
 /**

@@ -91,7 +91,7 @@ export function SessionsView() {
           ) : rows.length === 0 ? (
             <p className="mt-16 text-center text-sm text-muted-foreground">
               {showUnpinned
-                ? 'Nothing unpinned. Unpin a session to shelve it here.'
+                ? 'Nothing unpinned. Unpin a session and it moves here.'
                 : 'No sessions yet. A session is saved here once it gets its first reply.'}
             </p>
           ) : (

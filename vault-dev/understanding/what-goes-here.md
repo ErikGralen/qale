@@ -12,11 +12,11 @@ Qale keeps this up to date. Correct anything wrong.
 What this workspace holds about the product itself, so every session starts from the same picture.
 Three notes, and deliberately no more:
 
-- `notes/understanding-product.md`: what the product is, who it is for, and what it is trying to
+- `understanding/product.md`: what the product is, who it is for, and what it is trying to
   do right now.
-- `notes/understanding-technical.md`: the shape of the system in general terms, the big
+- `understanding/technical.md`: the shape of the system in general terms, the big
   constraints, and the names of the moving parts.
-- `notes/understanding-organization.md`: the teams, who owns what, and the names that keep coming
+- `understanding/organization.md`: the teams, who owns what, and the names that keep coming
   up.
 
 If they do not exist yet, the way to get them is the interview (`tell-qale`), which asks

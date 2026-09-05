@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   isMirrorType,
   latestVerification,
@@ -35,7 +35,6 @@ import { navFromEvent } from '../lib/nav';
 import { invoke } from '../lib/ipc';
 import { webUrl } from '../lib/urls';
 import { isExternalRef, providerLabelOf } from '../lib/connections';
-import { collectContexts } from '../lib/contexts';
 import {
   FACTS,
   FIELDS,
@@ -51,6 +50,7 @@ import { localDateStr } from '../lib/dates';
 import { dateLabel } from '../lib/due-date';
 import { DatePicker } from './DatePicker';
 import { TagInput } from './TagInput';
+import { TagChip } from './TagChip';
 import { PeopleInput } from './PeopleInput';
 import { PersonChip } from './PersonChip';
 import { titleForRef } from './inbox/cardMeta';
@@ -63,8 +63,9 @@ function refLabel(target: string): string {
 
 /**
  * Frontmatter as a collapsible property list under the title. Every row is a
- * typed widget with a type icon; edits autosave (selects/dates/tags
- * on change, text on blur or Enter, Escape reverts). Fields come from the
+ * typed widget with a type icon; edits autosave (selects/dates on change, text
+ * on blur or Enter, Escape reverts). A row the agent owns reads and never
+ * edits, tags first among them. Fields come from the
  * per-type schema; ref arrays render as clickable wikilink chips (provenance
  * is a first-class citizen here, not a footnote); unknown frontmatter keys
  * surface as removable custom rows behind a `N more` fold — a synced note
@@ -297,7 +298,7 @@ function FactStrip({ note }: { note: NoteDTO }) {
       {stale && (
         <span
           className="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
-          title="Marked stale: what this rests on changed after it was last processed."
+          title="Marked stale: something this note is based on changed after it was last gone through."
         >
           <Clock className="size-3" aria-hidden />
           Stale
@@ -327,8 +328,7 @@ const COLLAPSE_KEY = 'qale.properties.collapsed';
 const SHOW_ALL_KEY = 'qale.properties.showAll';
 
 export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: () => void }) {
-  const { saveFrontmatter, markChecked: check, loadDoc, tree, openContext, openDoc } = useApp();
-  const tagSuggestions = useMemo(() => collectContexts(tree), [tree]);
+  const { saveFrontmatter, markChecked: check, loadDoc, openDoc } = useApp();
   // Closed unless the PO opened it: the fact strip carries what a reader came
   // for, and the full table is reference material, not the page's opening act.
   const [open, setOpen] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '0');
@@ -426,7 +426,7 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
   const markChecked = async () => {
     // Same shape as the save queue above: whatever main did or refused, the
     // panel then reads the file rather than its own guess at it.
-    await check(note.path, note.type);
+    await check(note.path);
     await loadDoc(note.path);
   };
 
@@ -474,10 +474,8 @@ export function PropertiesBlock({ note, onDirty }: { note: NoteDTO; onDirty?: ()
                 <PropertyValue
                   spec={spec}
                   value={note.frontmatter[spec.key]}
-                  readOnly={!canEdit(spec.key)}
+                  readOnly={!canEdit(spec.key) || spec.agentOwned === true}
                   onCommit={(v) => commit(spec.key, v)}
-                  tagSuggestions={spec.key === 'tags' ? tagSuggestions : undefined}
-                  onTagClick={spec.key === 'tags' ? openContext : undefined}
                 />
               </PropertyRow>
             ))}
@@ -754,17 +752,29 @@ function PropertyValue({
   value,
   readOnly,
   onCommit,
-  tagSuggestions,
-  onTagClick,
 }: {
   spec: FieldSpec;
   value: unknown;
-  /** The type's invariant forbids changing this field (immutable provenance). */
+  /** The type's invariant forbids changing this field, or the agent owns it. */
   readOnly?: boolean;
   onCommit: (v: unknown) => void;
-  tagSuggestions?: { tag: string; count: number }[];
-  onTagClick?: (tag: string) => void;
 }) {
+  if (spec.widget === 'tags' && readOnly) {
+    // Tags read as the chips they are everywhere else, and each one still opens
+    // its context. The value shows; nothing here asks the PO to keep it true.
+    const arr = Array.isArray(value)
+      ? (value as unknown[]).filter((t): t is string => typeof t === 'string')
+      : [];
+    return (
+      <div className="flex min-h-[26px] flex-wrap items-center gap-1 px-1.5 py-0.5">
+        {arr.length === 0 ? (
+          <span className="text-sm text-muted-foreground/50">Empty</span>
+        ) : (
+          arr.map((tag) => <TagChip key={tag} tag={tag} />)
+        )}
+      </div>
+    );
+  }
   if (spec.widget === 'people') {
     const arr = Array.isArray(value)
       ? (value as unknown[]).filter((t): t is string => typeof t === 'string')
@@ -814,7 +824,11 @@ function PropertyValue({
     );
   }
   if (spec.widget === 'select') {
-    const current = (value as string) ?? '';
+    const current = typeof value === 'string' ? value : '';
+    // A file can hold a word the list no longer offers (`processing: stale`,
+    // written by an older vault). A select with no matching option renders
+    // blank, so the row would deny what the file says. Show it, at the end.
+    const orphan = current !== '' && !spec.options?.some((o) => o.value === current);
     return (
       <select
         className={`${quietInput} ${current ? '' : 'text-muted-foreground/50'}`}
@@ -828,6 +842,7 @@ function PropertyValue({
             {o.label}
           </option>
         ))}
+        {orphan && <option value={current}>{humanize(current)}</option>}
       </select>
     );
   }
@@ -848,9 +863,6 @@ function PropertyValue({
       <TagInput
         value={arr}
         onChange={(next) => onCommit(next.length > 0 ? next : undefined)}
-        suggestions={tagSuggestions}
-        normalize={onTagClick ? (raw) => raw.trim().toLowerCase().replace(/\s+/g, '-') : undefined}
-        onTagClick={onTagClick}
         placeholder="Empty"
         ariaLabel={spec.label}
       />

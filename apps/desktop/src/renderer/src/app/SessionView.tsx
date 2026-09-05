@@ -19,7 +19,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import type { NoteRefDTO, SessionFileDTO } from '@qale/ipc';
-import { titleFromSlug } from '@qale/domain';
+import { readAppliedReceipt, titleFromSlug } from '@qale/domain';
 import { parseKickoff, type Kickoff } from '@qale/sessions';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { navFromEvent, type NavOpts } from '../lib/nav';
@@ -145,6 +145,36 @@ function stepLabel(part: AnyPart): { verb: string; detail?: string } {
   return isFailedStep(part) ? { ...label, verb: triedVerb(label.verb) } : label;
 }
 
+/**
+ * The write that applied on its own, if this step was one
+ * (docs/easier-tickets.md E-3).
+ *
+ * Most of what the agent writes no longer waits on a card, so the trail cannot
+ * keep saying "Proposed a note" for something already in the workspace. The
+ * tool's own result carries the line, written once in the domain, and this reads
+ * it back: "Created the Nordkap write-up", "Added to rules". Null for everything
+ * still waiting on the PM.
+ */
+function appliedLabel(part: AnyPart): { verb: string; detail?: string } | null {
+  if (isFailedStep(part) || typeof part.output !== 'string') return null;
+  return readAppliedReceipt(part.output);
+}
+
+/**
+ * The writes this turn made on its own, in order, for the quiet line under the
+ * collapsed activity row. Erik's rule for E-8: it should be visible without
+ * opening anything, and it should not be loud.
+ */
+function appliedWrites(parts: AnyPart[]): { verb: string; detail?: string }[] {
+  const out: { verb: string; detail?: string }[] = [];
+  for (const part of parts) {
+    if (!isToolPart(part)) continue;
+    const applied = appliedLabel(part);
+    if (applied) out.push(applied);
+  }
+  return out;
+}
+
 /** The verb table: one entry per tool, past tense, plain and sentence case. */
 function doneLabel(part: AnyPart): { verb: string; detail?: string } {
   const name = toolNameOf(part);
@@ -177,7 +207,7 @@ function doneLabel(part: AnyPart): { verb: string; detail?: string } {
     case 'use_skill':
       return { verb: 'Loaded skill', detail: str('name') };
     case 'spawn':
-      return { verb: 'Ran subagents' };
+      return { verb: 'Split the work up' };
     case 'ask_user': {
       const questions = Array.isArray(input.questions)
         ? (input.questions as { header?: string }[])
@@ -231,13 +261,18 @@ function doneLabel(part: AnyPart): { verb: string; detail?: string } {
     // were removed still contain these calls, and an old session must not
     // render a raw tool name.
     case 'advance_checkpoint':
-      return { verb: 'Advanced checkpoint' };
+      return { verb: 'Moved to the next step' };
     default:
-      if (name.startsWith('propose_'))
+      if (name.startsWith('propose_')) {
+        // Most writes land without a card now, so the step says what happened
+        // rather than what was asked for.
+        const landed = appliedLabel(part);
+        if (landed) return landed;
         return {
           verb: `Proposed a ${name.slice(8).replace(/_/g, ' ')}`,
           detail: str('title') ?? (str('path') && titleFromSlug(str('path')!)),
         };
+      }
       if (name.startsWith('draft_'))
         return {
           verb: `Drafted a ${name.slice(6).replace(/_/g, ' ')}`,
@@ -272,7 +307,7 @@ function liveLabel(part: AnyPart | undefined): string {
     case 'draft_text':
       return 'Writing a draft…';
     case 'spawn':
-      return 'Running subagents…';
+      return 'Splitting the work up…';
     case 'ask_user':
       return 'Waiting on your answer…';
     case 'files_write':
@@ -433,6 +468,10 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
   // make room for it: "Working…" alone, "Working for 12s" with a clock.
   const step = liveLabel(parts[parts.length - 1]);
   const running = clock ? step.replace(/…$/, '') : step;
+  // What landed without asking. It sits under the collapsed row rather than
+  // inside it: a write that needed no card still has to be visible without
+  // opening anything, and one small line each is as loud as it should be.
+  const wrote = live ? [] : appliedWrites(parts);
   const bits: string[] = [];
   // How long it took, first: it is the thing the PM was watching a second ago.
   if (!live && clock) bits.push(`worked for ${clock}`);
@@ -461,6 +500,16 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
           className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
         />
       </button>
+      {!open && wrote.length > 0 && (
+        <ul className="mt-0.5 ml-1.5 flex flex-col gap-0.5 text-muted-foreground">
+          {wrote.map((w, i) => (
+            <li key={i} className="truncate">
+              <span className="font-medium">{w.verb}</span>
+              {w.detail && <span> {w.detail}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
       {open && (
         <div className="mt-1 ml-2 flex flex-col border-l border-border pl-3">
           {parts.map((part, i) => {

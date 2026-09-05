@@ -139,10 +139,19 @@ export function isHandCreatable(type: NoteType): type is HandCreatableType {
  * guess at our vocabulary.
  */
 export const NEW_NOTE_PURPOSE: Record<HandCreatableType, string> = {
-  note: 'A blank page for anything',
+  note: 'A blank document for anything you write',
   theme: 'A problem worth solving',
   customer: 'An account to hang meetings on',
   person: 'A stakeholder and what they care about',
+};
+
+/**
+ * The types the user knows by another name than the one in the code. A `note`
+ * is a "Document": the place shipped as Documents, so the item follows it. Two
+ * words for one thing read as two things (docs/sidebar-ia.md, SB-3).
+ */
+const TYPE_LABEL: Partial<Record<NoteType, string>> = {
+  note: 'Document',
 };
 
 /**
@@ -157,5 +166,5 @@ export function noteTypeLabel(
 ): string {
   const source = mirrorSource(type, frontmatter);
   if (source) return `${source} mirror`;
-  return type.charAt(0).toUpperCase() + type.slice(1);
+  return TYPE_LABEL[type] ?? type.charAt(0).toUpperCase() + type.slice(1);
 }

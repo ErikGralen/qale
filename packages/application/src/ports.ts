@@ -1,4 +1,6 @@
 import type {
+  ActivityRecord,
+  CreateActivityInput,
   Frontmatter,
   LinkOrigin,
   Note,
@@ -173,6 +175,15 @@ export interface GitPort {
   history(relPath: string): Promise<GitCommit[]>;
   /** File contents at a commit, or null if it didn't exist there. */
   fileAt(relPath: string, hash: string): Promise<string | null>;
+  /**
+   * The paths one commit changed that concern this note: its own path, plus the
+   * other side of a rename. Empty when the commit did not touch it, which is
+   * what an undo checks before it writes anything.
+   *
+   * Optional so a stand-in git in a test only has to answer what that test
+   * asks. The undo refuses outright when it is missing, rather than guessing.
+   */
+  pathsChangedWith?(hash: string, relPath: string): Promise<string[]>;
 }
 
 /** Injected clock — domain/use-cases stay pure of the ambient system clock. */
@@ -233,6 +244,20 @@ export interface ProposalPort {
    */
   updatePayload(id: string, payload: unknown): void;
   pendingCount(): number;
+}
+
+/**
+ * The Activity log (app.db): one row per write that needed no card
+ * (docs/easier-tickets.md E-9). Append-only from the agent's side: the only
+ * thing that ever changes on a row is `reverted`, when the PM puts it back.
+ */
+export interface ActivityPort {
+  record(input: CreateActivityInput, now: number): ActivityRecord;
+  /** Newest first. `limit` caps the read; the log itself is never trimmed. */
+  list(limit?: number): ActivityRecord[];
+  get(id: string): ActivityRecord | null;
+  /** Stamp a row as put back. Workstream A1's revert path calls this last. */
+  markReverted(id: string, at: number): void;
 }
 
 /**
@@ -422,6 +447,9 @@ export interface UseCaseContext {
   codebase?: CodebasePort;
   /** Sweep check ledger; absent in contexts that never run background sweeps. */
   checks?: CheckLedgerPort;
+  /** The log of writes that needed no card. Absent in a context with no app.db,
+   *  where a silent write simply leaves no row. */
+  activity?: ActivityPort;
 }
 
 export type { Note, SchemaMiss, SearchHit, ThemeStance, NoteType, Frontmatter };

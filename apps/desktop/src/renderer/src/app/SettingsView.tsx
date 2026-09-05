@@ -388,7 +388,7 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
                 >
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-3">
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{vault?.name ?? '—'}</div>
+                      <div className="truncate text-sm font-medium">{vault?.name ?? 'None'}</div>
                       <div
                         className="truncate font-mono text-xs text-muted-foreground"
                         title={vault?.path}

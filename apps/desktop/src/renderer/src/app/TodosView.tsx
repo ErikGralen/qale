@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Calendar,
   Check,
@@ -15,7 +15,7 @@ import { Button, Spinner, cn } from '@qale/ui';
 import type { NoteRefDTO } from '@qale/ipc';
 import { byDue, todoLane, type TodoLane, isFolderIndex } from '@qale/domain';
 import { useApp } from '../state/app-state';
-import { navFromEvent } from '../lib/nav';
+import { navFromEvent, type NavOpts } from '../lib/nav';
 import { useToast } from '../components/toast';
 import { PageHeader } from '../components/PageHeader';
 import { AtRiskMarker, riskFor, useAtRisk } from '../components/ExternalRef';
@@ -25,12 +25,17 @@ import { DatePicker } from '../components/DatePicker';
 import { parseTodoInput } from '../lib/todo-parse';
 import { handleTodoSeed } from '../lib/agent-nudges';
 import type { AtRiskLinkDTO } from '../lib/connections';
+import { TodoDetail } from '../components/TodoDetail';
 
 /**
  * The commitment ledger (PLAN-V2 Todos): the PO's own todos lane-grouped by due
  * date, external commitments in a "Waiting on" lane, closed ones accreting in
- * Done. Every row is a real note in todos/ — opening it shows provenance
- * (sources, backlinks); the checkbox and quick-add are the fast paths.
+ * Done. The checkbox and quick-add are the fast paths.
+ *
+ * Every row is a real note in todos/, but pressing one opens {@link TodoDetail}
+ * and not the file (E-13): a promise reads as who owes it and when it was made,
+ * never as frontmatter. ⌘click still opens the markdown in a tab, and so does
+ * "Open the file" on the panel.
  */
 
 const LANE_ORDER: TodoLane[] = ['overdue', 'today', 'upcoming', 'someday', 'waiting', 'closed'];
@@ -107,10 +112,7 @@ function QuickAdd() {
         {busy ? (
           <Spinner className="size-4 shrink-0 text-muted-foreground" />
         ) : (
-          <span
-            className="size-4 shrink-0 rounded-full border border-border"
-            aria-hidden
-          />
+          <span className="size-4 shrink-0 rounded-full border border-border" aria-hidden />
         )}
         <input
           ref={inputRef}
@@ -178,6 +180,7 @@ function TodoRowItem({
   peopleBySlug,
   busy,
   risk,
+  onOpen,
   onToggle,
   onDrop,
   onReopen,
@@ -189,6 +192,8 @@ function TodoRowItem({
   busy: boolean;
   /** A linked ticket went blocked / drifted — the commitment may be at risk. */
   risk?: AtRiskLinkDTO;
+  /** Press the row: the panel in place, or the file when the click asks for a tab. */
+  onOpen: (nav: NavOpts) => void;
   onToggle: () => void;
   onDrop: () => void;
   onReopen: () => void;
@@ -219,8 +224,8 @@ function TodoRowItem({
       <button
         data-todo-row
         className="absolute inset-0 w-full cursor-pointer focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset focus-visible:outline-none"
-        onClick={(e) => void openDoc(n.path, navFromEvent(e))}
-        onAuxClick={(e) => e.button === 1 && void openDoc(n.path, navFromEvent(e))}
+        onClick={(e) => onOpen(navFromEvent(e))}
+        onAuxClick={(e) => e.button === 1 && onOpen(navFromEvent(e))}
         onKeyDown={(e) => {
           if (e.key === ' ') {
             e.preventDefault();
@@ -451,7 +456,7 @@ function SubLabel({ children }: { children: React.ReactNode }) {
 }
 
 export function TodosView() {
-  const { tree, setTodoStatus, setTodoDue, openFolder } = useApp();
+  const { tree, setTodoStatus, setTodoDue, openDoc, openFolder } = useApp();
   const toast = useToast();
   const today = localDateStr();
   const risks = useAtRisk();
@@ -460,6 +465,8 @@ export function TodosView() {
   const [pending, setPending] = useState<Record<string, string>>({});
   /** Todos whose due date is mid-write — their row actions stay disabled. */
   const [snoozing, setSnoozing] = useState<string[]>([]);
+  /** The todo whose panel is open. Held by path so it survives a reindex. */
+  const [peekPath, setPeekPath] = useState<string | null>(null);
 
   // People resolve owner refs; todos come straight off the live tree.
   const { todos, peopleBySlug } = useMemo(() => {
@@ -474,6 +481,15 @@ export function TodosView() {
     }
     return { todos: todoNotes, peopleBySlug: bySlug };
   }, [tree]);
+
+  /** A frontmatter ref ("[[meetings/…]]") to the note it points at, if we hold it. */
+  const resolveRef = useCallback(
+    (ref: string) => {
+      const slug = refSlug(ref);
+      return slug ? peopleBySlug.get(slug) : undefined;
+    },
+    [peopleBySlug],
+  );
 
   const lanes = useMemo(() => {
     const map = new Map<TodoLane, TodoRow[]>();
@@ -558,6 +574,15 @@ export function TodosView() {
     }
   };
 
+  /** The row whose panel is open, off the live tree so an edit shows straight away. */
+  const peek = peekPath ? todos.find((n) => n.path === peekPath) : undefined;
+
+  /** Plain press opens the panel; ⌘click and middle-click still want the file. */
+  const openRow = (path: string, nav: NavOpts) => {
+    if (nav.newTab) void openDoc(path, nav);
+    else setPeekPath(path);
+  };
+
   const onListKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'j' && e.key !== 'k') return;
     const t = e.target;
@@ -581,6 +606,7 @@ export function TodosView() {
           peopleBySlug={peopleBySlug}
           busy={row.note.path in pending || snoozing.includes(row.note.path)}
           risk={riskFor(risks, row.note.path)}
+          onOpen={(nav) => openRow(row.note.path, nav)}
           onToggle={() => void flip(row.note.path, 'done')}
           onDrop={() => void flip(row.note.path, 'dropped')}
           onReopen={() => void flip(row.note.path, 'open')}
@@ -743,6 +769,7 @@ export function TodosView() {
                       today={today}
                       peopleBySlug={peopleBySlug}
                       busy={row.note.path in pending}
+                      onOpen={(nav) => openRow(row.note.path, nav)}
                       onToggle={() => void flip(row.note.path, 'done')}
                       onDrop={() => void flip(row.note.path, 'dropped')}
                       onReopen={() => void flip(row.note.path, 'open')}
@@ -766,10 +793,34 @@ export function TodosView() {
         {closedRows.length > 0 && (
           <p className="mt-3 flex items-center gap-1 px-2 pb-4 text-xs text-muted-foreground/70">
             <RotateCcw className="size-3" aria-hidden />
-            Done and dropped todos stay on the ledger: the memory accretes.
+            Done and dropped todos stay here. Nothing is thrown away.
           </p>
         )}
       </div>
+
+      {peek && (
+        <TodoDetail
+          note={peek}
+          commitment={pending[peek.path] ?? peek.lifecycle ?? 'open'}
+          today={today}
+          open
+          onOpenChange={(o) => !o && setPeekPath(null)}
+          resolveRef={resolveRef}
+          risk={riskFor(risks, peek.path)}
+          busy={peek.path in pending || snoozing.includes(peek.path)}
+          // Closing a commitment closes the panel: the answer is the list again.
+          onDone={() => {
+            setPeekPath(null);
+            void flip(peek.path, 'done');
+          }}
+          onDrop={() => {
+            setPeekPath(null);
+            void flip(peek.path, 'dropped');
+          }}
+          onReopen={() => void flip(peek.path, 'open')}
+          onSnooze={(due) => void snooze(peek.path, due)}
+        />
+      )}
     </div>
   );
 }

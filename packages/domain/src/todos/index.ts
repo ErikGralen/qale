@@ -38,6 +38,24 @@ export function isOverdueTodo(todo: TodoShape, today: string): boolean {
 }
 
 /**
+ * The day a todo was written down, read off its file name — every writer stamps
+ * the date there (`todos/2026-08-28-email-asa.md`). It is not the day the
+ * promise was made: a commitment cited from a meeting was promised on the
+ * meeting's date, and that is the date to show when there is a source. A file
+ * somebody renamed by hand loses the stamp, so this returns null instead of
+ * guessing.
+ */
+export function todoAddedOn(pathOrSlug: string): string | null {
+  const name = pathOrSlug.split('/').pop() ?? pathOrSlug;
+  const m = /^(\d{4})-(\d{2})-(\d{2})-/.exec(name);
+  if (!m) return null;
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+/**
  * Sort comparator within a lane: dated before undated, earlier due first,
  * ties broken by the caller (usually recency).
  */

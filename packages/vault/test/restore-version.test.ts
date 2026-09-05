@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { restoreNoteVersion, type UseCaseContext } from '@qale/application';
+import { restoreNoteVersion, revertNoteChange, type UseCaseContext } from '@qale/application';
 import { FsVault } from '../src/fs-vault.js';
 import { GitAdapter } from '../src/git.js';
 
@@ -145,6 +146,105 @@ test('a note whose body nobody may rewrite refuses the restore (the UI hides the
     () => restoreNoteVersion(ctx, { path, hash: only!.hash }),
     /nobody rewrites/,
   );
+});
+
+// ---------------------------------------------------------------------------
+// The undo (E-2). Same real repo, because "the note comes back" is a claim
+// about git and a stand-in would prove none of it.
+// ---------------------------------------------------------------------------
+
+const FM = '---\ntype: note\nsummary: s\ntags: [alpha]\n---\n';
+
+test('undoing an edit puts the whole file back, properties included', async () => {
+  const { dir, ctx, git } = await workspace();
+  const path = 'notes/x.md';
+  const file = join(dir, path);
+  await writeFile(file, `${FM}\nWhat I wrote.\n`);
+  await git.commitPaths([path], 'create: x');
+  await writeFile(
+    file,
+    '---\ntype: note\nsummary: s\ntags: [alpha, beta]\n---\n\nWhat the agent wrote.\n',
+  );
+  await git.commitPaths([path], 'update: x');
+
+  const applied = (await git.history(path))[0]!;
+  const result = await revertNoteChange(ctx, { path, hash: applied.hash });
+  assert.deepEqual(result, { path, outcome: 'restored' });
+
+  const raw = await readFile(file, 'utf8');
+  assert.ok(raw.includes('What I wrote.'));
+  // The tag the agent added goes too. Half an undo leaves a note nobody wrote.
+  assert.ok(!raw.includes('beta'));
+  // Forward, not a rewind: the undone change is still a version, so it can be
+  // put back in turn.
+  assert.equal((await git.history(path)).length, 3);
+  assert.ok((await git.fileAt(path, applied.hash))?.includes('What the agent wrote.'));
+});
+
+test('undoing a delete brings the note back', async () => {
+  const { dir, ctx, git } = await workspace();
+  const path = 'notes/x.md';
+  const file = join(dir, path);
+  await writeFile(file, `${FM}\nStill wanted.\n`);
+  await git.commitPaths([path], 'create: x');
+  await rm(file);
+  await git.commitPaths([path], 'delete: x');
+  assert.equal(existsSync(file), false);
+
+  const deleted = (await git.history(path))[0]!;
+  const result = await revertNoteChange(ctx, { path, hash: deleted.hash });
+  assert.deepEqual(result, { path, outcome: 'undeleted' });
+  assert.ok((await readFile(file, 'utf8')).includes('Still wanted.'));
+});
+
+test('undoing a change that created the note takes the note away', async () => {
+  const { dir, ctx, git } = await workspace();
+  const path = 'notes/agent-wrote-this.md';
+  const file = join(dir, path);
+  await writeFile(join(dir, 'notes/other.md'), `${FM}\nUnrelated.\n`);
+  await git.commitPaths(['notes/other.md'], 'create: other');
+  await writeFile(file, `${FM}\nFiled without asking.\n`);
+  await git.commitPaths([path], 'note: agent-wrote-this');
+
+  const created = (await git.history(path))[0]!;
+  const result = await revertNoteChange(ctx, { path, hash: created.hash });
+  assert.deepEqual(result, { path, outcome: 'removed' });
+  assert.equal(existsSync(file), false);
+  assert.ok(existsSync(join(dir, 'notes/other.md')), 'nothing else was touched');
+  // And it is still in the record, so the undo can be undone.
+  assert.ok((await git.fileAt(path, created.hash))?.includes('Filed without asking.'));
+});
+
+test('undoing a rename puts the note back under the name it had', async () => {
+  const { dir, ctx, git } = await workspace();
+  const from = 'notes/old-name.md';
+  const to = 'notes/new-name.md';
+  await writeFile(join(dir, from), `${FM}\nA body long enough for git to see the rename.\n`);
+  await git.commitPaths([from], 'create: old-name');
+  await writeFile(join(dir, to), `${FM}\nA body long enough for git to see the rename.\n`);
+  await rm(join(dir, from));
+  await git.commitPaths([from, to], 'rename: old-name → new-name');
+
+  const renamed = (await git.history(to))[0]!;
+  const result = await revertNoteChange(ctx, { path: to, hash: renamed.hash });
+  assert.deepEqual(result, { path: from, outcome: 'undeleted' });
+  assert.equal(existsSync(join(dir, to)), false, 'the new name goes');
+  assert.ok((await readFile(join(dir, from), 'utf8')).includes('A body long enough'));
+});
+
+test('a hash from another note is refused, and nothing is written', async () => {
+  const { dir, ctx, git } = await workspace();
+  await writeFile(join(dir, 'notes/a.md'), `${FM}\nA.\n`);
+  await git.commitPaths(['notes/a.md'], 'create: a');
+  await writeFile(join(dir, 'notes/b.md'), `${FM}\nB.\n`);
+  await git.commitPaths(['notes/b.md'], 'create: b');
+  const other = (await git.history('notes/a.md'))[0]!;
+
+  await assert.rejects(
+    () => revertNoteChange(ctx, { path: 'notes/b.md', hash: other.hash }),
+    /did not touch this note/,
+  );
+  assert.ok((await readFile(join(dir, 'notes/b.md'), 'utf8')).includes('B.'));
 });
 
 test('there is nothing to restore when the note did not exist in that version', async () => {

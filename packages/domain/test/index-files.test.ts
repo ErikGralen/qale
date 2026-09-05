@@ -57,10 +57,10 @@ test('renderFolderIndex groups by lifecycle, projects summary to description, so
   const out = renderFolderIndex(folder);
   assert.match(out, /^---\ndescription: Insights — analyses over the raw layer\n---\n/);
   assert.match(out, /# Insights/);
-  // Processed precedes Stale (attention-first order), Acme before Zeta (title sort).
-  const processed = out.indexOf('## Processed');
+  // "Gone through" precedes Stale (attention-first order), Acme before Zeta (title sort).
+  const processed = out.indexOf('## Gone through');
   const stale = out.indexOf('## Stale');
-  assert.ok(processed > 0 && stale > processed, 'Processed section comes before Stale');
+  assert.ok(processed > 0 && stale > processed, '"Gone through" section comes before Stale');
   assert.ok(out.indexOf('[Acme]') < out.indexOf('[Zeta]'), 'entries sort by title');
   // Description projected from summary, entry links are vault-relative.
   assert.match(out, /\* \[Acme\]\(insights\/acme\.md\) — Acme wants SCIM\./);

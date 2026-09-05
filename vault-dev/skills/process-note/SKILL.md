@@ -11,7 +11,7 @@ scenarios:
 ## When
 
 You dumped rough text into a note (half-sentences from a call, a day's running log) and hit
-"Go through this note" on the note page. Re-runs are normal: yesterday's processed note with
+"Go through this document" on the document page. Re-runs are normal: yesterday's processed note with
 today's raw additions at the bottom.
 
 ## Read
@@ -19,6 +19,19 @@ today's raw additions at the bottom.
 The note first. Then the memory it touches: search_vault for the people, customers, themes, and
 decisions it mentions. Existing wikilinks mean an earlier run already handled those parts; leave
 them alone and work on what is new or still raw.
+
+## Check what it claims
+
+Before you propose anything, write out what the dump asserts and call `check_claims` once: who
+committed to what, dates, owners, numbers, decisions. One claim per entry, in the words the dump
+used, each scoped to the pages it is about or to a tag.
+
+Each one comes back as already known (do nothing), new (file it below as you would anyway), in
+conflict with a note we hold, implying something that is not there, or no answer. No answer means
+nothing was settled, so treat it as if you had never asked.
+
+A conflict or a gap can earn one short question about their world, never about our filing. The
+answer says how many of them to ask.
 
 ## Produce
 

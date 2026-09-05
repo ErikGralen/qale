@@ -456,8 +456,10 @@ function main(): void {
       const fm =
         readFileSync(join(validateRoot, 'todos', f), 'utf8').match(FRONTMATTER_RE)?.[1] ?? '';
       // Accept the legacy `status:` key too, exactly as the frontmatter parser does.
-      const commitment = fm.match(/^\s*(?:commitment|status):\s*"?([\w-]+)"?/m)?.[1] ?? 'open';
-      const due = fm.match(/^\s*due:\s*"?(\d{4}-\d{2}-\d{2})"?/m)?.[1] ?? null;
+      // A date may be quoted either way, or not at all. Accepting only `"` read
+      // every single-quoted due as no due, and put a live todo in Someday.
+      const commitment = fm.match(/^\s*(?:commitment|status):\s*['"]?([\w-]+)['"]?/m)?.[1] ?? 'open';
+      const due = fm.match(/^\s*due:\s*['"]?(\d{4}-\d{2}-\d{2})['"]?/m)?.[1] ?? null;
       const owner = /^\s*owner:\s*\S/m.test(fm);
       if (commitment !== 'open') lanes.closed++;
       else if (owner) lanes.waiting++;

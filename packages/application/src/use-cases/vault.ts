@@ -6,6 +6,7 @@ import {
   isReservedFile,
   refToSlug,
   SESSION_FILES_DIR,
+  titleFromSlug,
   type NoteType,
 } from '@qale/domain';
 import type { GitCommit, IndexedNote, UseCaseContext } from '../ports.js';
@@ -260,13 +261,43 @@ export interface VaultTreeGroup {
   notes: IndexedNote[];
 }
 
-/** The workspace tree grouped by note type/folder, each group sorted newest-first. */
-export function getVaultTree(ctx: UseCaseContext): VaultTreeGroup[] {
+/**
+ * The workspace tree grouped by note type/folder, each group sorted newest-first.
+ *
+ * The note group also carries a row per `notes/<folder>/index.md`. Those are
+ * reserved orientation files, so the index never holds them, but a folder with
+ * no documents in it is visible only through its index file, and the Documents
+ * screen derives its folders from the paths in this tree. Every list already
+ * hides the rows themselves via `isFolderIndex`.
+ */
+export async function getVaultTree(ctx: UseCaseContext): Promise<VaultTreeGroup[]> {
   const all = ctx.index.all();
+  const noteDir = NOTE_TYPE_META.note.dir;
+  const folderRows: IndexedNote[] = (await ctx.vault.list())
+    .filter(
+      (f) =>
+        f.path.startsWith(`${noteDir}/`) &&
+        isFolderIndex(f.path) &&
+        f.path !== `${noteDir}/index.md`,
+    )
+    .map((f) => ({
+      path: f.path,
+      slug: f.path.replace(/\.md$/, ''),
+      type: 'note',
+      layer: NOTE_TYPE_META.note.layer,
+      title: titleFromSlug(f.path.slice(0, f.path.lastIndexOf('/'))),
+      summary: '',
+      lifecycle: null,
+      hasBody: false,
+      mtime: f.mtime,
+      frontmatter: {},
+      links: [],
+    }));
   const groups: VaultTreeGroup[] = [];
   for (const type of Object.keys(NOTE_TYPE_META) as NoteType[]) {
     const meta = NOTE_TYPE_META[type];
-    const notes = all.filter((n) => n.type === type).sort((a, b) => b.mtime - a.mtime);
+    const notes = [...all.filter((n) => n.type === type), ...(type === 'note' ? folderRows : [])]
+      .sort((a, b) => b.mtime - a.mtime);
     if (notes.length > 0) {
       groups.push({ dir: meta.dir, type, layer: meta.layer, notes });
     }

@@ -142,7 +142,7 @@ export function useApprovals(): Approvals {
           setError(
             p.id,
             r.error ??
-              `This changed upstream since the card was drafted. Take one more look, then approve anyway to ${outboundAct(p.payload as OutboundPayloadDTO).verb}.`,
+              `It has changed since this card was drafted. Take one more look, then approve anyway to ${outboundAct(p.payload as OutboundPayloadDTO).verb}.`,
           );
         } else if (r.stale) {
           // The edit has nowhere to land. The card opens on this message and

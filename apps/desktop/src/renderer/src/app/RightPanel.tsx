@@ -42,7 +42,7 @@ export function RightPanel() {
   if (!note) {
     return (
       <div className="flex h-full flex-col bg-card/40">
-        <PageHeader label="Context" />
+        <PageHeader label="Session" />
       </div>
     );
   }
@@ -502,8 +502,8 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
       />
       {files.length === 0 ? (
         <p className="px-4 py-3.5 text-dense leading-relaxed text-muted-foreground">
-          Nothing yet. Working material this session writes (a brief, per-item notes, a draft) shows
-          up here to read. It never enters your memory, and you can ignore it.
+          Nothing yet. Scratch this session writes for itself (a brief, per-item notes, a draft)
+          shows up here to read. It never enters your memory, and you can ignore it.
         </p>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto py-1.5">

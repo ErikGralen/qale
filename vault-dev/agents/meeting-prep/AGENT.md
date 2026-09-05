@@ -37,5 +37,5 @@ instead. Leave out any section with nothing real in it.
 
 ## Then
 
-The approved prep lands on the meeting page and doubles as the in-meeting crib sheet. The
+The prep lands on the meeting page and doubles as the in-meeting crib sheet. The
 after-meeting pass later checks which prep questions were answered.

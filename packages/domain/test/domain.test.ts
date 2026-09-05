@@ -12,6 +12,7 @@ import {
   isIndexableNote,
   validateEvidence,
   todoLane,
+  todoAddedOn,
   isOverdueTodo,
   isExternalTodo,
   byDue,
@@ -207,6 +208,15 @@ test('todoLane: buckets by commitment, owner and due date', () => {
   // "waiting" and an overdue date can be true of the same todo at once
   assert.equal(isOverdueTodo({ owner: 'Jonas', due: '2026-07-01' }, today), true);
   assert.equal(isOverdueTodo({ commitment: 'done', due: '2026-07-01' }, today), false);
+});
+
+test('todoAddedOn: the day a todo was written down, off its file name', () => {
+  assert.equal(todoAddedOn('todos/2026-07-17-email-asa-about-rollout.md'), '2026-07-17');
+  assert.equal(todoAddedOn('2026-07-17-email-asa'), '2026-07-17');
+  // A file somebody renamed carries no stamp, and we do not guess one.
+  assert.equal(todoAddedOn('todos/email-asa-about-rollout.md'), null);
+  assert.equal(todoAddedOn('todos/2026-13-01-not-a-month.md'), null);
+  assert.equal(todoAddedOn('todos/2026-07-17.md'), null);
 });
 
 test('byDue: dated before undated, earlier first', () => {

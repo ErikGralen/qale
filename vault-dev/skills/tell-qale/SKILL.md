@@ -24,7 +24,7 @@ time, and the section below says what to do with that. Everything else here appl
 ## Read first
 
 Before asking anything, see what the workspace already holds on the topic. Search for it, read
-the notes it turns up, and read `notes/understanding.md` and the area notes it points at
+the notes it turns up, and read `understanding/what-goes-here.md` and the area notes it points at
 whenever the topic touches the product, the system or the organization. Never ask for something
 the memory already knows: read it back and ask whether it is still true.
 
@@ -37,7 +37,7 @@ few prompts in it, like the product example below. One open invitation beats a f
 ## First look
 
 A connection has just read for the first time, and you are handed what came in. It can be two
-connections at once. Nobody is at the screen. This goes in three beats, and the first one is short.
+connections at once. Nobody is at the screen. This goes in two beats, and the first one is short.
 
 **Beat one: read, then knock.** Look at everything that arrived, using each connection's own
 search tools, and search the workspace as well:
@@ -70,21 +70,14 @@ Then work the areas below, hypothesis first. The sources propose and you put it 
 because they can correct it in four words. Where the sources are thin, fall back to the open ask
 above. Never read the debrief back into a note: the picture that lasts is the area notes.
 
-**Beat three: how they use the tools.** Two or three strong patterns in what you read, at most: a
-label or a component on the clear majority of recent tickets, one space holding all the specs, one
-project taking all the bugs. Only strong ones. A confirmed convention repeats on every draft from
-then on, so a wrong one is expensive and a weak pattern is left out.
-
-Ask each as a question with the evidence in it: "Most NORD tickets carry `team-checkout`. Should I
-do the same when I draft?" A yes is one `propose_instruction` call, `target` `jira` for tickets and
-comments and `confluence` for pages. No and silence both mean nothing lands, and a no is never
-raised again. With no connection, or nothing that strong in what you read, say nothing here.
+Never ask how they use Jira or Confluence one rule at a time. How this team writes a ticket and a
+page is written up when the connection is made, from the same read, and it lands as a proposal
+they can correct. Asking about it again here is the workspace forgetting.
 
 **When the kickoff says the picture is already there.** They have told the workspace about the
-product before, so beats two and three are the whole session. Report what you read the same way,
-with the same citations, ask beat three's questions, then offer to set the workspace up.
-Do not run the interview and do not ask the areas again: they are written down, and asking for
-them twice is the workspace forgetting.
+product before, so the debrief is the whole session. Report what you read the same way, with the
+same citations, then offer to set the workspace up. Do not run the interview and do not ask the
+areas again: they are written down, and asking for them twice is the workspace forgetting.
 
 ## Options at every fork
 
@@ -107,9 +100,9 @@ drop arrives as an ordinary source, and what you draft from it cites it as their
 Every topic ends in the memory, as proposals.
 
 - **The product, the system, or the organization** go in the area notes:
-  `notes/understanding-product.md`, `notes/understanding-technical.md`,
-  `notes/understanding-organization.md`. `notes/understanding.md` is the map over them. It says
-  what belongs in each, how short to keep them, and how a claim is marked. Follow it.
+  `understanding/product.md`, `understanding/technical.md`,
+  `understanding/organization.md`. `understanding/what-goes-here.md` is the map over them. It
+  says what belongs in each, how short to keep them, and how a claim is marked. Follow it.
 - **Anything else** goes in the note that already owns the subject: the customer, the theme, the
   person. Write a new note only when nothing owns it yet, and say in the proposal what it will hold.
 
@@ -223,5 +216,5 @@ the way the section above says. End by saying plainly what is still empty.
 
 ## Then
 
-The approved notes are what every session starts from. Keeping them true is ordinary upkeep, so
+These notes are what every session starts from. Keeping them true is ordinary upkeep, so
 this does not need running again on the same topic unless a whole area is still empty.

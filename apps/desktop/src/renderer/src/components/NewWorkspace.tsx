@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input } from '@qale/ui';
 import { TriangleAlert } from 'lucide-react';
-import type { PathCheckDTO, VaultInfoDTO } from '@qale/ipc';
+import type { GitStatusDTO, PathCheckDTO, VaultInfoDTO } from '@qale/ipc';
 import { invoke } from '../lib/ipc';
 import { useApp } from '../state/app-state';
 
@@ -30,6 +30,8 @@ export function NewWorkspace({
   const [check, setCheck] = useState<PathCheckDTO | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Null while the machine is still being asked. */
+  const [git, setGit] = useState<GitStatusDTO | null>(null);
   /** The sync warning has been shown once, so the button now means "I know". */
   const [warned, setWarned] = useState(false);
 
@@ -42,6 +44,15 @@ export function NewWorkspace({
         setName(baseOf(s.path));
       })
       .catch(() => setParent(null));
+  }, []);
+
+  // A new workspace keeps its own history from the first save (E-1), so the one
+  // thing worth saying here is when it cannot. Asked once, before the folder is
+  // made, for the same reason the sync warning is: afterwards it is a report.
+  useEffect(() => {
+    void invoke['git:status']()
+      .then(setGit)
+      .catch(() => setGit(null));
   }, []);
 
   const path = parent && name ? joinPath(parent, name) : null;
@@ -155,6 +166,13 @@ export function NewWorkspace({
             folder is deep enough that notes inside it would pass that. Put the workspace nearer the
             top of the drive, like C:\Qale, or shorten the folders above it.
           </span>
+        </p>
+      )}
+
+      {git && !git.available && (
+        <p className="text-sm text-muted-foreground">
+          This workspace will not keep version history, because git is not installed on this
+          computer. {git.hint} Everything else works without it.
         </p>
       )}
 

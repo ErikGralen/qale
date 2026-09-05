@@ -22,7 +22,7 @@ const SECTION_LABEL: Partial<Record<NoteType, string>> = {
   customer: 'Customers',
   person: 'People',
   meeting: 'Meetings',
-  note: 'Notes',
+  note: `${noteTypeLabel('note')}s`,
   source: 'Sources',
   // Mirrors read as the system they copy ("Jira mirrors"), not as a shelf of
   // the memory — one vocabulary, from @qale/domain.
@@ -71,8 +71,8 @@ export function ContextView({ tag }: { tag: string }) {
         <div className="mx-auto w-full max-w-2xl">
           {notes.length === 0 ? (
             <p className="px-1 py-2 text-sm text-muted-foreground">
-              Nothing tagged #{tag} yet. The librarian suggests contexts when filing: approve a
-              proposal carrying this tag and it fills up.
+              Nothing tagged #{tag} yet. Qale suggests tags when it files something: approve a
+              proposal that carries this tag and this page fills up.
             </p>
           ) : (
             <div className="flex flex-col gap-5">
@@ -91,7 +91,7 @@ export function ContextView({ tag }: { tag: string }) {
                         {s.rows.length}
                       </span>
                     </div>
-                    <NoteList rows={s.shown} empty="" omitTag={tag} selection={selection} />
+                    <NoteList rows={s.shown} empty="" selection={selection} />
                     {truncated && (
                       <button
                         className="mt-1 rounded px-2 text-xs font-medium text-brand hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"

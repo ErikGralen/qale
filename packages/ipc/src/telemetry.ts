@@ -141,11 +141,14 @@ export const VIEW_KINDS = [
   'chats',
   'inbox',
   'todos',
+  'calendar',
+  'documents',
   'memory',
   'folder',
   'context',
   'settings',
   'skills',
+  'activity',
 ] as const;
 
 /** Where a crash came from. */

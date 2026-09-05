@@ -3,7 +3,6 @@ import type { NoteRefDTO, StateCategory } from '@qale/ipc';
 import { AlertTriangle } from 'lucide-react';
 import { useApp } from '../state/app-state';
 import { navFromEvent } from '../lib/nav';
-import { TagChip } from '../components/TagChip';
 import { relativeTime } from '../lib/dates';
 
 /**
@@ -11,7 +10,10 @@ import { relativeTime } from '../lib/dates';
  * read the way a board is read: by where each ticket sits in flight. Columns
  * are the normalized state category (the same axis the chips and hover cards
  * color), so "what's blocked" is a glance, not a scan. Cards open the mirror
- * note; the whole card is one target with tags floating clickable above it.
+ * note; the whole card is one target.
+ *
+ * No tags on the cards, and no tag filter over the board. Tags are the agent's
+ * filing now (E-15), and on a mirror they are the agent's twice over.
  *
  * The board is the tickets folder's default; the list is one toggle away. The
  * Week/List — here Board/List — switch is owned by the folder page and passed
@@ -56,18 +58,15 @@ function initials(name: string): string {
 
 function TicketCard({
   note,
-  omitTag,
   onOpen,
 }: {
   note: NoteRefDTO;
-  omitTag?: string | null;
   onOpen: (path: string, e?: React.MouseEvent) => void;
 }) {
   const key = note.slug.split('/').pop() ?? note.slug;
   const name = ticketName(note, key);
   const detail = ticketDetail(note);
   const when = note.remoteUpdated ?? note.mtime;
-  const tags = (note.tags ?? []).filter((t) => t !== omitTag);
   const blocked = note.stateCategory === 'blocked';
   // The column already names the category; show the provider's raw label only
   // when it says something more ("In Review" under In progress), never when it
@@ -100,16 +99,6 @@ function TicketCard({
           <div className="line-clamp-2 text-xs leading-snug text-muted-foreground">{detail}</div>
         )}
 
-        {tags.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1">
-            {tags.map((t) => (
-              <span key={t} className="pointer-events-auto">
-                <TagChip tag={t} />
-              </span>
-            ))}
-          </div>
-        )}
-
         <div className="mt-0.5 flex items-center gap-1.5 text-micro text-muted-foreground">
           {note.assignee ? (
             <>
@@ -133,15 +122,9 @@ function TicketCard({
 
 export function TicketBoard({
   notes,
-  allTags,
-  contextFacet,
-  onToggleContext,
   toolbarLead,
 }: {
   notes: NoteRefDTO[];
-  allTags: string[];
-  contextFacet: string | null;
-  onToggleContext: (tag: string) => void;
   /** The Board/List switch, owned by the folder page so both views share it. */
   toolbarLead?: ReactNode;
 }) {
@@ -150,7 +133,6 @@ export function TicketBoard({
   const byColumn = useMemo(() => {
     const map = new Map<StateCategory, NoteRefDTO[]>(COLUMNS.map((c) => [c.cat, []]));
     for (const n of notes) {
-      if (contextFacet && !n.tags?.includes(contextFacet)) continue;
       // Unmapped/missing category reads as not-yet-started, the honest default.
       const cat = map.has(n.stateCategory as StateCategory)
         ? (n.stateCategory as StateCategory)
@@ -162,24 +144,12 @@ export function TicketBoard({
       rows.sort((a, b) => tickMs(b) - tickMs(a));
     }
     return map;
-  }, [notes, contextFacet]);
+  }, [notes]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border/70 px-4 py-2">
         {toolbarLead}
-        {allTags.length > 0 && (
-          <div className="ml-auto flex flex-wrap items-center gap-1">
-            {allTags.map((t) => (
-              <TagChip
-                key={t}
-                tag={t}
-                active={contextFacet === t}
-                onToggle={() => onToggleContext(t)}
-              />
-            ))}
-          </div>
-        )}
       </div>
 
       <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-5 py-4">
@@ -206,7 +176,6 @@ export function TicketBoard({
                     <TicketCard
                       key={n.path}
                       note={n}
-                      omitTag={contextFacet}
                       onOpen={(p, e) => void openDoc(p, e && navFromEvent(e))}
                     />
                   ))}

@@ -15,7 +15,8 @@ import type { NavOpts } from './nav';
  * while nothing links there yet. One click, and you are typing.
  */
 export function useNewNote(): {
-  create: (type: HandCreatableType, nav?: NavOpts) => Promise<void>;
+  /** `folder` (type `note` only) puts the new page in that Documents folder. */
+  create: (type: HandCreatableType, nav?: NavOpts, folder?: string) => Promise<void>;
   busy: boolean;
 } {
   const { createNote, openDoc } = useApp();
@@ -23,11 +24,11 @@ export function useNewNote(): {
   const [busy, setBusy] = useState(false);
 
   const create = useCallback(
-    async (type: HandCreatableType, nav?: NavOpts) => {
+    async (type: HandCreatableType, nav?: NavOpts, folder?: string) => {
       if (busy) return;
       setBusy(true);
       try {
-        const note = await createNote(type);
+        const note = await createNote(type, undefined, folder);
         await openDoc(note.path, nav);
       } catch (err) {
         toast(

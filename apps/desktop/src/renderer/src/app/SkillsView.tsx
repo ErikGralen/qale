@@ -425,8 +425,8 @@ function NewSkill({ onTab }: { onTab: (tab: SkillsTab) => void }) {
               onClick={() => setStep('name-voice')}
             />
             <CreateOption
-              label="Do more at a moment"
-              detail="Add to what Qale already does when something happens."
+              label="Add to something Qale already does"
+              detail="One more step, at a moment Qale already acts on."
               onClick={() => setStep('moment')}
             />
           </div>
@@ -455,7 +455,7 @@ function NewSkill({ onTab }: { onTab: (tab: SkillsTab) => void }) {
         {step === 'moment' && (
           <div className="flex flex-col">
             <p className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
-              Which moment? Its instructions are yours to add to.
+              At which moment? Its instructions are yours to add to.
             </p>
             {moments.map(({ moment, file }) => (
               <CreateOption
@@ -570,8 +570,8 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
           <div className="w-full max-w-2xl">
             {/* The one sentence that says what the whole page is. */}
             <p className="mb-4 text-dense text-muted-foreground">
-              Skills are work you run, house rules are always in force, moments fire when the
-              product acts, voices shape a draft, and agents run on clocks.
+              Skills are work you run, house rules are always in force, moments are what Qale
+              does the second something happens, voices shape a draft, and agents run on a clock.
             </p>
 
             <TabsContent value="skills">
@@ -582,7 +582,7 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
                   </div>
                   <h2 className="text-lg font-semibold">No skills yet</h2>
                   <p className="max-w-sm text-sm text-muted-foreground">
-                    Write one yourself with New skill, or ask the librarian to draft one for you.
+                    Write one yourself with New skill, or ask Qale to draft one for you.
                   </p>
                 </div>
               ) : (
@@ -606,9 +606,9 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
 
             <TabsContent value="moments">
               <p className="mb-2 text-dense text-muted-foreground">
-                What Qale does the moment something happens. These cannot be switched off, and what
-                fires them lives in the app, not in the file. The instructions are yours to edit.
-                Each row below says when it fires.
+                What Qale does the second something happens. These cannot be switched off, and
+                what sets them off lives in the app, not in the file. The instructions are yours to
+                edit. Each row below says when it runs.
               </p>
               <ul className={LIST}>
                 {moments.map(({ moment, file }) =>
@@ -660,14 +660,14 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
 
             <p className="mt-7 flex items-center gap-1.5 pb-4 text-xs text-muted-foreground/70">
               <Sparkles className="size-3" aria-hidden />
-              Every skill is a file you can read and edit. Ask the{' '}
+              Every skill is a file you can read and edit.{' '}
               <button
                 className="rounded font-medium text-brand underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                 onClick={() =>
                   openSession('librarian', { initialPrompt: 'Help me write or adjust a skill.' })
                 }
               >
-                librarian
+                Ask Qale
               </button>{' '}
               to draft one for you.
             </p>

@@ -69,9 +69,9 @@ export interface Lifecycle {
 
 const PROCESSING: Lifecycle = {
   field: 'processing',
-  label: 'Processing',
+  label: 'Gone through',
   values: PROCESSING_STATES,
-  valueLabels: { new: 'New', processed: 'Processed', stale: 'Stale' },
+  valueLabels: { new: 'Not yet', processed: 'Gone through', stale: 'Stale' },
   // The old generic enum also had `active`, which only ever meant "we are done
   // with it and rely on it" — that is `processed` under a name borrowed from two
   // other lifecycles, which is the confusion this whole file exists to end.

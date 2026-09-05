@@ -38,7 +38,8 @@ import {
   SendButton,
   useAutoGrow,
 } from '../components/Composer';
-import { FirstSteps, firstStepsShowing } from '../onboarding/FirstSteps';
+import { firstStepsShowing } from '../onboarding/FirstSteps';
+import { SetupPitch } from '../onboarding/SetupPitch';
 import { contentNotes } from '../lib/contexts';
 import { isBulkPaste, requestCapture } from '../lib/capture-event';
 import { navFromEvent, type NavOpts } from '../lib/nav';
@@ -105,9 +106,11 @@ export function Home() {
           </div>
           <Notices />
           {/* Above the waiting list on purpose: on day one there is nothing
-              waiting, and these are the moves that change that. It takes
-              itself off the page once they are done (ONB-8). */}
-          <FirstSteps />
+              waiting, and this is what changes that. It is the pitch once the
+              agent has seen enough to make one (E-24), the first-steps
+              checklist until then, and nothing at all once either is put
+              away. */}
+          <SetupPitch onChange={seed} />
           <Waiting />
           {/* Extra air on top of the column gap: the pause before the page's
               centerpiece is part of what makes it the centerpiece. */}
@@ -191,7 +194,7 @@ function Greeting() {
 // ---------------------------------------------------------------------------
 
 /**
- * New note and Add source, opposite the greeting. These are the app's two
+ * New document and Add source, opposite the greeting. These are the app's two
  * ways of putting something *in* (the bar below only asks), and they sit up
  * here rather than inside the composer strip so a new user sees both verbs
  * before they ever focus the bar. Same instruments as ⌘N and ⇧⌘N — the
@@ -208,8 +211,8 @@ function QuickActions() {
 
   return (
     <div className="mt-1 flex shrink-0 items-center gap-1.5">
-      <Button variant="outline" size="sm" title="New note (⌘N)" onClick={() => void newNote()}>
-        <SquarePen className="size-3.5 text-muted-foreground" aria-hidden /> New note
+      <Button variant="outline" size="sm" title="New document (⌘N)" onClick={() => void newNote()}>
+        <SquarePen className="size-3.5 text-muted-foreground" aria-hidden /> New document
       </Button>
       <Button
         variant="outline"
@@ -457,7 +460,7 @@ const CATEGORIES: Category[] = [
       { label: 'File the notes I dumped in' },
       { label: 'What has gone stale?' },
       { label: 'Find broken links and orphaned notes' },
-      { label: 'Which decisions have been superseded?' },
+      { label: 'Which decisions have been replaced?' },
       { label: 'Which commitments are slipping?' },
     ],
   },
@@ -746,6 +749,7 @@ function Waiting() {
     attention,
     openInbox,
     openTodos,
+    openCalendar,
     openDoc,
     openChat,
     openFolder,
@@ -776,6 +780,8 @@ function Waiting() {
         return openInbox(opts);
       case 'todos':
         return openTodos(opts);
+      case 'calendar':
+        return openCalendar(opts);
       case 'folder':
         return openFolder(target.dir, opts);
       case 'capture':
@@ -813,8 +819,8 @@ function Waiting() {
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium">Start with a meeting you already have</span>
             <span className="mt-0.5 block text-sm text-muted-foreground">
-              Drop a transcript anywhere in the window. The memory files it and turns the
-              follow-ups into proposals you approve.
+              Drop a transcript anywhere in the window. The memory files it and turns the follow-ups
+              into proposals you approve.
             </span>
           </span>
           <span className="mt-0.5 shrink-0 text-xs text-muted-foreground tabular-nums">⇧⌘N</span>
@@ -1069,11 +1075,11 @@ function NoWorkspace({ onOpen }: { onOpen: () => void }) {
         <div className="mx-auto flex min-h-full w-full max-w-[640px] flex-col justify-center gap-6 px-8 py-12">
           <div className="space-y-1.5">
             <h1 className="font-serif text-greeting leading-tight font-semibold tracking-tight text-balance">
-              Your product memory, one workspace deep
+              Your product memory, in plain files you own
             </h1>
             <p className="text-body text-muted-foreground">
-              Meetings go in; approved decisions, updates and answers come out. Everything is plain
-              markdown in a folder you own, and nothing is ever written without your approval.
+              Meetings go in; approved decisions, updates and answers come out. Nothing is ever
+              written without your approval.
             </p>
           </div>
           {creating ? (
@@ -1084,8 +1090,7 @@ function NoWorkspace({ onOpen }: { onOpen: () => void }) {
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium">Pick a folder to work in</div>
                 <div className="text-sm text-muted-foreground">
-                  Start a new one, or open a folder of markdown you already have — an existing
-                  Obsidian vault included.
+                  Start a new one, or open a folder of markdown you already have.
                 </div>
               </div>
               <Button size="sm" onClick={() => setCreating(true)}>

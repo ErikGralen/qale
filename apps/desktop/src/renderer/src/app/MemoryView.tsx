@@ -9,73 +9,60 @@ import {
   type HandCreatableType,
 } from '@qale/domain';
 import { Button } from '@qale/ui';
-import { ChevronRight, FileUp, Inbox, Library, Mic, Plus } from 'lucide-react';
+import { ChevronRight, FileUp, Library, Plus } from 'lucide-react';
 import type { NoteRefDTO, NoteType, VaultTreeGroupDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
-import { navFromEvent } from '../lib/nav';
+import { MEMORY_SHELVES, MIRROR_SHELVES, navFromEvent } from '../lib/nav';
 import { useNewNote } from '../lib/new-note';
 import { requestCapture } from '../lib/capture-event';
 import { PageHeader } from '../components/PageHeader';
 import { noteTypeIcon } from '../lib/note-icons';
-import { isUnprocessedSource, needsReview } from '../lib/note-status';
+import { isUnprocessedSource } from '../lib/note-status';
 
 /**
- * The shelves, in one flat list — a wall of typed shelves reads fine once it
- * is not also carrying four invented category names. Notes sits alone on top
- * as the desk. Every shelf renders from day one, empty or not: Memory is the
- * map of what the workspace can hold, so nothing is drip-fed. The sidebar is
- * the part that stays small — a type only gets a rail section once one of its
- * notes is pinned.
+ * The one door to what Qale knows, with the types kept apart behind it (E-16).
  *
- * Ticket and Wikipage keep a group of their own: they are the two types Qale
- * never writes, only mirrors, and that is worth a label.
+ * Every shelf renders from day one, empty or not: this page is the map of what
+ * the workspace can hold, so nothing is drip-fed. The sidebar is the part that
+ * stays small — a type only gets a rail section once one of its notes is
+ * pinned.
  *
- * Sessions are deliberately absent: a session receipt is a record the user
+ * Meetings and notes are not here. A meeting belongs to the Calendar and a note
+ * to Documents, and a type with two homes is a type the user has to guess
+ * about. People are a shelf rather than a rail row (E-17): a person page earns
+ * its keep, a People directory does not.
+ *
+ * Sessions are deliberately absent too: a session receipt is a record the user
  * never authors, and it already has a home in the Sessions rail. It stays
  * addressable ([[sessions/…]] links resolve, backlinks work) without costing
  * a shelf here.
  */
-const FLAT_SHELVES: readonly NoteType[] = [
-  'meeting',
-  'source',
-  'decision',
-  'insight',
-  'theme',
-  'customer',
-  'person',
-];
-
 const SYNCED_SHELVES: { label: string; subtitle: string; types: readonly NoteType[] } = {
   label: 'Synced',
-  subtitle: 'Mirrored from your tracker and wiki. Qale never edits them.',
-  types: ['ticket', 'wikipage'],
+  subtitle: 'Copied from your tracker and wiki. Qale never edits them.',
+  types: MIRROR_SHELVES,
 };
 
 /**
- * What each shelf holds — the whole subtitle: note titles here read as bloat,
- * and the row truncates, so one clause is the budget. The two mirror shelves
- * lead with the domain's own sentence (@qale/domain readOnlyReason) so the shelf
- * and the note page name the source the same way.
+ * What each shelf holds, in the words a person would use. One clause is the
+ * budget: note titles here read as bloat, and the row truncates anyway. The two
+ * mirror shelves lead with the domain's own sentence
+ * (@qale/domain readOnlyReason) so the shelf and the note page name the source
+ * the same way.
  */
 const TYPE_DESC: Partial<Record<NoteType, string>> = {
-  meeting: 'Meetings, with what each one changed. The recordings live in sources.',
-  decision: 'The decision spine: active calls, and the chain of what they superseded.',
-  theme: 'The durable things worth solving, accreting evidence.',
-  source: 'Dumped-in sources, analyzed but never rewritten.',
-  insight: 'Claims extracted from meetings, each citing its evidence.',
-  customer: 'Accounts the memory knows, prospect to churned.',
-  person: 'Stakeholders: what they care about, what they were last told.',
-  note: 'Untyped notes and quick captures.',
-  ticket: `${readOnlyReason('ticket')} The work your notes link against.`,
+  decision: 'What was decided, and what each call replaced.',
+  theme: 'Problems worth solving, and the evidence behind them.',
+  source: 'What you dropped in: transcripts, articles, files. Kept as they came.',
+  insight: 'One claim per page, each with the quote it came from.',
+  customer: 'The accounts Qale knows about.',
+  person: 'The people you work with: what they care about, what they were last told.',
+  ticket: `${readOnlyReason('ticket')} The work your pages link to.`,
   wikipage: `${readOnlyReason('wikipage')} The pages your updates land on.`,
 };
 
 /** The one number per shelf that means "waiting on you", in the flag voice. */
 function attentionFor(type: NoteType, notes: NoteRefDTO[]): string | null {
-  if (type === 'meeting') {
-    const n = notes.filter((note) => needsReview(note)).length;
-    return n > 0 ? `${n} to review` : null;
-  }
   if (type === 'source') {
     const n = notes.filter(isUnprocessedSource).length;
     return n > 0 ? `${n} unprocessed` : null;
@@ -135,64 +122,35 @@ function ShelfRow({ group }: { group: VaultTreeGroupDTO }) {
 }
 
 /**
- * Day one, before anything is filed: the shelves alone can't say how anything
- * gets onto them, so the loop leads — in, approve, accrete — with one action.
- * The shelves stand under it, empty, and this block drops away once the memory
- * holds something.
+ * Day one, before anything is filed. The shelves alone cannot say how anything
+ * gets onto them, so one sentence and one button do. It drops away as soon as
+ * the page holds something.
  */
 function FirstRun() {
-  const steps = [
-    {
-      icon: Mic,
-      title: 'A transcript goes in',
-      desc: 'Any meeting you already have. Drop the file anywhere, or paste it with ⇧⌘N.',
-    },
-    {
-      icon: Inbox,
-      title: 'You approve what it finds',
-      desc: 'Decisions, actions, and drafts arrive as proposals. Nothing is written silently.',
-    },
-    {
-      icon: Library,
-      title: 'The memory accretes',
-      desc: 'Every claim files with its source. Week six answers what week one couldn’t.',
-    },
-  ];
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col gap-6 pt-10">
+    <div className="mx-auto flex w-full max-w-md flex-col gap-4 pt-10">
       <h1 className="font-serif text-2xl font-semibold tracking-tight text-balance">
-        The memory starts with a meeting.
+        Nothing here yet.
       </h1>
-      <ol className="flex flex-col gap-4">
-        {steps.map((s) => (
-          <li key={s.title} className="flex items-start gap-3">
-            <s.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <span className="min-w-0">
-              <span className="block text-sm font-medium">{s.title}</span>
-              <span className="block text-sm text-muted-foreground">{s.desc}</span>
-            </span>
-          </li>
-        ))}
-      </ol>
+      <p className="text-sm text-muted-foreground">
+        Give Qale a meeting recording, an article, or any file. It reads what you give it and keeps
+        what matters on the shelves below, with a link back to where it came from.
+      </p>
       <div>
         <Button size="sm" onClick={() => requestCapture()}>
-          <FileUp className="size-3.5" /> Drop a transcript
+          <FileUp className="size-3.5" /> Add something
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground/80">
-        The shelves below are what it fills in: decisions, insights, customers, themes, and the
-        rest.
-      </p>
     </div>
   );
 }
 
 /**
- * The whole memory, one shelf per note type, in a flat list with one group at
- * the end for the two synced types. Each row: what the shelf holds, how much,
- * and anything on it waiting for the PO — never individual note titles, which
- * read as inventory bloat. Week 6 reads fuller than week 1 through the counts,
- * not through rows that appear out of nowhere.
+ * One shelf per type, in a flat list, with one group at the end for the two
+ * synced types. Each row: what the shelf holds, how much, and anything on it
+ * waiting for the PO — never individual note titles, which read as inventory
+ * bloat. Week 6 reads fuller than week 1 through the counts, not through rows
+ * that appear out of nowhere.
  */
 export function MemoryView() {
   const { tree } = useApp();
@@ -201,18 +159,18 @@ export function MemoryView() {
     for (const g of tree?.groups ?? []) m.set(g.type, g);
     return m;
   }, [tree]);
-  // Every shelf renders, empty or not — synthesized when the memory holds none
-  // of that type yet.
+  // Every shelf renders, empty or not — synthesized when the workspace holds
+  // none of that type yet.
   const groupFor = (t: NoteType): VaultTreeGroupDTO =>
     byType.get(t) ?? { dir: dirForType(t), type: t, layer: layerForType(t), notes: [] };
 
-  // The header count has to match what the shelves add up to, so the types
-  // with homes of their own (Skills, Todos, Sessions) stay out of it.
-  const total = [...byType.values()]
-    .filter(
-      (g) => g.type !== 'skill' && g.type !== 'agent' && g.type !== 'todo' && g.type !== 'session',
-    )
-    .reduce((sum, g) => sum + g.notes.filter((n) => !isFolderIndex(n.path)).length, 0);
+  // The header count has to match what the shelves add up to, so it is summed
+  // over exactly the shelves this page shows. Meetings, notes and todos live on
+  // their own rails and are counted there.
+  const total = [...MEMORY_SHELVES, ...MIRROR_SHELVES].reduce(
+    (sum, t) => sum + groupFor(t).notes.filter((n) => !isFolderIndex(n.path)).length,
+    0,
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -220,14 +178,11 @@ export function MemoryView() {
 
       <div className="flex-1 overflow-y-auto px-8 py-4">
         <div className="mx-auto w-full max-w-2xl">
-          {/* An empty memory gets the loop above the shelves, not instead of
+          {/* An empty page gets the invitation above the shelves, not instead of
               them: the whole ceiling is visible from the first launch. */}
           {total === 0 && <FirstRun />}
-          {/* The desk — the scratch pad rides on top, then the rest of the
-              flat list. */}
           <ul className={`flex flex-col gap-0.5 ${total === 0 ? 'mt-8' : ''}`}>
-            <ShelfRow group={groupFor('note')} />
-            {FLAT_SHELVES.map((t) => (
+            {MEMORY_SHELVES.map((t) => (
               <ShelfRow key={t} group={groupFor(t)} />
             ))}
           </ul>
@@ -236,9 +191,7 @@ export function MemoryView() {
             <h2 className="px-3 pb-1 text-xs font-medium tracking-wide text-muted-foreground/80 uppercase">
               {SYNCED_SHELVES.label}
             </h2>
-            <p className="px-3 pb-1 text-xs text-muted-foreground/70">
-              {SYNCED_SHELVES.subtitle}
-            </p>
+            <p className="px-3 pb-1 text-xs text-muted-foreground/70">{SYNCED_SHELVES.subtitle}</p>
             <ul className="flex flex-col gap-0.5">
               {SYNCED_SHELVES.types.map((t) => (
                 <ShelfRow key={t} group={groupFor(t)} />

@@ -274,6 +274,8 @@ export interface CaptureNoteInput {
 export interface CreateNoteInputDTO {
   type: NoteType;
   title?: string;
+  /** For `type: note` only: the Documents folder the file lands in. */
+  folder?: string;
 }
 
 /** Quick-add todo — parsed renderer-side from the smart one-liner. */
@@ -376,9 +378,77 @@ export interface RestoreVersionInput {
   hash: string;
 }
 
+/**
+ * Whether this machine can keep version history, and what to do about it if it
+ * cannot. Asked fresh rather than read off the workspace: git can be installed
+ * while the app is open, and the answer changes without a restart (E-1).
+ */
+export interface GitStatusDTO {
+  /** git is on this machine. */
+  available: boolean;
+  /** The open workspace is a repo, so its history is being kept. */
+  repo: boolean;
+  /** One sentence naming what to install. Null when git is already there. */
+  hint: string | null;
+}
+
+/** Undo one recorded change to one note (E-2). */
+export interface RevertChangeInput {
+  path: string;
+  /** The change to undo, by the commit hash `note:history` lists. */
+  hash: string;
+  /**
+   * The Activity row the undo was clicked on, when it was. Marked as put back
+   * only after the files are, so a row never claims an undo that failed.
+   */
+  activityId?: string;
+}
+
+export interface RevertResultDTO {
+  /** The note the undo left behind, or the one it took away. */
+  path: string;
+  /**
+   * `restored` put an earlier version back, `undeleted` brought back a note
+   * that was gone, `removed` took away a note that change had created.
+   */
+  outcome: 'restored' | 'undeleted' | 'removed';
+}
+
 export interface RenameNoteInput {
   path: string;
   title: string;
+}
+
+/**
+ * Move one document into a folder of the PM's own making (E-14). `folder` is
+ * written relative to `notes/`, and "" is the top of Documents.
+ */
+export interface MoveNoteInput {
+  path: string;
+  folder: string;
+}
+
+/**
+ * Make a folder in Documents. `folder` is the new folder's path relative to
+ * `notes/`; nested is allowed ("specs/2026"). The folder exists from now on,
+ * even empty: it is kept by its `index.md` orientation file.
+ */
+export interface CreateFolderInput {
+  folder: string;
+}
+
+/** Delete an empty folder in Documents. Refuses while anything is still in it. */
+export interface DeleteFolderInput {
+  folder: string;
+}
+
+/**
+ * Rename a folder in Documents. `name` is the new LAST segment; the folder
+ * stays under the same parent, and the documents inside move with it.
+ */
+export interface RenameFolderInput {
+  folder: string;
+  name: string;
 }
 
 export interface ProposalPreviewDTO {
@@ -1264,4 +1334,33 @@ export interface AtRiskLinkDTO {
   changedAt: string;
   /** Vault note paths whose truth depends on this item. */
   linked: string[];
+}
+
+/**
+ * One thing the agent did without asking (docs/easier-tickets.md E-9).
+ *
+ * The receipt for the silence: first person, past tense, what changed, where,
+ * when, and whether it can still be put back. Workstream B2 renders these;
+ * workstream A1 owns what "put it back" runs.
+ */
+export interface ActivityDTO {
+  id: string;
+  /** created / updated / remembered / deleted. */
+  action: string;
+  /** "I created the Nordkap SSO write-up." */
+  line: string;
+  /** Why it needed no card, in the policy's own words. */
+  reason: string;
+  /** The note it wrote, so the row opens it. Null when nothing landed. */
+  path: string | null;
+  /** The proposal it applied, for anything that needs the payload. */
+  proposalId: string;
+  /** The session it came from, so the row can open that chat. */
+  sessionId: string;
+  /** ISO timestamp. */
+  at: string;
+  /** False when the workspace is not a git repo, so nothing can be put back. */
+  revertable: boolean;
+  /** ISO timestamp of when it was put back, or null. */
+  reverted: string | null;
 }

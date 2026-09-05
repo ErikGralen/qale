@@ -9,7 +9,7 @@ import {
   Spinner,
 } from '@qale/ui';
 import { History, GitCommitHorizontal, Undo2 } from 'lucide-react';
-import type { NoteCommitDTO } from '@qale/ipc';
+import type { GitStatusDTO, NoteCommitDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { stripFrontmatter } from '../lib/frontmatter';
@@ -59,8 +59,20 @@ export function NoteHistory({
   const [enabling, setEnabling] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [git, setGit] = useState<GitStatusDTO | null>(null);
 
-  const gitOn = !!vault?.git;
+  // Asked here, not read off the workspace: git may have been installed since
+  // the workspace was opened, and the answer is what decides which of the three
+  // things below this dialog says.
+  useEffect(() => {
+    if (!open) return;
+    invoke['git:status']()
+      .then(setGit)
+      .catch(() => setGit(null));
+  }, [open, vault?.git]);
+
+  const gitOn = git ? git.repo : !!vault?.git;
+  const gitAvailable = git ? git.available : !!vault?.gitAvailable;
   const current = docData[path]?.note ?? null;
 
   useEffect(() => {
@@ -131,7 +143,7 @@ export function NoteHistory({
 
         {!gitOn ? (
           <div className="flex flex-col items-start gap-3 py-4">
-            {vault?.gitAvailable ? (
+            {gitAvailable ? (
               <>
                 {/* "Nothing leaves your machine" was true of us and silent
                     about the folder (OW10): git never pushes on its own, but a
@@ -158,9 +170,20 @@ export function NoteHistory({
                 </Button>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                Version history needs git, which isn't installed on this system.
-              </p>
+              // Names the fix, not just the problem. A new workspace turns
+              // history on by itself now, so a PM who lands here has a machine
+              // with no git, and "it isn't installed" left them with nothing to
+              // do about it.
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Version history is off, because git is not installed on this computer.
+                </p>
+                <p className="text-sm text-muted-foreground">{git?.hint}</p>
+                <p className="text-sm text-muted-foreground">
+                  Everything else in Qale works without it. Your notes are plain files in the folder
+                  either way.
+                </p>
+              </div>
             )}
           </div>
         ) : (

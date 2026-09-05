@@ -85,8 +85,40 @@ export interface FileSourceInput {
    * there so a citation can say "your note from March".
    */
   origin?: string;
-  /** Screenshot only: what the picture shows, which is the note's whole body. */
-  caption?: string;
+  /**
+   * What the source says, in the agent's own words (E-18). It goes at the top
+   * of the source page and the original goes underneath, so one drop is one
+   * address: nothing extra to open, sync or keep in step.
+   *
+   * On a screenshot it is the caption, and it is the whole body: nothing in the
+   * memory can read pixels, so a picture nobody described is a file nobody will
+   * find again.
+   *
+   * Not the frontmatter `summary`, which stays the one-line name of the page.
+   */
+  summary?: string;
+}
+
+/**
+ * The heading between what we made of a source and what arrived (E-18).
+ *
+ * A marker rather than prose, because the note page reads it back: it shows the
+ * summary and folds the original away, so a 12,000-word transcript does not
+ * bury the four lines worth reading. The renderer keeps its own copy of the
+ * spelling (`lib/source-body.ts`), so change both or the fold quietly stops.
+ */
+export const SOURCE_ORIGINAL_HEADING = '## Original';
+
+/**
+ * One source page: the summary on top, what arrived underneath. With no
+ * summary the body is what arrived and nothing else, which is every source
+ * filed before E-18 and every one the agent files without reading.
+ */
+function sourceBody(body: string, summary?: string): string {
+  const said = summary?.trim();
+  const arrived = body.trim();
+  if (!said) return arrived;
+  return `## Summary\n\n${said}\n\n${SOURCE_ORIGINAL_HEADING}\n\n${arrived}`;
 }
 
 export interface FileSourceResult {
@@ -118,7 +150,14 @@ export async function fileSource(
     const image = parts.find((p) => p.image);
     if (image) {
       throw new Error(
-        `“${image.name}” is an image, and an image is never a meeting. File it as a source with a caption.`,
+        `“${image.name}” is an image, and an image is never a meeting. File it as a source with a summary.`,
+      );
+    }
+    // A meeting is written up on its own page, which is the address people go
+    // to. A second write-up on the transcript would be the one that goes stale.
+    if (input.summary?.trim()) {
+      throw new Error(
+        'A meeting is written up on its own page, not on the transcript. File the recording with no summary, then propose the page with propose_meeting.',
       );
     }
     const body: MeetingTranscriptPart[] = parts.map((p) => ({
@@ -151,25 +190,35 @@ export async function fileSource(
   // A source that arrived in several files is several sources: nothing in
   // `sources/` owns anything else, so there is no page to gather them under and
   // splicing them into one body would be a claim about how they fit together.
+  // Which is why one summary cannot cover them: it would land, word for word,
+  // on every one of them, and be true of none.
+  if (parts.length > 1 && input.summary?.trim()) {
+    throw new Error(
+      `these are ${parts.length} separate sources, so one summary cannot describe them. File them one call each, so every source keeps its own.`,
+    );
+  }
   const wrote: string[] = [];
   for (const [i, part] of parts.entries()) {
     const name = parts.length > 1 ? `${title} (${part.label ?? `part ${i + 1}`})` : title;
     if (part.image) {
+      // A picture has no text to fold away, so the summary IS the body and the
+      // image sits under it. Same shape as every other source, no headings.
       const note = await captureScreenshot(ctx, {
         title: name,
-        caption: input.caption?.trim() || name,
+        caption: input.summary?.trim() || name,
         image: { name: part.name, data: part.image },
       });
       wrote.push(note.path);
       continue;
     }
+    const body = sourceBody(part.text ?? '', input.summary);
     const note = input.origin
       ? await captureExternalTranscript(ctx, {
           title: name,
-          body: part.text ?? '',
+          body,
           origin: input.origin,
         })
-      : await captureDocument(ctx, { title: name, body: part.text ?? '', fileName: part.name });
+      : await captureDocument(ctx, { title: name, body, fileName: part.name });
     wrote.push(note.path);
   }
   return { path: wrote[0]!, wrote };
@@ -282,6 +331,8 @@ export async function refileSource(
   const target = input.meeting?.trim();
   const toNothing = target === 'none';
   const moved: string[] = [];
+  /** Pages this changed that the report does not name: the meeting it left. */
+  const alsoTouched: string[] = [];
   let path = note.path;
   let removed: string | undefined;
 
@@ -329,30 +380,39 @@ export async function refileSource(
     // A source page: a transcript that ended up under the wrong meeting, or one
     // that was never the PM's meeting.
     const holder = meetingHolding(ctx, note);
+    /**
+     * Take this transcript off the meeting that was holding it, and take the
+     * meeting away too if that left it with nothing.
+     *
+     * The unlink rewrites the holder's frontmatter, so the holder goes in the
+     * commit list even when it survives. Without that its `transcript` field
+     * sat changed and uncommitted until some other write happened to pick it up,
+     * and git's answer to "what did this refile do" was missing half of it.
+     */
+    const dropFrom = async (meetingPath: string): Promise<void> => {
+      await unlinkTranscript(ctx, meetingPath, `[[${note.slug}]]`);
+      const after = await ctx.vault.readNote(meetingPath);
+      if (after && transcriptRefs(after.frontmatter).length === 0 && meetingIsEmpty(after.body)) {
+        await deleteNote(ctx, meetingPath);
+        removed = meetingPath;
+        return;
+      }
+      alsoTouched.push(meetingPath);
+    };
     if (target && !toNothing) {
-      if (holder) await unlinkTranscript(ctx, holder.path, `[[${note.slug}]]`);
+      // Off the old meeting first. Where the two are the same meeting there is
+      // nothing to correct, and dropping it would undo the attach that follows.
+      if (holder && holder.path !== target) await dropFrom(holder.path);
       await attachExistingTranscript(ctx, target, note.path);
       moved.push(note.path);
       // The page that OWNS the source now, which is what the agent should
       // cite from here on. The transcript itself never moves: it is evidence,
       // and evidence keeps its address.
       path = target;
-      if (holder) {
-        const after = await ctx.vault.readNote(holder.path);
-        if (after && transcriptRefs(after.frontmatter).length === 0 && meetingIsEmpty(after.body)) {
-          await deleteNote(ctx, holder.path);
-          removed = holder.path;
-        }
-      }
     } else if (toNothing) {
       if (holder) {
-        await unlinkTranscript(ctx, holder.path, `[[${note.slug}]]`);
+        await dropFrom(holder.path);
         moved.push(note.path);
-        const after = await ctx.vault.readNote(holder.path);
-        if (after && transcriptRefs(after.frontmatter).length === 0 && meetingIsEmpty(after.body)) {
-          await deleteNote(ctx, holder.path);
-          removed = holder.path;
-        }
       }
       if (input.origin) await setField(ctx, note.path, 'origin', input.origin);
     }
@@ -368,7 +428,7 @@ export async function refileSource(
     if (subject === path) path = renamed.path;
   }
 
-  const touched = [path, ...moved, ...(removed ? [removed] : [])];
+  const touched = [path, ...moved, ...alsoTouched, ...(removed ? [removed] : [])];
   await ctx.git.commitPaths(touched, `refile: ${titleFromSlug(path)}`);
   return { path, moved, ...(removed ? { removed } : {}) };
 }

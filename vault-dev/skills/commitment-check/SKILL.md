@@ -77,8 +77,9 @@ do not produce all of them.
 ## Produce: a request that came in
 
 One proposal, the decode (propose_note, type `note`, path `notes/YYYY-MM-DD-<sender>-<ask>.md`), with
-`sources` citing every note it rests on. Where the pasted message is genuinely all there is, set
-`asked`.
+`sources` citing every note it rests on. Always send `asked`: the decode is the document the PM
+asked you for in this conversation, and `notes/` is their own folder, which nothing writes into
+unasked.
 
 One addition to the writing rules: quote the ask itself. The message lives nowhere else, and what
 somebody asked for, in their own words, is what they will hold you to later.
@@ -105,9 +106,9 @@ decision it rests on, and draft the reply only where it has to be said out loud.
 Approved proposals update this one commitment: the plan lands on the todo, a close flips
 `commitment`, a reschedule moves `due`. Nothing else in the memory is touched.
 
-An approved decode sits in `notes/` as the record of what was asked and what we said back, so the
-same ask arriving next month from somebody else lands on something. Approved todos join the
-commitment ledger.
+The decode sits with the PM's own documents as the record of what was asked and what we said
+back, so the same ask arriving next month from somebody else lands on something. Todos join the
+commitment ledger once the PM approves them.
 
 A nudge and a reply are not proposals. Both wait in the chat for you to copy and send yourself.
 

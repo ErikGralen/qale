@@ -96,4 +96,5 @@ reading, say in the next round which reading that was, and carry on.
 ## Then
 
 The rounds stay in the session folder with the comments written into them, so the thinking is
-readable later. Nothing lands in the memory except the proposals you approve.
+readable later. New pages land as they are written; a rewrite of something the memory already says
+waits for you.

@@ -145,10 +145,16 @@ test('a demo skill, agent or voice with no seeded pair is named here or it fails
   // own rules rather than the template's example lines, so a word-for-word
   // comparison would be wrong. The next test checks the part that must not
   // drift, which is their shape.
+  // The three `index.md` files are the folders' own orientation pages. Their
+  // body is a list of what is in the folder, so a demo copy is right to differ
+  // from a seeded one and there is nothing to compare.
   const demoOnly = new Set([
     'skills/broken-demo/SKILL.md',
     'skills/jira/SKILL.md',
     'skills/confluence/SKILL.md',
+    'skills/index.md',
+    'agents/index.md',
+    'voices/index.md',
   ]);
   const paired = new Set(seededFiles().map((s) => s.file));
 

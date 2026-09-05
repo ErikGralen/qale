@@ -50,7 +50,9 @@ confirm the claim. A run that ends there has done its job.
 ## Produce
 
 One proposal, the spec (propose_note, type `note`, path `notes/spec-<theme-slug>.md`), with `sources`
-citing the theme, the insights and the decisions it rests on. Take `tags` from the theme.
+citing the theme, the insights and the decisions it rests on. Take `tags` from the theme. Send
+`asked` with it: the spec is the document the PM pointed at a theme and asked for, and `notes/`
+is their own folder, which nothing writes into unasked.
 
 One addition to the writing rules: no requirement without a trace. Every requirement names the
 insight, decision or ticket mirror behind it. One that cites nothing is not a requirement, it is
@@ -63,9 +65,9 @@ and accepted.
 
 ## Then
 
-The approved spec sits in `notes/` and cites its way back down: a reader follows a requirement to
-the insight, and the insight to the account that said it. A later run over the same theme extends
-this one instead of filing a rival.
+The spec sits with the PM's own documents and cites its way back down: a reader follows a
+requirement to the insight, and the insight to the account that said it. A later run over the
+same theme extends this one instead of filing a rival.
 
 ## The shape of the spec
 

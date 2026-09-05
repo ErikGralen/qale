@@ -6,6 +6,7 @@ import { AlertTriangle, FileUp, X } from 'lucide-react';
 import { pathForFile } from './lib/ipc';
 import { AppStateProvider, useApp } from './state/app-state';
 import { CAPTURE_EVENT, type CaptureRequest } from './lib/capture-event';
+import { useNewNote } from './lib/new-note';
 import { Sidebar } from './app/Sidebar';
 import { Home } from './app/Home';
 import { NoteView } from './app/NoteView';
@@ -17,7 +18,10 @@ import { SkillsView } from './app/SkillsView';
 import { InboxView } from './app/InboxView';
 import { TodosView } from './app/TodosView';
 import { MemoryView } from './app/MemoryView';
+import { ActivityView } from './app/ActivityView';
 import { FolderView } from './app/FolderView';
+import { CalendarView } from './app/CalendarView';
+import { DocumentsView, NEW_FOLDER_EVENT } from './app/DocumentsView';
 import { ContextView } from './app/ContextView';
 import { RightPanel } from './app/RightPanel';
 import { TabStrip } from './app/TabStrip';
@@ -63,8 +67,26 @@ function Center() {
       return <InboxView />;
     case 'todos':
       return <TodosView />;
+    // Calendar and Documents are rail places before they are screens. The
+    // meetings and notes folders are the truest thing we have today, so they
+    // stand in: replace the one line with the real view when it lands.
+    case 'calendar':
+      return <CalendarView key="calendar" />;
+    // The key stays "documents" on purpose: the level comes in as a prop, so
+    // walking folders keeps one component and its expansion state.
+    case 'documents':
+      return (
+        <DocumentsView
+          key="documents"
+          viewKey={activeTab.key}
+          folder={activeTab.folder ?? ''}
+          expanded={activeTab.expanded}
+        />
+      );
     case 'memory':
       return <MemoryView />;
+    case 'activity':
+      return <ActivityView />;
     case 'folder':
       return <FolderView key={activeTab.dir} dir={activeTab.dir} />;
     case 'context':
@@ -132,12 +154,19 @@ function Shell() {
     dismissBlockedBy,
   } = useApp();
 
+  // Documents' own "New document", so ⌘N on that page files where the page is.
+  const { create: createDocument } = useNewNote();
+
   // ⌘N: a blank note straight into the editor — capture (⇧⌘N) keeps the dialog.
+  // On a Documents tab it lands in the folder that tab is standing in, which is
+  // what the page's own "New document" does and what its tooltip promises.
   const newNote = useCallback(async () => {
     if (!vault) return;
+    if (activeTab?.kind === 'documents')
+      return void createDocument('note', undefined, activeTab.folder);
     const note = await captureNote({ body: '', summary: 'Untitled' });
     await openDoc(note.path);
-  }, [vault, captureNote, openDoc]);
+  }, [vault, activeTab, createDocument, captureNote, openDoc]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((o) => {
@@ -206,6 +235,13 @@ function Shell() {
       if (key === 'k') {
         e.preventDefault();
         setSwitcherOpen((o) => !o);
+      } else if (e.altKey && e.code === 'KeyN') {
+        // ⌥⌘N is Documents' own: a new folder at the level that tab stands in.
+        // The key is read by `code`, because ⌥ rewrites `key` into the character
+        // the layout makes ("˜" on a US Mac). ⇧⌘N stays the capture tray.
+        if (activeTab?.kind !== 'documents') return;
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent(NEW_FOLDER_EVENT));
       } else if (key === 'n') {
         // ⇧⌘N is guarded exactly like ⌘↵: pressing it with the tray already
         // open used to re-open it with a fresh draft, throwing away every file
@@ -311,6 +347,7 @@ function Shell() {
     goForward,
     reopenClosedTab,
     captureOpen,
+    activeTab,
   ]);
 
   /**

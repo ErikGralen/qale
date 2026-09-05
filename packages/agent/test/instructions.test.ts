@@ -53,27 +53,51 @@ function rulesCtx(
   pending: Pending[] = [],
 ): UseCaseContext & { filed: Filed[] } {
   const filed: Filed[] = [];
+  const rows = new Map<string, Record<string, unknown>>();
+  // A rule lands as it is written (docs/easier-tickets.md E-8), so the fake has
+  // to be able to write: what the card carries is still the subject of these
+  // tests, and the file it lands in is checked through the same map.
+  const read = (p: string) => {
+    const note = files[p];
+    return note
+      ? {
+          path: p,
+          slug: p.replace(/\.md$/, ''),
+          type: 'skill',
+          frontmatter: { type: 'skill', ...(note.title ? { title: note.title } : {}) },
+          body: note.body,
+        }
+      : null;
+  };
   return {
     vault: {
-      readNote: async (p: string) => {
-        const note = files[p];
-        return note
-          ? {
-              path: p,
-              type: 'skill',
-              frontmatter: { type: 'skill', ...(note.title ? { title: note.title } : {}) },
-              body: note.body,
-            }
-          : null;
+      readNote: async (p: string) => read(p),
+      exists: async (p: string) => !!files[p],
+      writeNote: async (p: string, _fm: unknown, body: string) => {
+        files[p] = { ...(files[p] ?? {}), body };
+        return read(p)!;
+      },
+      writeBody: async (p: string, body: string) => {
+        files[p] = { ...(files[p] ?? {}), body };
+        return read(p)!;
       },
     },
-    index: { resolve: () => null, get: () => null },
+    index: { resolve: () => null, get: () => null, reindex: () => {} },
+    git: { commitPaths: async () => {}, history: async () => [] },
+    clock: { now: () => '2026-09-02T09:00:00.000Z' },
     proposals: {
       create: (input: Filed) => {
+        const rec = { ...input, id: `p${filed.length + 1}`, status: 'pending', evidence: [] };
         filed.push(input);
-        return { id: `p${filed.length}` };
+        rows.set(rec.id, rec);
+        return rec;
       },
       list: (status?: string) => (status === 'pending' ? pending : []),
+      get: (id: string) => rows.get(id) ?? null,
+      setStatus: (id: string, status: string) => {
+        const rec = rows.get(id);
+        if (rec) rows.set(id, { ...rec, status });
+      },
     },
     filed,
   } as unknown as UseCaseContext & { filed: Filed[] };
@@ -99,7 +123,7 @@ test('a rule joins the Standing instructions the target already ends with', asyn
   });
   const said = await out(tool(ctx), { rule: RULE, target: 'arrival' });
 
-  assert.match(said, /^Proposed instruction \(p1\)/);
+  assert.match(said, /^Applied: Added to rules/);
   const card = ctx.filed[0]!;
   assert.equal(card.kind, 'update');
   assert.equal(card.targetPath, ARRIVAL);
@@ -145,7 +169,7 @@ test('with no target and no house-rules file, the card writes the whole document
   const ctx = rulesCtx({});
   const said = await out(tool(ctx), { rule: RULE });
 
-  assert.match(said, /-> house-rules\./);
+  assert.match(said, /in house-rules now/);
   const card = ctx.filed[0]!;
   assert.equal(card.kind, 'note');
   assert.equal(card.targetPath, RULES);
@@ -188,7 +212,7 @@ test('a name nothing answers to falls back to the house rules, and says so', asy
   const said = await out(tool(ctx), { rule: RULE, target: 'meeting-prep' });
 
   assert.equal(ctx.filed[0]!.targetPath, RULES);
-  assert.match(said, /-> house-rules\./);
+  assert.match(said, /in house-rules now/);
   assert.match(said, /Nothing is called "meeting-prep" here/);
 });
 
@@ -209,7 +233,7 @@ test('an agent takes the rule when no skill of that name exists', async () => {
   const said = await out(tool(ctx), { rule: RULE, target: 'librarian' });
 
   assert.equal(ctx.filed[0]!.targetPath, 'agents/librarian/AGENT.md');
-  assert.match(said, /-> librarian\./);
+  assert.match(said, /in librarian now/);
   assert.match(ctx.filed[0]!.rationale, /Goes into Librarian's standing instructions\./);
 });
 
@@ -277,7 +301,7 @@ test('a different rule to the same file is still proposed', async () => {
     target: 'arrival',
   });
 
-  assert.match(said, /^Proposed instruction/);
+  assert.match(said, /^Applied: Added to rules/);
   assert.equal(ctx.filed.length, 1);
 });
 
@@ -293,7 +317,7 @@ test('a rule too long to be one sentence is refused with the cap in it', async (
   assert.equal(ctx.filed.length, 0);
 });
 
-test('the receipt names the card, the rule and where it goes', async () => {
+test('the receipt says the rule landed and where it went', async () => {
   const ctx = rulesCtx({ [ARRIVAL]: { title: 'Arrival', body: '# Arrival\n' } });
   const said = await out(tool(ctx), {
     rule: RULE,
@@ -301,7 +325,12 @@ test('the receipt names the card, the rule and where it goes', async () => {
     why: 'Erik asked for it after the Nordkap call.',
   });
 
-  assert.equal(said, `Proposed instruction (p1): "${RULE}" -> arrival. Awaiting review.`);
+  assert.equal(
+    said,
+    `Applied: Added to rules "${RULE}".\n` +
+      'It is in arrival now, and every session that reads that file follows it. Nothing is ' +
+      'waiting on the PM: say you have noted it, in one short line, and carry on.',
+  );
   assert.match(ctx.filed[0]!.rationale, /^Erik asked for it after the Nordkap call\./);
 });
 
@@ -326,7 +355,13 @@ test('a ticket rule with no conventions file yet creates it from the template', 
   const ctx = rulesCtx({ [RULES]: { title: 'House rules', body: `${HOUSE}\n` } });
   const said = await out(tool(ctx), { rule: TICKET_RULE, target: 'jira' });
 
-  assert.equal(said, `Proposed instruction (p1): "${TICKET_RULE}" -> jira. Awaiting review.`);
+  assert.match(
+    said,
+    new RegExp(
+      `^Applied: Added to rules "${TICKET_RULE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\.`,
+    ),
+  );
+  assert.match(said, /It is in jira now/);
   // Nothing is missing: "jira" resolved, to a file the card writes.
   assert.doesNotMatch(said, /Nothing is called/);
   const card = ctx.filed[0]!;
@@ -354,7 +389,7 @@ test('a page rule with no conventions file yet creates the Confluence one', asyn
   const ctx = rulesCtx({});
   const said = await out(tool(ctx), { rule: PAGE_RULE, target: 'confluence' });
 
-  assert.match(said, /-> confluence\./);
+  assert.match(said, /in confluence now/);
   const card = ctx.filed[0]!;
   assert.equal(card.targetPath, CONFLUENCE);
   const fm = (card.payload as unknown as { frontmatter: Record<string, unknown> }).frontmatter;
@@ -380,7 +415,7 @@ test('a conventions file that exists takes the bullet, with no new heading', asy
   });
   const said = await out(tool(ctx), { rule: PAGE_RULE, target: 'jira' });
 
-  assert.match(said, /-> jira\./);
+  assert.match(said, /in jira now/);
   const card = ctx.filed[0]!;
   assert.equal(card.kind, 'update');
   assert.equal(card.targetPath, JIRA);
@@ -411,7 +446,7 @@ test('the name folds, so "Jira" is the same file as "jira"', async () => {
 
   assert.equal(ctx.filed[0]!.targetPath, JIRA);
   assert.equal(ctx.filed[0]!.kind, 'update');
-  assert.match(said, /-> jira\./);
+  assert.match(said, /in jira now/);
 
   const empty = rulesCtx({});
   await out(tool(empty), { rule: TICKET_RULE, target: 'Confluence' });
@@ -425,7 +460,7 @@ test('a name that is not a conventions skill still falls back to the house rules
 
   assert.equal(ctx.filed[0]!.kind, 'update');
   assert.equal(ctx.filed[0]!.targetPath, RULES);
-  assert.match(said, /-> house-rules\./);
+  assert.match(said, /in house-rules now/);
   assert.match(said, /Nothing is called "zendesk" here/);
 });
 

@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import type {
+  ActivityDTO,
   AgentDTO,
   BacklinkDTO,
   CaptureNoteInput,
@@ -51,6 +52,7 @@ import { requestCapture } from '../lib/capture-event';
 import { isPinnable, qualifiesForRail } from '../lib/note-status';
 import { buildAttention, waitingOnYou, type AttentionItem } from '../lib/attention';
 import type { NavOpts } from '../lib/nav';
+import { documentsFolder } from '../lib/crumbs';
 import { isSettingsSection, type SettingsSection } from '../lib/settings-sections';
 import { isSkillsTab, type SkillsTab } from '../lib/skills-tabs';
 
@@ -82,7 +84,18 @@ export type ViewBody = { title: string } &
     | { kind: 'chats' }
     | { kind: 'inbox' }
     | { kind: 'todos' }
+    /** What is coming and what happened (E-12). Its own screen, not a folder. */
+    | { kind: 'calendar' }
+    /** What the user writes in: notes, briefs, specs (E-14). `folder` is the
+     *  level under notes/ the page is standing in ('' or absent = the root).
+     *  It lives on the view, not in the component, so every folder you enter is
+     *  a history entry and the tab's back/forward arrows walk the levels.
+     *  `expanded` is the folders opened in place at that level, here for the
+     *  same reason: it survives a tab switch and rides the tab's history. */
+    | { kind: 'documents'; folder?: string; expanded?: string[] }
     | { kind: 'memory' }
+    /** What the agent wrote without asking, and the way back (E-9). */
+    | { kind: 'activity' }
     | { kind: 'folder'; dir: string }
     | { kind: 'context'; tag: string }
     /** `section` is which tab is showing — carried on the view so a deep link
@@ -132,6 +145,12 @@ function sameTarget(a: View, b: ViewBody): boolean {
       return a.dir === (b as Extract<ViewBody, { kind: 'folder' }>).dir;
     case 'context':
       return a.tag === (b as Extract<ViewBody, { kind: 'context' }>).tag;
+    case 'documents': {
+      // The folder is the place. Absent and '' both mean the root, so the
+      // sidebar row and a crumb click on the root are the same destination.
+      const d = b as Extract<ViewBody, { kind: 'documents' }>;
+      return (a.folder ?? '') === (d.folder ?? '');
+    }
     case 'settings': {
       // Aiming at a section means that section; asking for Settings with no
       // section in mind (⌘, the cog, ⌘K) means "wherever it is already open",
@@ -252,6 +271,16 @@ interface AppState {
   /** Acknowledge an auto-pinned row (clears its mark). */
   markPinSeen: (path: string) => void;
   proposals: ProposalDTO[];
+  /**
+   * What the agent wrote without asking, newest first (E-9). Held here rather
+   * than inside its own view because the rail prints today's count from it, and
+   * two surfaces counting the same thing separately is how they come to
+   * disagree.
+   */
+  activity: ActivityDTO[];
+  refreshActivity: () => Promise<void>;
+  /** Put one row back, and refresh what the undo touched. */
+  revertActivity: (id: string) => Promise<void>;
   themes: ThemeHeatDTO[];
   /** Merged session rows (stored + live + cards + seen) — rail, Inbox, history. */
   sessions: SessionOverview[];
@@ -363,13 +392,22 @@ interface AppState {
   openInbox: (opts?: NavOpts) => void;
   /** Open the Todos view — the commitment ledger. */
   openTodos: (opts?: NavOpts) => void;
-  /** Open the Memory page — the full directory of every note type. */
+  /** Open the Calendar: what is coming, and what happened. */
+  openCalendar: (opts?: NavOpts) => void;
+  /** Open Documents: the pages the user writes in. `folder` is the level under
+   *  notes/ to stand in; leave it out (or pass '') for the root. */
+  openDocuments: (folder?: string, opts?: NavOpts) => void;
+  /** Open the Memory page: the one door to what Qale knows. */
   openMemory: (opts?: NavOpts) => void;
+  /** Open Activity: every write the agent made on its own (E-9). */
+  openActivity: (opts?: NavOpts) => void;
   openFolder: (dir: string, opts?: NavOpts) => void;
   /** Open a context (tag) page — the cross-cutting project/product/area axis. */
   openContext: (tag: string, opts?: NavOpts) => void;
   openSettings: (section?: SettingsSection, opts?: NavOpts) => void;
   setSettingsSection: (viewKey: string, section: SettingsSection) => void;
+  /** Documents: the folders opened in place, kept on the history entry. */
+  setDocumentsExpanded: (viewKey: string, expanded: string[]) => void;
   /**
    * Open the Skills view, optionally aimed at one of its five tabs (SK-12).
    * `openSkills('agents')` is what every door to the old Agents page became.
@@ -431,8 +469,9 @@ interface AppState {
   /** The PO's answer to that ask: take the meeting out of "needs review". */
   markMeetingReviewed: (path: string) => Promise<{ ok: boolean }>;
   captureNote: (input: CaptureNoteInput) => Promise<NoteDTO>;
-  /** Start a blank page of a chosen type (the "+" on a Memory shelf) and open it. */
-  createNote: (type: HandCreatableType, title?: string) => Promise<NoteDTO>;
+  /** Start a blank page of a chosen type (the "+" on a Memory shelf) and open
+   *  it. `folder` (type `note` only) puts it in that Documents folder. */
+  createNote: (type: HandCreatableType, title?: string, folder?: string) => Promise<NoteDTO>;
   /** Quick-add a todo (already parsed from the one-liner). */
   captureTodo: (input: CaptureTodoInputDTO) => Promise<NoteDTO>;
   /** Flip a todo open/done/dropped. */
@@ -443,9 +482,9 @@ interface AppState {
   /** Put a note back to an earlier version, saved forward as the newest one. */
   restoreVersion: (path: string, hash: string) => Promise<void>;
   saveFrontmatter: (path: string, frontmatter: Record<string, unknown>) => Promise<void>;
-  /** Vouch for a note ("Mark as checked"). Its own write path — `verified` is
-   *  frozen on the types worth vouching for — and its own pin, like any edit. */
-  markChecked: (path: string, type?: NoteType) => Promise<void>;
+  /** Vouch for a note ("Mark as checked"). Its own write path, because
+   *  `verified` is frozen on the types worth vouching for. */
+  markChecked: (path: string) => Promise<void>;
   /** Retitle a note; the file may move, so open tabs/favourites follow the new path. */
   renameNote: (path: string, title: string) => Promise<NoteDTO>;
   /** Delete a note: close open tabs, drop from favourites, purge docData, remove file. */
@@ -661,6 +700,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const closedTabs = useRef<TabState[]>([]);
   const [docData, setDocData] = useState<Record<string, DocData>>({});
   const [proposals, setProposals] = useState<ProposalDTO[]>([]);
+  const [activity, setActivity] = useState<ActivityDTO[]>([]);
   const [themes, setThemes] = useState<ThemeHeatDTO[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [dismissed, setDismissed] = useState<string[]>([]);
@@ -728,6 +768,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       /* ignore quota */
     }
   }, [tabStates, activeTabId]);
+
+  /**
+   * The receipt list (E-9). A workspace with no log answers with an empty list
+   * rather than an error: nothing was written on its own, which is the truth
+   * for every workspace until the first silent write lands.
+   */
+  const refreshActivity = useCallback(async () => {
+    try {
+      setActivity(await invoke['activity:list']());
+    } catch {
+      setActivity([]);
+    }
+  }, []);
 
   const refreshTree = useCallback(async () => {
     try {
@@ -1062,13 +1115,56 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     (opts?: NavOpts) => navigate({ kind: 'todos', title: 'Todos' }, opts),
     [navigate],
   );
+  const openCalendar = useCallback(
+    (opts?: NavOpts) => navigate({ kind: 'calendar', title: 'Calendar' }, opts),
+    [navigate],
+  );
+  const openDocuments = useCallback(
+    (folder?: string, opts?: NavOpts) =>
+      navigate(
+        {
+          kind: 'documents',
+          // The tab wears the folder's own name, the way a Finder window does.
+          title: folder ? folder.slice(folder.lastIndexOf('/') + 1) : 'Documents',
+          folder: folder || undefined,
+        },
+        opts,
+      ),
+    [navigate],
+  );
+  /** Opening a folder in place changes what is drawn, never where you are, so
+   *  it edits the entry rather than pushing one: back still leaves the level. */
+  const setDocumentsExpanded = useCallback(
+    (viewKey: string, expanded: string[]) => {
+      mapViews((v) => (v.key === viewKey && v.kind === 'documents' ? { ...v, expanded } : v));
+    },
+    [mapViews],
+  );
   const openMemory = useCallback(
     (opts?: NavOpts) => navigate({ kind: 'memory', title: 'Memory' }, opts),
     [navigate],
   );
+  const openActivity = useCallback(
+    (opts?: NavOpts) => {
+      // Read it fresh on the way in: this is the one page whose whole job is to
+      // be complete, and it is opened rarely enough that the cost never shows.
+      void refreshActivity();
+      navigate({ kind: 'activity', title: 'Activity' }, opts);
+    },
+    [navigate, refreshActivity],
+  );
+  /**
+   * The folder browser, for the shelves Memory owns. Anything under `notes/`
+   * goes to Documents instead: documents have one home and one name, so the
+   * Memory-owned notes browser is not a place you can end up (SB-4).
+   */
   const openFolder = useCallback(
-    (dir: string, opts?: NavOpts) => navigate({ kind: 'folder', dir, title: dir }, opts),
-    [navigate],
+    (dir: string, opts?: NavOpts) => {
+      const folder = documentsFolder(dir);
+      if (folder !== null) return openDocuments(folder, opts);
+      navigate({ kind: 'folder', dir, title: dir }, opts);
+    },
+    [navigate, openDocuments],
   );
   const openContext = useCallback(
     (tag: string, opts?: NavOpts) => navigate({ kind: 'context', tag, title: `#${tag}` }, opts),
@@ -1265,15 +1361,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   /**
-   * Pin what the PO just worked on. Anything they make, approve, or write in goes
-   * on the rail and stays there until they take it off (docs/autopinning.md).
+   * Pin a page the PO just started. A pin comes from their own creation or from
+   * arrived material, never from an edit (docs/sidebar-ia.md, SB-2). Editing a
+   * page does not pin it: they have it open, and Activity already says what
+   * happened. The row stays until they take it off.
    *
    * One thing it will not do, and that is theirs too: a note they have already
    * unpinned stays unpinned. Otherwise X-ing an open note would undo itself on the
-   * next keystroke. Only the pin control takes an unpin back — see toggleFavorite.
+   * next create. Only the pin control takes an unpin back — see toggleFavorite.
    *
    * The type is what the note says it is when the caller has the note in hand, and
-   * the folder otherwise: an accepted card knows the path it wrote, not the type.
+   * the folder otherwise.
    */
   const pinForWork = useCallback(
     (path: string, type?: NoteType) => {
@@ -1367,6 +1465,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setProposals([]);
     }
   }, []);
+
+  /**
+   * Put one row back. The tree and any open page follow, because an undo is a
+   * write like any other: it renames nothing quietly and hides nothing.
+   */
+  const revertActivity = useCallback(
+    async (id: string) => {
+      const result = await invoke['activity:revert'](id);
+      await Promise.all([refreshActivity(), refreshTree()]);
+      if (docData[result.path]) await loadDoc(result.path);
+    },
+    [refreshActivity, refreshTree, loadDoc, docData],
+  );
 
   const refreshThemes = useCallback(async () => {
     try {
@@ -1557,15 +1668,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const acceptProposal = useCallback(
     async (id: string, edited?: unknown) => {
+      // Approving does not pin the file it wrote. The receipt and Activity
+      // already say what happened (docs/sidebar-ia.md, SB-2).
       const result = await invoke['proposals:accept'](id, edited);
-      // Approving is the PM's own hand on the note, so it lands on the rail like
-      // anything else they make or write in. Outbound cards write to Jira or
-      // Confluence and carry no vault path, so they pin nothing.
-      if (result.ok && result.path) pinForWork(result.path);
       await Promise.all([refreshProposals(), refreshTree(), refreshThemes()]);
       return result;
     },
-    [refreshProposals, refreshTree, refreshThemes, pinForWork],
+    [refreshProposals, refreshTree, refreshThemes],
   );
 
   const rejectProposal = useCallback(
@@ -1621,6 +1730,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         await Promise.all([
           refreshTree(),
           refreshProposals(),
+          refreshActivity(),
           refreshThemes(),
           refreshSessions(),
           refreshCaptureNudge(),
@@ -1631,6 +1741,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [
       refreshTree,
       refreshProposals,
+      refreshActivity,
       refreshThemes,
       refreshSessions,
       refreshCaptureNudge,
@@ -1688,8 +1799,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const createNote = useCallback(
-    async (type: HandCreatableType, title?: string) => {
-      const note = await invoke['note:create']({ type, ...(title ? { title } : {}) });
+    async (type: HandCreatableType, title?: string, folder?: string) => {
+      const note = await invoke['note:create']({
+        type,
+        ...(title ? { title } : {}),
+        ...(folder ? { folder } : {}),
+      });
       pinForWork(note.path, note.type);
       await refreshTree();
       return note;
@@ -1729,25 +1844,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // clobber the cursor mid-autosave.
       const note = await invoke['note:save']({ path, body });
       setDocData((d) => ({ ...d, [path]: { note, backlinks: d[path]?.backlinks ?? [] } }));
-      // Writing in a note is the plainest statement that it's being worked on.
-      pinForWork(path, note.type);
       await refreshTree();
     },
-    [refreshTree, pinForWork],
+    [refreshTree],
   );
 
   /**
    * Vouch for a note: the trust write is its own IPC call because `verified` is
-   * frozen on the types most worth vouching for. Reading a note closely enough to
-   * say it is right is work on it, so it lands on the rail like any other edit.
+   * frozen on the types most worth vouching for.
    */
   const markChecked = useCallback(
-    async (path: string, type?: NoteType) => {
+    async (path: string) => {
       await invoke['note:markChecked'](path).catch(() => {});
-      pinForWork(path, type);
       await refreshTree();
     },
-    [refreshTree, pinForWork],
+    [refreshTree],
   );
 
   const restoreVersion = useCallback(
@@ -1756,21 +1867,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // the open editor shows the restored text without a reload race.
       const note = await invoke['note:restoreVersion']({ path, hash });
       setDocData((d) => ({ ...d, [path]: { note, backlinks: d[path]?.backlinks ?? [] } }));
-      pinForWork(path, note.type);
       await refreshTree();
     },
-    [refreshTree, pinForWork],
+    [refreshTree],
   );
 
   const saveFrontmatter = useCallback(
     async (path: string, frontmatter: Record<string, unknown>) => {
-      const note = await invoke['note:saveFrontmatter']({ path, frontmatter });
-      // Editing the properties counts as writing in it. Skills and agents save
-      // through here too, and pinForWork turns those away on type.
-      pinForWork(path, note.type);
+      await invoke['note:saveFrontmatter']({ path, frontmatter });
       await Promise.all([refreshTree(), refreshThemes(), loadDoc(path)]);
     },
-    [refreshTree, refreshThemes, loadDoc, pinForWork],
+    [refreshTree, refreshThemes, loadDoc],
   );
 
   const renameNote = useCallback(
@@ -1966,7 +2073,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       else if (info && open === '__chat') openSession(undefined);
       else if (info && open === '__review') openInbox();
       else if (info && open === '__todos') openTodos();
+      else if (info && open === '__calendar') openCalendar();
+      else if (info && open === '__documents') openDocuments('');
       else if (info && open === '__memory') openMemory();
+      else if (info && open === '__activity') openActivity();
       else if (info && (open === '__capture' || open === '__meeting')) requestCapture();
       else if (info && open?.startsWith('__session:')) {
         // A conversation by id — the deep link the session surfaces (working
@@ -1987,6 +2097,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (event.channel === 'vault:changed') {
         void refreshTree();
         void refreshThemes();
+        // A write the agent made on its own lands as a file change like any
+        // other, so this is also when a new receipt exists. No push channel of
+        // its own: a second event for the same moment could only ever disagree
+        // with this one.
+        void refreshActivity();
         if (event.paths.some((p) => p.startsWith('skills/') || p.startsWith('voices/')))
           void refreshSkills();
         if (event.paths.some((p) => p.startsWith('agents/'))) void refreshAgents();
@@ -2074,6 +2189,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     refreshTree,
     refreshThemes,
     refreshProposals,
+    refreshActivity,
     refreshSessions,
     refreshSessionFiles,
     refreshSkills,
@@ -2173,6 +2289,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       autoPinNew,
       markPinSeen,
       proposals,
+      activity,
+      refreshActivity,
+      revertActivity,
       themes,
       sessions,
       skills,
@@ -2209,11 +2328,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openHome,
       openInbox,
       openTodos,
+      openCalendar,
+      openDocuments,
       openMemory,
+      openActivity,
       openFolder,
       openContext,
       openSettings,
       setSettingsSection,
+      setDocumentsExpanded,
       openSkills,
       setSkillsTab,
       goBack,
@@ -2276,6 +2399,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       autoPinNew,
       markPinSeen,
       proposals,
+      activity,
+      refreshActivity,
+      revertActivity,
       themes,
       sessions,
       skills,
@@ -2312,11 +2438,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openHome,
       openInbox,
       openTodos,
+      openCalendar,
+      openDocuments,
       openMemory,
+      openActivity,
       openFolder,
       openContext,
       openSettings,
       setSettingsSection,
+      setDocumentsExpanded,
       openSkills,
       setSkillsTab,
       goBack,

@@ -9,9 +9,15 @@ import {
   checkSupersede,
   checkFrontmatterMutation,
   isBodyEditable,
+  isFilingKey,
   refToSlug,
   titleFromSlug,
   typeToWrite,
+  writePolicy,
+  activityAction,
+  activityLine,
+  type WriteDisposition,
+  type WriteFacts,
   type DecisionNode,
   type DecisionFrontmatter,
   type Frontmatter,
@@ -45,6 +51,138 @@ export function contentHash(text: string): string {
 
 export function createProposal(ctx: UseCaseContext, input: CreateProposalInput): ProposalRecord {
   return ctx.proposals.create(input, Date.now());
+}
+
+/** What filing a write came to: the row, the ruling, and what landed. */
+export interface FiledWrite {
+  rec: ProposalRecord;
+  /** `silent` only when the write actually applied; see `error`. */
+  disposition: WriteDisposition;
+  /** The policy's own sentence for why. */
+  reason: string;
+  /** The note it wrote, once it applied. */
+  path?: string;
+  /** The Activity row it left, once it applied. */
+  activityId?: string;
+  /** Why a silent write could not apply after all. The card stays in the queue. */
+  error?: string;
+}
+
+/**
+ * File one write, and apply it on the spot when the policy says it needs no card
+ * (docs/easier-tickets.md E-3). The ONE place a write is graded.
+ *
+ * The row is created either way. A silent write is still a proposal: the payload
+ * is the record of what changed, the accept path is the only code that knows how
+ * to write each kind, and the Activity row points back at it. Nothing forks.
+ *
+ * A silent apply that fails leaves the card pending and says so. That is the
+ * honest outcome: the work is not lost, the PM sees it, and the tool tells the
+ * model the truth about where it stands.
+ *
+ * `grouped` behaves exactly like `ask` today. Workstream B1 builds the grouped
+ * card; until then a grouped write waits on its own, which is what it did before.
+ */
+export async function fileProposal(
+  ctx: UseCaseContext,
+  input: CreateProposalInput,
+  /** What the policy needs that the row does not carry: the note's own type, and
+   *  whether an update only adds at the end. Kind, asked and the target path all
+   *  come off the row itself. */
+  facts: Omit<WriteFacts, 'kind' | 'asked' | 'targetPath'> = {},
+): Promise<FiledWrite> {
+  const rec = ctx.proposals.create(input, Date.now());
+  const ruling = writePolicy({
+    ...facts,
+    kind: input.kind,
+    asked: input.asked,
+    targetPath: input.targetPath ?? undefined,
+  });
+  if (ruling.disposition !== 'silent') {
+    return { rec, disposition: ruling.disposition, reason: ruling.reason };
+  }
+  const result = await acceptProposal(ctx, rec.id);
+  if (!result.ok) {
+    return {
+      rec,
+      disposition: 'ask',
+      reason: ruling.reason,
+      error: result.error ?? 'the change could not be applied',
+    };
+  }
+  const activityId = await recordActivity(ctx, rec, ruling.reason, result.path);
+  return {
+    rec,
+    disposition: 'silent',
+    reason: ruling.reason,
+    ...(result.path ? { path: result.path } : {}),
+    ...(activityId ? { activityId } : {}),
+  };
+}
+
+/**
+ * The receipt one silent write leaves (E-9). Best-effort throughout: a log entry
+ * that failed must never turn a landed write into an error the model retries.
+ *
+ * The commit is read back from the note's own history, straight after the write,
+ * so the row carries a real handle for putting it back. Workstream A1 owns what
+ * happens next: `revert.commit` names where the change landed, and `revert.undo`
+ * says whether putting it back means removing the file or restoring its parent.
+ */
+async function recordActivity(
+  ctx: UseCaseContext,
+  rec: ProposalRecord,
+  reason: string,
+  landed?: string,
+): Promise<string | undefined> {
+  if (!ctx.activity) return undefined;
+  try {
+    const payload = (rec.payload ?? {}) as {
+      frontmatter?: Record<string, unknown>;
+      append?: string;
+      body?: string;
+    };
+    const path = landed ?? rec.targetPath;
+    const lineInput = {
+      kind: rec.kind,
+      targetPath: path,
+      frontmatter: payload.frontmatter,
+      append: payload.append,
+      body: payload.body,
+    };
+    // An update edits a file that was already there, so putting it back means
+    // its previous contents. Everything else made the file, so putting it back
+    // means removing it.
+    const undo = rec.kind === 'update' ? 'restore' : 'delete';
+    const commit = path ? await headCommit(ctx, path) : null;
+    const row = ctx.activity.record(
+      {
+        proposalId: rec.id,
+        action: activityAction(lineInput),
+        line: activityLine(lineInput),
+        reason,
+        path: path ?? null,
+        sessionId: rec.sessionId,
+        skill: rec.skill,
+        revert: { commit, undo },
+      },
+      Date.now(),
+    );
+    return row.id;
+  } catch (err) {
+    logError('[qale] the Activity row for a silent write failed:', err);
+    return undefined;
+  }
+}
+
+/** The commit the write just landed in, or null when the vault is not a repo. */
+async function headCommit(ctx: UseCaseContext, path: string): Promise<string | null> {
+  try {
+    const history = await ctx.git.history(path);
+    return history[0]?.hash ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** What a stored card is called, for comparing it against a new one. */
@@ -253,7 +391,16 @@ export interface ProposalPreview {
   frontmatterChanges?: { key: string; before: unknown; after: unknown }[];
 }
 
-/** The frontmatter keys an update card actually changes (shallow diff of the merge). */
+/**
+ * The frontmatter keys an update card actually changes (shallow diff of the
+ * merge), minus the app's own filing.
+ *
+ * Type, tags, sources and path are decided in code and cannot be edited from a
+ * card, so showing them as changes asked the PM to approve a schema they never
+ * chose and cannot see (E-6). They still get written; they are just no longer a
+ * question. Everything a person really decides — a due date, a status, who owes
+ * what — stays.
+ */
 function frontmatterDiff(
   current: Record<string, unknown>,
   changes: Record<string, unknown> | undefined,
@@ -261,6 +408,7 @@ function frontmatterDiff(
   if (!changes) return [];
   const out: { key: string; before: unknown; after: unknown }[] = [];
   for (const [key, after] of Object.entries(changes)) {
+    if (isFilingKey(key)) continue;
     const before = current[key];
     if (JSON.stringify(before) !== JSON.stringify(after)) out.push({ key, before, after });
   }
@@ -408,6 +556,21 @@ async function acceptNote(
  * written from sitting at `new`, waiting to be read a second time.
  */
 async function markCitedSourcesProcessed(
+  ctx: UseCaseContext,
+  fm: Frontmatter,
+  card?: ProposalRecord,
+): Promise<void> {
+  try {
+    await flipCitedSources(ctx, fm, card);
+  } catch (err) {
+    // Best-effort in the comment above, and now in the code as well. Most
+    // writes land without a card, so this runs with nobody watching: a bad ref
+    // must cost a log line, never the write the PM asked for.
+    logError('[qale] marking cited sources processed failed (the write stands):', err);
+  }
+}
+
+async function flipCitedSources(
   ctx: UseCaseContext,
   fm: Frontmatter,
   card?: ProposalRecord,

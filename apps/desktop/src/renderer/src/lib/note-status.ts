@@ -216,11 +216,21 @@ export function isUnreadMeeting(m: {
 
 /**
  * Types that keep a first-class home of their own: todos have the Todos page,
- * skills and agents the Skills page, sessions their own rail section. Working in
- * one never pins it — the rail would only say a second time what those already
- * say, and the row could not be reached from the section that owns it.
+ * skills and agents the Skills page, sessions their own rail section, meetings
+ * the Calendar. Working in one never pins it — the rail would only say a second
+ * time what those already say, and the row could not be reached from the
+ * section that owns it.
+ *
+ * Calendar is a meeting's home, so a meeting never holds a rail row. Calendar
+ * shows what is coming and Home shows today (docs/sidebar-ia.md, SB-1).
  */
-const UNPINNABLE: ReadonlySet<string> = new Set(['todo', 'skill', 'agent', 'session']);
+const UNPINNABLE: ReadonlySet<string> = new Set([
+  'todo',
+  'skill',
+  'agent',
+  'session',
+  'meeting',
+]);
 
 /** Whether the rail may hold this type at all. See {@link UNPINNABLE}. */
 export function isPinnable(type: string): boolean {

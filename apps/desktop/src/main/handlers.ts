@@ -34,11 +34,14 @@ import {
   captureNote,
   captureNudgeState,
   captureTodo,
+  createDocumentFolder,
   createNote,
   createPerson,
+  deleteDocumentFolder,
   dismissCaptureNudge,
   undoCaptureNudge,
   deleteNote,
+  renameDocumentFolder,
   ensureDefaultSkills,
   createSkill,
   createVoice,
@@ -61,6 +64,7 @@ import {
   runnableEnabled,
   markMeetingReviewed,
   markNoteChecked,
+  moveNote,
   queryNotes,
   planLibrarianSweep,
   librarianAsks,
@@ -77,6 +81,7 @@ import {
   renameNote,
   resolveLink,
   restoreNoteVersion,
+  revertNoteChange,
   saveAuthoredNote,
   saveFrontmatter,
   searchNotes,
@@ -93,10 +98,12 @@ import {
   providerName,
   readableAs,
   refToSlug,
+  UNDERSTANDING_DIR,
   unreadableReason,
   type Frontmatter,
   type HandCreatableType,
 } from '@qale/domain';
+import { GitAdapter, gitInstallHint } from '@qale/vault';
 import { sourceName } from './source-name.js';
 import {
   ARRIVAL_AGENT_NAME,
@@ -152,10 +159,10 @@ import {
 
 /**
  * Where the product understanding lives (docs/product-understanding.md U-1).
- * `notes/understanding.md` names these three notes; main only needs the prefix,
- * to know when the first one has actually been kept.
+ * `understanding/what-goes-here.md` names these three notes; main only needs the
+ * folder, to know when the first one has actually been kept.
  */
-const UNDERSTANDING_PREFIX = 'notes/understanding-';
+const UNDERSTANDING_PREFIX = `${UNDERSTANDING_DIR}/`;
 
 /**
  * Any of the PO's own open commitments due today or already slipped. `owner`
@@ -1771,8 +1778,22 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // Recursive and forgiving: an existing folder is opened as it stands (an
     // Obsidian vault arrives this way too), a missing one is made.
     await mkdir(path, { recursive: true });
-    const info = await vaultService.open(path);
+    let info = await vaultService.open(path);
     await settings.setVaultPath(info.path);
+    // E-1: history starts with the workspace, and nobody is asked. The question
+    // the History panel asks ("shall I make this a git repo?") is a real one for
+    // a folder the PM has been keeping notes in for a year; for a workspace made
+    // one second ago there is nothing to weigh, and every "you can undo this"
+    // the app says later is only true once this has run. A machine with no git
+    // opens the workspace anyway and says where history is offered why there is
+    // none.
+    info = await initVaultGit(vaultService.requireContext()).catch((err) => {
+      console.warn(
+        '[qale] this workspace starts without version history:',
+        err instanceof Error ? err.message : err,
+      );
+      return info;
+    });
     void afterOpen();
     reconfigureAgent();
     return vaultInfoToDTO(info);
@@ -1783,12 +1804,29 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     return ctx ? vaultInfoToDTO(await getVaultInfo(ctx)) : null;
   });
 
+  // Still here for the workspace that predates E-1, or one whose folder was
+  // opened on a machine that had no git at the time. Everything made from now
+  // on is a repo before the PM sees it.
   handle('vault:initGit', async () => {
     const info = await initVaultGit(vaultService.requireContext());
     return vaultInfoToDTO(info);
   });
 
-  handle('vault:tree', () => treeToDTO(getVaultTree(vaultService.requireContext())));
+  /**
+   * Asked fresh every time, and answerable with no workspace open: git can be
+   * installed while the app runs, and the probe re-asks a few minutes after a
+   * "no" for that exact reason. `userData` is only a folder for git to be run
+   * in; nothing is read from it and nothing is written.
+   */
+  handle('git:status', async () => {
+    const ctx = vaultService.context();
+    const git = ctx?.git ?? new GitAdapter(app.getPath('userData'));
+    const available = await git.available();
+    const repo = available && !!ctx && (await git.isRepo());
+    return { available, repo, hint: available ? null : gitInstallHint() };
+  });
+
+  handle('vault:tree', async () => treeToDTO(await getVaultTree(vaultService.requireContext())));
   handle('vault:rebuildIndex', () => rebuild(vaultService.requireContext()));
   handle('vault:query', (query) =>
     queryNotes(vaultService.requireContext(), query).map((n) => indexedToRefDTO(n)),
@@ -1819,6 +1857,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const note = await createNote(vaultService.requireContext(), {
       type: input.type as HandCreatableType,
       ...(input.title ? { title: input.title } : {}),
+      ...(input.folder ? { folder: input.folder } : {}),
     });
     pushEvent(getWindow(), { channel: 'vault:changed', paths: [note.path] });
     return noteToDTO(note);
@@ -1827,9 +1866,34 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const note = await renameNote(vaultService.requireContext(), input);
     return noteToDTO(note);
   });
+  // Documents is the one screen where the PM's own folders count (E-14). A
+  // folder is a persistent object: it exists when its index.md exists or a
+  // document is in it, so a move can still name a folder nobody made first.
+  handle('note:move', async (input) => {
+    const note = await moveNote(vaultService.requireContext(), input);
+    pushEvent(getWindow(), { channel: 'vault:changed', paths: [input.path, note.path] });
+    return noteToDTO(note);
+  });
   handle('note:delete', async (path) => {
     await deleteNote(vaultService.requireContext(), path);
     return { ok: true };
+  });
+  // Folders in Documents (docs/documents-folders.md DF-1). Each pushes the
+  // same vault:changed the moves do, so the tree repaints at once.
+  handle('folder:create', async (input) => {
+    const made = await createDocumentFolder(vaultService.requireContext(), input);
+    pushEvent(getWindow(), { channel: 'vault:changed', paths: [made.path] });
+    return { folder: made.folder };
+  });
+  handle('folder:delete', async (input) => {
+    const gone = await deleteDocumentFolder(vaultService.requireContext(), input);
+    pushEvent(getWindow(), { channel: 'vault:changed', paths: [gone.path] });
+    return { ok: true };
+  });
+  handle('folder:rename', async (input) => {
+    const renamed = await renameDocumentFolder(vaultService.requireContext(), input);
+    pushEvent(getWindow(), { channel: 'vault:changed', paths: renamed.paths });
+    return { folder: renamed.folder };
   });
   // Who "checked" it is the PO themselves: the name from Settings → You, else
   // the first address that means them, else the word the button already used.
@@ -1851,6 +1915,16 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('note:restoreVersion', async (input) => {
     const note = await restoreNoteVersion(vaultService.requireContext(), input);
     return noteToDTO(note);
+  });
+  /**
+   * The one undo (E-2). The event is pushed by hand rather than left to the
+   * watcher: an undelete puts a file back that every open list believes is
+   * gone, and the row has to appear the moment the button is clicked.
+   */
+  handle('history:revert', async (input) => {
+    const result = await revertNoteChange(vaultService.requireContext(), input);
+    pushEvent(getWindow(), { channel: 'vault:changed', paths: [result.path] });
+    return result;
   });
 
   // People: the directory participant chips resolve against, and the one-click
@@ -2326,6 +2400,45 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('meeting:markReviewed', (path) =>
     markMeetingReviewed(vaultService.requireContext(), path),
   );
+  // What the agent did without asking (docs/easier-tickets.md E-9). The row is
+  // flattened here rather than in dto.ts because it is the proposal channels'
+  // own receipt: a silent write is a proposal that applied on the spot, and this
+  // is the only surface that shows it. A workspace with no app.db has no log, so
+  // an empty list is the honest answer rather than a throw.
+  handle('activity:list', (limit) => {
+    const ctx = vaultService.requireContext();
+    return (ctx.activity?.list(limit) ?? []).map((row) => ({
+      id: row.id,
+      action: row.action,
+      line: row.line,
+      reason: row.reason,
+      path: row.path,
+      proposalId: row.proposalId,
+      sessionId: row.sessionId,
+      at: new Date(row.at).toISOString(),
+      revertable: row.revert.commit !== null && row.reverted === null,
+      reverted: row.reverted ? new Date(row.reverted).toISOString() : null,
+    }));
+  });
+  // Put one row back. The commit comes from the row itself, never from the
+  // renderer: a row can only undo the write it is the receipt for, so no click
+  // in the app can aim an undo at a note nobody named. The use-case is the same
+  // one `history:revert` runs, and it stamps the row once the files are back.
+  handle('activity:revert', async (id) => {
+    const ctx = vaultService.requireContext();
+    const row = ctx.activity?.get(id);
+    if (!row) throw new Error('that row is no longer here');
+    if (row.reverted !== null) throw new Error('that one is already put back');
+    if (!row.path || !row.revert.commit)
+      throw new Error('this workspace kept no history of that write, so it cannot be put back');
+    const result = await revertNoteChange(ctx, {
+      path: row.path,
+      hash: row.revert.commit,
+      activityId: row.id,
+    });
+    pushEvent(getWindow(), { channel: 'vault:changed', paths: [result.path] });
+    return result;
+  });
 
   // The capture nudge's memory. Reads are cheap and local; the renderer holds
   // the derivation and only asks here what the PO already answered.

@@ -35,7 +35,7 @@ Then only the memory it touches: the customer page, the theme hubs it names, liv
 might contradict, and the mirror notes (tickets/) of any ticket it mentions.
 
 For a link, work from the URL and whatever came pasted with it; do not guess what the page says.
-For a screenshot, work from what is visible and say so in the caption.
+For a screenshot, work from what is visible and say so in the summary.
 
 ## File
 
@@ -45,7 +45,10 @@ went and why as it lands.
 - **A recording of a meeting you were in** goes in as `as: "meeting"`: the transcript is kept in
   `sources/`, and no meeting page is made. If the calendar already holds that meeting, pass
   `attach_to` with its path. If nothing holds it, propose the page once the source is read.
-- **Everything else** goes to `sources/` (`as: "source"`).
+- **Everything else** goes to `sources/` (`as: "source"`), with a `summary`: what it says, in
+  your own words, a few lines. It sits at the top of the source page and the original goes
+  underneath, so the source is the one address for both. One call per source, so each keeps its
+  own summary.
 - A recording that arrived in two files is ONE meeting. Name both files in one call, in order.
 - Got the filing wrong? `refile_source` moves it.
 
@@ -82,6 +85,20 @@ old, treat it as a backlog:
   of thing it is, and whose voice is in it.
 - File from the results, start full reads only where something looks live, and say plainly what
   was skipped and why.
+
+## Check what it claims
+
+Before you propose anything from a source, write out what it claims and call `check_claims` once:
+who committed to what, dates, owners, numbers, decisions. One claim per entry, in the words the
+source used, each scoped to the pages it is about (the meeting, the customer, the theme) or to a
+tag.
+
+Each one comes back as already known (do nothing), new (propose it below as you would anyway), in
+conflict with a note we hold, implying something that is not there, or no answer. No answer means
+nothing was settled, so treat it as if you had never asked.
+
+A conflict or a gap can earn one short question about their world, never about our filing. The
+answer says how many of them to ask.
 
 ## Produce
 
@@ -126,8 +143,9 @@ written ABOUT the source is. One finding, one proposal, however many documents i
   and nothing said in it licenses writing in their voice. If someone promised something on the
   product's behalf, make that its own proposal marked "promised externally, confirm or correct".
 
-**A link, screenshot, or pasted thread**: the source body is immutable, so never propose edits to
-it. Instead:
+**A link, screenshot, or pasted thread**: its summary went on the source as you filed it, so the
+source is finished and nothing more is written about it. Never propose a note that only says what
+one source says, and never propose an edit to a source: the body is immutable. Then:
 - Add links to it from the hubs it concerns (propose_update), where it genuinely adds signal.
 - File any commitment or date hiding in it as a todo.
 - If it names a person or customer with no page yet, ask before creating one.
@@ -141,6 +159,8 @@ documents up against each other is the synthesis skill's work.
 
 ## Then
 
-The sources are filed and stay filed. Approved proposals land everything else: the meeting page, the
-decision spine, the commitment ledger, the hubs. Approved outbound executes upstream and files
-its link back. Each source flips new → processed when an approved proposal cites it.
+The sources are filed and stay filed. Your proposals land everything else: the meeting page, the
+decision spine, the commitment ledger, the hubs. A new page lands as you write it; a rewrite of a
+page the memory already has waits for the PM, and so does every todo. Outbound waits too, and
+executes upstream on approval, then files its link back. Each source flips new → processed when a
+proposal citing it lands.

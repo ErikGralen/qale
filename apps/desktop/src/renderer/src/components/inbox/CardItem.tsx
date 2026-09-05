@@ -289,8 +289,7 @@ export function CardItem({
     else setExpanded((x) => !x);
   };
 
-  const { Icon, headline, authored, verb, note, creates, replaces, retitle } =
-    cardHeadline(proposal);
+  const { Icon, headline, authored, verb, note, replaces, retitle } = cardHeadline(proposal);
   // What approving DOES, and where it lands. Composed in main from the payload,
   // never written by the agent, so every card of a kind says the same sentence
   // and the renderer never gets a second chance to word it differently.
@@ -496,7 +495,6 @@ export function CardItem({
             {(replaces ||
               retitle ||
               (note && authored) ||
-              creates ||
               source ||
               proposal.asked ||
               proposal.inference ||
@@ -509,14 +507,6 @@ export function CardItem({
                     onOpen={(opts) => onOpen(note.path, opts)}
                     small
                   />
-                )}
-                {/* Where a create card lands. Plain text, not a chip: the note
-                    does not exist yet, and a chip that cannot be clicked is a
-                    promise the card can't keep. The path is on hover. */}
-                {creates && (
-                  <span title={creates.path}>
-                    Files as <span className="text-foreground/75">“{creates.title}”</span>
-                  </span>
                 )}
                 {replaces && (
                   <span>
@@ -1358,11 +1348,13 @@ function ChangePreview({
   return (
     <div>
       <div className="mb-2 text-xs font-medium text-muted-foreground">
+        {/* "What gets filed" made the page sound like paperwork the PO now owns
+            (E-6). It is a page, and this is what it will say. */}
         {kind === 'update'
           ? 'What this changes'
           : kind === 'delete'
             ? 'What goes'
-            : 'What gets filed'}
+            : 'What it will say'}
       </div>
       <PreviewSurface>
         {kind === 'update' ? (

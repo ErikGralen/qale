@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { ProposalStore } from './proposal-store.js';
+import { ActivityStore } from './activity-store.js';
 import { AskStore } from './ask-store.js';
 import { CheckLedgerStore } from './check-ledger.js';
 import { SyncStore } from './sync-store.js';
@@ -13,6 +14,7 @@ import { SyncStore } from './sync-store.js';
 export class AppDb {
   private readonly db: Database.Database;
   readonly proposals: ProposalStore;
+  readonly activity: ActivityStore;
   readonly asks: AskStore;
   readonly checks: CheckLedgerStore;
   readonly sync: SyncStore;
@@ -26,6 +28,7 @@ export class AppDb {
     // and nobody can answer.
     this.db.exec('DROP TABLE IF EXISTS pings');
     this.proposals = new ProposalStore(this.db);
+    this.activity = new ActivityStore(this.db);
     this.asks = new AskStore(this.db);
     this.checks = new CheckLedgerStore(this.db);
     this.sync = new SyncStore(this.db);

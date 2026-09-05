@@ -3,7 +3,14 @@ import { Folder, Hash } from 'lucide-react';
 import { useApp } from '../state/app-state';
 import { useChatMentions } from '../app/ChatMentions';
 import { SkillPicker } from '../app/SkillPicker';
-import { COMPOSER_INPUT, COMPOSER_ROW, COMPOSER_SHELL, SendButton, useAutoGrow } from './Composer';
+import {
+  COMPOSER_INPUT,
+  COMPOSER_ROW,
+  COMPOSER_SHELL,
+  MentionHint,
+  SendButton,
+  useAutoGrow,
+} from './Composer';
 
 /**
  * Half-written questions survive a tab switch. Module-level and keyed by scope,
@@ -33,6 +40,7 @@ export function ScopedAskComposer({
   sessionTitle,
   scopePrefix,
   placeholder = 'Ask the memory…',
+  flat = false,
 }: {
   scope: AskScope;
   /** Tab title for the Ask session, e.g. "Ask · decisions". */
@@ -40,6 +48,12 @@ export function ScopedAskComposer({
   /** Prepended to the question so the agent knows the scope. */
   scopePrefix: string;
   placeholder?: string;
+  /**
+   * Drops the resting shadow. A page whose list runs the full pane width has
+   * nothing for the bar to float over, and a shadow there reads as a seam
+   * (The Floating-Only Rule).
+   */
+  flat?: boolean;
 }) {
   const { tree, skills, openSession } = useApp();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -92,7 +106,7 @@ export function ScopedAskComposer({
   return (
     <div className="shrink-0 px-6 pt-2 pb-5">
       <div className="mx-auto w-full max-w-2xl">
-        <div className={COMPOSER_SHELL}>
+        <div className={flat ? `${COMPOSER_SHELL} shadow-none` : COMPOSER_SHELL}>
           {mentions.menu}
           <textarea
             ref={inputRef}
@@ -141,17 +155,18 @@ export function ScopedAskComposer({
             />
             <span
               className="flex h-7 shrink-0 items-center gap-1 rounded-md bg-brand/8 pr-2 pl-1.5 text-xs font-medium text-brand"
-              title={scopePrefix}
+              title={`Asks about ${scopeName} only`}
             >
               <ScopeIcon className="size-3.5" aria-hidden />
               <span className="max-w-40 truncate">{scope.label}</span>
             </span>
+            <MentionHint show={!ask.trim()} />
             <SendButton ready={!!ask.trim()} onClick={() => runAsk()} />
           </div>
         </div>
         <p id={hintId} className="sr-only">
-          Enter asks, Shift+Enter starts a new line. Type @ to reference a note, # for a context, /
-          to bring in a skill. The answer opens in a new session scoped to {scopeName}.
+          Enter asks, Shift+Enter starts a new line. Type @ to reference a note, # for a tag, / to
+          bring in a skill. The answer opens in a new session about {scopeName}.
         </p>
       </div>
     </div>

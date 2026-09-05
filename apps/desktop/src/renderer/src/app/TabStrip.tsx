@@ -9,8 +9,10 @@ import {
   Inbox,
   History,
   MessageSquare,
+  CalendarDays,
   FileCode,
   FileText,
+  Files,
   Folder,
   Hash,
   Settings,
@@ -43,6 +45,10 @@ function iconFor(tab: Tab): LucideIcon {
       return Inbox;
     case 'todos':
       return ListTodo;
+    case 'calendar':
+      return CalendarDays;
+    case 'documents':
+      return Files;
     case 'memory':
       return Library;
     case 'folder':

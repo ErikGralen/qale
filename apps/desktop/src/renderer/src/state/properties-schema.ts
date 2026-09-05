@@ -25,24 +25,41 @@ export interface FieldSpec {
   label: string;
   widget: Widget;
   options?: readonly SelectOption[];
+  /**
+   * The agent writes this, the reader only reads it. The row still shows the
+   * value, it just offers no cursor. See {@link TAGS}.
+   */
+  agentOwned?: boolean;
 }
 
 const SUMMARY: FieldSpec = { key: 'summary', label: 'Summary', widget: 'textarea' };
-const TAGS: FieldSpec = { key: 'tags', label: 'Tags', widget: 'tags' };
+/**
+ * Tags file a note into a context, and the agent fills them on every note it
+ * writes. Asking the PO to keep that vocabulary true is asking them to run a
+ * filing system for a schema they never see, so the row reads and never edits:
+ * chips you can click through to the context, and nothing to curate.
+ */
+const TAGS: FieldSpec = { key: 'tags', label: 'Tags', widget: 'tags', agentOwned: true };
 
 /**
  * Lifecycle rows. Each type carries its OWN lifecycle under its own name, so no
  * two of them ever appear as "Status" (see NOTE_LIFECYCLES in @qale/domain, the
  * authority these mirror). Values are enums, never free text.
+ *
+ * Two of the three `processing` states are real: code writes `new` when
+ * material lands and `processed` when a proposal citing it is approved, and the
+ * attention lists read both. Nothing anywhere writes `stale`, so offering it
+ * taught a word that only ever came back from the PO's own hand. The reads stay
+ * (a vault file that carries it still counts as unread, and the fact strip still
+ * flags it), and PropertyValue still shows a value the options no longer offer.
  */
 const PROCESSING: FieldSpec = {
   key: 'processing',
-  label: 'Processing',
+  label: 'Gone through',
   widget: 'select',
   options: [
-    { value: 'new', label: 'New' },
-    { value: 'processed', label: 'Processed' },
-    { value: 'stale', label: 'Stale' },
+    { value: 'new', label: 'Not yet' },
+    { value: 'processed', label: 'Gone through' },
   ],
 };
 const STANDING: FieldSpec = {
@@ -52,16 +69,6 @@ const STANDING: FieldSpec = {
   options: [
     { value: 'active', label: 'Active' },
     { value: 'superseded', label: 'Superseded' },
-  ],
-};
-const RELATIONSHIP: FieldSpec = {
-  key: 'relationship',
-  label: 'Relationship',
-  widget: 'select',
-  options: [
-    { value: 'prospect', label: 'Prospect' },
-    { value: 'active', label: 'Active' },
-    { value: 'churned', label: 'Churned' },
   ],
 };
 const COMMITMENT: FieldSpec = {
@@ -74,18 +81,6 @@ const COMMITMENT: FieldSpec = {
     { value: 'dropped', label: 'Dropped' },
   ],
 };
-const STANCE: FieldSpec = {
-  key: 'stance',
-  label: 'Stance',
-  widget: 'select',
-  options: [
-    { value: 'exploring', label: 'Exploring' },
-    { value: 'watching', label: 'Watching' },
-    { value: 'committed', label: 'Committed' },
-    { value: 'wont-do', label: "Won't do" },
-  ],
-};
-
 /**
  * `processing` sits last everywhere it appears: it is Qale's own bookkeeping
  * (did the pipeline read this yet), not a fact about the thing the note
@@ -131,8 +126,10 @@ export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[
     TAGS,
     PROCESSING,
   ],
-  customer: [SUMMARY, RELATIONSHIP, { key: 'segment', label: 'Segment', widget: 'text' }, TAGS],
-  theme: [SUMMARY, STANCE, TAGS],
+  // A customer's `relationship` and a theme's `stance` have no row: see
+  // {@link HIDDEN_KEYS}.
+  customer: [SUMMARY, { key: 'segment', label: 'Segment', widget: 'text' }, TAGS],
+  theme: [SUMMARY, TAGS],
   person: [
     SUMMARY,
     { key: 'role', label: 'Role', widget: 'text' },
@@ -166,14 +163,14 @@ export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[
     SUMMARY,
     { key: 'state', label: 'Tracker state', widget: 'readonly' },
     { key: 'assignee', label: 'Assignee', widget: 'readonly' },
-    { key: 'remote_updated', label: 'Changed upstream', widget: 'readonly' },
+    { key: 'remote_updated', label: 'Changed in the tracker', widget: 'readonly' },
     TAGS,
     PROCESSING,
   ],
   wikipage: [
     SUMMARY,
     { key: 'version', label: 'Version', widget: 'readonly' },
-    { key: 'remote_updated', label: 'Changed upstream', widget: 'readonly' },
+    { key: 'remote_updated', label: 'Changed in the wiki', widget: 'readonly' },
     TAGS,
     PROCESSING,
   ],
@@ -192,7 +189,7 @@ export const FACTS: Partial<Record<NoteType, string[]>> = {
   meeting: ['date', 'participants'],
   decision: ['date', 'deciders'],
   todo: ['due', 'owner'],
-  customer: ['relationship', 'segment'],
+  customer: ['segment'],
   person: ['role'],
   insight: ['confidence'],
   source: ['origin', 'captured'],
@@ -230,7 +227,14 @@ export const REF_LABELS: Record<string, string> = {
  *   from the body and still owes the note a real one. "Needs summary: true" is
  *   the pass talking to itself, and it read as a demand on the PM;
  * - `broken_frontmatter`: one plain sentence replaces it (PropertiesBlock),
- *   because a wall of raw YAML in a value column explains nothing.
+ *   because a wall of raw YAML in a value column explains nothing;
+ * - `relationship` (a customer) and `stance` (a theme): two vocabularies with
+ *   no code behind them. Every other lifecycle changes what the app does:
+ *   `processing` picks what the attention lists ask about, `standing` strikes a
+ *   superseded decision, `commitment` is the todo. Nothing branches on whether
+ *   a customer is a prospect or a theme is being watched, so the two rows only
+ *   asked the PO to keep a word true for us. The agent reads them and writes
+ *   them; they are worth more in the file than on the screen.
  *
  * Hidden, not dropped: the keys stay in the file, and the agent still reads them.
  */
@@ -238,6 +242,8 @@ export const HIDDEN_KEYS = new Set<string>([
   'state_category',
   'needs_summary',
   'broken_frontmatter',
+  'relationship',
+  'stance',
 ]);
 
 /**

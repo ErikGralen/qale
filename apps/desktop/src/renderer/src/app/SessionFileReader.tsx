@@ -137,7 +137,7 @@ export function SessionFileBody({
     return (
       <div className={`flex flex-col items-start gap-3 ${className}`}>
         <p className="text-dense leading-relaxed text-muted-foreground">
-          This file is gone. Session files are working material, and nothing keeps them.
+          This file is gone. Session files are scratch, and nothing keeps them.
         </p>
         {onGone}
       </div>

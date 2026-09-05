@@ -107,6 +107,33 @@ export function dueLabel(due: string, today: string): string {
   return (d.getFullYear() === toDate(today).getFullYear() ? dayMonth : dayMonthYear).format(d);
 }
 
+/**
+ * How a due date stands against today, in words. `dueLabel` says which day it
+ * is; this says what that means, which is the line a person reads first on a
+ * single todo. Tone is for colour only — the words carry it on their own.
+ */
+export type DueTone = 'late' | 'today' | 'soon' | 'later' | 'none';
+
+export interface DueStanding {
+  tone: DueTone;
+  /** "3 days late", "Due today", "Due in 4 days", "No date yet". */
+  text: string;
+  /** Whole days from today to the date; negative when late, null when undated. */
+  days: number | null;
+}
+
+export function dueStanding(due: string | null | undefined, today: string): DueStanding {
+  if (!due) return { tone: 'none', text: 'No date yet', days: null };
+  const days = daysBetween(today, due);
+  if (days < 0) {
+    return { tone: 'late', text: days === -1 ? 'A day late' : `${-days} days late`, days };
+  }
+  if (days === 0) return { tone: 'today', text: 'Due today', days };
+  if (days === 1) return { tone: 'soon', text: 'Due tomorrow', days };
+  if (days <= 7) return { tone: 'soon', text: `Due in ${days} days`, days };
+  return { tone: 'later', text: `Due in ${days} days`, days };
+}
+
 /** "4 Sep 2026" — a date as a property value, where the year is part of it. */
 export function dateLabel(iso: string): string {
   return dayMonthYear.format(toDate(iso));

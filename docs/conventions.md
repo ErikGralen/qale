@@ -240,6 +240,10 @@ the beat's heading, `propose_instruction` as the route, "Only strong ones", and 
 a test cannot reach is whether the model holds the bar, so the beat is unverified in the way every
 debrief is: it needs a live site, a live key and somebody to answer.
 
+**Superseded 2026-09-02 by CV-6.** Beat three is cut. Conventions are written up when the
+connection is made, from the same read, whether or not the PM wants a walkthrough. `## First look`
+is two beats again, and the section now says never to ask about conventions one rule at a time.
+
 ---
 
 ## CV-5. The demo vault shows it working
@@ -302,6 +306,70 @@ plus `pnpm check-types` and `pnpm lint`. The seed script is outside the type-che
 was checked on its own against the same compiler options, clean. `pnpm reset-atlassian` was NOT run,
 so the label converge path is unverified against a live site, and neither demo file has been seen in
 the app.
+
+---
+
+## CV-6. The write-up happens on connect (E-25)
+
+**Today, before this ticket:** every feeder needed the PM to speak first. `propose_instruction`
+takes a rule they state in a chat. The debrief's beat three asks two or three yes/no questions,
+and only if they answered the knock with "yes, walk me through it". Say "not now" and the
+workspace never learns anything about how the team writes a ticket. Worse, a rule confirmed that
+way lands silently, because the write policy applies a rule file with no card (E-8), so nobody
+ever reads what was recorded.
+
+**Change:** a connection's first read is the moment. It is the one time the evidence is all
+there and nothing has been written yet, so the run reads a sample of what arrived and writes up
+how this team writes a ticket and a page: the title shape, what the description holds, the tone,
+where things get filed, whatever repeats. One proposal per system. The proposal is how it asks.
+
+**Decision:** Implement as proposed (Erik, 2026-09-02, docs/easier-tickets.md E-25)
+
+**Notes:** Built 2026-09-02 in `apps/desktop/src/main/services/sync-service.ts`, as part of the
+kickoff the first look already fires (`firstLookInstruction`). Three pieces:
+
+- `FirstLookRead.containers[]` gained `provider`, taken from the connector's own `providers` map.
+  That is what says which conventions file a container's items belong in, so a second tracker
+  writes its own file instead of writing into Jira's.
+- `conventionsJobs` turns those into one job per system. It quotes the path, the title, the
+  summary and the `##` headings out of the shipped template rather than typing them again, so
+  renaming a heading in `defaults.ts` cannot leave the kickoff pointing at the old one. A
+  container that is empty, one the connector mirrors nowhere, and a calendar all drop out, so a
+  Google-only first look says nothing about conventions.
+- `conventionsBlock` is the instruction. It says to do this before the knock and whether or not
+  they want a walkthrough, names beat one's "propose nothing" as the one thing this overrides,
+  and ends on "never ask about conventions one rule at a time".
+
+**Why the kickoff and not the skill.** This file's earlier tickets put behaviour in skill prose
+on purpose, and CV-4 put beat three in `TELL_QALE_SKILL`. This job goes the other way, for one
+reason: it is not the interview. It runs whether or not the PM wants a walkthrough, it ends in a
+file rather than in a conversation, and only the caller knows a connection has just arrived with
+nothing written about it. What the PM reads and edits is still prose in a file they own; it is
+the conventions file itself.
+
+**Three things this needs and does not have.** None of them are in this workstream's files:
+
+1. **The card.** `writePolicy` in `packages/domain/src/proposals/policy.ts` applies any `skill`
+   or `agent` file silently. That rule is right for E-8, where the PM stated the rule in a chat,
+   and wrong here, where the agent inferred a whole file from reading their Jira with nobody
+   watching. The reason string it prints, "You said it should hold from now on", is simply false
+   for this write. The fix is one line: a rule file applies silently only when `asked` is set,
+   which every chat-stated rule already sets through `chatIsTheSource`. Until it lands the
+   write-up applies without a card, which E-25 asks for the opposite of.
+2. **Sonnet.** E-25 wants the read on the quick model, and the first look pins none: FD-2 left it
+   open so the interview does not get stuck on the background model when the PM answers. That is
+   still right for the interview and wrong for this read, and splitting them means a second
+   session fired from `handlers.ts`, pinned to `BACKGROUND_MODEL_ID`.
+3. **Labels.** `JiraIssue` in `packages/atlassian` carries no labels and no issue type, and
+   neither does the shallow mirror, so nothing in the read path can see them. Beat three's own
+   example ("most NORD tickets carry `team-checkout`") is the one thing the model cannot check.
+   It needs `labels` and `issueType` on `JiraIssue`, both in the `fields=` list, and one line
+   each in `atlassianReadTools`.
+
+**And one thing to cut.** Beat three of `## First look` in `TELL_QALE_SKILL` asked about
+conventions one rule at a time, which is what the write-up replaces. **Cut 2026-09-02.**
+`## First look` is two beats, and the paragraph in its place says never to ask about conventions
+one rule at a time. The kickoff's own sentence still holds and needed no change.
 
 ---
 

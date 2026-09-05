@@ -44,7 +44,7 @@ export function SpawnCard({ request }: { request: SpawnRequestDTO }) {
     <div className="overflow-hidden rounded-xl bg-card p-3.5 ring-1 ring-brand/30">
       <div className="flex items-center gap-1.5 text-sm font-medium">
         <Users className="size-4 text-muted-foreground" aria-hidden />
-        Spawn {request.total} subagent{request.total === 1 ? '' : 's'}?
+        Split this work into {request.total} job{request.total === 1 ? '' : 's'}?
       </div>
 
       <ul className="mt-2 flex flex-col gap-0.5 text-sm text-muted-foreground">
@@ -66,7 +66,7 @@ export function SpawnCard({ request }: { request: SpawnRequestDTO }) {
             <ChevronDown
               className={`size-3 transition-transform motion-reduce:transition-none ${briefOpen ? 'rotate-180' : '-rotate-90'}`}
             />
-            brief.md: what they’ll all be told
+            brief.md: what every job is told
           </button>
           {briefOpen && (
             <pre className="mt-1 max-h-56 overflow-y-auto rounded-md bg-muted/40 px-2.5 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
@@ -77,7 +77,7 @@ export function SpawnCard({ request }: { request: SpawnRequestDTO }) {
       )}
       {request.brief === null && (
         <p className="mt-2 text-xs text-warning">
-          No brief.md yet. Each child will read its item with no idea what you already believe, so
+          No brief.md yet. Each job reads its own item with no idea what you already believe, so
           none of them can flag a contradiction. Discard and ask for a brief first if that matters
           here.
         </p>

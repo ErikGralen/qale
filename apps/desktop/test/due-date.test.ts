@@ -4,6 +4,7 @@ import {
   addMonths,
   datePresets,
   dueLabel,
+  dueStanding,
   endOfWeek,
   monthGrid,
   parseDateInput,
@@ -55,6 +56,18 @@ test('dueLabel says today, tomorrow, then the date', () => {
   assert.equal(dueLabel('2026-09-03', WEDNESDAY), 'tomorrow');
   assert.equal(dueLabel('2026-09-18', WEDNESDAY), '18 Sept');
   assert.equal(dueLabel('2027-01-04', WEDNESDAY), '4 Jan 2027');
+});
+
+test('dueStanding says what the date means, and how loud to say it', () => {
+  const s = (due: string | null) => dueStanding(due, WEDNESDAY);
+  assert.deepEqual(s('2026-09-01'), { tone: 'late', text: 'A day late', days: -1 });
+  assert.deepEqual(s('2026-08-30'), { tone: 'late', text: '3 days late', days: -3 });
+  assert.deepEqual(s(WEDNESDAY), { tone: 'today', text: 'Due today', days: 0 });
+  assert.deepEqual(s('2026-09-03'), { tone: 'soon', text: 'Due tomorrow', days: 1 });
+  assert.deepEqual(s('2026-09-09'), { tone: 'soon', text: 'Due in 7 days', days: 7 });
+  // Past a week the words stay the same; only the colour steps back.
+  assert.deepEqual(s('2026-09-10'), { tone: 'later', text: 'Due in 8 days', days: 8 });
+  assert.deepEqual(s(null), { tone: 'none', text: 'No date yet', days: null });
 });
 
 test('parses the words', () => {

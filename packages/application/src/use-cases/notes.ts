@@ -65,6 +65,12 @@ export interface CreateNoteInput {
    * the cursor in the title, and renaming moves the file while nothing cites it.
    */
   title?: string;
+  /**
+   * Which of the PM's own folders the file lands in, relative to `notes/`.
+   * Only a `note` has folders (Documents); everywhere else the folder IS the
+   * type, so the field is ignored for the other types.
+   */
+  folder?: string;
 }
 
 /**
@@ -87,9 +93,10 @@ export async function createNote(ctx: UseCaseContext, input: CreateNoteInput): P
   }
   const title = (input.title ?? '').trim().slice(0, 200) || 'Untitled';
   const dir = dirForType(input.type);
+  const folder = input.type === 'note' ? documentFolderPath(input.folder ?? '') : '';
   const desired =
     input.type === 'note'
-      ? `${dir}/${fileSlug(title, ctx.clock.now().slice(0, 10))}.md`
+      ? `${dir}/${folder ? `${folder}/` : ''}${fileSlug(title, ctx.clock.now().slice(0, 10))}.md`
       : `${dir}/${slugify(title) || 'untitled'}.md`;
   const path = await freePath(ctx, desired);
 
@@ -423,6 +430,226 @@ export async function renameNote(ctx: UseCaseContext, input: RenameNoteInput): P
   ctx.index.reindex(note);
   await ctx.git.commitPaths([existing.path, note.path], `rename: ${existing.slug} → ${note.slug}`);
   return note;
+}
+
+export interface MoveNoteInput {
+  path: string;
+  /**
+   * Where it goes, written relative to `notes/`. "" is the top of Documents.
+   * Nested folders are allowed: "specs/2026".
+   */
+  folder: string;
+}
+
+/**
+ * The folder a document sits in, cleaned up: every segment slugified, empty
+ * segments dropped, and anything that tries to climb out refused.
+ */
+function documentFolderPath(folder: string): string {
+  const parts = folder
+    .split('/')
+    .map((part) => slugify(part.trim()))
+    .filter((part) => part.length > 0);
+  return parts.join('/');
+}
+
+/**
+ * Move one document into one of the PM's own folders (E-14).
+ *
+ * Documents is the one screen where the structure a person made means anything.
+ * A folder there is a persistent object: it exists when its
+ * `notes/<folder>/index.md` orientation file exists, or when a document sits in
+ * it (see {@link createDocumentFolder}). A move may still name a folder nobody
+ * made first; the write creates the path, and the document in it is what keeps
+ * it real. That is why this takes a folder name rather than a full path.
+ *
+ * Three rules hold it together:
+ *
+ * 1. **Only inside Documents.** `notes/` is the PM's folder. Everywhere else in
+ *    the workspace the folder IS the note's type, so moving a file out of
+ *    `insights/` would silently retype it.
+ * 2. **The filename never changes.** A wikilink resolves by exact slug, else by
+ *    unique basename, so `[[notes/q3-priorities]]` still finds the file after it
+ *    moves to `notes/plans/q3-priorities.md`. Renaming it on the way would be
+ *    the one thing that breaks the backlinks.
+ * 3. **A name already taken refuses.** Sliding a `-2` onto the filename to make
+ *    room would rename it, which rule 2 forbids, and would leave the PM with two
+ *    documents they cannot tell apart.
+ *
+ * The file moves byte for byte, through the raw text rather than through the
+ * parsed note. A move says nothing new about a document, so nothing it says may
+ * change on the way: re-serializing would persist the coerced frontmatter the
+ * reader falls back to when a file's own fields fail the schema, which is how a
+ * move would quietly eat the fields the PM typed.
+ */
+export async function moveNote(ctx: UseCaseContext, input: MoveNoteInput): Promise<Note> {
+  const dir = `${dirForType('note')}/`;
+  if (!input.path.startsWith(dir)) {
+    throw new Error(`only your documents move between folders, and “${input.path}” is not one`);
+  }
+  const raw = await ctx.vault.readRaw(input.path);
+  if (raw === null) throw new Error(`there is no note called “${titleFromSlug(input.path)}”`);
+
+  const folder = documentFolderPath(input.folder);
+  const base = input.path.slice(input.path.lastIndexOf('/') + 1);
+  const target = folder ? `${dir}${folder}/${base}` : `${dir}${base}`;
+  if (target === input.path) {
+    const same = await ctx.vault.readNote(input.path);
+    if (!same) throw new Error(`there is no note called “${titleFromSlug(input.path)}”`);
+    return same;
+  }
+  if (await ctx.vault.exists(target)) {
+    throw new Error(`there is already a document called “${titleFromSlug(target)}” in that folder`);
+  }
+
+  await ctx.vault.writeRaw(target, raw);
+  await ctx.vault.remove(input.path);
+  const note = await ctx.vault.readNote(target);
+  if (!note) throw new Error(`the document could not be read after the move`);
+  ctx.index.removeByPath(input.path);
+  ctx.index.reindex(note);
+  await ctx.git.commitPaths(
+    [input.path, note.path],
+    `move: ${note.slug} → ${folder || 'documents'}`,
+  );
+  return note;
+}
+
+/**
+ * The orientation stub a new folder starts with. Same shape as the folder maps
+ * the librarian writes (`renderFolderIndex`): a `description` in frontmatter and
+ * a heading, with nothing to list yet. Kept minimal on purpose: index.md is
+ * orientation, not content, and every list already hides it.
+ */
+function folderIndexStub(title: string): string {
+  return `---\ndescription: ${title}, a folder of your documents\n---\n\n# ${title}\n`;
+}
+
+export interface CreateDocumentFolderInput {
+  /**
+   * The new folder's path, relative to `notes/`. Nested is allowed:
+   * "specs/2026" makes (or lands inside) `notes/specs/`.
+   */
+  folder: string;
+}
+
+/**
+ * Make a folder in Documents (docs/documents-folders.md DF-1).
+ *
+ * A folder is a persistent object: it exists when `notes/<folder>/index.md`
+ * exists, or when a document sits in it. This writes the index file, so the
+ * folder shows up empty and stays until the PM deletes it. The write goes
+ * through `writeRaw` because index.md is a reserved orientation file, not a
+ * concept note: it never enters the index, and the Documents screen derives the
+ * folder from its path in the tree (see `getVaultTree`).
+ */
+export async function createDocumentFolder(
+  ctx: UseCaseContext,
+  input: CreateDocumentFolderInput,
+): Promise<{ folder: string; path: string }> {
+  const folder = documentFolderPath(input.folder);
+  if (!folder) throw new Error('a folder needs a name');
+  const prefix = `${dirForType('note')}/${folder}/`;
+  const path = `${prefix}index.md`;
+  // "Already exists" is either sign of life: the index file, or any file under
+  // the folder (a document keeps a folder real without an index file).
+  const files = await ctx.vault.list();
+  if ((await ctx.vault.exists(path)) || files.some((f) => f.path.startsWith(prefix))) {
+    throw new Error(`there is already a folder called “${titleFromSlug(folder)}”`);
+  }
+  await ctx.vault.writeRaw(path, folderIndexStub(titleFromSlug(folder)));
+  await ctx.git.commitPaths([path], `create folder: ${folder}`);
+  return { folder, path };
+}
+
+export interface DeleteDocumentFolderInput {
+  /** The folder's path, relative to `notes/`. */
+  folder: string;
+}
+
+/**
+ * Delete an empty folder in Documents. "Empty" means nothing under it except
+ * the folder's own index.md. A folder that still holds a document, or a
+ * subfolder with anything in it, refuses: nothing a person wrote can leave
+ * through this door.
+ */
+export async function deleteDocumentFolder(
+  ctx: UseCaseContext,
+  input: DeleteDocumentFolderInput,
+): Promise<{ folder: string; path: string }> {
+  const folder = documentFolderPath(input.folder);
+  if (!folder) throw new Error('a folder needs a name');
+  const prefix = `${dirForType('note')}/${folder}/`;
+  const path = `${prefix}index.md`;
+  const files = await ctx.vault.list();
+  const occupied = files.filter((f) => f.path.startsWith(prefix) && f.path !== path);
+  if (occupied.length > 0) {
+    throw new Error(
+      `“${titleFromSlug(folder)}” still has files in it: move or delete them first`,
+    );
+  }
+  if (!(await ctx.vault.exists(path))) {
+    throw new Error(`there is no folder called “${titleFromSlug(folder)}”`);
+  }
+  await ctx.vault.remove(path);
+  ctx.index.removeByPath(path);
+  await ctx.git.commitPaths([path], `delete folder: ${folder}`);
+  return { folder, path };
+}
+
+export interface RenameDocumentFolderInput {
+  /** The folder's current path, relative to `notes/`. */
+  folder: string;
+  /** The new name for the LAST segment; the folder stays under the same parent. */
+  name: string;
+}
+
+/**
+ * Rename a folder in Documents. Every file under it moves to the new prefix
+ * byte for byte, through `readRaw`/`writeRaw` for the same reason `moveNote`
+ * does: a rename says nothing new about a document, so nothing it says may
+ * change on the way. Basenames never change, so wikilinks survive.
+ */
+export async function renameDocumentFolder(
+  ctx: UseCaseContext,
+  input: RenameDocumentFolderInput,
+): Promise<{ folder: string; paths: string[] }> {
+  const folder = documentFolderPath(input.folder);
+  if (!folder) throw new Error('a folder needs a name');
+  const slug = slugify(input.name.trim());
+  if (!slug) throw new Error('a folder needs a name');
+  const cut = folder.lastIndexOf('/');
+  const next = cut === -1 ? slug : `${folder.slice(0, cut + 1)}${slug}`;
+  if (next === folder) throw new Error('that is already the folder’s name');
+
+  const dir = dirForType('note');
+  const oldPrefix = `${dir}/${folder}/`;
+  const newPrefix = `${dir}/${next}/`;
+  const files = await ctx.vault.list();
+  const inside = files.filter((f) => f.path.startsWith(oldPrefix));
+  if (inside.length === 0) {
+    throw new Error(`there is no folder called “${titleFromSlug(folder)}”`);
+  }
+  if (files.some((f) => f.path.startsWith(newPrefix))) {
+    throw new Error(`there is already a folder called “${titleFromSlug(next)}”`);
+  }
+
+  const paths: string[] = [];
+  for (const file of inside) {
+    const raw = await ctx.vault.readRaw(file.path);
+    if (raw === null) continue; // gone between the listing and the read
+    const target = `${newPrefix}${file.path.slice(oldPrefix.length)}`;
+    await ctx.vault.writeRaw(target, raw);
+    await ctx.vault.remove(file.path);
+    ctx.index.removeByPath(file.path);
+    // Reserved files (the folder's own index.md) come back null-typed but
+    // harmless: reindex refuses them itself.
+    const note = await ctx.vault.readNote(target);
+    if (note) ctx.index.reindex(note);
+    paths.push(file.path, target);
+  }
+  await ctx.git.commitPaths(paths, `rename folder: ${folder} → ${next}`);
+  return { folder: next, paths };
 }
 
 /** Delete a note: remove from disk, drop from index, and commit. */

@@ -96,6 +96,18 @@ test('a theme starts on a stance, a note keeps its date prefix', async () => {
   assert.equal((store.get(note.path)!.frontmatter as Record<string, unknown>)['title'], 'Untitled');
 });
 
+test('a note can start inside one of the PM’s folders, cleaned up on the way', async () => {
+  const { ctx } = fakeContext();
+  const note = await createNote(ctx, { type: 'note', title: 'Roadmap', folder: ' Q3 Plans /2026' });
+  assert.equal(note.path, 'notes/q3-plans/2026/2026-08-14-roadmap.md');
+});
+
+test('a folder means nothing to the other types: hubs stay in their own dir', async () => {
+  const { ctx } = fakeContext();
+  const hub = await createNote(ctx, { type: 'customer', title: 'Nordkap', folder: 'plans' });
+  assert.equal(hub.path, 'customers/nordkap.md');
+});
+
 test('a second page of the same name does not clobber the first', async () => {
   const { ctx } = fakeContext();
   const first = await createNote(ctx, { type: 'person', title: 'Sara Lindqvist' });

@@ -1,0 +1,155 @@
+/**
+ * The write policy: how much of the PM's attention one write is worth
+ * (docs/easier-tickets.md E-3).
+ *
+ * Every write the agent makes used to cost a card, and a card costs a reading, a
+ * judgement and a click. An ordinary week ran to an estimated 30 to 70 of them,
+ * so the queue stopped being a review and became a chore. The fix is not fewer
+ * writes. It is grading each write by the damage it can do, in ONE place, and
+ * asking only where the answer matters.
+ *
+ * Three answers:
+ * - `silent`  applies on the spot. Nothing enters the queue. An Activity row is
+ *             the receipt, and the chat says one quiet line.
+ * - `grouped` still asks, but belongs in a card with its siblings rather than in
+ *             one of its own. Workstream B1 builds that card; until it exists a
+ *             grouped write behaves exactly like `ask`.
+ * - `ask`     one card, on its own, every time.
+ *
+ * Nothing here is new data. A proposal already carries its kind, the note type it
+ * writes, the file it aims at, and whether the PM asked for it.
+ */
+
+export const WRITE_DISPOSITIONS = ['silent', 'grouped', 'ask'] as const;
+export type WriteDisposition = (typeof WRITE_DISPOSITIONS)[number];
+
+/** What the policy reads. All of it is already on the proposal. */
+export interface WriteFacts {
+  /** note / update / decision / outbound / delete. */
+  kind: string;
+  /**
+   * The `type` of the note this write lands in: the frontmatter type for a new
+   * note, the target note's own type for an update. Undefined when nothing
+   * knows it, which reads as an ordinary note.
+   */
+  noteType?: string | undefined;
+  /** The PM asked for this in the conversation, so the card would be asking them
+   *  to confirm their own instruction. */
+  asked?: boolean | undefined;
+  /**
+   * The file this write lands in, e.g. `notes/q3-priorities.md`. Where a page
+   * goes is part of what the write does: `notes/` is the PM's own Documents
+   * folder, and the rest of the workspace is the memory the agent keeps.
+   */
+  targetPath?: string | undefined;
+  /**
+   * The update only adds text at the end. It rewrites nothing the note already
+   * says, it re-places against the note as it currently reads, and it refuses a
+   * duplicate, so the risky part is handled before the policy is consulted.
+   */
+  appendOnly?: boolean | undefined;
+}
+
+/** The ruling, plus why, in the words a person could read. */
+export interface WriteRuling {
+  disposition: WriteDisposition;
+  /** One short sentence: why this write gets this answer. */
+  reason: string;
+}
+
+/** A commitment ledger entry. Creating one, or changing one, is the PM's word. */
+function isTodo(facts: WriteFacts): boolean {
+  return facts.noteType === 'todo';
+}
+
+/** A file that says how the app behaves: a skill, an agent, the house rules. */
+function isRuleFile(facts: WriteFacts): boolean {
+  return facts.noteType === 'skill' || facts.noteType === 'agent';
+}
+
+/**
+ * The folder behind the Documents screen. It holds what the PM writes: scratch
+ * notes, briefs, PRDs, specs (E-14). Everything else in the workspace is the
+ * memory, which the agent keeps for them.
+ */
+export const USER_DOCUMENTS_DIR = 'notes/';
+
+/** Does this write land in the PM's own Documents folder? */
+function inDocuments(facts: WriteFacts): boolean {
+  return (facts.targetPath ?? '').startsWith(USER_DOCUMENTS_DIR);
+}
+
+/**
+ * What happens to one write. First rule that matches wins, and the order is the
+ * argument:
+ *
+ * 1. Outbound goes to Jira, Confluence or a calendar, and the code has no
+ *    compensating action for a send. It always asks, one card per send, and it
+ *    never groups (E-7).
+ * 2. A delete takes something away, and there is no undelete either.
+ * 3. A todo is a promise, and a promise is the PM's word to somebody. Creating
+ *    one, closing one or moving its date all ask.
+ * 4. A standing rule the PM stated is remembered without a card. The chat says
+ *    "Added to rules" and Activity keeps the row (E-8). A rule file the agent
+ *    wrote on its own asks: reading a team's Jira and writing up how they work
+ *    (E-25) is a whole file nobody watched being made.
+ * 5. What the PM asked for in the chat applies on the spot. The card was asking
+ *    them to confirm their own instruction (E-4).
+ * 6. Anything else landing in `notes/` asks. That folder is the PM's own
+ *    Documents, and nothing writes there unless they said so in the chat
+ *    (E-14). Where a page goes is part of what the write does: a page the agent
+ *    files for itself costs the PM nothing, and a page in their folder is a
+ *    page they did not put there.
+ * 7. A new note, or text added at the end of one, applies silently. Both add;
+ *    neither rewrites what is already there (E-5).
+ * 8. A patch over existing text, and a decision, still need a human. They belong
+ *    in one grouped card per intent (E-6, B1's work).
+ */
+export function writePolicy(facts: WriteFacts): WriteRuling {
+  if (facts.kind === 'outbound') {
+    return {
+      disposition: 'ask',
+      reason: 'Nothing sent to another system can be taken back.',
+    };
+  }
+  if (facts.kind === 'delete') {
+    return { disposition: 'ask', reason: 'A deleted page cannot be put back.' };
+  }
+  if (isTodo(facts)) {
+    return { disposition: 'ask', reason: 'A promise is your word, so you decide it.' };
+  }
+  if (isRuleFile(facts)) {
+    return facts.asked
+      ? { disposition: 'silent', reason: 'You said it should hold from now on.' }
+      : {
+          disposition: 'ask',
+          reason: 'This changes how the agent works, and you did not ask for it.',
+        };
+  }
+  if (facts.asked) {
+    return { disposition: 'silent', reason: 'You asked for this in the chat.' };
+  }
+  if (inDocuments(facts)) {
+    return { disposition: 'ask', reason: 'Documents is your folder, so you say what goes in it.' };
+  }
+  if (facts.kind === 'note') {
+    return { disposition: 'silent', reason: 'A new page takes nothing away.' };
+  }
+  if (facts.kind === 'update' && facts.appendOnly) {
+    return { disposition: 'silent', reason: 'It adds at the end and rewrites nothing.' };
+  }
+  if (facts.kind === 'update') {
+    return { disposition: 'grouped', reason: 'It rewrites text the page already has.' };
+  }
+  if (facts.kind === 'decision') {
+    return { disposition: 'grouped', reason: 'A decision is yours to make.' };
+  }
+  // A kind nobody has graded yet. Asking is the answer that cannot surprise
+  // anyone, so a new card kind starts there and is graded on purpose.
+  return { disposition: 'ask', reason: 'This kind of write always asks.' };
+}
+
+/** Shorthand: does this write land without a card? */
+export function appliesSilently(facts: WriteFacts): boolean {
+  return writePolicy(facts).disposition === 'silent';
+}

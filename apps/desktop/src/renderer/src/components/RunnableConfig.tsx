@@ -41,7 +41,7 @@ const CAN_META: Record<CapabilityDTO, { icon: LucideIcon; title: string }> = {
   'keep-working-files': {
     icon: FolderClosed,
     title:
-      'May keep scratch files for the length of a session. Working material, never part of the memory.',
+      'May keep scratch files for the length of a session. They are never part of the memory.',
   },
   'file-source': {
     icon: FolderInput,

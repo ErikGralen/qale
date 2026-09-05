@@ -433,23 +433,70 @@ test('every write tool names the conventions file for the system it writes to', 
  */
 
 function meetingCtx(filed: Record<string, unknown>[], existing: string[] = []): UseCaseContext {
-  const notes: Record<string, { type: string }> = {
-    'sources/2026-08-04-nordkap-qbr-transcript.md': { type: 'source' },
-    'meetings/2026-07-01-nordkap-checkin.md': { type: 'meeting' },
-    ...Object.fromEntries(existing.map((p) => [p, { type: 'meeting' }])),
+  const notes: Record<string, { type: string; frontmatter: Record<string, unknown> }> = {
+    'sources/2026-08-04-nordkap-qbr-transcript.md': {
+      type: 'source',
+      frontmatter: { type: 'source', processing: 'processed' },
+    },
+    'meetings/2026-07-01-nordkap-checkin.md': {
+      type: 'meeting',
+      frontmatter: { type: 'meeting' },
+    },
+    ...Object.fromEntries(
+      existing.map((p) => [p, { type: 'meeting', frontmatter: { type: 'meeting' } }]),
+    ),
   };
+  const rows = new Map<string, Record<string, unknown>>();
+  const written = new Map<string, string>();
   return {
-    vault: { exists: async (p: string) => p in notes },
+    vault: {
+      exists: async (p: string) => p in notes || written.has(p),
+      readNote: async (p: string) =>
+        written.has(p)
+          ? {
+              path: p,
+              slug: p.replace(/\.md$/, ''),
+              type: 'meeting',
+              frontmatter: { type: 'meeting' },
+              body: written.get(p)!,
+            }
+          : null,
+      writeNote: async (p: string, _fm: unknown, body: string) => {
+        written.set(p, body);
+        return {
+          path: p,
+          slug: p.replace(/\.md$/, ''),
+          type: 'meeting',
+          frontmatter: { type: 'meeting' },
+          body,
+        };
+      },
+    },
     index: {
       resolve: (target: string) => (`${target}.md` in notes ? `${target}.md` : null),
       get: (p: string) => notes[p] ?? null,
+      reindex: () => {},
     },
+    git: { commitPaths: async () => {}, history: async () => [] },
+    clock: { now: () => '2026-08-04T09:00:00.000Z' },
     proposals: {
       create: (input: Record<string, unknown>) => {
+        const rec = {
+          ...input,
+          id: `p${filed.length + 1}`,
+          status: 'pending',
+          evidence: input['evidence'] ?? [],
+        };
         filed.push(input);
-        return { id: `p${filed.length}` };
+        rows.set(rec.id as string, rec);
+        return rec;
       },
       list: () => [],
+      get: (id: string) => rows.get(id) ?? null,
+      setStatus: (id: string, status: string) => {
+        const rec = rows.get(id);
+        if (rec) rows.set(id, { ...rec, status });
+      },
     },
   } as unknown as UseCaseContext;
 }
@@ -472,9 +519,9 @@ test('a proposed meeting is the whole page: date, summary and recording in one c
     participants: ['[[people/asa-lind]]'],
   });
 
-  assert.match(said, /Proposed meeting/);
+  // A new page, so it lands as it is written (docs/easier-tickets.md E-5).
+  assert.match(said, /^Applied: Created Nordkap QBR\./);
   const card = filed[0]!;
-  // Nothing was written: the card is the only thing that exists so far.
   assert.equal(card['kind'], 'note');
   assert.equal(card['targetPath'], 'meetings/2026-08-04-nordkap-qbr.md');
   const payload = card['payload'] as { body: string; frontmatter: Record<string, unknown> };
@@ -525,7 +572,7 @@ test('a meeting nobody is on is refused, unless the source really names nobody',
 
   // Speaker labels only: the flag says the model looked, and the card lands.
   const said = await out(tool, { ...MEETING, participants_unknown: true });
-  assert.match(said, /Proposed meeting/);
+  assert.match(said, /^Applied: Created Nordkap QBR\./);
   assert.match(said, /say so in your closing line/);
   const fm = (filed[0]!['payload'] as { frontmatter: Record<string, unknown> }).frontmatter;
   assert.equal(fm['participants'], undefined);
@@ -535,7 +582,7 @@ test('a meeting nobody is on is refused, unless the source really names nobody',
     ...MEETING,
     participants: ['Åsa Lind'],
   });
-  assert.match(named, /Proposed meeting/);
+  assert.match(named, /^Applied: Created Nordkap QBR\./);
   assert.deepEqual(
     (filed[1]!['payload'] as { frontmatter: Record<string, unknown> }).frontmatter['participants'],
     ['Åsa Lind'],
@@ -672,19 +719,43 @@ function updateCtx(filed: Record<string, unknown>[], body: string): UseCaseConte
     frontmatter: { type: 'meeting' },
     body,
   };
+  const rows = new Map<string, Record<string, unknown>>();
   return {
-    vault: { readNote: async (p: string) => (p === note.path ? note : null) },
+    vault: {
+      readNote: async (p: string) => (p === note.path ? note : null),
+      writeBody: async (p: string, next: string) => ({
+        ...note,
+        path: p,
+        slug: p.replace(/\.md$/, ''),
+        body: next,
+      }),
+    },
     index: {
       resolve: (t: string) =>
         t === 'meetings/2026-08-04-nordkap-qbr' || t === 'sources/gong-call' ? `${t}.md` : null,
       get: () => null,
+      reindex: () => {},
     },
+    git: { commitPaths: async () => {}, history: async () => [] },
+    clock: { now: () => '2026-08-04T09:00:00.000Z' },
     proposals: {
       create: (input: Record<string, unknown>) => {
+        const rec = {
+          ...input,
+          id: `p${filed.length + 1}`,
+          status: 'pending',
+          evidence: input['evidence'] ?? [],
+        };
         filed.push(input);
-        return { id: `p${filed.length}` };
+        rows.set(rec.id as string, rec);
+        return rec;
       },
       list: () => [],
+      get: (id: string) => rows.get(id) ?? null,
+      setStatus: (id: string, status: string) => {
+        const rec = rows.get(id);
+        if (rec) rows.set(id, { ...rec, status });
+      },
     },
   } as unknown as UseCaseContext;
 }
@@ -730,7 +801,8 @@ test('append carries the write-up onto a page that has nothing to anchor to', as
     append: '## Summary\n\nThey confirmed the go-live.',
   });
 
-  assert.match(said, /Proposed update/);
+  // Adding at the end rewrites nothing, so it lands (docs/easier-tickets.md E-5).
+  assert.match(said, /^Applied: Updated Nordkap QBR\./);
   const payload = filed[0]!['payload'] as { append: string; patch?: unknown };
   assert.match(payload.append, /They confirmed the go-live/);
   assert.equal(payload.patch, undefined);

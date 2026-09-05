@@ -1,4 +1,5 @@
 import type {
+  ActivityDTO,
   AgentDTO,
   AgentRunInput,
   AgentRunHandle,
@@ -34,6 +35,10 @@ import type {
   ThemeHeatDTO,
   PeopleDirectoryDTO,
   PersonCardDTO,
+  MoveNoteInput,
+  CreateFolderInput,
+  DeleteFolderInput,
+  RenameFolderInput,
   RenameNoteInput,
   RestoreVersionInput,
   SaveNoteInput,
@@ -44,6 +49,9 @@ import type {
   CodebasePathDTO,
   CodebaseRequestDTO,
   CodebaseStatusDTO,
+  GitStatusDTO,
+  RevertChangeInput,
+  RevertResultDTO,
   SessionLifecycle,
   SessionFileDTO,
   SpawnRequestDTO,
@@ -174,7 +182,18 @@ export interface InvokeMap {
   'note:saveFrontmatter': { args: [input: SaveFrontmatterInput]; result: NoteDTO };
   'note:create': { args: [input: CreateNoteInputDTO]; result: NoteDTO };
   'note:rename': { args: [input: RenameNoteInput]; result: NoteDTO };
+  /** Move a document into one of the PM's own folders under `notes/` (E-14). */
+  'note:move': { args: [input: MoveNoteInput]; result: NoteDTO };
   'note:delete': { args: [path: string]; result: { ok: boolean } };
+  // Folders in Documents (docs/documents-folders.md DF-1). A folder is a
+  // persistent object: it exists when `notes/<folder>/index.md` exists or a
+  // document is in it.
+  /** Make a folder. Answers with the normalized path, so the view can open it. */
+  'folder:create': { args: [input: CreateFolderInput]; result: { folder: string } };
+  /** Delete an empty folder. */
+  'folder:delete': { args: [input: DeleteFolderInput]; result: { ok: boolean } };
+  /** Rename a folder; every file inside moves with it, basenames untouched. */
+  'folder:rename': { args: [input: RenameFolderInput]; result: { folder: string } };
   /**
    * "I checked this": append one `human:<you>` verification to the note. Its
    * own channel because the frontmatter form cannot carry it. The mutability
@@ -188,6 +207,15 @@ export interface InvokeMap {
   'note:history': { args: [path: string]; result: NoteCommitDTO[] };
   'note:versionAt': { args: [path: string, hash: string]; result: string | null };
   'note:restoreVersion': { args: [input: RestoreVersionInput]; result: NoteDTO };
+  /** Can this machine keep history, and if not, how does the PM get it? */
+  'git:status': { args: []; result: GitStatusDTO };
+  /**
+   * Undo one recorded change to one note (E-2): an edit goes back, a deleted
+   * note comes back, a note the change created goes away. Written forward, so
+   * the undo is itself a version and can be undone in turn. This is the one
+   * revert path in the app; Activity is its caller.
+   */
+  'history:revert': { args: [input: RevertChangeInput]; result: RevertResultDTO };
   'themes:byHeat': { args: []; result: ThemeHeatDTO[] };
 
   // People (participant chips + their preview cards)
@@ -254,6 +282,19 @@ export interface InvokeMap {
   'proposals:reject': { args: [id: string]; result: { ok: boolean; review?: MeetingReviewAskDTO } };
   /** The PO's answer to that question: take the meeting out of "needs review". */
   'meeting:markReviewed': { args: [path: string]; result: { ok: boolean } };
+  /**
+   * What the agent did without asking, newest first (docs/easier-tickets.md
+   * E-9). Read-only: nothing writes a row from the renderer, and every row is
+   * already the receipt for a write that landed.
+   */
+  'activity:list': { args: [limit?: number]; result: ActivityDTO[] };
+  /**
+   * Put one Activity row back, by its id. The row already holds the commit to
+   * undo, so main reads it from there and the renderer never handles a hash:
+   * a row can only ever undo its own write. It runs the same use-case
+   * `history:revert` does, and marks the row put back once the files are.
+   */
+  'activity:revert': { args: [id: string]; result: RevertResultDTO };
 
   // The capture nudge's memory (docs/capture-nudge.md) — which empty meetings
   // the PO has waved off, and which recurring series went quiet after two.
@@ -437,13 +478,19 @@ export const INVOKE_CHANNELS = [
   'note:saveFrontmatter',
   'note:create',
   'note:rename',
+  'note:move',
   'note:delete',
+  'folder:create',
+  'folder:delete',
+  'folder:rename',
   'note:markChecked',
   'note:backlinks',
   'note:resolveLink',
   'note:history',
   'note:versionAt',
   'note:restoreVersion',
+  'git:status',
+  'history:revert',
   'themes:byHeat',
   'people:directory',
   'people:create',
@@ -462,6 +509,8 @@ export const INVOKE_CHANNELS = [
   'proposals:accept',
   'proposals:reject',
   'meeting:markReviewed',
+  'activity:list',
+  'activity:revert',
   'captureNudge:state',
   'captureNudge:dismiss',
   'captureNudge:undo',

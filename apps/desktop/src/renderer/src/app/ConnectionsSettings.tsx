@@ -55,7 +55,7 @@ export function ConnectionsSettings() {
   return (
     <Setting
       title="Connected systems"
-      description="Where your delivery truth lives: tickets and pages from followed projects stay readable here, and anything you link from a note keeps itself up to date. Reading never asks, and writing always goes through a proposal. What comes in becomes notes like any other, so it goes to your model provider with the rest when the agent works."
+      description="Your tickets and pages, readable here without leaving. Anything you link from a note keeps itself up to date. Reading never asks, and writing always goes through a proposal you approve. What comes in becomes notes like any other, so it goes to your model provider with the rest when the agent works."
     >
       {loadFailed ? (
         <p className="text-sm text-muted-foreground">

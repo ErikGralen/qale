@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import {
   lifecycleValue,
   lifecycleValueLabel,
@@ -16,6 +16,7 @@ import {
   Link2,
   Lock,
   MessageSquare,
+  FileText,
   Mic,
   Pin,
   Sparkles,
@@ -25,6 +26,7 @@ import {
 import { useApp, type SessionOverview } from '../state/app-state';
 import { useAimedDrop } from '../lib/aimed-drop';
 import { requestCapture } from '../lib/capture-event';
+import { locationCrumbs } from '../lib/crumbs';
 import { navFromEvent, type NavOpts } from '../lib/nav';
 import { noteTypeIcon } from '../lib/note-icons';
 import { Markdown } from '../components/Markdown';
@@ -42,6 +44,7 @@ import {
   readMeetingSeed,
 } from '../lib/agent-nudges';
 import { isLiveWindow, isUnreadMeeting, meetingWindowOf } from '../lib/note-status';
+import { splitSource } from '../lib/source-body';
 import { localDateStr } from '../lib/dates';
 
 /** "today 14:00" / "tomorrow" / "in 3 days": how far off the start is, or null
@@ -189,6 +192,56 @@ function LinksSection({
 }
 
 /**
+ * A source that has been read: its summary, then the original folded away
+ * (E-18).
+ *
+ * One drop is one page now, so the page holds both a paragraph and a whole
+ * transcript. Printing them one after the other would put four lines worth
+ * reading on top of ten thousand nobody scrolls past, and the summary would
+ * lose by being outnumbered. So the original waits behind one line that says
+ * how much of it there is.
+ */
+function SourceBody({
+  summary,
+  original,
+  words,
+  onOpenNote,
+}: {
+  summary: string;
+  original: string;
+  words: number;
+  onOpenNote: (path: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Markdown content={summary} onOpenNote={onOpenNote} />
+      <section className="mt-6 border-t border-border/60 pt-3">
+        <button
+          className="flex items-center gap-1.5 rounded-md py-0.5 text-xs text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={() => setOpen((was) => !was)}
+          aria-expanded={open}
+        >
+          <ChevronRight
+            className={`size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none ${
+              open ? 'rotate-90' : ''
+            }`}
+            aria-hidden
+          />
+          <FileText className="size-3.5 shrink-0" aria-hidden />
+          {open ? 'Hide the original' : `Show the original (${words.toLocaleString()} words)`}
+        </button>
+        {open && (
+          <div className="mt-3">
+            <Markdown content={original} onOpenNote={onOpenNote} />
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+/**
  * The stored conversation a session receipt was filed from, or null if it is no
  * longer in the chat store. `session_id` is the join; receipts written before
  * that field existed end in the id's first 8 characters, which is the same
@@ -210,6 +263,8 @@ export function NoteView({ path }: { path: string }) {
     docData,
     openDoc,
     openFolder,
+    openDocuments,
+    openCalendar,
     loadDoc,
     saveNote,
     renameNote,
@@ -291,14 +346,13 @@ export function NoteView({ path }: { path: string }) {
     currentNote.type === 'ticket' && typeof currentNote.frontmatter['external_id'] === 'string'
       ? currentNote.frontmatter['external_id']
       : null;
-  // The note's own lifecycle value ('wont-do', 'superseded', …), read under
-  // whatever key its type calls it. Only themes and superseded decisions wear it
-  // as a badge; the rest carry it quietly in properties.
+  // The note's own lifecycle value, read under whatever key its type calls it.
+  // One value wears a badge: superseded. It changes how you read the page,
+  // because this is the old answer. A theme's stance said nothing extra, and asked
+  // the PO to keep a word true that no code ever reads.
   const lifecycle = lifecycleValue(currentNote.type, currentNote.frontmatter);
-  const lifecycleBadge =
-    currentNote.type === 'theme' || lifecycle === 'superseded'
-      ? lifecycle && lifecycleValueLabel(currentNote.type, lifecycle)
-      : null;
+  const supersededBadge =
+    lifecycle === 'superseded' ? lifecycleValueLabel(currentNote.type, lifecycle) : null;
   // An upcoming meeting without prep gets the brief offer here,
   // on the page it would write to — never as an inbox item.
   // Synced-meeting chrome (google-calendar mirror): a quiet glyph + open link,
@@ -393,13 +447,23 @@ export function NoteView({ path }: { path: string }) {
     currentNote.type === 'session'
       ? chatForReceipt(currentNote.path, currentNote.frontmatter, sessions)
       : null;
-  // Where you are, in the words the app uses everywhere else: type glyph →
-  // the shelf this note sits on (opens it) → the note's own name. Never the
-  // file path: where a note is stored is not something the reader has to know,
-  // and the shelf answers the only question the path was standing in for.
-  const slash = currentNote.path.lastIndexOf('/');
-  const folder = slash >= 0 ? currentNote.path.slice(0, slash) : null;
-  const shelf = folder ? folder.charAt(0).toUpperCase() + folder.slice(1) : null;
+  // A source that carries its own summary, split from the original underneath.
+  // Null on everything else, and on a source nobody has read yet.
+  const sourceParts = currentNote.type === 'source' ? splitSource(currentNote.body) : null;
+  // Where you are, in the words the rail uses: type glyph → the place this page
+  // belongs to (opens it) → the page's own name. Never the file path: where a
+  // page is stored is not something the reader has to know, and the place
+  // answers the only question the path was standing in for.
+  const crumbs = locationCrumbs(currentNote.path, currentNote.type).map((crumb) => ({
+    label: crumb.label,
+    onClick: (e: MouseEvent<HTMLButtonElement>) => {
+      const nav = navFromEvent(e);
+      const target = crumb.target;
+      if (target.kind === 'documents') openDocuments(target.folder, nav);
+      else if (target.kind === 'calendar') openCalendar(nav);
+      else openFolder(target.dir, nav);
+    },
+  }));
   const TypeIcon = noteTypeIcon(currentNote.type);
 
   return (
@@ -409,11 +473,7 @@ export function NoteView({ path }: { path: string }) {
     >
       <PageHeader
         icon={TypeIcon}
-        crumbs={
-          folder && shelf
-            ? [{ label: shelf, onClick: (e) => openFolder(folder, navFromEvent(e)) }]
-            : undefined
-        }
+        crumbs={crumbs.length > 0 ? crumbs : undefined}
         label={currentNote.title}
         labelTitle={currentNote.title}
       >
@@ -439,9 +499,9 @@ export function NoteView({ path }: { path: string }) {
                   fresh: true,
                 })
               }
-              title="Work this note into the memory: clean it up, update the pages it touches, file what it implies, all as proposals. Re-run anytime after adding more."
+              title="Work this document into the memory: clean it up, update the pages it touches, file what it implies, all as proposals. Re-run anytime after adding more."
             >
-              <Sparkles className="size-3.5" /> Go through this note
+              <Sparkles className="size-3.5" /> Go through this document
             </Button>
           )}
           {/* Every past meeting can take another recording, not only the empty
@@ -582,8 +642,7 @@ export function NoteView({ path }: { path: string }) {
             <Badge variant="secondary">
               {noteTypeLabel(currentNote.type, currentNote.frontmatter)}
             </Badge>
-            {currentNote.type === 'theme' && lifecycleBadge && <Badge>{lifecycleBadge}</Badge>}
-            {lifecycle === 'superseded' && <Badge variant="outline">{lifecycleBadge}</Badge>}
+            {supersededBadge && <Badge variant="outline">{supersededBadge}</Badge>}
             {eventCancelled && <Badge variant="outline">cancelled</Badge>}
             {syncedMeeting &&
               (eventUrl ? (
@@ -709,6 +768,14 @@ export function NoteView({ path }: { path: string }) {
                   fresh: true,
                 })
               }
+            />
+          ) : sourceParts ? (
+            <SourceBody
+              key={currentNote.path}
+              summary={sourceParts.summary}
+              original={sourceParts.original}
+              words={sourceParts.words}
+              onOpenNote={openDoc}
             />
           ) : (
             <Markdown content={currentNote.body} onOpenNote={openDoc} />

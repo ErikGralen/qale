@@ -14,12 +14,14 @@ import {
 } from 'lucide-react';
 import {
   bareRef,
+  groupIntents,
   isNewSkill,
   nounForDir,
   proposalHeadline,
   titleForRef,
   titleFromSlug,
   typeForDir,
+  type IntentCard,
 } from '@qale/domain';
 import type { OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
 import { isExternalRef } from '../../lib/connections';
@@ -33,8 +35,8 @@ export { bareRef, titleForRef };
 /**
  * Turns a raw proposal into the one thing the PO reads to decide: a
  * plain-language line saying what the app will do, plus the pieces the card
- * draws around it (the glyph, the note chip, the name a create card files
- * under). No paths, slugs, or jargon.
+ * draws around it (the glyph, the note chip, what a decision replaces). No
+ * paths, slugs, or jargon, and nothing about filing.
  *
  * The app composes that line, it does not ask for one. No `propose_*` tool takes
  * a headline except `propose_instruction`, so on every other card the composed
@@ -54,14 +56,6 @@ export interface CardHeadline {
   verb: string;
   /** The existing note an update touches — rendered as a distinct, openable chip. */
   note?: { title: string; path: string };
-  /**
-   * The note a create card would write, named so the card says where the change
-   * lands. "New note: <a paragraph-long summary>" said what the note would SAY
-   * and never what it would be called, and a create card has no openable chip to
-   * fall back on: the file does not exist until the PO approves. Absent when the
-   * headline already carries the name, so the card never says it twice.
-   */
-  creates?: { title: string; path: string };
   /** Human title of the note this decision replaces, when superseding. */
   replaces?: string;
   /** New title an update applies on approval — shown so a rename is never silent. */
@@ -235,18 +229,12 @@ export function cardHeadline(p: ProposalDTO): CardHeadline {
   // Everything left creates something: a note, a decision, or (outbound) a
   // record somewhere else, which has no vault path and names its target in its
   // own head line.
-  const headline = p.headline?.trim() || composedHeadline(p);
-  const path = p.kind === 'note' || p.kind === 'decision' ? targetOf(p) : '';
-  const created = titleForRef(path);
-  return {
-    ...base,
-    verb: '',
-    headline,
-    creates:
-      created && !headline.toLowerCase().includes(created.toLowerCase())
-        ? { title: created, path }
-        : undefined,
-  };
+  //
+  // The card used to add "Files as “…”" under the headline. That is filing: the
+  // name and the folder are the app's job, decided in code, and no card could
+  // edit either (E-6). The headline says what gets written and the effect line
+  // says where it lands, which is everything a person decides here.
+  return { ...base, verb: '', headline: p.headline?.trim() || composedHeadline(p) };
 }
 
 // ---------------------------------------------------------------------------
@@ -364,6 +352,38 @@ export function sourceHint(p: ProposalDTO): string | null {
  * its own last decision. Shared by the Inbox and the in-session review so both
  * read the same way.
  */
+/**
+ * A card as the intent grouper reads it (E-6). The DTO carries every fact the
+ * grouping rests on; this only reshapes them, so the queue's answer can never
+ * drift from what the write path decided.
+ */
+export function intentCard(p: ProposalDTO): IntentCard {
+  return {
+    id: p.id,
+    kind: p.kind,
+    targetPath: p.targetPath,
+    evidence: p.evidence.map((e) => e.ref),
+    asked: p.asked,
+    payload: p.payload as IntentCard['payload'],
+  };
+}
+
+/**
+ * A section's cards, grouped into the intents behind them, in the order the
+ * cards were given. A group of one is handed back as a card: it says nothing a
+ * card does not already say.
+ */
+export function cardIntents(
+  cards: ProposalDTO[],
+): { key: string; sentence: string; cards: ProposalDTO[] }[] {
+  const byId = new Map(cards.map((p) => [p.id, p]));
+  return groupIntents(cards.map(intentCard)).map((intent) => ({
+    key: intent.key,
+    sentence: intent.sentence,
+    cards: intent.cards.map((c) => byId.get(c.id)!),
+  }));
+}
+
 export function cardRank(p: ProposalDTO): number {
   if (p.kind === 'outbound') return 4;
   // Never housekeeping. Everything in that fold collapses to a one-line row

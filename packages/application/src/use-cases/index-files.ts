@@ -1,6 +1,8 @@
 import {
+  isUnderstandingPath,
   isVoicePath,
   NOTE_TYPE_META,
+  UNDERSTANDING_DIR,
   VOICES_DIR,
   renderFolderIndex,
   renderRootIndex,
@@ -37,7 +39,7 @@ const FOLDER_PURPOSE: Record<NoteType, string> = {
   skill: 'the written instructions the agent follows when you hand work over',
   agent: 'self-starting agents — what fires on workspace events, and when',
   todo: 'tracked commitments — the PO’s own and what they are waiting on',
-  note: 'authored notes that do not fit another folder',
+  note: 'the documents you write: scratch notes, briefs, PRDs, specs',
   ticket: 'mirrored tracker items, never edited locally',
   wikipage: 'mirrored living documents, never edited locally',
 };
@@ -56,6 +58,14 @@ const SKIP_DIRS = new Set<string>([NOTE_TYPE_META.session.dir]);
  */
 const VOICES_PURPOSE = 'how a draft sounds — tone and wording, applied when something is drafted';
 
+/**
+ * The understanding notes. They are filed as plain notes, so without this they
+ * would be mapped under `notes/`, which is the PM's own Documents folder. Two
+ * things belong in two maps: what a person writes, and what the agent keeps.
+ */
+const UNDERSTANDING_PURPOSE =
+  'what the workspace knows about the product, the system and the organization';
+
 /** Build the shaped folder data the domain renderers consume. */
 function collectFolders(ctx: UseCaseContext): IndexFolder[] {
   const all = ctx.index.all();
@@ -63,7 +73,12 @@ function collectFolders(ctx: UseCaseContext): IndexFolder[] {
   for (const type of Object.keys(NOTE_TYPE_META) as NoteType[]) {
     const meta = NOTE_TYPE_META[type];
     if (SKIP_DIRS.has(meta.dir)) continue;
-    const notes = all.filter((n) => n.type === type && (type !== 'skill' || !isVoicePath(n.path)));
+    const notes = all.filter(
+      (n) =>
+        n.type === type &&
+        (type !== 'skill' || !isVoicePath(n.path)) &&
+        (type !== 'note' || !isUnderstandingPath(n.path)),
+    );
     if (notes.length === 0) continue;
     const entries: IndexEntry[] = notes.map((n) => ({
       path: n.path,
@@ -77,6 +92,20 @@ function collectFolders(ctx: UseCaseContext): IndexFolder[] {
       label: labelFor(meta.dir),
       purpose: FOLDER_PURPOSE[type],
       entries,
+    });
+  }
+  const understanding = all.filter((n) => isUnderstandingPath(n.path));
+  if (understanding.length > 0) {
+    folders.push({
+      dir: UNDERSTANDING_DIR,
+      label: labelFor(UNDERSTANDING_DIR),
+      purpose: UNDERSTANDING_PURPOSE,
+      entries: understanding.map((n) => ({
+        path: n.path,
+        title: n.title,
+        description: n.summary,
+        lifecycle: n.lifecycle,
+      })),
     });
   }
   const voices = all.filter((n) => isVoicePath(n.path));

@@ -503,7 +503,7 @@ test('home: cards, reviews and commitments each collapse behind one door', () =>
     rows.map((r) => [r.label, r.meta, r.count]),
     [
       ['3 proposals waiting for your approval', 'Inbox', 3],
-      ['2 meetings still to review', 'meetings', 2],
+      ['2 meetings still to review', 'Calendar', 2],
       ['2 commitments due', '1 overdue', 2],
     ],
   );

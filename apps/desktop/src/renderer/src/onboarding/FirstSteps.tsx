@@ -85,7 +85,7 @@ export function FirstSteps() {
     openSettings,
     openInbox,
     openSession,
-    openFolder,
+    openCalendar,
     openChat,
     tree,
     askRequests,
@@ -134,7 +134,9 @@ export function FirstSteps() {
       hasMeetings,
       openSettings: (section) => openSettings(section),
       openInbox: () => openInbox(),
-      openMeetings: () => openFolder('meetings'),
+      // The Calendar is its own screen now (E-12), so the row that wants a
+      // meeting to brief goes there, not into the folder underneath it.
+      openCalendar: () => openCalendar(),
       addSource: () => requestCapture(),
       ask: () => openSession('ask'),
       // The interview, not a file to edit (docs/product-understanding.md U-4).
@@ -161,7 +163,7 @@ export function FirstSteps() {
     waitingInterview,
     openSettings,
     openInbox,
-    openFolder,
+    openCalendar,
     openSession,
     openChat,
   ]);
@@ -340,7 +342,7 @@ function buildRows(
     hasMeetings: boolean;
     openSettings: (section: SettingsSection) => void;
     openInbox: () => void;
-    openMeetings: () => void;
+    openCalendar: () => void;
     addSource: () => void;
     ask: () => void;
     learnProduct: () => void;
@@ -400,8 +402,8 @@ function buildRows(
       icon: CalendarClock,
       done: !!stamped.prep,
       line: stamped.prep?.line,
-      go: go.hasMeetings ? go.openMeetings : () => go.openSettings('connections'),
-      cta: go.hasMeetings ? 'Meetings' : 'Connect',
+      go: go.hasMeetings ? go.openCalendar : () => go.openSettings('connections'),
+      cta: go.hasMeetings ? 'Calendar' : 'Connect',
     },
     {
       id: 'ask',

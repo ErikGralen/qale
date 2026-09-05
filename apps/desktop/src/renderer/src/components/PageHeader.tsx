@@ -27,6 +27,13 @@ export interface PageCrumb {
   /** Omit for a crumb that only names an ancestor without navigating to it. */
   onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
   title?: string;
+  /**
+   * For a view that needs the crumb's element, such as a drop target. Only a
+   * clickable crumb gets one: a crumb that does not navigate is text.
+   */
+  ref?: (el: HTMLElement | null) => void;
+  /** Extra classes on the crumb, for a state the view owns (hovered by a drag). */
+  className?: string;
 }
 
 export function PageHeader({
@@ -62,7 +69,11 @@ export function PageHeader({
           crumb.onClick ? (
             <span key={crumb.label} className="flex shrink-0 items-center gap-1">
               <button
-                className="rounded px-1 py-0.5 font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                ref={crumb.ref}
+                className={cn(
+                  'rounded px-1 py-0.5 font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none',
+                  crumb.className,
+                )}
                 onClick={crumb.onClick}
                 title={crumb.title ?? `Open ${crumb.label}`}
               >

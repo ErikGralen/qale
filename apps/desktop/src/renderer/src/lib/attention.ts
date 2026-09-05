@@ -55,6 +55,7 @@ export type AttentionTarget =
   | { open: 'session'; sessionId: string; title: string }
   | { open: 'inbox' }
   | { open: 'todos' }
+  | { open: 'calendar' }
   | { open: 'folder'; dir: string }
   /** Add a source, attached to this meeting — the row IS the way to fill it. */
   | { open: 'capture'; path: string; title: string }
@@ -539,16 +540,16 @@ function door(first: AttentionItem, items: readonly AttentionItem[], now: number
     }
     default:
       // One unfiled meeting is worth naming; several are a backlog, and the
-      // meetings folder is the place to work through them.
+      // Calendar is the place to work through them (E-12).
       return n === 1
         ? { ...first, count: 1 }
         : {
             id: 'reviews',
             kind: 'review',
             label: `${n} meetings still to review`,
-            meta: 'meetings',
+            meta: 'Calendar',
             tone: 'warning',
-            target: { open: 'folder', dir: 'meetings' },
+            target: { open: 'calendar' },
             count: n,
           };
   }

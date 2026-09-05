@@ -1,0 +1,169 @@
+import { titleForRef } from './card-copy.js';
+
+/**
+ * The receipt for a write nobody was asked about (docs/easier-tickets.md E-9).
+ *
+ * Silence is only earned if it is visible afterwards. Every write the policy
+ * lets through without a card leaves one row here: first person, past tense,
+ * what changed, where, when, and enough to put it back.
+ *
+ * The shape is fixed here, in the domain, because three sides read it: the store
+ * that keeps it (`@qale/vault`), the view that lists it (workstream B2) and the
+ * revert path that undoes it (workstream A1).
+ */
+
+/** What the agent did, in one word. */
+export const ACTIVITY_ACTIONS = ['created', 'updated', 'remembered', 'deleted'] as const;
+export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
+
+/** How a row is put back. */
+export type ActivityUndo =
+  /** The file did not exist before, so putting it back means removing it. */
+  | 'delete'
+  /** The file existed, so putting it back means its previous contents. */
+  | 'restore';
+
+/**
+ * Everything needed to undo one row.
+ *
+ * `commit` is the vault commit the write landed in, read straight after it, so
+ * the previous contents are its parent's. Null when the workspace is not a git
+ * repo, which is the one case a row cannot promise a revert (E-1 makes that case
+ * rare; it never makes it impossible).
+ */
+export interface ActivityRevert {
+  commit: string | null;
+  undo: ActivityUndo;
+}
+
+/** One thing the agent did on its own. */
+export interface ActivityRecord {
+  id: string;
+  /** The proposal this applied. Its payload is still the record of what changed. */
+  proposalId: string;
+  action: ActivityAction;
+  /** First person, past tense, one line: "I created the Nordkap SSO write-up." */
+  line: string;
+  /** Why it needed no card, in the policy's words. */
+  reason: string;
+  /** The note it wrote, as a vault path. Null when nothing landed in the vault. */
+  path: string | null;
+  /** The session that did it, so the row can open the chat it came from. */
+  sessionId: string;
+  /** The skill in force when it happened. */
+  skill: string | null;
+  /** When, in unix ms. */
+  at: number;
+  revert: ActivityRevert;
+  /** Set once the row has been put back, so it is not offered twice. */
+  reverted: number | null;
+}
+
+/** What a new row carries. The store mints the id and stamps the time. */
+export type CreateActivityInput = Omit<ActivityRecord, 'id' | 'at' | 'reverted'>;
+
+/** What the line is written from. All of it is on the proposal already. */
+export interface ActivityLineInput {
+  kind: string;
+  targetPath?: string | null;
+  frontmatter?: Record<string, unknown>;
+  /** An update's appended text, or a new file's body, for reading a rule back. */
+  append?: string;
+  body?: string;
+}
+
+/** The title a payload calls itself, or the file's name as a fallback. */
+function subjectOf(input: ActivityLineInput): string {
+  const fm = input.frontmatter ?? {};
+  const title = typeof fm['title'] === 'string' ? fm['title'].trim() : '';
+  const summary = typeof fm['summary'] === 'string' ? fm['summary'].trim() : '';
+  return title || summary || titleForRef(input.targetPath) || 'a page';
+}
+
+/** A file that says how the app behaves. Rules land in these and nowhere else. */
+function isRuleFile(path: string | null | undefined): boolean {
+  return !!path && (path.startsWith('skills/') || path.startsWith('agents/'));
+}
+
+/**
+ * The rule a standing instruction added, read back out of the text it appends.
+ * `propose_instruction` always writes it as the last bullet, so the last bullet
+ * is the rule.
+ */
+export function ruleFromText(text: string | undefined): string {
+  if (!text) return '';
+  const bullets = text
+    .split('\n')
+    .map((line) => /^\s*-\s+(.*\S)\s*$/.exec(line)?.[1])
+    .filter((r): r is string => !!r);
+  return bullets.at(-1) ?? '';
+}
+
+/** What one write did, in one word. */
+export function activityAction(input: ActivityLineInput): ActivityAction {
+  if (input.kind === 'delete') return 'deleted';
+  if (isRuleFile(input.targetPath) && ruleFromText(input.append ?? input.body)) return 'remembered';
+  return input.kind === 'update' ? 'updated' : 'created';
+}
+
+/**
+ * The Activity row's own sentence. First person and past tense, because the row
+ * is the agent reporting what it did, not a card asking for anything.
+ */
+export function activityLine(input: ActivityLineInput): string {
+  const subject = subjectOf(input);
+  switch (activityAction(input)) {
+    case 'deleted':
+      return `I deleted ${subject}.`;
+    case 'remembered':
+      return `I remembered a rule: ${ruleFromText(input.append ?? input.body)}`;
+    case 'updated':
+      return `I updated ${subject}.`;
+    default:
+      return input.kind === 'decision'
+        ? `I recorded a decision: ${subject}.`
+        : `I created ${subject}.`;
+  }
+}
+
+/**
+ * The quiet line the chat shows for a write that applied on its own.
+ *
+ * It rides back to the model as the tool's own result, which is also what the
+ * session view reads it out of. One string, written once, so the trail and the
+ * model can never say two different things about the same write.
+ */
+const APPLIED_VERB: Record<ActivityAction, string> = {
+  created: 'Created',
+  updated: 'Updated',
+  remembered: 'Added to rules',
+  deleted: 'Deleted',
+};
+
+const APPLIED_TAG = 'Applied:';
+
+/** The first line of what a silently applied write reports back. */
+export function appliedReceipt(action: ActivityAction, subject: string): string {
+  const detail = subject.replace(/\s+/g, ' ').trim();
+  return `${APPLIED_TAG} ${APPLIED_VERB[action]}${detail ? ` ${detail}` : ''}`;
+}
+
+/**
+ * Read that line back out of a tool result, for the session view's trail. Null
+ * when the write is still waiting on the PM, which is every other case.
+ */
+export function readAppliedReceipt(output: string | undefined): {
+  verb: string;
+  detail?: string;
+} | null {
+  if (!output) return null;
+  const first = output.split('\n')[0] ?? '';
+  if (!first.startsWith(APPLIED_TAG)) return null;
+  const rest = first.slice(APPLIED_TAG.length).trim().replace(/\.$/, '');
+  const verb = (Object.values(APPLIED_VERB) as string[]).find(
+    (v) => rest === v || rest.startsWith(`${v} `),
+  );
+  if (!verb) return null;
+  const detail = rest.slice(verb.length).trim();
+  return detail ? { verb, detail } : { verb };
+}

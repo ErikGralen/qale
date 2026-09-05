@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import {
   isFolderIndex,
   isHandCreatable,
+  lifecycleField,
   lifecycleValueLabel,
   noteTypeLabel,
   type HandCreatableType,
@@ -11,6 +12,7 @@ import { AlertTriangle, Folder, Plus, Search, X } from 'lucide-react';
 import type { NoteRefDTO, NoteType } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { useAimedDrop } from '../lib/aimed-drop';
+import { shelfLabel } from '../lib/crumbs';
 import { navFromEvent } from '../lib/nav';
 import { useNewNote } from '../lib/new-note';
 import { PageHeader } from '../components/PageHeader';
@@ -19,7 +21,7 @@ import { MeetingWeek } from './MeetingWeek';
 import { TicketBoard } from './TicketBoard';
 import { ScopedAskComposer } from '../components/ScopedAskComposer';
 import { SelectionBar } from '../components/SelectionBar';
-import { TagChip } from '../components/TagChip';
+import { HIDDEN_KEYS } from '../state/properties-schema';
 import { monthBucket, refDate } from '../lib/contexts';
 import { selectionKeyDown, useSelection } from '../lib/selection';
 
@@ -46,33 +48,38 @@ function storedView(dir: string, alt: AltLayout | null): FolderView {
 /** What an empty folder means — teach the mechanism, don't just say "nothing". */
 const EMPTY_TEACH: Partial<Record<NoteType, string>> = {
   source:
-    'No sources yet. Dumped raw material (article links, screenshots, pasted threads) lands here, never edited, only analyzed.',
+    'No sources yet. Whatever you drop in lands here: transcripts, articles, screenshots, pasted threads. They are kept as they came and never edited.',
   meeting: 'No meetings yet. Drop a transcript (or paste one with ⇧⌘N) and it gets filed here.',
   decision:
-    'No decisions yet. Approve a decision proposal from a meeting and the spine starts here, and superseded ones keep their place in the chain.',
+    'No decisions yet. Approve a decision from a meeting and it lands here, with the call it replaced kept underneath.',
   insight:
-    'No insights yet. Claims the agent extracts from meetings land here, each citing its evidence.',
-  customer: 'No customers yet. They appear as meetings and insights start naming them.',
+    'No insights yet. When a meeting says something worth keeping, it lands here as one claim with the quote it came from.',
+  customer: 'No customers yet. An account gets a page once your meetings and notes name it.',
   theme:
-    'No themes yet. Run Synthesis over a few interviews and the patterns worth solving land here.',
+    'No themes yet. Ask Qale to look across a few interviews and the problems worth solving land here, with the evidence behind them.',
   person:
-    'No people yet. Stakeholders appear here with what they care about and what they were last told.',
-  skill: 'No skills yet. The written instructions the agent follows live here.',
-  // Mirrors, in the mirror voice: the folder holds copies, the real items live
-  // in the connected tracker or wiki. The edit rule waits for the note page,
-  // where it answers a question the reader is actually asking.
+    'No people yet. The people you work with appear here, with what they care about and what they were last told.',
+  skill: 'No skills yet. Work you hand over is written down here, in words you can edit.',
+  // The folder holds copies; the real items live in the connected tracker or
+  // wiki. The edit rule waits for the note page, where it answers a question the
+  // reader is actually asking.
   ticket:
-    'No mirrors yet. Tickets the agent tracks appear here, and the board fills as sessions link work to your meetings and decisions. Connect a tracker in Settings → Connections to start.',
+    'No tickets yet. The ones Qale follows are copied here and kept up to date, so you can read them without leaving. Connect your tracker in Settings → Connections to start.',
   wikipage:
-    'No mirrors yet. Wiki pages the agent tracks appear here, ready for your updates to land on. Connect a wiki in Settings → Connections to start.',
-  note: 'No notes yet. Start one with ⌘N; captures that are not typed records land here too.',
+    'No wiki pages yet. The ones Qale follows are copied here, ready for your updates to land on. Connect your wiki in Settings → Connections to start.',
+  note: 'No documents yet. Start one with ⌘N: scratch notes, briefs, specs.',
 };
 
 /**
  * Lifecycle values worth a facet chip, in chip order. A folder holds one note
  * type, so a folder only ever shows one lifecycle: a decision's `standing`, a
- * customer's `relationship`, a source's `processing`. The chip reads as the
- * value's own label, never the raw token.
+ * source's `processing`. The chip reads as the value's own label, never the raw
+ * token.
+ *
+ * Only the lifecycles the app acts on get chips. `relationship` (a customer)
+ * and `stance` (a theme) are hidden everywhere else (HIDDEN_KEYS), and a row of
+ * "Exploring / Watching / Committed / Won't do" was the last screen still
+ * teaching them.
  */
 const LIFECYCLE_ORDER = [
   'new',
@@ -80,12 +87,6 @@ const LIFECYCLE_ORDER = [
   'active',
   'stale',
   'superseded',
-  'prospect',
-  'churned',
-  'exploring',
-  'committed',
-  'watching',
-  'wont-do',
   'open',
   'done',
   'dropped',
@@ -147,8 +148,7 @@ export function FolderView({ dir }: { dir: string }) {
     localStorage.setItem(VIEW_KEY(dir), v);
   };
   const [filter, setFilter] = useState('');
-  const [contextFacet, setContextFacet] = useState<string | null>(null);
-  // Decisions default to the live spine — superseded ones are one click away.
+  // Decisions open on the ones that still hold. Replaced ones are one click away.
   const [lifecycleFacet, setLifecycleFacet] = useState<string | null>(
     dir === 'decisions' ? 'active' : null,
   );
@@ -159,31 +159,27 @@ export function FolderView({ dir }: { dir: string }) {
   const group = tree?.groups.find((g) => g.dir === dir);
   const notes = useMemo(() => (group?.notes ?? []).filter((n) => !isFolderIndex(n.path)), [group]);
 
-  const allTags = useMemo(() => {
-    const freq = new Map<string, number>();
-    for (const n of notes) for (const t of n.tags ?? []) freq.set(t, (freq.get(t) ?? 0) + 1);
-    return [...freq.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([t]) => t);
-  }, [notes]);
-
+  // A hidden lifecycle gets no chips at all: `active` belongs to a decision's
+  // `standing` AND to a customer's `relationship`, so the value alone cannot
+  // tell them apart. The field can.
   const lifecycles = useMemo(() => {
+    const field = group ? lifecycleField(group.type) : null;
+    if (!field || HIDDEN_KEYS.has(field)) return [];
     const present = new Set(notes.map((n) => n.lifecycle).filter((v): v is string => !!v));
     return LIFECYCLE_ORDER.filter((v) => present.has(v));
-  }, [notes]);
+  }, [notes, group]);
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return notes
       .filter((n) => {
-        if (contextFacet && !n.tags?.includes(contextFacet)) return false;
         if (lifecycleFacet && n.lifecycle !== lifecycleFacet) return false;
         if (!q) return true;
         const hay = `${n.title} ${n.summary} ${(n.tags ?? []).join(' ')}`.toLowerCase();
         return hay.includes(q);
       })
       .sort((a, b) => refDate(b).getTime() - refDate(a).getTime());
-  }, [notes, filter, contextFacet, lifecycleFacet]);
+  }, [notes, filter, lifecycleFacet]);
 
   const sections = useMemo((): {
     key: string;
@@ -208,12 +204,11 @@ export function FolderView({ dir }: { dir: string }) {
   const ordered = useMemo(() => filtered.map((n) => n.path), [filtered]);
   const selection = useSelection(ordered);
 
-  const filtersActive = filter.trim() !== '' || contextFacet !== null || lifecycleFacet !== null;
+  const filtersActive = filter.trim() !== '' || lifecycleFacet !== null;
   const emptyTeach = group ? (EMPTY_TEACH[group.type] ?? 'Nothing here yet.') : 'Nothing here yet.';
 
   const clearFilters = () => {
     setFilter('');
-    setContextFacet(null);
     setLifecycleFacet(null);
     filterRef.current?.focus();
   };
@@ -281,32 +276,17 @@ export function FolderView({ dir }: { dir: string }) {
       <PageHeader
         icon={Folder}
         crumbs={[{ label: 'Memory', onClick: (e) => openMemory(navFromEvent(e)) }]}
-        label={dir}
-        labelClassName="capitalize"
+        // The shelf's name, not the folder on disk: the page says what the rail
+        // and the Memory shelf say (SB-4).
+        label={shelfLabel(dir)}
         meta={!altMode && filtersActive ? `${filtered.length} of ${notes.length}` : notes.length}
       >
         {newAction}
       </PageHeader>
 
-      {altMode && altLayout === 'week' && (
-        <MeetingWeek
-          notes={notes}
-          allTags={allTags}
-          contextFacet={contextFacet}
-          onToggleContext={(t) => setContextFacet((c) => (c === t ? null : t))}
-          toolbarLead={viewToggle}
-        />
-      )}
+      {altMode && altLayout === 'week' && <MeetingWeek notes={notes} toolbarLead={viewToggle} />}
 
-      {altMode && altLayout === 'board' && (
-        <TicketBoard
-          notes={notes}
-          allTags={allTags}
-          contextFacet={contextFacet}
-          onToggleContext={(t) => setContextFacet((c) => (c === t ? null : t))}
-          toolbarLead={viewToggle}
-        />
-      )}
+      {altMode && altLayout === 'board' && <TicketBoard notes={notes} toolbarLead={viewToggle} />}
 
       {!altMode && notes.length > 0 && (
         <div className="shrink-0 border-b border-border/70 px-4 py-2">
@@ -375,16 +355,10 @@ export function FolderView({ dir }: { dir: string }) {
               </div>
             </div>
 
-            {(allTags.length > 0 || lifecycles.length > 0) && (
+            {/* Lifecycle only. Tags are the agent's filing (E-15), so a row of
+                them here was a vocabulary the page taught and nobody kept. */}
+            {lifecycles.length > 0 && (
               <div className="flex flex-wrap items-center gap-1">
-                {allTags.map((t) => (
-                  <TagChip
-                    key={t}
-                    tag={t}
-                    active={contextFacet === t}
-                    onToggle={() => setContextFacet((c) => (c === t ? null : t))}
-                  />
-                ))}
                 {lifecycles.map((v) => (
                   <FacetChip
                     key={v}
@@ -448,12 +422,7 @@ export function FolderView({ dir }: { dir: string }) {
                         </span>
                       </div>
                     )}
-                    <NoteList
-                      rows={s.rows}
-                      empty=""
-                      omitTag={contextFacet ?? undefined}
-                      selection={selection}
-                    />
+                    <NoteList rows={s.rows} empty="" selection={selection} />
                   </section>
                 ))}
               </div>

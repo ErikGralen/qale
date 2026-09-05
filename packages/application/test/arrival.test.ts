@@ -23,11 +23,11 @@ import type { IndexedNote, UseCaseContext } from '../src/ports.js';
 function fakeWorld(now = '2026-08-04T09:00:00.000Z'): {
   ctx: UseCaseContext;
   files: Map<string, Note>;
-  commits: string[];
+  commits: { paths: string[]; message: string }[];
 } {
   const files = new Map<string, Note>();
   const indexed = new Map<string, IndexedNote>();
-  const commits: string[] = [];
+  const commits: { paths: string[]; message: string }[] = [];
 
   const ctx = {
     vault: {
@@ -90,7 +90,8 @@ function fakeWorld(now = '2026-08-04T09:00:00.000Z'): {
       available: async () => false,
       isRepo: async () => false,
       init: async () => {},
-      commitPaths: async (_paths: string[], message: string) => void commits.push(message),
+      commitPaths: async (paths: string[], message: string) =>
+        void commits.push({ paths, message }),
       history: async () => [],
       fileAt: async () => null,
     },
@@ -275,6 +276,96 @@ test('a meeting somebody has written on is never emptied out from under them', a
     /notes or a summary/,
   );
   assert.equal(files.has(filed.path), true);
+});
+
+test('a source keeps one address: the summary on top, what arrived underneath', async () => {
+  const { ctx, files } = fakeWorld();
+  const result = await fileSource(ctx, {
+    as: 'source',
+    title: 'Why SSO deals stall',
+    summary: 'The author says procurement, not engineering, holds up every SSO rollout.',
+    parts: [{ name: 'sso-article.md', text: 'Procurement is the bottleneck. It always was.' }],
+  });
+
+  // One page, not two: the summary and the article live at the same address.
+  assert.equal(result.wrote.length, 1);
+  const body = files.get(result.path)!.body;
+  assert.equal(
+    body,
+    '## Summary\n\nThe author says procurement, not engineering, holds up every SSO rollout.\n\n' +
+      '## Original\n\nProcurement is the bottleneck. It always was.',
+  );
+});
+
+test('a source filed without a summary is the original and nothing else', async () => {
+  const { ctx, files } = fakeWorld();
+  const result = await fileSource(ctx, {
+    as: 'source',
+    title: 'Why SSO deals stall',
+    parts: [{ name: 'sso-article.md', text: 'Procurement is the bottleneck.' }],
+  });
+
+  assert.equal(files.get(result.path)!.body, 'Procurement is the bottleneck.');
+});
+
+test('a meeting is written up on its own page, never on the transcript', async () => {
+  const { ctx } = fakeWorld();
+  await assert.rejects(
+    fileSource(ctx, {
+      as: 'meeting',
+      title: 'Nordkap QBR',
+      summary: 'They confirmed the July go-live.',
+      parts: [{ name: 'qbr.vtt', text: 'Erik: hello.' }],
+    }),
+    /propose_meeting/,
+  );
+});
+
+test('one summary cannot cover several sources filed in one call', async () => {
+  const { ctx } = fakeWorld();
+  await assert.rejects(
+    fileSource(ctx, {
+      as: 'source',
+      title: 'Two articles',
+      summary: 'Both say procurement is the bottleneck.',
+      parts: [
+        { name: 'one.md', text: 'first article' },
+        { name: 'two.md', text: 'second article' },
+      ],
+    }),
+    /one call each/,
+  );
+});
+
+test('unlinking a transcript commits the meeting it left', async () => {
+  const { ctx, files, commits } = fakeWorld();
+  const held = await fileSource(ctx, {
+    as: 'meeting',
+    title: 'Nordkap QBR',
+    // Written on, so the page survives losing its transcript — which is the
+    // case where the frontmatter change had nothing to commit it.
+    attachTo: await meetingPage(
+      ctx,
+      'meetings/2026-08-04-nordkap-qbr.md',
+      'Nordkap QBR',
+      '## Summary\n\nThey confirmed the July go-live.\n',
+    ),
+    parts: [{ name: 'qbr.vtt', text: 'Erik: hello.' }],
+  });
+  const transcriptPath = held.wrote[1]!;
+
+  const result = await refileSource(ctx, {
+    path: transcriptPath,
+    meeting: 'none',
+    origin: 'Jonas Palm',
+  });
+
+  assert.equal(result.removed, undefined, 'the page has a summary on it, so it stays');
+  assert.equal(refsOf(files, held.path).length, 0, 'and it no longer holds the transcript');
+  assert.ok(
+    commits.at(-1)!.paths.includes(held.path),
+    `the meeting was left out of ${JSON.stringify(commits.at(-1))}`,
+  );
 });
 
 test('refiling can just rename, without touching where anything lives', async () => {

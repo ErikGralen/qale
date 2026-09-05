@@ -42,6 +42,7 @@ const BAKED_ENV = [
   'QALE_POSTHOG_DEV',
   'QALE_GOOGLE_CLIENT_ID',
   'QALE_GOOGLE_CLIENT_SECRET',
+  'QALE_DEMO',
 ];
 const define = Object.fromEntries(
   // `?? ''` matters: an undefined value would emit the bare token `undefined`.

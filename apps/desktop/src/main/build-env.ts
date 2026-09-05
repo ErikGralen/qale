@@ -29,6 +29,7 @@ declare const __QALE_POSTHOG_HOST__: string;
 declare const __QALE_POSTHOG_DEV__: string;
 declare const __QALE_GOOGLE_CLIENT_ID__: string;
 declare const __QALE_GOOGLE_CLIENT_SECRET__: string;
+declare const __QALE_DEMO__: string;
 
 /**
  * Baked value first, shell second. `typeof` guards the case where the constant
@@ -69,3 +70,11 @@ export const googleClientSecret = (): string =>
     typeof __QALE_GOOGLE_CLIENT_SECRET__ === 'string' ? __QALE_GOOGLE_CLIENT_SECRET__ : undefined,
     'QALE_GOOGLE_CLIENT_SECRET',
   );
+
+/**
+ * Is this the demo build (docs/demo-mode.md)? Baked with `QALE_DEMO=1`, so a
+ * packaged "Qale Demo" knows what it is without a shell. A dev run can set the
+ * same variable. Empty means the real product.
+ */
+export const isDemoBuild = (): boolean =>
+  baked(typeof __QALE_DEMO__ === 'string' ? __QALE_DEMO__ : undefined, 'QALE_DEMO') === '1';

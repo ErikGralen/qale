@@ -7,7 +7,10 @@
     "QALE_GOOGLE_CLIENT_SECRET",
     "QALE_POSTHOG_KEY",
     "QALE_POSTHOG_HOST",
-    "QALE_POSTHOG_DEV"
+    "QALE_POSTHOG_DEV",
+    "QALE_DEMO",
+    "QALE_DEMO_RECORD",
+    "QALE_DEMO_TODAY"
   ],
   "tasks": {
     "dev": {

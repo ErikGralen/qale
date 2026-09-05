@@ -1,0 +1,35 @@
+# The demo build (docs/demo-mode.md DM-1).
+#
+# Everything about the real build, with a different name and three folders
+# bundled beside the app. `extends` pulls in electron-builder.yml whole, so the
+# file list, the asar rules, the mac target and the after-pack signing hook all
+# stay written in one place. Only what MUST differ is here.
+#
+# Build it with `pnpm dmg:demo` from apps/desktop, which sets `QALE_DEMO=1` so
+# electron.vite.config.ts bakes the flag into the binary. The flag and this file
+# have to travel together: this file alone gives you a differently named copy of
+# the real product, and the flag alone gives you a demo that overwrites the real
+# Qale's workspace.
+extends: electron-builder.yml
+
+# Its own name and its own id, so it installs beside the real Qale and shares
+# nothing: separate userData, separate keychain item, separate dock icon. The
+# name here is what Electron derives the userData folder from, and it is the
+# same string src/main/index.ts passes to `app.setName` in a dev demo run.
+appId: ai.qale.demo
+productName: Qale Demo
+
+# The demo's material, copied into Contents/Resources/demo-assets. The main
+# process finds them there through `assetsRoot()` in src/main/demo/demo-service.ts,
+# and finds the same three folders in the repo during a dev run.
+#
+#   vault-dev/      the workspace every Reset copies and dates to today
+#   demo-samples/   the files the presenter drags in, also put on the Desktop
+#   demo/           the recordings and the Atlassian fixture
+extraResources:
+  - from: ../../vault-dev
+    to: demo-assets/vault-dev
+  - from: ../../demo-samples
+    to: demo-assets/demo-samples
+  - from: ../../demo
+    to: demo-assets/demo

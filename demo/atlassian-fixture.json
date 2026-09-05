@@ -1,0 +1,240 @@
+{
+  "anchor": "2026-07-17",
+  "siteUrl": "https://tavla.atlassian.net",
+  "self": {
+    "accountId": "demo-pm",
+    "displayName": "Demo user",
+    "emailAddress": "demo@tavla.example"
+  },
+  "projects": [
+    {
+      "id": "10000",
+      "key": "PAY",
+      "name": "Payments"
+    }
+  ],
+  "spaces": [
+    {
+      "id": "65537",
+      "key": "PRODUCT",
+      "name": "Product"
+    }
+  ],
+  "issues": [
+    {
+      "id": "10001",
+      "key": "PAY-142",
+      "projectKey": "PAY",
+      "summary": "SAML SSO (epic)",
+      "description": "SAML SSO against customer IdPs via WorkOS. Rollout target 2026-07-28 behind a feature flag, Nordkap Payments as first tenant (they run Entra). General availability in August.",
+      "issueType": "Epic",
+      "status": "Blocked",
+      "statusCategory": "indeterminate",
+      "labels": [
+        "enterprise-auth"
+      ],
+      "assignee": "Tom Devlin",
+      "reporter": "Demo user",
+      "created": "2026-06-16T15:40:00.000Z",
+      "updated": "2026-07-16T15:40:00Z",
+      "comments": [
+        {
+          "id": "1421",
+          "author": "Tom Devlin",
+          "created": "2026-07-08T09:30:00.000Z",
+          "body": "Scoped per sprint planning. Audit-log export dependency split out as PAY-156."
+        },
+        {
+          "id": "1422",
+          "author": "Tom Devlin",
+          "created": "2026-07-11T09:30:00.000Z",
+          "body": "Staging verified against Okta and Entra. Moving to In Review."
+        },
+        {
+          "id": "1423",
+          "author": "Tom Devlin",
+          "created": "2026-07-16T09:30:00.000Z",
+          "body": "Moving to Blocked. The infra review flagged the WorkOS callback endpoints, specifically secrets handling on the redirect path. Security sign-off is needed before the flag path can be enabled in production. Review slot requested for 2026-07-20."
+        }
+      ],
+      "links": [
+        {
+          "type": "Blocks",
+          "key": "PAY-161",
+          "outward": false
+        }
+      ]
+    },
+    {
+      "id": "10002",
+      "key": "PAY-148",
+      "projectKey": "PAY",
+      "summary": "Payout report exports",
+      "description": "CSV and Excel payout report exports for finance teams. Shipped; feeds the Kranelund exports pilot.",
+      "issueType": "Task",
+      "status": "Done",
+      "statusCategory": "done",
+      "labels": [
+        "reporting"
+      ],
+      "assignee": "Tom Devlin",
+      "reporter": "Demo user",
+      "created": "2026-05-29T14:05:00.000Z",
+      "updated": "2026-06-28T14:05:00Z",
+      "comments": [
+        {
+          "id": "1481",
+          "author": "Tom Devlin",
+          "created": "2026-06-28T09:30:00.000Z",
+          "body": "CSV and Excel out behind the reports flag. Finance verified the column set. Closing."
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "10003",
+      "key": "PAY-156",
+      "projectKey": "PAY",
+      "summary": "Audit-log export for SSO events",
+      "description": "Export SSO sign-in/sign-out events into the audit-log stream shipped in June, so enterprise security teams can trace access during the SSO rollout. Split out of the SAML SSO epic.",
+      "issueType": "Task",
+      "status": "Done",
+      "statusCategory": "done",
+      "labels": [
+        "enterprise-auth"
+      ],
+      "assignee": "Tom Devlin",
+      "reporter": "Demo user",
+      "created": "2026-06-15T09:10:00.000Z",
+      "updated": "2026-07-15T09:10:00Z",
+      "parentKey": "PAY-142",
+      "comments": [
+        {
+          "id": "1561",
+          "author": "Tom Devlin",
+          "created": "2026-07-10T09:30:00.000Z",
+          "body": "Picked up after the internal auth review confirmed the export gap."
+        },
+        {
+          "id": "1562",
+          "author": "Tom Devlin",
+          "created": "2026-07-15T09:30:00.000Z",
+          "body": "Shipped behind the same flag family as SSO, verified in staging against the Nordkap tenant config. Closing."
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "10004",
+      "key": "PAY-161",
+      "projectKey": "PAY",
+      "summary": "IdP metadata validation in staging",
+      "description": "Validate customer IdP metadata exchange in staging ahead of the Nordkap go-live: Entra first (their stack), Okta as the regression pair.",
+      "issueType": "Task",
+      "status": "In Progress",
+      "statusCategory": "indeterminate",
+      "labels": [
+        "enterprise-auth"
+      ],
+      "assignee": "Tom Devlin",
+      "reporter": "Demo user",
+      "created": "2026-06-16T11:20:00.000Z",
+      "updated": "2026-07-16T11:20:00Z",
+      "parentKey": "PAY-142",
+      "comments": [
+        {
+          "id": "1611",
+          "author": "Tom Devlin",
+          "created": "2026-07-16T09:30:00.000Z",
+          "body": "Entra metadata round-trips in staging. Working through the Okta regression pair before the go-live sign-off."
+        }
+      ],
+      "links": [
+        {
+          "type": "Blocks",
+          "key": "PAY-142",
+          "outward": true
+        }
+      ]
+    },
+    {
+      "id": "10005",
+      "key": "PAY-165",
+      "projectKey": "PAY",
+      "summary": "Webhook delivery retries with backoff",
+      "description": "Retry failed webhook deliveries with exponential backoff and a dead-letter view.",
+      "issueType": "Task",
+      "status": "To Do",
+      "statusCategory": "new",
+      "labels": [
+        "reliability"
+      ],
+      "assignee": "Tom Devlin",
+      "reporter": "Demo user",
+      "created": "2026-06-10T09:45:00.000Z",
+      "updated": "2026-07-10T09:45:00Z",
+      "comments": [],
+      "links": []
+    },
+    {
+      "id": "10006",
+      "key": "PAY-167",
+      "projectKey": "PAY",
+      "summary": "Reconciliation report date-range filter",
+      "description": "Let finance filter the reconciliation report by settlement date range.",
+      "issueType": "Task",
+      "status": "To Do",
+      "statusCategory": "new",
+      "labels": [
+        "reporting"
+      ],
+      "assignee": "Tom Devlin",
+      "reporter": "Demo user",
+      "created": "2026-06-11T16:30:00.000Z",
+      "updated": "2026-07-11T16:30:00Z",
+      "comments": [],
+      "links": []
+    }
+  ],
+  "pages": [
+    {
+      "id": "910231",
+      "title": "Enterprise Onboarding",
+      "spaceKey": "PRODUCT",
+      "version": 12,
+      "body": "<h2>Provisioning</h2><p>Enterprise tenants authenticate via SAML SSO (WorkOS). Group and role assignment is manual during onboarding.</p><p>SCIM provisioning ships in Q2 alongside the SSO rollout, so group mapping is automatic from day one.</p><h2>Rollout checklist</h2><ul><li><p>IdP metadata exchanged and verified in staging</p></li><li><p>First-tenant flag enabled the week before go-live</p></li><li><p>Written go-live confirmation to the customer security contact</p></li></ul>",
+      "created": "2025-12-03T09:40:00.000Z",
+      "updated": "2026-04-02T09:40:00Z",
+      "webui": "/spaces/PRODUCT/pages/910231"
+    },
+    {
+      "id": "18350081",
+      "title": "Product weekly update",
+      "spaceKey": "PRODUCT",
+      "version": 41,
+      "body": "<h1>Product weekly update</h1><p>_Week of 2026-07-06 to 2026-07-10, published 2026-07-11. Older updates are archived under this page._</p><p><strong>Enterprise auth.</strong> SSO rollout on track for 2026-07-28, with Nordkap Payments as the first tenant behind a feature flag. Audit-log export for SSO events is in progress as a split-out dependency. SCIM still lands in September per the Q3 deferral.</p><p><strong>Reporting.</strong> Kranelund exports pilot kickoff is being scheduled. Scope for scheduled reporting is unchanged.</p><p><strong>Pricing.</strong> Annual prepay discount is live. Nordkap procurement's review is expected to start shortly.</p>",
+      "created": "2026-03-13T16:20:00.000Z",
+      "updated": "2026-07-11T16:20:00Z",
+      "webui": "/spaces/PRODUCT/pages/18350081"
+    }
+  ],
+  "steps": [
+    {
+      "id": "pay-161-done",
+      "label": "PAY-161 goes Done",
+      "changes": [
+        {
+          "kind": "comment",
+          "key": "PAY-161",
+          "author": "Tom Devlin",
+          "body": "Okta regression pair passed too. Metadata exchange validated in staging. Closing."
+        },
+        {
+          "kind": "transition",
+          "key": "PAY-161",
+          "to": "Done"
+        }
+      ]
+    }
+  ]
+}

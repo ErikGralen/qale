@@ -49,6 +49,8 @@ import type {
   CodebasePathDTO,
   CodebaseRequestDTO,
   CodebaseStatusDTO,
+  DemoInfoDTO,
+  DemoStepDTO,
   GitStatusDTO,
   RevertChangeInput,
   RevertResultDTO,
@@ -422,6 +424,18 @@ export interface InvokeMap {
   'codebase:set': { args: [paths: CodebasePathDTO[]]; result: CodebaseStatusDTO };
   /** The repos under the configured folders, plus the `claude` probe. */
   'codebase:status': { args: []; result: CodebaseStatusDTO };
+
+  // Demo build only (docs/demo-mode.md). In an ordinary build `demo:info`
+  // answers `enabled: false` with no steps and the Settings section is not
+  // drawn, so the other three are never called.
+  /** What the Demo section draws: the date it is set to, and the script. */
+  'demo:info': { args: []; result: DemoInfoDTO };
+  /** Back to the start of the script, dated today. Throws away the last demo. */
+  'demo:reset': { args: []; result: void };
+  /** Put the drag-in files on the Desktop and open the folder. */
+  'demo:openSamples': { args: []; result: void };
+  /** Apply one scripted change to the fake tracker; answers the new step list. */
+  'demo:applyStep': { args: [id: string]; result: DemoStepDTO[] };
 }
 
 export type InvokeChannel = keyof InvokeMap;
@@ -540,6 +554,10 @@ export const INVOKE_CHANNELS = [
   'codebase:get',
   'codebase:set',
   'codebase:status',
+  'demo:info',
+  'demo:reset',
+  'demo:openSamples',
+  'demo:applyStep',
 ] as const satisfies readonly InvokeChannel[];
 
 // Compile-time completeness guard: every InvokeMap key must appear above. A

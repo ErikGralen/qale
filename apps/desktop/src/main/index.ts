@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { electronApp, is } from '@electron-toolkit/utils';
 import { registerHandlers } from './handlers.js';
 import { installLogCapture } from './log.js';
+import { isDemoBuild } from './build-env.js';
 import type { Telemetry } from './telemetry.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -38,7 +39,15 @@ function devEnv(name: string): string | undefined {
  * the same move). It also puts "Qale Dev" in the menu bar, so it is obvious
  * which one you are looking at. The packaged app never takes this branch.
  */
-if (is.dev) app.setName('Qale Dev');
+if (isDemoBuild()) {
+  // Same move again, for the third identity (docs/demo-mode.md DM-1). The demo
+  // build is installed BESIDE the real Qale on the cofounder's machine, so it
+  // has to hold its own workspace, its own settings and its own keychain item.
+  // A packaged demo already carries this name from electron-builder.demo.yml;
+  // saying it here is what gives a `QALE_DEMO=1` dev run the same separation,
+  // and the "Dev" suffix keeps that run off the packaged demo's profile too.
+  app.setName(is.dev ? 'Qale Demo Dev' : 'Qale Demo');
+} else if (is.dev) app.setName('Qale Dev');
 
 /**
  * The other half of the app's identity, and the Windows-only half: a toast on

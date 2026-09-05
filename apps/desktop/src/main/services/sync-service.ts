@@ -27,6 +27,7 @@ import {
   type ContainerKind,
   type EventChange,
   type ExternalContainer,
+  type FetchLike,
   type ShallowChange,
 } from '@qale/connectors';
 import { conventionsSkill, parseRunnable } from '@qale/sessions';
@@ -416,6 +417,10 @@ export class SyncService {
     private readonly onChanged: (mirrorPaths: string[]) => void,
     /** The connector registry. A parameter so a test can register its own. */
     private readonly registry: readonly ConnectorProvider<unknown>[] = CONNECTOR_PROVIDERS,
+    /** The transport a provider's connector gets. The demo build returns the
+     *  fake Atlassian here, so nothing leaves the process (docs/demo-mode.md
+     *  DM-8). Absent, every connector uses the global fetch. */
+    private readonly fetchImplFor?: (providerId: string) => FetchLike | undefined,
   ) {
     for (const provider of registry) this.conns.set(provider.id, freshState(provider));
   }
@@ -468,7 +473,11 @@ export class SyncService {
       fingerprint: fields ? fingerprintOf(fields) : null,
       identity: undefined,
       siteLabel: fields ? siteLabelFor(fields, provider.label) : provider.label,
-      create: () => (parsed?.success ? provider.create(parsed.data) : null),
+      create: () => {
+        if (!parsed?.success) return null;
+        const fetchImpl = this.fetchImplFor?.(provider.id);
+        return provider.create(parsed.data, fetchImpl ? { fetchImpl } : undefined);
+      },
     };
   }
 

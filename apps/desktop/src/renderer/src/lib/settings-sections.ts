@@ -3,6 +3,7 @@ import {
   Cable,
   FolderGit2,
   FolderOpen,
+  Presentation,
   ShieldCheck,
   SlidersHorizontal,
   Terminal,
@@ -21,7 +22,15 @@ import {
  * worth its click if what is behind it is short.
  */
 export type SettingsSection =
-  'general' | 'you' | 'workspace' | 'agent' | 'connections' | 'codebase' | 'advanced' | 'privacy';
+  | 'general'
+  | 'you'
+  | 'workspace'
+  | 'agent'
+  | 'connections'
+  | 'codebase'
+  | 'advanced'
+  | 'privacy'
+  | 'demo';
 
 export interface SettingsSectionInfo {
   id: SettingsSection;
@@ -88,13 +97,29 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionInfo[] = [
   },
 ];
 
+/**
+ * The ninth tab, and the only one that is not in the list above (docs/demo-mode.md
+ * DM-9). It exists in the demo build and nowhere else, so SettingsView appends it
+ * when `demo:info` says the build is a demo, and ⌘K, which reads the list, never
+ * offers a tab an ordinary install does not have.
+ */
+export const DEMO_SECTION: SettingsSectionInfo = {
+  id: 'demo',
+  label: 'Demo',
+  icon: Presentation,
+  keywords: 'demo reset script steps sample files walkthrough',
+};
+
 /** Where Settings opens when nobody named a section. */
 export const DEFAULT_SETTINGS_SECTION: SettingsSection = 'general';
 
+/** Every tab that can exist, the demo one included. */
+const ALL_SECTIONS: readonly SettingsSectionInfo[] = [...SETTINGS_SECTIONS, DEMO_SECTION];
+
 export function settingsSectionLabel(id: SettingsSection): string {
-  return SETTINGS_SECTIONS.find((s) => s.id === id)?.label ?? 'General';
+  return ALL_SECTIONS.find((s) => s.id === id)?.label ?? 'General';
 }
 
 export function isSettingsSection(value: string | undefined): value is SettingsSection {
-  return SETTINGS_SECTIONS.some((s) => s.id === value);
+  return ALL_SECTIONS.some((s) => s.id === value);
 }

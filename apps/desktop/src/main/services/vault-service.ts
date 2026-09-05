@@ -1,5 +1,4 @@
 import { app } from 'electron';
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import {
   FsVault,
@@ -10,6 +9,7 @@ import {
   type VaultChange,
 } from '@qale/vault';
 import { notIndexable, openVault, type UseCaseContext, type VaultInfo } from '@qale/application';
+import { appDbBasename } from '@qale/domain/demo';
 
 /**
  * Owns the live vault: fs + index + git + watcher for the currently-open vault.
@@ -31,8 +31,7 @@ export class VaultService {
    * into vault B, and accepting one would write A's paths into B.
    */
   private appDbPathFor(root: string): string {
-    const key = createHash('sha256').update(root).digest('hex').slice(0, 12);
-    return join(app.getPath('userData'), `app-${key}.db`);
+    return join(app.getPath('userData'), appDbBasename(root));
   }
 
   constructor(private readonly notifyChanged: (paths: string[]) => void) {}

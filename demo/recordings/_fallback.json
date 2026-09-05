@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "key": "_fallback",
+  "turns": [
+    {
+      "request": {
+        "system": "",
+        "messages": [],
+        "model": "claude-opus-5"
+      },
+      "response": {
+        "id": "msg_demo_fallback",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-opus-5",
+        "content": [
+          {
+            "type": "text",
+            "text": "I’m the demo build, so I only know the walkthrough. Try one of the three prompts on the Home page, or drop one of the two transcripts."
+          }
+        ],
+        "stop_reason": "end_turn",
+        "stop_sequence": null,
+        "usage": { "input_tokens": 0, "output_tokens": 32 }
+      }
+    }
+  ]
+}

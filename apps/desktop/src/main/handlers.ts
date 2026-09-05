@@ -127,6 +127,8 @@ import {
   MEETING_PREP_LEAD_PHRASE,
 } from './agents.js';
 import { setDockBadge } from './dock-badge.js';
+import { isDemoBuild } from './build-env.js';
+import { DemoService } from './demo/demo-service.js';
 import { seedDemoProposal } from './dev-seed.js';
 import { Telemetry } from './telemetry.js';
 import { SettingsService } from './services/settings-service.js';
@@ -210,6 +212,20 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   const agent = new AgentRuntime();
 
   /**
+   * The demo build's own machinery (docs/demo-mode.md), or null in the product.
+   * Null is what keeps every branch below to one `demo &&`: an ordinary build
+   * builds nothing, starts nothing and answers `demo:info` with `enabled: false`.
+   */
+  const demo = isDemoBuild()
+    ? new DemoService({
+        settings,
+        vaultService,
+        disposeAgent: () => agent.dispose(),
+        onReset: () => afterDemoReset(),
+      })
+    : null;
+
+  /**
    * Sessions parked on a card that only the PO can clear — a mid-turn question
    * or a fan-out approval. Keyed per kind so a session holding both doesn't
    * lose its badge when one resolves.
@@ -252,6 +268,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       if (mirrorPaths.length > 0)
         pushEvent(getWindow(), { channel: 'vault:changed', paths: mirrorPaths });
     },
+    // The registry, left at its default. Named only so the demo's fetch can sit
+    // last, where a new option belongs.
+    undefined,
+    // Demo build only: Jira and Confluence answer from a fixture in this
+    // process, so the connector's own code runs unchanged against a site that
+    // does not exist (docs/demo-mode.md DM-8).
+    demo?.fetchImplFor,
   );
 
   /** When each background agent last actually FIRED, epoch ms. In memory: a
@@ -665,6 +688,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       modelId: s.modelId,
       provider: settings.getProvider(),
       apiKey: settings.getActiveKey(),
+      // Demo build only: every model call goes to the local replay server
+      // instead of the provider. Spread, so an ordinary build's config has no
+      // such field and nothing about it changes.
+      ...(demo?.baseUrl ? { baseUrl: demo.baseUrl } : {}),
       connections: agentConnections(settings),
       // Which repos the sessions were built against. A change here rebuilds the
       // live ones, because a session's tool set is fixed when it is built and a
@@ -756,6 +783,19 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   const pushSettings = (): void => {
     pushEvent(getWindow(), { channel: 'settings:changed', settings: settingsDTO() });
   };
+
+  /**
+   * Reset has finished: the workspace is a new folder, the databases are new
+   * files and the renderer's local storage is gone. Everything the page holds
+   * is about the demo that just ended, so it is reloaded rather than patched.
+   * A function declaration, because the demo service is built above it.
+   */
+  function afterDemoReset(): void {
+    reconfigureAgent();
+    pushSettings();
+    pushEvent(getWindow(), { channel: 'connections:changed' });
+    getWindow()?.webContents.reload();
+  }
 
   /**
    * What this install looks like as counts and flags — the facts the person
@@ -1519,7 +1559,12 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     unblockClock();
     return settingsDTO();
   });
-  handle('settings:verifyProviderKey', (provider, key) => verifyProviderKey(provider, key));
+  handle('settings:verifyProviderKey', (provider, key) =>
+    // The demo build's key is the word "demo" and the replay server never looks
+    // at it, so there is nothing to ask anyone. A real check here would put a
+    // red "that key is wrong" under a key that works fine.
+    demo ? { ok: true } : verifyProviderKey(provider, key),
+  );
   // Connections (Area C): the renderer's one door to external-system state.
   handle('connections:providers', () => syncService.providers());
   handle('connections:list', () => syncService.list());
@@ -1597,6 +1642,23 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     return codebaseService.status();
   });
   handle('codebase:status', () => codebaseService.status());
+
+  // Demo build only (docs/demo-mode.md DM-9). In the product `demo` is null, so
+  // `demo:info` reports that it is off and the Settings section is not drawn.
+  handle('demo:info', () => demo?.info() ?? { enabled: false, today: '', anchor: '', steps: [] });
+  handle('demo:reset', async () => {
+    await demo?.reset();
+  });
+  handle('demo:openSamples', async () => {
+    await demo?.openSamples();
+  });
+  handle('demo:applyStep', async (id) => {
+    const steps = demo?.applyStep(id) ?? [];
+    // The step changed the fake tracker; the mirror in the workspace has to
+    // follow, or the presenter shows a ticket that still reads the old status.
+    await syncService.tick().catch((err) => console.error('[qale] demo: sync failed:', err));
+    return steps;
+  });
   handle('settings:setSchedule', async (skill, patch) => {
     // Enabling starts the schedule from now — otherwise the next tick sees
     // last week's slot and fires immediately.
@@ -2385,6 +2447,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         ...(card ?? {}),
       });
       await fireSupersedeReactions(id).catch(() => {});
+      // Demo build only: the scheduler is off (DM-7), so an approved Jira or
+      // Confluence write would sit in the fake tracker with nothing to bring it
+      // back into the mirror. One sync, right here, is that missing tick.
+      if (demo)
+        await syncService.tick().catch((err) => console.error('[qale] demo: sync failed:', err));
     }
     const review = await afterCardResolved(id);
     notifyProposalsFor();
@@ -2572,6 +2639,14 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       // Read before the workspace opens: an install that has never been set up
       // has neither a finished opening nor a folder to point at.
       const firstRun = !settings.getOnboarding().finishedAt && !settings.get().vaultPath;
+      // Demo build only (docs/demo-mode.md). Both calls come before the
+      // workspace opens: the replay server has to exist before the agent is
+      // configured against it, and first launch writes the `vaultPath` the open
+      // below reads.
+      if (demo) {
+        await demo.start();
+        await demo.firstLaunch();
+      }
       // Dev affordance: QALE_VAULT opens a workspace without the picker.
       const saved = devEnv('QALE_VAULT') ?? settings.get().vaultPath;
       if (saved) {
@@ -2591,7 +2666,17 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         }
       }
       // Start the app-open scheduler (idempotent; ticks no-op until a vault opens).
-      scheduler.start();
+      // Not in the demo build: the tick fires the librarian, the summary pass
+      // and meeting prep, and none of those requests is recorded, so each one
+      // would file the fallback text as its answer (DM-7). "Run now" still
+      // works, and the connector sync the tick would have run happens here.
+      if (demo) {
+        void syncService
+          .tick()
+          .catch((err) => console.error('[qale] demo: launch sync failed:', err));
+      } else {
+        scheduler.start();
+      }
       if (settings.get().mcpEnabled || devEnv('QALE_MCP')) {
         await mcp.start(settings.get().mcpPort);
         if (devEnv('QALE_MCP')) console.log(`[qale] MCP token: ${settings.get().mcpToken}`);
@@ -2611,6 +2696,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // then close the watcher/index/DB so nothing writes against a closing app.
     async dispose() {
       scheduler.stop();
+      await demo?.stop().catch(() => {});
       await mcp.stop().catch(() => {});
       agent.dispose();
       // No codebase run outlives the app.

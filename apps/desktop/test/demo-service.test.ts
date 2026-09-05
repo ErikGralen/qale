@@ -1,0 +1,272 @@
+import assert from 'node:assert/strict';
+import test, { mock } from 'node:test';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+/**
+ * The demo build's own service (docs/demo-mode.md DM-2, DM-9).
+ *
+ * Two things are worth pinning. The date maths, because every recorded answer
+ * and every fixture row is slid by the same number and a wrong one is only
+ * visible in the demo itself. And what Reset actually deletes, because it
+ * deletes a workspace: the test proves it rebuilds from the bundled copy,
+ * clears the per-vault database and never reaches past the folders it owns.
+ *
+ * The whole of Electron is faked. `app.getPath` answers with scratch folders,
+ * so the "Desktop" the samples land on is a temp directory and no test writes
+ * anywhere a person keeps things.
+ */
+
+let userData = '';
+let desktop = '';
+/** Every clearStorageData call, so the test can see it happened. */
+const cleared: unknown[] = [];
+/** Every path handed to shell.openPath. */
+const opened: string[] = [];
+
+mock.module('electron', {
+  namedExports: {
+    app: {
+      isPackaged: false,
+      getAppPath: () => userData,
+      getPath: (name: string) => (name === 'desktop' ? desktop : userData),
+      getLocale: () => 'en-US',
+    },
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (value: string) => Buffer.from(value, 'utf8'),
+      decryptString: (buf: Buffer) => buf.toString('utf8'),
+    },
+    session: {
+      defaultSession: {
+        clearStorageData: (opts: unknown) => {
+          cleared.push(opts);
+          return Promise.resolve();
+        },
+      },
+    },
+    // @electron-toolkit/utils imports these two by name, so they have to exist
+    // for the module to load at all. Nothing under test calls either.
+    ipcMain: { on: () => {}, handle: () => {} },
+    BrowserWindow: class {},
+    shell: {
+      openPath: (path: string) => {
+        opened.push(path);
+        return Promise.resolve('');
+      },
+    },
+  },
+});
+
+const { DemoService } = await import('../src/main/demo/demo-service.js');
+const { SettingsService } = await import('../src/main/services/settings-service.js');
+const { ANCHOR, appDbBasename } = await import('@qale/domain/demo');
+
+type Service = InstanceType<typeof DemoService>;
+
+/** A workspace service that records what was asked of it and owns no files. */
+function fakeVault(): { calls: string[]; service: never } {
+  const calls: string[] = [];
+  const service = {
+    dispose: async () => {
+      calls.push('dispose');
+    },
+    open: async (path: string) => {
+      calls.push(`open ${path}`);
+      return {};
+    },
+  };
+  return { calls, service: service as never };
+}
+
+/** A scratch install: userData, a Desktop, and the bundled demo material. */
+function install(): { root: string; assets: string } {
+  const root = mkdtempSync(join(tmpdir(), 'qale-demo-'));
+  userData = join(root, 'userData');
+  desktop = join(root, 'Desktop');
+  mkdirSync(userData, { recursive: true });
+  mkdirSync(desktop, { recursive: true });
+
+  const assets = join(root, 'assets');
+  mkdirSync(join(assets, 'vault-dev', 'notes'), { recursive: true });
+  mkdirSync(join(assets, 'vault-dev', 'sessions', 'old-run'), { recursive: true });
+  mkdirSync(join(assets, 'demo-samples'), { recursive: true });
+  writeFileSync(
+    join(assets, 'vault-dev', 'notes', 'a.md'),
+    `---\ntype: note\ndate: ${ANCHOR}\n---\n\nWritten on ${ANCHOR}.\n`,
+  );
+  writeFileSync(join(assets, 'vault-dev', 'sessions', 'old-run', 'brief.md'), 'stale\n');
+  writeFileSync(join(assets, 'demo-samples', 'transcript.txt'), 'Anna: hello\n');
+  return { root, assets };
+}
+
+function service(assets: string, vault = fakeVault()): { demo: Service; vault: typeof vault } {
+  const settings = new SettingsService();
+  const demo = new DemoService({
+    settings,
+    vaultService: vault.service,
+    assetsRoot: assets,
+    disposeAgent: () => vault.calls.push('disposeAgent'),
+    onReset: () => vault.calls.push('onReset'),
+  });
+  return { demo, vault };
+}
+
+function demoOn(): void {
+  process.env['QALE_DEMO'] = '1';
+}
+function demoOff(): void {
+  delete process.env['QALE_DEMO'];
+}
+function pinToday(day: string | null): void {
+  if (day) process.env['QALE_DEMO_TODAY'] = day;
+  else delete process.env['QALE_DEMO_TODAY'];
+}
+
+test('a pinned day sets both the date and the offset', () => {
+  demoOn();
+  pinToday('2026-07-25');
+  const { assets } = install();
+  const { demo } = service(assets);
+  assert.equal(demo.today(), '2026-07-25');
+  assert.equal(demo.dateOffsetDays(), 8);
+  pinToday('2026-07-10');
+  assert.equal(demo.dateOffsetDays(), -7);
+  pinToday(ANCHOR);
+  assert.equal(demo.dateOffsetDays(), 0);
+  demoOff();
+});
+
+test('a pinned day that is not a date is ignored, and today is the real day', () => {
+  demoOn();
+  pinToday('next tuesday');
+  const { assets } = install();
+  const { demo } = service(assets);
+  assert.equal(demo.today(), new Date().toISOString().slice(0, 10));
+  pinToday(null);
+  demoOff();
+});
+
+test('an ordinary build reports the demo as off and does nothing', async () => {
+  demoOff();
+  pinToday(null);
+  const { assets } = install();
+  const { demo, vault } = service(assets);
+  const info = demo.info();
+  assert.equal(info.enabled, false);
+  assert.deepEqual(info.steps, []);
+  await demo.start();
+  await demo.reset();
+  assert.equal(await demo.firstLaunch(), false);
+  // Not one file moved and not one session was stopped.
+  assert.deepEqual(vault.calls, []);
+  assert.equal(existsSync(demo.workspacePath), false);
+});
+
+test('reset rebuilds the workspace from the bundled copy, dated to today', async () => {
+  demoOn();
+  pinToday('2026-07-25');
+  const { root, assets } = install();
+  const { demo, vault } = service(assets);
+
+  // What the last demo left behind: a note nobody bundled, a session folder,
+  // the per-vault database, the search index and a run receipt.
+  const workspace = demo.workspacePath;
+  mkdirSync(join(workspace, 'notes'), { recursive: true });
+  writeFileSync(join(workspace, 'notes', 'left-over.md'), '---\ntype: note\n---\n');
+  mkdirSync(join(userData, 'sessions'), { recursive: true });
+  writeFileSync(join(userData, 'sessions', 'run.jsonl'), '{}\n');
+  writeFileSync(join(userData, appDbBasename(workspace)), 'db');
+  writeFileSync(join(userData, 'index.db'), 'index');
+
+  await demo.reset();
+
+  // The bundled note is back and every date in it moved eight days.
+  const note = readFileSync(join(workspace, 'notes', 'a.md'), 'utf8');
+  assert.match(note, /date: 2026-07-25/);
+  assert.match(note, /Written on 2026-07-25\./);
+  // Last demo's note is gone, and so is the session folder's contents.
+  assert.equal(existsSync(join(workspace, 'notes', 'left-over.md')), false);
+  assert.equal(existsSync(join(workspace, 'sessions')), true);
+  assert.equal(existsSync(join(workspace, 'sessions', 'old-run')), false);
+  // The app state keyed to that workspace is gone with it.
+  assert.equal(existsSync(join(userData, appDbBasename(workspace))), false);
+  assert.equal(existsSync(join(userData, 'index.db')), false);
+  assert.equal(existsSync(join(userData, 'sessions', 'run.jsonl')), false);
+  // The renderer's own memory of the last demo, asked for by name.
+  assert.deepEqual(cleared.at(-1), { storages: ['localstorage'] });
+  // The drag-in files are on the Desktop.
+  assert.equal(
+    readFileSync(join(desktop, 'Qale demo files', 'transcript.txt'), 'utf8'),
+    'Anna: hello\n',
+  );
+  // In order: sessions stop, the workspace closes, and it only reopens at the end.
+  assert.deepEqual(vault.calls, ['disposeAgent', 'dispose', `open ${workspace}`, 'onReset']);
+
+  rmSync(root, { recursive: true, force: true });
+  demoOff();
+});
+
+test('reset can be told not to reopen, which is what first launch needs', async () => {
+  demoOn();
+  pinToday('2026-07-25');
+  const { root, assets } = install();
+  const { demo, vault } = service(assets);
+  await demo.reset({ reopen: false });
+  assert.deepEqual(vault.calls, ['disposeAgent', 'dispose']);
+  assert.equal(existsSync(join(demo.workspacePath, 'notes', 'a.md')), true);
+  rmSync(root, { recursive: true, force: true });
+  demoOff();
+});
+
+test('first launch answers the whole opening, once', async () => {
+  demoOn();
+  pinToday('2026-07-25');
+  const { root, assets } = install();
+  const settings = new SettingsService();
+  await settings.load();
+  const vault = fakeVault();
+  const demo = new DemoService({
+    settings,
+    vaultService: vault.service,
+    assetsRoot: assets,
+    disposeAgent: () => vault.calls.push('disposeAgent'),
+    onReset: () => vault.calls.push('onReset'),
+  });
+
+  assert.equal(await demo.firstLaunch(), true);
+  assert.equal(settings.get().vaultPath, demo.workspacePath);
+  assert.equal(settings.getProvider(), 'anthropic');
+  assert.equal(settings.getActiveKey(), 'demo');
+  assert.deepEqual(settings.getConnection('atlassian'), {
+    providerId: 'atlassian',
+    fields: {
+      siteUrl: 'https://tavla.atlassian.net',
+      email: 'demo@tavla.example',
+      apiToken: 'demo',
+    },
+  });
+  const onboarding = settings.getOnboarding();
+  assert.ok(onboarding.finishedAt, 'the opening is finished, so it never renders');
+  assert.equal(onboarding.telemetry, false);
+
+  // A second launch has a workspace on file and takes none of it.
+  const before = vault.calls.length;
+  assert.equal(await demo.firstLaunch(), false);
+  assert.equal(vault.calls.length, before);
+
+  rmSync(root, { recursive: true, force: true });
+  demoOff();
+});
+
+test('opening the demo files fills the folder and then opens it', async () => {
+  demoOn();
+  const { root, assets } = install();
+  const { demo } = service(assets);
+  await demo.openSamples();
+  assert.equal(opened.at(-1), join(desktop, 'Qale demo files'));
+  assert.equal(existsSync(join(desktop, 'Qale demo files', 'transcript.txt')), true);
+  rmSync(root, { recursive: true, force: true });
+  demoOff();
+});

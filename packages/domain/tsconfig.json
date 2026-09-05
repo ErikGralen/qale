@@ -2,7 +2,12 @@
   "extends": "@qale/typescript-config/base.json",
   "compilerOptions": {
     "noEmit": true,
-    "rootDir": "src"
+    "rootDir": "src",
+    // Only src/demo/ uses them: the date shift the demo build and
+    // scripts/refresh-demo.ts share reads and writes files (docs/demo-mode.md
+    // DM-9). Everything else in this package is still pure domain, and adding
+    // the types here does not change that.
+    "types": ["node"]
   },
   "include": ["src"]
 }

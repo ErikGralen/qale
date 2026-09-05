@@ -18,6 +18,7 @@
     "refresh-demo": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/refresh-demo.ts",
     "uninstall-app": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/uninstall.ts",
     "reset-atlassian": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/reset-atlassian.ts",
+    "build-demo-fixture": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/build-demo-fixture.ts",
     "seed-google-calendar": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/seed-google-calendar.ts",
     "reset": "pnpm refresh-demo && pnpm reset-atlassian && pnpm seed-google-calendar"
   },

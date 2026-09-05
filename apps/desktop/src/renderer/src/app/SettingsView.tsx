@@ -51,6 +51,7 @@ const GIT_FOR_WINDOWS = 'https://git-scm.com/download/win';
 import {
   TELEMETRY_IDENTITY,
   TELEMETRY_PROCESSOR,
+  type DemoInfoDTO,
   type ModelInfoDTO,
   type SettingsDTO,
 } from '@qale/ipc';
@@ -61,11 +62,13 @@ import { PageHeader } from '../components/PageHeader';
 import { TelemetryDetails } from '../components/TelemetryDetails';
 import { NewWorkspace } from '../components/NewWorkspace';
 import { CodebaseSettings } from './CodebaseSettings';
+import { DemoSettings } from './DemoSettings';
 import { ConnectionsSettings } from './ConnectionsSettings';
 import { Setting, SettingNotice, SettingPanel } from '../components/Setting';
 import { WritePolicySetting } from '../components/WritePolicySetting';
 import {
   DEFAULT_SETTINGS_SECTION,
+  DEMO_SECTION,
   SETTINGS_SECTIONS,
   settingsSectionLabel,
   type SettingsSection,
@@ -95,11 +98,13 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
   const toast = useToast();
   const [settings, setSettings] = useState<SettingsDTO | null>(null);
   const [models, setModels] = useState<ModelInfoDTO[]>([]);
+  /** The demo build's own tab, or null in the product (docs/demo-mode.md DM-9). */
+  const [demo, setDemo] = useState<DemoInfoDTO | null>(null);
   const [key, setKey] = useState('');
   const [savedKey, setSavedKey] = useState(false);
   /** The new-workspace form, folded away until asked for. */
   const [creating, setCreating] = useState(false);
-  const active = section ?? DEFAULT_SETTINGS_SECTION;
+  const requested = section ?? DEFAULT_SETTINGS_SECTION;
   /** The chosen provider, for the copy that has to name a company or a key. */
   const providerInfo = LLM_PROVIDER_INFO[settings?.provider ?? 'anthropic'];
 
@@ -111,7 +116,18 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
 
   useEffect(() => {
     void reload();
+    // Asked once: what a build is cannot change while it runs.
+    void invoke['demo:info']().then((info) => setDemo(info.enabled ? info : null));
   }, []);
+
+  /** The tabs this build has. The demo one is appended, never in the shared list. */
+  const sections = demo ? [...SETTINGS_SECTIONS, DEMO_SECTION] : SETTINGS_SECTIONS;
+  /**
+   * A tab this build does not have shows the first one instead of an empty
+   * page. It corrects itself: `demo` arrives a tick after the first render, so
+   * a demo build asked for the Demo tab lands on it as soon as the answer does.
+   */
+  const active = sections.some((s) => s.id === requested) ? requested : DEFAULT_SETTINGS_SECTION;
 
   // Every mutator funnels through this: a failed save must say so — the
   // button quietly staying "Save" reads as success.
@@ -270,7 +286,7 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
             (and a scroll container here would clip it away entirely). */}
         <div className="shrink-0 border-b border-border px-4 pb-[5px]">
           <TabsList variant="line" className="h-9 gap-1 p-0">
-            {SETTINGS_SECTIONS.map((s) => (
+            {sections.map((s) => (
               <TabsTrigger
                 key={s.id}
                 value={s.id}
@@ -806,6 +822,12 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
                 </Setting>
               </SettingPanel>
             </TabsContent>
+
+            {demo && (
+              <TabsContent value="demo">
+                <DemoSettings info={demo} onChange={setDemo} />
+              </TabsContent>
+            )}
           </div>
         </div>
       </Tabs>

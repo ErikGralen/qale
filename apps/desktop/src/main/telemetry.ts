@@ -8,7 +8,7 @@ import {
   type TelemetryEnv,
   type TelemetryValue,
 } from '@qale/ipc';
-import { posthogDev, posthogHost, posthogKey } from './build-env.js';
+import { isDemoBuild, posthogDev, posthogHost, posthogKey } from './build-env.js';
 import { redactLogLine } from './log.js';
 
 /**
@@ -190,9 +190,12 @@ export class Telemetry {
    */
   setConsent(consented: boolean, answered: boolean): void {
     this.consentKnown = true;
-    this.consented = consented;
+    // A demo build never sends, whatever the switch says (docs/demo-mode.md
+    // DM-2). He demos to customers, and an event under his install id is the
+    // last thing that should leave that machine. Held events are dropped below.
+    this.consented = consented && !isDemoBuild();
     this.answered = answered;
-    if (!consented) {
+    if (!this.consented) {
       this.held = [];
       return;
     }

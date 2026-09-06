@@ -141,7 +141,7 @@ test('a demo skill, agent or voice with no seeded pair is named here or it fails
   // page has a broken file to show. Seeding one would be absurd.
   //
   // The two conventions skills are demo-only for the opposite reason: nothing
-  // seeds them (they are created on first use), and the demo copies hold Tavla's
+  // seeds them (they are created on first use), and the demo copies hold Rota's
   // own rules rather than the template's example lines, so a word-for-word
   // comparison would be wrong. The next test checks the part that must not
   // drift, which is their shape.
@@ -243,7 +243,7 @@ test('each conventions template ends with the Standing instructions section', ()
 
 /**
  * The demo copies (CV-5) are not mirrors. A real workspace fills the template
- * with its own rules, so `vault-dev/skills/jira/SKILL.md` holds Tavla's rules
+ * with its own rules, so `vault-dev/skills/jira/SKILL.md` holds Rota's rules
  * and says nothing the template says. What must still hold is the shape: the
  * same title, and the same headings in the same order, ending on the anchor
  * `propose_instruction` appends to. A demo file that lost a drafting moment

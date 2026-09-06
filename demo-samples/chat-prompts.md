@@ -1,13 +1,11 @@
 # Example chat prompts
 
-## Pain point 1: after-meeting follow-up (what do I owe, what's out of date)
+## Flow 2: When can we deliver? (Marcus's fourth ping)
 
-- `List every open commitment I've made to a customer and who's waiting on me, soonest first.`
+- `When can we deliver shift swaps to Café Nord, and what have they already been told?`
+- Follow-up: `Draft a reply to Marcus in the sales voice.`
 
-## Pain point 2: insights from customer meetings
+## Flow 4: Who needs to know? (SCH-231 goes Done)
 
-- `What have customers told us they need from scheduled exports? Split it into must-haves and nice-to-haves, and say who said what.`
-
-## Before-meeting prep (bonus)
-
-- `I have a Nordkap check-in coming up. What's changed since we last spoke, what did I promise, and what should I walk in ready to answer?`
+- `SCH-231 just went to Done. Who needs to know, and what were they told?`
+- Follow-up: `Draft the messages, CS voice for the customers, one line for Jonas.`

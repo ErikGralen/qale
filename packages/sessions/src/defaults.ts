@@ -53,7 +53,7 @@ summary: Files what you just dropped in, and reads what is worth reading.
 scenarios:
   - putting sources that just arrived where they belong ("file this transcript")
   - going through a drop of new files and pulling out what they commit us to ("I dropped three recordings in, work through them")
-  - reading one meeting from its own page ("read the Nordkap meeting and write it up")
+  - reading one meeting from its own page ("read the Café Nord meeting and write it up")
 can: [file-source, keep-working-files, draft-outbound, draft-calendar, track-external]
 ---
 
@@ -233,7 +233,7 @@ screen; every line cites its source.
   \`last_told\` entries against the decision spine and shipped tickets, and flag decisions they may
   still know only in the superseded version.
 - **Delivery**: ticket movement since the previous meeting, straight from the mirror notes
-  ("Since Jul 14: PAY-142 In Review → Blocked"). Leave out tickets that did not move.
+  ("Since Jul 14: SCH-125 In Progress → Blocked"). Leave out tickets that did not move.
 - **Open questions**: from the hubs' open-question lists, as checkboxes.
 - **Loose ends**: unresolved actions and commitments from the previous meeting in the series.
 - **Landmines**: anything promised externally that a current decision contradicts, or whose linked
@@ -530,7 +530,7 @@ search tools, and search the workspace as well:
 Then make one \`ask_user\` call. Name the whole haul in one line, with the real names and the real
 numbers, and end your turn:
 
-"I read NORD and KRAN, 214 tickets and 40 pages, and a month of your calendar. Want to walk
+"I read SCH and APP, 214 tickets and 40 pages, and a month of your calendar. Want to walk
 through what I found?"
 
 Two options: yes, walk me through it / not now. Write nothing, propose nothing, say nothing else.
@@ -959,6 +959,9 @@ one out and the next run stops writing it.
 - **cs**: what customers can use today and since when, what is promised and on what date, and what
   they keep asking about that nothing commits to. Say the uncertain part out loud instead of
   over-promising. Every "live now" and "committed" line stands on a shipped ticket or a decision.
+- **sales**: the dates that changed this week, and nothing else. What a deal can now point to, what
+  slipped and to when, and what still has no date. No process, no reasoning: sales relays this
+  verbatim to an account.
 
 The voice file says how each one sounds. This list says what goes in. Read the voice with
 \`get_voice\` before writing a word of that draft.
@@ -1021,6 +1024,14 @@ No date yet: <what they keep asking about that nothing commits to>
 [cs, variant "Short"]
 <the one change customers will notice, and when> ([[tickets/KEY]])
 
+[sales, variant "Full"]
+Now: <what an account can be told is live, and since when> ([[tickets/KEY]])
+Changed: <a date that moved this week, old date to new> ([[decisions/...]])
+No date: <what still has nothing to promise>
+
+[sales, variant "Short"]
+<the one date to relay this week> ([[decisions/...]])
+
 [team: draft_page_update, or a note]
 ## Shipped
 - <KEY title>: <state last Friday> to <state now> ([[tickets/KEY]])
@@ -1039,7 +1050,7 @@ title: Find the pattern
 summary: Reads a stack of interviews and says what they add up to.
 scenarios:
   - weighing a stack of material already in the workspace against one question ("what do these nine interviews add up to")
-  - counting how many accounts say the same thing ("who else has asked for scheduled exports")
+  - counting how many accounts say the same thing ("who else has asked for shift swaps")
   - reading a body of tagged material for whatever is in it ("read everything tagged onboarding and tell me what is there")
 can: [draft-outbound, keep-working-files]
 ---
@@ -1199,6 +1210,24 @@ The reader talks to customers all day and will quote this word for word.
 - Say the uncertain part out loud. "We do not have a date yet" is a usable sentence.
 - One idea per sentence. Short sentences are easier to quote.
 - Never write: "should be fine", "soon", "we are working on it" without a date, "as you know".
+`;
+
+export const VOICE_SALES = `---
+type: skill
+title: Sales voice
+summary: For sales to relay to a prospect or account. Short, date-first, no engineering caveats.
+---
+
+# Sales voice
+
+The reader is closing or renewing a deal and will paste this straight into their own message.
+
+- The date first. "Shift swaps ship in Q4" before any reasoning.
+- Say plainly what can be promised and what cannot. "We do not have a date yet" beats a soft one.
+- No engineering caveats the customer can't act on: no ticket keys, no blocked-by, no re-estimate,
+  no team names. If it isn't a date or a fact they can repeat to their boss, cut it.
+- One idea per sentence. This gets forwarded, so it has to survive on its own.
+- Never write: "should be fine", "soon", "in progress" without a date, "we're working on it".
 `;
 
 export const LIBRARIAN_AGENT = `---
@@ -1382,10 +1411,10 @@ title: Handle a commitment
 summary: Works out what to do about a promise that's slipping, or a request that just came in.
 scenarios:
   - one todo that has gone past its date ("this one is overdue, what do I do about it")
-  - something owed to a named person ("I still owe Sara the SCIM timeline")
+  - something owed to a named person ("I still owe Marcus the swap ETA for Café Nord")
   - deciding whether a commitment can be closed or has to move ("can I close this one out")
   - a request that just came in where it is not obvious what it wants ("what do I do with this message from sales?")
-  - a request from somebody whose position changes the answer ("the CEO wants SSO by Q3, what now")
+  - a request from somebody whose position changes the answer ("the CPO wants shift swaps live before September, what now")
   - working out what to say back to one ("how should I answer this")
 ---
 
@@ -1866,6 +1895,7 @@ export const RETIRED_SKILLS: string[] = ['skills/incoming-request/SKILL.md'];
 export const DEFAULT_VOICES: DefaultSkill[] = [
   { file: 'voices/exec.md', content: VOICE_EXEC },
   { file: 'voices/cs.md', content: VOICE_CS },
+  { file: 'voices/sales.md', content: VOICE_SALES },
 ];
 
 /** Agent files the pack ships, seeded into `agents/` exactly like the skills. */

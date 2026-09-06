@@ -257,7 +257,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     setDockBadge(ctx.proposals.pendingCount() > 0 || asking || hasDueTodos(ctx));
   }
 
-  const googleOAuth = new GoogleOAuthService(settings);
+  // Demo build only: the token refresh is answered by the fake Google Calendar,
+  // so a demo build needs no OAuth client and opens no browser (docs/demo-mode.md).
+  // Read through the getter on every call: the fake is built later, by
+  // `demo.start()`, and a value captured here would still be undefined.
+  const googleOAuth = demo
+    ? new GoogleOAuthService(settings, (url, init) => (demo.googleFetch ?? fetch)(url, init))
+    : new GoogleOAuthService(settings);
   const syncService = new SyncService(
     () => vaultService.context(),
     () => vaultService.syncStore(),
@@ -794,6 +800,14 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     reconfigureAgent();
     pushSettings();
     pushEvent(getWindow(), { channel: 'connections:changed' });
+    // Reset deleted the workspace database, and the follow flag went with it,
+    // so the demo calendar is followed again and the week is pulled back in.
+    if (demo) {
+      void demo
+        .followCalendar(syncService)
+        .then(() => syncService.tick())
+        .catch((err) => console.error('[qale] demo: sync after reset failed:', err));
+    }
     getWindow()?.webContents.reload();
   }
 
@@ -2671,6 +2685,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       // would file the fallback text as its answer (DM-7). "Run now" still
       // works, and the connector sync the tick would have run happens here.
       if (demo) {
+        // The one calendar the fake serves is followed for him, once, so the
+        // launch sync has a week to pull.
+        await demo.followCalendar(syncService);
         void syncService
           .tick()
           .catch((err) => console.error('[qale] demo: launch sync failed:', err));

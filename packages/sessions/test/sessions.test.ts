@@ -683,7 +683,7 @@ test('a message the PM typed is never mistaken for a kickoff', () => {
 test('the voices ship in voices/, as flat files, with nothing but tone in them', () => {
   assert.deepEqual(
     DEFAULT_VOICES.map((v) => v.file),
-    ['voices/exec.md', 'voices/cs.md'],
+    ['voices/exec.md', 'voices/cs.md', 'voices/sales.md'],
   );
   // Not a skill, and not in the by-name registry: nothing invokes a voice.
   const skillFiles = DEFAULT_SKILLS.map((s) => s.file);

@@ -1,7 +1,7 @@
 /**
  * Seed the demo workspace (PLAN-V2 Phase 1.5) by copying the checked-in demo
- * vault at vault-dev/ — the Tavla scenario: 5 customers, 10 decisions with a
- * supersedes-chain, 9 meetings with transcripts, and cited insights.
+ * vault at vault-dev/ — the Rota scenario: customers, decisions with a
+ * supersedes-chain, meetings with transcripts, and cited insights.
  * Deterministic — run with:
  *   npx tsx scripts/seed-demo.ts [targetDir=.vault-dev]
  *

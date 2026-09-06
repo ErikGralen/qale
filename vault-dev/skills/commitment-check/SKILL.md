@@ -4,10 +4,10 @@ title: Handle a commitment
 summary: Works out what to do about a promise that's slipping, or a request that just came in.
 scenarios:
   - one todo that has gone past its date ("this one is overdue, what do I do about it")
-  - something owed to a named person ("I still owe Sara the SCIM timeline")
+  - something owed to a named person ("I still owe Marcus the swap ETA for Café Nord")
   - deciding whether a commitment can be closed or has to move ("can I close this one out")
   - a request that just came in where it is not obvious what it wants ("what do I do with this message from sales?")
-  - a request from somebody whose position changes the answer ("the CEO wants SSO by Q3, what now")
+  - a request from somebody whose position changes the answer ("the CPO wants shift swaps live before September, what now")
   - working out what to say back to one ("how should I answer this")
 ---
 

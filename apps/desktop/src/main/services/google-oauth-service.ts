@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { shell } from 'electron';
-import { CalendarAuthError } from '@qale/connectors';
+import { CalendarAuthError, type FetchLike } from '@qale/connectors';
 import { googleClientId, googleClientSecret } from '../build-env.js';
 import { registerSecretValue } from '../log.js';
 import type { SettingsService } from './settings-service.js';
@@ -66,7 +66,9 @@ export class GoogleOAuthService {
 
   constructor(
     private readonly settings: SettingsService,
-    private readonly fetchImpl: typeof fetch = fetch,
+    /** The transport the token endpoint is reached over. The demo build hands
+     *  in its fake Google, which answers a refresh without a network call. */
+    private readonly fetchImpl: FetchLike = (url, init) => fetch(url, init),
   ) {}
 
   isConfigured(): boolean {

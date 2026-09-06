@@ -242,11 +242,16 @@ test('first launch answers the whole opening, once', async () => {
   assert.deepEqual(settings.getConnection('atlassian'), {
     providerId: 'atlassian',
     fields: {
-      siteUrl: 'https://tavla.atlassian.net',
-      email: 'demo@tavla.example',
+      siteUrl: 'https://rota.atlassian.net',
+      email: 'demo@rota.example',
       apiToken: 'demo',
     },
   });
+  // The Google grant is written rather than granted: the demo build has no
+  // OAuth client, and the fake answers the token refresh this stands in for.
+  const google = settings.getGoogle();
+  assert.equal(google?.email, 'demo@rota.example');
+  assert.ok(google?.scopes.includes('calendar.events'), 'the grant can write events');
   const onboarding = settings.getOnboarding();
   assert.ok(onboarding.finishedAt, 'the opening is finished, so it never renders');
   assert.equal(onboarding.telemetry, false);

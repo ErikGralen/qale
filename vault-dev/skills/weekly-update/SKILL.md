@@ -32,6 +32,9 @@ one out and the next run stops writing it.
 - **cs**: what customers can use today and since when, what is promised and on what date, and what
   they keep asking about that nothing commits to. Say the uncertain part out loud instead of
   over-promising. Every "live now" and "committed" line stands on a shipped ticket or a decision.
+- **sales**: the dates that changed this week, and nothing else. What a deal can now point to, what
+  slipped and to when, and what still has no date. No process, no reasoning: sales relays this
+  verbatim to an account.
 
 The voice file says how each one sounds. This list says what goes in. Read the voice with
 `get_voice` before writing a word of that draft.
@@ -97,6 +100,14 @@ No date yet: <what they keep asking about that nothing commits to>
 
 [cs, variant "Short"]
 <the one change customers will notice, and when> ([[tickets/KEY]])
+
+[sales, variant "Full"]
+Now: <what an account can be told is live, and since when> ([[tickets/KEY]])
+Changed: <a date that moved this week, old date to new> ([[decisions/...]])
+No date: <what still has nothing to promise>
+
+[sales, variant "Short"]
+<the one date to relay this week> ([[decisions/...]])
 
 [team: draft_page_update, or a note]
 ## Shipped

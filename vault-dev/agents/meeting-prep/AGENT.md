@@ -26,7 +26,7 @@ screen; every line cites its source.
   `last_told` entries against the decision spine and shipped tickets, and flag decisions they may
   still know only in the superseded version.
 - **Delivery**: ticket movement since the previous meeting, straight from the mirror notes
-  ("Since Jul 14: PAY-142 In Review → Blocked"). Leave out tickets that did not move.
+  ("Since Jul 14: SCH-125 In Progress → Blocked"). Leave out tickets that did not move.
 - **Open questions**: from the hubs' open-question lists, as checkboxes.
 - **Loose ends**: unresolved actions and commitments from the previous meeting in the series.
 - **Landmines**: anything promised externally that a current decision contradicts, or whose linked

@@ -1,7 +1,7 @@
 /**
  * Refresh the demo workspace — the successor to seed-demo.ts.
  *
- * `vault-dev/` is the *canonical* demo source: the Tavla scenario, frozen on a
+ * `vault-dev/` is the *canonical* demo source: the Rota scenario, frozen on a
  * fictional "today" of ANCHOR (2026-07-17). This script copies it to a runtime
  * target (default `.vault-dev`, gitignored) and slides every date forward by
  * (real today − ANCHOR) so the demo always reads as *now*: the upcoming meeting
@@ -19,6 +19,15 @@
  *   pnpm tsx scripts/refresh-demo.ts --anchor=2026-07-17  # if you re-center the source timeline
  *   pnpm tsx scripts/refresh-demo.ts --dry           # print the plan, write nothing
  *   pnpm tsx scripts/refresh-demo.ts --keep-app-state    # rebuild the vault, leave the inbox alone
+ *   pnpm tsx scripts/refresh-demo.ts --done          # the Flow 4 snapshot (see below)
+ *
+ * --done lays scripts/demo-overlays/done/ over the fresh copy before the dates
+ * slide: the same vault, except the shift-swaps epic and its last story read
+ * Done. Flow 4 needs that state and nothing else does, so it is two overlay
+ * files rather than a second vault. `pnpm reset-atlassian --done` is its live
+ * counterpart, and reads the same list of keys from scripts/lib/atlassian-cast.ts.
+ * The demo build needs none of this: Settings → Demo applies the
+ * `sch-231-done` fixture step and the sync tick after it writes the mirrors.
  *
  * It also resets the app-side state keyed to the runtime vault. The inbox cards
  * and proposals do NOT live in the vault — they sit in a per-vault SQLite
@@ -32,7 +41,7 @@
  * What shifts: the date-valued frontmatter fields (date, due, captured, updated,
  * last_told, resolved, started, ended), the prose in summary/title, and bare
  * YYYY-MM-DD tokens in the body. What never shifts: dates that are part of a
- * wikilink slug (e.g. `[[meetings/2026-07-14-nordkap-checkin]]`) — filenames and
+ * wikilink slug (e.g. `[[meetings/2026-07-09-steering]]`) — filenames and
  * links are stable ids, so nothing to rewrite and no link can break. The app
  * derives every freshness/overdue/upcoming signal from frontmatter dates, not
  * filenames.
@@ -44,7 +53,7 @@
  * stripping and no bundler, which is also why that module may only import node
  * builtins. Keep it that way and this script keeps working.
  */
-import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir, platform } from 'node:os';
 import {
@@ -64,6 +73,7 @@ interface Args {
   today: string;
   dry: boolean;
   keepAppState: boolean;
+  done: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -72,15 +82,49 @@ function parseArgs(argv: string[]): Args {
   let today = new Date().toISOString().slice(0, 10);
   let dry = false;
   let keepAppState = false;
+  let done = false;
   for (const a of argv) {
     if (a === '--dry' || a === '--dry-run') dry = true;
     else if (a === '--keep-app-state') keepAppState = true;
+    else if (a === '--done') done = true;
     else if (a.startsWith('--anchor=')) anchor = a.slice('--anchor='.length);
     else if (a.startsWith('--today=')) today = a.slice('--today='.length);
     else if (a.startsWith('--')) throw new Error(`Unknown flag: ${a}`);
     else target = a;
   }
-  return { target: target ?? '.vault-dev', anchor, today, dry, keepAppState };
+  return { target: target ?? '.vault-dev', anchor, today, dry, keepAppState, done };
+}
+
+/**
+ * Lay one overlay directory over the fresh copy: every file under
+ * scripts/demo-overlays/<name>/ replaces the note at the same relative path.
+ * It runs before the date shift, so overlay dates slide with everything else.
+ * The overlay only ever REPLACES a note the canonical vault already has; a
+ * stray path is a typo, and a typo that silently adds an orphan note to the
+ * demo is worse than a stop.
+ */
+function applyOverlay(name: string, target: string, dry: boolean): void {
+  const root = join(import.meta.dirname, 'demo-overlays', name);
+  if (!existsSync(root)) throw new Error(`No demo overlay at ${root}`);
+  const files: string[] = [];
+  const walk = (dir: string, rel: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const next = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(join(dir, entry.name), next);
+      else if (entry.isFile() && entry.name.endsWith('.md')) files.push(next);
+    }
+  };
+  walk(root, '');
+  for (const rel of files) {
+    const to = join(target, ...rel.split('/'));
+    if (!dry && !existsSync(to)) {
+      throw new Error(`Overlay "${name}" names ${rel}, which the canonical vault does not have.`);
+    }
+    if (!dry) copyFileSync(join(root, ...rel.split('/')), to);
+  }
+  console.log(
+    `Overlay "${name}": ${dry ? 'would replace' : 'replaced'} ${files.length} note(s) — ${files.join(', ')}.`,
+  );
 }
 
 /**
@@ -197,6 +241,11 @@ function main(): void {
     }
     copyVault(source, target);
   }
+
+  // 1a. The Flow 4 snapshot, laid over the fresh copy before the dates slide.
+  // This is the live-site path only; the demo build gets there from Settings →
+  // Demo with the `sch-231-done` fixture step.
+  if (args.done) applyOverlay('done', target, args.dry);
 
   // 1b. Reset the app-side state keyed to this runtime vault (inbox and proposals
   // live in a per-vault DB under userData, not in the vault) so the demo

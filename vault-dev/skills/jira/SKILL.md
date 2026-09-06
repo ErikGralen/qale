@@ -9,8 +9,8 @@ best. Keep them high level: what the team wants done, not a copy of the Jira set
 
 ## When you draft a ticket
 
-- File it in PAY. It is the only project this team works in.
-- Give it one area label: `enterprise-auth`, `reporting` or `reliability`. One label, never two.
+- File it under `SCH` (Scheduling), `APP` (Staff app) or `PLT` (Platform), whichever team owns the work.
+- Give it one area label: `shift-swaps`, `payroll-export` or `platform`. One label, never two.
 - If the work comes from one customer, name them in the first line of the description.
 
 ## When you comment

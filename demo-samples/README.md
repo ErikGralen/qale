@@ -1,14 +1,14 @@
 # Demo samples
 
-Material to drop into a running demo, covering the product's two core pain points. These files
-live outside the vault on purpose. They're things you feed in during a demo, not notes that get
-seeded and indexed. They use relative time language ("Friday", "last month", "in three weeks")
-so they never go stale and never need re-dating.
+Material to feed into a running demo. These files live outside the vault on purpose: they are
+things you drop or paste in during a demo, not notes that get seeded and indexed ahead of time.
+They are dated on the same anchor timeline as `vault-dev/` (2026-07-17), so `pnpm refresh-demo`
+keeps them in step with the vault instead of going stale.
 
-The cast they mention (Nordkap, Kranelund, Sara, Mikkel, Tom, and the SCIM and scheduled-exports
-storylines) already lives in the demo vault, so the agent's proposals land on real hubs. It
-updates the actual Nordkap page, the real SCIM insight, existing todos, rather than creating
-things that float free.
+The cast they mention (Rota, Café Nord, Bruno's Burgers, Fjord Sports, Åsa, Rebecca, Marcus, Jonas,
+Petra) already lives in the demo vault, so the agent's proposals land on real hubs: the actual
+Café Nord customer page, the real `SCH-231` and `SCH-118` epics, existing todos, rather than
+creating things that float free.
 
 ## Setup
 
@@ -19,55 +19,60 @@ pnpm desktop             # then open the .vault-dev workspace
 
 ## The pack
 
-| File                                         | Ingest as                           | Demos                                            |
-| -------------------------------------------- | ----------------------------------- | ------------------------------------------------ |
-| `nordkap-post-sso-checkin-transcript.txt`    | Meeting transcript (you were in it) | Pain point 1, after-meeting follow-up            |
-| `kranelund-exports-discovery-transcript.txt` | Meeting transcript (you were in it) | Pain point 2, insights from customer meetings    |
-| `messy-standup-capture.md`                   | Quick note / paste                  | Intake and librarian (sloppy links get repaired) |
-| `chat-prompts.md`                            | n/a                                 | Prompts to paste into a Session                  |
+| File                          | The door                                   | Runs as               |
+| ------------------------------ | ------------------------------------------- | ---------------------- |
+| `steering-h2-priorities.vtt`   | Drop it on the window                       | Flow 1 (a meeting you were in) |
+| `support-thread-brunos.md`     | Paste it into Home's bar                    | Flow 3 (a pasted source) |
+| `chat-prompts.md`              | n/a — type these into Ask or a chat         | Flow 2 and Flow 4 prompts |
 
-### Pain point 1: after-meeting follow-up
+Dropping or pasting starts (or adds to) the `arrival` session: the one place new material lands,
+reads itself, and works out where it belongs. Nothing is pre-filed; that reading is the point.
 
-Drop `nordkap-post-sso-checkin-transcript.txt` into the capture dialog (⇧⌘N) as a normal meeting
-transcript. After-Meeting runs and the Inbox fills up with what changed:
+### Flow 1: the meeting produced actions
 
-- **Actions you now owe.** Send Sara the written SCIM plan by Friday, get her named security
-  contacts, chase legal on side letter versus contract. Those are your own todos. Sara's CISO
-  intro and the review scope come back as waiting-on. Watch it skip the commitments already
-  tracked as todos.
-- **Docs now out of date.** The Nordkap customer page (the renewal now gates on a written SCIM
-  date before their board meeting), the `nordkap-needs-scim` insight (confidence up), Sara's
-  `last_told` ledger, the SSO rollout notes (the Entra UPN claim-mapping gotcha), and the
-  meeting summary.
-- **A decision.** Commit SCIM delivery to late September, scoping the week after SSO.
+Drop `steering-h2-priorities.vtt` on the window. It is a Teams-style transcript of last Thursday's
+steering meeting, roughly 25 minutes, Åsa, Rebecca, Marcus and me. `arrival` recognizes it as a
+meeting I was in and reads it start to finish. What comes back as proposals:
 
-What to say while it runs: the meeting isn't over until the systems are updated, and here are
-the three things you owe people and the four docs that just went stale, each one citing the
-transcript.
+- **A meeting page**, with participants and a summary.
+- **A decision.** Åsa flips the H2 order: shift swaps ship before payroll export, which moves to
+  Q1, because Café Nord and two more chains need swaps before the September staff turnover.
+  It supersedes the standing "payroll export first" decision, with the reasoning and the explicit
+  not-doing (offline mode, declined again, out loud, on the record).
+- **Three todos with dates**: Rebecca re-estimates the last swap-approval story by next Friday
+  (2026-07-24); I ping Henrik for a GDPR review of swap notifications (they show colleagues' names
+  and phone numbers); I owe Fjord Sports an updated timeline now that payroll export has moved.
+- **Three outbound cards, one at a time**: a Jira comment on `SCH-118` saying the epic slipped to
+  Q1 and why, a new `SCH` story for "notify the affected colleague when a swap is approved" (raised
+  in the meeting, not yet in the epic), and a Confluence patch to the Roadmap H2 page swapping the
+  two priority lines.
 
-### Pain point 2: insights from customer meetings
+Nobody in the meeting wrote any of this down. That is the point of dropping it in.
 
-Drop `kranelund-exports-discovery-transcript.txt` the same way. This one is dense with insights:
+### Flow 3: the support thread
 
-- **Confirms a rumour.** `kranelund-evaluating-insikt` was low-confidence and secondhand. Mikkel
-  now confirms the Insikt demo himself, so watch the confidence get proposed up.
-- **Reinforces a pattern.** The seasonal per-seat objection, now with a second account behind it
-  (`per-seat-resistance-midmarket`).
-- **New requirement-shaped insights.** Scheduled exports have to deliver per region, per
-  recipient format (PDF or Excel), to a shared distribution list, on a schedule. Each one comes
-  back as a cited insight or an update on the `scheduled-reporting` theme.
+Paste `support-thread-brunos.md` into Home's bar. It is a `#support` Slack export from March: a
+Bruno's Burgers manager tells Jonas that two or three staff a week want to trade shifts, she
+redoes the schedule by hand every time, and asks whether Rota will ever let staff swap shifts
+themselves. Jonas says he'll ask product. The thread ends there, unresolved, for four months.
+The paste clears the long-paste threshold and files as a source.
 
-What to say while it runs: a customer meeting is a pile of raw signal, and the product pulls the
-insights out, quotes the customer's own words back, and files them where the next person will
-find them.
+What comes back: an insight on the shift-swaps theme, with the thread as evidence and Bruno's as
+the customer; an update to the Bruno's customer page; a Jira comment on `SCH-231` noting Bruno's
+asked for this via support in March, with the thread linked; and a todo for Ulrika to tell Bruno's
+once `SCH-231` ships.
 
-> Tip: to demo the external-transcript path instead (insights only, never decisions, for a call
-> a colleague ran that you're only reviewing), tick "Someone else's meeting" in the capture
-> dialog when you drop the Kranelund transcript.
+### Flow 2 and Flow 4: chat prompts
 
-### Intake and librarian
+`chat-prompts.md` is not something you ingest. It holds the Ask prompts (and their follow-ups)
+for two flows that run entirely in a chat, after Flow 1 and Flow 3 have landed:
 
-Paste `messy-standup-capture.md` as a quick note. It files as a `note`, and its deliberately
-sloppy links (`[[tom]]`, `[[nordkap]]`, `[[q3 priorities]]`, `[[elin]]`, `[[bergman falk]]`)
-give the librarian a set of one-tap fixes to the real slugs. It also carries a fresh thread, the
-Bergman & Falk SOC 2 request, for Intake to wire in.
+- **Flow 2** answers "when can we deliver shift swaps to Café Nord, and what have they already
+  been told", citing the ticket mirror, the fresh steering decision, and Marcus's promise from the
+  QBR, then drafts a reply in the sales voice.
+- **Flow 4** runs once `SCH-231` is switched to its Done snapshot: "who needs to know, and what
+  were they told", pulling together Bruno's (never told), Café Nord (promised at the QBR), and
+  Fjord Sports (told Q4, now Q1), then drafts the messages, CS voice for the customers, one line
+  for Jonas.
+
+Type each prompt into Ask and copy the drafted replies out by hand once you're happy with them.

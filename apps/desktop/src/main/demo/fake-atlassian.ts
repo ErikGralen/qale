@@ -3,7 +3,7 @@
  * answers the REST endpoints the Atlassian connector uses from an in-memory
  * store seeded by a fixture. Nothing leaves the process.
  *
- * The store is the Tavla cast: `demo/atlassian-fixture.json` is generated from
+ * The store is the Rota cast: `demo/atlassian-fixture.json` is generated from
  * scripts/lib/atlassian-cast.ts and the static mirrors in vault-dev/, so the
  * keys, page ids and site URL already match what the demo vault says. Dates in
  * the fixture are anchored on 2026-07-17 and slid by `dateOffsetDays` at load,
@@ -133,6 +133,13 @@ export interface FakeStep {
   id: string;
   label: string;
   changes: FakeChange[];
+  /**
+   * Ids of the steps this one comes after. `applyStep` applies each of them
+   * first if it is not applied yet, so a presenter can jump straight to a late
+   * step and still get a tracker that reads in order. Steps that have nothing
+   * to do with each other name nothing here and stay independent.
+   */
+  requires?: string[];
 }
 
 export interface AtlassianFixture {
@@ -711,6 +718,18 @@ export function createFakeAtlassian(opts: FakeAtlassianOptions): FakeAtlassian {
     return null;
   }
 
+  /** One step and, before it, every step it requires that is still open.
+   *  `pending` breaks a cycle in a hand-edited fixture. */
+  function applyStepWithRequires(id: string, pending: Set<string>): boolean {
+    const step = store.steps.find((s) => s.id === id);
+    if (!step || store.appliedStepIds.includes(id) || pending.has(id)) return false;
+    pending.add(id);
+    for (const required of step.requires ?? []) applyStepWithRequires(required, pending);
+    for (const change of step.changes) applyChange(change);
+    store.appliedStepIds.push(id);
+    return true;
+  }
+
   return {
     fetchImpl: (url, init) => route(url, init),
     reset(): void {
@@ -725,12 +744,9 @@ export function createFakeAtlassian(opts: FakeAtlassianOptions): FakeAtlassian {
       }));
     },
     applyStep(id: string): boolean {
-      const step = store.steps.find((s) => s.id === id);
-      if (!step || store.appliedStepIds.includes(id)) return false;
-      for (const change of step.changes) applyChange(change);
-      store.appliedStepIds.push(id);
-      persist();
-      return true;
+      const applied = applyStepWithRequires(id, new Set());
+      if (applied) persist();
+      return applied;
     },
   };
 }

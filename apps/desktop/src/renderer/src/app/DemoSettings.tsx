@@ -109,9 +109,9 @@ export function DemoSettings({
       {info.steps.length > 0 && (
         <Setting
           title="Script steps"
-          description="Changes you can make happen on cue, the way they would if someone else moved a ticket while you talked. Each one runs once per demo."
+          description="Changes you can make happen on cue, the way they would if someone else moved a ticket while you talked. Each one runs once per demo, and a later step brings the earlier ones with it."
         >
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col items-start gap-2">
             {info.steps.map((step) => (
               <Button
                 key={step.id}

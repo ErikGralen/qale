@@ -108,6 +108,20 @@ events under the cofounder's install id.
 
 ---
 
+### Building the Windows demo installer
+
+Answers open question 3. `pnpm --filter @qale/desktop run win:demo` builds it, but that
+needs Windows (see the `windows` job comment in `build-installers.yml`), so the way to get
+one is the workflow: on GitHub, Actions → Build installers → Run workflow, tick the `demo`
+checkbox, Run. It downloads as `qale-demo-windows`, an unsigned `Qale Demo-Setup-...exe`
+that installs beside a real Qale with no secrets baked in.
+
+Unsigned means SmartScreen. Tell the recipient before they run it: click "More info", then
+"Run anyway". Same click path as the real installer, documented in `electron-builder.yml`'s
+`win:` block.
+
+---
+
 ## B. The model
 
 ### DM-3. A local replay server that speaks the Anthropic Messages API
@@ -243,10 +257,27 @@ the build is a demo build. One branch, one file.
 
 **Notes:** Built: `demo/fake-atlassian.ts` (735 lines), fixture from `scripts/build-demo-fixture.ts` (re-run after cast or mirror changes; nothing runs it for you), cast moved to `scripts/lib/atlassian-cast.ts`. `SyncService` takes `fetchImplFor` as its 7th constructor arg. Steps come from the fixture (`pay-161-done` for Tavla). Tests drive the real connector against the fake. The static mirrors already carry `tavla.atlassian.net` and the `PAY-*` keys, so no
 reconcile step is needed. That is the whole reason to fake the API instead of pointing at the
-live demo site. Google Calendar is not mocked: the demo build has no Google client baked in,
-and the scenario's meetings are already notes in the vault.
+live demo site. Google Calendar is faked the same way; see "Google Calendar in demo builds"
+below.
 
 ---
+
+## Google Calendar in demo builds
+
+The demo build's calendar is a fixture too, behind the same `fetchImpl` seam. `demo/google-fixture.json`
+holds the Rota week in Google's own event shape, generated from `scripts/lib/google-cast.ts` (the cast
+`pnpm seed-google-calendar` pushes to a live account) by `pnpm build-demo-google-fixture`. Re-run that
+after a change to the cast; nothing runs it for you.
+
+`apps/desktop/src/main/demo/fake-google-calendar.ts` answers the token refresh, the calendar list and
+`events.list/get/insert/patch`, slides every date by (today − 2026-07-17) at load, and persists writes
+(a created event, an RSVP) to `<userData>/demo/google.json` until Reset. First launch writes the grant
+itself and follows the one calendar, so Connections reads "connected" with no OAuth client, no browser
+and no client id.
+
+What is not faked: real Google auth (`connect()` still refuses in a build with no client), and the
+scheduler. Meeting prep runs only from Run now, and answers with the canned reply until that turn is
+recorded (DM-7).
 
 ## D. Reset
 

@@ -1,11 +1,11 @@
 /**
  * Everything the demo build does on its own (docs/demo-mode.md DM-2, DM-7, DM-9).
  *
- * The demo build is the real product with three things swapped underneath it:
+ * The demo build is the real product with four things swapped underneath it:
  * the model answers from recordings, Jira and Confluence answer from a fixture,
- * and the workspace is a copy of `vault-dev/` dated to today. This service owns
- * the third one, plus the first launch and the Reset that returns the install to
- * the start of the script.
+ * Google Calendar answers from a second fixture, and the workspace is a copy of
+ * `vault-dev/` dated to today. This service owns the last one, plus the first
+ * launch and the Reset that returns the install to the start of the script.
  *
  * Nothing here runs in an ordinary build. Every caller is behind `isDemoBuild()`,
  * and `enabled` says so again for the renderer.
@@ -26,14 +26,20 @@ import type { FetchLike } from '@qale/connectors';
 import { isDemoBuild } from '../build-env.js';
 import type { SettingsService } from '../services/settings-service.js';
 import type { VaultService } from '../services/vault-service.js';
+import { CALENDAR_RW_SCOPES } from '../services/google-oauth-service.js';
 import { createFakeAtlassian, type DemoStep, type FakeAtlassian } from './fake-atlassian.js';
+import { createFakeGoogleCalendar, type FakeGoogleCalendar } from './fake-google-calendar.js';
 import { startReplayServer, type ReplayServer } from './replay-server.js';
 
-/** The provider whose REST calls the fake answers. Its id is in the registry. */
+/** The providers whose REST calls the fakes answer. Both ids are in the registry. */
 const ATLASSIAN_PROVIDER = 'atlassian';
+const GOOGLE_PROVIDER = 'google-calendar';
 
 /** The site the `vault-dev/` mirrors already name. It does not exist. */
-const DEMO_SITE_URL = 'https://tavla.atlassian.net';
+const DEMO_SITE_URL = 'https://rota.atlassian.net';
+
+/** The account the fake calendar belongs to. It does not exist either. */
+const DEMO_ACCOUNT_EMAIL = 'demo@rota.example';
 
 /** Where the drag-in material lands so the presenter can find it. */
 const SAMPLES_FOLDER = 'Qale demo files';
@@ -58,8 +64,20 @@ export interface DemoServiceOptions {
   onReset: () => void;
 }
 
+/**
+ * The slice of SyncService the demo drives, as a shape rather than the class:
+ * the sync service is built after this one, and a demo build should not make
+ * the two depend on each other in both directions.
+ */
+export interface DemoSyncService {
+  refreshContainers(connectionId: string): Promise<unknown[]>;
+  setFollow(connectionId: string, containerId: string, followed: boolean): Promise<void>;
+  list(): { id: string; containers: { id: string; followed: boolean }[] }[];
+}
+
 export class DemoService {
   private fake: FakeAtlassian | null = null;
+  private google: FakeGoogleCalendar | null = null;
   private replay: ReplayServer | null = null;
   private readonly assets: string;
 
@@ -99,11 +117,24 @@ export class DemoService {
   }
 
   /**
-   * The fake Jira and Confluence, as SyncService asks for it: one provider is
-   * answered from the fixture and every other provider is left alone.
+   * The fakes, as SyncService asks for them: two providers are answered from a
+   * fixture and every other provider is left alone.
    */
-  readonly fetchImplFor = (providerId: string): FetchLike | undefined =>
-    providerId === ATLASSIAN_PROVIDER ? this.fake?.fetchImpl : undefined;
+  readonly fetchImplFor = (providerId: string): FetchLike | undefined => {
+    if (providerId === ATLASSIAN_PROVIDER) return this.fake?.fetchImpl ?? undefined;
+    if (providerId === GOOGLE_PROVIDER) return this.google?.fetchImpl ?? undefined;
+    return undefined;
+  };
+
+  /**
+   * The same fake, for the OAuth service: its token refresh is the one Google
+   * call the connector never makes for itself. Undefined means the fake did not
+   * start, and the ordinary `fetch` is used, which is what an ordinary build
+   * does anyway.
+   */
+  get googleFetch(): FetchLike | undefined {
+    return this.google?.fetchImpl ?? undefined;
+  }
 
   /**
    * Start the two fakes. Called once, before the agent is configured, because
@@ -141,6 +172,39 @@ export class DemoService {
       });
     } catch (err) {
       console.error('[qale] demo: the fake Atlassian did not start:', err);
+    }
+    try {
+      this.google = createFakeGoogleCalendar({
+        fixturePath: join(this.assets, 'demo', 'google-fixture.json'),
+        statePath: join(app.getPath('userData'), 'demo', 'google.json'),
+        dateOffsetDays: this.dateOffsetDays(),
+      });
+    } catch (err) {
+      console.error('[qale] demo: the fake Google Calendar did not start:', err);
+    }
+  }
+
+  /**
+   * Follow the demo calendar, once, so the launch sync has something to pull.
+   * The PM of a real install picks their calendars; this one has exactly one,
+   * and a demo that opens on an empty week is not a demo.
+   *
+   * Called after the workspace opens, because the follow flag lives in the
+   * per-workspace database. A calendar the presenter unfollowed during a demo
+   * stays unfollowed until the next Reset, which is what the flag is for.
+   */
+  async followCalendar(sync: DemoSyncService): Promise<void> {
+    if (!this.enabled || !this.google) return;
+    try {
+      const alreadyFollowed = sync
+        .list()
+        .find((c) => c.id === GOOGLE_PROVIDER)
+        ?.containers.some((c) => c.followed);
+      if (alreadyFollowed) return;
+      await sync.refreshContainers(GOOGLE_PROVIDER);
+      await sync.setFollow(GOOGLE_PROVIDER, this.google.primaryCalendarId(), true);
+    } catch (err) {
+      console.error('[qale] demo: could not follow the demo calendar:', err);
     }
   }
 
@@ -196,9 +260,14 @@ export class DemoService {
     await settings.setKey('anthropic', 'demo');
     await settings.setConnection(ATLASSIAN_PROVIDER, ATLASSIAN_PROVIDER, {
       siteUrl: DEMO_SITE_URL,
-      email: 'demo@tavla.example',
+      email: DEMO_ACCOUNT_EMAIL,
       apiToken: 'demo',
     });
+    // The Google grant, written rather than granted: the demo build bakes no
+    // OAuth client, so `connect()` would refuse before a browser ever opened.
+    // The fake answers the token refresh this stands in for, and the scopes say
+    // read and write, so an approved calendar card goes through.
+    await settings.setGoogle('demo-refresh-token', DEMO_ACCOUNT_EMAIL, CALENDAR_RW_SCOPES);
     // Finished, on the last screen, consent off. Telemetry stays off in a demo
     // build whatever this says (see telemetry.ts), but the switch should read
     // the way the build behaves.
@@ -258,6 +327,11 @@ export class DemoService {
       this.fake?.reset();
     } catch (err) {
       console.error('[qale] demo: could not reset the fake Atlassian:', err);
+    }
+    try {
+      this.google?.reset();
+    } catch (err) {
+      console.error('[qale] demo: could not reset the fake Google Calendar:', err);
     }
     this.replay?.reset();
     // 8. The files he drags in, where he can find them.
@@ -323,7 +397,7 @@ export class DemoService {
 
 /**
  * Where the bundled demo material lives: `vault-dev/`, `demo-samples/` and
- * `demo/` (the recordings and the Atlassian fixture).
+ * `demo/` (the recordings and the two fixtures).
  *
  * A packaged build carries them as `extraResources`, so they sit beside the app
  * under `Contents/Resources/demo-assets`. A dev run reads them straight out of

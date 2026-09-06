@@ -1,26 +1,33 @@
 /**
- * Seed (and reset) a live Google Calendar with the Tavla demo scenario — the
+ * Seed (and reset) a live Google Calendar with the Rota demo scenario, the
  * calendar-side counterpart of scripts/reset-atlassian.ts. One command both
  * populates a fresh demo account and resets it after a run: it deletes every
- * event this script has ever seeded (tagged with a private `qaleDemo=tavla`
- * property) inside the window, then recreates the cast — so run it as often as
- * you like and the calendar always converges to the same story.
+ * event this script has ever seeded (tagged with a private `qaleDemo` property)
+ * inside the window, then recreates the cast, so run it as often as you like
+ * and the calendar always converges to the same story.
  *
- * Why this exists: phases 2–4 of the Google Calendar integration (auto-prep,
+ * Why this exists: phases 2-4 of the Google Calendar integration (auto-prep,
  * capture-matching, participant resolution, outbound events) only come alive
- * when the shallow event index has real rows — which needs a real calendar. The
+ * when the shallow event index has real rows, which needs a real calendar. The
  * offline vault ships one static synced meeting so the chrome renders, but the
  * live features need this.
  *
  * What it seeds:
- *  - a **weekly Nordkap check-in** (recurring) with Sara — the star: a past
- *    instance for series history, the upcoming one for before-meeting auto-prep,
- *    and the SCIM commitment that commitment-check offers to "raise there";
- *  - a handful of forward-looking meetings with no hand-authored vault twin
- *    (Kranelund pilot kickoff, Bergman & Falk security review, a Tom 1:1, a
- *    Fenno follow-up) so "the week fills itself in" is real and duplicate-free.
+ *  - the **weekly steering** (recurring Thursdays) with the CPO, the tech lead
+ *    and the head of sales: the star. Yesterday's instance is what the dropped
+ *    steering transcript matches against, the next one is what before-meeting
+ *    auto-prep reads, and the H2 order is what gets decided there;
+ *  - the upcoming **1:1 with the tech lead**, where the re-estimate is owed;
+ *  - three customer-facing meetings with no hand-authored vault twin (the Café
+ *    Nord QBR prep, the Bruno's CS sync, the Fjord Sports call) so "the week
+ *    fills itself in" is real and duplicate-free. Anything the vault already
+ *    holds a hand-authored note for is NOT seeded: past = vault.
  *  Every attendee email matches a vault person note's `email`, so participant
  *  resolution turns them into `[[people/…]]` links on sync.
+ *
+ * The cast itself lives in scripts/lib/google-cast.ts, so this script and the
+ * offline fixture builder (scripts/build-demo-google-fixture.ts) seed the same
+ * week.
  *
  * Dates: the canonical scenario is anchored on 2026-07-17 (see
  * scripts/refresh-demo.ts). Every meeting is anchored there and slid by
@@ -31,13 +38,13 @@
  * flow the app uses (a browser opens once for consent, write scope included).
  * The resulting refresh token is cached in .google-demo.json (gitignored, mode
  * 600); later runs reuse it silently. The OAuth client comes from
- * QALE_GOOGLE_CLIENT_ID / QALE_GOOGLE_CLIENT_SECRET (the same env the app needs —
+ * QALE_GOOGLE_CLIENT_ID / QALE_GOOGLE_CLIENT_SECRET (the same env the app needs,
  * docs/google-cloud-setup.md).
  *
  * By default it targets the PRIMARY calendar; pass --calendar to point it at a
  * specific one (by name or id) so your other calendars are never touched. It
  * only ever reads/writes the one calendar you name, and only deletes events it
- * seeded itself (the qaleDemo marker) — never your real events.
+ * seeded itself (the qaleDemo marker), never your real events.
  *
  *   pnpm seed-google-calendar --calendar="PM/PO Test"   # seed/reset that calendar
  *   pnpm seed-google-calendar --calendar="PM/PO Test" --dry   # print the plan, write nothing
@@ -53,7 +60,7 @@
  * Reconcile (default on): the runtime .vault-dev ships ONE pre-synced stub
  * meeting (provider: google-calendar) so the offline chrome renders. Against a
  * live calendar that stub would sit forever beside the real synced note, so the
- * reconcile step removes such stubs from .vault-dev — the live sync recreates
+ * reconcile step removes such stubs from .vault-dev; the live sync recreates
  * them for real on the next pull. The canonical vault-dev/ is NEVER touched.
  */
 import { createServer, type Server } from 'node:http';
@@ -62,10 +69,19 @@ import { exec } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { platform } from 'node:os';
+import {
+  ANCHOR,
+  CAST_MEETINGS,
+  DEFAULT_TIMEZONE,
+  DEMO_TAG,
+  DEMO_TAGS,
+  daysBetween,
+  endTimeOf,
+  shiftDate,
+  type CastMeeting,
+} from './lib/google-cast.ts';
 
-const ANCHOR = '2026-07-17';
 const CREDS_FILE = '.google-demo.json';
-const DEMO_TAG = 'tavla'; // extendedProperties.private.qaleDemo — our own events only
 const API = 'https://www.googleapis.com/calendar/v3';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -77,77 +93,6 @@ const FLOW_TIMEOUT_MS = 3 * 60 * 1000;
 
 const CLIENT_ID = process.env['QALE_GOOGLE_CLIENT_ID'] ?? '';
 const CLIENT_SECRET = process.env['QALE_GOOGLE_CLIENT_SECRET'] ?? '';
-
-// ---------------------------------------------------------------------------
-// The desired calendar state. Each meeting is anchored on ANCHOR; `date` slides
-// by (today − anchor) at runtime. Attendee emails match vault person notes so
-// participant resolution links them. `recurrence` (optional) uses the event's
-// date as DTSTART; singleEvents expansion on the app side gives every instance
-// the same series.
-// ---------------------------------------------------------------------------
-
-interface CastMeeting {
-  title: string;
-  /** ANCHOR-relative date (YYYY-MM-DD) of the (first) occurrence. */
-  date: string;
-  /** Local wall-clock start, "HH:MM". */
-  time: string;
-  durationMin: number;
-  /** Invitee emails (the seeded account is the organizer, not listed here). */
-  attendees: string[];
-  description: string;
-  /** RRULE bodies, e.g. "RRULE:FREQ=WEEKLY;COUNT=5" — omit for a one-off. */
-  recurrence?: string[];
-}
-
-const CAST: CastMeeting[] = [
-  {
-    // Starts at the UPCOMING instance (anchor+1), not in the past: the vault
-    // already ships the hand-authored previous instance (2026-07-14, with the
-    // decided content before-meeting reads), so a seeded past instance would be
-    // a near-duplicate. Past = vault; upcoming + future = calendar.
-    title: 'Nordkap check-in',
-    date: '2026-07-18',
-    time: '10:00',
-    durationMin: 30,
-    attendees: ['sara.lindqvist@nordkap.example'],
-    description:
-      'Weekly sync with Nordkap. Standing items: SSO go-live readiness, the SCIM timeline, procurement.',
-    recurrence: ['RRULE:FREQ=WEEKLY;COUNT=4'],
-  },
-  {
-    title: 'Kranelund exports pilot kickoff',
-    date: '2026-07-20',
-    time: '10:00',
-    durationMin: 45,
-    attendees: ['mikkel.sorensen@kranelund.example', 'johanna@tavla.example'],
-    description: 'Kick off the scheduled-delivery exports pilot with Kranelund ops.',
-  },
-  {
-    title: 'Bergman & Falk security review',
-    date: '2026-07-23',
-    time: '13:30',
-    durationMin: 60,
-    attendees: ['elin.vestergaard@bergmanfalk.example', 'david@tavla.example'],
-    description: 'Vendor security review session: questionnaire walkthrough and evidence.',
-  },
-  {
-    title: '1:1 with Tom',
-    date: '2026-07-21',
-    time: '15:00',
-    durationMin: 30,
-    attendees: ['tom@tavla.example'],
-    description: 'Weekly 1:1. Auth migration, platform.',
-  },
-  {
-    title: 'Fenno Energi architecture follow-up',
-    date: '2026-07-29',
-    time: '11:00',
-    durationMin: 45,
-    attendees: ['antti.korhonen@fennoenergi.example', 'david@tavla.example'],
-    description: 'Follow up on the on-prem question: EU region, ISO 27001, DPA.',
-  },
-];
 
 // ---------------------------------------------------------------------------
 // Args
@@ -169,7 +114,7 @@ function parseArgs(argv: string[]): Args {
   const args: Args = {
     anchor: ANCHOR,
     today: new Date().toISOString().slice(0, 10),
-    tz: process.env['QALE_GOOGLE_TZ'] ?? 'Europe/Stockholm',
+    tz: process.env['QALE_GOOGLE_TZ'] ?? DEFAULT_TIMEZONE,
     // --calendar wins; else QALE_GOOGLE_CALENDAR (so the chained `pnpm reset` can
     // target it without threading a flag); else the primary calendar.
     calendar: process.env['QALE_GOOGLE_CALENDAR'] ?? 'primary',
@@ -190,23 +135,6 @@ function parseArgs(argv: string[]): Args {
     else throw new Error(`Unknown argument: ${a}`);
   }
   return args;
-}
-
-// ---------------------------------------------------------------------------
-// Date shifting — same UTC day maths as refresh-demo.ts / reset-atlassian.ts.
-// ---------------------------------------------------------------------------
-
-function daysBetween(a: string, b: string): number {
-  const [ay, am, ad] = a.split('-').map(Number);
-  const [by, bm, bd] = b.split('-').map(Number);
-  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86_400_000);
-}
-
-function shiftDate(iso: string, offset: number): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + offset);
-  return dt.toISOString().slice(0, 10);
 }
 
 // ---------------------------------------------------------------------------
@@ -426,26 +354,30 @@ class Cal {
   }
 
   /** Every event we've previously seeded (the `qaleDemo` marker), masters and
-   *  one-offs — deleting a recurring master removes all its instances. */
+   *  one-offs; deleting a recurring master removes all its instances. Google
+   *  ANDs repeated privateExtendedProperty values, so each tag needs its own
+   *  query. Results are de-duplicated by event id. */
   async listSeeded(): Promise<GEvent[]> {
-    const out: GEvent[] = [];
-    let pageToken: string | undefined;
-    do {
-      const page = await this.req<{ items?: GEvent[]; nextPageToken?: string }>(
-        'GET',
-        `/calendars/${encodeURIComponent(this.calendarId)}/events`,
-        {
-          singleEvents: 'false',
-          showDeleted: 'false',
-          maxResults: '250',
-          privateExtendedProperty: `qaleDemo=${DEMO_TAG}`,
-          ...(pageToken ? { pageToken } : {}),
-        },
-      );
-      out.push(...(page.items ?? []));
-      pageToken = page.nextPageToken;
-    } while (pageToken);
-    return out;
+    const byId = new Map<string, GEvent>();
+    for (const tag of DEMO_TAGS) {
+      let pageToken: string | undefined;
+      do {
+        const page = await this.req<{ items?: GEvent[]; nextPageToken?: string }>(
+          'GET',
+          `/calendars/${encodeURIComponent(this.calendarId)}/events`,
+          {
+            singleEvents: 'false',
+            showDeleted: 'false',
+            maxResults: '250',
+            privateExtendedProperty: `qaleDemo=${tag}`,
+            ...(pageToken ? { pageToken } : {}),
+          },
+        );
+        for (const e of page.items ?? []) byId.set(e.id, e);
+        pageToken = page.nextPageToken;
+      } while (pageToken);
+    }
+    return [...byId.values()];
   }
 
   /** `sendUpdates=none` on both writes: the cast are invented people at reserved
@@ -492,8 +424,7 @@ function pickCalendar(cals: GCalendar[], wanted: string): GCalendar {
 
 /** Build the events.insert body for one cast meeting at its shifted date. */
 function eventBody(m: CastMeeting, date: string, tz: string, selfEmail: string): unknown {
-  const endMin = Number(m.time.slice(0, 2)) * 60 + Number(m.time.slice(3, 5)) + m.durationMin;
-  const endTime = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+  const endTime = endTimeOf(m.time, m.durationMin);
   // Organizer (accepted) + the guests: the same shape a real invite has, so the
   // qualifying heuristic (needs another human) holds. `self` is output-only —
   // Google stamps it per-reader, so the app sees it when it later pulls.
@@ -598,7 +529,7 @@ async function main(): Promise<void> {
 
   // 2. Recreate the cast at today-relative dates.
   const created: { title: string; url?: string }[] = [];
-  for (const m of CAST) {
+  for (const m of CAST_MEETINGS) {
     const date = shiftDate(m.date, offset);
     console.log(`  + create "${m.title}" on ${date} ${m.time}${m.recurrence ? ' (weekly)' : ''}`);
     if (args.dry) continue;
@@ -614,9 +545,9 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `\n✓ "${targetName}" seeded with the Tavla scenario.` +
+    `\n✓ "${targetName}" seeded with the Rota scenario.` +
       `\n  Next: in the app, connect Google Calendar (Settings → Connections) and follow "${targetName}".` +
-      '\n  Within a tick the week fills itself in; before-meeting preps the upcoming Nordkap check-in.' +
+      '\n  Within a tick the week fills itself in; before-meeting preps the next steering.' +
       '\n  Re-run this any time to reset — it deletes what it seeded and recreates it.',
   );
 }

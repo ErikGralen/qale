@@ -8,13 +8,13 @@ the durable things worth solving — problems, pains, opportunities
 
 ## Exploring
 
-* [Mobile Access](themes/mobile-access.md) — Mobile access: occasional asks from field staff, nothing gating a deal yet
+* [Auto-schedule suggestions](themes/auto-schedule.md) — Auto-schedule suggestions: propose next week from last week, the manager edits it
 
 ## Committed
 
-* [Enterprise Onboarding](themes/enterprise-onboarding.md) — Enterprise onboarding: SSO, SCIM, audit and residency gate every deal over ~200 seats
-* [Scheduled Reporting](themes/scheduled-reporting.md) — Scheduled reporting: manual weekly reports are costing us mid-market accounts
+* [Payroll Export](themes/payroll-export.md) — Payroll export: approved hours out of Rota and into Fortnox and Visma without retyping
+* [Shift Swaps](themes/shift-swaps.md) — Shift swaps: staff trade shifts themselves, the manager approves, the schedule updates
 
 ## Won't do
 
-* [On Prem Deployment](themes/on-prem-deployment.md) — On-prem and self-hosted deployment: asked for twice, declined both times
+* [Offline Mode](themes/offline-mode.md) — Offline mode: asked for twice, declined twice, and the answer has not changed

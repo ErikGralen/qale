@@ -5,7 +5,7 @@ summary: Files what you just dropped in, and reads what is worth reading.
 scenarios:
   - putting sources that just arrived where they belong ("file this transcript")
   - going through a drop of new files and pulling out what they commit us to ("I dropped three recordings in, work through them")
-  - reading one meeting from its own page ("read the Nordkap meeting and write it up")
+  - reading one meeting from its own page ("read the Café Nord meeting and write it up")
 can: [file-source, keep-working-files, draft-outbound, draft-calendar, track-external]
 ---
 

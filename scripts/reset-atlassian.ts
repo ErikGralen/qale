@@ -1,30 +1,29 @@
 /**
- * Converge the live Atlassian demo site to the Tavla baseline — the scripted
+ * Converge the live Atlassian demo site to the Rota baseline, the scripted
  * counterpart of docs/jira-demo-setup.md. One command both seeds a fresh site
  * and resets it after a demo run; it always drives toward the same desired
  * state, so run it as often as you like.
  *
  * What it converges:
- *  - Jira `PAY`: the cast issues exist (epic Blocked, audit-log export Done,
- *    IdP validation In Progress, fillers), descriptions and statuses match,
- *    every issue carries its one area label, the epic is assigned to you, and
- *    comment threads are reset to the seeds.
- *    Issues NOT in the cast — e.g. the "SCIM group-mapping for Nordkap" ticket
- *    the after-meeting demo creates live — are DELETED (skip with
- *    --keep-extras).
- *  - Confluence: the "Product" space exists; "Enterprise Onboarding" and
- *    "Product weekly update" are rewritten to their canonical bodies from
- *    vault-dev/wikipages/confluence/ — which un-does the librarian's redline fix and the
- *    weekly-update appends. Extra pages are listed but never deleted.
+ *  - Jira `SCH`, `APP` and `PLT`: the cast issues exist (two epics In Progress
+ *    with their stories, the platform tasks, the staff-app filler),
+ *    descriptions and statuses match, every issue carries its one area label,
+ *    both epics are assigned to you, and comment threads are reset to the
+ *    seeds. Issues NOT in the cast, such as the swap-notification story the
+ *    after-meeting demo creates live, are DELETED (skip with --keep-extras).
+ *  - Confluence: the "Product" space exists; "Roadmap H2" and "Product weekly
+ *    update" are rewritten to their canonical bodies from
+ *    vault-dev/wikipages/confluence/, which un-does the roadmap re-order and
+ *    the weekly-update appends. Extra pages are listed but never deleted.
  *  - The runtime vault (.vault-dev): the canonical scenario ships with STATIC
- *    mirrors (tickets/PAY-142.md, fake tavla.atlassian.net URLs, made-up page
- *    ids) so the demo works offline. Against a live site those are wrong — the
- *    keys don't exist and outbound/librarian cards would target dead ids. So
- *    the script renames the static ticket mirrors to the live keys, rewrites
- *    every [[PAY-142]] link and prose mention across the vault, swaps the fake
+ *    mirrors (tickets/jira/SCH-231.md, fake rota.atlassian.net URLs, made-up
+ *    page ids) so the demo works offline. Against a live site those are wrong:
+ *    the keys don't exist and outbound/librarian cards would target dead ids.
+ *    So the script renames the static ticket mirrors to the live keys, rewrites
+ *    every [[SCH-231]] link and prose mention across the vault, swaps the fake
  *    host for the real site, and re-points the wikipage external_ids. The
- *    canonical vault-dev/ is NEVER touched — after each `pnpm refresh-demo`
- *    the static ids are back, so re-run this script (that order: refresh, then
+ *    canonical vault-dev/ is NEVER touched. After each `pnpm refresh-demo` the
+ *    static ids are back, so re-run this script (that order: refresh, then
  *    reset). --no-reconcile skips it; --vault=path targets a different copy.
  *
  * Dates: the canonical scenario is anchored on 2026-07-17 (see
@@ -32,22 +31,24 @@
  * comments and page bodies is slid by (today − anchor) so the live site tells
  * the same story as the refreshed .vault-dev. Run both the same day.
  *
- * What stays manual (once, ~10 min — see docs/jira-demo-setup.md):
+ * What stays manual (once, ~10 min, see docs/jira-demo-setup.md):
  *  - the free Jira+Confluence site and the API token;
- *  - the `PAY` project itself;
- *  - a workflow status named `Blocked` on PAY (the REST API cannot edit a
- *    company-managed workflow). The script verifies both and tells you what's
- *    missing.
+ *  - the three projects themselves: SCH (Scheduling), APP (Staff app) and PLT
+ *    (Platform). The REST API cannot create a project on a free site, so the
+ *    script only verifies them and names the ones that are missing. Their
+ *    workflows need the plain "To Do" / "In Progress" / "Done" statuses, which
+ *    is what every default template gives you.
  *
- *   pnpm reset-atlassian --site=tavla-demo.atlassian.net --email=you@x --token=... --save
+ *   pnpm reset-atlassian --site=rota-demo.atlassian.net --email=you@x --token=... --save
  *   pnpm reset-atlassian                  # creds from .atlassian-demo.json / env
  *   pnpm reset-atlassian --dry            # print the plan, write nothing
- *   pnpm reset-atlassian --keep-extras    # don't delete non-cast PAY issues
+ *   pnpm reset-atlassian --keep-extras    # don't delete non-cast issues
+ *   pnpm reset-atlassian --done           # Flow 4 snapshot: SCH-231 + SCH-240 Done
  *   pnpm reset-atlassian --today=2026-09-01 --anchor=2026-07-17
  *
  * Credentials resolve flags → env (ATLASSIAN_SITE / ATLASSIAN_EMAIL /
  * ATLASSIAN_TOKEN) → .atlassian-demo.json (gitignored; --save writes it,
- * mode 600). Both unscoped and scoped tokens work — like the app's probe, an
+ * mode 600). Both unscoped and scoped tokens work: like the app's probe, an
  * auth refusal on the site retries via the api.atlassian.com gateway.
  */
 import { existsSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -59,12 +60,14 @@ import {
   DATE_RE,
   FRONTMATTER_RE,
   PAGES,
-  PROJECT_KEY,
+  PROJECT_KEYS,
+  PROJECT_NAMES,
   SPACE_KEY,
   SPACE_NAME,
   STATIC_HOST,
   STATIC_PAGE_IDS,
   STATIC_TICKETS,
+  doneSnapshotCast,
   markdownToStorage,
 } from './lib/atlassian-cast.ts';
 import type { CastIssue } from './lib/atlassian-cast.ts';
@@ -86,6 +89,7 @@ interface Args {
   save: boolean;
   vault: string;
   reconcile: boolean;
+  done: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -97,9 +101,11 @@ function parseArgs(argv: string[]): Args {
     save: false,
     vault: '.vault-dev',
     reconcile: true,
+    done: false,
   };
   for (const a of argv) {
     if (a === '--dry' || a === '--dry-run') args.dry = true;
+    else if (a === '--done') args.done = true;
     else if (a === '--keep-extras') args.keepExtras = true;
     else if (a === '--save') args.save = true;
     else if (a === '--no-reconcile') args.reconcile = false;
@@ -306,6 +312,8 @@ interface LiveIssue {
   labels: string[];
 }
 
+/** Every issue in the three cast projects, oldest first. One query: the extras
+ *  sweep and the summary lookup both want the whole set at once. */
 async function listProjectIssues(api: Api): Promise<LiveIssue[]> {
   const issues: LiveIssue[] = [];
   let nextPageToken: string | undefined;
@@ -326,7 +334,7 @@ async function listProjectIssues(api: Api): Promise<LiveIssue[]> {
     }>('/rest/api/3/search/jql', {
       method: 'POST',
       body: JSON.stringify({
-        jql: `project = ${PROJECT_KEY} ORDER BY created ASC`,
+        jql: `project IN (${PROJECT_KEYS.join(', ')}) ORDER BY created ASC`,
         fields: ['summary', 'status', 'issuetype', 'description', 'assignee', 'labels'],
         maxResults: 100,
         ...(nextPageToken ? { nextPageToken } : {}),
@@ -355,15 +363,15 @@ async function createIssue(
   api: Api,
   member: CastIssue,
   description: string,
-  epicKey: string | null,
+  parentKey: string | null,
 ): Promise<string> {
   const fields: Record<string, unknown> = {
-    project: { key: PROJECT_KEY },
+    project: { key: member.project },
     issuetype: { name: member.issueType },
     summary: member.summary,
     description: textToAdf(description),
     labels: [member.label],
-    ...(member.childOfEpic && epicKey ? { parent: { key: epicKey } } : {}),
+    ...(parentKey ? { parent: { key: parentKey } } : {}),
   };
   try {
     const out = await api.request<{ key: string }>('/rest/api/3/issue', {
@@ -434,37 +442,55 @@ async function resetComments(
 async function convergeJira(
   api: Api,
   accountId: string,
+  cast: CastIssue[],
   offset: number,
   opts: { dry: boolean; keepExtras: boolean },
 ): Promise<Map<string, string>> {
-  // Preconditions: the project and the Blocked status are the two manual steps.
-  try {
-    await api.request(`/rest/api/3/project/${PROJECT_KEY}`);
-  } catch {
+  // Precondition: the three projects are the manual step. A free site's REST
+  // API cannot create one, so name every missing key in a single message.
+  const missing: string[] = [];
+  for (const key of PROJECT_KEYS) {
+    try {
+      await api.request(`/rest/api/3/project/${key}`);
+    } catch {
+      missing.push(`${key} (${PROJECT_NAMES[key]})`);
+    }
+  }
+  if (missing.length) {
     throw new Error(
-      `Jira project ${PROJECT_KEY} not found. Create it once by hand (docs/jira-demo-setup.md §3), then re-run.`,
+      `Jira project(s) not found: ${missing.join(', ')}. Create them once by hand ` +
+        '(docs/jira-demo-setup.md §3), then re-run.',
     );
   }
-  const statusData = await api.request<{ statuses?: { name?: string }[] }[]>(
-    `/rest/api/3/project/${PROJECT_KEY}/statuses`,
-  );
-  const statusNames = new Set(
-    statusData.flatMap((t) => (t.statuses ?? []).map((s) => (s.name ?? '').toLowerCase())),
-  );
-  if (!statusNames.has('blocked')) {
-    throw new Error(
-      `The ${PROJECT_KEY} workflow has no "Blocked" status — add it by hand (docs/jira-demo-setup.md §3.2; ` +
-        'the REST API cannot edit a company-managed workflow), then re-run.',
+  // Every status the cast asks for has to exist in that project's workflow.
+  // The defaults ("To Do", "In Progress", "Done") do, but a hand-built board
+  // may not, and a missing one only shows up as an issue stuck in the wrong
+  // column halfway through a demo.
+  for (const key of PROJECT_KEYS) {
+    const statusData = await api.request<{ statuses?: { name?: string }[] }[]>(
+      `/rest/api/3/project/${key}/statuses`,
     );
+    const have = new Set(
+      statusData.flatMap((t) => (t.statuses ?? []).map((s) => (s.name ?? '').toLowerCase())),
+    );
+    const want = [...new Set(cast.filter((m) => m.project === key).map((m) => m.status))];
+    const absent = want.filter((s) => !have.has(s.toLowerCase()));
+    if (absent.length) {
+      throw new Error(
+        `The ${key} workflow has no ${absent.map((s) => `"${s}"`).join(' / ')} status. ` +
+          'Add it by hand (docs/jira-demo-setup.md §3.2; the REST API cannot edit a ' +
+          'company-managed workflow), then re-run.',
+      );
+    }
   }
 
   const live = await listProjectIssues(api);
   const bySummary = new Map(live.map((i) => [i.summary, i]));
-  const castSummaries = new Set(CAST.map((m) => m.summary));
+  const castSummaries = new Set(cast.map((m) => m.summary));
   const keyBySummary = new Map<string, string>();
 
-  // Extras first (the demo-created SCIM ticket, edited-summary strays): delete,
-  // so a renamed cast member is recreated cleanly below.
+  // Extras first (the demo-created swap-notification story, edited-summary
+  // strays): delete, so a renamed cast member is recreated cleanly below.
   const extras = live.filter((i) => !castSummaries.has(i.summary));
   for (const extra of extras) {
     console.log(
@@ -475,20 +501,24 @@ async function convergeJira(
     }
   }
 
-  // Epic first so children can point at it.
-  const ordered = [...CAST].sort(
+  // Epics first so their stories can point at them.
+  const ordered = [...cast].sort(
     (a, b) => Number(b.issueType === 'Epic') - Number(a.issueType === 'Epic'),
   );
-  let epicKey: string | null = bySummary.get(CAST[0].summary)?.key ?? null;
   for (const member of ordered) {
     const description = shiftDates(member.description, offset);
     const existing = bySummary.get(member.summary);
     let key = existing?.key;
     const fixed: string[] = [];
     if (!existing) {
-      console.log(`  + create ${member.issueType} "${member.summary}" → ${member.status}`);
+      console.log(
+        `  + create ${member.project} ${member.issueType} "${member.summary}" → ${member.status}`,
+      );
       if (opts.dry) continue;
-      key = await createIssue(api, member, description, epicKey);
+      const parentKey = member.parent
+        ? (keyBySummary.get(member.parent) ?? bySummary.get(member.parent)?.key ?? null)
+        : null;
+      key = await createIssue(api, member, description, parentKey);
     } else if (!opts.dry) {
       // Converge the fields the drafted-against-stale demo edits, plus the area
       // label the conventions skill names. Never touch a clean issue: every
@@ -512,7 +542,6 @@ async function convergeJira(
     }
     if (!key) continue;
     keyBySummary.set(member.summary, key);
-    if (member.issueType === 'Epic') epicKey = key;
     if (!opts.dry) {
       if ((existing?.status ?? 'To Do').toLowerCase() !== member.status.toLowerCase()) {
         const ok = await transitionTo(api, key, member.status);
@@ -546,9 +575,9 @@ async function convergeJira(
     }
   }
 
-  // Typed issue links: the epic reads "Blocked by" the
-  // staging validation task — the relationship behind its Blocked status, which
-  // sync mirrors into ticket frontmatter and the app renders on both notes.
+  // Typed issue links: the Fortnox connector reads "is blocked by" the platform
+  // token store, the one cross-project dependency in the scenario. Sync mirrors
+  // it into ticket frontmatter and the app renders it on both notes.
   for (const link of CAST_LINKS) {
     const inwardKey = keyBySummary.get(link.inward);
     const outwardKey = keyBySummary.get(link.outward);
@@ -633,7 +662,14 @@ async function convergeConfluence(
   const byTitle = new Map((livePages.results ?? []).map((p) => [p.title ?? '', p]));
 
   for (const pageDef of PAGES) {
-    const mdPath = join(import.meta.dirname, '..', 'vault-dev', 'wikipages', 'confluence', pageDef.file);
+    const mdPath = join(
+      import.meta.dirname,
+      '..',
+      'vault-dev',
+      'wikipages',
+      'confluence',
+      pageDef.file,
+    );
     const md = shiftDates(readFileSync(mdPath, 'utf8').replace(FRONTMATTER_RE, '').trim(), offset);
     const body = markdownToStorage(md);
     const existing = byTitle.get(pageDef.title);
@@ -756,9 +792,11 @@ function reconcileVault(
     const live = ticketKeys.get(summary);
     if (!live || live === staticKey) continue;
     replacements.push([new RegExp(`\\b${staticKey}\\b`, 'g'), live]);
+    // Mirrors live under their provider folder (docs/provider-decoupling.md
+    // PD-10): tickets/jira/SCH-231.md.
     renames.push([
-      join(vaultRoot, 'tickets', `${staticKey}.md`),
-      join(vaultRoot, 'tickets', `${live}.md`),
+      join(vaultRoot, 'tickets', 'jira', `${staticKey}.md`),
+      join(vaultRoot, 'tickets', 'jira', `${live}.md`),
     ]);
   }
   for (const [staticId, title] of Object.entries(STATIC_PAGE_IDS)) {
@@ -842,15 +880,21 @@ async function main(): Promise<void> {
   const offset = daysBetween(args.anchor, args.today);
   console.log(
     `Anchor ${args.anchor} → today ${args.today} (offset ${offset >= 0 ? '+' : ''}${offset} days)` +
-      `${args.dry ? '  (dry run — no writes)' : ''}`,
+      `${args.dry ? '  (dry run — no writes)' : ''}` +
+      `${args.done ? '  (--done: the Flow 4 snapshot)' : ''}`,
   );
 
   const api = new Api(creds);
   const me = await api.connect();
   console.log(`Connected to ${creds.siteUrl} as ${me.displayName}\n`);
 
-  console.log(`Jira · project ${PROJECT_KEY}`);
-  const keys = await convergeJira(api, me.accountId, offset, {
+  // --done is the same cast with the shift-swaps epic and its last story
+  // already closed, so Flow 4 can be demoed after the work "landed". Pair it
+  // with `pnpm refresh-demo --done`, which lays the matching mirrors down.
+  const cast = args.done ? doneSnapshotCast(CAST) : CAST;
+
+  console.log(`Jira · projects ${PROJECT_KEYS.join(', ')}`);
+  const keys = await convergeJira(api, me.accountId, cast, offset, {
     dry: args.dry,
     keepExtras: args.keepExtras,
   });
@@ -872,8 +916,8 @@ async function main(): Promise<void> {
 
   console.log(
     `\n✓ ${creds.siteUrl} matches the demo baseline.` +
-      '\n  Next: in the app, follow PAY + Product (or Settings → sync now) to refresh mirrors.' +
-      '\n  refresh-demo restores the static ids — when demoing live, always refresh first, then re-run this.',
+      `\n  Next: in the app, follow ${PROJECT_KEYS.join(' + ')} + ${SPACE_KEY} (or Settings → sync now) to refresh mirrors.` +
+      '\n  refresh-demo restores the static ids, so when demoing live, always refresh first, then re-run this.',
   );
 }
 

@@ -418,8 +418,9 @@ export class SyncService {
     /** The connector registry. A parameter so a test can register its own. */
     private readonly registry: readonly ConnectorProvider<unknown>[] = CONNECTOR_PROVIDERS,
     /** The transport a provider's connector gets. The demo build returns the
-     *  fake Atlassian here, so nothing leaves the process (docs/demo-mode.md
-     *  DM-8). Absent, every connector uses the global fetch. */
+     *  fake Atlassian and the fake Google Calendar here, so nothing leaves the
+     *  process (docs/demo-mode.md DM-8). Absent, every connector uses the
+     *  global fetch. */
     private readonly fetchImplFor?: (providerId: string) => FetchLike | undefined,
   ) {
     for (const provider of registry) this.conns.set(provider.id, freshState(provider));
@@ -462,8 +463,16 @@ export class SyncService {
         fingerprint: google ? `grant|${google.refreshToken.slice(0, 12)}` : null,
         identity: google?.email ?? undefined,
         siteLabel: google?.email ?? 'Google account',
-        create: () =>
-          google ? provider.create({ getAccessToken: () => this.oauth.getAccessToken() }) : null,
+        create: () => {
+          if (!google) return null;
+          // The demo build answers the calendar from a fixture, the same seam
+          // Jira and Confluence use below (docs/demo-mode.md).
+          const fetchImpl = this.fetchImplFor?.(provider.id);
+          return provider.create(
+            { getAccessToken: () => this.oauth.getAccessToken() },
+            fetchImpl ? { fetchImpl } : undefined,
+          );
+        },
       };
     }
     const stored = this.settings.getConnection(provider.id);

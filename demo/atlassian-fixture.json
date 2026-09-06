@@ -1,237 +1,368 @@
 {
   "anchor": "2026-07-17",
-  "siteUrl": "https://tavla.atlassian.net",
+  "siteUrl": "https://rota.atlassian.net",
   "self": {
     "accountId": "demo-pm",
     "displayName": "Demo user",
-    "emailAddress": "demo@tavla.example"
+    "emailAddress": "demo@rota.example"
   },
   "projects": [
     {
       "id": "10000",
-      "key": "PAY",
-      "name": "Payments"
+      "key": "SCH",
+      "name": "Scheduling"
+    },
+    {
+      "id": "10001",
+      "key": "APP",
+      "name": "Staff app"
+    },
+    {
+      "id": "10002",
+      "key": "PLT",
+      "name": "Platform"
     }
   ],
   "spaces": [
     {
       "id": "65537",
-      "key": "PRODUCT",
+      "key": "PROD",
       "name": "Product"
     }
   ],
   "issues": [
     {
       "id": "10001",
-      "key": "PAY-142",
-      "projectKey": "PAY",
-      "summary": "SAML SSO (epic)",
-      "description": "SAML SSO against customer IdPs via WorkOS. Rollout target 2026-07-28 behind a feature flag, Nordkap Payments as first tenant (they run Entra). General availability in August.",
-      "issueType": "Epic",
-      "status": "Blocked",
-      "statusCategory": "indeterminate",
+      "key": "APP-54",
+      "projectKey": "APP",
+      "summary": "Push notification opt-in screen",
+      "description": "Ask for push permission at the moment it means something — after the first shift is visible, not on first launch — and let staff turn shift reminders on and off from settings.",
+      "issueType": "Story",
+      "status": "To Do",
+      "statusCategory": "new",
       "labels": [
-        "enterprise-auth"
+        "staff-app"
       ],
-      "assignee": "Tom Devlin",
+      "assignee": "Amir Haddad",
       "reporter": "Demo user",
-      "created": "2026-06-16T15:40:00.000Z",
-      "updated": "2026-07-16T15:40:00Z",
-      "comments": [
-        {
-          "id": "1421",
-          "author": "Tom Devlin",
-          "created": "2026-07-08T09:30:00.000Z",
-          "body": "Scoped per sprint planning. Audit-log export dependency split out as PAY-156."
-        },
-        {
-          "id": "1422",
-          "author": "Tom Devlin",
-          "created": "2026-07-11T09:30:00.000Z",
-          "body": "Staging verified against Okta and Entra. Moving to In Review."
-        },
-        {
-          "id": "1423",
-          "author": "Tom Devlin",
-          "created": "2026-07-16T09:30:00.000Z",
-          "body": "Moving to Blocked. The infra review flagged the WorkOS callback endpoints, specifically secrets handling on the redirect path. Security sign-off is needed before the flag path can be enabled in production. Review slot requested for 2026-07-20."
-        }
-      ],
-      "links": [
-        {
-          "type": "Blocks",
-          "key": "PAY-161",
-          "outward": false
-        }
-      ]
+      "created": "2026-06-02T12:00:00.000Z",
+      "updated": "2026-07-02T12:00:00Z",
+      "comments": [],
+      "links": []
     },
     {
       "id": "10002",
-      "key": "PAY-148",
-      "projectKey": "PAY",
-      "summary": "Payout report exports",
-      "description": "CSV and Excel payout report exports for finance teams. Shipped; feeds the Kranelund exports pilot.",
-      "issueType": "Task",
-      "status": "Done",
-      "statusCategory": "done",
-      "labels": [
-        "reporting"
-      ],
-      "assignee": "Tom Devlin",
-      "reporter": "Demo user",
-      "created": "2026-05-29T14:05:00.000Z",
-      "updated": "2026-06-28T14:05:00Z",
-      "comments": [
-        {
-          "id": "1481",
-          "author": "Tom Devlin",
-          "created": "2026-06-28T09:30:00.000Z",
-          "body": "CSV and Excel out behind the reports flag. Finance verified the column set. Closing."
-        }
-      ],
-      "links": []
-    },
-    {
-      "id": "10003",
-      "key": "PAY-156",
-      "projectKey": "PAY",
-      "summary": "Audit-log export for SSO events",
-      "description": "Export SSO sign-in/sign-out events into the audit-log stream shipped in June, so enterprise security teams can trace access during the SSO rollout. Split out of the SAML SSO epic.",
-      "issueType": "Task",
-      "status": "Done",
-      "statusCategory": "done",
-      "labels": [
-        "enterprise-auth"
-      ],
-      "assignee": "Tom Devlin",
-      "reporter": "Demo user",
-      "created": "2026-06-15T09:10:00.000Z",
-      "updated": "2026-07-15T09:10:00Z",
-      "parentKey": "PAY-142",
-      "comments": [
-        {
-          "id": "1561",
-          "author": "Tom Devlin",
-          "created": "2026-07-10T09:30:00.000Z",
-          "body": "Picked up after the internal auth review confirmed the export gap."
-        },
-        {
-          "id": "1562",
-          "author": "Tom Devlin",
-          "created": "2026-07-15T09:30:00.000Z",
-          "body": "Shipped behind the same flag family as SSO, verified in staging against the Nordkap tenant config. Closing."
-        }
-      ],
-      "links": []
-    },
-    {
-      "id": "10004",
-      "key": "PAY-161",
-      "projectKey": "PAY",
-      "summary": "IdP metadata validation in staging",
-      "description": "Validate customer IdP metadata exchange in staging ahead of the Nordkap go-live: Entra first (their stack), Okta as the regression pair.",
+      "key": "PLT-77",
+      "projectKey": "PLT",
+      "summary": "OAuth token store for integrations",
+      "description": "One encrypted store for third-party OAuth tokens — Fortnox first, Visma next — with refresh handling and per-tenant isolation, so every integration does not invent its own.",
       "issueType": "Task",
       "status": "In Progress",
       "statusCategory": "indeterminate",
       "labels": [
-        "enterprise-auth"
+        "platform"
       ],
-      "assignee": "Tom Devlin",
+      "assignee": "Nils Ek",
       "reporter": "Demo user",
-      "created": "2026-06-16T11:20:00.000Z",
-      "updated": "2026-07-16T11:20:00Z",
-      "parentKey": "PAY-142",
+      "created": "2026-06-14T15:10:00.000Z",
+      "updated": "2026-07-14T15:10:00Z",
       "comments": [
         {
-          "id": "1611",
-          "author": "Tom Devlin",
-          "created": "2026-07-16T09:30:00.000Z",
-          "body": "Entra metadata round-trips in staging. Working through the Okta regression pair before the go-live sign-off."
+          "id": "771",
+          "author": "Nils Ek",
+          "created": "2026-07-14T09:30:00.000Z",
+          "body": "Encryption and per-tenant isolation are in. Refresh-on-expiry is the piece left, and SCH-125 needs it before it can talk to a real Fortnox account."
         }
       ],
       "links": [
         {
           "type": "Blocks",
-          "key": "PAY-142",
+          "key": "SCH-125",
           "outward": true
         }
       ]
     },
     {
-      "id": "10005",
-      "key": "PAY-165",
-      "projectKey": "PAY",
-      "summary": "Webhook delivery retries with backoff",
-      "description": "Retry failed webhook deliveries with exponential backoff and a dead-letter view.",
+      "id": "10003",
+      "key": "PLT-80",
+      "projectKey": "PLT",
+      "summary": "Nightly schedule backup job",
+      "description": "Nightly snapshot of every published schedule to object storage with 30-day retention, so a bad bulk edit on a chain's week can be rolled back instead of rebuilt by hand.",
       "issueType": "Task",
-      "status": "To Do",
-      "statusCategory": "new",
+      "status": "Done",
+      "statusCategory": "done",
       "labels": [
-        "reliability"
+        "platform"
       ],
-      "assignee": "Tom Devlin",
+      "assignee": null,
       "reporter": "Demo user",
-      "created": "2026-06-10T09:45:00.000Z",
-      "updated": "2026-07-10T09:45:00Z",
+      "created": "2026-05-13T07:40:00.000Z",
+      "updated": "2026-06-12T07:40:00Z",
       "comments": [],
       "links": []
     },
     {
-      "id": "10006",
-      "key": "PAY-167",
-      "projectKey": "PAY",
-      "summary": "Reconciliation report date-range filter",
-      "description": "Let finance filter the reconciliation report by settlement date range.",
-      "issueType": "Task",
-      "status": "To Do",
-      "statusCategory": "new",
+      "id": "10004",
+      "key": "SCH-118",
+      "projectKey": "SCH",
+      "summary": "Payroll export (epic)",
+      "description": "Approved hours from the schedule go to the customer's payroll system instead of being retyped. A CSV export first, then a direct Fortnox connector; Visma after that. Fortnox is the first target.",
+      "issueType": "Epic",
+      "status": "In Progress",
+      "statusCategory": "indeterminate",
       "labels": [
-        "reporting"
+        "payroll-export"
       ],
-      "assignee": "Tom Devlin",
+      "assignee": "Rebecca Holm",
       "reporter": "Demo user",
-      "created": "2026-06-11T16:30:00.000Z",
-      "updated": "2026-07-11T16:30:00Z",
-      "comments": [],
+      "created": "2026-06-10T09:30:00.000Z",
+      "updated": "2026-07-10T09:30:00Z",
+      "comments": [
+        {
+          "id": "1181",
+          "author": "Rebecca Holm",
+          "created": "2026-07-10T09:30:00.000Z",
+          "body": "The approved-hours CSV is out. The Fortnox connector is in progress and needs the platform token store before it can hold real customer credentials."
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "10005",
+      "key": "SCH-121",
+      "projectKey": "SCH",
+      "summary": "Approved-hours export (CSV)",
+      "description": "Export approved hours for a period as CSV: person, location, date, hours, cost centre. One column set that both Fortnox and Visma accept, so the connectors later map from the same shape.",
+      "issueType": "Story",
+      "status": "Done",
+      "statusCategory": "done",
+      "labels": [
+        "payroll-export"
+      ],
+      "assignee": "Rebecca Holm",
+      "reporter": "Demo user",
+      "created": "2026-05-25T13:00:00.000Z",
+      "updated": "2026-06-24T13:00:00Z",
+      "parentKey": "SCH-118",
+      "comments": [
+        {
+          "id": "1211",
+          "author": "Rebecca Holm",
+          "created": "2026-06-24T09:30:00.000Z",
+          "body": "Column set verified against a real Fortnox import template and a Visma one. Closing."
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "10006",
+      "key": "SCH-125",
+      "projectKey": "SCH",
+      "summary": "Fortnox connector",
+      "description": "Push approved hours straight into Fortnox instead of handing the manager a file: OAuth against the customer's Fortnox account, locations mapped to cost centres, one push per period, and a readable report of what Fortnox rejected.",
+      "issueType": "Story",
+      "status": "In Progress",
+      "statusCategory": "indeterminate",
+      "labels": [
+        "payroll-export"
+      ],
+      "assignee": "Nils Ek",
+      "reporter": "Demo user",
+      "created": "2026-06-14T08:50:00.000Z",
+      "updated": "2026-07-14T08:50:00Z",
+      "parentKey": "SCH-118",
+      "comments": [
+        {
+          "id": "1251",
+          "author": "Nils Ek",
+          "created": "2026-07-14T09:30:00.000Z",
+          "body": "Mapping and the push work against the Fortnox sandbox. Real customer accounts need somewhere to keep refresh tokens, which is PLT-77 — I am not putting them in this service."
+        }
+      ],
+      "links": [
+        {
+          "type": "Blocks",
+          "key": "PLT-77",
+          "outward": false
+        }
+      ]
+    },
+    {
+      "id": "10007",
+      "key": "SCH-231",
+      "projectKey": "SCH",
+      "summary": "Shift swaps (epic)",
+      "description": "Staff propose a shift swap in the app, the affected colleague accepts, the manager approves, and the schedule updates for both people. Three stories: the swap request model and API, the request screen in the staff app, and the manager approval flow. Rules: same role, same location, manager approves, no overtime beyond contract.",
+      "issueType": "Epic",
+      "status": "In Progress",
+      "statusCategory": "indeterminate",
+      "labels": [
+        "shift-swaps"
+      ],
+      "assignee": "Rebecca Holm",
+      "reporter": "Demo user",
+      "created": "2026-06-15T14:20:00.000Z",
+      "updated": "2026-07-15T14:20:00Z",
+      "comments": [
+        {
+          "id": "2311",
+          "author": "Rebecca Holm",
+          "created": "2026-06-18T09:30:00.000Z",
+          "body": "Scope agreed: same role, same location, manager approves, and a swap can never push either person past their contracted hours. Split into three stories."
+        },
+        {
+          "id": "2312",
+          "author": "Rebecca Holm",
+          "created": "2026-07-15T09:30:00.000Z",
+          "body": "SCH-232 and SCH-236 are Done. SCH-240 is what is left, and the overtime check in it is bigger than the original estimate. Re-estimate before anyone quotes a date."
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "10008",
+      "key": "SCH-232",
+      "projectKey": "SCH",
+      "summary": "Swap request model and API",
+      "description": "A swap request as a first-class object: who proposes it, which shift, which colleague, and the state it is in (proposed, accepted by the colleague, approved, rejected). Plus the REST endpoints the staff app and the manager web both read and write.",
+      "issueType": "Story",
+      "status": "Done",
+      "statusCategory": "done",
+      "labels": [
+        "shift-swaps"
+      ],
+      "assignee": "Rebecca Holm",
+      "reporter": "Demo user",
+      "created": "2026-05-31T10:15:00.000Z",
+      "updated": "2026-06-30T10:15:00Z",
+      "parentKey": "SCH-231",
+      "comments": [
+        {
+          "id": "2321",
+          "author": "Rebecca Holm",
+          "created": "2026-06-30T09:30:00.000Z",
+          "body": "Endpoints are live behind the swaps flag, with same-role and same-location validation on the request itself. Closing."
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "10009",
+      "key": "SCH-236",
+      "projectKey": "SCH",
+      "summary": "Swap request screen in staff app",
+      "description": "The staff-app screen where someone picks one of their own shifts, picks a colleague who can work that role at that location, and sends the swap request. Includes the list of requests they have sent and received.",
+      "issueType": "Story",
+      "status": "Done",
+      "statusCategory": "done",
+      "labels": [
+        "shift-swaps"
+      ],
+      "assignee": "Amir Haddad",
+      "reporter": "Demo user",
+      "created": "2026-06-08T11:05:00.000Z",
+      "updated": "2026-07-08T11:05:00Z",
+      "parentKey": "SCH-231",
+      "comments": [
+        {
+          "id": "2361",
+          "author": "Amir Haddad",
+          "created": "2026-07-08T09:30:00.000Z",
+          "body": "Shipped behind the swaps flag. The sent/received list reuses the shift list component, so nothing new to maintain. Closing."
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "10010",
+      "key": "SCH-240",
+      "projectKey": "SCH",
+      "summary": "Manager approval flow and schedule update",
+      "description": "The manager sees the week's pending swaps, approves or rejects each one, and an approval rewrites the schedule for both people. The approval must refuse anything that pushes either person past their contracted hours for the week.",
+      "issueType": "Story",
+      "status": "In Progress",
+      "statusCategory": "indeterminate",
+      "labels": [
+        "shift-swaps"
+      ],
+      "assignee": "Rebecca Holm",
+      "reporter": "Demo user",
+      "created": "2026-06-13T16:45:00.000Z",
+      "updated": "2026-07-13T16:45:00Z",
+      "parentKey": "SCH-231",
+      "comments": [
+        {
+          "id": "2401",
+          "author": "Rebecca Holm",
+          "created": "2026-07-06T09:30:00.000Z",
+          "body": "Approval list and the reject path work against the API. Starting on the schedule write."
+        },
+        {
+          "id": "2402",
+          "author": "Rebecca Holm",
+          "created": "2026-07-13T09:30:00.000Z",
+          "body": "This needs a re-estimate. The overtime check has to run against both people's contracted hours for the whole week, not just the two shifts, and the week can already contain other approved swaps. I would rather re-estimate than give a date now."
+        }
+      ],
       "links": []
     }
   ],
   "pages": [
     {
-      "id": "910231",
-      "title": "Enterprise Onboarding",
-      "spaceKey": "PRODUCT",
-      "version": 12,
-      "body": "<h2>Provisioning</h2><p>Enterprise tenants authenticate via SAML SSO (WorkOS). Group and role assignment is manual during onboarding.</p><p>SCIM provisioning ships in Q2 alongside the SSO rollout, so group mapping is automatic from day one.</p><h2>Rollout checklist</h2><ul><li><p>IdP metadata exchanged and verified in staging</p></li><li><p>First-tenant flag enabled the week before go-live</p></li><li><p>Written go-live confirmation to the customer security contact</p></li></ul>",
-      "created": "2025-12-03T09:40:00.000Z",
-      "updated": "2026-04-02T09:40:00Z",
-      "webui": "/spaces/PRODUCT/pages/910231"
+      "id": "4521985",
+      "title": "Roadmap H2",
+      "spaceKey": "PROD",
+      "version": 17,
+      "body": "<h1>Roadmap H2</h1><p>The order below is the plan of record. Q3 is July to September, Q4 is October to December. Anything not on this page is not committed, whatever anyone has been told.</p><h2>Committed</h2><p>1. Payroll export (Fortnox first) — Q3</p><p>2. Shift swaps — Q4</p><p>Both epics sit with the Scheduling team, which is why this is an order and not two dates: if one moves up, the other one moves a quarter.</p><h2>Exploring</h2><p>Auto-schedule suggestions. Suggest next week's schedule from last week plus stated availability, for the manager to edit rather than accept. No team, no date, and it stays that way until the swaps work is out.</p><h2>Not doing</h2><p>Offline mode in the staff app. Declined in February and again in May: back offices have wifi, and the app already caches the shifts a person needs to read.</p>",
+      "created": "2026-01-19T09:15:00.000Z",
+      "updated": "2026-05-19T09:15:00Z",
+      "webui": "/spaces/PROD/pages/4521985"
     },
     {
-      "id": "18350081",
+      "id": "4784129",
       "title": "Product weekly update",
-      "spaceKey": "PRODUCT",
-      "version": 41,
-      "body": "<h1>Product weekly update</h1><p>_Week of 2026-07-06 to 2026-07-10, published 2026-07-11. Older updates are archived under this page._</p><p><strong>Enterprise auth.</strong> SSO rollout on track for 2026-07-28, with Nordkap Payments as the first tenant behind a feature flag. Audit-log export for SSO events is in progress as a split-out dependency. SCIM still lands in September per the Q3 deferral.</p><p><strong>Reporting.</strong> Kranelund exports pilot kickoff is being scheduled. Scope for scheduled reporting is unchanged.</p><p><strong>Pricing.</strong> Annual prepay discount is live. Nordkap procurement's review is expected to start shortly.</p>",
-      "created": "2026-03-13T16:20:00.000Z",
-      "updated": "2026-07-11T16:20:00Z",
-      "webui": "/spaces/PRODUCT/pages/18350081"
+      "spaceKey": "PROD",
+      "version": 38,
+      "body": "<h1>Product weekly update</h1><p>Published Friday, newest first. Three sentences per area; if something needs more than that it needs a meeting, not a paragraph.</p><h2>2026-07-10</h2><p><strong>Shift swaps.</strong> Two of the three stories are done and the manager approval flow is the one left. The overtime check inside it is larger than estimated, so it is being re-estimated before anyone gives a date. Nothing on the page moves until that number exists.</p><p><strong>Payroll export.</strong> The approved-hours CSV shipped on 2026-06-24 with a column set both Fortnox and Visma accept. The Fortnox connector works against the sandbox and is waiting on the platform token store. H2 order is unchanged: payroll export first, shift swaps in Q4.</p><h2>2026-07-03</h2><p><strong>Payroll export.</strong> The approved-hours CSV is in review, one column set for both payroll systems rather than one per customer. The Fortnox connector starts next week.</p><p><strong>Shift swaps.</strong> The request model and API are done and the staff-app screen is about a week out. Both epics are on the same team, so if the H2 order changes, one of them slips a quarter — the capacity numbers are with the CPO.</p>",
+      "created": "2026-03-12T16:20:00.000Z",
+      "updated": "2026-07-10T16:20:00Z",
+      "webui": "/spaces/PROD/pages/4784129"
     }
   ],
   "steps": [
     {
-      "id": "pay-161-done",
-      "label": "PAY-161 goes Done",
+      "id": "sch-240-done",
+      "label": "Flow 2: SCH-240 (last swap story) → Done",
       "changes": [
         {
           "kind": "comment",
-          "key": "PAY-161",
-          "author": "Tom Devlin",
-          "body": "Okta regression pair passed too. Metadata exchange validated in staging. Closing."
+          "key": "SCH-240",
+          "author": "Rebecca Holm",
+          "body": "Overtime check runs against both people's contracted hours for the whole week, other approved swaps included. Closing."
         },
         {
           "kind": "transition",
-          "key": "PAY-161",
+          "key": "SCH-240",
+          "to": "Done"
+        }
+      ]
+    },
+    {
+      "id": "sch-231-done",
+      "label": "Flow 4: SCH-231 (shift swaps epic) → Done",
+      "requires": [
+        "sch-240-done"
+      ],
+      "changes": [
+        {
+          "kind": "comment",
+          "key": "SCH-231",
+          "author": "Rebecca Holm",
+          "body": "All three stories done, swap approval flow shipped to staging; release train Tuesday."
+        },
+        {
+          "kind": "transition",
+          "key": "SCH-231",
           "to": "Done"
         }
       ]

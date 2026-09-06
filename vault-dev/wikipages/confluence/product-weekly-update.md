@@ -1,26 +1,36 @@
 ---
 type: wikipage
-summary: 'Product weekly update: the Friday update page in the Product space, last published 2026-07-11'
+summary: 'Product weekly update: the Friday update page in the Product space, last published 2026-07-10'
 title: Product weekly update
 processing: processed
 provider: confluence
-external_id: '18350081'
-container: Product
-version: 41
-remote_updated: '2026-07-11T16:20:00Z'
-url: https://tavla.atlassian.net/wiki/spaces/PRODUCT/pages/18350081
+external_id: '4784129'
+container: PROD
+version: 38
+remote_updated: '2026-07-10T16:20:00Z'
+url: https://rota.atlassian.net/wiki/spaces/PROD/pages/4784129
 ---
 
 # Product weekly update
 
-_Week of 2026-07-06 to 2026-07-10, published 2026-07-11. Older updates are archived under this page._
+Published Friday, newest first. Three sentences per area; if something needs more than that it
+needs a meeting, not a paragraph.
 
-**Enterprise auth.** SSO rollout on track for 2026-07-28, with Nordkap Payments as the first
-tenant behind a feature flag. Audit-log export for SSO events is in progress as a split-out
-dependency. SCIM still lands in September per the Q3 deferral.
+## 2026-07-10
 
-**Reporting.** Kranelund exports pilot kickoff is being scheduled. Scope for scheduled
-reporting is unchanged.
+**Shift swaps.** Two of the three stories are done and the manager approval flow is the one
+left. The overtime check inside it is larger than estimated, so it is being re-estimated
+before anyone gives a date. Nothing on the page moves until that number exists.
 
-**Pricing.** Annual prepay discount is live. Nordkap procurement's review is expected to start
-shortly.
+**Payroll export.** The approved-hours CSV shipped on 2026-06-24 with a column set both
+Fortnox and Visma accept. The Fortnox connector works against the sandbox and is waiting on the
+platform token store. H2 order is unchanged: payroll export first, shift swaps in Q4.
+
+## 2026-07-03
+
+**Payroll export.** The approved-hours CSV is in review, one column set for both payroll
+systems rather than one per customer. The Fortnox connector starts next week.
+
+**Shift swaps.** The request model and API are done and the staff-app screen is about a week
+out. Both epics are on the same team, so if the H2 order changes, one of them slips a quarter —
+the capacity numbers are with the CPO.

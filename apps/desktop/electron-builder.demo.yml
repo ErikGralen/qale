@@ -16,6 +16,12 @@ extends: electron-builder.yml
 # nothing: separate userData, separate keychain item, separate dock icon. The
 # name here is what Electron derives the userData folder from, and it is the
 # same string src/main/index.ts passes to `app.setName` in a dev demo run.
+#
+# `productName` alone is enough to rename the installer on every platform: the
+# inherited `dmg.title` and `nsis.artifactName` in electron-builder.yml both
+# read `${productName}`, so the Windows exe comes out
+# `Qale Demo-Setup-${version}-x64.exe` beside the real `Qale-Setup-...` with no
+# `win:` block needed here.
 appId: ai.qale.demo
 productName: Qale Demo
 

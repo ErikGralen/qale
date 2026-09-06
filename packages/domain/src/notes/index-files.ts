@@ -186,13 +186,29 @@ function groupBy<K>(entries: IndexEntry[], keyOf: (e: IndexEntry) => K): Map<K, 
   return groups;
 }
 
+/**
+ * A frontmatter scalar, quoted when a plain one would not parse back. Folder
+ * purposes are English prose, and prose carries colons ("the documents you
+ * write: briefs, specs") — plain YAML reads `a: b: c` as a nested mapping and
+ * throws, so the whole map's frontmatter would be unreadable. Single quotes,
+ * with `''` for an embedded one, because the value is already a single line.
+ */
+function yamlScalar(value: string): string {
+  const needsQuotes =
+    value === '' ||
+    /: |:$|\s#/.test(value) ||
+    /^[-?:,[\]{}#&*!|>'"%@`]/.test(value) ||
+    /^\s|\s$/.test(value);
+  return needsQuotes ? `'${value.replace(/'/g, "''")}'` : value;
+}
+
 function frontmatterOf(folder: IndexFolder): string {
   const description =
     folder.subfolders !== undefined
       ? oneLine(folder.purpose)
       : oneLine(`${folder.label} — ${folder.purpose}`);
-  const marker = folder.purposeOf ? `purpose_of: ${oneLine(folder.purposeOf)}\n` : '';
-  return `---\ndescription: ${description}\n${marker}---\n`;
+  const marker = folder.purposeOf ? `purpose_of: ${yamlScalar(oneLine(folder.purposeOf))}\n` : '';
+  return `---\ndescription: ${yamlScalar(description)}\n${marker}---\n`;
 }
 
 function headOf(folder: IndexFolder): string {
@@ -353,7 +369,7 @@ function recursiveCount(folders: IndexFolder[], dir: string): number {
 export function renderRootIndex(folders: IndexFolder[], workspaceName: string): string {
   const fm =
     `---\nokf_version: "${OKF_VERSION}"\n` +
-    `description: ${oneLine(`Map of the ${workspaceName} workspace — one line per folder.`)}\n---\n`;
+    `description: ${yamlScalar(oneLine(`Map of the ${workspaceName} workspace — one line per folder.`))}\n---\n`;
   const intro =
     `\n# ${workspaceName}\n\n` +
     'This workspace is an Open Knowledge Format bundle. Each folder has an `index.md` ' +

@@ -4,7 +4,7 @@ title: Find the pattern
 summary: Reads a stack of interviews and says what they add up to.
 scenarios:
   - weighing a stack of material already in the workspace against one question ("what do these nine interviews add up to")
-  - counting how many accounts say the same thing ("who else has asked for scheduled exports")
+  - counting how many accounts say the same thing ("who else has asked for shift swaps")
   - reading a body of tagged material for whatever is in it ("read everything tagged onboarding and tell me what is there")
 can: [draft-outbound, keep-working-files]
 ---

@@ -9,7 +9,7 @@ work best. Keep them high level: what the team wants done, not a copy of the spa
 
 ## When you update a page
 
-- Product pages live in the Product space. Never propose a page in another space.
+- Product pages live in the Product space (key `PROD`). Never propose a page in another space.
 - Edit under the headings the page already has. Never add a section at the bottom.
 - The weekly update goes on the Product weekly update page, newest week first, with the week's
   dates in the opening line.

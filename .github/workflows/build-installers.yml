@@ -7,6 +7,11 @@ name: Build installers
 # than no build, but they are not the reason this workflow exists.
 on:
   workflow_dispatch:
+    inputs:
+      demo:
+        description: 'Build the demo installer (QALE_DEMO=1, electron-builder.demo.yml) instead of the normal one'
+        type: boolean
+        default: false
   push:
     tags:
       - 'v*'
@@ -103,7 +108,11 @@ jobs:
       # Secrets and variables → Actions. A secret that was never added resolves
       # to '', same as an unset shell variable, so a missing one is silent here
       # too — check the built app if a baked feature stops working.
+      # A tag push carries no `inputs`, so `github.event.inputs.demo` is unset
+      # and this is the branch that runs: the normal installer, every time a
+      # version is cut.
       - name: Package
+        if: ${{ github.event.inputs.demo != 'true' }}
         env:
           QALE_GOOGLE_CLIENT_ID: ${{ secrets.QALE_GOOGLE_CLIENT_ID }}
           QALE_GOOGLE_CLIENT_SECRET: ${{ secrets.QALE_GOOGLE_CLIENT_SECRET }}
@@ -111,7 +120,16 @@ jobs:
           QALE_POSTHOG_HOST: ${{ secrets.QALE_POSTHOG_HOST }}
         run: pnpm --filter @qale/desktop run win
 
+      # Only reachable from a manual run with the `demo` input checked. The
+      # demo build doesn't need a live Google or PostHog key: DM-8's fake
+      # Atlassian and the replay server are the only connectors it talks to,
+      # both in-repo, so no secrets are passed here.
+      - name: Package (demo)
+        if: ${{ github.event.inputs.demo == 'true' }}
+        run: pnpm --filter @qale/desktop run win:demo
+
       - uses: actions/upload-artifact@v4
+        if: ${{ github.event.inputs.demo != 'true' }}
         with:
           name: qale-windows-installer
           path: apps/desktop/dist/*.exe
@@ -121,4 +139,12 @@ jobs:
           if-no-files-found: error
           # This is ~140 MB and rebuildable from the tag. Ninety days of them is
           # storage nobody asked for.
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ github.event.inputs.demo == 'true' }}
+        with:
+          name: qale-demo-windows
+          path: apps/desktop/dist/*.exe
+          if-no-files-found: error
           retention-days: 14

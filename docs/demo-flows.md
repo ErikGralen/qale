@@ -5,6 +5,8 @@ scores, churn signals, on-prem asks. The 42-interview research in `transcripts2/
 a PO at a mid-size Nordic product company who spends most of the week in meetings with people who want something,
 and then hand-copies the results into Jira, Confluence and four chat threads. The demo data should be that job.
 
+Settled: everything in English (Swedish names only). The Jira flip in Flow 4 is a demo step you apply on cue. Slack is copy-out only.
+
 ## 1. The pains the demo must hit, in priority order
 
 | # | Pain | Evidence weight | The scene the interviewees described |
@@ -22,17 +24,18 @@ Rejected anti-patterns the demo must visibly avoid: no new place to fill in ("ä
 The research's build order: meeting → action first (W2), the answer layer second (W1), and customer signals as a
 second extraction target of the same engine. The flows below follow that order and depend on each other in that order.
 
-## 2. The demo company: Brevik
+## 2. The demo company: Rota
 
 Modelled on the mid-size cluster the research says has the strongest pain a v1 buyer can act on (PLAYipp, Albacross,
 Tactel, Pricer): 150 to 400 people, several dev teams, Jira + Confluence + Slack, sales/CS/support/leadership as
 stakeholders, and a real churn-shaped incident.
 
-**Brevik** is a Swedish B2B SaaS for property-management operations: work orders, inspections, tenant communication.
-Around 280 people, five dev teams on a quarterly planning cadence. The PO ("me") owns two teams: Work Orders and
-Tenant Communication.
+**Rota** makes staff-scheduling software for restaurant and retail chains. A manager builds the week's shift
+schedule, staff see their shifts in the app, hours flow to payroll. The vocabulary is shifts, schedules, staff,
+managers, locations. Nothing needs explaining. Around 250 people, four dev teams on a quarterly planning cadence.
+The PO ("me") owns two teams: Scheduling and Staff App.
 
-Tools, all real and connected: Jira projects `WO` (Work Orders), `TEN` (Tenant app), `PLT` (Platform); Confluence
+Tools, all real and connected: Jira projects `SCH` (Scheduling), `APP` (Staff app), `PLT` (Platform); Confluence
 space `PROD` with a "Roadmap H2" page and a "Product weekly update" page; Slack channels `#support`, `#sales`,
 `#product`. Meetings are recorded in Teams; the transcript is what gets dropped.
 
@@ -41,41 +44,42 @@ People (the `people/` folder, each with `email` so calendar attendees resolve):
 | Person | Role | Why they exist in the demo |
 |---|---|---|
 | Åsa Lindgren | CPO | Runs the steering meeting, decides priorities, wants three-sentence updates. |
-| Rebecca Holm | Tech lead, Work Orders | Refuses dates before estimation. Owns `WO` epics. |
-| Marcus Ek | Head of Sales | Promised a customer a date at a QBR. Asks "när kan vi leverera?" in four channels. |
+| Rebecca Holm | Tech lead, Scheduling | Refuses dates before estimation. Owns `SCH` epics. |
+| Marcus Ek | Head of Sales | Promised a customer a date at a QBR. Asks "when can we deliver?" in four channels. |
 | Malin Sjöberg | CS lead | Her team meets customers weekly and hears asks that never reach product. |
-| Ulrika Nyström | CS manager for Solbacken | The person who should be told when the feature ships, and never was, last time. |
+| Ulrika Nyström | CS manager for Bruno's | The person who should be told when the feature ships, and never was, last time. |
 | Jonas Berg | Support lead | Runs `#support`; writes macros; wants to know what to tell customers. |
-| Henrik Dahl | Legal and GDPR | Reviews anything touching tenant personal data, usually too late. |
+| Henrik Dahl | Legal and GDPR | Reviews anything touching staff personal data, usually too late. |
 
 Customers (the `customers/` folder):
 
 | Customer | Relationship | Role in the story |
 |---|---|---|
-| Norrsken Fastigheter | Active, largest account, 14,000 units | Sales promised them bulk scheduling "before the autumn inspection round" at the Q2 QBR. |
-| Solbacken Bostäder | Active, municipal housing | Asked support for bulk scheduling in March. Nobody linked it to the epic. This is the Albacross setup. |
-| Tornby Living | Active | Was told "Q4" for tenant self-service booking. That answer is about to be wrong. |
-| Gärdet Förvaltning | Churned | Churned last year after asking for something that had already shipped. The cautionary tale on the customer page. |
+| Café Nord | Active, largest account, 120 locations | Sales promised them shift swaps "before September, when the student staff turn over" at the Q2 QBR. |
+| Bruno's Burgers | Active, 35 locations | A manager asked support for shift swaps in March. Nobody linked it to the epic. This is the Albacross setup. |
+| Fjord Sports | Active, retail, 60 stores | Was told "Q4" for payroll export. That answer is about to be wrong. |
+| Kaffekopp | Churned | Churned last year after asking for something that had already shipped. The cautionary tale on the customer page. |
 
-Themes (`themes/`): **Bulk work-order scheduling** (committed), **Tenant self-service booking** (committed, about to
-be deferred), **Inspection photo AI** (exploring), **Offline mode for field staff** (won't-do, declined twice).
+Themes (`themes/`): **Shift swaps** (staff trade shifts in the app, manager approves; committed), **Payroll
+export** (hours to payroll systems; committed, about to be deferred), **Auto-schedule suggestions** (exploring),
+**Offline mode** (won't-do, declined twice).
 
 The storyline spine, in anchor-relative dates (`ANCHOR = 2026-07-17`, so `refresh-demo` slides them):
 
-- Q2 QBR with Norrsken (anchor minus 40 days): Marcus promises bulk scheduling before the autumn inspection round.
-  `people/marcus-ek.md` and `customers/norrsken.md` carry that as `last_told`.
-- Standing decision (anchor minus 60 days): "H2 order: tenant self-service booking first, bulk scheduling second."
-  `decisions/h2-order-self-service-first.md`, `standing: active`. The Confluence "Roadmap H2" page mirrors it.
-- Solbacken support thread (anchor minus 120 days): exists only as a Slack thread. Not in the vault yet. Flow 3
+- Q2 QBR with Café Nord (anchor minus 40 days): Marcus promises shift swaps before September. `people/marcus-ek.md`
+  and `customers/cafe-nord.md` carry that as `last_told`.
+- Standing decision (anchor minus 60 days): "H2 order: payroll export first, shift swaps second."
+  `decisions/h2-order-payroll-first.md`, `standing: active`. The Confluence "Roadmap H2" page mirrors it.
+- Bruno's support thread (anchor minus 120 days): exists only as a Slack thread. Not in the vault yet. Flow 3
   brings it in.
-- Jira today: `WO-231` "Bulk work-order scheduling (epic)" In Progress with three child stories (two Done, one In
-  Progress, assignee Rebecca). `TEN-118` "Tenant self-service booking (epic)" In Progress. No target dates in Jira.
-  The only date anywhere is the one sales promised.
-- Steering meeting (anchor minus 1 day): Åsa flips the order. Bulk scheduling first. Self-service booking to Q1.
-  Explicit not-doing: no offline mode, again. That transcript is Flow 1.
-- Overdue todo seeded: "Tell Tornby Living the new booking timeline" (due anchor minus 3 days). Flow 6.
-- Upcoming calendar: "Norrsken QBR prep" (anchor plus 2 days), "1:1 Rebecca" (anchor plus 1 day), "Steering"
-  recurring, "Solbacken CS sync" (anchor plus 4 days).
+- Jira today: `SCH-231` "Shift swaps (epic)" In Progress with three child stories (two Done, one In Progress,
+  assignee Rebecca). `SCH-118` "Payroll export (epic)" In Progress. No target dates in Jira. The only date anywhere
+  is the one sales promised.
+- Steering meeting (anchor minus 1 day): Åsa flips the order. Shift swaps first. Payroll export to Q1. Explicit
+  not-doing: no offline mode, again. That transcript is Flow 1.
+- Overdue todo seeded: "Tell Fjord Sports the new payroll-export timeline" (due anchor minus 3 days). Flow 6.
+- Upcoming calendar: "Café Nord QBR prep" (anchor plus 2 days), "1:1 Rebecca" (anchor plus 1 day), "Steering"
+  recurring, "Bruno's CS sync" (anchor plus 4 days).
 
 ## 3. The flows
 
@@ -84,76 +88,85 @@ session on drop or long paste, Ask with citations, the Jira/Confluence mirror in
 `draft_ticket` / `draft_ticket_comment` / `draft_page_update` outbound cards, voices, `weekly-update`,
 `commitment-check`, meeting prep from calendar.
 
-### Flow 1 — "Mötet gav actions" (P1, P3)
+### Flow 1 — "The meeting produced actions" (P1, P3)
 
 **Drop the steering-meeting transcript → get suggested actions → approve.**
 
-Input: `demo-samples/steering-q4-priorities.vtt`, a Teams transcript, 25 minutes, Åsa, Rebecca, Marcus, me. Content:
-Åsa moves bulk scheduling ahead of self-service booking because Norrsken and two more accounts need it for the
-autumn round. Self-service booking slides to Q1. Offline mode is raised by Marcus and declined again. Rebecca will
-re-estimate the remaining `WO-231` story by Friday. Henrik must review the tenant-notification batching for GDPR.
-I owe Tornby an updated timeline. Nobody writes any of it down.
+Input: `demo-samples/steering-h2-priorities.vtt`, a Teams transcript, 25 minutes, Åsa, Rebecca, Marcus, me.
+Content: Åsa moves shift swaps ahead of payroll export because Café Nord and two more chains need it before the
+September staff turnover. Payroll export slides to Q1. Offline mode is raised by Marcus and declined again. Rebecca
+will re-estimate the remaining `SCH-231` story by Friday. Henrik must review swap notifications for GDPR (they show
+colleagues' names and phone numbers). I owe Fjord Sports an updated timeline. Nobody writes any of it down.
 
 Expected cards:
 
 1. Meeting page with participants and a summary.
-2. Decision "Bulk scheduling before self-service booking" that **supersedes** the standing H2-order decision, with
-   deciders, rationale and the explicit not-doing (offline mode). On approve the old decision flips to `superseded`
-   and the librarian repoints its citations. This is the P3 beat: the truth changed in a leadership room and the
-   record changed with it.
-3. Todos with owners and due dates: Rebecca re-estimates by Friday; Henrik GDPR review; me, tell Tornby.
-4. Outbound, one card each, never batched: a Jira comment on `TEN-118` ("Deferred to Q1 per steering, see decision"),
-   a new `WO` story "Tenant notification batching for bulk scheduling", and a Confluence patch to the "Roadmap H2"
-   page swapping the two lines. Each card shows the exact text and the transcript line it came from.
+2. Decision "Shift swaps before payroll export" that **supersedes** the standing H2-order decision, with deciders,
+   rationale and the explicit not-doing (offline mode). On approve the old decision flips to `superseded` and the
+   librarian repoints its citations. This is the P3 beat: the truth changed in a leadership room and the record
+   changed with it.
+3. Todos with owners and due dates: Rebecca re-estimates by Friday; Henrik GDPR review; me, tell Fjord Sports.
+4. Outbound, one card each, never batched: a Jira comment on `SCH-118` ("Deferred to Q1 per steering, see
+   decision"), a new `SCH` story "Swap request notifications", and a Confluence patch to the "Roadmap H2" page
+   swapping the two lines. Each card shows the exact text and the transcript line it came from.
 
 Presenter beat: open the decision card, show the diff and the citation, edit one due date, **Approve all**, then
 approve the three outbound cards one by one and open Jira to show the comment landed with the source link.
 
-### Flow 2 — "När kan vi leverera?" (P2)
+### Flow 2 — "When can we deliver?" (P2)
 
 **Sales pings → Ask → copy a cited answer.** Run right after Flow 1.
 
-Marcus writes in `#sales` for the fourth time: "När kan vi leverera bulk scheduling till Norrsken? De frågar igen."
+Marcus writes in `#sales` for the fourth time: "When can we deliver shift swaps to Café Nord? They're asking again."
 
-Ask: *"When can we deliver bulk scheduling to Norrsken, and what have they already been told?"*
+Ask: *"When can we deliver shift swaps to Café Nord, and what have they already been told?"*
 
-Expected answer: `WO-231` state from the mirror (In Progress, two of three stories done, last remote update), the
+Expected answer: `SCH-231` state from the mirror (In Progress, two of three stories done, last remote update), the
 steering decision approved two minutes ago, Rebecca's pending re-estimate todo, and what Marcus promised at the QBR
 with the date. It should say plainly that there is no target date in Jira and that the only date in circulation is
 the one sales gave. Cite-or-decline, no invented ETA.
 
-Follow up: *"Draft a reply to Marcus in the sales voice."* Copy from the `draft_text` panel.
+Follow up: *"Draft a reply to Marcus in the sales voice."* Copy from the `draft_text` panel into Slack by hand.
 
 Presenter beat: the same question comes in four chats; this answer is the same every time because it reads from an
-approved log, not from the PO's memory. Do not claim it posts to Slack. It doesn't.
+approved log, not from the PO's memory.
 
 ### Flow 3 — "The support thread" (P4, and the setup for P7)
 
 **Paste a Slack thread → get an insight and a Jira link → approve.**
 
-Input: `demo-samples/support-thread-solbacken.md`, a `#support` thread from March. A Solbacken property manager
-tells Jonas they schedule roughly 300 spring inspections by hand and asks whether Brevik will ever do it in bulk.
-Jonas replies "I'll ask product". The thread ends there. Paste it into Home's bar; it clears the long-paste threshold
-and files as a source.
+Input: `demo-samples/support-thread-brunos.md`, a `#support` thread from March. A Bruno's restaurant manager tells
+Jonas that every week two or three staff want to trade shifts, and she redoes the schedule by hand each time. She
+asks whether Rota will ever let staff swap shifts themselves. Jonas replies "I'll ask product". The thread ends
+there. Paste it into Home's bar; it clears the long-paste threshold and files as a source.
 
-Expected cards: an insight on the bulk-scheduling theme with the thread as evidence and Solbacken as the customer;
-an update to the Solbacken customer page; a Jira comment on `WO-231` ("Solbacken asked for this via support in
-March, source linked"); a todo for Ulrika, "tell Solbacken when WO-231 ships".
+Expected cards: an insight on the shift-swaps theme with the thread as evidence and Bruno's as the customer; an
+update to the Bruno's customer page; a Jira comment on `SCH-231` ("Bruno's asked for this via support in March,
+source linked"); a todo for Ulrika, "tell Bruno's when SCH-231 ships".
 
 Presenter beat: support did not fill anything in. The ask is now attached to the epic that will ship it. This is
 the link that did not exist at Albacross.
 
-### Flow 4 — "Vem måste veta?" (P7, the payoff)
+### Flow 4 — "Who needs to know?" (P7, the payoff)
 
 **Ticket goes Done → Ask who needs to know → approve the messages.**
 
-Move `WO-231` to Done in Jira (live, or pre-staged so the mirror already shows it). Ask: *"WO-231 just went to
-Done. Who needs to know, and what were they told?"*
+`SCH-231` goes Done on cue, from inside the app: **Settings → Demo → Script steps → "Flow 4: SCH-231 (shift swaps
+epic) → Done"**. The step adds Rebecca's closing comment, flips the epic, and brings the Flow 2 step ("SCH-240 (last
+swap story) → Done") with it if you have not run that one yet. A sync tick follows the step, so wait a moment for
+`tickets/jira/SCH-231.md` to read Done before you Ask. Both steps run once per demo and a Reset gives them back.
 
-Expected answer, each line with its source: Solbacken asked via support in March and was never told (Flow 3);
-Norrsken was promised it at the QBR by Marcus; Tornby was told "Q4" for self-service booking and that is now Q1
-(Flow 1); Jonas needs a support macro. Then: *"Draft the messages, CS voice for the customers, one line for
-Jonas."* Cards: per-recipient drafts to copy, an update to `last_told` on each person, todos for Ulrika and Marcus.
+For a demo against a real Atlassian site there is a CLI path to the same state: `pnpm reset:done` (or
+`pnpm refresh-demo:done` plus `pnpm reset-atlassian:done`) lays the overlay in `scripts/demo-overlays/done/` over
+the vault and flips `SCH-231` and `SCH-240` to Done in Jira before the date shift. That one stages the close up
+front, so Flow 2's answer has to say "the last story closed today, not yet released".
+
+Ask: *"SCH-231 just went to Done. Who needs to know, and what were they told?"*
+
+Expected answer, each line with its source: Bruno's asked via support in March and was never told (Flow 3); Café
+Nord was promised it at the QBR by Marcus; Fjord Sports was told "Q4" for payroll export and that is now Q1 (Flow
+1); Jonas needs a support macro. Then: *"Draft the messages, CS voice for the customers, one line for Jonas."*
+Cards: per-recipient drafts to copy, an update to `last_told` on each person, todos for Ulrika and Marcus.
 
 Presenter beat: this is the churn that does not happen. The recipients were not recalled from memory; each one is
 there because of an approved note with a date.
@@ -163,7 +176,7 @@ there because of an approved note with a date.
 **Run the weekly update → approve per audience.**
 
 Pick the `/` skill **Write the weekly update**. Drafts arrive in three voices: exec (three sentences for Åsa: what
-shipped, what moved, what we are not doing), CS (what to tell customers, with the Solbacken and Norrsken lines),
+shipped, what moved, what we are not doing), CS (what to tell customers, with the Bruno's and Café Nord lines),
 sales (dates that changed). Everything in them was approved in Flows 1 to 4. Approve, copy out.
 
 Presenter beat: the release note is a rewrite of the approved log, not a Friday-afternoon writing task. The scheduled
@@ -171,11 +184,11 @@ Friday run is off by default; trigger it by hand and say so.
 
 ### Flow 6 — "I promised a date" (P8, spare)
 
-The overdue todo "Tell Tornby Living the new booking timeline" → **Help me handle this** → `commitment-check`
-proposes: a CS-voice note to Tornby with the Q1 timeline citing the steering decision, and moves the item onto the
-upcoming "Solbacken CS sync" or a Tornby call. Approve. If Google Calendar is connected, the meeting-prep agent
-also writes a `## Prep` section on "Norrsken QBR prep" within the hour before it: since last time, ticket movement,
-what Marcus promised, the open re-estimate.
+The overdue todo "Tell Fjord Sports the new payroll-export timeline" → **Help me handle this** → `commitment-check`
+proposes: a CS-voice note to Fjord Sports with the Q1 timeline citing the steering decision, and moves the item
+onto an upcoming call. Approve. If Google Calendar is connected, the meeting-prep agent also writes a `## Prep`
+section on "Café Nord QBR prep" within the hour before it: since last time, ticket movement, what Marcus promised,
+the open re-estimate.
 
 ## 4. Suggested 12-minute arc
 
@@ -185,7 +198,7 @@ what Marcus promised, the open re-estimate.
 | 1-5 | Flow 1 | Drop the steering transcript. Cards. Supersede. Approve all, outbound one by one, show Jira. |
 | 5-6 | Flow 2 | Marcus's fourth ping. Cited answer, sales-voice reply. |
 | 6-8 | Flow 3 | Paste the March support thread. Insight, Jira comment, todo for Ulrika. |
-| 8-10 | Flow 4 | WO-231 Done. Who needs to know. Messages. |
+| 8-10 | Flow 4 | SCH-231 Done. Who needs to know. Messages. |
 | 10-12 | Flow 5 | Friday update in three voices. |
 
 Paste the support thread (Flow 3) before starting Flow 1 if you want its cards ready when you get there; a drop is a
@@ -196,52 +209,46 @@ full agentic session and takes minutes.
 Vault (`vault-dev/`), all new content, dates relative to `2026-07-17`:
 
 - `people/` 7 notes with `email`, `role`, `cares_about`, `last_told`.
-- `customers/` 4 notes, Gärdet with the churn story in prose.
+- `customers/` 4 notes, Kaffekopp with the churn story in prose.
 - `themes/` 4 notes with `stance` and `evidence`.
 - `decisions/` the standing H2-order decision (`standing: active`), the offline-mode won't-do, and 2 to 3 older ones
   so the decision spine looks lived-in.
-- `insights/` 3 to 4 seeded (Norrsken's autumn-round need, Tornby's Q4 expectation, one on inspection photos).
-  None about Solbacken; Flow 3 creates that one.
-- `todos/` 4 to 5, one overdue (Tornby), one waiting-on (Henrik).
-- `meetings/` the Q2 Norrsken QBR (with Marcus's promise in the notes), last steering, two 1:1s.
-- `tickets/jira/` mirror files for `WO-231` and its three stories, `TEN-118` and two stories, three `PLT` fillers.
+- `insights/` 3 to 4 seeded (Café Nord's September turnover, Fjord Sports' Q4 expectation, one on auto-schedule).
+  None about Bruno's; Flow 3 creates that one.
+- `todos/` 4 to 5, one overdue (Fjord Sports), one waiting-on (Henrik).
+- `meetings/` the Q2 Café Nord QBR (with Marcus's promise in the notes), last steering, two 1:1s.
+- `tickets/jira/` mirror files for `SCH-231` and its three stories, `SCH-118` and two stories, three `PLT` fillers.
+  A second snapshot (or a `--done` flag in `refresh-demo`) with `SCH-231` and its last story Done for Flow 4.
   `wikipages/confluence/roadmap-h2.md` and `product-weekly-update.md`.
 - `skills/` keep `arrival`, `commitment-check`, `process-note`, `weekly-update`, `spec`, `iterate`, `tell-qale`,
   house rules, the Jira and Confluence style guides, `broken-demo`. Drop `synthesis` from the demo path (it's the
-  Tavla insight-stack story). Update house rules to name the `WO`/`TEN`/`PLT` projects and the `PROD` space.
+  Tavla insight-stack story). Update house rules to name the `SCH`/`APP`/`PLT` projects and the `PROD` space.
 - `voices/` exec, CS, and a new **sales** voice (short, date-first, no engineering caveats the customer can't act on).
 - `agents/` keep librarian and meeting-prep as they are.
 
 Connector seeds:
 
-- `scripts/reset-atlassian.ts` `CAST`: projects `WO`, `TEN`, `PLT`; the epics and stories above with states,
-  assignees, one Blocks link, seeded comments; Confluence pages "Roadmap H2" and "Product weekly update" with bodies
-  read from `vault-dev/wikipages/confluence/`. Demo-created items (the new `WO` story from Flow 1, the two comments)
-  must be absent from `CAST` so reset removes them.
-- `scripts/seed-google-calendar.ts` `CAST_MEETINGS`: Steering (weekly, past and future), Norrsken QBR prep,
-  1:1 Rebecca, Solbacken CS sync, Tornby call. Attendee emails match `people/*.email`.
+- `scripts/lib/atlassian-cast.ts` `CAST` (consumed by `reset-atlassian.ts` and `build-demo-fixture.ts`): projects
+  `SCH`, `APP`, `PLT`; the epics and stories above with states, assignees, one Blocks link, seeded comments;
+  Confluence space `PROD` with "Roadmap H2" and "Product weekly update", bodies read from
+  `vault-dev/wikipages/confluence/`. Demo-created items (the new `SCH` story from Flow 1, the two comments) are absent
+  from `CAST` so reset removes them. `--done` flips the keys in `DONE_SNAPSHOT_KEYS` for Flow 4.
+  **The Atlassian site must have the three projects created by hand** (default To Do / In Progress / Done workflow);
+  the script creates issues and the space, never projects. `tavla-demo.atlassian.net` has none of them yet.
+- `scripts/seed-google-calendar.ts` `CAST_MEETINGS`: past = vault, upcoming = calendar. Steering weekly from
+  2026-07-16 (so the Flow 1 drop gets it as a nearby-meeting hint), 1:1 Rebecca 2026-07-20, Café Nord QBR prep,
+  Bruno's CS sync, Fjord Sports call. Attendee emails match `people/*.email`. Events are tagged `rota`; reset also
+  sweeps old `tavla`-tagged events.
 
 `demo-samples/`:
 
-- `steering-q4-priorities.vtt` (Flow 1). Teams-style, four speakers, must contain the supersede, the not-doing,
-  three owned actions, one GDPR mention, and Marcus repeating the Norrsken promise.
-- `support-thread-solbacken.md` (Flow 3). Slack export style, three messages, ends unresolved.
+- `steering-h2-priorities.vtt` (Flow 1). Teams-style, four speakers, must contain the supersede, the not-doing,
+  three owned actions, one GDPR mention, and Marcus repeating the Café Nord promise.
+- `support-thread-brunos.md` (Flow 3). Slack export style, three messages, ends unresolved.
 - `chat-prompts.md` with the Flow 2 and Flow 4 prompts and the follow-ups.
 - `README.md` rewritten to map files to flows; remove the "Inbox" and "After-Meeting skill" references.
 
-## 6. Decisions to make before writing the data
-
-1. **Language.** The research is Swedish, the demo audience likely is. The vault search stemmer is English-only
-   (`docs/mvp-strategy.md`), so a Swedish vault breaks Ask. Recommendation: English vault and transcripts, Swedish
-   names and channel names, Swedish stakeholder quotes inside transcripts where it adds realism.
-2. **WO-231 Done in Flow 4.** Live flip in Jira depends on the 5-minute sync tick. Recommendation: pre-stage the
-   mirror as Done in a second vault snapshot, or accept a "sync now" click if one exists.
-3. **Slack.** Nothing posts to Slack. Flows 2, 4 and 5 end in copy-out. Say so, or build a `#product` read-only
-   import later as the "customer signals" door.
-4. **Brevik as a name and property management as a domain.** Chosen because every Nordic PO understands
-   tenants, inspections and work orders without explanation. Easy to swap; nothing in the flows depends on it.
-
-## 7. Sharp edges that survive the rewrite
+## 6. Sharp edges that survive the rewrite
 
 - API key required. A drop without it files the source and stops.
 - Drops accept `.txt .md .vtt .srt` and a few more. PDF, DOCX and audio are refused.
@@ -249,5 +256,9 @@ Connector seeds:
   todos, deletes and outbound. Say "derived changes arrive as cards".
 - Outbound cards are excluded from Approve all. Approve all is a serial loop; a partial failure leaves a mixed queue.
 - No weekly commitment-check job exists. `commitment-check` is per todo.
-- No demo mode, replay server or reset button. `docs/demo-mode.md` is undecided.
+- Demo mode exists on the `demo` branch (bundled vault, in-memory Jira/Confluence from `demo/atlassian-fixture.json`,
+  replay server, in-app Reset in Settings → Demo). `demo/recordings/` holds only the fallback, so a demo build answers
+  every prompt with the canned line until Flows 1 to 5 are recorded. Google Calendar is not faked; Flow 6 is cut in
+  demo builds.
+- Nothing posts to Slack. Flows 2, 4 and 5 end in copy-out.
 - The repo root holds live connector tokens in `.atlassian-demo.json` and `.google-demo.json`. Do not screen-share it.

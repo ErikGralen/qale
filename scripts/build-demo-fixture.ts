@@ -1,5 +1,5 @@
 /**
- * Bake the Tavla cast into `demo/atlassian-fixture.json`, the seed the demo
+ * Bake the Rota cast into `demo/atlassian-fixture.json`, the seed the demo
  * build's fake Atlassian serves (docs/demo-mode.md DM-8).
  *
  * Two sources, both git-tracked, both already the truth for something else:
@@ -7,7 +7,7 @@
  *    seeds, issue links, page titles. The same cast `pnpm reset-atlassian`
  *    pushes to the live demo site.
  *  - vault-dev/ — the static mirrors give each cast member its key
- *    (`tickets/jira/PAY-142.md`), its assignee and its last-updated stamp, and
+ *    (`tickets/jira/SCH-231.md`), its assignee and its last-updated stamp, and
  *    the wikipages give the canonical page bodies and version numbers. So the
  *    fake answers with exactly the ids the demo vault already names.
  *
@@ -28,7 +28,8 @@ import {
   CAST_LINKS,
   FRONTMATTER_RE,
   PAGES,
-  PROJECT_KEY,
+  PROJECT_KEYS,
+  PROJECT_NAMES,
   SPACE_KEY,
   SPACE_NAME,
   STATIC_HOST,
@@ -42,13 +43,12 @@ const VAULT = join(ROOT, 'vault-dev');
 const OUT = join(ROOT, 'demo', 'atlassian-fixture.json');
 
 const SITE_URL = `https://${STATIC_HOST}`;
-const PROJECT_NAME = 'Payments';
 /** The demo's own account. Every cast issue reports to it, so the footprint
- *  survey's `currentUser()` queries find the project. */
+ *  survey's `currentUser()` queries find all three projects. */
 const SELF = {
   accountId: 'demo-pm',
   displayName: 'Demo user',
-  emailAddress: 'demo@tavla.example',
+  emailAddress: 'demo@rota.example',
 };
 
 interface Comment {
@@ -154,7 +154,7 @@ const issues = keys.map((key, index) => {
   return {
     id: String(10_001 + index),
     key,
-    projectKey: PROJECT_KEY,
+    projectKey: member.project,
     summary: member.summary,
     description: member.description,
     issueType: member.issueType,
@@ -214,24 +214,56 @@ const fixture = {
   anchor: ANCHOR,
   siteUrl: SITE_URL,
   self: SELF,
-  projects: [{ id: '10000', key: PROJECT_KEY, name: PROJECT_NAME }],
+  projects: PROJECT_KEYS.map((key, n) => ({
+    id: String(10_000 + n),
+    key,
+    name: PROJECT_NAMES[key],
+  })),
   spaces: [{ id: '65537', key: SPACE_KEY, name: SPACE_NAME }],
   issues,
   pages,
-  // One scripted step, so the mechanism is exercised by the shipped fixture.
-  // The Brevik data (docs/demo-flows.md) brings its own.
+  // The two scripted steps the walkthrough needs, in the order the script
+  // reaches them (docs/demo-flows.md). The presenter applies them from
+  // Settings → Demo, and the sync tick that follows carries the change into
+  // the mirror in tickets/jira/. The live-site path to the same state is
+  // `pnpm reset:done`, which uses `doneSnapshotCast()` instead.
+  //
+  // Step 2 REQUIRES step 1: the epic cannot close before its last story, and
+  // the presenter has to be able to jump straight to Flow 4. `requires` is
+  // what the fake reads (apps/desktop/src/main/demo/fake-atlassian.ts).
+  //
+  // The comment and the transition are stamped with the clock at apply time,
+  // so the close reads as today without a date in the fixture.
   steps: [
     {
-      id: 'pay-161-done',
-      label: 'PAY-161 goes Done',
+      id: 'sch-240-done',
+      label: 'Flow 2: SCH-240 (last swap story) → Done',
       changes: [
         {
           kind: 'comment',
-          key: 'PAY-161',
-          author: 'Tom Devlin',
-          body: 'Okta regression pair passed too. Metadata exchange validated in staging. Closing.',
+          key: 'SCH-240',
+          author: 'Rebecca Holm',
+          body:
+            "Overtime check runs against both people's contracted hours for the whole week, " +
+            'other approved swaps included. Closing.',
         },
-        { kind: 'transition', key: 'PAY-161', to: 'Done' },
+        { kind: 'transition', key: 'SCH-240', to: 'Done' },
+      ],
+    },
+    {
+      id: 'sch-231-done',
+      label: 'Flow 4: SCH-231 (shift swaps epic) → Done',
+      requires: ['sch-240-done'],
+      changes: [
+        {
+          kind: 'comment',
+          key: 'SCH-231',
+          author: 'Rebecca Holm',
+          body:
+            'All three stories done, swap approval flow shipped to staging; release train ' +
+            'Tuesday.',
+        },
+        { kind: 'transition', key: 'SCH-231', to: 'Done' },
       ],
     },
   ],

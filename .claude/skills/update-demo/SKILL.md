@@ -10,7 +10,7 @@ description: >-
 
 # Update the demo
 
-Get the Tavla demo workspace into a crisp, current-dated state for a live demo. Three moving parts:
+Get the Rota demo workspace into a crisp, current-dated state for a live demo. Three moving parts:
 
 - **`vault-dev/`** — the _canonical_ demo source, frozen on a fictional "today" of **2026-07-17**.
   Edit demo content here. It should stay pristine — no harness-written session receipts, no leftover
@@ -18,8 +18,9 @@ Get the Tavla demo workspace into a crisp, current-dated state for a live demo. 
 - **`.vault-dev/`** — the _runtime_ copy the app actually opens (gitignored). Built from `vault-dev/`
   by `scripts/refresh-demo.ts`, with all dates shifted so the scenario reads as _now_. Throwaway;
   rebuild it any time.
-- **`demo-samples/`** — committed, relative-dated material you drag into the running app to demo the
-  two pain points. See `demo-samples/README.md`.
+- **`demo-samples/`** — committed material you drag into the running app to run the demo flows.
+  Dated on the same anchor timeline as `vault-dev/` (2026-07-17), not relative language, so it stays
+  in step with the vault. See `demo-samples/README.md`.
 
 The whole flow is safe to re-run: the refresh script never mutates `vault-dev/`, it only reads it.
 
@@ -47,7 +48,7 @@ was ever run against `vault-dev/` directly, that cruft is now committed. Remove 
 
 The intentional demo states are NOT cruft — do not "fix" them (see the vault-dev scenario memory):
 the deliberately stale insight, the low-confidence/unverified insights, the sloppy links in
-`notes/2026-07-16-nordkap-scim-date.md`, the orphan `notes/rollout-runbook.md`, the `broken-demo`
+`notes/auto-schedule-interviews.md`, any orphan note nothing links to yet, the `broken-demo`
 skill, the untagged notes. Leave them.
 
 ### 2. Rebuild the runtime vault, dated to today
@@ -60,8 +61,9 @@ This copies `vault-dev/` → `.vault-dev/`, slides every date-valued frontmatter
 by (today − 2026-07-17), empties `sessions/`, and self-validates. Read its output:
 
 - The **offset** and **todo-lane summary** ("1 overdue · 1 today · 1 upcoming · 2 waiting · …") tell
-  you whether "today" lands well. A healthy demo has at least one overdue todo, the Nordkap check-in
-  meeting still upcoming, and waiting-on items.
+  you whether "today" lands well. A healthy demo has at least one overdue todo (the Fjord Sports
+  payroll-export timeline), a waiting-on item (Henrik's GDPR review), and no meeting mis-dated
+  relative to today.
 - The **`App state @ …`** line reports the inbox reset (see below). Expect "removed inbox DB …" on a
   normal run, or "already clean" if there was nothing to clear.
 - It must end with **`✓ … all wikilinks resolve`**. If it reports unresolved wikilinks or files
@@ -69,7 +71,7 @@ by (today − 2026-07-17), empties `sessions/`, and self-validates. Read its out
   proceed as if it worked.
 
 **Demoing against the live Atlassian site?** The rebuild restores the _static_ mirror ids
-(`PAY-142`, fake `tavla.atlassian.net` URLs) — fine offline, wrong online. Run
+(`SCH-125`, fake `rota.atlassian.net` URLs) — fine offline, wrong online. Run
 `pnpm reset-atlassian` afterwards (docs/jira-demo-setup.md): it resets the live site to the
 baseline AND reconciles `.vault-dev` to the live keys/ids. Always in that order: refresh first,
 then reset-atlassian.
@@ -89,11 +91,12 @@ re-centred away from 2026-07-17.)
 
 ### 3. Confirm the ingest samples are ready
 
-Check `demo-samples/` still has the two transcripts, the messy note, and `chat-prompts.md`, and that
-the transcripts use **relative** time language only (no absolute `YYYY-MM-DD` — grep for it). If the
-scenario in `vault-dev/` has drifted (new customers, renamed people, changed storylines), update the
-samples so they still reference real cast and land on real hubs. The samples are the drag-in payload
-for the demo; `demo-samples/README.md` maps each to its pain point.
+Check `demo-samples/` still has `steering-h2-priorities.vtt`, `support-thread-brunos.md`, and
+`chat-prompts.md`, and that their dates line up with the vault's anchor timeline (2026-07-16 for the
+steering meeting, 2026-03-12 and 2026-03-26 for the support thread). If the scenario in `vault-dev/`
+has drifted (new customers, renamed people, changed storylines), update the samples so they still
+reference real cast and land on real hubs. The samples are the drag-in payload for the demo;
+`demo-samples/README.md` maps each to its flow.
 
 ### 4. Report
 
@@ -104,8 +107,8 @@ Tell the user, briefly:
 - the app-state reset (e.g. "cleared the inbox DB + N session receipts") — or "inbox already clean",
 - that validation passed (or exactly what failed),
 - the one-line run instruction: **open `.vault-dev/` in the app** (not `vault-dev/` — that's what
-  keeps cruft from coming back), then drag the `demo-samples/` transcripts in to demo the two pain
-  points. First time only: the macOS folder picker hides dot-directories, so press **⌘⇧.** to reveal
+  keeps cruft from coming back), then drag the `demo-samples/` files in to run the flows. First
+  time only: the macOS folder picker hides dot-directories, so press **⌘⇧.** to reveal
   `.vault-dev`, select it once, and the app remembers it (`settings.vaultPath`) on every launch after.
 
 Leave the changes in the working tree for the user to review; don't commit unless asked.

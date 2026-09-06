@@ -1,0 +1,387 @@
+{
+  "anchor": "2026-07-17",
+  "timeZone": "Europe/Stockholm",
+  "self": {
+    "email": "demo@rota.example",
+    "displayName": "Demo user"
+  },
+  "calendars": [
+    {
+      "id": "demo@rota.example",
+      "summary": "Demo user",
+      "primary": true,
+      "accessRole": "owner",
+      "timeZone": "Europe/Stockholm"
+    }
+  ],
+  "events": [
+    {
+      "id": "qale-demo-steering-1",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=qale-demo-steering-1",
+      "created": "2026-06-15T09:00:00.000Z",
+      "updated": "2026-07-15T09:00:00.000Z",
+      "summary": "Steering",
+      "description": "Weekly steering. Standing items: H2 order, what we can promise customers, capacity.",
+      "organizer": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "creator": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "start": {
+        "dateTime": "2026-07-16T10:00:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "end": {
+        "dateTime": "2026-07-16T10:45:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "recurringEventId": "qale-demo-steering",
+      "originalStartTime": {
+        "dateTime": "2026-07-16T10:00:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "attendees": [
+        {
+          "email": "demo@rota.example",
+          "displayName": "Demo user",
+          "organizer": true,
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "asa.lindgren@rota.example",
+          "displayName": "Åsa Lindgren",
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "rebecca.holm@rota.example",
+          "displayName": "Rebecca Holm",
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "marcus.ek@rota.example",
+          "displayName": "Marcus Ek",
+          "responseStatus": "accepted"
+        }
+      ],
+      "eventType": "default",
+      "extendedProperties": {
+        "private": {
+          "qaleDemo": "rota"
+        }
+      }
+    },
+    {
+      "id": "qale-demo-1-1-rebecca",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=qale-demo-1-1-rebecca",
+      "created": "2026-06-15T09:00:00.000Z",
+      "updated": "2026-07-15T09:00:00.000Z",
+      "summary": "1:1 Rebecca",
+      "description": "Weekly 1:1 with the Scheduling tech lead. Estimates, on-call load, scope.",
+      "organizer": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "creator": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "start": {
+        "dateTime": "2026-07-20T09:30:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "end": {
+        "dateTime": "2026-07-20T10:00:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "attendees": [
+        {
+          "email": "demo@rota.example",
+          "displayName": "Demo user",
+          "organizer": true,
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "rebecca.holm@rota.example",
+          "displayName": "Rebecca Holm",
+          "responseStatus": "accepted"
+        }
+      ],
+      "eventType": "default",
+      "extendedProperties": {
+        "private": {
+          "qaleDemo": "rota"
+        }
+      }
+    },
+    {
+      "id": "qale-demo-cafe-nord-qbr-prep",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=qale-demo-cafe-nord-qbr-prep",
+      "created": "2026-06-15T09:00:00.000Z",
+      "updated": "2026-07-15T09:00:00.000Z",
+      "summary": "Café Nord QBR prep",
+      "description": "Prep for the Café Nord quarterly business review: what we say about shift swaps and September.",
+      "organizer": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "creator": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "start": {
+        "dateTime": "2026-07-21T14:00:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "end": {
+        "dateTime": "2026-07-21T15:00:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "attendees": [
+        {
+          "email": "demo@rota.example",
+          "displayName": "Demo user",
+          "organizer": true,
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "marcus.ek@rota.example",
+          "displayName": "Marcus Ek",
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "lena.strand@cafenord.example",
+          "displayName": "Lena Strand",
+          "responseStatus": "accepted"
+        }
+      ],
+      "eventType": "default",
+      "extendedProperties": {
+        "private": {
+          "qaleDemo": "rota"
+        }
+      }
+    },
+    {
+      "id": "qale-demo-bruno-s-cs-sync",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=qale-demo-bruno-s-cs-sync",
+      "created": "2026-06-15T09:00:00.000Z",
+      "updated": "2026-07-15T09:00:00.000Z",
+      "summary": "Bruno's CS sync",
+      "description": "Monthly sync with Bruno's Burgers: open support themes and release timing.",
+      "organizer": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "creator": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "start": {
+        "dateTime": "2026-07-22T11:00:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "end": {
+        "dateTime": "2026-07-22T11:30:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "attendees": [
+        {
+          "email": "demo@rota.example",
+          "displayName": "Demo user",
+          "organizer": true,
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "ulrika.nystrom@rota.example",
+          "displayName": "Ulrika Nyström",
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "petra.alm@brunos.example",
+          "displayName": "Petra Alm",
+          "responseStatus": "accepted"
+        }
+      ],
+      "eventType": "default",
+      "extendedProperties": {
+        "private": {
+          "qaleDemo": "rota"
+        }
+      }
+    },
+    {
+      "id": "qale-demo-steering-2",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=qale-demo-steering-2",
+      "created": "2026-06-15T09:00:00.000Z",
+      "updated": "2026-07-15T09:00:00.000Z",
+      "summary": "Steering",
+      "description": "Weekly steering. Standing items: H2 order, what we can promise customers, capacity.",
+      "organizer": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "creator": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "start": {
+        "dateTime": "2026-07-23T10:00:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "end": {
+        "dateTime": "2026-07-23T10:45:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "recurringEventId": "qale-demo-steering",
+      "originalStartTime": {
+        "dateTime": "2026-07-23T10:00:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "attendees": [
+        {
+          "email": "demo@rota.example",
+          "displayName": "Demo user",
+          "organizer": true,
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "asa.lindgren@rota.example",
+          "displayName": "Åsa Lindgren",
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "rebecca.holm@rota.example",
+          "displayName": "Rebecca Holm",
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "marcus.ek@rota.example",
+          "displayName": "Marcus Ek",
+          "responseStatus": "accepted"
+        }
+      ],
+      "eventType": "default",
+      "extendedProperties": {
+        "private": {
+          "qaleDemo": "rota"
+        }
+      }
+    },
+    {
+      "id": "qale-demo-fjord-sports-call",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=qale-demo-fjord-sports-call",
+      "created": "2026-06-15T09:00:00.000Z",
+      "updated": "2026-07-15T09:00:00.000Z",
+      "summary": "Fjord Sports call",
+      "description": "Fjord Sports: payroll export timeline against their Visma migration.",
+      "organizer": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "creator": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "start": {
+        "dateTime": "2026-07-24T13:00:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "end": {
+        "dateTime": "2026-07-24T13:30:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "attendees": [
+        {
+          "email": "demo@rota.example",
+          "displayName": "Demo user",
+          "organizer": true,
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "oskar.lind@fjordsports.example",
+          "displayName": "Oskar Lind",
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "ulrika.nystrom@rota.example",
+          "displayName": "Ulrika Nyström",
+          "responseStatus": "accepted"
+        }
+      ],
+      "eventType": "default",
+      "extendedProperties": {
+        "private": {
+          "qaleDemo": "rota"
+        }
+      }
+    },
+    {
+      "id": "qale-demo-steering-3",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=qale-demo-steering-3",
+      "created": "2026-06-15T09:00:00.000Z",
+      "updated": "2026-07-15T09:00:00.000Z",
+      "summary": "Steering",
+      "description": "Weekly steering. Standing items: H2 order, what we can promise customers, capacity.",
+      "organizer": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "creator": {
+        "email": "demo@rota.example",
+        "displayName": "Demo user"
+      },
+      "start": {
+        "dateTime": "2026-07-30T10:00:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "end": {
+        "dateTime": "2026-07-30T10:45:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "recurringEventId": "qale-demo-steering",
+      "originalStartTime": {
+        "dateTime": "2026-07-30T10:00:00+02:00",
+        "timeZone": "Europe/Stockholm"
+      },
+      "attendees": [
+        {
+          "email": "demo@rota.example",
+          "displayName": "Demo user",
+          "organizer": true,
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "asa.lindgren@rota.example",
+          "displayName": "Åsa Lindgren",
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "rebecca.holm@rota.example",
+          "displayName": "Rebecca Holm",
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "marcus.ek@rota.example",
+          "displayName": "Marcus Ek",
+          "responseStatus": "accepted"
+        }
+      ],
+      "eventType": "default",
+      "extendedProperties": {
+        "private": {
+          "qaleDemo": "rota"
+        }
+      }
+    }
+  ]
+}

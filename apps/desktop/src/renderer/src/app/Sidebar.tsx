@@ -396,18 +396,20 @@ function PinRows({ notes, onUnpin }: { notes: NoteRefDTO[]; onUnpin: (n: NoteRef
         return (
           <li key={n.path} className="group/note relative">
             <button
-              className={`flex w-full items-center gap-1.5 rounded-md py-1 pr-2 pl-2 text-left text-dense transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
+              className={`flex w-full items-center gap-1.5 rounded-md py-0.5 pr-2 pl-3 text-left text-xs transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
                 active
                   ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-                  : 'text-sidebar-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
               onClick={openRow}
               onAuxClick={(e) => e.button === 1 && openRow(e)}
               title={n.title}
             >
-              {/* The glyph column the session rows above use, held empty so the
-                  two lists line up. */}
-              <span className="size-3.5 shrink-0" aria-hidden />
+              {/* A subitem marker, smaller than the place row's icon above it,
+                  so the row reads as one level down rather than a peer. */}
+              <span className="flex size-3.5 shrink-0 items-center justify-center" aria-hidden>
+                <span className="size-1 rounded-full bg-current opacity-50" />
+              </span>
               <span className="truncate">{n.title}</span>
             </button>
             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-r-md bg-gradient-to-l from-sidebar-accent from-65% to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover/note:opacity-100 group-focus-within/note:opacity-100">

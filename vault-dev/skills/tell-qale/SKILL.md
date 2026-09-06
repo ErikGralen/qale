@@ -50,7 +50,7 @@ search tools, and search the workspace as well:
 Then make one `ask_user` call. Name the whole haul in one line, with the real names and the real
 numbers, and end your turn:
 
-"I read NORD and KRAN, 214 tickets and 40 pages, and a month of your calendar. Want to walk
+"I read SCH and APP, 214 tickets and 40 pages, and a month of your calendar. Want to walk
 through what I found?"
 
 Two options: yes, walk me through it / not now. Write nothing, propose nothing, say nothing else.

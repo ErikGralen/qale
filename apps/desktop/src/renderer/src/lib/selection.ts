@@ -3,14 +3,14 @@ import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'reac
 /**
  * List selection, shared by every page that lists notes.
  *
- * Two models sit on one set. Most pages use the checkbox model: a click on a
- * row always opens it, and only the checkbox selects, so the meaning of a click
- * never changes under the PO's finger. Documents uses the Finder model: the row
- * IS the selection, so a click picks it ({@link Selection.only}), ⌘click adds
- * or removes one ({@link Selection.toggle}), and shift picks a range
- * ({@link Selection.extend}).
+ * One model, everywhere: the row IS the selection. A click picks it
+ * ({@link Selection.only}), ⌘click adds or removes one
+ * ({@link Selection.toggle}), and shift picks a range ({@link
+ * Selection.extend}). A double click or ↵ opens. There is no checkbox: a list
+ * that selected one way and a list that selected another was one vocabulary too
+ * many, and the file-manager one is the one people already know.
  *
- * Both models share one anchor: the last row the PO touched. A range always
+ * One anchor holds it together: the last row the PO touched. A range always
  * reads from it.
  *
  * The selection is kept as a raw set but always READ through the list's own
@@ -24,11 +24,11 @@ export interface Selection {
   count: number;
   /** Every visible row is selected (false when the list is empty). */
   all: boolean;
-  /** Something is selected: checkboxes stay out, shift-click extends. */
+  /** Something is selected, so the selection bar is up. */
   active: boolean;
   isSelected: (path: string) => boolean;
-  /** Toggle one row, or with `range` select everything from the anchor to it. */
-  toggle: (path: string, opts?: { range?: boolean }) => void;
+  /** Add this row to the selection, or take it out. The ⌘click. */
+  toggle: (path: string) => void;
   /** Make this row the whole selection, and the anchor. The Finder click. */
   only: (path: string) => void;
   /**
@@ -42,28 +42,9 @@ export interface Selection {
   clear: () => void;
 }
 
-/**
- * The set after a ⌘click, or after a shift-click on a checkbox page.
- *
- * A range only ADDS. Sweeping back over rows already picked is a correction of
- * the range's end, not an undo of the whole gesture.
- */
-export function toggled(
-  raw: ReadonlySet<string>,
-  ordered: string[],
-  anchor: string | null,
-  path: string,
-  range = false,
-): Set<string> {
+/** The set after a ⌘click: this row joins the selection, or leaves it. */
+export function toggled(raw: ReadonlySet<string>, path: string): Set<string> {
   const next = new Set(raw);
-  if (range && anchor && anchor !== path) {
-    const a = ordered.indexOf(anchor);
-    const b = ordered.indexOf(path);
-    if (a !== -1 && b !== -1) {
-      for (const p of ordered.slice(Math.min(a, b), Math.max(a, b) + 1)) next.add(p);
-      return next;
-    }
-  }
   if (next.has(path)) next.delete(path);
   else next.add(path);
   return next;
@@ -91,13 +72,10 @@ export function useSelection(ordered: string[]): Selection {
 
   const paths = useMemo(() => ordered.filter((p) => raw.has(p)), [ordered, raw]);
 
-  const toggle = useCallback(
-    (path: string, opts?: { range?: boolean }) => {
-      setRaw((prev) => toggled(prev, ordered, anchor.current, path, opts?.range));
-      anchor.current = path;
-    },
-    [ordered],
-  );
+  const toggle = useCallback((path: string) => {
+    setRaw((prev) => toggled(prev, path));
+    anchor.current = path;
+  }, []);
 
   const only = useCallback((path: string) => {
     setRaw(new Set([path]));
@@ -144,17 +122,12 @@ export function useSelection(ordered: string[]): Selection {
  * The page-level keys, wired by every page that offers selection: Escape drops
  * the selection, ⌘A takes the whole list.
  *
- * On a checkbox page ⌘A only binds once something is selected. An unarmed
- * page must not steal select-all from the browser. On a Finder page the rows
- * are the selection, so ⌘A is always the list's: pass `alwaysSelectAll`.
+ * ⌘A is always the list's, selection or not, because the rows ARE the
+ * selection. Inside a field it stays the field's.
  *
  * Returns true when the key was spent, so the caller can stop there.
  */
-export function selectionKeyDown(
-  e: KeyboardEvent,
-  selection: Selection,
-  opts?: { alwaysSelectAll?: boolean },
-): boolean {
+export function selectionKeyDown(e: KeyboardEvent, selection: Selection): boolean {
   const t = e.target as HTMLElement;
   const typing = t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable;
   if (e.key === 'Escape' && selection.active) {
@@ -162,8 +135,7 @@ export function selectionKeyDown(
     selection.clear();
     return true;
   }
-  const armed = opts?.alwaysSelectAll || selection.active;
-  if ((e.key === 'a' || e.key === 'A') && (e.metaKey || e.ctrlKey) && armed && !typing) {
+  if ((e.key === 'a' || e.key === 'A') && (e.metaKey || e.ctrlKey) && !typing) {
     e.preventDefault();
     selection.selectAll();
     return true;

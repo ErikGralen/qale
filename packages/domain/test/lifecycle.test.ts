@@ -34,7 +34,7 @@ test('the three "active"s are three different fields', () => {
   assert.equal(lifecycleField('customer'), 'relationship');
   assert.equal(lifecycleField('source'), 'processing');
   assert.equal(lifecycleField('todo'), 'commitment');
-  assert.equal(lifecycleField('theme'), 'stance');
+  assert.equal(lifecycleField('research'), 'processing');
   // Types with no lifecycle say so rather than faking one.
   assert.equal(lifecycleField('person'), null);
   assert.equal(lifecycleField('skill'), null);
@@ -48,7 +48,7 @@ test('lifecycleValue reads whichever key the type uses', () => {
 });
 
 test('values render as labels, never raw tokens', () => {
-  assert.equal(lifecycleValueLabel('theme', 'wont-do'), "Won't do");
+  assert.equal(lifecycleValueLabel('research', 'new'), 'Not yet');
   assert.equal(lifecycleValueLabel('decision', 'superseded'), 'Superseded');
   assert.equal(lifecycleValueLabel('customer', 'prospect'), 'Prospect');
   // A token no lifecycle claims still reads as words, never as a raw enum.

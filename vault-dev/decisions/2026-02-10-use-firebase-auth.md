@@ -5,9 +5,8 @@ tags: ['enterprise-auth']
 standing: 'superseded'
 date: '2026-02-10'
 deciders: ['Tom Devlin']
-sources: []
+sources: ['[[research/enterprise-onboarding]]']
 superseded_by: '[[decisions/2026-05-20-adopt-workos]]'
-theme: '[[themes/enterprise-onboarding]]'
 ---
 
 Chose Firebase Auth so we could ship email and Google login in a week instead of a month. We

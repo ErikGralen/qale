@@ -11,8 +11,6 @@ import {
   draggedDocuments,
   folderMtimes,
   isDocument,
-  nextDocumentSort,
-  parseDocumentSort,
   sortDocuments,
   sortFolders,
   toggleExpanded,
@@ -23,8 +21,8 @@ import {
 test('a document is one by its path, not by its type', () => {
   assert.equal(isDocument('notes/q3-priorities.md'), true);
   assert.equal(isDocument('notes/specs/checkout.md'), true);
-  // A note type the agent keeps for itself. It must never reach this screen.
-  assert.equal(isDocument('understanding/product.md'), false);
+  // A page Qale keeps for itself. It must never reach this screen.
+  assert.equal(isDocument('research/product.md'), false);
   assert.equal(isDocument('insights/nordkap-needs-scim.md'), false);
   assert.equal(isDocument('notebooks/a.md'), false);
 });
@@ -291,24 +289,6 @@ const PATHS = [...DOCS.map((d) => d.path), 'notes/specs/index.md', 'notes/briefs
 
 test('the default sort is newest first', () => {
   assert.deepEqual(DEFAULT_SORT, { key: 'modified', dir: 'desc' });
-});
-
-test('a stored sort survives, and anything else falls back to the default', () => {
-  assert.deepEqual(parseDocumentSort('{"key":"name","dir":"asc"}'), { key: 'name', dir: 'asc' });
-  assert.deepEqual(parseDocumentSort(null), DEFAULT_SORT);
-  assert.deepEqual(parseDocumentSort('not json'), DEFAULT_SORT);
-  // A key from a build that had a third column.
-  assert.deepEqual(parseDocumentSort('{"key":"size","dir":"asc"}'), DEFAULT_SORT);
-});
-
-test('clicking a column picks it, clicking it again turns it around', () => {
-  const modifiedNewest = { key: 'modified', dir: 'desc' } as const;
-  assert.deepEqual(nextDocumentSort(modifiedNewest, 'name'), { key: 'name', dir: 'asc' });
-  assert.deepEqual(nextDocumentSort(modifiedNewest, 'modified'), { key: 'modified', dir: 'asc' });
-  assert.deepEqual(nextDocumentSort({ key: 'name', dir: 'asc' }, 'name'), {
-    key: 'name',
-    dir: 'desc',
-  });
 });
 
 test('documents sort by name, both ways', () => {

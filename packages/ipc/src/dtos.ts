@@ -15,7 +15,7 @@ export type NoteType =
   | 'decision'
   | 'insight'
   | 'customer'
-  | 'theme'
+  | 'research'
   | 'person'
   | 'session'
   | 'skill'
@@ -24,8 +24,6 @@ export type NoteType =
   | 'note'
   | 'ticket'
   | 'wikipage';
-
-export type ThemeStance = 'exploring' | 'watching' | 'committed' | 'wont-do';
 
 /** How far material has got through the workspace (sources/meetings/insights/
  *  notes/mirrors) — always enum, never free text. Mirrors @qale/domain. */
@@ -118,6 +116,10 @@ export interface NoteRefDTO {
   assignee?: string;
   /** Ticket mirror: ISO timestamp of the last upstream change. */
   remoteUpdated?: string;
+  /** The door back to the original, in the system that owns it: a mirror's
+   *  Jira or Confluence page, a synced meeting's calendar event. It rides the
+   *  ref so a list row can offer "Open in Jira" without reading the note. */
+  remoteUrl?: string;
 }
 
 /** A meeting a person is (or was) in — the preview card's "last met"/"next" line. */
@@ -239,12 +241,6 @@ export interface SearchHitDTO {
   summary: string;
   snippet: string;
   score: number;
-}
-
-export interface ThemeHeatDTO extends NoteRefDTO {
-  stance: ThemeStance;
-  evidenceCount: number;
-  newest: string | null;
 }
 
 export interface MaintenanceReportDTO {
@@ -717,6 +713,10 @@ export interface ChatRefDTO {
   lifecycle: SessionLifecycle;
   /** The model this session was moved to, or null when it follows Settings. */
   modelId: string | null;
+  /** True while no person has ever driven a turn in this session — a clock's
+   *  slot or an unattended arrival, never a reply. The Sessions page filters
+   *  these out by default. */
+  automatic: boolean;
 }
 
 /**

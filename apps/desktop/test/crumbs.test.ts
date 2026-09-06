@@ -23,8 +23,8 @@ test('a meeting reads Calendar, never a folder', () => {
 });
 
 test('a memory page reads its shelf and opens the folder', () => {
-  assert.deepEqual(locationCrumbs('themes/onboarding.md', 'theme'), [
-    { label: 'Themes', target: { kind: 'folder', dir: 'themes' } },
+  assert.deepEqual(locationCrumbs('research/onboarding.md', 'research'), [
+    { label: 'Research', target: { kind: 'folder', dir: 'research' } },
   ]);
   assert.deepEqual(locationCrumbs('people/erik.md', 'person'), [
     { label: 'People', target: { kind: 'folder', dir: 'people' } },
@@ -60,9 +60,9 @@ test('a flat mirror names no system, so the kind is all the crumb says', () => {
   ]);
 });
 
-test('an understanding file carries type note but never claims Documents', () => {
-  assert.deepEqual(locationCrumbs('understanding/product.md', 'note'), [
-    { label: 'Understanding', target: { kind: 'folder', dir: 'understanding' } },
+test('a research page reads its shelf, product picture included', () => {
+  assert.deepEqual(locationCrumbs('research/product.md', 'research'), [
+    { label: 'Research', target: { kind: 'folder', dir: 'research' } },
   ]);
 });
 
@@ -82,15 +82,15 @@ test('a file at the workspace root has nothing above it to name', () => {
 test('a folder wears the shelf name, not the name on disk', () => {
   assert.equal(shelfLabel('notes'), 'Documents');
   assert.equal(shelfLabel('people'), 'People');
-  assert.equal(shelfLabel('themes'), 'Themes');
+  assert.equal(shelfLabel('research'), 'Research');
   assert.equal(shelfLabel('tickets'), 'Tickets');
-  assert.equal(shelfLabel('understanding'), 'Understanding');
+  assert.equal(shelfLabel('attachments'), 'Attachments');
 });
 
 test('the notes dir is a Documents folder, everything else is not', () => {
   assert.equal(documentsFolder('notes'), '');
   assert.equal(documentsFolder('notes/specs'), 'specs');
   assert.equal(documentsFolder('notes/specs/api'), 'specs/api');
-  assert.equal(documentsFolder('themes'), null);
+  assert.equal(documentsFolder('research'), null);
   assert.equal(documentsFolder('notebooks'), null);
 });

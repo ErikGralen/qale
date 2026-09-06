@@ -14,13 +14,13 @@ test('the rail is five places, in the order the PM asked for', () => {
 
 test('Memory has no rail row: it is a footer row, beside Activity', () => {
   assert.ok(!(RAIL_ORDER as readonly string[]).includes('memory'));
-  assert.equal(surfaceForType('theme'), 'memory');
+  assert.equal(surfaceForType('research'), 'memory');
 });
 
 test('Memory is one entry point holding six types, kept apart behind it', () => {
   assert.deepEqual(
     [...MEMORY_SHELVES],
-    ['source', 'decision', 'insight', 'theme', 'customer', 'person'],
+    ['source', 'decision', 'insight', 'research', 'customer', 'person'],
   );
 });
 
@@ -56,7 +56,7 @@ test('every note type has one surface, or none, and never two', () => {
     'decision',
     'insight',
     'customer',
-    'theme',
+    'research',
     'person',
     'session',
     'skill',

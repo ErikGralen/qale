@@ -8,7 +8,6 @@ evidence:
     '[[meetings/2026-07-02-bergman-falk-security-review]]',
   ]
 confidence: 'med'
-theme: '[[themes/on-prem-deployment]]'
 ---
 
 Self-hosting has come up twice. Both times, asking what the policy was actually protecting

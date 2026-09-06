@@ -44,7 +44,6 @@ import {
   createVoice,
   getBacklinks,
   getNote,
-  getThemesByHeat,
   getMaintenanceReport,
   getNoteHistory,
   getNoteVersion,
@@ -56,6 +55,7 @@ import {
   listSkills,
   listAgentFiles,
   migrateRunnableFolders,
+  migrateThemesToResearch,
   normalizeVaultFrontmatter,
   runSummaryPass,
   retireDefaultSkills,
@@ -95,7 +95,7 @@ import {
   providerName,
   readableAs,
   refToSlug,
-  UNDERSTANDING_DIR,
+  isProductPicturePath,
   unreadableReason,
   type Frontmatter,
   type HandCreatableType,
@@ -147,19 +147,11 @@ import {
   agentFileToDTO,
   noteToDTO,
   outboundEffectFacts,
-  themeHeatToDTO,
   proposalToDTO,
   skillToDTO,
   treeToDTO,
   vaultInfoToDTO,
 } from './dto.js';
-
-/**
- * Where the product understanding lives (docs/product-understanding.md U-1).
- * `understanding/what-goes-here.md` names these three notes; main only needs the
- * folder, to know when the first one has actually been kept.
- */
-const UNDERSTANDING_PREFIX = `${UNDERSTANDING_DIR}/`;
 
 /**
  * Any of the PO's own open commitments due today or already slipped. `owner`
@@ -588,6 +580,19 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         console.warn(
           `[qale] ${path} differs from its folder copy — left both in place, nothing lost`,
         );
+      // Themes and understanding pages are research pages now (MT-8). Move
+      // them before the seed runs, so a seeded research page never shadows the
+      // PM's own copy still sitting in the old folder. One commit, one Activity
+      // row; a workspace that has already moved returns at once.
+      const research = await migrateThemesToResearch(ctx);
+      if (research.changed.length > 0) {
+        console.log(
+          `[qale] moved ${research.themes.length} theme(s) and ${research.understanding.length} understanding page(s) into research/`,
+        );
+        pushEvent(getWindow(), { channel: 'vault:changed', paths: research.changed });
+      }
+      for (const path of research.left)
+        console.warn(`[qale] ${path} stayed: research/ already has a page by that name`);
       // Take out of force what the pack has stopped shipping. Renamed, never
       // deleted, so a file the PM edited keeps every word (see
       // `retireDefaultSkills`). The name still resolves, through its alias.
@@ -2273,10 +2278,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     searchNotes(vaultService.requireContext(), query, limit).map(hitToDTO),
   );
 
-  handle('themes:byHeat', () =>
-    getThemesByHeat(vaultService.requireContext()).map((r) => themeHeatToDTO(r)),
-  );
-
   handle('proposals:list', (status) => {
     const ctx = vaultService.requireContext();
     // A card from a run the app started on its own clock carries the line that
@@ -2393,7 +2394,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // Keeping the first thing the interview drafted is what "tell it about your
     // product" now means (docs/product-understanding.md U-4). The step is the
     // approval, not a file save: you talk, it drafts, you approve.
-    if (result.ok && target?.startsWith(UNDERSTANDING_PREFIX)) {
+    if (result.ok && target && isProductPicturePath(target)) {
       markFirstStep(
         'understanding',
         'Told it about your product, and every session reads this now',

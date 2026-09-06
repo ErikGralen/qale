@@ -55,7 +55,7 @@ export function notesInContext(tree: VaultTreeDTO | null, tag: string): NoteRefD
  */
 export const SPINE_ORDER: readonly NoteType[] = [
   'decision',
-  'theme',
+  'research',
   'insight',
   'todo',
   'customer',

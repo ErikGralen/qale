@@ -79,18 +79,19 @@ test('a person’s own words about a person stay editable', () => {
   assert.equal(cares.owner ?? 'user', 'user');
 });
 
-test('relationship and stance are off the screen and still in the file', () => {
+test('relationship is off the screen and still in the file', () => {
   assert.ok(HIDDEN_KEYS.has('relationship'));
-  assert.ok(HIDDEN_KEYS.has('stance'));
   for (const type of TYPES) {
     const keys = fieldKeys(type);
     assert.ok(!keys.includes('relationship'), `${type} still draws a relationship row`);
-    assert.ok(!keys.includes('stance'), `${type} still draws a stance row`);
   }
   for (const [type, facts] of Object.entries(FACTS)) {
     assert.ok(!facts.includes('relationship'), `${type} still leads with relationship`);
-    assert.ok(!facts.includes('stance'), `${type} still leads with stance`);
   }
+});
+
+test('a research page draws the same rows a document does', () => {
+  assert.deepEqual(fieldKeys('research'), fieldKeys('note'));
 });
 
 test('the lifecycles that carry logic keep their rows', () => {

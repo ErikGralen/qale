@@ -9,7 +9,7 @@ sources: ['[[meetings/2026-07-10-internal-auth-review]]']
 
 # SCIM scope
 
-SCIM provisioning is the second half of [[themes/enterprise-onboarding]]. The sequencing is
+SCIM provisioning is the second half of [[research/enterprise-onboarding]]. The sequencing is
 settled ([[decisions/2026-04-15-defer-scim-to-q3]]): SSO first, scoping in August, delivery in
 September. What is not settled is what SCIM means here. There is no epic, no stories and no
 estimate, so the September date rests on nothing.

@@ -2,12 +2,10 @@ import {
   documentFolderPurpose,
   FOLDER_PURPOSE_OF_FIELD,
   isFolderIndex,
-  isUnderstandingPath,
   isVoicePath,
   NOTE_TYPE_META,
   refToSlug,
   titleFromSlug,
-  UNDERSTANDING_DIR,
   VOICES_DIR,
   renderFolderIndex,
   renderRootIndex,
@@ -42,7 +40,7 @@ const FOLDER_PURPOSE: Record<NoteType, string> = {
   decision: 'the append-only decision spine',
   insight: 'analyses over the raw layer, each citing its evidence',
   customer: 'customer hubs — who they are and where they stand',
-  theme: 'the durable things worth solving — problems, pains, opportunities',
+  research: 'what Qale worked out: the case for a problem, a competitor scan, the product picture',
   person: 'people the work touches and what they were last told',
   session: 'session receipts — the replayable audit trail',
   skill: 'the written instructions the agent follows when you hand work over',
@@ -66,14 +64,6 @@ const SKIP_DIRS = new Set<string>([NOTE_TYPE_META.session.dir]);
  * file listed as work the agent can hand itself is a file it will try to run.
  */
 const VOICES_PURPOSE = 'how a draft sounds — tone and wording, applied when something is drafted';
-
-/**
- * The understanding notes. They are filed as plain notes, so without this they
- * would be mapped under `notes/`, which is the PM's own Documents folder. Two
- * things belong in two maps: what a person writes, and what the agent keeps.
- */
-const UNDERSTANDING_PURPOSE =
-  'what the workspace knows about the product, the system and the organization';
 
 /** The Documents folder, with its trailing slash. */
 export const DOCUMENTS_PREFIX = `${NOTE_TYPE_META.note.dir}/`;
@@ -127,9 +117,9 @@ function labelFor(dir: string): string {
   return dir.charAt(0).toUpperCase() + dir.slice(1);
 }
 
-/** Is this one of the PM's documents? The folder says it (understanding notes live elsewhere). */
+/** Is this one of the PM's documents? The folder says it. */
 export function isDocument(n: IndexedNote): boolean {
-  return n.type === 'note' && n.path.startsWith(DOCUMENTS_PREFIX) && !isUnderstandingPath(n.path);
+  return n.type === 'note' && n.path.startsWith(DOCUMENTS_PREFIX);
 }
 
 /** The folder a path sits in, relative to `notes/`. "" is the top level. */
@@ -264,15 +254,6 @@ async function collectFolders(ctx: UseCaseContext): Promise<IndexFolder[]> {
       label: labelFor(meta.dir),
       purpose: FOLDER_PURPOSE[type],
       entries: notes.map((n) => entryOf(ctx, n)),
-    });
-  }
-  const understanding = all.filter((n) => isUnderstandingPath(n.path));
-  if (understanding.length > 0) {
-    folders.push({
-      dir: UNDERSTANDING_DIR,
-      label: labelFor(UNDERSTANDING_DIR),
-      purpose: UNDERSTANDING_PURPOSE,
-      entries: understanding.map((n) => entryOf(ctx, n)),
     });
   }
   const voices = all.filter((n) => isVoicePath(n.path));

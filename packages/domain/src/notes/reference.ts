@@ -26,7 +26,7 @@ const AUTHORED: readonly NoteType[] = [
   'note',
   'insight',
   'decision',
-  'theme',
+  'research',
   'customer',
   'person',
   'todo',

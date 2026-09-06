@@ -32,7 +32,6 @@ import type {
   ProposalPreviewDTO,
   NoteDTO,
   ProposalDTO,
-  ThemeHeatDTO,
   PeopleDirectoryDTO,
   PersonCardDTO,
   MoveNoteInput,
@@ -215,7 +214,6 @@ export interface InvokeMap {
    * revert path in the app; Activity is its caller.
    */
   'history:revert': { args: [input: RevertChangeInput]; result: RevertResultDTO };
-  'themes:byHeat': { args: []; result: ThemeHeatDTO[] };
 
   // People (participant chips + their preview cards)
   'people:directory': { args: []; result: PeopleDirectoryDTO };
@@ -482,7 +480,6 @@ export const INVOKE_CHANNELS = [
   'note:restoreVersion',
   'git:status',
   'history:revert',
-  'themes:byHeat',
   'people:directory',
   'people:create',
   'todos:capture',

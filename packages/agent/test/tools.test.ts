@@ -1160,7 +1160,7 @@ test('a page other pages link to is refused, and the refusal names them', async 
   const ctx = deleteCtx(filed, {
     path: 'notes/scratch.md',
     type: 'note',
-    backlinks: ['themes/sso.md'],
+    backlinks: ['research/sso.md'],
   });
 
   const said = await out(deleteTool(ctx), {
@@ -1170,7 +1170,7 @@ test('a page other pages link to is refused, and the refusal names them', async 
   });
 
   assert.match(said, /^Rejected:/);
-  assert.match(said, /themes\/sso\.md/);
+  assert.match(said, /research\/sso\.md/);
   assert.equal(filed.length, 0);
 });
 

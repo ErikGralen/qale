@@ -5,7 +5,6 @@ tags: ['compliance']
 evidence: ['[[meetings/2026-07-02-bergman-falk-security-review]]']
 confidence: 'low'
 customer: '[[customers/bergman-falk]]'
-theme: '[[themes/enterprise-onboarding]]'
 ---
 
 Bergman & Falk run a questionnaire, then evidence collection, then a review board, and the

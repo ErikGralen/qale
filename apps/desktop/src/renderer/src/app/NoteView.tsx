@@ -348,8 +348,8 @@ export function NoteView({ path }: { path: string }) {
       : null;
   // The note's own lifecycle value, read under whatever key its type calls it.
   // One value wears a badge: superseded. It changes how you read the page,
-  // because this is the old answer. A theme's stance said nothing extra, and asked
-  // the PO to keep a word true that no code ever reads.
+  // because this is the old answer. A customer's relationship says nothing extra,
+  // and asks the PO to keep a word true that no code ever reads.
   const lifecycle = lifecycleValue(currentNote.type, currentNote.frontmatter);
   const supersededBadge =
     lifecycle === 'superseded' ? lifecycleValueLabel(currentNote.type, lifecycle) : null;

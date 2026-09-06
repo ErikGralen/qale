@@ -70,7 +70,7 @@ test('a send never joins a group, whatever it arrived beside', () => {
       rationale: 'because',
     } as ProposalDTO['payload'],
   });
-  const groups = cardIntents([patch('insights/pricing.md'), patch('themes/pricing.md'), send]);
+  const groups = cardIntents([patch('insights/pricing.md'), patch('research/pricing.md'), send]);
   assert.equal(groups.length, 2);
   assert.equal(groups[0]!.cards.length, 2);
   assert.deepEqual(groups[1]!.cards, [send]);
@@ -126,7 +126,7 @@ function repointed(path: string, cause: string): ProposalDTO {
 
 test('cards that all cite the same decision name it as their cause', () => {
   const cause = 'decisions/2026-07-01-ship-in-august';
-  const cards = [repointed('insights/pricing.md', cause), repointed('themes/pricing.md', cause)];
+  const cards = [repointed('insights/pricing.md', cause), repointed('research/pricing.md', cause)];
   assert.equal(groupCause(cards), cause);
   assert.equal(
     causeSentence(cause, cards.length),
@@ -148,7 +148,7 @@ test('an ordinary pile has no cause', () => {
   assert.equal(
     groupCause([
       repointed('insights/pricing.md', cause),
-      repointed('themes/pricing.md', 'decisions/2026-06-02-hold-the-price'),
+      repointed('research/pricing.md', 'decisions/2026-06-02-hold-the-price'),
     ]),
     null,
   );
@@ -161,6 +161,6 @@ test('an ordinary pile has no cause', () => {
     null,
   );
   // Updates with no decision behind them at all.
-  assert.equal(groupCause([patch('insights/pricing.md'), patch('themes/pricing.md')]), null);
+  assert.equal(groupCause([patch('insights/pricing.md'), patch('research/pricing.md')]), null);
   assert.equal(groupCause([]), null);
 });

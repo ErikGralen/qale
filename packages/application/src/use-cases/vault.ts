@@ -1,7 +1,5 @@
 import {
   NOTE_TYPE_META,
-  byHeat,
-  computeHeat,
   isFolderIndex,
   isReservedFile,
   refToSlug,
@@ -308,40 +306,6 @@ export async function getVaultTree(ctx: UseCaseContext): Promise<VaultTreeGroup[
   return groups;
 }
 
-export interface ThemeHeatRow {
-  note: IndexedNote;
-  count: number;
-  newest: string | null;
-}
-
-/**
- * Themes (the durable hubs where insights accrete) ranked by evidence heat —
- * count + newest evidence date. Evidence dates come from each referenced note's
- * `date`/`captured` via the index.
- */
-export function getThemesByHeat(ctx: UseCaseContext): ThemeHeatRow[] {
-  const themes = ctx.index.listByType('theme').filter((n) => !isFolderIndex(n.path));
-  const rows = themes.map((note) => {
-    const evidence = Array.isArray(note.frontmatter['evidence'])
-      ? (note.frontmatter['evidence'] as string[])
-      : [];
-    const dates = evidence.map((ref) => {
-      const slug = refToSlug(ref);
-      const path = slug ? ctx.index.resolve(slug) : null;
-      const rec = path ? ctx.index.get(path) : null;
-      const fm = rec?.frontmatter ?? {};
-      const d = fm['date'] ?? fm['captured'];
-      return typeof d === 'string' ? d : null;
-    });
-    const heat = computeHeat(dates);
-    return { note, count: heat.count, newest: heat.newest };
-  });
-  rows.sort((a, b) =>
-    byHeat({ count: a.count, newest: a.newest }, { count: b.count, newest: b.newest }),
-  );
-  return rows;
-}
-
 export interface NoteQuery {
   types?: NoteType[];
   /** Match the type's lifecycle value, e.g. `"superseded"` on decisions. */
@@ -470,7 +434,7 @@ function isDocumentPath(path: string): boolean {
  *
  * Documents are out of the orphan half only (docs/background-system.md, ticket
  * 1). "Nothing links it and it links nothing" is a fact about a Memory page: a
- * theme nobody wired in is a filing error. It is not a fact about a document.
+ * research page nobody wired in is a filing error. It is not a fact about a document.
  * The PM writes a document for their own reasons, and a scratch page they never
  * linked is what a folder of your own is for, so reporting it is noise. Their
  * links OUT still count: a broken link is broken wherever it was written.

@@ -23,7 +23,6 @@ import {
   DEFAULT_AGENTS,
   DEFAULT_NOTES,
   DEFAULT_VOICES,
-  UNDERSTANDING_NOTE,
   newSkillFile,
   newVoiceFile,
   buildSkillBrief,
@@ -353,9 +352,9 @@ test('the always-on files it replaced are gone from the pack', () => {
 
 /**
  * SK-4 and SK-5: the pack ships no underscore file at all. The unattended rules
- * are code in the agent preamble, and the product understanding is a note. Both
- * left because neither was work anyone hands over, which is the only thing a
- * skill is.
+ * are code in the agent preamble, and the product picture is written by the
+ * interview into `research/`. Both left because neither was work anyone hands
+ * over, which is the only thing a skill is.
  */
 test('nothing underscore-prefixed ships any more', () => {
   const files = [...DEFAULT_SKILLS, ...DEFAULT_AGENTS].map((s) => s.file);
@@ -366,25 +365,15 @@ test('nothing underscore-prefixed ships any more', () => {
   assert.ok(!files.includes('skills/_understanding/SKILL.md'));
 });
 
-test('the product understanding ships as a note in the memory, not as a skill', () => {
-  const seed = DEFAULT_NOTES.find((n) => n.file === 'understanding/what-goes-here.md');
-  assert.ok(seed, 'the orientation note is not in the pack');
-  assert.equal(seed.content, UNDERSTANDING_NOTE);
-  // A note, in `understanding/`, with the frontmatter its type wants. Get this
-  // wrong and the file lands in the memory as a broken note rather than as
-  // orientation. It is out of `notes/` because nobody asks for it, and `notes/`
-  // is the PM's own Documents folder (E-14).
-  assert.match(seed.content, /^---\ntype: note\n/);
-  assert.match(seed.content, /\ntitle: Product understanding\n/);
-  assert.match(seed.content, /\nsummary: .+\n/);
-  // It is the note the interview writes into, so it names the three area notes.
-  for (const area of ['product', 'technical', 'organization']) {
-    assert.ok(
-      seed.content.includes(`understanding/${area}.md`),
-      `the orientation note does not name the ${area} note`,
-    );
-  }
-  // Nothing seeds a skill under that name any more.
+/**
+ * MT-3 (docs/memory-types.md): the product picture is three research pages the
+ * interview writes, and nothing seeds a stub or an orientation note for them.
+ * A page that does not exist yet is an honest gap; a seeded placeholder would
+ * be a page in Memory saying nothing.
+ */
+test('the product picture is written by the interview, never seeded', () => {
+  assert.ok(!DEFAULT_NOTES.some((n) => n.file.startsWith('understanding/')));
+  assert.ok(!DEFAULT_NOTES.some((n) => n.file.startsWith('research/')));
   assert.ok(!DEFAULT_SKILLS.some((s) => s.file.includes('_understanding')));
 });
 
@@ -783,20 +772,15 @@ test('the interview takes a topic, and ships under a name that is not the produc
   assert.ok(c.scenarios.some((s) => /team/.test(s)));
   // A topic comes in with the request, and the product is one of them.
   assert.match(c.body, /## Example topic: the product/);
-  // What it learns lands in the memory, at the notes the orientation note maps.
+  // What it learns lands in the memory, on the three product pages in
+  // `research/` (docs/memory-types.md, MT-3). Nothing points at `understanding/`.
   for (const area of ['product', 'technical', 'organization']) {
-    assert.ok(c.body.includes(`understanding/${area}.md`), `${area} is not a landing place`);
+    assert.ok(c.body.includes(`research/${area}.md`), `${area} is not a landing place`);
   }
-  assert.ok(c.body.includes('understanding/what-goes-here.md'));
+  assert.ok(!c.body.includes('understanding/'));
   // CM-4: the interview asks for the notes they already wrote, and says the word
   // folder, because nobody drops one unless told they can.
   assert.match(c.body, /Do you keep notes from before\? Drop the folder/);
-});
-
-/** The orientation note points at the interview by its address, so it has to move with it. */
-test('the orientation note names the interview by the name that resolves', () => {
-  assert.ok(UNDERSTANDING_NOTE.includes('`tell-qale`'));
-  assert.ok(!UNDERSTANDING_NOTE.includes('learn-the-product'));
 });
 
 /**
@@ -842,7 +826,7 @@ test('the interview knows how to open on what a connection just read', () => {
 
   // The seeds: one card, and the two things it may set up.
   assert.ok(c.body.includes('`track_external`'), 'tracked tickets go through the existing tool');
-  assert.ok(c.body.includes('`propose_note`'), 'a theme is still a proposal');
+  assert.ok(c.body.includes('`propose_note`'), 'a research page is still a proposal');
   assert.match(c.body, /Never mirror a wiki page/);
   // Tracking writes sync state, so the file has to claim it by name.
   assert.deepEqual(c.can, ['track-external']);

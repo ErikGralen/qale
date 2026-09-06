@@ -22,8 +22,15 @@ export interface SelectionMoveTo {
 }
 
 /**
- * What a selection can have done to it — the strip that appears under the page
- * header the moment a row is ticked, and leaves when the last one is.
+ * What a selection can have done to it. This goes in the page header's right
+ * cluster, in place of the view's own actions, for as long as a row is ticked.
+ *
+ * It used to be a strip of its own under the header. That strip pushed the
+ * whole list down the moment you clicked a row, and pulled it back up when you
+ * cleared, so the thing you were aiming at moved twice per click. The header
+ * already has the room, so the selection borrows it: the row count and the
+ * actions sit after a vertical rule, the header wears a light ink wash while
+ * the selection lasts, and nothing below moves.
  *
  * The actions are the ones that are the same job repeated: pin a batch to the
  * rail, file a batch into a folder, throw a batch away. Anything that needs
@@ -44,7 +51,6 @@ export function SelectionBar({
   selection,
   total,
   noun = 'note',
-  wide = false,
   moveTo,
 }: {
   selection: Selection;
@@ -52,10 +58,10 @@ export function SelectionBar({
   /**
    * What the rows are called, singular. The page owns the word: Documents says
    * "document", every other page keeps "note". The plural is this plus an s.
+   * The header says only "6 selected" — the ticked rows are in plain sight —
+   * so the word is here for the tooltips, the confirm and the toast.
    */
   noun?: string;
-  /** Runs the strip the full pane width, for a page whose list is full width. */
-  wide?: boolean;
   /** Adds a "Move to" button. Left out, nothing changes. */
   moveTo?: SelectionMoveTo;
 }) {
@@ -69,7 +75,7 @@ export function SelectionBar({
   const allPinned = count > 0 && paths.every((p) => favorites.includes(p));
   const nouns = count === 1 ? noun : `${noun}s`;
   // The button says one thing, so it only shows when it can do that one thing
-  // to every row taken. A theme, a person or a meeting cannot be pinned at all
+  // to every row taken. A research page, a person or a meeting cannot be pinned at all
   // (docs/memory-placement.md), and a control that does nothing is worse than
   // no control.
   const pinnable = paths.every((p) => {
@@ -95,94 +101,98 @@ export function SelectionBar({
   };
 
   return (
-    <div className="shrink-0 border-b border-border/70 bg-brand/5 px-4 py-1.5">
-      <div
-        className={`flex w-full flex-wrap items-center gap-x-2 gap-y-1 ${wide ? '' : 'mx-auto max-w-2xl'}`}
-      >
-        {/* Announced, not just drawn: the count changes under the keyboard as
-            often as under the pointer, and a shift-range is the one gesture
-            where you cannot see everything you just took. */}
-        <span className="text-sm font-medium tabular-nums" aria-live="polite">
-          {count} {nouns} selected
-          {busy && <Spinner className="ml-2 inline size-3.5 align-[-2px]" />}
-        </span>
-        {!selection.all && (
-          <button
-            className="rounded px-1 text-xs font-medium text-brand hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={selection.selectAll}
-          >
-            Select all {total}
-          </button>
-        )}
+    <>
+      <Rule />
+      {/* Announced, not just drawn: the count changes under the keyboard as
+          often as under the pointer, and a shift-range is the one gesture
+          where you cannot see everything you just took. */}
+      <span className="text-xs font-medium tabular-nums" aria-live="polite">
+        {count} selected
+        {busy && <Spinner className="ml-1.5 inline size-3 align-[-2px]" />}
+      </span>
+      {!selection.all && (
+        <button
+          className="rounded px-1 text-xs font-medium text-brand hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={selection.selectAll}
+        >
+          Select all {total}
+        </button>
+      )}
+      <Rule />
 
-        {confirmDelete ? (
-          <div className="ml-auto flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">
-              Delete {count} {nouns}?
-            </span>
-            <Button size="sm" variant="destructive" disabled={busy} onClick={() => void remove()}>
-              Delete
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>
-              Cancel
-            </Button>
-          </div>
-        ) : (
-          <div className="ml-auto flex items-center gap-0.5">
-            {pinnable && (
-              <BarAction
-                icon={allPinned ? PinOff : Pin}
-                label={allPinned ? 'Unpin' : 'Pin'}
-                title={
-                  allPinned
-                    ? `Take these ${count} off the sidebar`
-                    : `Keep these ${count} on the sidebar`
-                }
-                onClick={pin}
+      {confirmDelete ? (
+        <>
+          <span className="text-xs text-muted-foreground">
+            Delete {count} {nouns}?
+          </span>
+          <Button size="sm" variant="destructive" disabled={busy} onClick={() => void remove()}>
+            Delete
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>
+            Cancel
+          </Button>
+        </>
+      ) : (
+        <div className="flex items-center gap-0.5">
+          {pinnable && (
+            <BarAction
+              icon={allPinned ? PinOff : Pin}
+              label={allPinned ? 'Unpin' : 'Pin'}
+              title={
+                allPinned
+                  ? `Take these ${count} off the sidebar`
+                  : `Keep these ${count} on the sidebar`
+              }
+              onClick={pin}
+              disabled={busy}
+            />
+          )}
+          {moveTo && (
+            <FolderPickerMenu
+              folders={moveTo.folders}
+              exclude={[moveTo.current]}
+              onPick={(folder) => moveTo.onMove(folder)}
+              onCreate={moveTo.onCreateAndMove}
+              open={picking}
+              onOpenChange={setPicking}
+            >
+              {/* The picker anchors to its own button, so this one is written
+                  out rather than made by BarAction: a trigger needs the ref. */}
+              <button
+                className={barActionClass()}
                 disabled={busy}
-              />
-            )}
-            {moveTo && (
-              <FolderPickerMenu
-                folders={moveTo.folders}
-                exclude={[moveTo.current]}
-                onPick={(folder) => moveTo.onMove(folder)}
-                onCreate={moveTo.onCreateAndMove}
-                open={picking}
-                onOpenChange={setPicking}
+                title={`Move these ${count} ${nouns} to another folder`}
               >
-                {/* The picker anchors to its own button, so this one is written
-                    out rather than made by BarAction: a trigger needs the ref. */}
-                <button
-                  className={barActionClass()}
-                  disabled={busy}
-                  title={`Move these ${count} ${nouns} to another folder`}
-                >
-                  <FolderInput className="size-3.5" aria-hidden />
-                  Move to
-                </button>
-              </FolderPickerMenu>
-            )}
-            <BarAction
-              icon={Trash2}
-              label="Delete"
-              title={`Delete ${count} ${nouns}`}
-              onClick={() => setConfirmDelete(true)}
-              disabled={busy}
-              danger
-            />
-            <BarAction
-              icon={X}
-              label="Clear"
-              title="Clear the selection (Esc)"
-              onClick={selection.clear}
-              disabled={busy}
-            />
-          </div>
-        )}
-      </div>
-    </div>
+                <FolderInput className="size-3.5" aria-hidden />
+                Move to
+              </button>
+            </FolderPickerMenu>
+          )}
+          <BarAction
+            icon={Trash2}
+            label="Delete"
+            title={`Delete ${count} ${nouns}`}
+            onClick={() => setConfirmDelete(true)}
+            disabled={busy}
+            danger
+          />
+          {/* Glyph only: Esc does the same thing, and the header has to hold
+              the location as well as this. */}
+          <BarAction
+            icon={X}
+            title="Clear the selection (Esc)"
+            onClick={selection.clear}
+            disabled={busy}
+          />
+        </div>
+      )}
+    </>
   );
+}
+
+/** The hairline that keeps the selection apart from the location it sits beside. */
+function Rule() {
+  return <span className="h-4 w-px shrink-0 bg-border" aria-hidden />;
 }
 
 /** How every button in the strip looks. `danger` turns the hover red. */
@@ -203,14 +213,21 @@ function BarAction({
   danger,
 }: {
   icon: typeof Pin;
-  label: string;
+  /** Left out for a glyph-only button: `title` is then the accessible name. */
+  label?: string;
   title: string;
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
 }) {
   return (
-    <button className={barActionClass(danger)} onClick={onClick} disabled={disabled} title={title}>
+    <button
+      className={barActionClass(danger)}
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      {...(label ? {} : { 'aria-label': title })}
+    >
       <Icon className="size-3.5" aria-hidden />
       {label}
     </button>

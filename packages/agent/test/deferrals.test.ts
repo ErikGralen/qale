@@ -42,26 +42,26 @@ const run = (tool: { execute: (...a: never[]) => unknown }, params: unknown) =>
   )('call-1', params, undefined);
 
 test('record_deferral leaves an entry a later run can read', async () => {
-  const { ctx, rows } = ctxWith(['themes/pricing.md']);
+  const { ctx, rows } = ctxWith(['research/pricing.md']);
   const tool = createDeferralTool(ctx, () => T0);
 
   const res = await run(tool as never, {
-    note: 'themes/pricing',
+    note: 'research/pricing',
     reason: 'Waiting on the Q3 interviews.',
   });
-  assert.match(res.content[0]!.text, /Deferred themes\/pricing\.md/);
+  assert.match(res.content[0]!.text, /Deferred research\/pricing\.md/);
 
-  assert.deepEqual([...rows.keys()], ['reason:deferred:themes/pricing.md']);
+  assert.deepEqual([...rows.keys()], ['reason:deferred:research/pricing.md']);
   const open = listDeferrals(ctx, T0);
   assert.equal(open.length, 1);
   assert.equal(open[0]!.reason, 'Waiting on the Q3 interviews.');
 });
 
 test('a deferral that anchors to nothing is refused, not stored loose', async () => {
-  const { ctx, rows } = ctxWith(['themes/pricing.md']);
+  const { ctx, rows } = ctxWith(['research/pricing.md']);
   const tool = createDeferralTool(ctx, () => T0);
 
-  const res = await run(tool as never, { note: 'themes/onboarding', reason: 'later' });
+  const res = await run(tool as never, { note: 'research/onboarding', reason: 'later' });
   assert.match(res.content[0]!.text, /^Not recorded:/);
   assert.equal(rows.size, 0);
 });

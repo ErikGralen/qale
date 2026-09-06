@@ -43,9 +43,9 @@ function world() {
         links: ['notes/plan'],
       }),
       inote({ path: 'insights/scratch.md', type: 'insight', title: 'Scratch pad', mtime: 500 }),
-      inote({ path: 'themes/pricing.md', type: 'theme', title: 'Pricing', links: ['notes/plan'] }),
+      inote({ path: 'research/pricing.md', type: 'research', title: 'Pricing', links: ['notes/plan'] }),
     ],
-    bodies: { 'themes/pricing.md': 'What we know about pricing.\n' },
+    bodies: { 'research/pricing.md': 'What we know about pricing.\n' },
   });
 }
 
@@ -55,40 +55,40 @@ test('a deferral carries the note and the reason, and survives in the ledger', (
   const res = recordDeferral(
     w.ctx,
     {
-      note: 'themes/pricing.md',
-      reason: 'Waiting on the Q3 interviews before touching the stance.',
+      note: 'research/pricing.md',
+      reason: 'Waiting on the Q3 interviews before touching the page.',
     },
     T0,
   );
-  assert.ok(res.ok && res.notePath === 'themes/pricing.md');
+  assert.ok(res.ok && res.notePath === 'research/pricing.md');
 
   // One row, in the same table the sweep's own state lives in, so a relaunch
   // reads it back unchanged.
-  assert.deepEqual([...w.checks.keys()], ['reason:deferred:themes/pricing.md']);
+  assert.deepEqual([...w.checks.keys()], ['reason:deferred:research/pricing.md']);
   assert.match(
-    w.checks.get('reason:deferred:themes/pricing.md')!,
+    w.checks.get('reason:deferred:research/pricing.md')!,
     /^\d+\|Waiting on the Q3 interviews/,
   );
 
   const open = listDeferrals(w.ctx, T0 + DAY);
   assert.equal(open.length, 1);
-  assert.equal(open[0]!.notePath, 'themes/pricing.md');
-  assert.equal(open[0]!.reason, 'Waiting on the Q3 interviews before touching the stance.');
+  assert.equal(open[0]!.notePath, 'research/pricing.md');
+  assert.equal(open[0]!.reason, 'Waiting on the Q3 interviews before touching the page.');
   assert.equal(open[0]!.since, T0);
 });
 
 test('a slug or a wikilink anchors as well as a path, and a stranger does not', () => {
   const w = world();
-  assert.ok(recordDeferral(w.ctx, { note: '[[themes/pricing]]', reason: 'not yet' }, T0).ok);
-  assert.deepEqual([...w.checks.keys()], ['reason:deferred:themes/pricing.md']);
+  assert.ok(recordDeferral(w.ctx, { note: '[[research/pricing]]', reason: 'not yet' }, T0).ok);
+  assert.deepEqual([...w.checks.keys()], ['reason:deferred:research/pricing.md']);
 
-  const missing = recordDeferral(w.ctx, { note: 'themes/onboarding', reason: 'not yet' }, T0);
+  const missing = recordDeferral(w.ctx, { note: 'research/onboarding', reason: 'not yet' }, T0);
   assert.equal(missing.ok, false);
   assert.match((missing as { error: string }).error, /no note called/);
 
   // A reason is the whole point of the entry, so an empty one is refused rather
   // than stored as a bare "something was deferred".
-  const blank = recordDeferral(w.ctx, { note: 'themes/pricing.md', reason: '   ' }, T0);
+  const blank = recordDeferral(w.ctx, { note: 'research/pricing.md', reason: '   ' }, T0);
   assert.equal(blank.ok, false);
 });
 
@@ -96,7 +96,7 @@ test('a deferral written by one pass shows up on the next worklist', async () =>
   const w = world();
   recordDeferral(
     w.ctx,
-    { note: 'themes/pricing.md', reason: 'no evidence under the theme yet' },
+    { note: 'research/pricing.md', reason: 'no evidence under the page yet' },
     T0,
   );
 
@@ -107,7 +107,7 @@ test('a deferral written by one pass shows up on the next worklist', async () =>
   assert.match(work.worklist, /Still deferred/);
   assert.match(
     work.worklist,
-    /- themes\/pricing\.md: "no evidence under the theme yet" \(deferred 3 days ago\)/,
+    /- research\/pricing\.md: "no evidence under the page yet" \(deferred 3 days ago\)/,
   );
   // Said out loud, because the sentence is the model's own earlier words coming
   // back into a prompt.
@@ -134,16 +134,16 @@ test('an open deferral never starts a pass of its own', async () => {
   // Nothing for the scan to find: no broken links, no orphans.
   const w = fakeDriftWorld({
     notes: [
-      inote({ path: 'themes/pricing.md', type: 'theme', title: 'Pricing', links: ['notes/plan'] }),
+      inote({ path: 'research/pricing.md', type: 'research', title: 'Pricing', links: ['notes/plan'] }),
       inote({
         path: 'notes/plan.md',
         type: 'note',
         title: 'Rollout plan',
-        links: ['themes/pricing'],
+        links: ['research/pricing'],
       }),
     ],
   });
-  recordDeferral(w.ctx, { note: 'themes/pricing.md', reason: 'waiting on the interviews' }, T0);
+  recordDeferral(w.ctx, { note: 'research/pricing.md', reason: 'waiting on the interviews' }, T0);
 
   // A reminder that fired a session every half hour would be the nagging the
   // whole tick exists to prevent: deferrals ride along, they never drive.
@@ -156,17 +156,17 @@ test('acting on the note removes the entry', async () => {
   const w = world();
   recordDeferral(
     w.ctx,
-    { note: 'themes/pricing.md', reason: 'no evidence under the theme yet' },
+    { note: 'research/pricing.md', reason: 'no evidence under the page yet' },
     T0,
   );
 
   const card = createProposal(w.ctx, {
     kind: 'update',
     sessionId: 's1',
-    targetPath: 'themes/pricing.md',
+    targetPath: 'research/pricing.md',
     baseHash: null,
     payload: {
-      path: 'themes/pricing.md',
+      path: 'research/pricing.md',
       append: '\nThree interviews now point at seat pricing.\n',
       rationale: 'the evidence arrived',
     },
@@ -185,7 +185,7 @@ test('acting on the note removes the entry', async () => {
 
 test('a deferral decays, and one whose note is gone goes with it', () => {
   const w = world();
-  recordDeferral(w.ctx, { note: 'themes/pricing.md', reason: 'waiting on the interviews' }, T0);
+  recordDeferral(w.ctx, { note: 'research/pricing.md', reason: 'waiting on the interviews' }, T0);
 
   assert.equal(listDeferrals(w.ctx, T0 + 29 * DAY).length, 1);
   assert.equal(listDeferrals(w.ctx, T0 + 30 * DAY).length, 0);

@@ -6,7 +6,6 @@ description: Notes — the documents you write: scratch notes, briefs, PRDs, spe
 
 the documents you write: scratch notes, briefs, PRDs, specs
 
-* [Competitors](notes/competitors.md) — Competitor notes. Insikt (cheap, report-first, weak governance) and Corvid Analytics (enterprise, slow, expensive)
 * [Discovery question bank](notes/discovery-question-bank.md) — The sentences to say in a live interview, grouped by what they are trying to learn
 * [Discovery questions](notes/discovery-questions.md) — How to get past the feature request to the problem underneath, and where the wording lives
 * [Friday Scratch](notes/2026-07-17-friday-scratch.md) — Friday scratch pad. Raw jottings from calls and standup, not tidied up yet

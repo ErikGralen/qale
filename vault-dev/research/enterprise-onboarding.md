@@ -1,9 +1,8 @@
 ---
-type: 'theme'
+type: 'research'
 summary: 'Enterprise onboarding: SSO, SCIM, audit and residency gate every deal over ~200 seats'
 tags: ['enterprise-auth', 'compliance']
-stance: 'committed'
-evidence:
+sources:
   [
     '[[insights/enterprise-buyers-gate-on-sso]]',
     '[[insights/nordkap-needs-scim]]',
@@ -15,6 +14,8 @@ evidence:
 ---
 
 # Enterprise onboarding
+
+Stance: committed.
 
 Enterprise buyers can't get us through their own security and IT processes. They need SSO
 against their IdP, SCIM for joiners and leavers, an audit trail, and EU residency. Every deal

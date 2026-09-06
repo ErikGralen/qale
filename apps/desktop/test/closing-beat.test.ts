@@ -61,10 +61,10 @@ test('every kind of card has its own past tense', () => {
     verb: 'Created',
     note: { title: 'Pricing', path: 'insights/pricing.md' },
   });
-  assert.deepEqual(receiptEntry(card('b', { kind: 'update', targetPath: 'themes/pricing.md' })), {
+  assert.deepEqual(receiptEntry(card('b', { kind: 'update', targetPath: 'research/pricing.md' })), {
     id: 'b',
     verb: 'Updated',
-    note: { title: 'Pricing', path: 'themes/pricing.md' },
+    note: { title: 'Pricing', path: 'research/pricing.md' },
   });
   assert.deepEqual(
     receiptEntry(card('c', { kind: 'decision', targetPath: 'decisions/2026-07-28-scim.md' })),
@@ -101,7 +101,7 @@ test('the receipt counts both answers and reports consequences for one', () => {
     card('a', {
       status: 'accepted',
       created: NOW,
-      targetPath: 'themes/pricing.md',
+      targetPath: 'research/pricing.md',
       kind: 'update',
     }),
     card('b', { status: 'accepted', created: NOW + 1, targetPath: 'insights/scim.md' }),

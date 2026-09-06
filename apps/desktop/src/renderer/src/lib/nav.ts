@@ -61,7 +61,7 @@ export const MEMORY_SHELVES: readonly NoteType[] = [
   'source',
   'decision',
   'insight',
-  'theme',
+  'research',
   'customer',
   'person',
 ];

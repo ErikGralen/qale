@@ -11,7 +11,7 @@ people and the account, on the page, before they walk in.
 
 - The meeting note.
 - Each participant's people page: what they care about, their `last_told` entries.
-- The customer hub and theme hubs the meeting touches.
+- The customer hub and the research pages the meeting touches.
 - Prior decisions involving these people.
 - When the meeting has a `series`: the previous meeting in it, for open actions, unanswered
   questions, and what was promised.

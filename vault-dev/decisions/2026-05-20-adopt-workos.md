@@ -5,9 +5,8 @@ tags: ['enterprise-auth']
 standing: 'active'
 date: '2026-05-20'
 deciders: ['Tom Devlin', 'me']
-sources: ['[[meetings/2026-05-18-nordkap-qbr]]']
+sources: ['[[meetings/2026-05-18-nordkap-qbr]]', '[[research/enterprise-onboarding]]']
 supersedes: '[[decisions/2026-02-10-use-firebase-auth]]'
-theme: '[[themes/enterprise-onboarding]]'
 ---
 
 Enterprise auth moves to WorkOS. SAML SSO against customer IdPs now, SCIM on the same platform

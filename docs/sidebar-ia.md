@@ -98,3 +98,22 @@ place in the rail is a pinned item of that place, nothing else.
 - **Sources still auto-pin.** It is the one principled auto-pin: you put
   material in and have not gone through it. Everything else in the rail is
   either a place or your own choice.
+
+## Update 2026-09-06: the PO sorts the rail
+
+Built. The pin set is a list, not a bag: its order is the order the rows read
+in, and a row moves by drag.
+
+- `lib/pins.ts` keeps the pin set's own order. Recency sorts nothing on the
+  rail any more, so a row stays where it was put.
+- A new pin goes on top, where the PO is looking. That is the one place the app
+  chooses; after that the order is theirs.
+- A drag reorders inside one place only. A ticket cannot land among the
+  documents, because each list passes its own name to `useReorderableRow` and a
+  row takes no drop from another list.
+- `movedPin` does the move on the one set. Both lists are views of it, so a
+  move inside Documents leaves the Jira rows where they were.
+- Drag and drop is `@atlaskit/pragmatic-drag-and-drop`, the same library the
+  Documents page uses. The hitbox package is not installed, so the row reads
+  the pointer against its own midpoint: top half means above, bottom half
+  below. An ink line says where the row lands.

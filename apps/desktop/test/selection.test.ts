@@ -27,13 +27,13 @@ const list = (s: Set<string>) => ROWS.filter((p) => s.has(p));
 
 test('⌘click adds a row and keeps the rest, where a plain click would not', () => {
   // The plain click is `only`, a fresh set of one row. ⌘click is this.
-  const one = toggled(set('a'), ROWS, 'a', 'c');
+  const one = toggled(set('a'), 'c');
   assert.deepEqual(list(one), ['a', 'c']);
-  assert.deepEqual(list(toggled(one, ROWS, 'c', 'a')), ['c']);
+  assert.deepEqual(list(toggled(one, 'a')), ['c']);
 });
 
 test('⌘click on an empty list starts the selection', () => {
-  assert.deepEqual(list(toggled(set(), ROWS, null, 'b')), ['b']);
+  assert.deepEqual(list(toggled(set(), 'b')), ['b']);
 });
 
 test('⇧click takes the anchor through the clicked row, in either direction', () => {
@@ -55,14 +55,6 @@ test('⇧click with no anchor yet is just that row', () => {
 test('⇧click from a row the list stopped showing is just that row', () => {
   // The anchor's row was deleted or filtered away under the pointer.
   assert.deepEqual(list(extended(ROWS, 'gone', 'c')), ['c']);
-});
-
-test('a checkbox range only ever adds', () => {
-  // The other model: on a checkbox page ⇧ corrects the end of a range and
-  // never un-picks what the sweep already covered.
-  const wide = toggled(set('b'), ROWS, 'b', 'd', true);
-  assert.deepEqual(list(wide), ['b', 'c', 'd']);
-  assert.deepEqual(list(toggled(wide, ROWS, 'b', 'c', true)), ['b', 'c', 'd']);
 });
 
 // ---------------------------------------------------------------------------
@@ -105,8 +97,7 @@ function key(k: string, opts: { meta?: boolean; tag?: string } = {}) {
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const send = (e: unknown, s: Selection, opts?: { alwaysSelectAll?: boolean }) =>
-  selectionKeyDown(e as any, s, opts);
+const send = (e: unknown, s: Selection) => selectionKeyDown(e as any, s);
 
 test('Escape clears a selection, and is left alone when there is none', () => {
   const armed = spy(true);
@@ -118,27 +109,15 @@ test('Escape clears a selection, and is left alone when there is none', () => {
   assert.deepEqual(idle.calls, []);
 });
 
-test('⌘A takes the whole list on a Finder page, with nothing selected yet', () => {
+test('⌘A takes the whole list, with nothing selected yet', () => {
+  // The rows ARE the selection, so the list never has to be armed first.
   const idle = spy(false);
-  assert.equal(send(key('a', { meta: true }), idle, { alwaysSelectAll: true }), true);
+  assert.equal(send(key('a', { meta: true }), idle), true);
   assert.deepEqual(idle.calls, ['selectAll']);
 });
 
-test('⌘A on a checkbox page waits until something is selected', () => {
-  const idle = spy(false);
-  assert.equal(send(key('a', { meta: true }), idle), false);
-  assert.deepEqual(idle.calls, []);
-
-  const armed = spy(true);
-  assert.equal(send(key('a', { meta: true }), armed), true);
-  assert.deepEqual(armed.calls, ['selectAll']);
-});
-
-test('⌘A inside a field is the field’s, on either page', () => {
+test('⌘A inside a field is the field’s', () => {
   const typing = spy(true);
-  assert.equal(
-    send(key('a', { meta: true, tag: 'INPUT' }), typing, { alwaysSelectAll: true }),
-    false,
-  );
+  assert.equal(send(key('a', { meta: true, tag: 'INPUT' }), typing), false);
   assert.deepEqual(typing.calls, []);
 });

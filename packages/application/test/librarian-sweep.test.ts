@@ -60,8 +60,8 @@ function driftWorld(decisionMtime = 300) {
         },
       }),
       inote({
-        path: 'themes/onboarding.md',
-        type: 'theme',
+        path: 'research/onboarding.md',
+        type: 'research',
         title: 'Enterprise onboarding',
         links: ['decisions/2026-05-20-adopt-workos', 'wikipages/onboarding'],
       }),
@@ -72,7 +72,6 @@ function driftWorld(decisionMtime = 300) {
         mtime: decisionMtime,
         frontmatter: {
           standing: 'active',
-          theme: '[[themes/onboarding]]',
           supersedes: '[[decisions/2026-02-10-use-firebase-auth]]',
         },
         links: ['decisions/2026-02-10-use-firebase-auth'],

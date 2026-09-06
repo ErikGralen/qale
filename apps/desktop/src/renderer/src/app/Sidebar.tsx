@@ -28,15 +28,16 @@ import {
   ScrollText,
   type LucideIcon,
 } from 'lucide-react';
-import { useApp, type SessionOverview } from '../state/app-state';
+import { useApp } from '../state/app-state';
 import { countToday } from '../lib/activity';
 import { countOf } from '../lib/attention';
+import { useReorderableRow } from '../lib/dnd';
 import { navFromEvent } from '../lib/nav';
 import { noteTypeIcon } from '../lib/note-icons';
 import { unprocessedSourceCount } from '../lib/note-status';
 import { documentPins, mirrorPins } from '../lib/pins';
 import { providerRows, type ProviderRow } from '../lib/providers';
-import { timeAgo } from '../lib/session-meta';
+import { needsYou, sessionRows, timeAgo } from '../lib/session-meta';
 import { tabForFile } from '../lib/skills-tabs';
 import { ToolbarButton } from '../components/ToolbarButton';
 import { UndoStrip, useUndoOffer, type UndoOffer } from '../components/UndoStrip';
@@ -44,32 +45,6 @@ import type { NoteRefDTO } from '@qale/ipc';
 
 // Clear the macOS traffic lights in the frameless window (hiddenInset).
 const isMac = navigator.userAgent.includes('Macintosh');
-
-/**
- * `asking` is the set of sessions parked on a question. It counts as
- * needing the PO even though the run is technically still going: a turn that
- * asked something and got no answer looks exactly like a turn that is working,
- * and the difference is that this one will wait forever.
- */
-const needsYou = (s: SessionOverview, asking?: ReadonlySet<string>): boolean =>
-  s.pendingCards > 0 || s.unread || !!asking?.has(s.id);
-
-/** Rows the Sessions rail shows: in flight, needing the PO, or finished within the hour. */
-function sessionRows(sessions: SessionOverview[], asking: ReadonlySet<string>): SessionOverview[] {
-  const cutoff = Date.now() - 60 * 60 * 1000;
-  return sessions
-    .filter(
-      (s) => s.running || (s.lifecycle === 'active' && (needsYou(s, asking) || s.updated > cutoff)),
-    )
-    .sort((a, b) => {
-      // A question outranks a running row: it is the only one that can't finish
-      // on its own.
-      if (asking.has(a.id) !== asking.has(b.id)) return asking.has(a.id) ? -1 : 1;
-      if (a.running !== b.running) return a.running ? -1 : 1;
-      if (needsYou(a, asking) !== needsYou(b, asking)) return needsYou(a, asking) ? -1 : 1;
-      return b.updated - a.updated;
-    });
-}
 
 /**
  * One row vocabulary for the whole rail (E-11). Five places and a row per
@@ -369,65 +344,111 @@ function ProviderPlaceRow({
       active={active}
       onOpen={(e) => openFolder(row.dir, navFromEvent(e))}
     >
-      <PinRows notes={pins} onUnpin={onUnpin} />
+      <PinRows notes={pins} list={row.dir} onUnpin={onUnpin} />
     </PlaceRow>
   );
 }
 
 /**
- * The pinned rows under a place: one flat list, most recent first, no sections
- * and no cap (docs/sidebar-ia.md, SB-1). A row under a place is a pinned item
- * of that place. Every row is one type, so no glyph leads it: the place above
- * already says what these are.
+ * One pinned row: open it, unpin it, or drag it somewhere else in the list.
+ *
+ * The row is its own drag source and its own drop target. An insert line says
+ * where it would land, above or below the row under the pointer, and the drop
+ * moves it there for good.
+ */
+function PinRow({
+  note,
+  list,
+  onUnpin,
+}: {
+  note: NoteRefDTO;
+  /** The list this row sorts inside. Rows of other lists take no drop here. */
+  list: string;
+  onUnpin: (n: NoteRefDTO) => void;
+}) {
+  const { openDoc, activeTab, movePin } = useApp();
+  const { ref, dragging, edge } = useReorderableRow(list, note.path, movePin);
+  const active = activeTab?.kind === 'doc' && activeTab.path === note.path;
+  const openRow = (e: React.MouseEvent) => void openDoc(note.path, navFromEvent(e));
+  return (
+    <li
+      ref={ref}
+      data-pin={note.path}
+      className={`group/note relative ${dragging ? 'opacity-40' : ''}`}
+    >
+      {/* Where the row lands if you let go now. */}
+      {edge && (
+        <span
+          className={`pointer-events-none absolute inset-x-2 z-10 h-0.5 rounded-full bg-brand ${
+            edge === 'before' ? '-top-px' : '-bottom-px'
+          }`}
+          aria-hidden
+        />
+      )}
+      <button
+        className={`flex w-full items-center gap-1.5 rounded-md py-0.5 pr-2 pl-3 text-left text-xs transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
+          active
+            ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+            : 'text-muted-foreground hover:text-foreground'
+        }`}
+        onClick={openRow}
+        onAuxClick={(e) => e.button === 1 && openRow(e)}
+        title={note.title}
+      >
+        {/* A subitem marker, smaller than the place row's icon above it,
+            so the row reads as one level down rather than a peer. */}
+        <span className="flex size-3.5 shrink-0 items-center justify-center" aria-hidden>
+          <span className="size-1 rounded-full bg-current opacity-50" />
+        </span>
+        <span className="truncate">{note.title}</span>
+      </button>
+      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-r-md bg-gradient-to-l from-sidebar-accent from-65% to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover/note:opacity-100 group-focus-within/note:opacity-100">
+        <button
+          className="pointer-events-auto rounded p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={(e) => {
+            e.stopPropagation();
+            onUnpin(note);
+          }}
+          aria-label={`Unpin ${note.title}`}
+          title="Unpin: remove from the sidebar"
+        >
+          <X className="size-3" />
+        </button>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * The pinned rows under a place: one flat list, no sections and no cap
+ * (docs/sidebar-ia.md, SB-1). A row under a place is a pinned item of that
+ * place. Every row is one type, so no glyph leads it: the place above already
+ * says what these are.
+ *
+ * The order is the PO's: a new pin arrives on top, and a drag puts any row
+ * anywhere. Rows only sort inside their own place, so a ticket never lands
+ * among the documents.
  *
  * Each row carries one action: the X that unpins it, which leaves the Undo
  * strip at the foot of the rail.
  */
-function PinRows({ notes, onUnpin }: { notes: NoteRefDTO[]; onUnpin: (n: NoteRefDTO) => void }) {
-  const { openDoc, activeTab } = useApp();
+function PinRows({
+  notes,
+  list,
+  onUnpin,
+}: {
+  notes: NoteRefDTO[];
+  list: string;
+  onUnpin: (n: NoteRefDTO) => void;
+}) {
   // Nothing pinned is its own answer: the place row alone stands in.
   if (notes.length === 0) return null;
 
   return (
     <ul className="flex flex-col">
-      {notes.map((n) => {
-        const active = activeTab?.kind === 'doc' && activeTab.path === n.path;
-        const openRow = (e: React.MouseEvent) => void openDoc(n.path, navFromEvent(e));
-        return (
-          <li key={n.path} className="group/note relative">
-            <button
-              className={`flex w-full items-center gap-1.5 rounded-md py-0.5 pr-2 pl-3 text-left text-xs transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
-                active
-                  ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              onClick={openRow}
-              onAuxClick={(e) => e.button === 1 && openRow(e)}
-              title={n.title}
-            >
-              {/* A subitem marker, smaller than the place row's icon above it,
-                  so the row reads as one level down rather than a peer. */}
-              <span className="flex size-3.5 shrink-0 items-center justify-center" aria-hidden>
-                <span className="size-1 rounded-full bg-current opacity-50" />
-              </span>
-              <span className="truncate">{n.title}</span>
-            </button>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-r-md bg-gradient-to-l from-sidebar-accent from-65% to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover/note:opacity-100 group-focus-within/note:opacity-100">
-              <button
-                className="pointer-events-auto rounded p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUnpin(n);
-                }}
-                aria-label={`Unpin ${n.title}`}
-                title="Unpin: remove from the sidebar"
-              >
-                <X className="size-3" />
-              </button>
-            </div>
-          </li>
-        );
-      })}
+      {notes.map((n) => (
+        <PinRow key={n.path} note={n} list={list} onUnpin={onUnpin} />
+      ))}
     </ul>
   );
 }
@@ -750,15 +771,9 @@ export function Sidebar({
               onOpen={(e) => openChats(navFromEvent(e))}
               // The accent means "something is waiting" — nothing waiting keeps
               // the glyph muted like its neighbours (The Inactive-Never-Accent
-              // Rule).
+              // Rule). No count here: the rows underneath already say what is
+              // waiting and how many — a badge on top of them would only repeat it.
               iconClassName={waitingCount > 0 ? 'text-brand' : undefined}
-              badge={
-                waitingCount > 0 ? (
-                  <span className="shrink-0 rounded-full bg-brand/15 px-1.5 text-xs font-semibold text-brand">
-                    {waitingCount}
-                  </span>
-                ) : undefined
-              }
               action={
                 <RowAction
                   icon={Plus}
@@ -785,7 +800,7 @@ export function Sidebar({
                 />
               }
             >
-              <PinRows notes={docPins} onUnpin={unpinNote} />
+              <PinRows notes={docPins} list="documents" onUnpin={unpinNote} />
             </PlaceRow>
             {/* Then the systems Qale reads, one row each, in name order. They
                 come and go with the connections, so nothing is here to explain

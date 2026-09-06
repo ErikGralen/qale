@@ -4,7 +4,6 @@ import {
   DECISION_STANDINGS,
   normalizeLifecycleKeys,
   PROCESSING_STATES,
-  THEME_STANCES,
   TODO_COMMITMENTS,
 } from './lifecycle.js';
 
@@ -24,7 +23,7 @@ export const NOTE_TYPES = [
   'decision',
   'insight',
   'customer',
-  'theme',
+  'research',
   'person',
   'session',
   'skill',
@@ -337,7 +336,6 @@ export const zDecision = z.object({
   supersedes: zRef.optional(),
   /** Set when a newer decision replaces this one; body is never edited. */
   superseded_by: zRef.optional(),
-  theme: zRef.optional(),
 });
 
 export const zInsight = z.object({
@@ -347,9 +345,6 @@ export const zInsight = z.object({
   evidence: z.preprocess(looseList, z.array(zRef).min(1, 'insights must cite evidence')),
   confidence: z.enum(CONFIDENCE_LEVELS).default('med'),
   customer: zRef.optional(),
-  /** Optional roll-up. An insight is never required to belong to a theme — a
-   *  claim can stand alone until synthesis finds it a pattern to join. */
-  theme: zRef.optional(),
 });
 
 export const zCustomer = z.object({
@@ -360,16 +355,17 @@ export const zCustomer = z.object({
 });
 
 /**
- * The durable thing worth solving — a problem, a pain, an opportunity, an idea.
- * The hub where insights accrete into a pattern and where a stance is taken.
- * Deliberately NOT a ticket: a ticket is an upstream mirror that cannot hold
- * evidence or a stance, and the watching/wont-do items never get one at all.
+ * What Qale worked out: the case for a problem, a competitor scan, the product
+ * picture. One flat folder, free-form body, every page cites its sources. The
+ * agent writes these without a card; the PM corrects what is wrong. There is no
+ * stance field. A position is a line in the body, and a firm no is a decision.
  */
-export const zTheme = z.object({
-  type: z.literal('theme'),
+export const zResearch = z.object({
+  type: z.literal('research'),
   ...base,
-  stance: z.enum(THEME_STANCES).default('exploring'),
-  evidence: listOrEmpty(zRef),
+  processing: z.enum(PROCESSING_STATES).optional(),
+  /** Empty only for a page drafted from what the PM said, not from material. */
+  sources: listOrEmpty(zRef),
   customer: zRef.optional(),
 });
 
@@ -541,7 +537,7 @@ export const zFrontmatter = z.discriminatedUnion('type', [
   zDecision,
   zInsight,
   zCustomer,
-  zTheme,
+  zResearch,
   zPerson,
   zSession,
   zSkill,
@@ -566,7 +562,7 @@ export const SCHEMA_BY_TYPE = {
   decision: zDecision,
   insight: zInsight,
   customer: zCustomer,
-  theme: zTheme,
+  research: zResearch,
   person: zPerson,
   session: zSession,
   skill: zSkill,
@@ -585,7 +581,7 @@ export type MeetingFrontmatter = z.infer<typeof zMeeting>;
 export type DecisionFrontmatter = z.infer<typeof zDecision>;
 export type InsightFrontmatter = z.infer<typeof zInsight>;
 export type CustomerFrontmatter = z.infer<typeof zCustomer>;
-export type ThemeFrontmatter = z.infer<typeof zTheme>;
+export type ResearchFrontmatter = z.infer<typeof zResearch>;
 export type PersonFrontmatter = z.infer<typeof zPerson>;
 export type SessionFrontmatter = z.infer<typeof zSession>;
 export type SkillFrontmatter = z.infer<typeof zSkill>;
@@ -602,7 +598,7 @@ export const NOTE_TYPE_META: Record<NoteType, { dir: string; layer: NoteLayer }>
   decision: { dir: 'decisions', layer: 'authored' },
   insight: { dir: 'insights', layer: 'derived' },
   customer: { dir: 'customers', layer: 'authored' },
-  theme: { dir: 'themes', layer: 'authored' },
+  research: { dir: 'research', layer: 'authored' },
   person: { dir: 'people', layer: 'authored' },
   session: { dir: 'sessions', layer: 'derived' },
   skill: { dir: 'skills', layer: 'authored' },

@@ -7,8 +7,7 @@ import type { NoteType } from './frontmatter.js';
  * Every type used to carry one polymorphic `status` key, so `active` meant three
  * unrelated things at once (a source that is current, a decision that still
  * stands, a customer who is paying) and every surface labelled all three
- * "Status". Themes already had it right with `stance`, so the fix is that shape
- * everywhere: one field name per lifecycle, one hard-coded enum per field, one
+ * "Status". The fix is one field name per lifecycle, one hard-coded enum per field, one
  * human label per value. Nothing here is configurable and nothing is generic;
  * adding a lifecycle is an entry in this file and a key on the type's schema.
  *
@@ -19,7 +18,7 @@ import type { NoteType } from './frontmatter.js';
 /**
  * How far a piece of material has got through the workspace. Shared, on purpose,
  * by every type whose lifecycle really is this one question: sources, meetings,
- * insights, plain notes, and the two external mirrors.
+ * insights, research pages, plain notes, and the two external mirrors.
  * - `new`, arrived (captured, synced, re-synced) and not yet worked;
  * - `processed`, the analyses ran and their truth delta landed;
  * - `stale`, needs another pass because something it cites moved upstream.
@@ -43,14 +42,6 @@ export type CustomerRelationship = (typeof CUSTOMER_RELATIONSHIPS)[number];
  */
 export const TODO_COMMITMENTS = ['open', 'done', 'dropped'] as const;
 export type TodoCommitment = (typeof TODO_COMMITMENTS)[number];
-
-/**
- * What we currently believe about a theme. `watching` is the someday shelf and
- * `wont-do` is a deliberate decline that KEEPS accreting evidence. Neither has a
- * ticket, which is precisely why they need a home the workspace owns.
- */
-export const THEME_STANCES = ['exploring', 'watching', 'committed', 'wont-do'] as const;
-export type ThemeStance = (typeof THEME_STANCES)[number];
 
 export interface Lifecycle {
   /** The frontmatter key, e.g. "standing". Never "status". */
@@ -99,18 +90,6 @@ const COMMITMENT: Lifecycle = {
   valueLabels: { open: 'Open', done: 'Done', dropped: 'Dropped' },
 };
 
-const STANCE: Lifecycle = {
-  field: 'stance',
-  label: 'Stance',
-  values: THEME_STANCES,
-  valueLabels: {
-    exploring: 'Exploring',
-    watching: 'Watching',
-    committed: 'Committed',
-    'wont-do': "Won't do",
-  },
-};
-
 /**
  * THE table: which lifecycle each note type carries, or `null` for none.
  *
@@ -126,7 +105,7 @@ export const NOTE_LIFECYCLES: Record<NoteType, Lifecycle | null> = {
   decision: STANDING,
   insight: PROCESSING,
   customer: RELATIONSHIP,
-  theme: STANCE,
+  research: PROCESSING,
   person: null,
   session: null,
   skill: null,

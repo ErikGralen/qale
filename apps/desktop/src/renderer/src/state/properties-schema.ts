@@ -173,10 +173,9 @@ export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[
     TAGS,
     PROCESSING,
   ],
-  // A customer's `relationship` and a theme's `stance` have no row: see
-  // {@link HIDDEN_KEYS}.
+  // A customer's `relationship` has no row: see {@link HIDDEN_KEYS}.
   customer: [SUMMARY, { key: 'segment', label: 'Segment', widget: 'text', owner: 'user' }, TAGS],
-  theme: [SUMMARY, TAGS],
+  research: [SUMMARY, TAGS, PROCESSING],
   person: [
     SUMMARY,
     { key: 'role', label: 'Role', widget: 'text', owner: 'user' },
@@ -254,7 +253,6 @@ export const REF_FIELDS = [
   'sources',
   'supersedes',
   'superseded_by',
-  'theme',
   'customer',
   'transcript',
 ] as const;
@@ -287,13 +285,13 @@ export const REF_LABELS: Record<string, string> = {
  * - `purpose_of`: the same pass's folder marker, one short hash per document
  *   the folder purpose was written from. A row of hashes, and the same kind of
  *   bookkeeping;
- * - `relationship` (a customer) and `stance` (a theme): two vocabularies with
- *   no code behind them. Every other lifecycle changes what the app does:
- *   `processing` picks what the attention lists ask about, `standing` strikes a
- *   superseded decision, `commitment` is the todo. Nothing branches on whether
- *   a customer is a prospect or a theme is being watched, so the two rows only
- *   asked the PO to keep a word true for us. The agent reads them and writes
- *   them; they are worth more in the file than on the screen.
+ * - `relationship` (a customer): a vocabulary with no code behind it. Every
+ *   other lifecycle changes what the app does: `processing` picks what the
+ *   attention lists ask about, `standing` strikes a superseded decision,
+ *   `commitment` is the todo. Nothing branches on whether a customer is a
+ *   prospect, so the row only asked the PO to keep a word true for us. The
+ *   agent reads it and writes it; it is worth more in the file than on the
+ *   screen.
  *
  * Hidden, not dropped: the keys stay in the file, and the agent still reads them.
  */
@@ -305,7 +303,6 @@ export const HIDDEN_KEYS = new Set<string>([
   'summary_of',
   'purpose_of',
   'relationship',
-  'stance',
 ]);
 
 /**

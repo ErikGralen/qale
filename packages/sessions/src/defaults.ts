@@ -76,8 +76,8 @@ instruction: it settles the question, so do not ask it again.
 Start with \`files_list\` and \`input.md\`, which lists what arrived. Then skim each piece: enough
 to know what it is, who is in it, when it happened, and whether anything in it is still live.
 
-Then only the memory it touches: the customer page, the theme hubs it names, live decisions it
-might contradict, and the mirror notes (tickets/) of any ticket it mentions.
+Then only the memory it touches: the customer page, the research pages it bears on, live decisions
+it might contradict, and the mirror notes (tickets/) of any ticket it mentions.
 
 For a link, work from the URL and whatever came pasted with it; do not guess what the page says.
 For a screenshot, work from what is visible and say so in the summary.
@@ -122,8 +122,8 @@ again, and when a meeting already holds transcripts read only the ones that are 
 
 Up to five pieces: read them in this session. More than five, or names that say the source is
 old, treat it as a backlog:
-- Write \`brief.md\` first: what the workspace currently believes, the themes in play, what a good
-  reading looks like. Every child reads it.
+- Write \`brief.md\` first: what the workspace currently believes, the research pages in play, what
+  a good reading looks like. Every child reads it.
 - \`spawn\` one skim per piece on a quick model. Each child returns the title, the date, what kind
   of thing it is, and whose voice is in it.
 - File from the results, start full reads only where something looks live, and say plainly what
@@ -133,8 +133,8 @@ old, treat it as a backlog:
 
 Before you propose anything from a source, write out what it claims and call \`check_claims\` once:
 who committed to what, dates, owners, numbers, decisions. One claim per entry, in the words the
-source used, each scoped to the pages it is about (the meeting, the customer, the theme) or to a
-tag.
+source used, each scoped to the pages it is about (the meeting, the customer, the research page) or to
+a tag.
 
 Each one comes back as already known (do nothing), new (propose it below as you would anyway), in
 conflict with a note we hold, implying something that is not there, or no answer. No answer means
@@ -188,7 +188,9 @@ written ABOUT the source is. One finding, one proposal, however many documents i
 **A link, screenshot, or pasted thread**: its summary went on the source as you filed it, so the
 source is finished and nothing more is written about it. Never propose a note that only says what
 one source says, and never propose an edit to a source: the body is immutable. Then:
-- Add links to it from the hubs it concerns (propose_update), where it genuinely adds signal.
+- Add links to it from the hubs it concerns (propose_update), where it genuinely adds signal. A
+  signal about a problem extends the research page for that problem, if one exists; otherwise
+  tag the insight and leave it. One signal makes no page.
 - File any commitment or date hiding in it as a todo.
 - If it names a person or customer with no page yet, ask before creating one.
 - If what it is for is not clear, ask one concrete question instead of guessing.
@@ -219,7 +221,7 @@ people and the account, on the page, before they walk in.
 ## Read
 - The meeting note.
 - Each participant's people page: what they care about, their \`last_told\` entries.
-- The customer hub and theme hubs the meeting touches.
+- The customer hub and the research pages the meeting touches.
 - Prior decisions involving these people.
 - When the meeting has a \`series\`: the previous meeting in it, for open actions, unanswered
   questions, and what was promised.
@@ -253,7 +255,7 @@ after-meeting pass later checks which prep questions were answered.
  * rather than each spelling them out.
  */
 export const MEETING_PREP_INSTRUCTION =
-  "read the participants' people pages (last_told), the customer/theme hubs this meeting touches, and the previous meeting in its series, then propose a ## Prep section for the meeting page as one proposal.";
+  "read the participants' people pages (last_told), the customer hub and research pages this meeting touches, and the previous meeting in its series, then propose a ## Prep section for the meeting page as one proposal.";
 
 /**
  * The one built-in, never seeded as a file. Every session opens as this, and so
@@ -276,7 +278,7 @@ can: [keep-working-files, draft-outbound]
 ## When
 Every session starts here: a question about the product, a customer, a decision or what was
 said, and open-ended thinking with everything the workspace remembers, across meetings,
-decisions, insights and themes. When the conversation turns into work a skill already describes,
+decisions, insights and research. When the conversation turns into work a skill already describes,
 load that skill rather than improvising it.
 
 ## Read
@@ -324,7 +326,7 @@ You dumped rough text into a note (half-sentences from a call, a day's running l
 today's raw additions at the bottom.
 
 ## Read
-The note first. Then the memory it touches: search_vault for the people, customers, themes, and
+The note first. Then the memory it touches: search_vault for the people, customers, research pages, and
 decisions it mentions. Existing wikilinks mean an earlier run already handled those parts; leave
 them alone and work on what is new or still raw.
 
@@ -347,8 +349,10 @@ Each piece its own proposal:
   a copy edit, not a rewrite: keep your wording and your meaning, and add nothing the dump does
   not say. If the note is untitled or its title no longer fits, set the proposal's \`title\` to a short
   descriptive one.
-- **Updates to other notes**: the customer or theme hub the dump adds signal to, an open question
-  elsewhere it answers, a person's \`last_told\` when it says who was told what.
+- **Updates to other notes**: the customer hub the dump adds signal to, an open question elsewhere
+  it answers, a person's \`last_told\` when it says who was told what. A signal about a problem
+  extends the research page for that problem, if one exists; otherwise tag the insight and
+  leave it. One signal makes no page.
 - **New notes the dump implies**: commitments become todos (propose_todo, with \`owner\` when
   someone else owes it), claims worth keeping become insights (propose_note type insight), and a
   real decision with a named decider becomes a decision proposal (propose_decision). A line with no
@@ -364,103 +368,8 @@ again, and only the new material is touched.
 `;
 
 /**
- * The product orientation note (SK-5), seeded into the memory of every
- * workspace: what the three understanding notes hold, at what level, and how
- * they are kept true.
- *
- * It shipped as an always-on skill (`skills/_understanding/SKILL.md`) while a
- * file could declare that, which put a document ABOUT the memory on the Skills
- * page and into every prompt. It is memory content, so it lives in the memory: a
- * session finds it by retrieval like any other note, and the interview
- * (`tell-qale`) fills the notes it names.
- *
- * It is seeded thin on purpose. The area notes it points at do not exist until
- * somebody says what the product is, and a note that admits that is what the
- * interview offer hangs on.
- *
- * It sits in `understanding/`, not in `notes/`. Nobody asks for these notes: a
- * first look writes them from what a connection read, and the interview drafts
- * them from what the PM said. `notes/` is the Documents screen, which is the
- * PM's own folder and is never written into unasked (E-14).
- */
-export const UNDERSTANDING_NOTE = `---
-type: note
-title: Product understanding
-summary: The three notes that hold what we know about the product, and how they are kept true.
-sources: []
----
-
-# Product understanding
-
-Qale keeps this up to date. Correct anything wrong.
-
-What this workspace holds about the product itself, so every session starts from the same picture.
-Three notes, and deliberately no more:
-
-- \`understanding/product.md\`: what the product is, who it is for, and what it is trying to
-  do right now.
-- \`understanding/technical.md\`: the shape of the system in general terms, the big
-  constraints, and the names of the moving parts.
-- \`understanding/organization.md\`: the teams, who owns what, and the names that keep coming
-  up.
-
-If they do not exist yet, the way to get them is the interview (\`tell-qale\`), which asks
-the PM and drafts from what they say. Nobody writes them from synced sources alone: a picture
-mined out of this quarter's tickets is confident and narrow at the same time.
-
-A source the PM hands over on purpose to answer one of these questions is the exception, such as
-a technical overview generated from their own code (\`product-overview.md\`). It gets filed like
-anything else, and the note it was for is proposed in the same session, citing it, unverified
-until they confirm it.
-
-## High level, everywhere
-These notes record the shape, not the detail: the five boxes and the arrows between them, who
-owns what, what the product does for whoever pays for it.
-
-The detail already lives in the sources; the understanding cites them instead of repeating them.
-A paragraph that could be replaced by a link should be the link.
-
-An empty area is an honest answer. "Nobody has said who pays for this yet" is worth more than a
-paragraph assembled out of guesses.
-
-## Where it lives
-The default is those three notes, in this workspace. A team that keeps this on a wiki page names
-that page here instead, and it works: writing to a mirrored page already goes through the
-ordinary approval path (a \`draft_page_update\` proposal the PM approves). This note is the setting.
-
-## Changing what is there
-Tighten only. Sharpen a sentence, replace what has changed, strike what is stale. An edit that
-makes one of these notes longer without making it truer is the wrong edit.
-
-Where a claim came from decides how it is marked:
-
-- **The PM said it themselves.** It lands verified: \`verified\` is set on the note. It is a list of
-  entries, and each entry carries both keys: \`by: human:<their name>\` and
-  \`at: <that day's date, YYYY-MM-DD>\`.
-
-  \`\`\`yaml
-  verified:
-    - by: human:asa
-      at: 2026-03-04
-  \`\`\`
-
-- **Qale inferred it from a synced source.** It lands unverified, which is simply the absence of
-  that field, and cites the page or ticket it came from. It stays that way until the PM confirms
-  it.
-
-Freshness applies either way, so a picture nobody has touched in six months admits its age.
-
-## What to watch
-When a synced source contradicts what is recorded here, the correction comes as its own proposal and
-says which sentence disagreed with what. Silence is not disagreement: a source that simply does
-not mention something contradicts nothing.
-
-Nothing here is written without a proposal, these notes included.
-`;
-
-/**
  * The interview, generalized (SK-11). It shipped as `learn-the-product`, one
- * conversation that filled the three understanding notes from the PM's own head.
+ * conversation that filled the three product pages from the PM's own head.
  * The mechanic was never about the product: somebody says what they know, the
  * session asks until it has it, and the memory gets a note. So the topic became
  * an argument the caller hands in, and the product is one example of it.
@@ -506,9 +415,9 @@ time, and the section below says what to do with that. Everything else here appl
 
 ## Read first
 Before asking anything, see what the workspace already holds on the topic. Search for it, read
-the notes it turns up, and read \`understanding/what-goes-here.md\` and the area notes it points at
-whenever the topic touches the product, the system or the organization. Never ask for something
-the memory already knows: read it back and ask whether it is still true.
+the notes it turns up, and read the three product pages in \`research/\` (product, technical,
+organization) whenever the topic touches the product, the system or the organization. Never ask
+for something the memory already knows: read it back and ask whether it is still true.
 
 ## Open with one big ask
 Name the topic, ask for everything at once, then stop and listen. For a narrow topic that is one
@@ -577,16 +486,25 @@ drop arrives as an ordinary source, and what you draft from it cites it as their
 ## Where what you hear lands
 Every topic ends in the memory, as proposals.
 
-- **The product, the system, or the organization** go in the area notes:
-  \`understanding/product.md\`, \`understanding/technical.md\`,
-  \`understanding/organization.md\`. \`understanding/what-goes-here.md\` is the map over them. It
-  says what belongs in each, how short to keep them, and how a claim is marked. Follow it.
-- **Anything else** goes in the note that already owns the subject: the customer, the theme, the
-  person. Write a new note only when nothing owns it yet, and say in the proposal what it will hold.
+- **The product, the system, or the organization** go in the three product pages, each a
+  research page (type \`research\`): \`research/product.md\` (what the product is, who it is for,
+  and what it is trying to do right now), \`research/technical.md\` (the shape of the system, the
+  big constraints, and the names of the moving parts) and \`research/organization.md\` (the
+  teams, who owns what, and the names that keep coming up). Three pages, and no more. They
+  record the shape, not the detail: the detail lives in the sources, so a paragraph that could
+  be a link should be the link. An empty area is an honest answer; never fill a gap with
+  something plausible. When one exists, tighten only: an edit that makes it longer without
+  making it truer is the wrong edit.
+- **Anything else** goes in the note that already owns the subject: the customer, the research
+  page, the person. Write a new note only when nothing owns it yet, and say in the proposal what
+  it will hold.
 
 How a claim is marked is the same wherever it lands:
 
 - A claim that came out of the conversation lands verified. It came from the person who knows.
+  Verified is the \`verified\` list on the page, one entry per confirmation, each with
+  \`by: human:<their name>\` and \`at: <that day, YYYY-MM-DD>\`. Unverified is the absence of that
+  field.
 - A claim that came out of a source lands unverified, and cites the source.
 - A claim you read in a source and then put to them, which they confirmed, lands verified and
   still cites the source. Their yes is what verifies it; the citation is what makes it
@@ -676,8 +594,9 @@ actually work on: ONE \`ask_user\` call, every row ticked, one confirm. Never a 
   row \`checked\`, each carrying its reason ("yours, moved on Tuesday"). Call \`track_external\`
   for each row they leave ticked. A tracked ticket is where context gathers around the work. It
   is never a copy of the ticket.
-- **Themes**, at most 3, from the epics they just confirmed matter. A second question in the same
-  call, same shape. Propose the theme note with \`propose_note\` for each row they leave ticked.
+- **Research pages**, at most 3, one per problem the epics they just confirmed are about. A
+  second question in the same call, same shape. Write the page with \`propose_note\` (type
+  \`research\`, path \`research/<slug>.md\`) for each row they leave ticked, citing the epic.
 
 Never mirror a wiki page. A page is cited, never copied. No people and no todos: those come out
 of meetings, not out of a first read.
@@ -809,13 +728,17 @@ Where each kind of note lives. The librarian follows these when proposing paths 
   body. To change one, supersede it: a new file with \`supersedes\`, and the old file flipped to
   \`standing: superseded\`.
 - **insights/**: cited claims, \`<slug>.md\`. \`evidence[]\` is required, plus a \`confidence\` level.
-  Link each to the customer and theme it concerns.
+  Link each to the customer it concerns, and to the research page for its problem when one exists.
 - **customers/**: one hub per account: commitments, signals, and the ledger of what they were
   told. Carries \`relationship\` (prospect / active / churned).
-- **themes/**: the durable things worth solving: a problem, a pain, an opportunity, an idea.
-  Carries \`stance\` (exploring / watching / committed / wont-do). Themes accrue evidence even when
-  \`wont-do\`; the declined ones are exactly the ones whose reasoning is expensive to rebuild. A
-  theme never requires a ticket, and a ticket never requires a theme.
+- **research/**: Qale's own pages, what it worked out: the case for a problem, a competitor
+  scan, and the product picture in \`product.md\`, \`technical.md\` and \`organization.md\`. One
+  folder, flat: every page is \`research/<slug>.md\` and there are no subfolders. Every page cites
+  its \`sources\`, states its case in one voice and links the insights that hold the quotes. A page
+  lands without a card, Qale keeps it fresh, and the PM corrects anything wrong. Only synthesis
+  opens a page unasked; everything else extends the page for that problem, if one exists, and
+  one signal makes no page. A declined problem keeps its page: its reasoning is expensive to
+  rebuild. A research page never requires a ticket, and a ticket never requires a research page.
 - **people/**: stakeholders: what they care about, and \`last_told\`.
 - **todos/**: the commitment ledger, one file per commitment, \`YYYY-MM-DD-<slug>.md\`. Carries
   \`commitment\` (open / done / dropped), optional \`due\`, and \`owner\` only when someone other than
@@ -826,8 +749,6 @@ Where each kind of note lives. The librarian follows these when proposing paths 
   the workspace that a person made. Write here only when they asked for the page in this
   conversation, and send \`asked\` when you do. Everything else you write goes in the memory
   folder that owns the subject. Anything dropped in from outside goes to sources/ instead.
-- **understanding/**: what the workspace knows about the product itself, in three area notes plus
-  the map over them. Nobody asks for these; the interview and the first look fill them.
 - **attachments/**: dropped images and screenshots, each referenced by a capture note in
   sources/.
 - **sessions/**: replayable session receipts, written by the harness. Never hand-edited.
@@ -1052,15 +973,15 @@ ways. Nothing in the memory yet says which accounts said the same thing. Finding
 
 ## Read
 Scope first: decide which documents are in and say the list back before reading anything. Use
-vault_list and search_vault over the tag, customer, or theme the request named. Read the claims
-insights/ already makes before the material: they are what you will extend rather than duplicate.
-Then read what you will weigh the material against: the existing themes and their current
-\`stance\`, the decisions that touched them, and the ticket mirrors where a theme links tracked
+vault_list and search_vault over the tag, customer, or research page the request named. Read the
+claims insights/ already makes before the material: they are what you will extend rather than
+duplicate. Then read what you will weigh the material against: the research pages that already
+make a case, the decisions that touched them, and the ticket mirrors where a page links tracked
 work.
 
-Write \`brief.md\` before reading the material: what we currently believe, the themes in play and
-their stances, the live decisions a source might contradict, and what a good answer looks like
-for this question. Every child reads it; without it, a reader handed one transcript in isolation
+Write \`brief.md\` before reading the material: what we currently believe, the research pages in
+play and the case each one makes, the live decisions a source might contradict, and what a good
+answer looks like for this question. Every child reads it; without it, a reader handed one transcript in isolation
 cannot tell a new fact from a contradiction.
 
 Then spawn the reading. One \`spawn\` entry with \`over\` set to the document list gives every
@@ -1082,31 +1003,32 @@ Two different things get called evidence, and proposals break when they are conf
 \`sources\` argument cites content already on disk: the original transcripts and sources, never
 your session files (those get deleted) and never a note this run has only proposed. A note's
 \`evidence\` frontmatter is written into the note itself and may point at anything, including the
-insights a theme rests on.
+insights a research page rests on.
 
 The proposals:
 - **Insights** (propose_note, type insight): one claim, stated in your own voice, with every
   account that backs it gathered inside it. An insight is the smallest thing we believe, and the
-  one place a transcript quote belongs. The bar is a claim someone could act on or a future theme
-  could rest on, never a summary line. List the backing accounts under \`evidence\`, quote each of
+  one place a transcript quote belongs. The bar is a claim someone could act on or a future research
+  page could rest on, never a summary line. List the backing accounts under \`evidence\`, quote each of
   them in the body, one short quote per account, and set \`confidence\` (high, med or low) from how
   many accounts back it and how directly they say it. Check insights/ first: a second account
   making the same claim extends the existing insight rather than filing a near-copy. Extending is
   a propose_update that restates the whole \`evidence\` list with the new account added, plus that
   account's quote in the body; an update replaces a field, so a list you shorten is a list you
   lose.
-- **A new theme** (propose_note, type theme) where several sources converge on something the
-  memory does not hold: state the problem worth solving (not the feature someone asked for), open
-  with an honest \`stance\` (\`exploring\` unless the evidence is overwhelming), and make the body an
-  argument over insights. A theme never quotes a transcript directly; if a quote is worth using,
-  it is worth keeping as an insight first. \`evidence\` lists the insights the theme rests on, and
-  the proposal's \`sources\` cite the transcripts underneath them.
-- **Evidence added to an existing theme** (propose_update): extend \`evidence\` and say in the
-  rationale what the addition changes about how strong the theme now is.
-- **A stance change** (propose_update setting \`stance\`) only where the evidence genuinely moved,
-  and \`wont-do\` only where the memory shows a deliberate decline (cite the decision). Never
-  \`committed\` from here: committing is a decision with a decider, so use \`propose_decision\`
-  and let the decider own it.
+- **A research page where several sources converge on one problem** (propose_note, type
+  research, path \`research/<slug>.md\`) the memory does not hold yet: state the problem worth
+  solving (not the feature someone asked for), open with one honest line on where it stands
+  (exploring, unless the evidence is overwhelming), and make the body an argument over insights.
+  A research page never quotes a transcript directly; if a quote is worth using, it is worth
+  keeping as an insight first. The page's \`sources\` lists the insights it rests on, and the
+  proposal's \`sources\` cite the transcripts underneath them. This is the one skill that opens a
+  research page unasked, so open one for a problem several sources share, never for one signal.
+- **Sources added to an existing research page** (propose_update): extend \`sources\`, and say in
+  the rationale what the addition changes about how strong the case now is. Move its opening line
+  only where the evidence genuinely moved, and to declined only where the memory shows a
+  deliberate decline (cite the decision). Never to committed from here: committing is a decision
+  with a decider, so use \`propose_decision\` and let the decider own it.
 - **Disagreement**: a live insight the material contradicts is never quietly rewritten: propose
   the corrected insight and point it at the old one with a \`supersedes\` link, so the old one
   carries a pointer to what replaced it.
@@ -1120,19 +1042,19 @@ Promote before you delete. Every per-item finding a cluster ends up leaning on b
 proposal, new or extended, and the cluster's proposal names those insights in its \`evidence\`. Do that
 while the session files are still there; the quotes live nowhere else.
 
-Themes written before insights existed carry their quotes inline. Leave them until a run touches
-one, then decompose the quotes it leans on into insights as part of that run's normal proposals.
+Research pages written before insights existed carry their quotes inline. Leave them until a run
+touches one, then decompose the quotes it leans on into insights as part of that run's normal proposals.
 
-Only when a theme is already \`committed\` does tracked work follow: draft_ticket for what no
-ticket covers, citing the theme and the decision that committed to it. Any other stance produces
-no ticket; \`watching\` and \`wont-do\` exist precisely to stay real and unbuilt. Never invent a
-theme to give an existing ticket a parent; themes come from evidence.
+Only when a live decision commits to a research page does tracked work follow: draft_ticket for
+what no ticket covers, citing the page and that decision. Without the decision no ticket follows;
+a page still exploring, watched or declined exists precisely to stay real and unbuilt. Never
+invent a research page to give an existing ticket a parent; pages come from evidence.
 
 Counting rules:
 - Every claim names its sources and how many distinct accounts back it. A pattern from one
   account is a signal, not a pattern; say which second account would confirm it.
-- An insight's strength is how many accounts its \`evidence\` lists, so a theme citing it reads the
-  count off the insight rather than recounting the transcripts.
+- An insight's strength is how many accounts its \`evidence\` lists, so a research page citing it reads
+  the count off the insight rather than recounting the transcripts.
 - Every document in scope gets a pass, and the ones that said nothing are named as silent. If
   some failed to read, report "six of nine"; do not write "the interviews show" over a partial
   read.
@@ -1140,8 +1062,7 @@ Counting rules:
   document.
 
 ## Then
-Approved proposals file the themes and insights and move the stances that moved; the sources stay
-exactly as they were. Session files are working material, not memory: anything worth keeping from
+The research pages and insights land, and the sources stay exactly as they were. Session files are working material, not memory: anything worth keeping from
 them was worth proposing as a note, and any quote worth keeping belongs in an insight.
 `;
 
@@ -1216,7 +1137,7 @@ right, ask.
 ## Two places
 The workspace has two places, and your job is different in each.
 
-**Memory** is what Qale keeps: themes, insights, decisions, customers, people, and mirrored pages.
+**Memory** is what Qale keeps: research pages, insights, decisions, customers, people, and mirrored pages.
 Here you are the steward. You file a stray page, link it from the hub it belongs under, repoint what
 still cites a replaced decision, and propose a delete when a page is noise.
 
@@ -1266,7 +1187,7 @@ moves a promise onto the wrong account.
 ## What an unlinked note can be
 Read it, then say what it is:
 
-- **A raw capture**: it names people, customers and themes in plain text and links none of them.
+- **A raw capture**: it names people, customers and problems in plain text and links none of them.
   Nothing is wrong with it. It has simply never been processed. Offer to handle it now instead of
   writing a proposal that tells the PM to: ask, and if they say yes, pull in the process-note skill
   with \`use_skill\` and do the pass in this session.
@@ -1404,7 +1325,7 @@ skill's job and this one reads what got filed.
 
 ## Read: a commitment of yours
 The todo (title, due date, owner, the \`sources\` it cites), the meeting or note where the
-commitment was made, and the related customer, theme, and decision pages. Three checks change
+commitment was made, and the related customer, research and decision pages. Three checks change
 the answer, so make all three:
 - **The linked ticket**, if any: its mirror note (tickets/), for \`state\`, \`state_category\` and
   \`remote_updated\`.
@@ -1422,7 +1343,7 @@ Then the memory it touches:
   own is what makes the same words a request or an instruction. An unknown sender is a fine
   answer: say they have no page rather than guess at their position.
 - **What we already know**: the insights that bear on the ask and how many accounts back them, the
-  live decisions that settle or contradict it, the theme it belongs under, and the ticket mirrors
+  live decisions that settle or contradict it, the research page it belongs under, and the ticket mirrors
   for anything already in flight.
 - **What we already promised**: open todos, and the customer hub's ledger of what they were told.
   An ask we committed to in March is a different conversation from a new one.
@@ -1466,8 +1387,10 @@ Then what the ask actually forces, and only that:
 - **A commitment you take on**: a todo (propose_todo) quoting the ask and citing this decode.
 - **A reply** (draft_text), where the posture is to answer now: cite the decisions and tickets it
   rests on, and follow the voice for that audience. It is text to copy, and nothing sends it.
-- **A signal worth keeping**: where the ask is evidence for a theme or a customer, extend that
-  page (propose_update) and say what the addition changes.
+- **A signal worth keeping**: where the ask is evidence for a customer, extend that page
+  (propose_update) and say what the addition changes. Where it is evidence for a problem, extend
+  the research page for that problem, if one exists; otherwise tag the insight and leave it. One
+  signal makes no page.
 - **A collision**: where the ask runs into a live decision or something already promised, that is
   its own proposal.
 
@@ -1526,20 +1449,21 @@ Next move: <what this run proposed, or nothing>
  * The reason this skill is not a template filler is one rule: no requirement
  * without a trace. A spec whose lines each name an insight, a decision or a
  * ticket mirror is a spec a reader can argue with; the same document written
- * from a good memory of the theme is a guess with headings.
+ * from a good memory of the problem is a guess with headings.
  */
 export const SPEC_SKILL = `---
 type: skill
 title: Write a spec
-summary: Turns a theme's insights and decisions into a document a team can build from.
+summary: Turns a research page's insights and decisions into a document a team can build from.
 scenarios:
-  - turning a theme the workspace already backs into something a team can build ("write a spec for the pricing theme")
+  - turning a research page or a tag the workspace already backs into something a team can build ("write a spec for the pricing page")
   - writing up what we are committing to, from insights and decisions already filed ("draft the PRD for scheduled exports")
   - checking whether the evidence carries a spec yet ("is there enough here to spec onboarding")
 ---
 
 ## When
-You point at a theme and want the document a team builds from. The material is already here.
+You point at a research page, or a \`#tag\`, and want the document a team builds from. The material
+is already here.
 
 Every line traces to something filed. A line the workspace cannot back does not go in; it gets
 named as missing instead.
@@ -1548,42 +1472,46 @@ Reading raw material and working out what it adds up to is the synthesis skill's
 starts where that one stopped: it reads the conclusions, never the transcripts under them.
 
 ## Read
-- **The theme**: its \`stance\`, its body, and the insights listed under \`evidence\`.
+- **The research page**: where it stands, its body, and the insights listed under \`sources\`. For
+  a \`#tag\`, its Context page: the research pages first, then the insights.
 - **Each of those insights**: the claim, and how many accounts its own \`evidence\` lists. That
   count is the strength of anything you build on it.
-- **The decisions** that touched the theme.
-- **The ticket mirrors** the theme links: what is built, in flight, or blocked.
+- **The decisions** that touched the page or the tag.
+- **The ticket mirrors** the page links: what is built, in flight, or blocked.
 - **The customer hubs** the insights name, for who has this problem and what they were told.
-- **The three understanding notes**, for the constraints anything built here has to live inside.
-- **Any spec this workspace already holds for this theme.** Extend that one rather than file a
-  second.
+- **The three product pages** in \`research/\` (product, technical, organization), for the
+  constraints anything built here has to live inside.
+- **Any spec this workspace already holds for this page or tag.** Extend that one rather than
+  file a second.
 
 ## Say the scope back first
-Before writing anything, say which theme this is, which insights and decisions are in, and what
-is being left out. That is the cheapest moment to be corrected. Where the choice is not yours to
-make (which of two themes, whether a neighbouring theme is in scope), ask. Where it is, decide,
+Before writing anything, say which page or tag this is, which insights and decisions are in, and
+what is being left out. That is the cheapest moment to be corrected. Where the choice is not
+yours to make (which of two pages, whether a neighbouring problem is in scope), ask. Where it is, decide,
 and say what was decided.
 
 ## When the evidence does not carry a spec
 A spec claims we know enough to build. Say plainly that we do not, and propose nothing, when:
-- the theme holds fewer than two insights, or every insight rests on a single account;
-- nothing commits to it: no live decision, and a \`stance\` of \`exploring\` or \`watching\`;
+- the page or tag holds fewer than two insights, or every insight rests on a single account;
+- nothing commits to it: no live decision, and the page itself says it is still exploring or
+  watching;
 - the problem is written as the feature somebody asked for, with no account behind it.
 
 Then name what would change that: which decision has to be made, which second account would
 confirm the claim. A run that ends there has done its job.
 
 ## Produce
-One proposal, the spec (propose_note, type \`note\`, path \`notes/spec-<theme-slug>.md\`), with \`sources\`
-citing the theme, the insights and the decisions it rests on. Take \`tags\` from the theme. Send
-\`asked\` with it: the spec is the document the PM pointed at a theme and asked for, and \`notes/\`
-is their own folder, which nothing writes into unasked.
+One proposal, the spec (propose_note, type \`note\`, path \`notes/spec-<slug>.md\`), with \`sources\`
+citing the research page, the insights and the decisions it rests on. Take \`tags\` from the page,
+or the tag itself. Send \`asked\` with it: the spec is the document the PM pointed at a page and
+asked for, and \`notes/\` is their own folder, which nothing writes into unasked.
 
 One addition to the writing rules: no requirement without a trace. Every requirement names the
 insight, decision or ticket mirror behind it. One that cites nothing is not a requirement, it is
 your idea, and it belongs under Assumptions with what would settle it.
 
-A second proposal where the theme does not link the spec yet: a propose_update adding the link.
+A second proposal where the research page does not link the spec yet: a propose_update adding
+the link. A tag has no page to link from.
 
 Tickets are not this skill's work. Breaking a spec into tracked work comes after the spec is read
 and accepted.
@@ -1591,11 +1519,11 @@ and accepted.
 ## Then
 The spec sits with the PM's own documents and cites its way back down: a reader follows a
 requirement to the insight, and the insight to the account that said it. A later run over the
-same theme extends this one instead of filing a rival.
+same page or tag extends this one instead of filing a rival.
 
 ## The shape of the spec
 \`\`\`
-[propose_note, type note, notes/spec-<theme-slug>.md]
+[propose_note, type note, notes/spec-<slug>.md]
 # <what is being built, in the words a person would use>
 
 ## Problem
@@ -1879,13 +1807,13 @@ export const DEFAULT_AGENTS: DefaultSkill[] = [
  * same call and by the same rule: a file already there is the PM's and is never
  * overwritten.
  *
- * One so far. It is knowledge about the product, so a session reaches it the way
- * it reaches every other note, through the folder map and search, and no prompt
- * carries it.
+ * None today. The product picture (`research/product.md` and its two siblings)
+ * used to have an orientation note here; what it said now lives in the
+ * house-rules `research/` entry and in the interview (`tell-qale`), which writes
+ * those pages. A research page that does not exist yet is an honest gap, not a
+ * stub (docs/memory-types.md, MT-3).
  */
-export const DEFAULT_NOTES: DefaultSkill[] = [
-  { file: 'understanding/what-goes-here.md', content: UNDERSTANDING_NOTE },
-];
+export const DEFAULT_NOTES: DefaultSkill[] = [];
 
 /**
  * What "New skill" writes. Every shipped file is finished and confident, which

@@ -76,7 +76,7 @@ export interface MeetingOutcome {
   promised: NoteRefDTO[];
   /** Insights holding it as evidence. */
   learned: NoteRefDTO[];
-  /** Everything else that points here: a customer page, a theme, a note. */
+  /** Everything else that points here: a customer page, a research page, a note. */
   linked: NoteRefDTO[];
 }
 

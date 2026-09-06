@@ -7,7 +7,6 @@ import type {
   NoteType,
   SchemaMiss,
   SearchHit,
-  ThemeStance,
 } from '@qale/domain';
 
 /**
@@ -125,6 +124,13 @@ export interface VaultPort {
   writeBinary(relPath: string, data: Uint8Array): Promise<void>;
   /** Delete a file. Throws {@link VaultBoundaryError} if the path escapes. */
   remove(relPath: string): Promise<void>;
+  /**
+   * Delete an EMPTY folder. A folder with anything left in it stays, without an
+   * error: the caller has already moved what it meant to move, and a leftover
+   * file is a reason to leave the folder standing, not a failure. Optional so a
+   * stand-in vault in a test only has to answer what that test asks.
+   */
+  removeDir?(relPath: string): Promise<void>;
   exists(relPath: string): Promise<boolean>;
   /** Every `.md` file under the vault. */
   list(): Promise<FileListing[]>;
@@ -467,4 +473,4 @@ export interface UseCaseContext {
   activity?: ActivityPort;
 }
 
-export type { Note, SchemaMiss, SearchHit, ThemeStance, NoteType, Frontmatter };
+export type { Note, SchemaMiss, SearchHit, NoteType, Frontmatter };

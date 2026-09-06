@@ -184,7 +184,7 @@ const PLURAL_FOR_DIR: Record<string, string> = {
   meetings: 'meeting pages',
   decisions: 'decisions',
   insights: 'insights',
-  themes: 'themes',
+  research: 'research pages',
   customers: 'customers',
   people: 'people',
   sources: 'sources',

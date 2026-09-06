@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FileText, Mic, Sparkles } from 'lucide-react';
+import { FileText, Mic, Sparkles, TriangleAlert } from 'lucide-react';
 import { Button, Dialog, DialogContent, DialogTitle, cn } from '@qale/ui';
 import type { BacklinkDTO, NoteDTO, NoteRefDTO } from '@qale/ipc';
 import { transcriptRefs } from '@qale/domain';
@@ -16,6 +16,7 @@ import {
   type MeetingTone,
 } from '../lib/meeting-read';
 import { noteTypeIcon } from '../lib/note-icons';
+import { resolveParticipant } from '../lib/people';
 import { Markdown } from './Markdown';
 import { PersonChip } from './PersonChip';
 
@@ -24,10 +25,21 @@ import { PersonChip } from './PersonChip';
  *
  * A meeting IS a markdown note, and opening the file gave the PO a note page:
  * frontmatter, a body, a properties block. That answers none of the questions a
- * person has after a call: when it was, who was in the room, what got decided,
- * what people promised, and what is still open. This panel answers those in that
- * order and puts the notes underneath, where they belong. The file is still one
- * button away, because the vault is the deliverable.
+ * person has about a call. This panel answers exactly those, top to bottom,
+ * and nothing else:
+ *
+ *   how it stands · what it is
+ *   when it is · who else is in the room · what was recorded
+ *   what came out of it · what was written down
+ *   what to do about it now
+ *
+ * It shares its shell with the todo panel: the same width, the same fact grid,
+ * the same chip and title sizes. The two open from neighbouring lists and must
+ * read as one instrument. It is sized by its content, not by a set height, and
+ * only the middle scrolls, so the actions never leave the screen.
+ *
+ * You are left out of the room: it is your memory, and a chip for yourself on
+ * every meeting says nothing. Rows with nothing to say are left out entirely.
  *
  * Nothing here is derived twice. The state word comes from the same rules the
  * week grid and the attention list read, and the outcome is the meeting's own
@@ -46,9 +58,21 @@ const DAY_FMT = new Intl.DateTimeFormat(undefined, {
   month: 'long',
 });
 
-/** "Tuesday 18 May, 14:00 – 15:00": the one line that places the meeting. */
+const DAY_YEAR_FMT = new Intl.DateTimeFormat(undefined, {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+});
+
+/**
+ * "Tuesday 18 May, 14:00 – 15:00": the one line that places the meeting. The
+ * year only when it is not this one, where leaving it out would mislead.
+ */
 function whenLine(start: number, clock: boolean, end: number): string {
-  const day = DAY_FMT.format(new Date(start));
+  const date = new Date(start);
+  const fmt = date.getFullYear() === new Date().getFullYear() ? DAY_FMT : DAY_YEAR_FMT;
+  const day = fmt.format(date);
   if (!clock) return `${day}, all day`;
   const hhmm = (ts: number): string => {
     const d = new Date(ts);
@@ -57,7 +81,6 @@ function whenLine(start: number, clock: boolean, end: number): string {
   return `${day}, ${hhmm(start)} – ${hhmm(end)}`;
 }
 
-/** One label + value line. A row with nothing to say is left out entirely. */
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <>
@@ -127,7 +150,7 @@ export function MeetingDetail({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { openDoc, openSession } = useApp();
+  const { openDoc, openSession, people } = useApp();
   const [full, setFull] = useState<NoteDTO | null>(null);
   const [backlinks, setBacklinks] = useState<BacklinkDTO[]>([]);
 
@@ -158,9 +181,11 @@ export function MeetingDetail({
   const cancelled = frontmatter['event_status'] === 'cancelled';
   const when = cancelled ? null : meetingWindowOf(frontmatter);
   const standing = meetingStanding(note);
-  const people = Array.isArray(frontmatter['participants'])
+  const participants = Array.isArray(frontmatter['participants'])
     ? frontmatter['participants'].filter((p): p is string => typeof p === 'string')
     : [];
+  // The others in the room. You were there: it is your memory.
+  const others = participants.filter((p) => resolveParticipant(p, people).kind !== 'self');
   const length = durationText(
     typeof frontmatter['duration_minutes'] === 'number'
       ? frontmatter['duration_minutes']
@@ -170,7 +195,6 @@ export function MeetingDetail({
   const body = full?.body.trim() ?? '';
   const outcome = meetingOutcome(backlinks);
   const nothingCameOut =
-    full !== null &&
     outcome.decided.length === 0 &&
     outcome.promised.length === 0 &&
     outcome.learned.length === 0 &&
@@ -184,168 +208,202 @@ export function MeetingDetail({
     transcripts: transcripts.length,
     body,
   });
+  // A recording row only once the meeting is behind the PO. "Recording: none"
+  // on a call that has not happened yet reads as a fault, and it is a fact
+  // about nothing.
+  const showRecording = full !== null && !upcoming && !cancelled;
+  const hasFacts = when !== null || others.length > 0 || showRecording;
+  const hasMiddle = full !== null && (!nothingCameOut || body !== '' || !upcoming);
 
   const go = (path: string) => {
     onOpenChange(false);
     void openDoc(path);
   };
 
+  const getBrief = () => {
+    onOpenChange(false);
+    openSession('meeting-prep', {
+      initialPrompt: beforeMeetingSeed(note.path),
+      title: `Brief: ${note.title}`,
+      fresh: true,
+    });
+  };
+
+  const goThrough = () => {
+    onOpenChange(false);
+    openSession('arrival', {
+      initialPrompt: readMeetingSeed(note.path, {
+        transcripts: transcripts.length,
+        typed: body.length > 0,
+      }),
+      title: `Go through: ${note.title}`,
+      fresh: true,
+    });
+  };
+
+  const addTranscript = () => {
+    onOpenChange(false);
+    requestCapture({ aim: { kind: 'meeting', path: note.path, title: note.title } });
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[85vh] gap-0 overflow-y-auto p-0 sm:max-w-lg"
+        // Sized by what is in it, capped by the window. Only the middle scrolls,
+        // so the actions never leave the screen.
+        className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
         aria-describedby={undefined}
+        // Land on the panel, not on the first button in it. Radix would put
+        // focus on an outcome row or the file button, which draws a ring
+        // around a secondary control before the PO has read a word.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement | null)?.focus?.();
+        }}
       >
-        <div className="px-4 pt-4 pb-3.5">
+        {/* The file itself sits with Close: a way out, not a thing to do. */}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="absolute top-2 right-10 text-muted-foreground"
+          onClick={() => go(note.path)}
+          title="Open the file"
+        >
+          <FileText aria-hidden />
+          <span className="sr-only">Open the file</span>
+        </Button>
+
+        <div className="shrink-0 pt-4 pr-20 pb-3.5 pl-4">
           {standing && (
+            // Not filed is the one state that must not be missed: amber, a glyph, and a word.
             <span
-              className={cn('rounded px-1.5 py-0.5 text-xs font-medium', TONE_CLASS[standing.tone])}
+              className={cn(
+                'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium',
+                TONE_CLASS[standing.tone],
+              )}
             >
+              {standing.tone === 'warning' && <TriangleAlert className="size-3" aria-hidden />}
               {standing.text}
             </span>
           )}
           <DialogTitle
             className={cn(
-              'mt-2 text-base leading-snug font-semibold',
+              'text-base leading-snug font-semibold text-balance',
+              standing && 'mt-2',
               cancelled && 'text-muted-foreground line-through',
             )}
           >
             {note.title}
           </DialogTitle>
-          {note.summary && <p className="mt-1 text-sm text-muted-foreground">{note.summary}</p>}
+          {note.summary && <p className="mt-1.5 text-sm text-muted-foreground">{note.summary}</p>}
         </div>
 
-        <dl className="grid grid-cols-[6rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2.5 border-t border-border px-4 py-3.5">
-          {when && (
-            <Fact label="When">
-              <span className="flex flex-wrap items-baseline gap-x-2">
-                <span>{whenLine(when.start, when.clock, when.end)}</span>
-                {length && when.clock && (
-                  <span className="text-xs text-muted-foreground">{length}</span>
-                )}
-              </span>
-            </Fact>
-          )}
-
-          {people.length > 0 && (
-            <Fact label="Who was there">
-              <span className="flex flex-wrap gap-1">
-                {people.map((p) => (
-                  <PersonChip key={p} value={p} />
-                ))}
-              </span>
-            </Fact>
-          )}
-
-          {/* Only once the meeting is behind the PO. "Recording: none" on a call
-              that has not happened yet reads as a fault, and it is a fact about
-              nothing. */}
-          {full !== null && !upcoming && !cancelled && (
-            <Fact label="Recording">
-              {transcripts.length > 0 ? (
-                <span>
-                  {transcripts.length === 1 ? '1 transcript' : `${transcripts.length} transcripts`}
+        {hasFacts && (
+          <dl className="grid shrink-0 grid-cols-[6rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 border-t border-border px-4 py-3.5">
+            {when && (
+              <Fact label="When">
+                <span className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="tabular-nums">{whenLine(when.start, when.clock, when.end)}</span>
+                  {length && when.clock && (
+                    <span className="text-xs text-muted-foreground">{length}</span>
+                  )}
                 </span>
-              ) : (
-                <span className="text-muted-foreground">None</span>
-              )}
-            </Fact>
-          )}
-        </dl>
+              </Fact>
+            )}
 
-        {full !== null && (
-          <div className="flex flex-col gap-3 border-t border-border px-4 py-3.5">
-            <Outcome heading="Decided" notes={outcome.decided} onOpen={go} />
-            <Outcome
-              heading="Promised"
-              notes={outcome.promised}
-              stateOf={promiseState}
-              onOpen={go}
-            />
-            <Outcome heading="Learned" notes={outcome.learned} onOpen={go} />
-            <Outcome heading="Also linked" notes={outcome.linked} onOpen={go} />
-            {nothingCameOut && (
-              <p className="px-1 text-sm text-muted-foreground">
-                Nothing has come out of this meeting yet.
-              </p>
+            {others.length > 0 && (
+              <Fact label="With">
+                <span className="flex flex-wrap gap-1">
+                  {others.map((p) => (
+                    <PersonChip key={p} value={p} />
+                  ))}
+                </span>
+              </Fact>
+            )}
+
+            {showRecording && (
+              <Fact label="Recording">
+                {transcripts.length > 0 ? (
+                  <span>
+                    {transcripts.length === 1
+                      ? '1 transcript'
+                      : `${transcripts.length} transcripts`}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">None</span>
+                )}
+              </Fact>
+            )}
+          </dl>
+        )}
+
+        {hasMiddle && (
+          <div className="min-h-0 overflow-y-auto">
+            {/* What came out of it. An upcoming meeting with nothing linked
+                says nothing: "nothing yet" is only news once it has happened. */}
+            {(!nothingCameOut || !upcoming) && (
+              <div className="flex flex-col gap-3 border-t border-border px-4 py-3.5">
+                <Outcome heading="Decided" notes={outcome.decided} onOpen={go} />
+                <Outcome
+                  heading="Promised"
+                  notes={outcome.promised}
+                  stateOf={promiseState}
+                  onOpen={go}
+                />
+                <Outcome heading="Learned" notes={outcome.learned} onOpen={go} />
+                <Outcome heading="Also linked" notes={outcome.linked} onOpen={go} />
+                {nothingCameOut && (
+                  <p className="px-1 text-sm text-muted-foreground">
+                    Nothing has come out of this meeting yet.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* What was written down, as it was written. */}
+            {body && (
+              <div className="border-t border-border px-4 py-3.5 text-sm">
+                <Markdown content={body} onOpenNote={(p) => go(p)} />
+              </div>
             )}
           </div>
         )}
 
-        {body && (
-          <div className="border-t border-border px-4 py-3.5">
-            {/* What was written down, as it was written. */}
-            <div className="max-h-72 overflow-y-auto text-sm">
-              <Markdown content={body} onOpenNote={(p) => go(p)} />
-            </div>
+        {(offerBrief || unread || (!upcoming && !cancelled)) && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-4 py-3">
+            {offerBrief && (
+              <Button
+                size="sm"
+                onClick={getBrief}
+                title="What changed since these people were last told, open questions, loose ends. One proposal writes it onto the page."
+              >
+                <Sparkles aria-hidden />
+                Get the brief
+              </Button>
+            )}
+            {unread && (
+              <Button
+                size="sm"
+                onClick={goThrough}
+                title="Go through what this meeting holds, typed notes and recordings alike, and turn what it changes into proposals."
+              >
+                <Sparkles aria-hidden />
+                Go through this meeting
+              </Button>
+            )}
+            {!upcoming && !cancelled && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={addTranscript}
+                title="Add a recording to this meeting"
+              >
+                <Mic aria-hidden />
+                Add transcript
+              </Button>
+            )}
           </div>
         )}
-
-        <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
-          {offerBrief && (
-            <Button
-              size="sm"
-              onClick={() => {
-                onOpenChange(false);
-                openSession('meeting-prep', {
-                  initialPrompt: beforeMeetingSeed(note.path),
-                  title: `Brief: ${note.title}`,
-                  fresh: true,
-                });
-              }}
-              title="What changed since these people were last told, open questions, loose ends. One proposal writes it onto the page."
-            >
-              <Sparkles aria-hidden />
-              Get the brief
-            </Button>
-          )}
-          {unread && (
-            <Button
-              size="sm"
-              onClick={() => {
-                onOpenChange(false);
-                openSession('arrival', {
-                  initialPrompt: readMeetingSeed(note.path, {
-                    transcripts: transcripts.length,
-                    typed: body.length > 0,
-                  }),
-                  title: `Go through: ${note.title}`,
-                  fresh: true,
-                });
-              }}
-              title="Go through what this meeting holds, typed notes and recordings alike, and turn what it changes into proposals."
-            >
-              <Sparkles aria-hidden />
-              Go through this meeting
-            </Button>
-          )}
-          {!upcoming && !cancelled && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                onOpenChange(false);
-                requestCapture({
-                  aim: { kind: 'meeting', path: note.path, title: note.title },
-                });
-              }}
-              title="Add a recording to this meeting"
-            >
-              <Mic aria-hidden />
-              Add transcript
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="ml-auto text-muted-foreground"
-            onClick={() => go(note.path)}
-            title="The markdown file this meeting lives in"
-          >
-            <FileText aria-hidden />
-            Open the file
-          </Button>
-        </div>
       </DialogContent>
     </Dialog>
   );

@@ -13,7 +13,7 @@ test('every authored type is described, and the machine-written ones are not', (
     'note',
     'insight',
     'decision',
-    'theme',
+    'research',
     'customer',
     'person',
     'todo',
@@ -33,7 +33,9 @@ test("the shapes are the schema's own, not a description of it", () => {
   // Enums are listed in full, so "which words may commitment hold" is answered
   // here rather than guessed.
   assert.match(ref, /commitment \(open \| done \| dropped\)/);
-  assert.match(ref, /stance \(exploring \| watching \| committed \| wont-do\)/);
+  assert.match(ref, /relationship \(prospect \| active \| churned\)/);
+  // A research page cites; the list is there even when it is empty.
+  assert.match(ref, /\*\*research\*\* \(research\/\): [^\n]*sources \(list\)/);
   // Lists say they are lists — the mistake this whole reference exists for.
   assert.match(ref, /tags \(list\)/);
   assert.match(ref, /verified \(list of \{by, at\}\)/);

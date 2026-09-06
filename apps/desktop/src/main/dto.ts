@@ -12,7 +12,6 @@ import {
 import type {
   Backlink,
   IndexedNote,
-  ThemeHeatRow,
   ProposalRecord,
   RunnableSummary,
   UseCaseContext,
@@ -24,8 +23,6 @@ import type {
   BacklinkDTO,
   NoteDTO,
   NoteRefDTO,
-  ThemeHeatDTO,
-  ThemeStance,
   ProposalDTO,
   SearchHitDTO,
   SkillDTO,
@@ -99,6 +96,7 @@ export function indexedToRefDTO(n: IndexedNote): NoteRefDTO {
     state: typeof fm['state'] === 'string' ? fm['state'] : undefined,
     assignee: typeof fm['assignee'] === 'string' ? fm['assignee'] : undefined,
     remoteUpdated: typeof fm['remote_updated'] === 'string' ? fm['remote_updated'] : undefined,
+    remoteUrl: typeof fm['url'] === 'string' ? fm['url'] : undefined,
   };
 }
 
@@ -217,15 +215,6 @@ export function vaultInfoToDTO(info: VaultInfo): VaultInfoDTO {
     syncedBy: info.syncedBy,
     pathTooDeep: info.pathTooDeep,
     noteCount: info.noteCount,
-  };
-}
-
-export function themeHeatToDTO(row: ThemeHeatRow): ThemeHeatDTO {
-  return {
-    ...indexedToRefDTO(row.note),
-    stance: ((row.note.frontmatter['stance'] as string) ?? 'exploring') as ThemeStance,
-    evidenceCount: row.count,
-    newest: row.newest,
   };
 }
 

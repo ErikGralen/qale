@@ -111,7 +111,7 @@ function sentence(parts: string[]): string {
  * the steps are done, so the interesting fact is no longer the steps, it is the
  * memory they built. Every number is read off the tree at render time, so the
  * sentence is true when it is shown and is never stored, and a count of zero
- * loses its segment rather than printing "0 themes".
+ * loses its segment rather than printing "0 decisions".
  *
  * Null means there is nothing to say, and the card falls back to the ticks.
  */
@@ -127,7 +127,6 @@ export function firstStepsTally(tree: VaultTreeDTO | null): string | null {
     segment(meetings.length, 'meeting', 'meetings'),
     segment(written, 'with notes', 'with notes'),
     segment(of('person').length, 'person', 'people'),
-    segment(of('theme').length, 'theme', 'themes'),
     segment(of('decision').length, 'decision', 'decisions'),
   ].filter((p): p is string => p !== null);
 

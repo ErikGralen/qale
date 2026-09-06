@@ -259,6 +259,8 @@ export function CardItem({
   } | null>(null);
   const [expanded, setExpanded] = useState(!!initialExpanded);
   const [editing, setEditing] = useState(false);
+  // The rationale and the sources, folded under the action row.
+  const [whyOpen, setWhyOpen] = useState(false);
   const [draftBody, setDraftBody] = useState('');
   const [draftPatch, setDraftPatch] = useState<{ search: string; replace: string }[]>([]);
   // null = this card has no append lever, so editing must not add one.
@@ -326,6 +328,8 @@ export function CardItem({
         }),
     ),
   ];
+
+  const why = whyLabel(proposal.rationale, evidence);
 
   // Fetch the preview lazily — only once the card is open, so a 24-card review
   // doesn't fire two dozen preview reads up front.
@@ -420,55 +424,30 @@ export function CardItem({
         outbound ? 'ring-brand/30' : ''
       }`}
     >
-      {/* A send's head is one statement, not a banner stacked on a headline:
-          where it goes, what it touches, what it says. The warning strip and the
-          title row were two containers narrating the same fact, and the card
-          spent three bordered regions before showing a word of the change. */}
-      {outbound ? (
-        <div className="border-b border-brand/20 bg-brand/6 px-4 py-3">
-          <div className="flex items-center gap-2 text-xs">
-            <ArrowUpRight className="size-3.5 shrink-0 text-brand" />
-            <span className="font-medium text-foreground">Leaves your workspace</span>
-          </div>
-          <OutboundTargetLine payload={outbound} onOpen={onOpen} />
-          {/* When it lands. On a calendar card this is the fact being approved —
-              the head named the event and the system and never once said which
-              day or hour, which is the only thing a person checks. */}
-          <EventWhenLine payload={outbound} />
-          {/* What approving does, and who it reaches — but only where it adds
-              a fact the target line above doesn't already state. A calendar
-              card's line carries the guest list and the no-email rule; a page
-              edit or ticket comment is already fully said by the target line,
-              and restating it made the head a paragraph. */}
-          {effect && outbound.action.endsWith('_event') && (
-            <p className="mt-2 text-sm leading-snug text-balance break-words text-foreground/80">
-              {effect}
-            </p>
-          )}
-          {/* The agent's own words for the change, when it wrote any. Full ink,
-              regular weight: the longest line in the head shouldn't also be the
-              faintest one. Only an authored headline earns the line. The
-              composed one is built from the same payload as the target and
-              effect lines above, so it could only ever restate them. */}
-          {authored && (
-            <p className="mt-2 text-sm leading-snug text-balance break-words text-foreground">
-              {headline}
-            </p>
-          )}
-          {(proposal.asked || proposal.inference || proposal.selfStarted) && (
-            <span className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
-              {proposal.asked ? <AskedLine /> : proposal.inference && <InferenceFlag />}
-              {proposal.selfStarted && <SelfStartedLine text={proposal.selfStarted} />}
-            </span>
-          )}
-        </div>
-      ) : (
-        /* Header: the scannable human headline + inline approve/discard. The whole
-         line toggles the detail. Actions stay top-aligned and reachable even
-         when the headline wraps to two lines. */
-        <div className="flex items-start gap-2 px-4 py-3">
+      {/* One head for every card: a glyph, the statement of what gets written
+          with the file as an openable chip, and the quiet facts under it. A card
+          that leaves the workspace wears the arrow in ink where the others wear
+          their note glyph, keeps an ink ring, and names its system on the chip.
+          It used to say "Leaves your workspace" on a tinted band above all of
+          that: a label restating what the arrow, the chip and the button verb
+          already said, and the card spent two bordered regions before showing a
+          word of the change. */}
+      <div className="flex items-start gap-2 px-4 py-3">
+        {outbound ? (
+          <span className="mt-0.5 shrink-0" title="Leaves your workspace">
+            <ArrowUpRight className="size-4 text-brand" aria-hidden />
+            <span className="sr-only">Leaves your workspace.</span>
+          </span>
+        ) : (
           <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <div className="min-w-0 flex-1 cursor-pointer" onClick={toggleDetail}>
+        )}
+        <div
+          className={`min-w-0 flex-1 ${outbound ? '' : 'cursor-pointer'}`}
+          onClick={outbound ? undefined : toggleDetail}
+        >
+          {outbound ? (
+            <OutboundTargetLine payload={outbound} onOpen={onOpen} />
+          ) : (
             <span className="block text-sm leading-snug font-medium text-balance break-words text-foreground">
               {note && !authored ? (
                 // "Update <note>" — the note is the subject, so it renders as a
@@ -485,51 +464,76 @@ export function CardItem({
                 headline
               )}
             </span>
-            {/* The line above names what gets written; this one names what
-                approving does and where it lands. A card that says neither
-                leaves the reader to supply the rest, and they supply the worst:
-                a page about a meeting reads as a meeting booked. It stays
-                readable with the card shut, which is where most cards are
-                judged. */}
-            {effect && <p className="mt-1 text-xs text-muted-foreground">{effect}</p>}
-            {(replaces ||
-              retitle ||
-              (note && authored) ||
-              source ||
-              proposal.asked ||
-              proposal.inference ||
-              proposal.selfStarted) && (
-              <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
-                {note && authored && (
-                  <NoteChip
-                    title={note.title}
-                    path={note.path}
-                    onOpen={(opts) => onOpen(note.path, opts)}
-                    small
-                  />
-                )}
-                {replaces && (
-                  <span>
-                    Replaces <span className="text-foreground/75">“{replaces}”</span>
-                  </span>
-                )}
-                {retitle && (
-                  <span>
-                    Retitles to <span className="text-foreground/75">“{retitle}”</span>
-                  </span>
-                )}
-                {proposal.asked ? (
-                  <AskedLine />
-                ) : proposal.inference ? (
-                  <InferenceFlag />
-                ) : (
-                  source && <span>from {source}</span>
-                )}
-                {proposal.selfStarted && <SelfStartedLine text={proposal.selfStarted} />}
-              </span>
-            )}
-          </div>
+          )}
+          {/* When a calendar card lands. This is the fact being approved: the
+              head named the event and the system and never once said which day
+              or hour, which is the only thing a person checks. */}
+          {outbound && <EventWhenLine payload={outbound} />}
+          {/* What approving does and where it lands, where it adds a fact the
+              line above does not already state. A card that stays in the
+              workspace names its folder; a calendar card carries the guest list
+              and the no-email rule; a page edit or a ticket comment is fully
+              said by its target line, and restating it made the head a
+              paragraph. */}
+          {effect &&
+            (outbound ? (
+              outbound.action.endsWith('_event') && (
+                <p className="mt-1.5 text-sm leading-snug text-balance break-words text-foreground/80">
+                  {effect}
+                </p>
+              )
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">{effect}</p>
+            ))}
+          {/* The agent's own words for a send, when it wrote any. Full ink,
+              regular weight: the longest line in the head shouldn't also be the
+              faintest one. */}
+          {outbound && authored && (
+            <p className="mt-1.5 text-sm leading-snug text-balance break-words text-foreground">
+              {headline}
+            </p>
+          )}
+          {(replaces ||
+            retitle ||
+            (note && authored && !outbound) ||
+            source ||
+            proposal.asked ||
+            proposal.inference ||
+            proposal.selfStarted) && (
+            <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+              {note && authored && !outbound && (
+                <NoteChip
+                  title={note.title}
+                  path={note.path}
+                  onOpen={(opts) => onOpen(note.path, opts)}
+                  small
+                />
+              )}
+              {replaces && (
+                <span>
+                  Replaces <span className="text-foreground/75">“{replaces}”</span>
+                </span>
+              )}
+              {retitle && (
+                <span>
+                  Retitles to <span className="text-foreground/75">“{retitle}”</span>
+                </span>
+              )}
+              {proposal.asked ? (
+                <AskedLine />
+              ) : proposal.inference ? (
+                <InferenceFlag />
+              ) : (
+                source && <span>from {source}</span>
+              )}
+              {proposal.selfStarted && <SelfStartedLine text={proposal.selfStarted} />}
+            </span>
+          )}
+        </div>
 
+        {/* A send is always open and always its own last decision, so it has no
+            quick approve and nothing to fold. */}
+        {!outbound && (
           <div className="flex shrink-0 items-center gap-0.5">
             {!open && (
               <>
@@ -562,165 +566,177 @@ export function CardItem({
               <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {open && (
-        <div className="border-t border-border/60 px-4 pt-3 pb-4">
-          {editing ? (
-            <EditFields
-              kind={proposal.kind}
-              draftBody={draftBody}
-              draftPatch={draftPatch}
-              draftAppend={draftAppend}
-              onBody={setDraftBody}
-              onPatch={setDraftPatch}
-              onAppend={setDraftAppend}
-            />
-          ) : outbound ? (
-            <OutboundDetail payload={outbound} onOpen={onOpen} />
-          ) : preview ? (
-            <ChangePreview kind={proposal.kind} preview={preview} onOpen={onOpen} />
-          ) : (
-            // The preview is read on open, so the card would otherwise sit
-            // empty: the one thing being approved, absent. Shaped like the lines
-            // it becomes, per the reader skeleton.
-            <PreviewSkeleton />
-          )}
+        <>
+          {/* The change, on the card's own surface under one hairline: the
+              document as it will read, not a captioned box inside a box. What
+              it is (a redline, a comment, a page) is what it looks like. */}
+          <div className="border-t border-border/60">
+            {editing ? (
+              <div className="px-4 py-3">
+                <EditFields
+                  kind={proposal.kind}
+                  draftBody={draftBody}
+                  draftPatch={draftPatch}
+                  draftAppend={draftAppend}
+                  onBody={setDraftBody}
+                  onPatch={setDraftPatch}
+                  onAppend={setDraftAppend}
+                />
+              </div>
+            ) : outbound ? (
+              <OutboundDetail payload={outbound} onOpen={onOpen} />
+            ) : preview ? (
+              <ChangePreview kind={proposal.kind} preview={preview} onOpen={onOpen} />
+            ) : (
+              // The preview is read on open, so the card would otherwise sit
+              // empty: the one thing being approved, absent. Shaped like the
+              // lines it becomes, per the reader skeleton.
+              <PreviewSkeleton />
+            )}
+          </div>
 
-          {/* Why it was written, and what it was written from. Both behind one
-              row, under the change rather than over it: the decision is the file
-              and the diff, and a reader who has decided never scrolls past the
-              agent's reasoning to reach the button. */}
-          <WhyFold rationale={proposal.rationale} refs={evidence} onOpen={onOpen} />
+          <div className="px-4 pt-1 pb-3">
+            {preview?.stale ? (
+              <div
+                role="alert"
+                className="mb-3 flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive"
+              >
+                {preview.staleReason === 'missing' ? (
+                  // Nothing to redo it against, so there is no repair to offer.
+                  <span className="flex-1">
+                    {removes
+                      ? 'This page is already gone, so there is nothing left to delete. Discard the proposal.'
+                      : 'The note this edit belongs to is gone, so there is nothing to change. Discard the proposal.'}
+                  </span>
+                ) : (
+                  <>
+                    <span className="flex-1">
+                      This edit has nowhere to go: {placementProblem}. Send it back to be redone
+                      against the note as it reads now, or edit it yourself.
+                    </span>
+                    <Button size="sm" variant="outline" onClick={fix}>
+                      <Wrench className="size-3.5" />
+                      Fix this
+                    </Button>
+                  </>
+                )}
+              </div>
+            ) : (
+              // The note moved under a card that still fits. Not a warning: the
+              // diff above is against the note as it reads now, so what gets
+              // approved is what is on screen. Said quietly because the sentence
+              // the card was written about may have moved with it.
+              preview?.moved && (
+                <p className="mb-3 text-xs text-muted-foreground">
+                  The note changed after this was proposed. The change above is against the note as
+                  it reads now.
+                </p>
+              )
+            )}
 
-          {preview?.stale ? (
-            <div
-              role="alert"
-              className="mt-3 flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive"
-            >
-              {preview.staleReason === 'missing' ? (
-                // Nothing to redo it against, so there is no repair to offer.
-                <span className="flex-1">
-                  {removes
-                    ? 'This page is already gone, so there is nothing left to delete. Discard the proposal.'
-                    : 'The note this edit belongs to is gone, so there is nothing to change. Discard the proposal.'}
-                </span>
+            {error && (
+              <div
+                role="alert"
+                className="mb-3 flex items-center gap-3 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive"
+              >
+                <span className="flex-1">{error}</span>
+                {outbound && staleSend ? (
+                  // Main refused the send because the target moved after
+                  // drafting. Approving anyway re-accepts with the snapshot
+                  // refreshed to the mirror's current state — an explicit
+                  // decision, never a silent retry loop.
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void withFreshSnapshot(outbound).then((p) => onAccept(p))}
+                  >
+                    {act && <act.Icon className="size-3.5" />} Approve anyway
+                  </Button>
+                ) : (
+                  retryable && (
+                    <Button size="sm" variant="outline" onClick={() => onAccept()} disabled={busy}>
+                      Retry
+                    </Button>
+                  )
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              {editing ? (
+                <>
+                  <Button
+                    size="sm"
+                    data-send={outbound ? proposal.id : undefined}
+                    onClick={approveEdited}
+                    disabled={busy || preview?.stale}
+                  >
+                    {act ? <act.Icon className="size-3.5" /> : <Check className="size-3.5" />}
+                    {act ? `Approve edits & ${act.verb}` : 'Approve edited'}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+                    Cancel
+                  </Button>
+                </>
               ) : (
                 <>
-                  <span className="flex-1">
-                    This edit has nowhere to go: {placementProblem}. Send it back to be redone
-                    against the note as it reads now, or edit it yourself.
-                  </span>
-                  <Button size="sm" variant="outline" onClick={fix}>
-                    <Wrench className="size-3.5" />
-                    Fix this
+                  {/* The queue's ↵ lands here rather than firing — `data-send` is
+                      the handle it focuses, so a send always costs a second,
+                      deliberate press on the button itself. The label names the
+                      act: only a message is sent, a page is updated in place. */}
+                  <Button
+                    size="sm"
+                    data-send={outbound ? proposal.id : undefined}
+                    onClick={() => onAccept()}
+                    disabled={busy || preview?.stale}
+                  >
+                    {act ? (
+                      <act.Icon className="size-3.5" />
+                    ) : removes ? (
+                      <Trash2 className="size-3.5" />
+                    ) : (
+                      <Check className="size-3.5" />
+                    )}
+                    {act ? `Approve & ${act.verb}` : removes ? 'Approve & delete' : 'Approve'}
+                  </Button>
+                  {/* One filled control on the row. Edit and Discard were two
+                      identical outlines flanking it, so three buttons competed at
+                      the same weight; as ghosts they read as what they are:
+                      adjuncts to the one decision the card is asking for. */}
+                  {/* A deletion has no text to edit: the card is a path and a
+                      reason. The two answers are yes and no. */}
+                  {!removes && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={startEdit}
+                      disabled={busy || preview?.stale}
+                    >
+                      <Pencil className="size-3.5" /> Edit
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={onReject} disabled={busy}>
+                    <X className="size-3.5" /> Discard
                   </Button>
                 </>
               )}
-            </div>
-          ) : (
-            // The note moved under a card that still fits. Not a warning: the
-            // diff above is against the note as it reads now, so what gets
-            // approved is what is on screen. Said quietly because the sentence
-            // the card was written about may have moved with it.
-            preview?.moved && (
-              <p className="mt-3 text-xs text-muted-foreground">
-                The note changed after this was proposed. The change above is against the note as it
-                reads now.
-              </p>
-            )
-          )}
-
-          {error && (
-            <div
-              role="alert"
-              className="mt-3 flex items-center gap-3 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive"
-            >
-              <span className="flex-1">{error}</span>
-              {outbound && staleSend ? (
-                // Main refused the send because the target moved after
-                // drafting. Approving anyway re-accepts with the snapshot
-                // refreshed to the mirror's current state — an explicit
-                // decision, never a silent retry loop.
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void withFreshSnapshot(outbound).then((p) => onAccept(p))}
-                >
-                  {act && <act.Icon className="size-3.5" />} Approve anyway
-                </Button>
-              ) : (
-                retryable && (
-                  <Button size="sm" variant="outline" onClick={() => onAccept()} disabled={busy}>
-                    Retry
-                  </Button>
-                )
+              {/* Why it was written and what from, as a footnote off the end of
+                  the row: the agent showing its work, one click away, under the
+                  decision rather than between the change and the button. */}
+              {why && (
+                <WhyToggle label={why} open={whyOpen} onToggle={() => setWhyOpen((v) => !v)} />
               )}
             </div>
-          )}
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            {editing ? (
-              <>
-                <Button
-                  size="sm"
-                  data-send={outbound ? proposal.id : undefined}
-                  onClick={approveEdited}
-                  disabled={busy || preview?.stale}
-                >
-                  {act ? <act.Icon className="size-3.5" /> : <Check className="size-3.5" />}
-                  {act ? `Approve edits & ${act.verb}` : 'Approve edited'}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
-                  Cancel
-                </Button>
-              </>
-            ) : (
-              <>
-                {/* The queue's ↵ lands here rather than firing — `data-send` is
-                    the handle it focuses, so a send always costs a second,
-                    deliberate press on the button itself. The label names the
-                    act: only a message is sent, a page is updated in place. */}
-                <Button
-                  size="sm"
-                  data-send={outbound ? proposal.id : undefined}
-                  onClick={() => onAccept()}
-                  disabled={busy || preview?.stale}
-                >
-                  {act ? (
-                    <act.Icon className="size-3.5" />
-                  ) : removes ? (
-                    <Trash2 className="size-3.5" />
-                  ) : (
-                    <Check className="size-3.5" />
-                  )}
-                  {act ? `Approve & ${act.verb}` : removes ? 'Approve & delete' : 'Approve'}
-                </Button>
-                {/* One filled control on the row. Edit and Discard were two
-                    identical outlines flanking it, so three buttons competed at
-                    the same weight; as ghosts they read as what they are:
-                    adjuncts to the one decision the card is asking for. */}
-                {/* A deletion has no text to edit: the card is a path and a
-                    reason. The two answers are yes and no. */}
-                {!removes && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={startEdit}
-                    disabled={busy || preview?.stale}
-                  >
-                    <Pencil className="size-3.5" /> Edit
-                  </Button>
-                )}
-                <Button size="sm" variant="ghost" onClick={onReject} disabled={busy}>
-                  <X className="size-3.5" /> Discard
-                </Button>
-              </>
+            {why && whyOpen && (
+              <WhyPanel rationale={proposal.rationale} refs={evidence} onOpen={onOpen} />
             )}
           </div>
-        </div>
+        </>
       )}
     </li>
   );
@@ -779,16 +795,46 @@ function EvidenceChip({
 
 /**
  * The agent's own account of the change: why it wrote this, and what it read to
- * write it. Both sit behind one row, because the decision the card is asking for
- * is the file and the diff. A session that read twelve things cites twelve, and
- * that list took more of the card than the change did while pushing the buttons
- * off the screen. It is a trust question, asked once, by a reader who already
- * doubts what is in front of them.
+ * write it. The decision the card asks for is the file and the diff, so this is
+ * a footnote: one quiet toggle at the far end of the action row, and the text
+ * unfolds under the buttons, never between the change and Approve. A session
+ * that read twelve things cites twelve, and that list took more of the card
+ * than the change did.
  *
- * The row says which of the two it holds. "Why this" over a card with no
+ * The label says which of the two it holds. "Why this" over a card with no
  * rationale is a promise the fold can't keep.
  */
-function WhyFold({
+function whyLabel(rationale: string, refs: string[]): string | null {
+  const why = rationale.trim();
+  if (!why && refs.length === 0) return null;
+  return why ? 'Why this' : 'Based on';
+}
+
+function WhyToggle({
+  label,
+  open,
+  onToggle,
+}: {
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      className="ml-auto inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      aria-expanded={open}
+    >
+      {label}
+      <ChevronDown className={`size-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+    </button>
+  );
+}
+
+function WhyPanel({
   rationale,
   refs,
   onOpen,
@@ -797,42 +843,20 @@ function WhyFold({
   refs: string[];
   onOpen: CardItemProps['onOpen'];
 }) {
-  const [open, setOpen] = useState(false);
   const why = rationale.trim();
-  if (!why && refs.length === 0) return null;
-  const label = why
-    ? refs.length > 0
-      ? 'Why this, and where it came from'
-      : 'Why this'
-    : 'Where it came from';
   return (
-    <div className="mt-3">
-      <button
-        className="-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
-        aria-expanded={open}
-      >
-        <ChevronDown className={`size-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
-        {label}
-      </button>
-      {open && (
-        <div className="mt-2">
-          {why && (
-            <p className="text-sm leading-relaxed text-foreground/80">
-              <WikiText text={why} onOpen={onOpen} />
-            </p>
-          )}
-          {refs.length > 0 && (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">Based on</span>
-              {refs.map((r) => (
-                <EvidenceChip key={r} source={r} onOpen={onOpen} />
-              ))}
-            </div>
-          )}
+    <div className="mt-3 border-t border-border/60 pt-3">
+      {why && (
+        <p className="text-sm leading-relaxed text-foreground/80">
+          <WikiText text={why} onOpen={onOpen} />
+        </p>
+      )}
+      {refs.length > 0 && (
+        <div className={`flex flex-wrap items-center gap-1.5 ${why ? 'mt-2' : ''}`}>
+          <span className="text-xs text-muted-foreground">Based on</span>
+          {refs.map((r) => (
+            <EvidenceChip key={r} source={r} onOpen={onOpen} />
+          ))}
         </div>
       )}
     </div>
@@ -977,7 +1001,7 @@ function OutboundTargetLine({
   const ref = outboundRef(payload);
   const system = providerName(payload);
   const line =
-    'mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-medium text-foreground';
+    'flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-medium text-foreground';
   const quiet = 'text-muted-foreground';
 
   if (payload.action === 'create_ticket') {
@@ -1026,7 +1050,7 @@ function OutboundTargetLine({
 
   return (
     <div className={line}>
-      <span>
+      <span className={quiet}>
         {payload.action === 'comment_ticket'
           ? `Comment on the${system ? ` ${system}` : ''} ticket`
           : 'Update'}
@@ -1181,7 +1205,7 @@ function OutboundDetail({
   return (
     <div>
       {changedSince && (
-        <div className="mb-3 flex items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
+        <div className="mx-4 mt-3 flex items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <span>
             <span className="font-medium">{refName} changed since this was drafted</span>
@@ -1193,21 +1217,8 @@ function OutboundDetail({
           </span>
         </div>
       )}
-      {/* Name what the box holds. "What gets sent" over a page redline
-          promised a delivery and showed an edit. */}
-      <div className="mb-2 text-xs font-medium text-muted-foreground">
-        {redline
-          ? 'How the page changes'
-          : payload.action === 'update_page'
-            ? 'What gets added to the page'
-            : payload.action === 'comment_ticket'
-              ? 'The comment'
-              : payload.action === 'create_ticket'
-                ? 'The ticket'
-                : payload.action.endsWith('_event')
-                  ? 'The event description'
-                  : 'What gets sent'}
-      </div>
+      {/* No caption over the box. The head already says "Update <page>" or
+          "Comment on the ticket", and a redline is unmistakably a redline. */}
       <PreviewSurface>
         {redline && diffPair ? (
           <RenderedDiff before={diffPair.before} after={diffPair.after} onOpen={onOpen} />
@@ -1218,23 +1229,19 @@ function OutboundDetail({
     </div>
   );
 }
-
 /** The change, still loading — same pulse vocabulary as the session reader's
  *  skeleton, shaped like the lines it becomes rather than a spinner parked in
  *  the middle of the card. */
 function PreviewSkeleton() {
   return (
-    <div role="status" aria-label="Loading the change">
-      <div className="mb-2 h-3 w-24 animate-pulse rounded bg-muted motion-reduce:animate-none" />
-      <div className="flex flex-col gap-2.5 rounded-lg bg-muted/30 px-4 py-3">
-        {[92, 76, 84].map((w, i) => (
-          <div
-            key={i}
-            className="h-2.5 animate-pulse rounded bg-muted motion-reduce:animate-none"
-            style={{ width: `${w}%`, animationDelay: `${i * 90}ms` }}
-          />
-        ))}
-      </div>
+    <div role="status" aria-label="Loading the change" className="flex flex-col gap-2.5 px-4 py-3">
+      {[92, 76, 84].map((w, i) => (
+        <div
+          key={i}
+          className="h-2.5 animate-pulse rounded bg-muted motion-reduce:animate-none"
+          style={{ width: `${w}%`, animationDelay: `${i * 90}ms` }}
+        />
+      ))}
     </div>
   );
 }
@@ -1265,9 +1272,7 @@ function PreviewSurface({ children }: { children: ReactNode }) {
   return (
     <div
       ref={ref}
-      className={`max-h-[26rem] overflow-y-auto rounded-lg bg-muted/30 px-4 py-3 ${
-        clipped ? 'qale-scroll-fade' : ''
-      }`}
+      className={`max-h-[26rem] overflow-y-auto px-4 py-3 ${clipped ? 'qale-scroll-fade' : ''}`}
     >
       {children}
     </div>
@@ -1347,15 +1352,9 @@ function ChangePreview({
   const empty = kind === 'delete' && !stripFrontmatter(preview.before).trim();
   return (
     <div>
-      <div className="mb-2 text-xs font-medium text-muted-foreground">
-        {/* "What gets filed" made the page sound like paperwork the PO now owns
-            (E-6). It is a page, and this is what it will say. */}
-        {kind === 'update'
-          ? 'What this changes'
-          : kind === 'delete'
-            ? 'What goes'
-            : 'What it will say'}
-      </div>
+      {/* No caption. A redline looks like a redline and a page looks like a
+          page; "What this changes" over a diff named what the eye had already
+          read. */}
       <PreviewSurface>
         {kind === 'update' ? (
           <div className="flex flex-col gap-3">
@@ -1507,7 +1506,7 @@ function parseStructure(text: string): LineStructure {
     return {
       inner: bullet[3]!,
       structural: '',
-      padLeft: Math.floor((bullet[1]?.length ?? 0) / 2) * 0.85 + 0.9,
+      padLeft: Math.floor((bullet[1]?.length ?? 0) / 2) * 0.85 + 1.3,
       lead: 'bullet',
     };
   if (quote)
@@ -1529,29 +1528,40 @@ function leadNode(lead: LineStructure['lead']): ReactNode {
   return null;
 }
 
-/** A wholly added or removed line — the change is carried by color + strikethrough. */
+/** A wholly added or removed line — the change is carried by color + strikethrough.
+ *  A run of such lines is one block: the wash is continuous through the blank
+ *  lines between paragraphs, and only the run's first and last line round their
+ *  corners. Washed line by line it read as a stack of pills. */
 function DiffLine({
   row,
+  first,
+  last,
   onOpen,
 }: {
   row: { kind: 'same' | 'add' | 'del'; text: string };
+  /** Whether the neighbouring row is of a different kind. */
+  first: boolean;
+  last: boolean;
   onOpen: (p: string) => void;
 }) {
-  // A blank line is paragraph spacing, not content — render the gap, never an
-  // empty colored bar.
-  if (row.text.trim() === '') return <div className="h-2" aria-hidden />;
+  const wash = row.kind === 'add' ? 'bg-success/10' : row.kind === 'del' ? 'bg-destructive/8' : '';
+  const corners = `${first ? 'rounded-t-sm' : ''} ${last ? 'rounded-b-sm' : ''}`;
+
+  // A blank line is paragraph spacing, not content — render the gap, carrying
+  // the run's wash so the block stays whole, never a bar of its own.
+  if (row.text.trim() === '') return <div className={`-mx-1 h-2 ${wash} ${corners}`} aria-hidden />;
 
   const s = parseStructure(row.text);
   const tone =
     row.kind === 'add'
-      ? 'bg-success/10 text-foreground'
+      ? 'text-foreground'
       : row.kind === 'del'
-        ? 'bg-destructive/8 text-muted-foreground line-through decoration-destructive/40'
+        ? 'text-muted-foreground line-through decoration-destructive/40'
         : 'text-foreground/70';
 
   return (
     <div
-      className={`relative -mx-1 rounded-sm px-2 py-0.5 ${tone} ${s.structural}`}
+      className={`relative -mx-1 px-2 py-0.5 ${wash} ${corners} ${tone} ${s.structural}`}
       style={s.padLeft ? { paddingLeft: `${s.padLeft}rem` } : undefined}
     >
       {leadNode(s.lead)}
@@ -1651,20 +1661,26 @@ function RenderedDiff({
     [before, after],
   );
   return (
-    <div className="flex flex-col gap-0.5 text-dense leading-relaxed">
+    <div className="flex flex-col text-sm leading-relaxed">
       {rows.map((r, i) =>
         r.kind === 'gap' ? (
-          // A rule through the middle says "the page continues here" better than
-          // a floating ellipsis, and the count rides on it at readable weight.
+          // The page continues here. The count leads and one rule runs out to
+          // the edge, so the marker reads as a fold in the document rather than
+          // a titled divider across the card.
           <div key={i} className="flex items-center gap-2 py-1 select-none" aria-hidden>
-            <span className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">{r.text}</span>
-            <span className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground/80">{r.text}</span>
+            <span className="h-px flex-1 bg-border/80" />
           </div>
         ) : r.kind === 'replace' ? (
           <ReplaceLine key={i} before={r.before} after={r.after} onOpen={onOpen} />
         ) : (
-          <DiffLine key={i} row={r} onOpen={onOpen} />
+          <DiffLine
+            key={i}
+            row={r}
+            first={rows[i - 1]?.kind !== r.kind}
+            last={rows[i + 1]?.kind !== r.kind}
+            onOpen={onOpen}
+          />
         ),
       )}
     </div>

@@ -214,3 +214,20 @@ test('writeNote folds a stray legacy `status` onto the right key', async () => {
   assert.ok(after.includes('commitment: done'));
   assert.ok(!/^status:/m.test(after));
 });
+
+test('removeDir takes away an empty folder and leaves one with anything in it', async () => {
+  const dir = await vaultDir();
+  await mkdir(join(dir, 'themes'));
+  await mkdir(join(dir, 'understanding'));
+  await writeFile(join(dir, 'understanding/product.md'), '# Product\n');
+  const vault = new FsVault(dir);
+
+  await vault.removeDir('themes');
+  assert.equal(await vault.exists('themes'), false);
+  // Already gone: the same outcome, not an error.
+  await vault.removeDir('themes');
+
+  await vault.removeDir('understanding');
+  assert.equal(await vault.exists('understanding/product.md'), true);
+  await assert.rejects(vault.removeDir('../elsewhere'), (err) => isVaultBoundaryError(err));
+});

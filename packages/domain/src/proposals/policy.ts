@@ -245,7 +245,7 @@ export interface WritePolicyPlace {
 const A_DOCUMENT = `${USER_DOCUMENTS_DIR}pricing-brief.md`;
 
 /** A page in Memory, for the same question. */
-const A_MEMORY_PAGE = 'themes/pricing.md';
+const A_MEMORY_PAGE = 'research/pricing.md';
 
 /**
  * The writes the screen explains, in the order it lists them. Each one is a real

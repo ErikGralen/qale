@@ -49,7 +49,7 @@ test('a page the agent files for itself lands without a card, wherever the memor
   for (const path of [
     'insights/nordkap-needs-scim.md',
     'meetings/2026-09-02-standup.md',
-    'understanding/product.md',
+    'research/product.md',
   ]) {
     assert.equal(writePolicy({ kind: 'note', targetPath: path }).disposition, 'silent', path);
   }
@@ -62,8 +62,45 @@ test('an append into a Documents page asks, and the same append into the memory 
     'ask',
   );
   assert.equal(
-    writePolicy({ kind: 'update', appendOnly: true, targetPath: 'themes/pricing.md' }).disposition,
+    writePolicy({ kind: 'update', appendOnly: true, targetPath: 'research/pricing.md' })
+      .disposition,
     'silent',
+  );
+});
+
+// Research is the folder for the pages Qale keeps for itself (docs/memory-types.md
+// MT-5): the case for a problem, a competitor scan, the product picture. It sits
+// in Memory, so the policy needs no rule of its own for it. These cases say so.
+
+test('a new research page lands without a card', () => {
+  assert.equal(
+    writePolicy({ kind: 'note', noteType: 'research', targetPath: 'research/competitors.md' })
+      .disposition,
+    'silent',
+  );
+});
+
+test('a research page that is rewritten is grouped, and one that only grows is silent', () => {
+  const page = { noteType: 'research', targetPath: 'research/competitors.md' };
+  assert.equal(writePolicy({ kind: 'update', ...page }).disposition, 'grouped');
+  assert.equal(writePolicy({ kind: 'update', appendOnly: false, ...page }).disposition, 'grouped');
+  assert.equal(writePolicy({ kind: 'update', appendOnly: true, ...page }).disposition, 'silent');
+});
+
+test('a research page written into Documents asks, because the folder wins over the type', () => {
+  assert.equal(
+    writePolicy({ kind: 'note', noteType: 'research', targetPath: 'notes/competitors.md' })
+      .disposition,
+    'ask',
+  );
+  assert.equal(
+    writePolicy({
+      kind: 'update',
+      noteType: 'research',
+      appendOnly: true,
+      targetPath: 'notes/competitors.md',
+    }).disposition,
+    'ask',
   );
 });
 
@@ -171,12 +208,16 @@ test('the same write reads differently in the two places', () => {
     ['decision', 'grouped'],
   ] as const) {
     assert.equal(writePolicy({ kind, targetPath: 'notes/brief.md' }).disposition, 'ask', kind);
-    assert.equal(writePolicy({ kind, targetPath: 'themes/pricing.md' }).disposition, memory, kind);
+    assert.equal(
+      writePolicy({ kind, targetPath: 'research/pricing.md' }).disposition,
+      memory,
+      kind,
+    );
   }
 });
 
 test('the rules that hold everywhere hold in both places', () => {
-  for (const targetPath of ['notes/brief.md', 'themes/pricing.md']) {
+  for (const targetPath of ['notes/brief.md', 'research/pricing.md']) {
     assert.equal(writePolicy({ kind: 'outbound', targetPath }).disposition, 'ask', targetPath);
     assert.equal(writePolicy({ kind: 'delete', targetPath }).disposition, 'ask', targetPath);
     assert.equal(
@@ -239,7 +280,7 @@ test('every row of the description is the policy answering for that place', () =
     { kind: 'update' },
     { kind: 'decision' },
   ];
-  const paths = { documents: 'notes/pricing-brief.md', memory: 'themes/pricing.md' };
+  const paths = { documents: 'notes/pricing-brief.md', memory: 'research/pricing.md' };
 
   for (const place of describeWritePolicy()) {
     assert.equal(place.rows.length, writes.length + 2, place.place);

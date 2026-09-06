@@ -100,12 +100,11 @@ test('the tally counts what the workspace holds', () => {
       note({ slug: 'three' }),
     ],
     person: [note({ type: 'person', slug: 'ada' }), note({ type: 'person', slug: 'bo' })],
-    theme: [note({ type: 'theme', slug: 'checkout' })],
     decision: [note({ type: 'decision', slug: 'd1' })],
   });
   assert.equal(
     firstStepsTally(built),
-    'Your memory now holds 3 meetings, 2 with notes, 2 people, 1 theme and 1 decision.',
+    'Your memory now holds 3 meetings, 2 with notes, 2 people and 1 decision.',
   );
 });
 

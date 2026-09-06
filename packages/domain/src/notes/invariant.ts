@@ -54,7 +54,7 @@ export const TYPE_RULES: Record<NoteType, TypeRule> = {
   },
   insight: { bodyEditable: true, mutableFields: 'all' },
   customer: { bodyEditable: true, mutableFields: 'all' },
-  theme: { bodyEditable: true, mutableFields: 'all' },
+  research: { bodyEditable: true, mutableFields: 'all' },
   person: { bodyEditable: true, mutableFields: 'all' },
   session: { bodyEditable: false, mutableFields: [] },
   skill: { bodyEditable: true, mutableFields: 'all' },

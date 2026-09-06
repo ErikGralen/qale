@@ -10,7 +10,6 @@ evidence:
   ]
 confidence: 'med'
 customer: '[[customers/nordkap-payments]]'
-theme: '[[themes/enterprise-onboarding]]'
 ---
 
 Nordkap's legal team is putting an EU-only clause into the renewal. Sara brought it to the QBR

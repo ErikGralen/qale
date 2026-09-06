@@ -5,8 +5,7 @@ tags: ['compliance']
 standing: 'active'
 date: '2026-05-19'
 deciders: ['me', 'Tom Devlin']
-sources: ['[[meetings/2026-05-18-nordkap-qbr]]']
-theme: '[[themes/enterprise-onboarding]]'
+sources: ['[[meetings/2026-05-18-nordkap-qbr]]', '[[research/enterprise-onboarding]]']
 ---
 
 Nordkap's compliance team asked for an audit trail at the QBR and Tom judged it close enough to

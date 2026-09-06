@@ -1,6 +1,5 @@
 import {
   buildChain,
-  refToSlug,
   type DecisionFrontmatter,
   type DecisionNode,
   type WikipageFrontmatter,
@@ -54,7 +53,7 @@ export interface DriftPair {
 
 /**
  * Pair every deep-tracked wikipage with the ACTIVE decisions in its orbit.
- * A page qualifies only when a theme hub or a decision links it
+ * A page qualifies only when a research page or a decision links it
  * (linking IS the tracking gesture — same rule as deep-track mirroring); the
  * decisions paired with it are those linked from the same hub, pointing at the
  * same hub, or linking the page directly. Superseded decisions never head a
@@ -108,7 +107,7 @@ export function selectDriftPairs(
 
     // Who links this page? Only spine-adjacent linkers count.
     const linkers = notes.filter(
-      (n) => (n.type === 'theme' || n.type === 'decision') && linkPaths(n).includes(page.path),
+      (n) => (n.type === 'research' || n.type === 'decision') && linkPaths(n).includes(page.path),
     );
     if (linkers.length === 0) continue;
 
@@ -118,16 +117,9 @@ export function selectDriftPairs(
         paired.set(linker.path, { decision: linker, via: linker.path });
         continue;
       }
-      // Hub → every decision in the hub's orbit.
+      // Research page → every decision in its orbit.
       for (const d of decisions) {
-        const dLinks = linkPaths(d);
-        const themeRef = refToSlug(
-          (d.frontmatter as Record<string, unknown>)['theme'] as string | undefined,
-        );
-        const inOrbit =
-          linkPaths(linker).includes(d.path) ||
-          dLinks.includes(linker.path) ||
-          (themeRef !== null && resolveOnce(themeRef) === linker.path);
+        const inOrbit = linkPaths(linker).includes(d.path) || linkPaths(d).includes(linker.path);
         if (inOrbit && !paired.has(d.path)) paired.set(d.path, { decision: d, via: linker.path });
       }
     }

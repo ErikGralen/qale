@@ -15,5 +15,5 @@ sat through an Insikt demo in June", and that's the whole of it. Mikkel hasn't s
 and we agreed not to ask, since asking mostly signals that we're worried.
 
 It matters because Insikt sell the Monday numbers landing in an inbox with no dashboard to
-keep alive ([[notes/competitors]]), which is Kranelund's Monday problem almost word for word.
+keep alive ([[research/competitors]]), which is Kranelund's Monday problem almost word for word.
 If the pilot slips, this rumour is the reason we'll wish it hadn't.

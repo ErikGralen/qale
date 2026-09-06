@@ -150,7 +150,7 @@ test('a note whose summary is its title is summarised, marked, reindexed and com
   assert.match(store.get('notes/q3-plan.md')!, /Ship SCIM before pricing\./, 'body untouched');
 });
 
-test('a mirror, a labelled note, an understanding note and an empty body are skipped', async () => {
+test('a mirror, a labelled note, a tagged research page and an empty body are skipped', async () => {
   // The body as parsed keeps the blank line after the frontmatter block.
   const body = '\nNordkap wants SSO by October.\n';
   const marked = `---\ntype: note\nsummary: Nordkap asked for SSO by October, tied to their renewal.\n${SUMMARY_AT_FIELD}: 2026-08-01\n${SUMMARY_OF_FIELD}: ${contentHash(body)}\n---\n${body}`;
@@ -158,7 +158,8 @@ test('a mirror, a labelled note, an understanding note and an empty body are ski
     {
       'tickets/jira/PAY-1.md': '---\ntype: ticket\nsummary: PAY-1\n---\n\nA ticket body.\n',
       'notes/nordkap.md': marked,
-      'understanding/product.md': '---\ntype: note\nsummary: product\n---\n\nWhat we sell.\n',
+      'research/product.md':
+        "---\ntype: research\nsummary: product\ntags: ['product']\n---\n\nWhat we sell.\n",
       'notes/empty.md': '---\ntype: note\nsummary: empty\n---\n\n',
       // A real summary and a tag: nothing left to label.
       'notes/real.md':
@@ -167,7 +168,7 @@ test('a mirror, a labelled note, an understanding note and an empty body are ski
     [
       inote('tickets/jira/PAY-1.md', 'ticket', { title: 'PAY-1' }),
       inote('notes/nordkap.md', 'note', { title: 'nordkap' }),
-      inote('understanding/product.md', 'note', { title: 'product' }),
+      inote('research/product.md', 'research', { title: 'product' }),
       inote('notes/empty.md', 'note', { title: 'empty', hasBody: false }),
       inote('notes/real.md', 'note', { title: 'Real' }),
     ],
@@ -313,7 +314,7 @@ test('a body that moved while the model was answering is not labelled', async ()
 
 const TAGGED_WORLD = [
   inote('insights/anchor.md', 'insight', { title: 'Anchor', frontmatter: { tags: ['pricing'] } }),
-  inote('themes/pricing.md', 'theme', { title: 'Pricing', frontmatter: { tags: ['pricing'] } }),
+  inote('research/pricing.md', 'research', { title: 'Pricing', frontmatter: { tags: ['pricing'] } }),
   inote('notes/sso.md', 'note', {
     title: 'SSO',
     frontmatter: { tags: ['checkout', 'a whole phrase'] },

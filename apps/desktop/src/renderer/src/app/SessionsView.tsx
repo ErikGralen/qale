@@ -25,26 +25,23 @@ export function SessionsView() {
   const { sessions, openChat, openSession, refreshSessions, deleteSession, setSessionLifecycle } =
     useApp();
   const [loaded, setLoaded] = useState(false);
-  const [showUnpinned, setShowUnpinned] = useState(false);
+  const [showAutomatic, setShowAutomatic] = useState(false);
 
   useEffect(() => {
     void refreshSessions().finally(() => setLoaded(true));
   }, [refreshSessions]);
 
-  // A running session is always on the active shelf, whatever its stored state.
-  const unpinnedCount = useMemo(
-    () => sessions.filter((s) => s.lifecycle !== 'active' && !s.running).length,
+  // Every session shows here, pinned or not — the sidebar is where pinning
+  // matters. A clock's own runs (the librarian, a weekly digest) are noise
+  // beside a real conversation, so they stay off until asked for.
+  const automaticCount = useMemo(
+    () => sessions.filter((s) => s.automatic).length,
     [sessions],
   );
 
   const rows = useMemo(
-    () =>
-      sessions.filter((s) =>
-        showUnpinned
-          ? s.lifecycle !== 'active' && !s.running
-          : s.lifecycle === 'active' || s.running,
-      ),
-    [sessions, showUnpinned],
+    () => (showAutomatic ? sessions : sessions.filter((s) => !s.automatic)),
+    [sessions, showAutomatic],
   );
 
   return (
@@ -61,7 +58,7 @@ export function SessionsView() {
 
       <div className="flex-1 overflow-y-auto px-6">
         <div className="mx-auto max-w-2xl py-4">
-          {unpinnedCount > 0 && (
+          {automaticCount > 0 && (
             <div
               className="mb-3 flex flex-wrap items-center gap-1"
               role="group"
@@ -69,9 +66,9 @@ export function SessionsView() {
             >
               <span className="ml-auto">
                 <FilterChip
-                  label={`Unpinned (${unpinnedCount})`}
-                  active={showUnpinned}
-                  onClick={() => setShowUnpinned((v) => !v)}
+                  label={`Automatic (${automaticCount})`}
+                  active={showAutomatic}
+                  onClick={() => setShowAutomatic((v) => !v)}
                 />
               </span>
             </div>
@@ -83,8 +80,8 @@ export function SessionsView() {
             </div>
           ) : rows.length === 0 ? (
             <p className="mt-16 text-center text-sm text-muted-foreground">
-              {showUnpinned
-                ? 'Nothing unpinned. Unpin a session and it moves here.'
+              {sessions.length > 0
+                ? 'Every session here runs on its own — turn on Automatic to see them.'
                 : 'No sessions yet. A session is saved here once it gets its first reply.'}
             </p>
           ) : (
@@ -153,7 +150,7 @@ function SessionRow({
         onClick={onOpen}
         onAuxClick={(e) => e.button === 1 && onOpen(e)}
       >
-        <span className="flex items-center gap-2 pr-8">
+        <span className="flex items-center gap-2">
           <MessageSquare className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           <span className={`truncate text-sm ${needsYou ? 'font-semibold' : 'font-medium'}`}>
             {s.title}
@@ -161,11 +158,6 @@ function SessionRow({
           {s.running ? (
             <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
               <Spinner className="size-3" /> working
-            </span>
-          ) : unpinned ? (
-            <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground/70">
-              <PinOff className="size-3" aria-hidden />
-              unpinned
             </span>
           ) : s.pendingCards > 0 ? (
             <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-brand">
@@ -180,7 +172,7 @@ function SessionRow({
           ) : (
             <Check className="size-3 shrink-0 text-muted-foreground/60" aria-hidden />
           )}
-          <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums transition-opacity group-focus-within:opacity-0 group-hover:opacity-0">
+          <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
             {timeAgo(s.updated)}
           </span>
         </span>
@@ -190,15 +182,7 @@ function SessionRow({
           </span>
         </span>
       </button>
-      {s.pendingCards > 0 && (
-        <button
-          className="absolute right-8 bottom-2 rounded-md px-1.5 py-0.5 text-xs text-brand opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-brand/10 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-          onClick={(e) => onOpen(e)}
-        >
-          Review →
-        </button>
-      )}
-      <span className="absolute top-2 right-2 flex items-center gap-0.5">
+      <span className="absolute right-2 bottom-2 flex items-center gap-0.5">
         {confirmDelete ? (
           <span className="flex items-center gap-1 rounded-md bg-background px-1 shadow-sm">
             <span className="text-xs text-destructive">Delete?</span>

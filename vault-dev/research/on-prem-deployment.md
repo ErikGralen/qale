@@ -1,9 +1,8 @@
 ---
-type: 'theme'
+type: 'research'
 summary: 'On-prem and self-hosted deployment: asked for twice, declined both times'
 tags: ['compliance']
-stance: 'wont-do'
-evidence:
+sources:
   [
     '[[insights/on-prem-asks-are-security-asks]]',
     '[[meetings/2026-06-16-fenno-energi-intro]]',
@@ -12,6 +11,8 @@ evidence:
 ---
 
 # On-prem deployment
+
+Stance: won't do. Settled by [[decisions/2026-06-18-no-on-prem]].
 
 Two enterprise conversations have asked for self-hosting. Fenno Energi stated it as policy, and
 Bergman & Falk's questionnaire has a deployment-model section pointing the same way. We decided

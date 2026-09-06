@@ -1,9 +1,8 @@
 ---
-type: 'theme'
+type: 'research'
 summary: 'Scheduled reporting: manual weekly reports are costing us mid-market accounts'
 tags: ['reporting']
-stance: 'committed'
-evidence:
+sources:
   [
     '[[insights/midmarket-needs-scheduled-exports]]',
     '[[insights/rondo-churned-over-reporting-gaps]]',
@@ -13,6 +12,8 @@ evidence:
 ---
 
 # Scheduled reporting
+
+Stance: committed.
 
 Ops teams don't want to open a dashboard. They want the same six numbers in the right inbox
 every Monday at 07:00. Right now a person does that job by hand. At Kranelund it's Lise,

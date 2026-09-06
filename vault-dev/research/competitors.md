@@ -1,9 +1,9 @@
 ---
-type: note
+type: research
 summary: Competitor notes. Insikt (cheap, report-first, weak governance) and Corvid Analytics (enterprise, slow, expensive)
 tags:
   - competition
-sources: []
+sources: ['[[insights/kranelund-evaluating-insikt]]']
 ---
 
 # Competitors

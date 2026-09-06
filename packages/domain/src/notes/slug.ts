@@ -81,20 +81,23 @@ export function voicePath(name: string): string {
 }
 
 /**
- * Where the product understanding lives: `understanding/product.md` and its two
- * siblings, plus the map over them.
+ * The three research pages that hold the product picture: what the product is,
+ * the shape of the system, and who owns what (docs/memory-types.md, MT-3).
  *
- * They are filed as plain notes, so without this folder they would sit in
- * `notes/`, which is the Documents screen and belongs to the PM (E-14). Nobody
- * asks for these: the interview drafts them from what the PM said, and a first
- * look writes them from what a connection read. A folder of its own is what
- * keeps the PM's own documents apart from what the agent keeps for itself.
+ * They are research pages like any other, in `research/`, so nothing keeps them
+ * apart from the PM's documents by hand: the type does. The interview drafts
+ * them from what the PM said, and a first look writes them from what a
+ * connection read. Main names them to know when the first one has been kept.
  */
-export const UNDERSTANDING_DIR = 'understanding';
+export const PRODUCT_PICTURE_PATHS: readonly string[] = [
+  'research/product.md',
+  'research/technical.md',
+  'research/organization.md',
+];
 
-/** Is this file one of the understanding notes? Path only: the folder says it. */
-export function isUnderstandingPath(path: string): boolean {
-  return path.startsWith(`${UNDERSTANDING_DIR}/`) && path.toLowerCase().endsWith('.md');
+/** Is this file one of the three product pages? */
+export function isProductPicturePath(path: string): boolean {
+  return PRODUCT_PICTURE_PATHS.includes(path);
 }
 
 const ENTRY_BASENAMES = Object.values(RUNNABLE_ENTRY).map((f) => f.toLowerCase());

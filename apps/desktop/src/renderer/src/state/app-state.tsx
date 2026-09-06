@@ -30,7 +30,6 @@ import type {
   OnboardingPatchDTO,
   PeopleDirectoryDTO,
   PersonCardDTO,
-  ThemeHeatDTO,
   ProposalDTO,
   SearchHitDTO,
   SettingsDTO,
@@ -51,6 +50,7 @@ import { isFolderIndex, titleFromSlug, typeForDir, type HandCreatableType } from
 import { invoke, onEvent } from '../lib/ipc';
 import { requestCapture } from '../lib/capture-event';
 import { isPinnable } from '../lib/note-status';
+import { movedPin } from '../lib/pins';
 import { buildAttention, waitingOnYou, type AttentionItem } from '../lib/attention';
 import type { NavOpts } from '../lib/nav';
 import { documentsFolder } from '../lib/crumbs';
@@ -97,7 +97,10 @@ export type ViewBody = { title: string } &
      *  `expanded` is the folders opened in place at that level, here for the
      *  same reason: it survives a tab switch and rides the tab's history. */
     | { kind: 'documents'; folder?: string; expanded?: string[] }
-    | { kind: 'memory' }
+    /** The one door to what Qale knows. `expanded` is the shelves opened in
+     *  place, on the view for the same reason Documents keeps its own: it
+     *  survives a tab switch and rides the tab's history. */
+    | { kind: 'memory'; expanded?: string[] }
     /** What the agent wrote without asking, and the way back (E-9). */
     | { kind: 'activity' }
     | { kind: 'folder'; dir: string }
@@ -212,6 +215,9 @@ export interface SessionOverview {
   lifecycle: SessionLifecycle;
   /** The model this session was moved to, or null when it follows Settings. */
   modelId: string | null;
+  /** No person has driven a turn in this session yet — a clock or an
+   *  unattended arrival started it. Sessions filters these out by default. */
+  automatic: boolean;
 }
 
 interface AppState {
@@ -261,6 +267,12 @@ interface AppState {
    */
   toggleFavorite: (path: string) => void;
   /**
+   * Put a pinned row directly above or below another one. The set's order is
+   * what the rail reads in, so this is how the PO sorts it: drag a row, drop it
+   * where they want it.
+   */
+  movePin: (path: string, target: string, place: 'before' | 'after') => void;
+  /**
    * Paths the PO has unpinned. View-only state (never a vault write). Its job is
    * to stop anything but their own pin from re-adding a note they cleared — so
    * unpinning an open note is not undone by the next keystroke.
@@ -277,7 +289,6 @@ interface AppState {
   refreshActivity: () => Promise<void>;
   /** Put one row back, and refresh what the undo touched. */
   revertActivity: (id: string) => Promise<void>;
-  themes: ThemeHeatDTO[];
   /** Merged session rows (stored + live + cards + seen) — rail, Sessions, Home. */
   sessions: SessionOverview[];
   /** The parsed skill catalogue (Skills v2) — refreshed on skill-file changes. */
@@ -409,8 +420,9 @@ interface AppState {
   openContext: (tag: string, opts?: NavOpts) => void;
   openSettings: (section?: SettingsSection, opts?: NavOpts) => void;
   setSettingsSection: (viewKey: string, section: SettingsSection) => void;
-  /** Documents: the folders opened in place, kept on the history entry. */
-  setDocumentsExpanded: (viewKey: string, expanded: string[]) => void;
+  /** The folders or shelves opened in place, kept on the history entry.
+   *  Documents and Memory are the two tree pages, and they share this. */
+  setExpanded: (viewKey: string, expanded: string[]) => void;
   /**
    * Open the Skills view, optionally aimed at one of its five tabs (SK-12).
    * `openSkills('agents')` is what every door to the old Agents page became.
@@ -680,7 +692,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [docData, setDocData] = useState<Record<string, DocData>>({});
   const [proposals, setProposals] = useState<ProposalDTO[]>([]);
   const [activity, setActivity] = useState<ActivityDTO[]>([]);
-  const [themes, setThemes] = useState<ThemeHeatDTO[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [chats, setChats] = useState<ChatRefDTO[]>([]);
@@ -1122,11 +1133,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       ),
     [navigate],
   );
-  /** Opening a folder in place changes what is drawn, never where you are, so
-   *  it edits the entry rather than pushing one: back still leaves the level. */
-  const setDocumentsExpanded = useCallback(
+  /** Opening a folder or a shelf in place changes what is drawn, never where
+   *  you are, so it edits the entry rather than pushing one: back still leaves
+   *  the level. */
+  const setExpanded = useCallback(
     (viewKey: string, expanded: string[]) => {
-      mapViews((v) => (v.key === viewKey && v.kind === 'documents' ? { ...v, expanded } : v));
+      mapViews((v) =>
+        v.key === viewKey && (v.kind === 'documents' || v.kind === 'memory')
+          ? { ...v, expanded }
+          : v,
+      );
     },
     [mapViews],
   );
@@ -1318,11 +1334,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (kind && !isPinnable(kind)) return;
       const pinned = favorites.includes(path);
       setFavorites((prev) => {
+        // A fresh pin goes on top, where the PO is looking. From there it
+        // stays put until they drag it.
         const next = pinned
           ? prev.filter((p) => p !== path)
           : prev.includes(path)
             ? prev
-            : [...prev, path];
+            : [path, ...prev];
         if (vault) persistFavorites(vault.path, next);
         return next;
       });
@@ -1360,12 +1378,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (dismissed.includes(path)) return;
       setFavorites((prev) => {
         if (prev.includes(path)) return prev;
-        const next = [...prev, path];
+        const next = [path, ...prev];
         persistFavorites(vault.path, next);
         return next;
       });
     },
     [vault, dismissed],
+  );
+
+  /**
+   * Sort the rail by hand. The pin set is a list and its order is what the rows
+   * read in, so a drag is one move inside that list. See `movedPin`.
+   */
+  const movePin = useCallback(
+    (path: string, target: string, place: 'before' | 'after') => {
+      setFavorites((prev) => {
+        const next = movedPin(prev, path, target, place);
+        if (next !== prev && vault) persistFavorites(vault.path, next);
+        return next;
+      });
+    },
+    [vault],
   );
 
   const query = useCallback((q: NoteQueryDTO) => invoke['vault:query'](q), []);
@@ -1427,14 +1460,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     },
     [refreshActivity, refreshTree, loadDoc, docData],
   );
-
-  const refreshThemes = useCallback(async () => {
-    try {
-      setThemes(await invoke['themes:byHeat']());
-    } catch {
-      setThemes([]);
-    }
-  }, []);
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -1560,6 +1585,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         messageCount: chat.messageCount,
         lifecycle: chat.lifecycle,
         modelId: chat.modelId,
+        automatic: chat.automatic,
       });
     }
     // A first turn in flight isn't in the chats list yet — surface it anyway.
@@ -1576,8 +1602,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         unread: false,
         messageCount: 0,
         lifecycle: 'active',
-        // The chats row hasn't landed yet; the composer's own pick covers the
-        // gap, and the next refresh brings the stored one.
+        // The chats row hasn't landed yet: a clock-started run reads as a
+        // person's until the next refresh brings the stored flags, and the
+        // composer's own pick covers the model gap in the meantime.
+        automatic: false,
         modelId: null,
       });
     }
@@ -1613,10 +1641,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // Approving does not pin the file it wrote. The receipt and Activity
       // already say what happened (docs/sidebar-ia.md, SB-2).
       const result = await invoke['proposals:accept'](id, edited);
-      await Promise.all([refreshProposals(), refreshTree(), refreshThemes()]);
+      await Promise.all([refreshProposals(), refreshTree()]);
       return result;
     },
-    [refreshProposals, refreshTree, refreshThemes],
+    [refreshProposals, refreshTree],
   );
 
   const rejectProposal = useCallback(
@@ -1673,7 +1701,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           refreshTree(),
           refreshProposals(),
           refreshActivity(),
-          refreshThemes(),
           refreshSessions(),
           refreshCaptureNudge(),
           refreshSkills(),
@@ -1684,7 +1711,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       refreshTree,
       refreshProposals,
       refreshActivity,
-      refreshThemes,
       refreshSessions,
       refreshCaptureNudge,
       refreshSkills,
@@ -1817,9 +1843,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const saveFrontmatter = useCallback(
     async (path: string, frontmatter: Record<string, unknown>) => {
       await invoke['note:saveFrontmatter']({ path, frontmatter });
-      await Promise.all([refreshTree(), refreshThemes(), loadDoc(path)]);
+      await Promise.all([refreshTree(), loadDoc(path)]);
     },
-    [refreshTree, refreshThemes, loadDoc],
+    [refreshTree, loadDoc],
   );
 
   const renameNote = useCallback(
@@ -1958,11 +1984,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         // what it is missing, so only the note actually on screen pays.
         const stale = new Set(touched);
         setDocData((d) => Object.fromEntries(Object.entries(d).filter(([p]) => !stale.has(p))));
-        await Promise.all([refreshTree(), refreshThemes()]);
+        await refreshTree();
       }
       return { ok, failed };
     },
-    [refreshTree, refreshThemes],
+    [refreshTree],
   );
 
   const search = useCallback(async (q: string) => {
@@ -2039,7 +2065,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return onEvent((event) => {
       if (event.channel === 'vault:changed') {
         void refreshTree();
-        void refreshThemes();
         // A write the agent made on its own lands as a file change like any
         // other, so this is also when a new receipt exists. No push channel of
         // its own: a second event for the same moment could only ever disagree
@@ -2134,7 +2159,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     });
   }, [
     refreshTree,
-    refreshThemes,
     refreshProposals,
     refreshActivity,
     refreshSessions,
@@ -2233,12 +2257,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       enableGit,
       favorites,
       toggleFavorite,
+      movePin,
       dismissed,
       proposals,
       activity,
       refreshActivity,
       revertActivity,
-      themes,
       sessions,
       skills,
       refreshSkills,
@@ -2283,7 +2307,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openContext,
       openSettings,
       setSettingsSection,
-      setDocumentsExpanded,
+      setExpanded,
       openSkills,
       setSkillsTab,
       goBack,
@@ -2342,12 +2366,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       enableGit,
       favorites,
       toggleFavorite,
+      movePin,
       dismissed,
       proposals,
       activity,
       refreshActivity,
       revertActivity,
-      themes,
       sessions,
       skills,
       refreshSkills,
@@ -2392,7 +2416,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       openContext,
       openSettings,
       setSettingsSection,
-      setDocumentsExpanded,
+      setExpanded,
       openSkills,
       setSkillsTab,
       goBack,

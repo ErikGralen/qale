@@ -93,13 +93,17 @@ Where each kind of note lives. The librarian follows these when proposing paths 
   body. To change one, supersede it: a new file with `supersedes`, and the old file flipped to
   `standing: superseded`.
 - **insights/**: cited claims, `<slug>.md`. `evidence[]` is required, plus a `confidence` level.
-  Link each to the customer and theme it concerns.
+  Link each to the customer it concerns, and to the research page for its problem when one exists.
 - **customers/**: one hub per account: commitments, signals, and the ledger of what they were
   told. Carries `relationship` (prospect / active / churned).
-- **themes/**: the durable things worth solving: a problem, a pain, an opportunity, an idea.
-  Carries `stance` (exploring / watching / committed / wont-do). Themes accrue evidence even when
-  `wont-do`; the declined ones are exactly the ones whose reasoning is expensive to rebuild. A
-  theme never requires a ticket, and a ticket never requires a theme.
+- **research/**: Qale's own pages, what it worked out: the case for a problem, a competitor
+  scan, and the product picture in `product.md`, `technical.md` and `organization.md`. One
+  folder, flat: every page is `research/<slug>.md` and there are no subfolders. Every page cites
+  its `sources`, states its case in one voice and links the insights that hold the quotes. A page
+  lands without a card, Qale keeps it fresh, and the PM corrects anything wrong. Only synthesis
+  opens a page unasked; everything else extends the page for that problem, if one exists, and
+  one signal makes no page. A declined problem keeps its page: its reasoning is expensive to
+  rebuild. A research page never requires a ticket, and a ticket never requires a research page.
 - **people/**: stakeholders: what they care about, and `last_told`.
 - **todos/**: the commitment ledger, one file per commitment, `YYYY-MM-DD-<slug>.md`. Carries
   `commitment` (open / done / dropped), optional `due`, and `owner` only when someone other than
@@ -110,8 +114,6 @@ Where each kind of note lives. The librarian follows these when proposing paths 
   the workspace that a person made. Write here only when they asked for the page in this
   conversation, and send `asked` when you do. Everything else you write goes in the memory
   folder that owns the subject. Anything dropped in from outside goes to sources/ instead.
-- **understanding/**: what the workspace knows about the product itself, in three area notes plus
-  the map over them. Nobody asks for these; the interview and the first look fill them.
 - **attachments/**: dropped images and screenshots, each referenced by a capture note in
   sources/.
 - **sessions/**: replayable session receipts, written by the harness. Never hand-edited.

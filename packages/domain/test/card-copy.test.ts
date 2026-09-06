@@ -116,14 +116,14 @@ test('person: the explicit title wins, since the slug folds away diacritics', ()
   );
 });
 
-test('theme: recorded, not raised', () => {
+test('research: recorded, not raised', () => {
   assert.equal(
     headline({
       kind: 'note',
-      targetPath: 'themes/onboarding-drag.md',
-      frontmatter: { type: 'theme', title: 'Onboarding drag' },
+      targetPath: 'research/onboarding-drag.md',
+      frontmatter: { type: 'research', title: 'Onboarding drag' },
     }),
-    'Record a theme: Onboarding drag',
+    'Record a research page: Onboarding drag',
   );
 });
 
@@ -255,10 +255,10 @@ test('vaultEffect: every kind names its folder', () => {
   assert.equal(
     effect({
       kind: 'note',
-      targetPath: 'themes/onboarding-drag.md',
-      frontmatter: { type: 'theme' },
+      targetPath: 'research/onboarding-drag.md',
+      frontmatter: { type: 'research' },
     }),
-    'Creates a page in Themes.',
+    'Creates a page in Research.',
   );
 });
 

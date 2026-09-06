@@ -56,6 +56,7 @@ import {
 } from '@qale/sessions';
 import type { ProviderReadTool } from '@qale/connectors';
 import { wrapExternal } from './external.js';
+import { placementError } from './placement.js';
 import { voiceBrief, voiceRoster, resolveVoice, type Voice } from './voices.js';
 
 /**
@@ -526,7 +527,7 @@ export function createVaultTools(
     name: 'vault_list',
     label: 'List notes',
     description:
-      'List notes in the workspace, filtered by any of type, lifecycle, day and tag. Each type has its OWN lifecycle field with its own values: sources/meetings/insights/notes/mirrors have `processing` (new/processed/stale), decisions have `standing` (active/superseded), customers have `relationship` (prospect/active/churned), themes have `stance` (exploring/watching/committed/wont-do), todos have `commitment` (open/done/dropped). Returns path, type, lifecycle value, day and one-line summary. ' +
+      'List notes in the workspace, filtered by any of type, lifecycle, day and tag. Each type has its OWN lifecycle field with its own values: sources/meetings/insights/research/notes/mirrors have `processing` (new/processed/stale), decisions have `standing` (active/superseded), customers have `relationship` (prospect/active/churned), todos have `commitment` (open/done/dropped). Returns path, type, lifecycle value, day and one-line summary. ' +
       'A folder\'s "index.md" map (e.g. "insights/index.md") is orientation only: it groups that one folder by lifecycle, and it shows neither days nor tags. Every time question comes here instead. `since` and `until` are days written YYYY-MM-DD and both bounds are inclusive; the day is the type\'s own field, `date` on a meeting or decision, `due` on a todo, and the day the file last changed on everything else. A day field written any other way counts as undated: it matches no filter and sorts last. `sort` gives `date` (newest day first), `title` (A to Z) or `modified` (newest change first). ' +
       '`tags` matches a note carrying ANY of the tags you give. Tags cut across types (a project, a product, an area), one note can carry more than one, and the maps do not list them, so this is the only way to reach them.',
     parameters: Type.Object({
@@ -668,7 +669,7 @@ export function createVaultTools(
     name: 'vault_backlinks',
     label: 'List backlinks',
     description:
-      'List the notes that link TO one note, grouped by relationship. Use this from a hub (customer, person, theme) to find the meetings, decisions and todos that mention it. It is the second way in after the folder maps. ' +
+      'List the notes that link TO one note, grouped by relationship. Use this from a hub (customer, person, research page) to find the meetings, decisions and todos that mention it. It is the second way in after the folder maps. ' +
       'Takes the note\'s path ("customers/nordkap.md") or its slug ("nordkap"). Rows read exactly like vault_list rows, so a vault_list with `since`/`until` narrows the same ground by day.',
     parameters: Type.Object({
       path: Type.String({ description: 'Workspace-relative path to the note, or its slug.' }),
@@ -984,6 +985,13 @@ export function createProposeTools(
    * used to fill the review with pairs, and neither could see the other because
    * a pending card is not a note on disk for `vault_list` to find.
    */
+  /**
+   * A folder under `notes/` the PM already made: anything indexed sits in it,
+   * its own index file included. The one folder shape a write may go into.
+   */
+  const knownFolder = (dir: string): boolean =>
+    ctx.index.all().some((n) => n.path.startsWith(`${dir}/`));
+
   const alreadyProposed = (candidate: {
     kind: string;
     targetPath?: string | null;
@@ -1110,7 +1118,7 @@ export function createProposeTools(
     name: 'propose_note',
     label: 'Propose note',
     description:
-      'Propose a NEW note (insight, meeting summary, customer/theme hub, person, or generic note). frontmatter must include type + summary; claim-like notes must list evidence/sources[] (wikilinks). Include tags[] with 1-2 contexts (kebab-case project/product/area, e.g. "pricing") drawn from tags already in use; name any brand-new context in the rationale. Every source must resolve unless asked:true or inference:true. For decisions use propose_decision.',
+      'Propose a NEW note: an insight, a customer hub, a person, a research page, or a document in notes/ the PM asked for. `research` is the type for a page you keep for yourself: an analysis, a scan, a picture of the product. It lives at research/<name>.md, cites its sources, and lands without a card. Every path is <folder>/<name>.md, one level deep, in the folder the type owns; Qale makes no folders, so a subfolder is refused. frontmatter must include type + summary; claim-like notes must list evidence/sources[] (wikilinks). Include tags[] with 1-2 contexts (kebab-case project/product/area, e.g. "pricing") drawn from tags already in use; name any brand-new context in the rationale. Every source must resolve unless asked:true or inference:true. For decisions use propose_decision.',
     parameters: Type.Object({
       path: Type.String({ description: 'Workspace path, e.g. "insights/acme-wants-scim.md".' }),
       frontmatter: Type.Record(Type.String(), Type.Any()),
@@ -1136,6 +1144,8 @@ export function createProposeTools(
       const fm = parsed.data.frontmatter;
       const invalid = badFrontmatter(fm);
       if (invalid) return invalid;
+      const misplaced = placementError(parsed.data.path, fm['type'] as string, knownFolder);
+      if (misplaced) return text(misplaced);
       const dup = alreadyProposed({
         kind: 'note',
         targetPath: parsed.data.path,
@@ -1490,6 +1500,8 @@ export function createProposeTools(
       if (!target) return text(`Rejected: target note not found: ${parsed.data.path}`);
       const note = await ctx.vault.readNote(target);
       if (!note) return text(`Rejected: cannot read ${target}`);
+      const misplaced = placementError(target, note.type, knownFolder);
+      if (misplaced) return text(misplaced);
       // Mutability guards at FILING time (same rules acceptUpdate enforces) —
       // reject where the agent can react, not at approval.
       if ((parsed.data.patch?.length || parsed.data.append?.trim()) && !isBodyEditable(note.type)) {

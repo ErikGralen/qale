@@ -47,7 +47,7 @@ const NOUN_FOR_DIR: Record<string, string> = {
   meetings: 'the meeting notes',
   decisions: 'a decision',
   insights: 'an insight',
-  themes: 'a theme',
+  research: 'a research page',
   customers: 'a customer',
   people: 'a person',
   sources: 'a source',
@@ -276,7 +276,7 @@ export function proposalHeadline(input: HeadlineInput): string {
     if (type === 'person' || type === 'customer') {
       return `Add a page for ${fmString(fm, 'title') || titleForRef(target) || subject}`;
     }
-    if (type === 'theme') return `Record a theme: ${subject}`;
+    if (type === 'research') return `Record a research page: ${subject}`;
     return `Write a document: ${subject}`;
   }
 

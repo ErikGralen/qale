@@ -312,15 +312,15 @@ test('a workspace with no Activity log still applies the write', async () => {
   const filed = await fileProposal(ctx, {
     ...base,
     kind: 'note',
-    targetPath: 'understanding/product.md',
+    targetPath: 'research/product.md',
     payload: {
-      path: 'understanding/product.md',
-      frontmatter: { type: 'note', title: 'Product', summary: 'What the product is' },
+      path: 'research/product.md',
+      frontmatter: { type: 'research', title: 'Product', summary: 'What the product is' },
       body: 'x',
       rationale: 'Because.',
     },
   });
   assert.equal(filed.disposition, 'silent');
   assert.equal(filed.activityId, undefined);
-  assert.ok(store.has('understanding/product.md'));
+  assert.ok(store.has('research/product.md'));
 });

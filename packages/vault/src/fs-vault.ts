@@ -200,6 +200,18 @@ export class FsVault implements VaultPort {
     await retryWhileLocked(() => fs.rm(abs, { force: true }));
   }
 
+  async removeDir(relPath: string): Promise<void> {
+    const abs = this.contain(relPath);
+    if (!abs) throw new VaultBoundaryError(relPath);
+    // `rmdir` is the non-recursive one on purpose: it refuses a folder with
+    // anything in it, and that refusal is the whole guarantee this method makes.
+    // A folder that is already gone is the same outcome as one just removed.
+    await fs.rmdir(abs).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT' || err.code === 'ENOTEMPTY' || err.code === 'EEXIST') return;
+      throw err;
+    });
+  }
+
   async exists(relPath: string): Promise<boolean> {
     const abs = this.contain(relPath);
     if (!abs) return false;

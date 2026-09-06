@@ -1,4 +1,5 @@
 import { Type } from 'typebox';
+import { placementError } from './placement.js';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { readableAs } from '@qale/domain';
 import { fileSource, refileSource, type ArrivalPart, type UseCaseContext } from '@qale/application';
@@ -144,6 +145,9 @@ export function createFilingTools(
       if (!harness.fileSource) {
         return text('Refused: this session may not file a source. Nothing was written.');
       }
+      // Only a page one level deep, in meetings/. Qale makes no folders.
+      const misplaced = params.attach_to ? placementError(params.attach_to, 'meeting') : null;
+      if (misplaced) return text(misplaced);
       const parts = await readParts(root, params.files);
       const result = await fileSource(ctx, {
         parts,
@@ -208,6 +212,13 @@ export function createFilingTools(
       if (!harness.fileSource) {
         return text('Refused: this session may not refile a source. Nothing was changed.');
       }
+      // Only pages one level deep. Qale makes no folders.
+      const misplaced =
+        placementError(params.path, undefined) ??
+        (params.meeting && params.meeting !== 'none'
+          ? placementError(params.meeting, 'meeting')
+          : null);
+      if (misplaced) return text(misplaced);
       const result = await refileSource(ctx, {
         path: params.path,
         ...(params.meeting ? { meeting: params.meeting } : {}),

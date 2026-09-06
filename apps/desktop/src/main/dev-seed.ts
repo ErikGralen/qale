@@ -207,7 +207,7 @@ export async function seedDemoProposal(
     // decided …, N notes still point at the old plan") with a batch approve.
     const decisionRef = `[[${decisionSlug}]]`;
     const sweepTargets = [
-      ...ctx.index.listByType('theme'),
+      ...ctx.index.listByType('research'),
       ...ctx.index.listByType('customer'),
       ...ctx.index.listByType('insight'),
     ]

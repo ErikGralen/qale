@@ -1,12 +1,13 @@
 ---
-type: 'theme'
+type: 'research'
 summary: 'Mobile access: occasional asks from field staff, nothing gating a deal yet'
 tags: ['mobile']
-stance: 'exploring'
-evidence: ['[[meetings/2026-06-12-kranelund-checkin]]']
+sources: ['[[meetings/2026-06-12-kranelund-checkin]]']
 ---
 
 # Mobile access
+
+Stance: exploring.
 
 This comes up sideways rather than as a demand. A Kranelund driver asked whether there's an
 app, and support sees a trickle of tickets about dashboards on phones. Nobody has made it a

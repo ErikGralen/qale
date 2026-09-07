@@ -126,7 +126,7 @@ steering decision approved two minutes ago, Rebecca's pending re-estimate todo, 
 with the date. It should say plainly that there is no target date in Jira and that the only date in circulation is
 the one sales gave. Cite-or-decline, no invented ETA.
 
-Follow up: *"Draft a reply to Marcus in the sales voice."* Copy from the `draft_text` panel into Slack by hand.
+Follow up: *"Draft a reply to Marcus."* The sales voice is picked from the audience, unprompted. Copy from the `draft_text` panel into Slack by hand.
 
 Presenter beat: the same question comes in four chats; this answer is the same every time because it reads from an
 approved log, not from the PO's memory.
@@ -165,7 +165,7 @@ Ask: *"SCH-231 just went to Done. Who needs to know, and what were they told?"*
 
 Expected answer, each line with its source: Bruno's asked via support in March and was never told (Flow 3); Café
 Nord was promised it at the QBR by Marcus; Fjord Sports was told "Q4" for payroll export and that is now Q1 (Flow
-1); Jonas needs a support macro. Then: *"Draft the messages, CS voice for the customers, one line for Jonas."*
+1); Jonas needs a support macro. Then: *"Draft the messages to each of them."* CS voice for the customers, plain for Jonas, picked without being told.
 Cards: per-recipient drafts to copy, an update to `last_told` on each person, todos for Ulrika and Marcus.
 
 Presenter beat: this is the churn that does not happen. The recipients were not recalled from memory; each one is
@@ -221,8 +221,8 @@ Vault (`vault-dev/`), all new content, dates relative to `2026-07-17`:
   A second snapshot (or a `--done` flag in `refresh-demo`) with `SCH-231` and its last story Done for Flow 4.
   `wikipages/confluence/roadmap-h2.md` and `product-weekly-update.md`.
 - `skills/` keep `arrival`, `commitment-check`, `process-note`, `weekly-update`, `spec`, `iterate`, `tell-qale`,
-  house rules, the Jira and Confluence style guides, `broken-demo`. Drop `synthesis` from the demo path (it's the
-  Tavla insight-stack story). Update house rules to name the `SCH`/`APP`/`PLT` projects and the `PROD` space.
+  house rules, the Jira and Confluence style guides. No `broken-demo` or any other fixture a real user would not
+  have. Drop `synthesis` from the demo path (it's the Tavla insight-stack story). Update house rules to name the `SCH`/`APP`/`PLT` projects and the `PROD` space.
 - `voices/` exec, CS, and a new **sales** voice (short, date-first, no engineering caveats the customer can't act on).
 - `agents/` keep librarian and meeting-prep as they are.
 

@@ -137,9 +137,6 @@ test('the house rules match down to Your rules, where the demo carries its own e
  * vault is mostly notes and only one of them is seeded.
  */
 test('a demo skill, agent or voice with no seeded pair is named here or it fails', () => {
-  // Deliberately demo-only: it carries a dead setting and a typo, so the Skills
-  // page has a broken file to show. Seeding one would be absurd.
-  //
   // The two conventions skills are demo-only for the opposite reason: nothing
   // seeds them (they are created on first use), and the demo copies hold Rota's
   // own rules rather than the template's example lines, so a word-for-word
@@ -149,7 +146,6 @@ test('a demo skill, agent or voice with no seeded pair is named here or it fails
   // body is a list of what is in the folder, so a demo copy is right to differ
   // from a seeded one and there is nothing to compare.
   const demoOnly = new Set([
-    'skills/broken-demo/SKILL.md',
     'skills/jira/SKILL.md',
     'skills/confluence/SKILL.md',
     'skills/index.md',

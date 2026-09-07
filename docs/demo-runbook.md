@@ -65,7 +65,7 @@ skill, Reset, and start again. A recording of a bad session is worthless.
 
 In Home, Ask: `When can we deliver shift swaps to Café Nord, and what have they already been told?`
 
-Then: `Draft a reply to Marcus in the sales voice.`
+Then: `Draft a reply to Marcus.`
 
 The answer should cite SCH-231's state, the decision you just approved, Rebecca's re-estimate todo, and Marcus's
 QBR promise. It should say there is no target date in Jira.
@@ -81,7 +81,7 @@ SCH-231, and a todo for Ulrika. Approve all, then the outbound comment.
 Settings → Demo → apply **SCH-231 → Done**. Wait for the sync that follows (the ticket page for SCH-231 should read
 Done). Then Ask: `SCH-231 just went to Done. Who needs to know, and what were they told?`
 
-Then: `Draft the messages, CS voice for the customers, one line for Jonas.`
+Then: `Draft the messages to each of them.`
 
 Approve the cards it produces.
 

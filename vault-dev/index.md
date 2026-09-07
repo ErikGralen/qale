@@ -15,7 +15,7 @@ This workspace is an Open Knowledge Format bundle. Each folder has an `index.md`
 * [Customers](customers/index.md) — customer hubs — who they are and where they stand (4)
 * [Themes](themes/index.md) — the durable things worth solving — problems, pains, opportunities (4)
 * [People](people/index.md) — people the work touches and what they were last told (10)
-* [Skills](skills/index.md) — the written instructions the agent follows when you hand work over (12)
+* [Skills](skills/index.md) — the written instructions the agent follows when you hand work over (11)
 * [Agents](agents/index.md) — self-starting agents — what fires on workspace events, and when (2)
 * [Todos](todos/index.md) — tracked commitments — the PO’s own and what they are waiting on (5)
 * [Notes](notes/index.md) — the documents you write: scratch notes, briefs, PRDs, specs (3)

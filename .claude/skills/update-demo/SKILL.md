@@ -46,10 +46,10 @@ was ever run against `vault-dev/` directly, that cruft is now committed. Remove 
   confirm with the user before deleting.** When unsure, leave it; the next step will flag anything
   broken.
 
-The intentional demo states are NOT cruft — do not "fix" them (see the vault-dev scenario memory):
-the deliberately stale insight, the low-confidence/unverified insights, the sloppy links in
-`notes/auto-schedule-interviews.md`, any orphan note nothing links to yet, the `broken-demo`
-skill, the untagged notes. Leave them.
+The intentional demo states are NOT cruft — do not "fix" them: the raw, untidied prose in
+`notes/auto-schedule-interviews.md`, the overdue Fjord Sports todo, the voices that still list three
+styles (a new user's default), the empty `sources/` hub. Leave them. The vault must look like a real
+user's workspace, never like a test fixture: nothing "broken on purpose", no placeholder text.
 
 ### 2. Rebuild the runtime vault, dated to today
 

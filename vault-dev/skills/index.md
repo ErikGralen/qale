@@ -6,7 +6,6 @@ description: Skills — the written instructions the agent follows when you hand
 
 the written instructions the agent follows when you hand work over
 
-* [Broken on purpose](skills/broken-demo/SKILL.md) — A demo file with bad settings, so you can see how that looks here.
 * [Find the pattern](skills/synthesis/SKILL.md) — Reads a stack of interviews and says what they add up to.
 * [Handle a commitment](skills/commitment-check/SKILL.md) — Works out what to do about a promise that's slipping, or a request that just came in.
 * [Handle new sources](skills/arrival/SKILL.md) — Files what you just dropped in, and reads what is worth reading.

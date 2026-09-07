@@ -77,10 +77,11 @@ const noteTool = (ctx: UseCaseContext, harness?: SessionHarness) =>
   createProposeTools(ctx, 's1', harness).find((t) => t.name === 'propose_note')!;
 
 /**
- * The withdraw tests run on todos, because a todo is one of the three kinds
- * that still waits on the PM (docs/easier-tickets.md E-3). A plain note lands
- * as it is written now, and there is nothing to take back from a note that has
- * already landed: that is a propose_update, which is what the refusal says.
+ * The withdraw tests run on todos, because a todo is the PM's and waits for
+ * them (docs/review-rework.md RR-1). A page in Qale's memory lands as it is
+ * written, and there is nothing to take back from a write that already landed:
+ * that is a propose_update, which is what the refusal says. The todos here are
+ * not `asked`, because a todo the PM dictated lands too.
  */
 const todoTool = (ctx: UseCaseContext, harness?: SessionHarness) =>
   createProposeTools(ctx, 's1', harness).find((t) => t.name === 'propose_todo')!;
@@ -88,7 +89,7 @@ const todoTool = (ctx: UseCaseContext, harness?: SessionHarness) =>
 const TODO = {
   title: 'Register kale.ai',
   sources: [],
-  asked: true,
+  inference: true,
   rationale: 'Erik said he wanted the domain.',
 };
 

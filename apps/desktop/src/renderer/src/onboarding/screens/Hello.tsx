@@ -42,18 +42,18 @@ export function Hello({ onNext }: { onNext: () => void }) {
             with Qale closed.
           </p>
           {/* "You approve before anything counts" was the old last sentence,
-              and the write policy made it untrue: a new page or an added
-              paragraph in Qale's own memory lands on its own
-              (docs/background-system.md ticket 6). The screen says what asks
-              and what does not, in the same words as PRODUCT.md, because the
-              one thing worse than a surprise is a promise that broke. */}
+              and the write policy made it untrue: what Qale keeps in its own
+              memory lands on its own (docs/review-rework.md RR-1). The screen
+              says which writes wait and which do not, in the same words as
+              PRODUCT.md, because the one thing worse than a surprise is a
+              promise that broke. */}
           <p>
             That folder is where you work. Write notes, drop in transcripts, ask questions. The AI
-            reads what you give it, files it, and drafts the follow-ups. It never writes in your own
-            documents unless you ask. In its own memory, a new page or an added paragraph lands on
-            its own, listed in Activity, where one press puts it back. Anything that rewrites your
-            text, records a decision, makes or closes a promise, deletes, or leaves for Jira,
-            Confluence or a calendar asks you first.
+            reads what you give it, files it, and drafts the follow-ups. Your documents, your to-dos
+            and your meetings are yours: it asks before it writes there. It asks before it sends
+            anything to Jira, Confluence or a calendar, and before it deletes. What it keeps for
+            itself, a decision, a customer page, an insight, lands as it writes it, listed in
+            Activity, where one press puts it back.
           </p>
           {/* The why, then the limit of the promise in the same breath (OW10).
               "Nothing leaves" was never true of the model, and a boundary

@@ -1420,7 +1420,7 @@ export function createProposeTools(
     name: 'propose_decision',
     label: 'Propose decision',
     description:
-      'Propose a NEW decision for the append-only decision spine. frontmatter must include type:"decision" + summary; cite sources[] (the meeting + any evidence). Include tags[] with 1-2 contexts (kebab-case project/product/area, e.g. "pricing") drawn from tags already in use; name any brand-new context in the rationale. To record that this replaces an earlier decision, pass "supersedes" with that decision\'s slug (e.g. "decisions/use-firebase-auth") — the old decision is never edited, only marked superseded on approval.',
+      'Propose a NEW decision for the append-only decision spine. frontmatter must include type:"decision" + summary; cite sources[] (the meeting + any evidence). Include tags[] with 1-2 contexts (kebab-case project/product/area, e.g. "pricing") drawn from tags already in use; name any brand-new context in the rationale. To record that this replaces an earlier decision, pass "supersedes" with that decision\'s slug (e.g. "decisions/use-firebase-auth") — the old decision is never edited, only marked superseded when the new one lands.',
     parameters: Type.Object({
       path: Type.String({ description: 'Workspace path, e.g. "decisions/adopt-workos.md".' }),
       frontmatter: Type.Record(Type.String(), Type.Any()),
@@ -1503,7 +1503,7 @@ export function createProposeTools(
     name: 'propose_update',
     label: 'Propose update',
     description:
-      "Propose an edit to an EXISTING authored/derived note. Three levers, use any of them together: `patch` = body search/replace blocks for changing text the note ALREADY has (correct a line, extend a list, answer an open question); `append` = text added at the end of the body, for saying something the note does not say yet (a meeting write-up, a `## Prep` section, a new section on a hub); `frontmatter` = a map of metadata keys to set on approval, the ONLY way to change a note's properties (a todo's `due` to reschedule or `commitment`+`resolved` to close it, a meeting's `processing`, a person's `last_told`). Provide at least one. Read the note (vault_read) before you patch it: the search text has to be copied from it word for word and appear only once, and a patch that cannot be found is refused here. A meeting page the calendar made is frontmatter and NO body, so the write-up goes in `append` — there is nothing there to anchor a patch to.",
+      "Propose an edit to an EXISTING authored/derived note. Three levers, use any of them together: `patch` = body search/replace blocks for changing text the note ALREADY has (correct a line, extend a list, answer an open question); `append` = text added at the end of the body, for saying something the note does not say yet (a meeting write-up, a `## Prep` section, a new section on a hub); `frontmatter` = a map of metadata keys to set when the update lands, the ONLY way to change a note's properties (a todo's `due` to reschedule or `commitment`+`resolved` to close it, a meeting's `processing`, a person's `last_told`). Provide at least one. Read the note (vault_read) before you patch it: the search text has to be copied from it word for word and appear only once, and a patch that cannot be found is refused here. A meeting page the calendar made is frontmatter and NO body, so the write-up goes in `append` — there is nothing there to anchor a patch to.",
     parameters: Type.Object({
       path: Type.String(),
       patch: Type.Optional(
@@ -1525,7 +1525,7 @@ export function createProposeTools(
       title: Type.Optional(
         Type.String({
           description:
-            'New display title for the note, applied on approval. Only when the note is untitled or its title no longer fits what it says — never rename gratuitously.',
+            'New display title for the note, applied when the update lands. Only when the note is untitled or its title no longer fits what it says — never rename gratuitously.',
         }),
       ),
       sources: Type.Optional(Type.Array(Type.String())),
@@ -1863,7 +1863,12 @@ export function createProposeTools(
       );
       harness?.recordWrite(path, filed.rec.id, 'note');
       const who = params.owner?.trim() ? ` (waiting on ${params.owner.trim()})` : '';
-      return text(`Proposed todo (${filed.rec.id}): ${title}${who}. Awaiting review.`);
+      if (filed.disposition === 'silent') {
+        return applied('created', `${title}${who}`, ` The to-do is at ${path}.`);
+      }
+      return text(
+        `Proposed todo (${filed.rec.id}): ${title}${who}. Awaiting review.${notApplied(filed.error)}`,
+      );
     },
   });
 
@@ -1911,7 +1916,7 @@ export function createProposeTools(
       'them, one line each. `list: "add"` puts `rule` on that list, and `list: "remove"` takes the line that ' +
       'says `rule` off it. A want ("I want to know who is waiting before it ships") is a line on the list; a way ' +
       'of working ("create person notes too") is a rule. When `list` is set, `target` is ignored: the list has ' +
-      'one home. Removing always comes as a card.',
+      'one home. Removing takes the line off the same way, and Activity keeps the row.',
     parameters: Type.Object({
       rule: Type.String({
         description:
@@ -2038,8 +2043,8 @@ export function createProposeTools(
             );
           }
           const rationale = `${params.why?.trim() || 'You said so in chat.'} Comes off the list of what you want from Qale.`;
-          // Never `asked`: taking a line off is always the PM's call on a card,
-          // so the card has no basis to claim and no source to cite.
+          // Never `asked`: the PM may have said "stop doing X" without naming
+          // the line, so the write has no basis to claim and no source to cite.
           const filed = await propose(
             {
               kind: 'update',
@@ -2062,9 +2067,16 @@ export function createProposeTools(
             { noteType: home.note.type },
           );
           harness?.recordWrite(path, filed.rec.id, 'update');
+          if (filed.disposition === 'silent') {
+            return text(
+              `${appliedReceipt('learned', `that "${line}" comes off the list`)}.\n` +
+                'It is off the list of what you want from Qale, and Activity keeps the row. ' +
+                'Nothing is waiting on the PM: say you have taken it off, in one short line, and carry on.',
+            );
+          }
           return text(
             `Proposed taking a line off what you want from Qale (${filed.rec.id}): "${line}". ` +
-              `Awaiting review: removing is always the PM's call.${notApplied(filed.error)}`,
+              `Awaiting review.${notApplied(filed.error)}`,
           );
         }
 
@@ -2329,7 +2341,7 @@ export function createProposeTools(
       'this way from now on"), never on your own. Read skills/writing-skills/SKILL.md (How Qale writes ' +
       'skills) before you call this: it says how a skill is laid out and what belongs in one. Draft ' +
       '`body` from THIS session, in the sections "## When", "## Read", "## Produce", "## Then". It ' +
-      'lands as a file in skills/ that runs only once the PM approves it. One rule about work an ' +
+      'lands as a file in skills/ as you write it, and the PM reads it and changes it on the Skills page. One rule about work an ' +
       'existing skill already covers is not a new skill: that is propose_instruction, aimed at the ' +
       'file that owns the behavior.',
     parameters: Type.Object({

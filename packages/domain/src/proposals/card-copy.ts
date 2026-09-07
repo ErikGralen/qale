@@ -317,6 +317,104 @@ function meetingDay(fm?: Record<string, unknown>): string | undefined {
 }
 
 /**
+ * A day field as a person says it: "2026-09-24" reads "24 Sep". Null for
+ * anything that is not a whole day on its own, so a card never turns a version
+ * number or a sentence into a date.
+ */
+export function dayLabel(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return null;
+  const stamp = parseEventStamp(value.trim());
+  return stamp ? formatStamp(stamp) : null;
+}
+
+/** How many people sat in the meeting the page records. */
+function participantCount(fm?: Record<string, unknown>): number {
+  const people = fm?.['participants'];
+  return Array.isArray(people) ? people.filter((p) => String(p).trim()).length : 0;
+}
+
+/**
+ * The first line of what a new page says, with its markers taken off: a quote
+ * marker, a bullet dash. A heading is skipped rather than read: "Summary" is
+ * what the page calls the part, never what it says. Wikilinks are left as they
+ * are, so the card can draw them as live references.
+ */
+function firstProseLine(body?: string): string {
+  for (const raw of (body ?? '').split('\n')) {
+    const trimmed = raw.trim();
+    if (isHeading(trimmed)) continue;
+    const line = trimmed
+      .replace(/^>\s*/, '')
+      .replace(/^[-*+]\s+/, '')
+      .trim();
+    if (line) return line;
+  }
+  return '';
+}
+
+/** What a row needs to say about a page it is about to create. */
+export interface NewPageFactsInput {
+  kind: 'note' | 'update' | 'decision' | 'outbound' | 'delete';
+  frontmatter?: Record<string, unknown>;
+  body?: string;
+}
+
+/**
+ * The change a new page makes, in the facts a person checks before they approve
+ * it: who owes a to-do and when it is due, when a meeting was and how many sat
+ * in it, then the first line of what the page says.
+ *
+ * The parts are handed back separately so the card can draw the line, and a
+ * missing fact drops a part rather than padding it. Same two rules as the
+ * headline: nothing here costs a lookup, and nothing here is authored.
+ */
+export function newPageFacts(input: NewPageFactsInput): string[] {
+  const fm = input.frontmatter;
+  const parts: string[] = [];
+  const type = noteType(fm);
+  if (type === 'todo') {
+    const owner = todoOwnerName(fm);
+    if (owner) parts.push(owner);
+    const due = dayLabel(fmString(fm, 'due'));
+    if (due) parts.push(`due ${due}`);
+  } else if (type === 'meeting') {
+    const day = meetingDay(fm);
+    if (day) parts.push(day);
+    const people = participantCount(fm);
+    if (people) parts.push(`${people} ${people === 1 ? 'person' : 'people'}`);
+  }
+  const line = firstProseLine(input.body);
+  if (line) parts.push(line);
+  return parts;
+}
+
+/** What a row needs to name the thing that changes. */
+export interface TargetTitleInput {
+  kind: 'note' | 'update' | 'decision' | 'outbound' | 'delete';
+  targetPath?: string | null;
+  frontmatter?: Record<string, unknown>;
+  /** The title the workspace holds for this file, when the file exists. */
+  knownTitle?: string | null;
+}
+
+/**
+ * The name a row leads with: the page's real title, never a prettified filename
+ * (docs/review-rework.md). A page that already exists is named by the workspace,
+ * so the caller looks that up and passes it in. A new page names itself, in the
+ * payload, because nothing else knows it yet. The de-slugged filename is the
+ * last resort, for a page nothing else can name.
+ */
+export function cardTargetTitle(input: TargetTitleInput): string {
+  const target = input.targetPath ?? '';
+  const known = input.knownTitle?.trim() ?? '';
+  const filed = titleForRef(target);
+  if (input.kind === 'update' || input.kind === 'delete') {
+    return known || filed || nounForDir(dirOf(target));
+  }
+  return payloadTitle(input.frontmatter) || known || filed || nounForDir(dirOf(target));
+}
+
+/**
  * The verb-first line the PO reads to decide. Names what the app will do, so no
  * card can be mistaken for the real-world act its subject is named after.
  */

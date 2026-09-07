@@ -8,11 +8,11 @@ import {
 
 /**
  * The write policy, in the shape the Settings section reads it
- * (docs/background-system.md ticket 6).
+ * (docs/background-system.md ticket 6, docs/review-rework.md RR-1).
  *
  * The policy already answers for every write and says why in one sentence. The
  * screen adds two things and nothing else: one word per answer, and a grouping,
- * because twenty-four rows each carrying "asks every time" is a wall. The rows
+ * because a column of rows each carrying "asks every time" is a wall. The rows
  * keep the policy's order inside their group, so the list on screen and the
  * rules in the domain read in the same order.
  */
@@ -23,11 +23,10 @@ import {
  */
 export const DISPOSITION_WORDS: Record<WriteDisposition, string> = {
   silent: 'Lands, listed in Activity',
-  grouped: 'Asks, one proposal per intent',
   ask: 'Asks every time',
 };
 
-/** The rows of one place that share an answer. */
+/** The rows of one sphere that share an answer. */
 export interface WritePolicyGroup {
   disposition: WriteDisposition;
   /** {@link DISPOSITION_WORDS} for this answer. */
@@ -35,7 +34,7 @@ export interface WritePolicyGroup {
   rows: WritePolicyRow[];
 }
 
-/** One place, its rows gathered under the answer they share. */
+/** One sphere, its rows gathered under the answer they share. */
 export interface WritePolicyBlock {
   place: WritePolicyPlace['place'];
   title: string;
@@ -43,10 +42,10 @@ export interface WritePolicyBlock {
 }
 
 /**
- * The policy as the screen shows it: the two places in the policy's order, and
- * inside each one the answers in the order silent, grouped, ask. What lands on
- * its own comes first because it is the part nobody would guess. An answer no
- * row has is left out.
+ * The policy as the screen shows it: the two spheres in the policy's order, and
+ * inside each one the answers in the order silent, then ask. What lands on its
+ * own comes first because it is the part nobody would guess. An answer no row
+ * has is left out.
  */
 export function writePolicyBlocks(): WritePolicyBlock[] {
   return describeWritePolicy().map(({ place, title, rows }) => ({

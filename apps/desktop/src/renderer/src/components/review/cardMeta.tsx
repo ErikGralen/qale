@@ -1,32 +1,27 @@
 import {
   BookMarked,
   BookOpen,
+  CalendarClock,
   FileText,
-  GitCommitHorizontal,
-  Lightbulb,
-  ListChecks,
-  Mic,
-  Pencil,
   Ticket,
   Trash2,
-  Users,
   type LucideIcon,
 } from 'lucide-react';
 import {
   bareRef,
-  groupIntents,
+  cardTargetTitle,
+  groupByTarget,
   isNewSkill,
-  nounForDir,
+  newPageFacts,
   proposalHeadline,
   titleForRef,
-  titleFromSlug,
   typeForDir,
-  type IntentCard,
+  type TargetCard,
 } from '@qale/domain';
-import type { OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
+import type { NoteType, OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
 import { isExternalRef } from '../../lib/connections';
 import { NOTE_TYPE_ICON, noteTypeIcon } from '../../lib/note-icons';
-import { outboundAct, outboundReceipt, providerLabel } from './shared';
+import { outboundReceipt } from './shared';
 
 // Both read a note reference the way the whole app reads one. They live in the
 // domain now; the card surfaces keep reading them from here.
@@ -45,17 +40,10 @@ export { bareRef, titleForRef };
  */
 export interface CardHeadline {
   Icon: LucideIcon;
-  /** The scannable sentence — wraps, never truncates. */
+  /** The scannable sentence — wraps, never truncates. It says what approving
+   *  does, so the row keeps it for the reader who opens the detail, and for
+   *  anyone reading the row through a screen reader. */
   headline: string;
-  /** Short human noun for the kind (aria + the "why" prompt), e.g. "decision". */
-  kind: string;
-  /** Whether the agent wrote the headline itself. Only a standing instruction
-   *  does; every other card carries the composed line. */
-  authored: boolean;
-  /** Lead verb for update cards, so the note reference can render distinctly. */
-  verb: string;
-  /** The existing note an update touches — rendered as a distinct, openable chip. */
-  note?: { title: string; path: string };
   /** Human title of the note this decision replaces, when superseding. */
   replaces?: string;
   /** New title an update applies on approval — shown so a rename is never silent. */
@@ -138,108 +126,75 @@ function composedHeadline(p: ProposalDTO): string {
   });
 }
 
+/**
+ * The glyph on the row: what KIND OF THING is about to change. A to-do wears the
+ * to-do glyph whether the card makes one or edits one, so the row is read the
+ * same way every time. It used to wear the act instead, a pencil for every
+ * update, so two changes to one to-do looked like two different subjects.
+ */
 function iconFor(p: ProposalDTO): LucideIcon {
-  // An outbound card wears its action's glyph, not a blanket paper plane —
-  // the same one the approve button carries, so the card reads as one act.
-  if (p.kind === 'outbound') return outboundAct(p.payload as OutboundPayloadDTO).Icon;
+  // A send names the item it touches in the system it lives in. The ink arrow
+  // beside this says it leaves the workspace.
+  if (p.kind === 'outbound') {
+    const ob = p.payload as OutboundPayloadDTO;
+    if (ob.action === 'update_page') return NOTE_TYPE_ICON.wikipage;
+    if (ob.action?.endsWith('_event')) return CalendarClock;
+    return NOTE_TYPE_ICON.ticket;
+  }
   // The one card that takes a page away wears the one glyph nothing else uses,
   // so it can never be mistaken for the edit it sits next to in the queue.
   if (p.kind === 'delete') return Trash2;
   // A new skill wears the glyph every skill wears, in the sidebar and on the
   // Skills page. The card is the file, so it should look like the file.
   if (isSkill(p)) return NOTE_TYPE_ICON.skill;
-  // A rule for the house, not a note in the memory — so neither the generic
-  // pencil an update wears nor a note-type glyph. The open book is the wiki
-  // page's already, so a rule takes the marked one.
+  // A rule for the house, not a note in the memory — so neither a note-type
+  // glyph nor the open book, which is the wiki page's already.
   if (isInstruction(p)) return BookMarked;
-  if (p.kind === 'decision') return GitCommitHorizontal;
-  if (p.kind === 'update') return dirOf(p.targetPath) === 'todos' ? ListChecks : Pencil;
+  // The folder says the type for anything that already exists; a new page says
+  // it in its own frontmatter.
   const type =
-    typeof frontmatter(p)['type'] === 'string' ? (frontmatter(p)['type'] as string) : 'note';
-  if (type === 'insight') return Lightbulb;
-  if (type === 'customer' || type === 'person') return Users;
-  if (type === 'todo') return ListChecks;
-  if (type === 'meeting') return Mic;
-  return FileText;
-}
-
-function kindNoun(p: ProposalDTO): string {
-  if (p.kind === 'outbound') return providerLabel(p.payload as OutboundPayloadDTO);
-  if (p.kind === 'delete') return 'deletion';
-  if (isSkill(p)) return 'skill';
-  if (isInstruction(p)) return 'standing instruction';
-  if (p.kind === 'decision') return 'decision';
-  if (p.kind === 'update') return nounForDir(dirOf(p.targetPath)).replace(/^(a|an|the) /, '');
-  const type =
-    typeof frontmatter(p)['type'] === 'string' ? (frontmatter(p)['type'] as string) : 'note';
-  return type;
+    typeForDir(dirOf(targetOf(p))) ??
+    (typeof frontmatter(p)['type'] === 'string' ? (frontmatter(p)['type'] as NoteType) : null);
+  return type ? noteTypeIcon(type) : FileText;
 }
 
 export function cardHeadline(p: ProposalDTO): CardHeadline {
   const supersedes = (p.payload as { supersedes?: string }).supersedes;
-  const authored = !!p.headline?.trim();
-  const base = {
+  const rawRetitle = p.kind === 'update' ? (p.payload as { title?: unknown }).title : undefined;
+  return {
     Icon: iconFor(p),
-    kind: kindNoun(p),
-    authored,
+    headline: p.headline?.trim() || composedHeadline(p),
     replaces: supersedes ? titleForRef(supersedes) : undefined,
+    retitle: typeof rawRetitle === 'string' && rawRetitle.trim() ? rawRetitle.trim() : undefined,
   };
+}
 
-  // A deletion reads like an update — verb plus the page as an openable chip —
-  // because the PO has to be able to go and look at what is about to go before
-  // they agree to lose it.
-  if (p.kind === 'delete') {
-    const path = targetOf(p);
-    const title = titleForRef(path) || 'this note';
-    return {
-      ...base,
-      verb: 'Delete',
-      headline: p.headline?.trim() || `Delete ${title}`,
-      note: path ? { title, path } : undefined,
-    };
-  }
+/**
+ * The name the row leads with: the page's own title. `knownTitle` is what the
+ * workspace holds for the file, looked up by the row (see `titles.ts`); without
+ * it the card falls back to what it carries.
+ */
+export function cardTitle(p: ProposalDTO, knownTitle?: string | null): string {
+  return cardTargetTitle({
+    kind: p.kind,
+    targetPath: targetOf(p),
+    frontmatter: frontmatter(p),
+    knownTitle,
+    });
+}
 
-  // A standing instruction says itself in full ("Remember this: …"), so the
-  // headline is the whole sentence and never "Update <file>" — the rule is the
-  // subject, the file it lands in is only where. Once the agent has authored
-  // the sentence, that file rides along as the quiet chip below it; an update
-  // with no authored headline would otherwise render as verb + chip and drop
-  // the rule entirely.
-  if (isInstruction(p)) {
-    const path = targetOf(p);
-    return {
-      ...base,
-      verb: '',
-      headline: p.headline?.trim() || composedHeadline(p),
-      note:
-        authored && p.kind === 'update' && path ? { title: titleForRef(path), path } : undefined,
-    };
-  }
-
-  // An update touches an existing note. The note is the subject — render it as a
-  // distinct, openable chip so "Update <note>" never reads as one run of words.
-  if (p.kind === 'update') {
-    const path = targetOf(p);
-    const title = titleForRef(path) || 'this note';
-    const rawRetitle = (p.payload as { title?: unknown }).title;
-    return {
-      ...base,
-      verb: 'Update',
-      headline: p.headline?.trim() || `Update ${title}`,
-      note: path ? { title, path } : undefined,
-      retitle: typeof rawRetitle === 'string' && rawRetitle.trim() ? rawRetitle.trim() : undefined,
-    };
-  }
-
-  // Everything left creates something: a note, a decision, or (outbound) a
-  // record somewhere else, which has no vault path and names its target in its
-  // own head line.
-  //
-  // The card used to add "Files as “…”" under the headline. That is filing: the
-  // name and the folder are the app's job, decided in code, and no card could
-  // edit either (E-6). The headline says what gets written and the effect line
-  // says where it lands, which is everything a person decides here.
-  return { ...base, verb: '', headline: p.headline?.trim() || composedHeadline(p) };
+/**
+ * The change a card that creates a page makes, in parts: who owes a to-do and
+ * when it is due, when a meeting was and how many sat in it, then the first line
+ * of what the page says. Composed in the domain, so the row and the receipt say
+ * the same thing.
+ */
+export function cardFacts(p: ProposalDTO): string[] {
+  return newPageFacts({
+    kind: p.kind,
+    frontmatter: frontmatter(p),
+    body: (p.payload as { body?: string }).body,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -340,76 +295,79 @@ export function receiptSummary(receipt: { accepted: number; rejected: number }):
 }
 
 /**
- * The provenance line — "from your <meeting>" — pulled from the card's evidence
- * or target. Present ⇒ the change is sourced; absent (or `inference`) ⇒ the
- * quietest-looking claim is the one to double-check, so the card flags it.
+ * Where a card was read out of: the meeting or the material behind it. The batch
+ * says this once, in its heading, instead of every row repeating it. Nine cards
+ * from one transcript said "from Steering H2 Priorities" nine times.
  */
-export function sourceHint(p: ProposalDTO): string | null {
-  const refs = [...p.evidence.map((e) => e.ref), p.targetPath ?? '']
-    .map((r) => r.replace(/^\[\[/, '').replace(/\]\]$/, '').split('|')[0]!.trim())
-    .filter(Boolean);
-  const meeting = refs.find((r) => r.startsWith('meetings/') || r.startsWith('sources/'));
-  return meeting ? titleFromSlug(meeting) : null;
+export function sourceRefOf(p: ProposalDTO): string {
+  const refs = [...p.evidence.map((e) => e.ref), p.targetPath ?? ''].map(bareRef).filter(Boolean);
+  return refs.find((r) => r.startsWith('meetings/') || r.startsWith('sources/')) ?? '';
+}
+
+/** The one source behind a whole batch, or null when they came from more than
+ *  one, or when any card came from none. A heading that names a source every
+ *  card does not share is a heading that lies about one of them. */
+export function batchSource(cards: readonly ProposalDTO[]): string | null {
+  if (cards.length === 0) return null;
+  const refs = new Set(cards.map(sourceRefOf));
+  const only = [...refs][0];
+  return refs.size === 1 && only ? only : null;
 }
 
 /**
- * Narrative order for a meeting review — stakes descending: the meeting summary
- * sets context, decisions are highest-stakes, then insights/todos; mechanical
- * hub/ledger updates are housekeeping; outbound (externally visible) is always
- * its own last decision. Shared by every surface that draws cards, so they all
- * read the same way.
+ * The heading over a batch: what is waiting, and what the Approve all button
+ * will not touch. A send is its own decision and never rides along in a batch,
+ * so it is counted apart rather than left to explain why "9 changes" sits above
+ * a button that says 7.
  */
+export function batchCount(changes: number, sends: number): string {
+  const c = `${changes} change${changes === 1 ? '' : 's'}`;
+  const s = `${sends} send${sends === 1 ? '' : 's'}`;
+  if (sends === 0) return c;
+  if (changes === 0) return s;
+  return `${c} and ${s}`;
+}
+
 /**
- * A card as the intent grouper reads it (E-6). The DTO carries every fact the
- * grouping rests on; this only reshapes them, so the queue's answer can never
- * drift from what the write path decided.
+ * A card as the grouper reads it. The DTO carries every fact the grouping rests
+ * on; this only reshapes them.
  */
-export function intentCard(p: ProposalDTO): IntentCard {
+export function targetCard(p: ProposalDTO): TargetCard {
   return {
     id: p.id,
     kind: p.kind,
     targetPath: p.targetPath,
-    evidence: p.evidence.map((e) => e.ref),
-    asked: p.asked,
-    payload: p.payload as IntentCard['payload'],
+    payload: p.payload as TargetCard['payload'],
   };
 }
 
 /**
- * A section's cards, grouped into the intents behind them, in the order the
- * cards were given. A group of one is handed back as a card: it says nothing a
- * card does not already say.
+ * A batch's cards, grouped by the thing each one changes, in the order the cards
+ * were given. Two changes to one to-do are one group; every other card is a
+ * group of one and draws as an ordinary row.
  */
-export function cardIntents(
-  cards: ProposalDTO[],
-): { key: string; sentence: string; cards: ProposalDTO[] }[] {
+export function cardGroups(cards: ProposalDTO[]): { key: string; cards: ProposalDTO[] }[] {
   const byId = new Map(cards.map((p) => [p.id, p]));
-  return groupIntents(cards.map(intentCard)).map((intent) => ({
-    key: intent.key,
-    sentence: intent.sentence,
-    cards: intent.cards.map((c) => byId.get(c.id)!),
+  return groupByTarget(cards.map(targetCard)).map((group) => ({
+    key: group.key,
+    cards: group.cards.map((c) => byId.get(c.id)!),
   }));
 }
 
+/**
+ * The order a batch reads in: the meeting page sets the context, then the
+ * promises made in it, then the documents, then what is taken away, and last
+ * what leaves the workspace. Nothing folds; every card is one row.
+ */
 export function cardRank(p: ProposalDTO): number {
-  if (p.kind === 'outbound') return 4;
-  // Never housekeeping. Everything in that fold collapses to a one-line row
-  // labelled "glance and go", and a page being removed is the one change in the
-  // queue that nobody should approve at a glance.
-  if (p.kind === 'delete') return 2;
-  // A rule changes how every session behaves from here on, so it never folds
-  // into the housekeeping tail. It also must not read louder or quieter
-  // depending on whether the rules file happened to exist yet (update vs note).
-  if (isInstruction(p)) return 2;
-  if (p.kind === 'update') return p.targetPath?.startsWith('meetings/') ? 0 : 3;
-  if (p.kind === 'decision') return 1;
-  // The meeting itself, proposed whole. Same place in the story as a summary
-  // patched onto an existing page: it is the context everything below it needs.
-  if (p.kind === 'note' && dirOf(p.targetPath) === 'meetings') return 0;
-  return 2;
+  if (p.kind === 'outbound') return 5;
+  if (p.kind === 'delete') return 4;
+  const dir = dirOf(targetOf(p));
+  if (dir === 'meetings') return 0;
+  if (dir === 'todos') return 1;
+  if (dir === 'notes') return 2;
+  return 3;
 }
-
-export const HOUSEKEEPING_RANK = 3;
 
 export function orderCards(cards: ProposalDTO[]): ProposalDTO[] {
   return [...cards].sort((a, b) => cardRank(a) - cardRank(b) || a.created - b.created);

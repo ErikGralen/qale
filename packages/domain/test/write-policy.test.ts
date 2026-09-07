@@ -6,51 +6,80 @@ import {
   describeWritePolicy,
   isMachineryField,
   isStyleFile,
+  isUsersSphere,
   STYLE_FILES,
-  type WriteFacts,
 } from '../src/index.js';
 
-// The write policy, one case per row of the table in docs/easier-tickets.md E-3.
-// This is the whole argument for the build: a write is graded by the damage it
-// can do, in one place, and only the ones that can hurt cost the PM a decision.
+// The write policy, two spheres (docs/review-rework.md RR-1). The PM's
+// documents, todos and meetings wait for them; a send and a delete wait
+// anywhere; everything else is Qale's memory and lands as it is written.
 
-test('what the PM asked for in the chat lands without a card', () => {
-  assert.equal(writePolicy({ kind: 'note', asked: true }).disposition, 'silent');
-  assert.equal(writePolicy({ kind: 'update', asked: true }).disposition, 'silent');
-  assert.equal(writePolicy({ kind: 'decision', asked: true }).disposition, 'silent');
+test('the PM sphere is the three folders, and the three types', () => {
+  for (const targetPath of ['notes/brief.md', 'todos/2026-09-07-send.md', 'meetings/x.md']) {
+    assert.equal(isUsersSphere({ kind: 'note', targetPath }), true, targetPath);
+  }
+  for (const noteType of ['note', 'todo', 'meeting']) {
+    assert.equal(isUsersSphere({ kind: 'note', noteType }), true, noteType);
+  }
+  for (const targetPath of ['research/pricing.md', 'decisions/adopt-workos.md', 'notebooks/x.md']) {
+    assert.equal(isUsersSphere({ kind: 'note', targetPath }), false, targetPath);
+  }
+  assert.equal(isUsersSphere({ kind: 'note' }), false);
 });
 
-test('material arriving lands a new note, and an append, without a card', () => {
-  assert.equal(writePolicy({ kind: 'note', noteType: 'meeting' }).disposition, 'silent');
-  assert.equal(writePolicy({ kind: 'note', noteType: 'insight' }).disposition, 'silent');
-  assert.equal(writePolicy({ kind: 'update', appendOnly: true }).disposition, 'silent');
+test('a page in the PM folders asks, whatever the write does', () => {
+  for (const targetPath of [
+    'notes/spec-pricing.md',
+    'todos/2026-09-07-send-the-dates.md',
+    'meetings/2026-09-02-standup.md',
+  ]) {
+    assert.equal(writePolicy({ kind: 'note', targetPath }).disposition, 'ask', targetPath);
+    assert.equal(writePolicy({ kind: 'update', targetPath }).disposition, 'ask', targetPath);
+    assert.equal(
+      writePolicy({ kind: 'update', appendOnly: true, targetPath }).disposition,
+      'ask',
+      targetPath,
+    );
+  }
 });
 
-// Where a page lands is part of what the write does (E-14). `notes/` is the PM's
-// own Documents folder; the rest of the workspace is the memory the agent keeps.
-
-test('a new page in the Documents folder asks', () => {
+test('a meeting page asks, and so does the write-up added to it', () => {
+  assert.equal(writePolicy({ kind: 'note', noteType: 'meeting' }).disposition, 'ask');
   assert.equal(
-    writePolicy({ kind: 'note', targetPath: 'notes/spec-pricing.md' }).disposition,
+    writePolicy({
+      kind: 'update',
+      noteType: 'meeting',
+      appendOnly: true,
+      targetPath: 'meetings/2026-09-02-standup.md',
+    }).disposition,
+    'ask',
+  );
+});
+
+test('a todo asks, made, closed or moved', () => {
+  assert.equal(writePolicy({ kind: 'note', noteType: 'todo' }).disposition, 'ask');
+  assert.equal(
+    writePolicy({ kind: 'update', noteType: 'todo', appendOnly: true }).disposition,
     'ask',
   );
   assert.equal(
-    writePolicy({ kind: 'note', targetPath: 'notes/2026-09-02-sales-ask.md' }).disposition,
+    writePolicy({ kind: 'update', targetPath: 'todos/2026-09-07-send.md' }).disposition,
     'ask',
   );
 });
 
-test('a page the PM asked for in the chat still lands in Documents without a card', () => {
-  assert.equal(
-    writePolicy({ kind: 'note', asked: true, targetPath: 'notes/spec-pricing.md' }).disposition,
-    'silent',
-  );
+test('a folder that only starts like a PM folder is not one', () => {
+  assert.equal(writePolicy({ kind: 'note', targetPath: 'notebooks/x.md' }).disposition, 'silent');
 });
 
-test('a page the agent files for itself lands without a card, wherever the memory keeps it', () => {
+// Qale's memory: what it keeps for the PM. A page here costs them nothing to
+// have, git commits it, and Activity puts it back, so it lands.
+
+test('a page Qale files for itself lands, wherever the memory keeps it', () => {
   for (const path of [
     'insights/nordkap-needs-scim.md',
-    'meetings/2026-09-02-standup.md',
+    'customers/nordkap.md',
+    'people/vera-lund.md',
     'research/competitors.md',
     'about/product.md',
   ]) {
@@ -58,38 +87,20 @@ test('a page the agent files for itself lands without a card, wherever the memor
   }
 });
 
-test('an append into a Documents page asks, and the same append into the memory does not', () => {
-  assert.equal(
-    writePolicy({ kind: 'update', appendOnly: true, targetPath: 'notes/q3-priorities.md' })
-      .disposition,
-    'ask',
-  );
-  assert.equal(
-    writePolicy({ kind: 'update', appendOnly: true, targetPath: 'research/pricing.md' })
-      .disposition,
-    'silent',
-  );
-});
-
-// Research is the folder for the pages Qale keeps for itself (docs/memory-types.md
-// MT-5): the case for a problem, a competitor scan. About is the folder for what
-// is true about the PM and the company (docs/learning-how-you-work.md, ticket
-// 16). Both sit in Memory, so the policy needs no rule of its own for either.
-// These cases say so.
-
-test('a new research page lands without a card', () => {
-  assert.equal(
-    writePolicy({ kind: 'note', noteType: 'research', targetPath: 'research/competitors.md' })
-      .disposition,
-    'silent',
-  );
-});
-
-test('a research page that is rewritten is grouped, and one that only grows is silent', () => {
-  const page = { noteType: 'research', targetPath: 'research/competitors.md' };
-  assert.equal(writePolicy({ kind: 'update', ...page }).disposition, 'grouped');
-  assert.equal(writePolicy({ kind: 'update', appendOnly: false, ...page }).disposition, 'grouped');
+test('an edit to a page Qale keeps lands, rewritten or added to', () => {
+  const page = { targetPath: 'customers/nordkap.md' };
+  assert.equal(writePolicy({ kind: 'update', ...page }).disposition, 'silent');
+  assert.equal(writePolicy({ kind: 'update', appendOnly: false, ...page }).disposition, 'silent');
   assert.equal(writePolicy({ kind: 'update', appendOnly: true, ...page }).disposition, 'silent');
+});
+
+test('a decision lands, because the spine supersedes rather than edits', () => {
+  const ruling = writePolicy({ kind: 'decision', targetPath: 'decisions/adopt-workos.md' });
+  assert.equal(ruling.disposition, 'silent');
+  assert.equal(
+    ruling.reason,
+    "A decision is Qale's record. A wrong one is superseded by the next.",
+  );
 });
 
 test('a research page written into Documents asks, because the folder wins over the type', () => {
@@ -98,159 +109,86 @@ test('a research page written into Documents asks, because the folder wins over 
       .disposition,
     'ask',
   );
-  assert.equal(
-    writePolicy({
-      kind: 'update',
-      noteType: 'research',
-      appendOnly: true,
-      targetPath: 'notes/competitors.md',
-    }).disposition,
-    'ask',
-  );
 });
 
-test('a folder that only starts like Documents is not Documents', () => {
-  assert.equal(writePolicy({ kind: 'note', targetPath: 'notebooks/x.md' }).disposition, 'silent');
-});
+// The rules that hold in both spheres.
 
-test('a standing rule is still remembered without a card, wherever it is written', () => {
-  assert.equal(
-    writePolicy({
-      kind: 'update',
-      noteType: 'skill',
-      appendOnly: true,
-      targetPath: 'notes/x.md',
-      asked: true,
-    }).disposition,
-    'silent',
-  );
-});
-
-test('a patch over existing text, and a decision, are grouped', () => {
-  assert.equal(writePolicy({ kind: 'update' }).disposition, 'grouped');
-  assert.equal(writePolicy({ kind: 'update', appendOnly: false }).disposition, 'grouped');
-  assert.equal(writePolicy({ kind: 'decision' }).disposition, 'grouped');
-});
-
-test('a todo always asks, however it arrived', () => {
-  assert.equal(writePolicy({ kind: 'note', noteType: 'todo' }).disposition, 'ask');
-  assert.equal(writePolicy({ kind: 'note', noteType: 'todo', asked: true }).disposition, 'ask');
-  // Closing one, or moving its date, is the same promise changing.
-  assert.equal(
-    writePolicy({ kind: 'update', noteType: 'todo', appendOnly: true }).disposition,
-    'ask',
-  );
-});
-
-test('outbound always asks, and never groups', () => {
+test('outbound always asks', () => {
   for (const asked of [true, false]) {
-    const ruling = writePolicy({ kind: 'outbound', asked });
-    assert.equal(ruling.disposition, 'ask');
-    assert.notEqual(ruling.disposition, 'grouped');
+    assert.equal(writePolicy({ kind: 'outbound', asked }).disposition, 'ask');
   }
 });
 
 test('a delete always asks', () => {
   assert.equal(writePolicy({ kind: 'delete' }).disposition, 'ask');
   assert.equal(writePolicy({ kind: 'delete', asked: true }).disposition, 'ask');
-  // Even a page the PM asked to lose. There is no undelete behind it.
-  assert.equal(writePolicy({ kind: 'delete', noteType: 'note', asked: true }).disposition, 'ask');
-});
-
-test('a standing rule the PM stated is remembered without a card', () => {
   assert.equal(
-    writePolicy({ kind: 'update', noteType: 'skill', appendOnly: true, asked: true }).disposition,
-    'silent',
-  );
-  assert.equal(writePolicy({ kind: 'note', noteType: 'skill', asked: true }).disposition, 'silent');
-  assert.equal(
-    writePolicy({ kind: 'update', noteType: 'agent', appendOnly: true, asked: true }).disposition,
-    'silent',
-  );
-});
-
-test('a rule file the agent wrote on its own asks', () => {
-  // Reading a team's Jira and writing up how they work (E-25) is a whole file
-  // made with nobody watching. "You said it should hold from now on" would be a
-  // lie on that card.
-  assert.equal(writePolicy({ kind: 'note', noteType: 'skill' }).disposition, 'ask');
-  assert.equal(
-    writePolicy({ kind: 'update', noteType: 'agent', appendOnly: true }).disposition,
+    writePolicy({ kind: 'delete', targetPath: 'research/pricing.md' }).disposition,
     'ask',
   );
-});
-
-test('a rule file is still never deleted without asking', () => {
   assert.equal(writePolicy({ kind: 'delete', noteType: 'skill' }).disposition, 'ask');
 });
 
-// Qale's own notes on how the PM works (docs/learning-how-you-work.md, ticket 5):
-// the Jira and Confluence files written from their own tickets and pages, and a
-// voice rewritten after a style pick. The file is the record, so no card.
+test('what the PM asked for in the chat lands, in either sphere', () => {
+  assert.equal(
+    writePolicy({ kind: 'note', asked: true, targetPath: 'notes/spec-pricing.md' }).disposition,
+    'silent',
+  );
+  assert.equal(
+    writePolicy({ kind: 'update', asked: true, targetPath: 'notes/spec-pricing.md' }).disposition,
+    'silent',
+  );
+  assert.equal(writePolicy({ kind: 'note', asked: true }).disposition, 'silent');
+  assert.equal(writePolicy({ kind: 'decision', asked: true }).disposition, 'silent');
+  // A todo they dictated is the exception: a promise asks whoever asked for it.
+  assert.equal(writePolicy({ kind: 'note', noteType: 'todo', asked: true }).disposition, 'ask');
+});
 
-test('the style files Qale writes from a first read land without a card', () => {
+test("Qale's own skill and agent files land, asked for or not", () => {
+  for (const noteType of ['skill', 'agent']) {
+    assert.equal(writePolicy({ kind: 'note', noteType }).disposition, 'silent', noteType);
+    assert.equal(
+      writePolicy({ kind: 'update', noteType, targetPath: 'skills/arrival/SKILL.md' }).disposition,
+      'silent',
+      noteType,
+    );
+  }
   for (const targetPath of STYLE_FILES) {
     assert.equal(isStyleFile(targetPath), true, targetPath);
-    const ruling = writePolicy({ kind: 'note', noteType: 'skill', targetPath });
-    assert.equal(ruling.disposition, 'silent', targetPath);
-    assert.equal(ruling.reason, "Qale's own notes about how you work, and the file is the record.");
-    // Filling the sections in later is the same notebook.
     assert.equal(
-      writePolicy({ kind: 'update', noteType: 'skill', targetPath }).disposition,
+      writePolicy({ kind: 'note', noteType: 'skill', targetPath }).disposition,
       'silent',
       targetPath,
     );
   }
-});
-
-test('a voice changed by a style pick lands without a card', () => {
+  // A voice sits in the memory too, so the same answer with no rule of its own.
   assert.equal(isStyleFile('voices/exec.md'), true);
-  assert.equal(isStyleFile('voices/cs.md'), true);
   assert.equal(writePolicy({ kind: 'update', targetPath: 'voices/exec.md' }).disposition, 'silent');
-  assert.equal(writePolicy({ kind: 'note', targetPath: 'voices/exec.md' }).disposition, 'silent');
 });
 
-test('a rule the PM stated into a style file keeps its own reason', () => {
+test('a rule the PM stated keeps its own reason', () => {
   const ruling = writePolicy({
     kind: 'update',
     noteType: 'skill',
     appendOnly: true,
     asked: true,
-    targetPath: 'skills/jira/SKILL.md',
+    targetPath: 'skills/house-rules/SKILL.md',
   });
   assert.equal(ruling.disposition, 'silent');
   assert.equal(ruling.reason, 'You said it should hold from now on.');
 });
 
-test('a style file is still never deleted without asking', () => {
-  for (const targetPath of [...STYLE_FILES, 'voices/exec.md']) {
-    assert.equal(writePolicy({ kind: 'delete', targetPath }).disposition, 'ask', targetPath);
-  }
-});
-
-test('any other skill, and anything that only looks like a voice, is not a style file', () => {
-  for (const path of [
-    'skills/arrival/SKILL.md',
-    'skills/house-rules/SKILL.md',
-    'skills/jira/notes.md',
-    'notes/voices/exec.md',
-    undefined,
-    null,
-  ]) {
+test('anything that only looks like a voice is not a style file', () => {
+  for (const path of ['skills/jira/notes.md', 'notes/voices/exec.md', undefined, null]) {
     assert.equal(isStyleFile(path), false, String(path));
   }
-  assert.equal(
-    writePolicy({ kind: 'note', noteType: 'skill', targetPath: 'skills/arrival/SKILL.md' })
-      .disposition,
-    'ask',
-  );
 });
 
 test('a kind nobody has graded asks, because asking cannot surprise anyone', () => {
   assert.equal(writePolicy({ kind: 'something-new' }).disposition, 'ask');
 });
 
-test('every ruling says why, in one sentence', () => {
+test('every ruling says why, in one plain sentence', () => {
   for (const kind of ['note', 'update', 'decision', 'outbound', 'delete']) {
     const { reason } = writePolicy({ kind });
     assert.ok(reason.length > 0, `${kind} has no reason`);
@@ -262,47 +200,17 @@ test('every ruling says why, in one sentence', () => {
 test('appliesSilently agrees with the ruling', () => {
   assert.equal(appliesSilently({ kind: 'note' }), true);
   assert.equal(appliesSilently({ kind: 'outbound' }), false);
-  assert.equal(appliesSilently({ kind: 'update' }), false);
+  assert.equal(appliesSilently({ kind: 'note', targetPath: 'notes/brief.md' }), false);
 });
 
-// Place is the first axis of the policy (docs/background-system.md ticket 2).
-// These cases pin the two places against each other, one write at a time.
-
-test('the same write reads differently in the two places', () => {
-  for (const [kind, memory] of [
-    ['note', 'silent'],
-    ['update', 'grouped'],
-    ['decision', 'grouped'],
-  ] as const) {
+test('the same write reads differently in the two spheres', () => {
+  for (const kind of ['note', 'update', 'decision']) {
     assert.equal(writePolicy({ kind, targetPath: 'notes/brief.md' }).disposition, 'ask', kind);
     assert.equal(
       writePolicy({ kind, targetPath: 'research/pricing.md' }).disposition,
-      memory,
+      'silent',
       kind,
     );
-  }
-});
-
-test('the rules that hold everywhere hold in both places', () => {
-  for (const targetPath of ['notes/brief.md', 'research/pricing.md']) {
-    assert.equal(writePolicy({ kind: 'outbound', targetPath }).disposition, 'ask', targetPath);
-    assert.equal(writePolicy({ kind: 'delete', targetPath }).disposition, 'ask', targetPath);
-    assert.equal(
-      writePolicy({ kind: 'note', noteType: 'todo', targetPath }).disposition,
-      'ask',
-      targetPath,
-    );
-    assert.equal(
-      writePolicy({ kind: 'note', noteType: 'skill', asked: true, targetPath }).disposition,
-      'silent',
-      targetPath,
-    );
-    assert.equal(
-      writePolicy({ kind: 'note', noteType: 'skill', targetPath }).disposition,
-      'ask',
-      targetPath,
-    );
-    assert.equal(writePolicy({ kind: 'note', asked: true, targetPath }).disposition, 'silent');
   }
 });
 
@@ -320,64 +228,43 @@ test('the derived labels and the tags are known to the policy file', () => {
 // The Settings section reads the policy, so it can never say something the
 // policy does not do (docs/background-system.md ticket 6).
 
-test('the description covers both places, and says which is which', () => {
+test('the description covers both spheres, and says which is which', () => {
   const places = describeWritePolicy();
   assert.deepEqual(
     places.map((p) => p.place),
-    ['documents', 'memory'],
+    ['yours', 'memory'],
   );
   assert.deepEqual(
     places.map((p) => p.title),
-    ['In your documents', 'In its memory'],
+    ['Your documents, to-dos and meetings', "Qale's memory"],
   );
 });
 
-test('every row of the description is the policy answering for that place', () => {
-  // The same list the description walks, in the same order. Two rows follow it:
-  // the labels and the tags, which no pass asks the policy about. The style
-  // files live in Memory, so their row is asked about its own path and is
-  // listed there only.
-  const writes: WriteFacts[] = [
-    { kind: 'outbound' },
-    { kind: 'delete' },
-    { kind: 'note', noteType: 'todo' },
-    { kind: 'update', noteType: 'skill', appendOnly: true, asked: true },
-    { kind: 'note', noteType: 'skill' },
-    { kind: 'note', noteType: 'skill', targetPath: 'skills/jira/SKILL.md' },
-    { kind: 'note', asked: true },
-    { kind: 'note' },
-    { kind: 'update', appendOnly: true },
-    { kind: 'update' },
-    { kind: 'decision' },
-  ];
-  const paths = { documents: 'notes/pricing-brief.md', memory: 'research/pricing.md' };
+test('the PM sphere asks for everything but what they asked for', () => {
+  const yours = describeWritePolicy().find((p) => p.place === 'yours')!;
+  const asks = yours.rows.filter((r) => r.disposition === 'ask');
+  assert.equal(asks.length, 4);
+  assert.ok(yours.rows.some((r) => r.what.startsWith('Anything sent to')));
+  assert.ok(yours.rows.some((r) => r.what.startsWith('Deleting a page')));
+  const asked = yours.rows.find((r) => r.what.startsWith('A page or an edit you asked for'))!;
+  assert.equal(asked.disposition, 'silent');
+});
 
-  for (const place of describeWritePolicy()) {
-    const expected = writes.filter((w) => place.place === 'memory' || !w.targetPath);
-    assert.equal(place.rows.length, expected.length + 2, place.place);
-    expected.forEach((facts, i) => {
-      const row = place.rows[i]!;
-      const ruling = writePolicy({ ...facts, targetPath: facts.targetPath ?? paths[place.place] });
-      assert.equal(row.reason, ruling.reason, `${place.place} row ${i}`);
-      assert.equal(row.disposition, ruling.disposition, `${place.place} row ${i}`);
-    });
-    for (const row of place.rows.slice(expected.length)) {
-      assert.equal(row.disposition, 'silent', row.what);
-    }
+test('every row of the memory list lands', () => {
+  const memory = describeWritePolicy().find((p) => p.place === 'memory')!;
+  for (const row of memory.rows) {
+    assert.equal(row.disposition, 'silent', row.what);
   }
 });
 
-test('the Settings section names the notes Qale keeps on how the PM writes', () => {
-  const memory = describeWritePolicy().find((p) => p.place === 'memory')!;
-  const row = memory.rows.find((r) => r.what.startsWith('The notes Qale keeps'))!;
-  assert.ok(row, 'no row for the style files');
-  assert.equal(row.disposition, 'silent');
-  assert.equal(row.reason, "Qale's own notes about how you work, and the file is the record.");
-  const documents = describeWritePolicy().find((p) => p.place === 'documents')!;
-  assert.equal(
-    documents.rows.some((r) => r.what.startsWith('The notes Qale keeps')),
-    false,
-  );
+test('the two label rows are on both lists', () => {
+  for (const place of describeWritePolicy()) {
+    const labels = place.rows.filter(
+      (r) => r.what.startsWith('The summary line') || r.what === 'The tags on a page',
+    );
+    assert.equal(labels.length, 2, place.place);
+    for (const row of labels) assert.equal(row.disposition, 'silent', row.what);
+  }
 });
 
 test('every row of the description reads as one plain sentence', () => {

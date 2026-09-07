@@ -10,7 +10,9 @@ import { fileProposal } from '../src/index.js';
 import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../src/ports.js';
 
 // Filing a write: the policy decides, one place, and a silent one lands on the
-// spot with an Activity row behind it (docs/easier-tickets.md E-3, E-9).
+// spot with an Activity row behind it (docs/easier-tickets.md E-3, E-9). Two
+// spheres since docs/review-rework.md RR-1: the PM's documents, todos and
+// meetings wait for them, and Qale's memory lands.
 
 interface Stored {
   frontmatter: Frontmatter;
@@ -54,7 +56,16 @@ function fakeContext(files: Record<string, Stored> = {}) {
     index: {
       reindex: () => {},
       removeByPath: () => {},
-      get: () => null,
+      get: (p: string) => {
+        const s = store.get(p);
+        if (!s) return null;
+        return {
+          path: p,
+          slug: p.replace(/\.md$/, ''),
+          type: s.frontmatter['type'],
+          frontmatter: s.frontmatter,
+        };
+      },
       all: () => [],
       listByType: () => [],
       search: () => [],
@@ -167,7 +178,6 @@ test('a todo waits, and writes nothing', async () => {
       ...base,
       kind: 'note',
       targetPath: 'todos/2026-09-02-send-the-dates.md',
-      asked: true,
       payload: {
         path: 'todos/2026-09-02-send-the-dates.md',
         frontmatter: {
@@ -189,8 +199,60 @@ test('a todo waits, and writes nothing', async () => {
   assert.equal(activity.length, 0);
 });
 
-test('an append lands, a patch waits', async () => {
+test('a write in the memory lands, whether it adds or rewrites', async () => {
   const files = {
+    'customers/nordkap.md': {
+      frontmatter: {
+        type: 'customer',
+        title: 'Nordkap',
+        summary: 'Nordkap',
+        relationship: 'active',
+      } as unknown as Frontmatter,
+      body: 'The old line.',
+    },
+  };
+
+  const appended = fakeContext(files);
+  const one = await fileProposal(
+    appended.ctx,
+    {
+      ...base,
+      kind: 'update',
+      targetPath: 'customers/nordkap.md',
+      payload: {
+        path: 'customers/nordkap.md',
+        append: '## Signals\n\nThey asked for SCIM twice.',
+        rationale: 'Because.',
+      },
+    },
+    { noteType: 'customer', appendOnly: true },
+  );
+  assert.equal(one.disposition, 'silent');
+  assert.match(appended.store.get('customers/nordkap.md')!.body, /SCIM twice\./);
+  assert.equal(appended.activity[0]!.action, 'updated');
+  assert.deepEqual(appended.activity[0]!.revert, { commit: 'c0ffee', undo: 'restore' });
+
+  const patched = fakeContext(files);
+  const two = await fileProposal(
+    patched.ctx,
+    {
+      ...base,
+      kind: 'update',
+      targetPath: 'customers/nordkap.md',
+      payload: {
+        path: 'customers/nordkap.md',
+        patch: [{ search: 'The old line.', replace: 'The new line.' }],
+        rationale: 'Because.',
+      },
+    },
+    { noteType: 'customer' },
+  );
+  assert.equal(two.disposition, 'silent');
+  assert.equal(patched.store.get('customers/nordkap.md')!.body, 'The new line.');
+});
+
+test('a write on a meeting page waits, even one that only adds', async () => {
+  const { ctx, store, rows, activity } = fakeContext({
     'meetings/2026-09-01-standup.md': {
       frontmatter: {
         type: 'meeting',
@@ -200,11 +262,9 @@ test('an append lands, a patch waits', async () => {
       } as unknown as Frontmatter,
       body: 'The old line.',
     },
-  };
-
-  const appended = fakeContext(files);
-  const one = await fileProposal(
-    appended.ctx,
+  });
+  const filed = await fileProposal(
+    ctx,
     {
       ...base,
       kind: 'update',
@@ -217,29 +277,62 @@ test('an append lands, a patch waits', async () => {
     },
     { noteType: 'meeting', appendOnly: true },
   );
-  assert.equal(one.disposition, 'silent');
-  assert.match(appended.store.get('meetings/2026-09-01-standup.md')!.body, /It went fine\./);
-  assert.equal(appended.activity[0]!.action, 'updated');
-  assert.deepEqual(appended.activity[0]!.revert, { commit: 'c0ffee', undo: 'restore' });
+  assert.equal(filed.disposition, 'ask');
+  assert.equal(store.get('meetings/2026-09-01-standup.md')!.body, 'The old line.');
+  assert.equal(rows.get(filed.rec.id)!.status, 'pending');
+  assert.equal(activity.length, 0);
+});
 
-  const patched = fakeContext(files);
-  const two = await fileProposal(
-    patched.ctx,
+test('a decision lands on the spot, and supersedes the one it replaces', async () => {
+  const { ctx, store, rows, activity } = fakeContext({
+    'decisions/use-firebase-auth.md': {
+      frontmatter: {
+        type: 'decision',
+        title: 'Use Firebase auth',
+        summary: 'Use Firebase auth',
+        standing: 'active',
+        date: '2026-06-01',
+      } as unknown as Frontmatter,
+      body: 'It was the fastest way in.',
+    },
+  });
+  const filed = await fileProposal(
+    ctx,
     {
       ...base,
-      kind: 'update',
-      targetPath: 'meetings/2026-09-01-standup.md',
+      kind: 'decision',
+      targetPath: 'decisions/adopt-workos.md',
       payload: {
-        path: 'meetings/2026-09-01-standup.md',
-        patch: [{ search: 'The old line.', replace: 'The new line.' }],
+        path: 'decisions/adopt-workos.md',
+        frontmatter: {
+          type: 'decision',
+          title: 'Adopt WorkOS',
+          summary: 'Adopt WorkOS',
+          standing: 'active',
+          date: '2026-09-02',
+        },
+        body: 'Nordkap needs SCIM.',
         rationale: 'Because.',
+        supersedes: 'decisions/use-firebase-auth',
       },
     },
-    { noteType: 'meeting' },
+    { noteType: 'decision' },
   );
-  assert.equal(two.disposition, 'grouped');
-  assert.equal(patched.store.get('meetings/2026-09-01-standup.md')!.body, 'The old line.');
-  assert.equal(patched.activity.length, 0);
+
+  assert.equal(filed.disposition, 'silent');
+  assert.equal(rows.get(filed.rec.id)!.status, 'accepted');
+  assert.ok(store.has('decisions/adopt-workos.md'));
+  // The old decision is never edited, only flipped and pointed forward.
+  const old = store.get('decisions/use-firebase-auth.md')!;
+  assert.equal(old.frontmatter['standing'], 'superseded');
+  assert.equal(old.frontmatter['superseded_by'], '[[decisions/adopt-workos]]');
+  assert.equal(old.body, 'It was the fastest way in.');
+  assert.equal(
+    store.get('decisions/adopt-workos.md')!.frontmatter['supersedes'],
+    '[[decisions/use-firebase-auth]]',
+  );
+  assert.equal(activity.length, 1);
+  assert.equal(activity[0]!.action, 'created');
 });
 
 test('a rule the PM stated lands, and the row quotes the rule', async () => {

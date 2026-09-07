@@ -82,5 +82,6 @@ that belongs upstream. Say that the reasoning is in this session, so it is one c
 
 ## Then
 
-The rounds stay in this session with the answers, so the thinking is readable later. New pages
-land as they are written; a rewrite of something the memory already says waits for you.
+The rounds stay in this session with the answers, so the thinking is readable later. Pages and
+edits in Qale's memory land as they are written; anything in your documents, your to-dos or your
+meetings waits for you.

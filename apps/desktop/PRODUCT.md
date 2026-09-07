@@ -12,7 +12,7 @@ One product owner / product manager at a Nordic product company (30–300 people
 
 ## Product Purpose
 
-A desktop workbench (Qale) where meeting transcripts go in and approved Jira/Confluence updates, decisions, and stakeholder answers come out. The workspace is a git-versioned directory of typed markdown files (meetings, decisions, insights, research, customers, people) that the agent maintains as a librarian; every session is a packaged PO workflow (After-Meeting, Synthesis, Weekly Update, Ask). One policy grades every write by the damage it can do. Adding a page or a paragraph lands on its own; anything that rewrites existing text, records a decision, makes or closes a promise, deletes, or leaves for Jira, Confluence or a calendar is put to the PO first. What lands on its own is committed to git and listed in Activity, where one press puts it back. Success looks like week 6 being visibly better than week 1 because the memory has accreted: a source-linked log of every decision, claim, and answer that no incumbent can reconstruct retroactively.
+A desktop workbench (Qale) where meeting transcripts go in and approved Jira/Confluence updates, decisions, and stakeholder answers come out. The workspace is a git-versioned directory of typed markdown files (meetings, decisions, insights, research, customers, people) that the agent maintains as a librarian; every session is a packaged PO workflow (After-Meeting, Synthesis, Weekly Update, Ask). One policy says which writes wait for the PO. The workspace has two spheres: the PO's documents, todos and meetings, where a write waits for them, and Qale's memory, where a write lands as it is written. A send and a delete wait everywhere. What lands on its own is committed to git and listed in Activity, where one press puts it back. Success looks like week 6 being visibly better than week 1 because the memory has accreted: a source-linked log of every decision, claim, and answer that no incumbent can reconstruct retroactively.
 
 ## Positioning
 
@@ -31,7 +31,7 @@ The only tool where a PO's meetings become approved system updates and a readabl
 
 ## Capabilities and Constraints
 
-- **A write costs as much of the PO's attention as it can do damage.** One policy, in one file, grades every write the agent makes. Adding lands on its own. Rewriting groups into one card per intent. A promise, a delete, and anything leaving the machine always ask, every time, one card each. Features are designed against that grading, and a feature that would let a send or a delete happen quietly is rejected on principle, not weighed against convenience.
+- **A write waits for the PO when it is theirs to make.** One policy, in one file, answers for every write the agent makes. Their documents, their todos and their meetings wait for them, one card each. A document or a meeting page they asked for in the chat lands; a todo waits whoever asked, because a promise is their word. A delete and anything leaving the machine ask every time. Everything Qale keeps in its own memory lands as it is written. Features are designed against that policy, and a feature that would let a send or a delete happen quietly is rejected on principle, not weighed against convenience.
 - **Nothing lands on its own unless git can take it back.** The workspace is a repo from the moment it is made, every write is a commit, and every row in Activity can be put back. That is the whole argument for the writes that do not ask. Remove it and they all have to ask again.
 - **Plain markdown honesty.** No feature may require a proprietary format. The workspace has to stay fully usable without Qale, which caps what the editor is allowed to produce.
 - **Model calls cost money and seconds.** This is the slow, expensive part of the product. It is why filing is mechanical before it is intelligent, why sessions end quietly when there is nothing to say, and why fan-out jobs are capped.
@@ -56,7 +56,7 @@ The only tool where a PO's meetings become approved system updates and a readabl
 
 ## Product Principles
 
-- **Nothing lands unseen.** The PO's trust is the product. Anything that rewrites, promises, sends or deletes is something they saw, could edit, and chose. Everything else is written down where they can find it, and one press puts it back. A feature that hides a write from both is not a faster feature, it is a different product.
+- **Nothing lands unseen.** The PO's trust is the product. Anything written in their own documents, todos or meetings, and anything that sends or deletes, is something they saw, could edit, and chose. Everything else is written down where they can find it, and one press puts it back. A feature that hides a write from both is not a faster feature, it is a different product.
 - **The files outlive the app.** The workspace is the deliverable. Qale is a good way to work on it, never a condition for reading it.
 - **Received is not written.** Provenance is structural, not decorative. What the PO said, what someone else said, and what the agent inferred stay visibly different things forever.
 - **Spend the model where it earns its cost.** Mechanical work stays mechanical. The agent runs when it has something worth saying and stops when it doesn't.

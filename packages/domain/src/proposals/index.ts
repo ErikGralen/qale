@@ -23,25 +23,33 @@ export {
   isFilingKey,
   FILING_KEYS,
   wantListChange,
+  cardTargetTitle,
+  dayLabel,
+  newPageFacts,
   type WantListChange,
+  type TargetTitleInput,
+  type NewPageFactsInput,
   type HeadlineInput,
   type VaultEffectInput,
   type OutboundCopyInput,
 } from './card-copy.js';
 
-/** How much of the PM's attention one write is worth: silent, grouped or ask. */
+/** Which writes wait for the PM: the PM's sphere asks, Qale's memory lands. */
 export {
   writePolicy,
   appliesSilently,
   describeWritePolicy,
   isMachineryField,
   isStyleFile,
+  isUsersSphere,
   STYLE_FILES,
   DERIVED_LABEL_FIELDS,
   DERIVED_LABEL_REASON,
   QALE_OWNED_FIELDS,
   TAG_REASON,
   USER_DOCUMENTS_DIR,
+  USERS_SPHERE_DIRS,
+  USERS_SPHERE_TYPES,
   WRITE_DISPOSITIONS,
   type WriteDisposition,
   type WriteFacts,
@@ -50,17 +58,8 @@ export {
   type WriteRuling,
 } from './policy.js';
 
-/** One card per intent: how a grouped write finds its siblings, and the one
- *  sentence that names them all. */
-export {
-  cardDisposition,
-  cardFacts,
-  groupIntents,
-  intentKey,
-  intentSentence,
-  type Intent,
-  type IntentCard,
-} from './intent.js';
+/** One row per thing that changes: how a card finds the cards beside it. */
+export { groupByTarget, targetKey, type TargetCard, type TargetGroup } from './intent.js';
 
 /** The receipt a write that needed no card leaves behind. */
 export {

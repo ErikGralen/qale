@@ -40,6 +40,10 @@ On first launch the app builds the workspace, slides every date to today, and co
 
 Now you are at the start line. From here on, one continuous run.
 
+**Fresh round after a failed or superseded take.** Your key survives Reset, so: pull the branch, make sure
+`demo/recordings/` holds only `_fallback.json`, start record mode, Settings → Demo → **Reset demo**, go.
+Reset also rewrites the Desktop folder, so the sample files are always the current ones, dated to today.
+
 ### The script
 
 Type the prompts exactly as written. Copy them from `chat-prompts.md` on the Desktop rather than retyping. Approve
@@ -57,6 +61,10 @@ finish. You should see, roughly:
 - three outbound cards: a comment on SCH-118, a new SCH story for swap notifications, a patch to Roadmap H2
 
 Press **Approve all**. Then approve the three outbound cards one at a time.
+
+If the model asks a question (a card with options) before it files anything, answer it and write down the
+exact option you picked; the demo presenter must pick the same one. A question about the meeting date means the
+sample dating is broken again. Stop and tell me.
 
 If the cards are wrong in a way you would not show an audience, stop here and tell me. We fix the transcript or the
 skill, Reset, and start again. A recording of a bad session is worthless.

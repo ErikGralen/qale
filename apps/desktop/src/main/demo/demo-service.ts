@@ -12,13 +12,14 @@
  */
 import { app, session, shell } from 'electron';
 import { is } from '@electron-toolkit/utils';
-import { cpSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import {
   ANCHOR,
   appDbBasename,
   copyVault,
   daysBetween,
+  shiftProse,
   shiftVaultDates,
   validateVault,
 } from '@qale/domain/demo';
@@ -366,11 +367,31 @@ export class DemoService {
     try {
       if (!existsSync(source)) return null;
       if (overwrite) rmSync(dest, { recursive: true, force: true });
-      if (!existsSync(dest)) cpSync(source, dest, { recursive: true });
+      if (!existsSync(dest)) {
+        cpSync(source, dest, { recursive: true });
+        this.shiftSampleDates(dest);
+      }
       return dest;
     } catch (err) {
       console.error('[qale] demo: could not copy the demo files to the Desktop:', err);
       return null;
+    }
+  }
+
+  /**
+   * Date the copied samples the same way the workspace is dated. A transcript
+   * is written at the anchor like every note, so its header date and the dates
+   * inside a pasted thread must move with the vault, or the model reads a
+   * meeting from seven weeks ago and asks when it happened.
+   */
+  private shiftSampleDates(dest: string): void {
+    const offset = this.dateOffsetDays();
+    if (offset === 0) return;
+    for (const name of readdirSync(dest)) {
+      if (!/\.(md|txt|vtt|srt)$/i.test(name)) continue;
+      const file = join(dest, name);
+      const { out, count } = shiftProse(readFileSync(file, 'utf8'), offset);
+      if (count > 0) writeFileSync(file, out);
     }
   }
 

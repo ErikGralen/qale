@@ -97,7 +97,7 @@ function install(): { root: string; assets: string } {
     `---\ntype: note\ndate: ${ANCHOR}\n---\n\nWritten on ${ANCHOR}.\n`,
   );
   writeFileSync(join(assets, 'vault-dev', 'sessions', 'old-run', 'brief.md'), 'stale\n');
-  writeFileSync(join(assets, 'demo-samples', 'transcript.txt'), 'Anna: hello\n');
+  writeFileSync(join(assets, 'demo-samples', 'transcript.txt'), 'Recorded 2026-07-17.\nAnna: hello\n');
   return { root, assets };
 }
 
@@ -197,9 +197,10 @@ test('reset rebuilds the workspace from the bundled copy, dated to today', async
   // The renderer's own memory of the last demo, asked for by name.
   assert.deepEqual(cleared.at(-1), { storages: ['localstorage'] });
   // The drag-in files are on the Desktop.
+  // and dated like the workspace: the anchor date moved the same eight days.
   assert.equal(
     readFileSync(join(desktop, 'Qale demo files', 'transcript.txt'), 'utf8'),
-    'Anna: hello\n',
+    'Recorded 2026-07-25.\nAnna: hello\n',
   );
   // In order: sessions stop, the workspace closes, and it only reopens at the end.
   assert.deepEqual(vault.calls, ['disposeAgent', 'dispose', `open ${workspace}`, 'onReset']);

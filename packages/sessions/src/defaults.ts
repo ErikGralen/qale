@@ -31,7 +31,9 @@
  * hides the slip"), not abstract exhortations.
  *
  * Underneath that: Simplified Technical English (ASD-STE100) plus Zinsser's four
- * principles, the same rule the agent prompts and this repo run on. It matters
+ * principles and the plain-speech baseline (lead with the answer, say it
+ * literally, ordinary words, no coined terms), the same rule the agent prompts
+ * and this repo run on. It matters
  * most here for one clause. ONE WORD, ONE MEANING: a skill body is the vocabulary
  * the model then writes the vault in, so a synonym invented for variety in this
  * file becomes a second name for the same thing in a year of notes. Reasoning in

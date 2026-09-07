@@ -16,6 +16,15 @@ together. This file holds the reasoning; the four places hold the rules.
 Write in Simplified Technical English (ASD-STE100) and follow Zinsser's four
 principles: simplicity, brevity, clarity, humanity.
 
+On top of those, since 2026-09-07, the plain-speech baseline. It adds the moves
+STE and Zinsser leave implicit: lead with the answer, say it literally (no
+metaphor, no flourish), use ordinary words, never coin a term, keep caveats to a
+clause, and offer more detail in one line instead of including it. It is hidden.
+The PM never sees or edits it. A voice in `voices/` sits on top of it and changes
+tone and register, and a voice may not lift a rule in the baseline. The reason
+is the thing the baseline was written against: the model's own house style, which
+reads as clever and costs the reader effort to decode.
+
 ASD-STE100 is a controlled language written for aerospace maintenance manuals. It
 is a real spec with two halves: a set of about 60 writing rules, and a dictionary
 of roughly 900 approved words, each with one approved meaning and one part of

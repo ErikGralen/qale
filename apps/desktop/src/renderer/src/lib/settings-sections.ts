@@ -116,10 +116,6 @@ export const DEFAULT_SETTINGS_SECTION: SettingsSection = 'general';
 /** Every tab that can exist, the demo one included. */
 const ALL_SECTIONS: readonly SettingsSectionInfo[] = [...SETTINGS_SECTIONS, DEMO_SECTION];
 
-export function settingsSectionLabel(id: SettingsSection): string {
-  return ALL_SECTIONS.find((s) => s.id === id)?.label ?? 'General';
-}
-
 export function isSettingsSection(value: string | undefined): value is SettingsSection {
   return ALL_SECTIONS.some((s) => s.id === value);
 }

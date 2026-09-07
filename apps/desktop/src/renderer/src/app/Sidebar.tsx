@@ -31,7 +31,6 @@ import {
 } from 'lucide-react';
 import { isFolderIndex } from '@qale/domain';
 import { useApp, useMinuteClock } from '../state/app-state';
-import { countToday } from '../lib/activity';
 import { countOf } from '../lib/attention';
 import { useReorderableRow } from '../lib/dnd';
 import { navFromEvent } from '../lib/nav';
@@ -292,12 +291,10 @@ function MemoryRow() {
  * moved to the foot of the rail: no pin list can push it out of sight, and it is
  * always here, because a receipt you have to find is not proof of anything.
  * Quieter than the places above it, because it is a fixture, not an eighth
- * surface. The number is today's writes, muted: a fact about the day, not a job
- * on the list.
+ * surface.
  */
 function ActivityRow() {
-  const { activity, activeTab, openActivity } = useApp();
-  const today = useMemo(() => countToday(activity), [activity]);
+  const { activeTab, openActivity } = useApp();
   const active = activeTab?.kind === 'activity';
   return (
     <button
@@ -312,7 +309,6 @@ function ActivityRow() {
     >
       <ScrollText className="size-3.5 shrink-0 text-muted-foreground/80" aria-hidden />
       <span className="min-w-0 flex-1 truncate">Activity</span>
-      {today > 0 && <span className="shrink-0 tabular-nums text-muted-foreground/80">{today}</span>}
     </button>
   );
 }

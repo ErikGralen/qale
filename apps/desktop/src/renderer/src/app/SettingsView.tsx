@@ -70,7 +70,6 @@ import {
   DEFAULT_SETTINGS_SECTION,
   DEMO_SECTION,
   SETTINGS_SECTIONS,
-  settingsSectionLabel,
   type SettingsSection,
 } from '../lib/settings-sections';
 
@@ -270,11 +269,7 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader
-        icon={Settings}
-        crumbs={[{ label: 'Settings' }]}
-        label={settingsSectionLabel(active)}
-      />
+      <PageHeader icon={Settings} label="Settings" />
       <Tabs
         value={active}
         onValueChange={(v) => setSettingsSection(viewKey, v as SettingsSection)}

@@ -157,7 +157,7 @@ export function CalendarView() {
       className={`flex h-full flex-col ${aimed.over ? 'bg-brand/5 ring-1 ring-brand/40 ring-inset' : ''}`}
       {...aimed.handlers}
     >
-      <PageHeader icon={CalendarDays} label="Calendar" meta={meetings.length} />
+      <PageHeader icon={CalendarDays} label="Calendar" />
 
       {meetings.length === 0 ? (
         <div className="flex-1 overflow-y-auto px-8 py-3">

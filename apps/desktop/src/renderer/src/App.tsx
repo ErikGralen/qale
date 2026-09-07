@@ -124,14 +124,14 @@ function Shell() {
       return true;
     }
   });
-  // Two rails, two memories. The note's session corner opens by default, the
-  // same as it always has. The session's file tree does not: opening a chat
-  // and dropping a file in it must never pop a panel the PM didn't ask for.
+  // Two rails, two memories, both shut until asked for. Opening a document
+  // must never pop a chat panel the PM didn't ask for, any more than opening
+  // a session should pop its file tree.
   const [docPanelOpen, setDocPanelOpen] = useState(() => {
     try {
-      return localStorage.getItem('qale.rightPanel.doc.visible') !== '0';
+      return localStorage.getItem('qale.rightPanel.doc.visible') === '1';
     } catch {
-      return true;
+      return false;
     }
   });
   const [sessionFilesOpen, setSessionFilesOpen] = useState(() => {
@@ -424,22 +424,20 @@ function Shell() {
   // filenames, and 420px of it was mostly empty space taken off the session.
   // The key remounts the panel so the new default applies — a width dragged by
   // hand still holds for as long as that kind of rail stays up.
-  const railKind = activeTab?.kind === 'session' ? 'files' : 'doc';
+  const railKind: 'files' | 'doc' = activeTab?.kind === 'session' ? 'files' : 'doc';
   const railWidth = railKind === 'files' ? '320px' : '420px';
   const rightOpen = railKind === 'files' ? sessionFilesOpen : docPanelOpen;
   const showRight = rightAvailable && rightOpen;
   // The toggle names what it would open — "session files", not "panel" — and
   // stays in the strip (disabled) on tabs that have no rail, so the cluster
-  // beside it never reflows.
+  // beside it never reflows. On a document the rail is a chat, not a panel:
+  // the button reads "Start session" and carries an AI icon, distinct from
+  // the file-tree toggle a session tab shows.
   const rightPanel = {
     open: rightOpen,
     available: rightAvailable,
-    name:
-      activeTab?.kind === 'session'
-        ? 'session files'
-        : activeTab?.kind === 'doc'
-          ? 'the session'
-          : 'panel',
+    kind: railKind,
+    name: railKind === 'files' ? 'session files' : 'the session',
     count: sessionFileCount,
     onToggle: toggleRightPanel,
   };

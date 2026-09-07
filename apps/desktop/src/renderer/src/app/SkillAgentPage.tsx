@@ -12,7 +12,7 @@ import { AgentSwitch } from '../components/AgentSwitch';
 import { AgentLifeSigns, AgentBlockedNotice } from '../components/AgentLifeSigns';
 import { CanChips } from '../components/RunnableConfig';
 import { askSelectionSeed } from '../lib/agent-nudges';
-import { momentFor, skillsTabItem, skillsTabLabel, tabForFile } from '../lib/skills-tabs';
+import { momentFor, skillsTabItem, tabForFile } from '../lib/skills-tabs';
 
 /**
  * The purpose-built page a skill or agent file opens as — stored as markdown,
@@ -123,7 +123,7 @@ export function SkillAgentPage({ note }: { note: NoteDTO }) {
         icon={isAgent ? Bot : Wand2}
         crumbs={[
           {
-            label: skillsTabLabel(tab),
+            label: 'Skills',
             onClick: (e) => openSkills(tab, navFromEvent(e)),
           },
         ]}

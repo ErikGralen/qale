@@ -46,7 +46,7 @@ export function SessionsView() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader icon={History} label="Sessions" meta={rows.length > 0 ? rows.length : undefined}>
+      <PageHeader icon={History} label="Sessions">
         <HeaderActions>
           <HeaderAction
             icon={MessageSquarePlus}

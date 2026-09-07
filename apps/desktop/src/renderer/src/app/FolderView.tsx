@@ -339,15 +339,12 @@ export function FolderView({ dir }: { dir: string }) {
   const ordered = useMemo(() => filtered.map((n) => n.path), [filtered]);
   const selection = useSelection(ordered);
 
-  const filtersActive = filter.trim() !== '' || lifecycleFacet !== null;
   const emptyTeach = group ? (EMPTY_TEACH[group.type] ?? 'Nothing here yet.') : 'Nothing here yet.';
 
   // What the page is called. A mirror folder wears the system's name, the same
-  // word the rail row wears, with what it holds said once in the count beside
-  // it: "Jira · 42 tickets".
+  // word the rail row wears.
   const pageLabel = provider ? providerLabelOf(provider.providerId) : shelfLabel(dir);
   const noun = provider ? (provider.kind === 'wikipage' ? 'page' : 'ticket') : null;
-  const countMeta = noun ? `${notes.length} ${noun}${notes.length === 1 ? '' : 's'}` : notes.length;
 
   const clearFilters = () => {
     setFilter('');
@@ -528,10 +525,8 @@ export function FolderView({ dir }: { dir: string }) {
         // parent above it (docs/memory-placement.md).
         crumbs={mirror ? [] : [{ label: 'Memory', onClick: (e) => openMemory(navFromEvent(e)) }]}
         // The shelf's name, not the folder on disk: the page says what the rail
-        // and the Memory shelf say (SB-4). A mirror folder says the system's
-        // name, and leaves what it holds to the count beside it.
+        // and the Memory shelf say (SB-4). A mirror folder says the system's name.
         label={pageLabel}
-        meta={!altMode && filtersActive ? `${filtered.length} of ${notes.length}` : countMeta}
         selecting={selecting}
       >
         {/* One cluster, two jobs: while a batch is ticked the batch owns it,

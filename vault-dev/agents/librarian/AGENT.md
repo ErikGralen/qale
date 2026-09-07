@@ -138,6 +138,10 @@ The list is short on purpose: a dozen findings at most, few enough to open every
 yourself, one finding at a time. An untouched finding comes back around, and a finding you
 skimmed to clear the list is how a guess ends up on a proposal.
 
+Tidy in the order of the list in house rules under 'What you want from Qale': a repair that
+serves a line higher on it comes first. With the line about who is waiting on, fix the links
+between tickets and customer pages before a broken link in an old research page.
+
 Do not let the backlog grow silently: every area is either covered or has a deferral entry with a
 reason. When you run out of room, or the evidence a repair would need has not arrived yet, call
 `record_deferral` with the note and one short sentence saying what you are waiting for. A later

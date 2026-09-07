@@ -16,6 +16,7 @@ import {
   writePolicy,
   activityAction,
   activityLine,
+  type LearnedSource,
   type ActivityUndo,
   type CreateActivityInput,
   type WriteDisposition,
@@ -204,12 +205,17 @@ async function recordActivity(
     frontmatter?: Record<string, unknown>;
     append?: string;
     body?: string;
+    /** Set by a tool that knows the write taught Qale how the PM works:
+     *  a line on the "What you want from Qale" list lands as a patch, so the
+     *  text alone cannot say it. */
+    learned?: LearnedSource;
   };
   const path = landed ?? rec.targetPath;
   const lineInput = {
     kind: rec.kind,
     targetPath: path,
     frontmatter: payload.frontmatter,
+    learned: payload.learned,
     append: payload.append,
     body: payload.body,
   };
@@ -312,6 +318,11 @@ export interface SessionCardState {
   targetPath: string | null;
   /** pending / accepted / rejected / withdrawn / stale. */
   status: string;
+  /** The card as drafted, and as the PM approved it when they changed it first.
+   *  The session is told what they changed, so the next draft is written their
+   *  way (docs/learning-how-you-work.md ticket 7). */
+  payload: unknown;
+  editedPayload?: unknown;
 }
 
 /**
@@ -337,6 +348,8 @@ export function sessionCards(ctx: UseCaseContext, sessionId: string): SessionCar
       title: cardTitle(rec),
       targetPath: rec.targetPath,
       status: rec.status,
+      payload: rec.payload,
+      editedPayload: rec.editedPayload ?? undefined,
     }));
 }
 
@@ -564,6 +577,19 @@ export async function acceptProposal(
     else if (rec.kind === 'outbound') result = await acceptOutbound(ctx, rec, edited);
     else if (rec.kind === 'delete') result = await acceptDelete(ctx, rec);
     else return { ok: false };
+    // What they approved, when it is not what was drafted. Kept beside the
+    // original, after the write, so the row only ever claims an edit that
+    // actually landed. The session reads the pair next turn and learns from the
+    // difference (docs/learning-how-you-work.md ticket 7). Bookkeeping: it can
+    // never turn a successful accept into a failure.
+    if (result.ok && edited !== undefined) {
+      try {
+        ctx.proposals.setEditedPayload(id, edited);
+      } catch {
+        // The write is done and theirs. A store that cannot hold the edit is
+        // not a reason to tell them their approval failed.
+      }
+    }
     // A deferral is a run's note to itself that a note is not covered yet
     // (OW6). An approved card against that note IS the coverage, so the entry
     // has done its job and goes; leaving it would have the next pass reminded

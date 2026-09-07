@@ -83,8 +83,17 @@ test('a folder wears the shelf name, not the name on disk', () => {
   assert.equal(shelfLabel('notes'), 'Documents');
   assert.equal(shelfLabel('people'), 'People');
   assert.equal(shelfLabel('research'), 'Research');
+  // "About" is a shelf, never "Abouts": the word is already the name of the
+  // whole shelf (docs/learning-how-you-work.md, ticket 16).
+  assert.equal(shelfLabel('about'), 'About');
   assert.equal(shelfLabel('tickets'), 'Tickets');
   assert.equal(shelfLabel('attachments'), 'Attachments');
+});
+
+test('an about page reads its own shelf, never Documents', () => {
+  assert.deepEqual(locationCrumbs('about/product.md', 'about'), [
+    { label: 'About', target: { kind: 'folder', dir: 'about' } },
+  ]);
 });
 
 test('the notes dir is a Documents folder, everything else is not', () => {

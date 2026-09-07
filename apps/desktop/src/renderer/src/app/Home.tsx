@@ -30,7 +30,7 @@ import {
   SendButton,
   useAutoGrow,
 } from '../components/Composer';
-import { SetupPitch } from '../onboarding/SetupPitch';
+import { FirstSteps } from '../onboarding/FirstSteps';
 import { contentNotes } from '../lib/contexts';
 import { isBulkPaste, requestCapture } from '../lib/capture-event';
 import { localDateStr } from '../lib/dates';
@@ -86,7 +86,7 @@ export function Home() {
             <QuickActions />
           </div>
           <Notices />
-          <SetupPitch onChange={seed} />
+          <FirstSteps />
           {/* Extra air on top of the column gap: the pause before the page's
               centerpiece is part of what makes it the centerpiece. */}
           <div className="mt-4 flex flex-col gap-3">

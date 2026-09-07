@@ -14,6 +14,7 @@ test('every authored type is described, and the machine-written ones are not', (
     'insight',
     'decision',
     'research',
+    'about',
     'customer',
     'person',
     'todo',

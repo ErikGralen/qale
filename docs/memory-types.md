@@ -1,5 +1,12 @@
 # Memory types: records, and the notes Qale keeps for itself
 
+**2026-09-07: MT-3 is partly reversed.** The three company pages (product,
+technical, organization) moved out of `research/` and into a shelf of their own,
+`about/`, with `type: about`. `research/` keeps what Qale worked out for itself:
+the case for a problem, a competitor scan, a scan of a codebase. A fact about
+the company is not a piece of reasoning, so the two are apart again. See
+docs/learning-how-you-work.md, ticket 16. Everything else below still holds.
+
 Date: 2026-09-06. Status: built the same day, MT-1 to MT-8 (MT-9 skipped:
 spec takes a tag now, and nothing has used it yet). Not committed, not
 live-verified. Decisions marked "(Erik)" were taken in the session that wrote

@@ -24,6 +24,7 @@ export const NOTE_TYPES = [
   'insight',
   'customer',
   'research',
+  'about',
   'person',
   'session',
   'skill',
@@ -369,6 +370,24 @@ export const zResearch = z.object({
   customer: zRef.optional(),
 });
 
+/**
+ * What is true about the PM and the company: what the product is, how it is
+ * built, who owns what. A fact, not a way of working, so it is not a skill
+ * (docs/learning-how-you-work.md, ticket 16). The interview writes these pages
+ * and a correction about a fact lands here. Skills read them and never copy the
+ * facts into themselves.
+ *
+ * One flat folder, like research. It ships with product, technical and
+ * organization, and it may grow: a teams page, a customers overview.
+ */
+export const zAbout = z.object({
+  type: z.literal('about'),
+  ...base,
+  processing: z.enum(PROCESSING_STATES).optional(),
+  /** Empty only for a page drafted from what the PM said, not from material. */
+  sources: listOrEmpty(zRef),
+});
+
 export const zPerson = z.object({
   type: z.literal('person'),
   ...base,
@@ -507,6 +526,17 @@ export const zTicket = z.object({
       }),
     )
     .optional(),
+  /** The labels the item carries upstream, as the provider spells them. How a
+   *  team labels its work is a convention nothing else in the mirror states. */
+  labels: optionalList(z.string()),
+  /** The provider's own type name, e.g. "Story" or "Bug". */
+  issue_type: z.string().min(1).optional(),
+  /** The provider's priority name, e.g. "High". Absent on sites without one. */
+  priority: z.string().min(1).optional(),
+  /** Component or area names on the item. */
+  components: optionalList(z.string()),
+  /** Who filed the item, by display name. */
+  reporter: z.string().min(1).optional(),
   /** ISO datetime of the last upstream change (the provider's clock) — a bare
    *  date here would break drafted-against-stale comparisons, so it's rejected. */
   remote_updated: z.iso.datetime({ offset: true }),
@@ -538,6 +568,7 @@ export const zFrontmatter = z.discriminatedUnion('type', [
   zInsight,
   zCustomer,
   zResearch,
+  zAbout,
   zPerson,
   zSession,
   zSkill,
@@ -563,6 +594,7 @@ export const SCHEMA_BY_TYPE = {
   insight: zInsight,
   customer: zCustomer,
   research: zResearch,
+  about: zAbout,
   person: zPerson,
   session: zSession,
   skill: zSkill,
@@ -582,6 +614,7 @@ export type DecisionFrontmatter = z.infer<typeof zDecision>;
 export type InsightFrontmatter = z.infer<typeof zInsight>;
 export type CustomerFrontmatter = z.infer<typeof zCustomer>;
 export type ResearchFrontmatter = z.infer<typeof zResearch>;
+export type AboutFrontmatter = z.infer<typeof zAbout>;
 export type PersonFrontmatter = z.infer<typeof zPerson>;
 export type SessionFrontmatter = z.infer<typeof zSession>;
 export type SkillFrontmatter = z.infer<typeof zSkill>;
@@ -599,6 +632,7 @@ export const NOTE_TYPE_META: Record<NoteType, { dir: string; layer: NoteLayer }>
   insight: { dir: 'insights', layer: 'derived' },
   customer: { dir: 'customers', layer: 'authored' },
   research: { dir: 'research', layer: 'authored' },
+  about: { dir: 'about', layer: 'authored' },
   person: { dir: 'people', layer: 'authored' },
   session: { dir: 'sessions', layer: 'derived' },
   skill: { dir: 'skills', layer: 'authored' },

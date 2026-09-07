@@ -37,7 +37,7 @@ export interface MeetingContents {
 }
 
 /**
- * Read a meeting that is already filed (meeting page → "Go through this meeting").
+ * Read a meeting that is already filed (meeting page → "Review this meeting").
  *
  * The one door back into a review (AR-3). An arrival that could not start — no
  * API key that afternoon, the skill switched off, the app quit mid-run — used to

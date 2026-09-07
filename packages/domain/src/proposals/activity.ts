@@ -1,4 +1,5 @@
 import { titleForRef } from './card-copy.js';
+import { isStyleFile } from './policy.js';
 
 /**
  * The receipt for a write nobody was asked about (docs/easier-tickets.md E-9).
@@ -20,6 +21,16 @@ export const ACTIVITY_ACTIONS = [
   'deleted',
   /** A maintenance pass put a retrieval label on a page: a summary, tags, or both. */
   'labelled',
+  /**
+   * Qale worked out how the PM works and wrote it down: a voice, the Jira or
+   * Confluence file, the "What you want from Qale" list, or a rule it took from
+   * a draft the PM corrected (docs/learning-how-you-work.md ticket 12).
+   *
+   * Apart from 'remembered', which is a rule the PM stated in the chat. The
+   * difference is who said it: 'remembered' repeats the PM, 'learned' is Qale's
+   * own reading of their work, so it is the one the PM may want to correct.
+   */
+  'learned',
 ] as const;
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
 
@@ -76,6 +87,21 @@ export interface ActivityRecord {
 /** What a new row carries. The store mints the id and stamps the time. */
 export type CreateActivityInput = Omit<ActivityRecord, 'id' | 'at' | 'reverted'>;
 
+/**
+ * Where Qale learned something goes on the record.
+ *
+ * A caller that knows the write taught Qale something says so here, and the row
+ * is a 'learned' one whatever the path says. The three callers are the first
+ * read of Jira or Confluence, the style the PM picked, and the correction router
+ * turning a corrected draft into a rule.
+ */
+export interface LearnedSource {
+  /** What Qale now knows, one sentence: "Exec updates: one paragraph, result first." */
+  what?: string;
+  /** Where it came from: "the style you copied on 5 September". */
+  from: string;
+}
+
 /** What the line is written from. All of it is on the proposal already. */
 export interface ActivityLineInput {
   kind: string;
@@ -84,6 +110,8 @@ export interface ActivityLineInput {
   /** An update's appended text, or a new file's body, for reading a rule back. */
   append?: string;
   body?: string;
+  /** Set when the caller knows this write taught Qale how the PM works. */
+  learned?: LearnedSource;
 }
 
 /** The title a payload calls itself, or the file's name as a fallback. */
@@ -97,6 +125,45 @@ function subjectOf(input: ActivityLineInput): string {
 /** A file that says how the app behaves. Rules land in these and nowhere else. */
 function isRuleFile(path: string | null | undefined): boolean {
   return !!path && (path.startsWith('skills/') || path.startsWith('agents/'));
+}
+
+/**
+ * The heading the "What you want from Qale" list sits under, in the house rules.
+ *
+ * One string, exported, because three sides have to agree on it: the shipped
+ * house rules that carry the section, the tool that adds and removes a line, and
+ * this file, which reads an appended bullet back to say what kind of write it
+ * was.
+ */
+export const WANT_LIST_HEADING = '## What you want from Qale';
+
+/**
+ * Does this appended text put its last bullet under the given heading?
+ *
+ * A rule appended to a section that is not last carries the heading with it, so
+ * the text says where it lands. A whole file written at once carries the heading
+ * too, but with other headings after it, and there the bullet lands somewhere
+ * else. The last heading in the text is the one the bullet is under.
+ */
+function landsUnder(text: string | undefined, heading: string): boolean {
+  if (!text) return false;
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = (lines[i] ?? '').trim();
+    if (!/^#{1,6}\s/.test(line)) continue;
+    return line === heading;
+  }
+  return false;
+}
+
+/**
+ * A write that taught Qale how the PM works: into a style file (a voice, the
+ * Jira or Confluence file) or into the "What you want from Qale" list. The
+ * write policy owns which files those are, so both sides read one list.
+ */
+function isLearnedWrite(input: ActivityLineInput): boolean {
+  if (isStyleFile(input.targetPath)) return true;
+  return landsUnder(input.append ?? input.body, WANT_LIST_HEADING);
 }
 
 /**
@@ -116,8 +183,33 @@ export function ruleFromText(text: string | undefined): string {
 /** What one write did, in one word. */
 export function activityAction(input: ActivityLineInput): ActivityAction {
   if (input.kind === 'delete') return 'deleted';
+  // What Qale worked out, before what the PM said: a rule bullet in the Jira
+  // file is Qale reading their tickets, not the PM stating a rule.
+  if (input.learned || isLearnedWrite(input)) return 'learned';
   if (isRuleFile(input.targetPath) && ruleFromText(input.append ?? input.body)) return 'remembered';
   return input.kind === 'update' ? 'updated' : 'created';
+}
+
+/** The opener on a learned row, so the PM reads it as an answer and not a report. */
+const GOT_IT = 'Got it.';
+
+/**
+ * The row's sentence with its opener taken off, for a list that already says
+ * these are things Qale learned. The Skills page shows this under each file.
+ *
+ * A rule the PM stated opens the same way in its own words, so it is trimmed
+ * here too: both kinds of row end up as the thing itself.
+ */
+export function learnedSummary(line: string): string {
+  const rest = line.startsWith(GOT_IT) ? line.slice(GOT_IT.length) : line;
+  return rest.replace(/^\s*I remembered a rule:\s*/, '').trim();
+}
+
+/** What one learned write says, in the words the chat says back to the PM. */
+function learnedLine(input: ActivityLineInput): string {
+  const said = input.learned?.what?.trim() || ruleFromText(input.append ?? input.body);
+  const detail = said || `I wrote it down in ${subjectOf(input)}`;
+  return `${GOT_IT} ${/[.!?]$/.test(detail) ? detail : `${detail}.`}`;
 }
 
 /**
@@ -129,6 +221,8 @@ export function activityLine(input: ActivityLineInput): string {
   switch (activityAction(input)) {
     case 'deleted':
       return `I deleted ${subject}.`;
+    case 'learned':
+      return learnedLine(input);
     case 'remembered':
       return `I remembered a rule: ${ruleFromText(input.append ?? input.body)}`;
     case 'updated':
@@ -138,6 +232,46 @@ export function activityLine(input: ActivityLineInput): string {
         ? `I recorded a decision: ${subject}.`
         : `I created ${subject}.`;
   }
+}
+
+/** One thing Qale learned, and the file it went into. */
+export interface LearnedWrite extends LearnedSource {
+  /** The file it was written into, as a vault path. */
+  path: string;
+  /** What Qale now knows, one sentence. */
+  what: string;
+  /** The session that learned it, when a chat was running. */
+  sessionId?: string | null;
+  /** The skill in force at the time. */
+  skill?: string | null;
+  /** The card it applied, when a card was filed for it. */
+  proposalId?: string | null;
+}
+
+/**
+ * The Activity row for something Qale learned about how the PM works
+ * (docs/learning-how-you-work.md ticket 12).
+ *
+ * One function, so the three callers say it the same way: the first read of
+ * Jira or Confluence, the style the PM picked, and a line added to or taken off
+ * the "What you want from Qale" list. Feed it straight to `recordActivityRow`,
+ * which stamps the commit the write landed in:
+ *
+ *     await recordActivityRow(ctx, learnedRow({ ... }), 'restore');
+ *
+ * The line is what the chat says back to the PM, word for word, so the receipt
+ * and the row can never say two different things about one write.
+ */
+export function learnedRow(input: LearnedWrite): Omit<CreateActivityInput, 'revert'> {
+  return {
+    proposalId: input.proposalId ?? null,
+    action: 'learned',
+    line: learnedLine({ kind: 'update', targetPath: input.path, learned: input }),
+    reason: `from ${input.from}`,
+    path: input.path,
+    sessionId: input.sessionId ?? null,
+    skill: input.skill ?? null,
+  };
 }
 
 /** What one pass wrote on one page. */
@@ -181,6 +315,7 @@ const APPLIED_VERB: Record<ActivityAction, string> = {
   remembered: 'Added to rules',
   deleted: 'Deleted',
   labelled: 'Labelled',
+  learned: 'Learned',
 };
 
 const APPLIED_TAG = 'Applied:';

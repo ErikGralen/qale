@@ -236,7 +236,7 @@ export function MeetingDetail({
         transcripts: transcripts.length,
         typed: body.length > 0,
       }),
-      title: `Go through: ${note.title}`,
+      title: `Review: ${note.title}`,
       fresh: true,
     });
   };
@@ -251,7 +251,7 @@ export function MeetingDetail({
       <DialogContent
         // Sized by what is in it, capped by the window. Only the middle scrolls,
         // so the actions never leave the screen.
-        className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
+        className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
         aria-describedby={undefined}
         // Land on the panel, not on the first button in it. Radix would put
         // focus on an outcome row or the file button, which draws a ring
@@ -385,10 +385,10 @@ export function MeetingDetail({
               <Button
                 size="sm"
                 onClick={goThrough}
-                title="Go through what this meeting holds, typed notes and recordings alike, and turn what it changes into proposals."
+                title="Review what this meeting holds, typed notes and recordings alike, and turn what it changes into proposals."
               >
                 <Sparkles aria-hidden />
-                Go through this meeting
+                Review this meeting
               </Button>
             )}
             {!upcoming && !cancelled && (

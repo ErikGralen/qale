@@ -195,3 +195,68 @@ test('get_voice hands over the brief and counts as having read it', async () => 
   });
   assert.match(said, /Showed 1 version/);
 });
+
+/**
+ * The optional `ask` (docs/learning-how-you-work.md, ticket 10): one sentence,
+ * up to three options, shown by the panel once a tab is copied. The tool only
+ * checks its shape; a fourth option would turn three buttons into a form.
+ */
+
+test('an `ask` is accepted and named in the result, and still files nothing', async () => {
+  const ctx = world();
+  const { draft } = await tools(ctx);
+  const said = await run(draft, {
+    variants: [
+      { label: 'Three lines', body: 'Decided: x. Shipped: y. Watch: z.' },
+      { label: 'One paragraph', body: 'We shipped y.' },
+    ],
+    ask: {
+      text: 'Write updates this way from now on?',
+      options: ['For exec', 'For every audience', 'Not now'],
+    },
+  });
+
+  assert.match(said, /Showed 2 versions in the chat: Three lines, One paragraph/);
+  assert.match(said, /asks "Write updates this way from now on\?"/);
+  assert.equal(ctx.rows.length, 0);
+});
+
+test('an `ask` with more than three options is refused', async () => {
+  const ctx = world();
+  const { draft } = await tools(ctx);
+  const said = await run(draft, {
+    variants: [{ label: 'Short', body: 'Exports land on 3 September.' }],
+    ask: { text: 'Which?', options: ['a', 'b', 'c', 'd'] },
+  });
+
+  assert.match(said, /^Rejected: `ask` needs one sentence of text and one to three short options/);
+});
+
+test('an `ask` with no text or no options is refused', async () => {
+  const ctx = world();
+  const { draft } = await tools(ctx);
+  for (const ask of [
+    { text: '', options: ['a'] },
+    { text: 'Which?', options: [] },
+    { text: 'Which?', options: ['  '] },
+  ]) {
+    const said = await run(draft, {
+      variants: [{ label: 'Short', body: 'Exports land on 3 September.' }],
+      ask,
+    });
+    assert.match(said, /^Rejected: `ask`/, JSON.stringify(ask));
+  }
+});
+
+test('a call without `ask` reads as it always did', async () => {
+  const ctx = world();
+  const { draft } = await tools(ctx);
+  const said = await run(draft, {
+    variants: [{ label: 'Short', body: 'Exports land on 3 September.' }],
+  });
+
+  assert.equal(
+    said,
+    'Showed 1 version in the chat: Short. Nothing was filed and nothing was sent. If they pick one they will say so.',
+  );
+});

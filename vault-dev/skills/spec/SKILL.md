@@ -28,7 +28,7 @@ starts where that one stopped: it reads the conclusions, never the transcripts u
 - **The decisions** that touched the page or the tag.
 - **The ticket mirrors** the page links: what is built, in flight, or blocked.
 - **The customer hubs** the insights name, for who has this problem and what they were told.
-- **The three product pages** in `research/` (product, technical, organization), for the
+- **The three about pages** in `about/` (product, technical, organization), for the
   constraints anything built here has to live inside.
 - **Any spec this workspace already holds for this page or tag.** Extend that one rather than
   file a second.

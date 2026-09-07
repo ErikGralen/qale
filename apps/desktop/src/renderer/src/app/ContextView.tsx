@@ -16,6 +16,7 @@ import { selectionKeyDown, useSelection } from '../lib/selection';
  * types get one: sessions and skills are chrome, never sections here.
  */
 const SECTION_LABEL: Partial<Record<NoteType, string>> = {
+  about: 'About',
   decision: 'Decisions',
   research: 'Research',
   insight: 'Insights',
@@ -66,10 +67,7 @@ export function ContextView({ tag }: { tag: string }) {
     // The rows ARE the selection here, so ⌘A belongs to the list whether or not
     // something is picked already. Escape drops the selection, in the same
     // helper.
-    <div
-      className="flex h-full flex-col"
-      onKeyDown={(e) => void selectionKeyDown(e, selection)}
-    >
+    <div className="flex h-full flex-col" onKeyDown={(e) => void selectionKeyDown(e, selection)}>
       <PageHeader
         icon={Hash}
         iconClassName="text-brand"

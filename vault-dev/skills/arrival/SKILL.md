@@ -105,6 +105,13 @@ answer says how many of them to ask.
 The smallest set of proposals the source actually forces. Filing is not a proposal; everything
 written ABOUT the source is. One finding, one proposal, however many documents it spans.
 
+Before you decide what a meeting forces, read the list in house rules under 'What you want from
+Qale'. With the line about who is waiting on, check the customer and people pages for anyone
+whose last update touches what the meeting changed, and propose those updates and a todo naming
+who to tell. With it off, file the meeting, the decisions and the todos, and propose none of that.
+With the line about writing the actions into Jira and Confluence on, propose the outbound cards.
+With it off, stop at the todos.
+
 **A meeting you were in:**
 - **Decisions** made in the meeting, with the decider and the reason (propose_decision). Set
   `supersedes` when it reverses an earlier decision. No clear decider or date: ask before

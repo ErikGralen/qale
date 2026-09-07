@@ -111,6 +111,7 @@ export const KNOWN_SKILLS = [
   'iterate',
   'tell-qale',
   'house-rules',
+  'writing-skills',
   'librarian',
   'meeting-prep',
   'custom',
@@ -218,6 +219,115 @@ export const ONBOARDING_ACTIONS = ['done', 'skipped', 'finished'] as const;
  * `@qale/agent` is the source, and a desktop test holds the two lists together.
  */
 export const CODEBASE_MODEL_WORDS = ['sonnet', 'opus', 'fable'] as const;
+
+/**
+ * The lines the "What you want from Qale" list ships with, by id, plus `custom`
+ * (docs/learning-how-you-work.md ticket 15).
+ *
+ * The id is a word we wrote. The line's text is not: the PM edits the file, and
+ * a line they wrote themselves is a sentence about their own work. So the text
+ * never leaves, and a line we do not recognise reports as `custom`, which still
+ * answers the question worth asking: which of ours do PMs keep, and how often
+ * do they write their own. `WANT_LIST_LINES` in `@qale/sessions` is the source
+ * of the ids, and a desktop test holds the two lists together.
+ */
+export const WANT_LIST_WORDS = [
+  'write-into-tools',
+  'delivery-from-record',
+  'who-is-waiting',
+  'priority-changed',
+  'one-news-many-words',
+  'promises',
+  'custom',
+] as const;
+
+/** What happened to one line on that list. */
+export const WANT_LIST_CHANGES = ['added', 'removed'] as const;
+
+/** One line's id, folded to something we wrote. */
+export function wantLineWord(id: string | null | undefined): string {
+  const bare = id?.trim();
+  if (!bare) return 'custom';
+  return (WANT_LIST_WORDS as readonly string[]).includes(bare) ? bare : 'custom';
+}
+
+/**
+ * Which voice a style pick was for (ticket 15). Two voices ship; a voice the PM
+ * added is named in their own words, so it reports as `custom`.
+ */
+export const VOICE_WORDS = ['exec', 'cs', 'custom'] as const;
+
+/** A voice file or name, folded to one of those words. */
+export function voiceWord(voice: string | null | undefined): string {
+  const bare = voice?.split('/').pop()?.replace(/\.md$/, '').trim().toLowerCase();
+  if (!bare) return 'custom';
+  return (VOICE_WORDS as readonly string[]).includes(bare) ? bare : 'custom';
+}
+
+/**
+ * The update styles the first draft offers, one word each, plus `custom` for a
+ * style the PM wrote in their own voice file. The three exec styles and the
+ * three CS ones are the `###` headings in `VOICE_EXEC` and `VOICE_CS`
+ * (`@qale/sessions`), and a desktop test holds the two together.
+ */
+export const STYLE_WORDS = [
+  'three-lines',
+  'one-paragraph',
+  'what-changed',
+  'three-dated-lines',
+  'short-note',
+  'use-now-next',
+  'custom',
+] as const;
+
+/** The heading each shipped style carries, and the word it reports as. */
+const STYLE_LABEL_WORDS: Readonly<Record<string, string>> = {
+  'three lines': 'three-lines',
+  'one paragraph': 'one-paragraph',
+  "what changed, what's next": 'what-changed',
+  'three dated lines': 'three-dated-lines',
+  'a short note': 'short-note',
+  'use now, coming next': 'use-now-next',
+};
+
+/** Straight quotes, one space between words, lower case. */
+function plainLabel(label: string | null | undefined): string {
+  return (label ?? '')
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/** A style tab's label, folded to a word. Anything we did not write is `custom`. */
+export function styleWord(label: string | null | undefined): string {
+  return STYLE_LABEL_WORDS[plainLabel(label)] ?? 'custom';
+}
+
+/**
+ * What the PM answered under the panel: this voice only, every voice, not now,
+ * or the second copy that counts as the pick.
+ */
+export const STYLE_ANSWERS = ['this-voice', 'every-voice', 'not-now', 'again'] as const;
+
+/**
+ * An answer button's label, folded to one of those words.
+ *
+ * The first option names the voice ("For exec"), so the voice's own name is in
+ * the label and must not go out. It folds to `this-voice`, and the voice goes
+ * out separately as a word from {@link VOICE_WORDS}. An answer we do not know
+ * returns nothing, so the caller sends no answer rather than a guess.
+ */
+export function styleAnswerWord(label: string | null | undefined): string | undefined {
+  const key = plainLabel(label).replace(/[.!]+$/, '');
+  if (!key) return undefined;
+  if ((STYLE_ANSWERS as readonly string[]).includes(key)) return key;
+  if (key === 'for every audience') return 'every-voice';
+  if (key === 'not now') return 'not-now';
+  if (key.startsWith('for ')) return 'this-voice';
+  return undefined;
+}
 
 /**
  * Every event, spelled out, with every property it may carry.
@@ -329,6 +439,26 @@ export const TELEMETRY_EVENTS: readonly TelemetryEventSpec[] = [
       // keeps the model that session started with, so the card shows no picker.
       resumed: { kind: 'flag' },
       approved: { kind: 'flag' },
+    },
+  },
+  {
+    id: 'want_list.changed',
+    says: 'Which line of what you want from Qale was added or removed, by its id',
+    props: {
+      line: { kind: 'word', values: WANT_LIST_WORDS },
+      change: { kind: 'word', values: WANT_LIST_CHANGES },
+      // Whether the PM said it themselves. A line they asked for and a line
+      // Qale worked out are two different facts about the same list.
+      asked: { kind: 'flag' },
+    },
+  },
+  {
+    id: 'style.picked',
+    says: 'Which update style you picked, and for which audience',
+    props: {
+      voice: { kind: 'word', values: VOICE_WORDS },
+      style: { kind: 'word', values: STYLE_WORDS },
+      answer: { kind: 'word', values: STYLE_ANSWERS },
     },
   },
   {

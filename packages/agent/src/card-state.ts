@@ -60,13 +60,101 @@ function standing(status: string): string | null {
   }
 }
 
-/** One line per card: the id to act on it by, what it says, where it stands. */
+/** How much of a quoted line is worth showing. */
+const QUOTE = 80;
+
+/** One line, on one line, short enough to sit in a list. */
+function quote(value: unknown): string {
+  const line = String(value ?? '')
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  const one = (line ?? '').replace(/\s+/g, ' ');
+  return one.length > QUOTE ? `${one.slice(0, QUOTE - 1)}…` : one;
+}
+
+const record = (v: unknown): Record<string, unknown> | null =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+const list = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
+
+/** What each card kind calls its title and its text, in the words the PM sees. */
+function fieldWords(action: string): { title: string; body: string } {
+  if (action === 'create_ticket') return { title: 'summary', body: 'description' };
+  if (action === 'comment_ticket') return { title: 'title', body: 'comment' };
+  if (action === 'update_page') return { title: 'title', body: 'page text' };
+  return { title: 'title', body: 'text' };
+}
+
+/**
+ * What the PM did to a card before they approved it, in one line, or null when
+ * they kept it as drafted (docs/learning-how-you-work.md ticket 7).
+ *
+ * The point is what the session does with it next: a change that would repeat is
+ * how this PM writes, and belongs in the Jira or Confluence file. So the line
+ * names the field and gives both versions short, never a diff and never the
+ * whole body. Words the PM would use, not field names: a ticket has a summary
+ * and a description.
+ */
+export function describeCardEdit(before: unknown, after: unknown): string | null {
+  const was = record(before);
+  const now = record(after);
+  if (!was || !now) return null;
+  const words = fieldWords(str(was['action']));
+  const said: string[] = [];
+
+  if (str(was['title']) !== str(now['title']) && str(now['title'])) {
+    said.push(`The PM changed the ${words.title} to "${quote(now['title'])}".`);
+  }
+  if (str(was['body']) !== str(now['body'])) {
+    said.push(
+      `The PM changed the ${words.body}: it began "${quote(was['body'])}" and now begins "${quote(now['body'])}".`,
+    );
+  }
+  if (str(was['append']) !== str(now['append']) && str(now['append'])) {
+    said.push(`The PM changed what gets added: it now begins "${quote(now['append'])}".`);
+  }
+  if (JSON.stringify(was['patch'] ?? null) !== JSON.stringify(now['patch'] ?? null)) {
+    said.push('The PM changed the passage this replaces, or what it says instead.');
+  }
+  for (const field of ['labels', 'components'] as const) {
+    const added = list(now[field]).filter((v) => !list(was[field]).includes(v));
+    const gone = list(was[field]).filter((v) => !list(now[field]).includes(v));
+    if (added.length)
+      said.push(
+        `The PM added ${field === 'labels' ? 'the label' : 'the component'} ${added.join(', ')}.`,
+      );
+    if (gone.length)
+      said.push(
+        `The PM took ${gone.join(', ')} off the ${field === 'labels' ? 'labels' : 'components'}.`,
+      );
+  }
+  if (str(was['priority']) !== str(now['priority']) && str(now['priority'])) {
+    said.push(`The PM set the priority to ${str(now['priority'])}.`);
+  }
+
+  // The question the card carried, and what they answered. It is on the same
+  // line because it is the same lesson: this is how they want the next one.
+  const asked = record(now['question']);
+  const answer = str(asked?.['answer']);
+  if (asked && answer) said.push(`The PM answered "${answer}" to "${quote(asked['text'])}"`);
+
+  return said.length ? said.join(' ') : null;
+}
+
+/** One line per card: the id to act on it by, what it says, where it stands.
+ *  A card the PM changed before approving carries a second, indented line. */
 function cardLines(cards: SessionCardState[]): string[] {
   const out: string[] = [];
   for (const c of cards.slice(-MAX_CARDS)) {
     const where = standing(c.status) ?? c.status;
     const what = c.title.replace(/\s+/g, ' ').trim().slice(0, 120);
     out.push(`- ${c.id} (${where}): ${what}`);
+    if (c.editedPayload === undefined || c.editedPayload === null) continue;
+    const change = describeCardEdit(c.payload, c.editedPayload);
+    if (change) out.push(`  ${change}`);
   }
   return out;
 }

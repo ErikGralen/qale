@@ -106,6 +106,7 @@ export const NOTE_LIFECYCLES: Record<NoteType, Lifecycle | null> = {
   insight: PROCESSING,
   customer: RELATIONSHIP,
   research: PROCESSING,
+  about: PROCESSING,
   person: null,
   session: null,
   skill: null,

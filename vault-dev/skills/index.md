@@ -11,8 +11,9 @@ the written instructions the agent follows when you hand work over
 * [Handle a commitment](skills/commitment-check/SKILL.md) — Works out what to do about a promise that's slipping, or a request that just came in.
 * [Handle new sources](skills/arrival/SKILL.md) — Files what you just dropped in, and reads what is worth reading.
 * [House rules](skills/house-rules/SKILL.md) — How Qale writes, files, and speaks, plus the rules you have given it.
-* [How we use Confluence](skills/confluence/SKILL.md) — The rules Qale follows when it drafts page updates.
-* [How we use Jira](skills/jira/SKILL.md) — The rules Qale follows when it drafts tickets and comments.
+* [How Qale writes skills](skills/writing-skills/SKILL.md) — What Qale reads before it writes into a skill or a voice. What goes where, what a rule looks like, and how a file says what it has learned.
+* [How you write pages](skills/confluence/SKILL.md) — How Qale drafts page updates so they read like yours.
+* [How you write tickets](skills/jira/SKILL.md) — How Qale drafts tickets and comments so they read like yours.
 * [Iterate on something](skills/iterate/SKILL.md) — Qale drafts something, you react to each piece, and it takes another pass.
 * [Tell Qale about something](skills/tell-qale/SKILL.md) — You talk about a topic, Qale asks until it has it, then writes it down.
 * [Tidy a rough note](skills/process-note/SKILL.md) — Turns a scratch dump into a clean page and updates what it touches.

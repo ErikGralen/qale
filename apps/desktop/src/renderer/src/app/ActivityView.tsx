@@ -4,6 +4,7 @@ import {
   BookMarked,
   FilePen,
   FilePlus2,
+  GraduationCap,
   MessageSquare,
   ScrollText,
   Tags,
@@ -27,6 +28,8 @@ const ACTION_ICON: Record<string, LucideIcon> = {
   remembered: BookMarked,
   deleted: Trash2,
   labelled: Tags,
+  // What Qale worked out about how the PM works, apart from a rule they stated.
+  learned: GraduationCap,
 };
 
 /**

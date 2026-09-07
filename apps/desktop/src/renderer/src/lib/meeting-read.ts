@@ -117,6 +117,47 @@ export function promiseState(n: NoteRefDTO): string {
   return n.owner ? 'waiting on them' : 'still open';
 }
 
+/** How far ahead a meeting can be and still earn a spot on the sidebar's
+ *  Meetings row (docs/sidebar-ia.md, SB-6): the day ahead, not the week. */
+const SIDEBAR_MEETING_MS = 24 * 3_600_000;
+
+/** The row's cap: a glance, not a second calendar. */
+export const SIDEBAR_MEETING_LIMIT = 3;
+
+/**
+ * Up to three meetings starting within the next day, soonest first — what the
+ * PO needs to notice without opening Calendar. Everything further out stays on
+ * Calendar alone; a cancelled meeting, or one the PO waved off this row for,
+ * never shows.
+ */
+export function upcomingSidebarMeetings(
+  meetings: readonly NoteRefDTO[],
+  dismissed: readonly string[],
+  now: number = Date.now(),
+): NoteRefDTO[] {
+  const off = new Set(dismissed);
+  return meetings
+    .filter(
+      (n) =>
+        n.eventStatus !== 'cancelled' &&
+        !off.has(n.path) &&
+        isUpcomingMeeting(n, now) &&
+        meetingStart(n) - now < SIDEBAR_MEETING_MS,
+    )
+    .sort((a, b) => meetingStart(a) - meetingStart(b))
+    .slice(0, SIDEBAR_MEETING_LIMIT);
+}
+
+/** The row's right-hand fact: the clock time, and the day when it isn't
+ *  today — the one thing a 24-hour window can't leave to "today" alone. */
+export function sidebarMeetingMeta(n: NoteRefDTO, now: number = Date.now()): string {
+  if (isLiveMeeting(n, now)) return 'now';
+  const time = n.time ?? '';
+  const sameDay = new Date(meetingStart(n)).toDateString() === new Date(now).toDateString();
+  if (sameDay) return time || 'today';
+  return time ? `tomorrow, ${time}` : 'tomorrow';
+}
+
 /** How long the meeting runs, as a person would say it. */
 export function durationText(minutes: number | undefined): string | null {
   if (!minutes || minutes <= 0) return null;

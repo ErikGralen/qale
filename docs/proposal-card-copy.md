@@ -90,7 +90,7 @@ before you change a line. The table is a map, not a copy.
 | Decision                          | `Decided: <title>`            | Records the decision in Decisions. Nothing is announced. It replaces "<title>".            |
 | Update                            | `Update <title>`              | None. See below.                                                                           |
 | Standing instruction              | `Remember this: <rule>`       | Adds the rule to `<file>`. Every session reads it from now on.                             |
-| Standing instruction, conventions | `Remember this: <rule>`       | Adds the rule to How we use Jira. Read whenever it drafts for Jira.                        |
+| Standing instruction, conventions | `Remember this: <rule>`       | Adds the rule to How you write tickets. Read whenever it drafts for Jira.                        |
 | Outbound                          | `Comment on PAY-142`          | See `outboundEffect` in `effect.ts`.                                                       |
 
 ## Two rules it inherits

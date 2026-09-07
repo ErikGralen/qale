@@ -529,16 +529,16 @@ export function NoteView({ path }: { path: string }) {
                     transcripts: meetingTranscripts.length,
                     typed: currentNote.body.trim().length > 0,
                   }),
-                  title: `Go through: ${currentNote.title}`,
+                  title: `Review: ${currentNote.title}`,
                   fresh: true,
                 })
               }
-              title="Go through what this meeting holds, typed notes and recordings alike, and turn what it changes into proposals."
+              title="Review what this meeting holds, typed notes and recordings alike, and turn what it changes into proposals."
             >
               {/* One label for both, because from the PO's side it is one act:
                   read this meeting. Whether they typed it or recorded it is the
                   run's business. */}
-              <Sparkles className="size-3.5" /> Go through this meeting
+              <Sparkles className="size-3.5" /> Review this meeting
             </Button>
           )}
           {todoOpen && (

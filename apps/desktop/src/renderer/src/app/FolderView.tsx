@@ -154,7 +154,9 @@ const EMPTY_TEACH: Partial<Record<NoteType, string>> = {
     'No insights yet. When a meeting says something worth keeping, it lands here as one claim with the quote it came from.',
   customer: 'No customers yet. An account gets a page once your meetings and notes name it.',
   research:
-    'What Qale worked out: the case for a problem, a competitor scan, the product picture. Correct anything wrong.',
+    'What Qale worked out: the case for a problem, a competitor scan. Correct anything wrong.',
+  about:
+    'What is true about you and the company: what the product is, how it is built, who owns what. Tell Qale about your product and these pages get written.',
   person:
     'No people yet. The people you work with appear here, with what they care about and what they were last told.',
   skill: 'No skills yet. Work you hand over is written down here, in words you can edit.',

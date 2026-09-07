@@ -195,6 +195,7 @@ function cardLabel(p: ProposalDTO): string {
     frontmatter?: Record<string, unknown>;
     append?: string;
     body?: string;
+    patch?: { search: string; replace: string }[];
   };
   const composed = proposalHeadline({
     kind: p.kind,
@@ -202,6 +203,7 @@ function cardLabel(p: ProposalDTO): string {
     frontmatter: payload.frontmatter,
     append: payload.append,
     body: payload.body,
+    patch: payload.patch,
     outbound: p.kind === 'outbound' ? (p.payload as OutboundCopyInput) : undefined,
   });
   return p.headline?.trim() || composed.trim() || p.rationale;

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { ActivityDTO } from '@qale/ipc';
 import {
   countToday,
+  learnedByPath,
   dayLabel,
   groupByDay,
   startOfToday,
@@ -94,4 +95,35 @@ test('today starts at local midnight', () => {
 test('a row says what time it landed, and stays quiet about a broken one', () => {
   assert.match(timeOfDay(at(0, 14).toISOString()), /\d{1,2}[:.]\d{2}/);
   assert.equal(timeOfDay('not a date'), '');
+});
+
+// The line under every row on the Skills page (docs/learning-how-you-work.md
+// ticket 13): the last thing Qale learned about that file.
+
+test('the newest row wins for a file, and the opener is off the sentence', () => {
+  const learned = learnedByPath([
+    {
+      path: 'voices/exec.md',
+      line: 'Got it. Exec updates: one paragraph, result first.',
+      at: at(1, 9).toISOString(),
+    },
+    {
+      path: 'voices/exec.md',
+      line: 'Got it. Exec updates open with the number.',
+      at: at(0, 9).toISOString(),
+    },
+    {
+      path: 'skills/house-rules/SKILL.md',
+      line: 'I remembered a rule: Write every summary in Swedish.',
+      at: at(3, 9).toISOString(),
+    },
+  ]);
+  assert.equal(learned.get('voices/exec.md')?.text, 'Exec updates open with the number.');
+  assert.equal(learned.get('skills/house-rules/SKILL.md')?.text, 'Write every summary in Swedish.');
+  assert.equal(learned.get('skills/jira/SKILL.md'), undefined);
+});
+
+test('a row with an unreadable date says nothing at all', () => {
+  const learned = learnedByPath([{ path: 'voices/exec.md', line: 'Got it. Short.', at: 'nope' }]);
+  assert.equal(learned.size, 0);
 });

@@ -59,6 +59,7 @@ function fakeActivity() {
     },
     list: () => [...rows].reverse(),
     get: (id: string) => rows.find((r) => r.id === id) ?? null,
+    latestLearned: () => [],
     markReverted: () => {},
   };
   return { rows, port };
@@ -314,7 +315,10 @@ test('a body that moved while the model was answering is not labelled', async ()
 
 const TAGGED_WORLD = [
   inote('insights/anchor.md', 'insight', { title: 'Anchor', frontmatter: { tags: ['pricing'] } }),
-  inote('research/pricing.md', 'research', { title: 'Pricing', frontmatter: { tags: ['pricing'] } }),
+  inote('research/pricing.md', 'research', {
+    title: 'Pricing',
+    frontmatter: { tags: ['pricing'] },
+  }),
   inote('notes/sso.md', 'note', {
     title: 'SSO',
     frontmatter: { tags: ['checkout', 'a whole phrase'] },

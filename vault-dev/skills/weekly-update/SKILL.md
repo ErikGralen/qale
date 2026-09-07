@@ -26,6 +26,10 @@ got blocked. Use the "This week" lens as the scope.
 One draft per voice in this list, and what belongs in each. Add a voice here to draft for it. Take
 one out and the next run stops writing it.
 
+One draft per voice holds while the line about the week's news in the words each group needs is
+on the list in house rules under 'What you want from Qale'. With that line off, write one draft,
+plainly, and read no voice.
+
 - **exec**: the decisions and who made them, what reached customers, and the one thing that could
   go wrong next. Put a number on it wherever a number exists: the date, the count, the money at
   risk. Leave the process out.
@@ -48,9 +52,37 @@ It gets forwarded word for word, so hold it to these whatever the sources say:
   pasted to anyone.
 - No date that nothing backs. No decision and no shipped ticket means no date.
 
+## The first time
+
+A voice that still lists three styles has no pick yet: its first line says so, or it holds more
+than one `###` style. For that voice, draw one `draft_text` panel with one tab per style, the
+style's name as the label, Full only, and the same news in all three. Set `ask` to the question
+{ text: "Write updates this way from now on?", options: ["For exec", "For every audience", "Not now"] },
+with the voice's own name in the first option. When the PM copies a tab, the question appears under
+the panel, and the answer comes back as a turn: `I copied "One paragraph" and answered "For exec".`
+
+What each answer means:
+- "For <voice>": vault_read `skills/writing-skills/SKILL.md`, read the voice with `get_voice`, then
+  `propose_update` the voice file with `patch` blocks. The first line becomes the learned form:
+  "Exec updates are one paragraph, result first. Learned from the style you copied on 5 September.
+  Change this line and the next update follows it." The picked `###` style stays, the other two go,
+  and "How it sounds" stays as it is. Set `learned` to what you now know and where it came from.
+  The write lands without a card. Then reply with one line: "Got it. Exec updates: one paragraph,
+  result first. [[voices/exec|Exec voice]]".
+- "For every audience": the same for every voice under "Who it goes to", in one turn, one receipt
+  line per voice.
+- "Not now": change nothing. The three styles come back next Friday.
+- `I copied "One paragraph" again without answering, so treat it as the pick for exec.`: the same
+  as "For exec", and the receipt says that two copies counted as the pick and that the file is
+  where to change it.
+
+After a pick the voice holds one style, and the drafts come as Full and Short as under "Produce".
+If the PM asks for another way, draw the three styles again, with the same `ask`.
+
 ## Produce
 
-One `draft_text` call per voice, with `voice` set and two variants in the same panel:
+One `draft_text` call per voice, with `voice` set and two variants in the same panel (a voice
+with no pick yet gets the panel under "The first time" instead):
 
 - **Full**: every heading in the shape below, in order. It goes in the mail.
 - **Short**: the one thing that audience would act on, in a line or two. It gets pasted into a
@@ -77,7 +109,8 @@ back, and the mirror re-syncs on the next pull.
 
 Where a line has nothing behind it, write "nothing this week" and keep the line. A week with nothing
 in it at all still produces nothing at all: the fallback covers one empty line, never a whole empty
-week. A voice added later brings its own shape, so ask once what belongs in it.
+week. A voice added later brings its own shape, so ask once what belongs in it. A voice with no
+pick yet takes the shape of each of its three styles instead of the Full shape below.
 
 The bracketed label names the draft and its variant. It is not part of the draft.
 

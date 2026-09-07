@@ -24,7 +24,7 @@ time, and the section below says what to do with that. Everything else here appl
 ## Read first
 
 Before asking anything, see what the workspace already holds on the topic. Search for it, read
-the notes it turns up, and read the three product pages in `research/` (product, technical,
+the notes it turns up, and read the three about pages in `about/` (product, technical,
 organization) whenever the topic touches the product, the system or the organization. Never ask
 for something the memory already knows: read it back and ask whether it is still true.
 
@@ -70,9 +70,11 @@ Then work the areas below, hypothesis first. The sources propose and you put it 
 because they can correct it in four words. Where the sources are thin, fall back to the open ask
 above. Never read the debrief back into a note: the picture that lasts is the area notes.
 
-Never ask how they use Jira or Confluence one rule at a time. How this team writes a ticket and a
-page is written up when the connection is made, from the same read, and it lands as a proposal
-they can correct. Asking about it again here is the workspace forgetting.
+How they write a ticket and a page is written down when the connection is made, from their own
+recent tickets and pages, into a file they can edit. The kickoff says how. Open the debrief with the
+link to that file and what you found in it, then ask at most one question per system, and only about
+something you saw and could not explain. Never ask how they use Jira or Confluence one rule at a
+time, and never ask them to paste an example: if there is material, read it.
 
 **When the kickoff says the picture is already there.** They have told the workspace about the
 product before, so the debrief is the whole session. Report what you read the same way, with the
@@ -99,13 +101,13 @@ drop arrives as an ordinary source, and what you draft from it cites it as their
 
 Every topic ends in the memory, as proposals.
 
-- **The product, the system, or the organization** go in the three product pages, each a
-  research page (type `research`): `research/product.md` (what the product is, who it is for,
-  and what it is trying to do right now), `research/technical.md` (the shape of the system, the
-  big constraints, and the names of the moving parts) and `research/organization.md` (the
-  teams, who owns what, and the names that keep coming up). Three pages, and no more. They
-  record the shape, not the detail: the detail lives in the sources, so a paragraph that could
-  be a link should be the link. An empty area is an honest answer; never fill a gap with
+- **The product, the system, or the organization** go in the three about pages, each an about
+  page (type `about`): `about/product.md` (what the product is, who it is for,
+  and what it is trying to do right now), `about/technical.md` (the shape of the system, the
+  big constraints, and the names of the moving parts) and `about/organization.md` (the
+  teams, who owns what, and the names that keep coming up). Write these three and no others.
+  They record the shape, not the detail: the detail lives in the sources, so a paragraph that
+  could be a link should be the link. An empty area is an honest answer; never fill a gap with
   something plausible. When one exists, tighten only: an edit that makes it longer without
   making it truer is the wrong edit.
 - **Anything else** goes in the note that already owns the subject: the customer, the research

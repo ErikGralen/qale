@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { stripExternalMarkers } from '../src/external.js';
+import { WANT_LIST_LINES } from '@qale/sessions';
 import { SUMMARY_BODY_MAX_CHARS, summaryPrompt } from '../src/summaries.js';
 
 /**
@@ -95,4 +96,27 @@ test('with nothing tagged yet the model is told so', () => {
     tagsInUse: [],
   });
   assert.match(user, /No tags are in use yet/);
+});
+
+/**
+ * The "What you want from Qale" list rides in the tag prompt with the tag for
+ * each line (docs/learning-how-you-work.md ticket 8), so a document about who
+ * is waiting is found under the same word the list and the telemetry use.
+ */
+test('the tag prompt hands over the "What you want from Qale" lines with their tags', () => {
+  const { system, user } = summaryPrompt({
+    path: 'notes/renewals.md',
+    title: 'Renewals',
+    body: 'Nordkap asked when it ships.',
+    wantsTags: true,
+    tagsInUse: [],
+  });
+
+  assert.match(system, /list of what the PM wants from Qale/);
+  assert.match(user, /What the PM wants from Qale, with the tag for each line: /);
+  for (const line of WANT_LIST_LINES) {
+    assert.ok(user.includes(`${line.id} (${line.text})`), `${line.id} is missing`);
+  }
+  const open = user.indexOf('<<<EXTERNAL_MATERIAL');
+  assert.ok(user.indexOf('What the PM wants') < open, 'the list is ours, not material');
 });

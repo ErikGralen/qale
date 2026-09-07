@@ -36,6 +36,7 @@ import type {
   SessionFileDTO,
   SessionLifecycle,
   SessionScopeDTO,
+  SidebarMeetingStateDTO,
   SpawnRequestDTO,
   CodebaseRequestDTO,
   AskRequestDTO,
@@ -323,6 +324,15 @@ interface AppState {
   dismissCapture: (path: string) => Promise<string | undefined>;
   /** Take that back: the meeting asks again, and its series is unmuted. */
   undoCapture: (path: string, series?: string) => Promise<void>;
+  /**
+   * Meetings waved off the sidebar's Meetings row — null until read, so the
+   * row never flashes one back on that was dismissed a moment ago.
+   */
+  sidebarMeetingDismissed: string[] | null;
+  /** Hide one meeting's occurrence from the sidebar's Meetings row. */
+  dismissSidebarMeeting: (path: string) => Promise<void>;
+  /** Take that back: the meeting can show on the row again. */
+  undoSidebarMeeting: (path: string) => Promise<void>;
   markSessionSeen: (sessionId: string) => void;
   refreshSessions: () => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
@@ -663,8 +673,10 @@ function loadPersistedTabs(): { tabs: TabState[]; activeTabId: string | null } {
 }
 
 /** A clock the attention list can age against: one read a minute, which is the
- *  finest granularity anything in that list is stated in ("in 20m", "due today"). */
-function useMinuteClock(): number {
+ *  finest granularity anything in that list is stated in ("in 20m", "due today").
+ *  Exported so any surface that ages its own derivation off `now` (the
+ *  sidebar's Meetings row included) reads the same clock, on the same tick. */
+export function useMinuteClock(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -701,6 +713,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   /** Capture nudges the PO has already waved off — null until it is read, so
    *  the list never flashes a row that was dismissed weeks ago. */
   const [captureNudge, setCaptureNudge] = useState<CaptureNudgeStateDTO | null>(null);
+  /** Meetings waved off the sidebar's Meetings row (docs/sidebar-ia.md, SB-6) —
+   *  its own ledger, separate from the capture nudge above. */
+  const [sidebarMeetingState, setSidebarMeetingState] = useState<SidebarMeetingStateDTO | null>(
+    null,
+  );
   const [skills, setSkills] = useState<SkillDTO[]>([]);
   const [agents, setAgents] = useState<AgentDTO[]>([]);
   const [connections, setConnections] = useState<ConnectionDTO[]>([]);
@@ -816,6 +833,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const undoCapture = useCallback(async (path: string, series?: string) => {
     setCaptureNudge(await invoke['captureNudge:undo'](path, series));
+  }, []);
+
+  const refreshSidebarMeetings = useCallback(async () => {
+    try {
+      setSidebarMeetingState(await invoke['sidebarMeeting:state']());
+    } catch {
+      setSidebarMeetingState(null);
+    }
+  }, []);
+
+  const dismissSidebarMeeting = useCallback(async (path: string) => {
+    setSidebarMeetingState(await invoke['sidebarMeeting:dismiss'](path));
+  }, []);
+
+  const undoSidebarMeeting = useCallback(async (path: string) => {
+    setSidebarMeetingState(await invoke['sidebarMeeting:undo'](path));
   }, []);
 
   const refreshSkills = useCallback(async () => {
@@ -1703,6 +1736,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           refreshActivity(),
           refreshSessions(),
           refreshCaptureNudge(),
+          refreshSidebarMeetings(),
           refreshSkills(),
           refreshAgents(),
         ]);
@@ -1713,6 +1747,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       refreshActivity,
       refreshSessions,
       refreshCaptureNudge,
+      refreshSidebarMeetings,
       refreshSkills,
       refreshAgents,
       dropViews,
@@ -2334,6 +2369,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       markMeetingReviewed,
       dismissCapture,
       undoCapture,
+      sidebarMeetingDismissed: sidebarMeetingState?.dismissed ?? null,
+      dismissSidebarMeeting,
+      undoSidebarMeeting,
       captureNote,
       createNote,
       captureTodo,
@@ -2442,6 +2480,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       markMeetingReviewed,
       dismissCapture,
       undoCapture,
+      sidebarMeetingState,
+      dismissSidebarMeeting,
+      undoSidebarMeeting,
       captureNote,
       createNote,
       captureTodo,

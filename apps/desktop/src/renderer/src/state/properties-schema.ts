@@ -176,6 +176,7 @@ export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[
   // A customer's `relationship` has no row: see {@link HIDDEN_KEYS}.
   customer: [SUMMARY, { key: 'segment', label: 'Segment', widget: 'text', owner: 'user' }, TAGS],
   research: [SUMMARY, TAGS, PROCESSING],
+  about: [SUMMARY, TAGS, PROCESSING],
   person: [
     SUMMARY,
     { key: 'role', label: 'Role', widget: 'text', owner: 'user' },
@@ -209,7 +210,13 @@ export const FIELDS: Partial<Record<NoteType, FieldSpec[]>> & { note: FieldSpec[
   ticket: [
     SUMMARY,
     { key: 'state', label: 'Tracker state', widget: 'readonly', owner: 'derived' },
+    // Type and labels only. Every row here also renders when the ticket has no
+    // such value, so priority, components and reporter would put three "Empty"
+    // rows on most tickets to say nothing. They are in the frontmatter, which
+    // is what the skills read.
+    { key: 'issue_type', label: 'Type', widget: 'readonly', owner: 'derived' },
     { key: 'assignee', label: 'Assignee', widget: 'readonly', owner: 'derived' },
+    { key: 'labels', label: 'Labels', widget: 'readonly', owner: 'derived' },
     {
       key: 'remote_updated',
       label: 'Changed in the tracker',

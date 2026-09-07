@@ -153,6 +153,9 @@ including the unticked key and connect rows. A PM who connects a calendar, reads
 closes it has no way back to "Connect Jira". The two cards were built three weeks apart for the
 same moment and were never put next to each other.
 
+2026-09-07: `SetupPitch` is deleted, per docs/learning-how-you-work.md ticket 11. Home shows
+First steps in that slot; this seam is closed.
+
 **2. The knock has nowhere to land.** The picker promises "it knocks on Home". Home has no
 waiting list (the flat "Waiting on you" from the Home redesign is gone; `waitingOnYou` only
 feeds the Sessions badge count). What the PM gets is a coloured icon in the rail and a changed

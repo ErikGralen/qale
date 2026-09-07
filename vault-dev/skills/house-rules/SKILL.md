@@ -97,13 +97,18 @@ Where each kind of note lives. The librarian follows these when proposing paths 
 - **customers/**: one hub per account: commitments, signals, and the ledger of what they were
   told. Carries `relationship` (prospect / active / churned).
 - **research/**: Qale's own pages, what it worked out: the case for a problem, a competitor
-  scan, and the product picture in `product.md`, `technical.md` and `organization.md`. One
+  scan, a scan of a codebase. One
   folder, flat: every page is `research/<slug>.md` and there are no subfolders. Every page cites
   its `sources`, states its case in one voice and links the insights that hold the quotes. A page
   lands without a card, Qale keeps it fresh, and the PM corrects anything wrong. Only synthesis
   opens a page unasked; everything else extends the page for that problem, if one exists, and
   one signal makes no page. A declined problem keeps its page: its reasoning is expensive to
   rebuild. A research page never requires a ticket, and a ticket never requires a research page.
+- **about/**: what is true about you and the company: the product, how it is built, who owns
+  what. One folder, flat: every page is `about/<slug>.md`. It holds `product.md`,
+  `technical.md` and `organization.md` today. Qale reads these and never copies the facts into
+  a skill. The interview writes them, and a correction about a fact lands here, not in a skill:
+  a skill says how to do a piece of work, an about page says what is true.
 - **people/**: stakeholders: what they care about, and `last_told`.
 - **todos/**: the commitment ledger, one file per commitment, `YYYY-MM-DD-<slug>.md`. Carries
   `commitment` (open / done / dropped), optional `due`, and `owner` only when someone other than
@@ -121,6 +126,18 @@ Where each kind of note lives. The librarian follows these when proposing paths 
 Every derived note lists its `sources` or `evidence` as wikilinks. Prefer linking to an existing
 hub over creating a new file; near-duplicate pages split the memory. Ticket keys and URLs are
 cited, never invented.
+
+## What you want from Qale
+
+What you want from Qale. Qale reads this before every job and adds to it as it learns what you
+ask for. Edit it any time. Keep it to about ten lines.
+
+- When a meeting ends, write the actions into Jira and Confluence for me.
+- Answer "when can we deliver this?" from the record, not from my memory.
+- Tell me who is waiting for something before it ships, and what they were told.
+- When a priority changes in a room I was in, change the record so the team reads it.
+- Write the week's news once and give it to me in the words each group needs.
+- Keep track of what I promised and tell me before the date, not after.
 
 ## Your rules
 

@@ -124,6 +124,16 @@ export interface FullItem {
   parentKey?: string;
   /** The provider's typed issue links, canonicalized. */
   links?: TicketLink[];
+  /** The labels on the item, as the provider spells them (tickets). */
+  labels?: string[];
+  /** The item's type in the provider's own words: "Story", "Bug". */
+  issueType?: string;
+  /** The item's priority, when the provider has one. */
+  priority?: string;
+  /** Component/area names on the item. */
+  components?: string[];
+  /** Who filed the item, by display name. */
+  reporter?: string;
   version?: number;
   remote_updated?: string;
 }

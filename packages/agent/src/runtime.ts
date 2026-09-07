@@ -15,6 +15,7 @@ import {
   markRunnableUsed,
   normalizeNoteFrontmatter,
   sessionCards,
+  type FiledWrite,
   type GitTouch,
   type IndexedNote,
   type IndexPort,
@@ -947,6 +948,13 @@ export class AgentRuntime {
    */
   onSourceFiled: ((sessionId: string, filed: SourceFiled) => void) | null = null;
   /**
+   * A session's write landed without a card. Main hears of a card through the
+   * queue, but a silent write never enters it, so this is the one place main
+   * can count what the chat changed on its own (docs/learning-how-you-work.md
+   * ticket 15: a list line added with "I want...").
+   */
+  onProposalApplied: ((sessionId: string, filed: FiledWrite) => void) | null = null;
+  /**
    * A fan-out is waiting on the PM (`request`), or its card has settled
    * (`null`). The only moment the PM steers before money is spent.
    */
@@ -1605,8 +1613,9 @@ export class AgentRuntime {
       // The rail only ever adds a row to what the PM sees, never removes one
       // on its own (docs/remove-inbox.md RI-5): a card that lands in a session
       // the PM had unpinned puts it back on the active list.
-      ...createProposeTools(ctx, id, harness, () => {
+      ...createProposeTools(ctx, id, harness, (filed) => {
         if (this.getLifecycle(id) === 'unpinned') this.setLifecycle(id, 'active');
+        if (filed.disposition === 'silent') this.onProposalApplied?.(id, filed);
       }),
       createWithdrawTool(ctx, id, harness),
       // One voice gate per session, shared: `get_voice` is one tool, and the

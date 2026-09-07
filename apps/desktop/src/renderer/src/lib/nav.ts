@@ -51,13 +51,18 @@ export type RailPlace = (typeof RAIL_ORDER)[number] | 'memory' | 'synced';
 /**
  * What the Memory page holds, in reading order (E-16, E-17).
  *
- * One entry point, the types kept apart behind it. Meetings and notes are NOT
- * here: a meeting is the Calendar's and a note is Documents', and a type with
- * two homes is a type the user has to guess about. A person is a shelf here
- * rather than a rail row of its own (E-17): a person page is worth keeping, a
- * People directory is not.
+ * One entry point, the types kept apart behind it. About comes first: it is
+ * what is true about you and the company, and everything under it is read
+ * against that background (docs/learning-how-you-work.md, ticket 16). Then the
+ * material, what was decided, what was claimed, what Qale worked out, and who.
+ *
+ * Meetings and notes are NOT here: a meeting is the Calendar's and a note is
+ * Documents', and a type with two homes is a type the user has to guess about.
+ * A person is a shelf here rather than a rail row of its own (E-17): a person
+ * page is worth keeping, a People directory is not.
  */
 export const MEMORY_SHELVES: readonly NoteType[] = [
+  'about',
   'source',
   'decision',
   'insight',

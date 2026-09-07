@@ -11,6 +11,7 @@ import {
 import {
   FolderOpen,
   Check,
+  Clock,
   Wand2,
   Bot,
   X,
@@ -28,13 +29,15 @@ import {
   ScrollText,
   type LucideIcon,
 } from 'lucide-react';
-import { useApp } from '../state/app-state';
+import { isFolderIndex } from '@qale/domain';
+import { useApp, useMinuteClock } from '../state/app-state';
 import { countToday } from '../lib/activity';
 import { countOf } from '../lib/attention';
 import { useReorderableRow } from '../lib/dnd';
 import { navFromEvent } from '../lib/nav';
 import { noteTypeIcon } from '../lib/note-icons';
 import { unprocessedSourceCount } from '../lib/note-status';
+import { sidebarMeetingMeta, upcomingSidebarMeetings } from '../lib/meeting-read';
 import { documentPins, mirrorPins } from '../lib/pins';
 import { providerRows, type ProviderRow } from '../lib/providers';
 import { needsYou, sessionRows, timeAgo } from '../lib/session-meta';
@@ -350,6 +353,88 @@ function ProviderPlaceRow({
 }
 
 /**
+ * One row of the Meetings section (docs/sidebar-ia.md, SB-6): a meeting
+ * starting within the day, and nothing else. Its place in the list is the
+ * clock's, not the PO's, so it does not drag like a pin — the one choice left
+ * is to dismiss this occurrence, which fades it out until it is over.
+ */
+function MeetingRow({
+  note,
+  now,
+  onDismiss,
+}: {
+  note: NoteRefDTO;
+  now: number;
+  onDismiss: (n: NoteRefDTO) => void;
+}) {
+  const { openDoc, activeTab } = useApp();
+  const active = activeTab?.kind === 'doc' && activeTab.path === note.path;
+  const openRow = (e: React.MouseEvent) => void openDoc(note.path, navFromEvent(e));
+  return (
+    <li className="group/meeting relative">
+      <button
+        className={`flex w-full items-center gap-1.5 rounded-md py-0.5 pr-2 pl-3 text-left text-xs transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
+          active
+            ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+            : 'text-muted-foreground hover:text-foreground'
+        }`}
+        onClick={openRow}
+        onAuxClick={(e) => e.button === 1 && openRow(e)}
+        title={note.title}
+      >
+        <span className="flex size-3.5 shrink-0 items-center justify-center" aria-hidden>
+          <span className="size-1 rounded-full bg-current opacity-50" />
+        </span>
+        <span className="truncate">{note.title}</span>
+        <span
+          className="ml-auto shrink-0 pl-2 text-xs tabular-nums text-muted-foreground/80 transition-opacity group-hover/meeting:opacity-0 group-focus-within/meeting:opacity-0"
+          aria-hidden
+        >
+          {sidebarMeetingMeta(note, now)}
+        </span>
+      </button>
+      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-md bg-gradient-to-l from-sidebar-accent from-65% to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover/meeting:opacity-100 group-focus-within/meeting:opacity-100">
+        <button
+          className="pointer-events-auto rounded p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDismiss(note);
+          }}
+          aria-label={`Dismiss ${note.title}`}
+          title="Dismiss: hide this meeting from the rail until it's over"
+        >
+          <X className="size-3" />
+        </button>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * The Meetings row's children: up to three, soonest first, or nothing at all
+ * — most of the day, that is the honest answer, so the row must be free to
+ * show nothing rather than pad itself out to a fixed height.
+ */
+function MeetingRows({
+  notes,
+  now,
+  onDismiss,
+}: {
+  notes: NoteRefDTO[];
+  now: number;
+  onDismiss: (n: NoteRefDTO) => void;
+}) {
+  if (notes.length === 0) return null;
+  return (
+    <ul className="flex flex-col">
+      {notes.map((n) => (
+        <MeetingRow key={n.path} note={n} now={now} onDismiss={onDismiss} />
+      ))}
+    </ul>
+  );
+}
+
+/**
  * One pinned row: open it, unpin it, or drag it somewhere else in the list.
  *
  * The row is its own drag source and its own drop target. An insert line says
@@ -647,12 +732,28 @@ export function Sidebar({
     tree,
     favorites,
     connections,
+    sidebarMeetingDismissed,
+    dismissSidebarMeeting,
+    undoSidebarMeeting,
   } = useApp();
 
   // One pin set, split by place: what you write under Documents, and each
   // system's mirrors under that system's own row.
   const docPins = useMemo(() => documentPins(tree, favorites), [tree, favorites]);
   const systems = useMemo(() => providerRows(connections, tree), [connections, tree]);
+
+  // Meetings starting within the day, soonest first (docs/sidebar-ia.md,
+  // SB-6). Ages against the same clock the attention list does, so a meeting
+  // leaves this row and the "now" state at once, never one before the other.
+  const now = useMinuteClock();
+  const meetingNotes = useMemo(() => {
+    const group = tree?.groups.find((g) => g.type === 'meeting');
+    return (group?.notes ?? []).filter((n) => !isFolderIndex(n.path));
+  }, [tree]);
+  const upcomingMeetings = useMemo(
+    () => upcomingSidebarMeetings(meetingNotes, sidebarMeetingDismissed ?? [], now),
+    [meetingNotes, sidebarMeetingDismissed, now],
+  );
 
   // Every way of clearing a row off the rail — unpinning a note, marking a
   // session done — is reversible: it leaves a one-tap Undo strip for a few
@@ -665,6 +766,17 @@ export function Sidebar({
       offerUndo({ label: 'Unpinned', title: n.title, undo: () => toggleFavorite(n.path) });
     },
     [toggleFavorite, offerUndo],
+  );
+  const dismissMeeting = useCallback(
+    (n: NoteRefDTO) => {
+      void dismissSidebarMeeting(n.path);
+      offerUndo({
+        label: 'Dismissed',
+        title: n.title,
+        undo: () => void undoSidebarMeeting(n.path),
+      });
+    },
+    [dismissSidebarMeeting, undoSidebarMeeting, offerUndo],
   );
 
   // Both badges (Sessions, Todos) are filters over the one attention list,
@@ -744,6 +856,20 @@ export function Sidebar({
               active={activeTab?.kind === 'calendar'}
               onOpen={(e) => openCalendar(navFromEvent(e))}
             />
+            {/* Meetings starting within the day, up to three (docs/sidebar-ia.md,
+                SB-6). Not a place of its own — Calendar stays the one home for
+                every meeting — so the row carries no accent tint and shows
+                nothing at all once the day is clear. */}
+            {upcomingMeetings.length > 0 && (
+              <PlaceRow
+                icon={Clock}
+                label="Meetings"
+                title="Meetings: what's starting within the day"
+                onOpen={(e) => openCalendar(navFromEvent(e))}
+              >
+                <MeetingRows notes={upcomingMeetings} now={now} onDismiss={dismissMeeting} />
+              </PlaceRow>
+            )}
             <PlaceRow
               icon={ListTodo}
               label="Todos"

@@ -208,7 +208,7 @@ export function TodoDetail({
       <DialogContent
         // Sized by what is in it, capped by the window. Only the words scroll,
         // so the actions never leave the screen.
-        className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
+        className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
         aria-describedby={undefined}
         // Land on the panel, not on the first button in it. Radix would put
         // focus on the date control, which draws a ring around a secondary

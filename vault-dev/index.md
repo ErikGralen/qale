@@ -13,7 +13,7 @@ This workspace is an Open Knowledge Format bundle. Each folder has an `index.md`
 * [Meetings](meetings/index.md) — meeting pages: prep, notes, and processed summaries (10)
 * [Decisions](decisions/index.md) — the append-only decision spine (10)
 * [Insights](insights/index.md) — analyses over the raw layer, each citing its evidence (9)
-* [Research](research/index.md) — what Qale worked out: the case for a problem, a competitor scan, the product picture (5)
+* [Research](research/index.md) — what Qale worked out: the case for a problem, a competitor scan (5)
 * [Customers](customers/index.md) — customer hubs — who they are and where they stand (5)
 * [People](people/index.md) — people the work touches and what they were last told (8)
 * [Skills](skills/index.md) — the written instructions the agent follows when you hand work over (12)

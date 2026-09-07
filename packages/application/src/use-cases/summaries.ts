@@ -87,6 +87,7 @@ const TAGGED_TYPES: readonly NoteType[] = [
   'insight',
   'customer',
   'research',
+  'about',
   'todo',
   'note',
   'source',

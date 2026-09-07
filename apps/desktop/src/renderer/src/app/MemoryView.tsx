@@ -20,10 +20,11 @@ import { selectionKeyDown, useSelection } from '../lib/selection';
 
 /**
  * What a shelf counts, singular and plural. A bare number says nothing, and
- * "12 documents" is wrong on every shelf here. Four of the six take an s;
- * "people" and "research pages" are why the pair is written out.
+ * "12 documents" is wrong on every shelf here. Four of the seven take an s;
+ * "people", "research pages" and "about pages" are why the pair is written out.
  */
 const SHELF_NOUN: Record<string, [string, string]> = {
+  about: ['about page', 'about pages'],
   source: ['source', 'sources'],
   decision: ['decision', 'decisions'],
   insight: ['insight', 'insights'],
@@ -64,7 +65,9 @@ function FirstRun() {
 
 /**
  * The one door to what Qale knows, with the types kept apart behind it (E-16):
- * one shelf per type, in a flat list.
+ * one shelf per type, in a flat list. About is first: what is true about you
+ * and the company is the background everything else is read against
+ * (docs/learning-how-you-work.md, ticket 16).
  *
  * It is the same tree Documents is, and for the same reason: this page was
  * always a folder list, so it now reads like one. One `role="tree"` at full
@@ -171,7 +174,7 @@ export function MemoryView({
   };
 
   // What the shelves add up to. The header does not print it — every shelf
-  // carries its own count in the rail, and a page total on top of six shelf
+  // carries its own count in the rail, and a page total on top of seven shelf
   // totals is a number nobody asked for. This one only decides whether the page
   // is empty enough to need the invitation.
   const total = shelves.reduce((sum, s) => sum + s.notes.length, 0);

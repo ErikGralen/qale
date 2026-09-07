@@ -81,18 +81,20 @@ export function voicePath(name: string): string {
 }
 
 /**
- * The three research pages that hold the product picture: what the product is,
- * the shape of the system, and who owns what (docs/memory-types.md, MT-3).
+ * The three about pages that hold the product picture: what the product is,
+ * the shape of the system, and who owns what
+ * (docs/learning-how-you-work.md, ticket 16).
  *
- * They are research pages like any other, in `research/`, so nothing keeps them
- * apart from the PM's documents by hand: the type does. The interview drafts
- * them from what the PM said, and a first look writes them from what a
- * connection read. Main names them to know when the first one has been kept.
+ * They are about pages, in `about/`, so nothing keeps them apart from what Qale
+ * worked out for itself by hand: the type does. The interview drafts them from
+ * what the PM said, and a first look writes them from what a connection read.
+ * Main names them to know when the first one has been kept. The shelf may hold
+ * more one day, so this list is what ships, not a ceiling.
  */
 export const PRODUCT_PICTURE_PATHS: readonly string[] = [
-  'research/product.md',
-  'research/technical.md',
-  'research/organization.md',
+  'about/product.md',
+  'about/technical.md',
+  'about/organization.md',
 ];
 
 /** Is this file one of the three product pages? */

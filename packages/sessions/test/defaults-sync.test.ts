@@ -237,7 +237,7 @@ test('each conventions template ends with the Standing instructions section', ()
       '## Standing instructions',
       `the last heading in the ${name} template is not the anchor propose_instruction appends to`,
     );
-    assert.match(content, /^---\ntype: skill\ntitle: How we use /);
+    assert.match(content, /^---\ntype: skill\ntitle: How you write /);
   }
 });
 

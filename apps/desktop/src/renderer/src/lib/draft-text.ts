@@ -14,16 +14,42 @@ export interface DraftVariant {
   body: string;
 }
 
+/**
+ * A question the panel asks once a tab has been copied or used: one sentence,
+ * one to three answers (docs/learning-how-you-work.md, ticket 10). The weekly
+ * update's first panel carries "Write updates this way from now on?", and the
+ * answer is what turns three styles into one.
+ */
+export interface DraftAsk {
+  text: string;
+  options: string[];
+}
+
 export interface DraftText {
   title?: string;
   voice?: string;
   variants: DraftVariant[];
   /** The agent's own button and the sentence it adds to the sent message. */
   action?: { label?: string; message?: string };
+  /** Shown under the footer after Copy or Use this. Absent on an ordinary panel. */
+  ask?: DraftAsk;
 }
 
 function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/** The ask as the tool accepted it, or nothing when it is missing or malformed. */
+function askOf(raw: unknown): DraftAsk | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const ask = raw as Record<string, unknown>;
+  const askText = str(ask.text)?.trim();
+  if (!askText || !Array.isArray(ask.options)) return undefined;
+  const options = ask.options
+    .map((o) => (typeof o === 'string' ? o.trim() : ''))
+    .filter((o) => o.length > 0);
+  if (options.length === 0 || options.length > 3) return undefined;
+  return { text: askText, options };
 }
 
 /**
@@ -70,12 +96,112 @@ export function draftTextOf(input: unknown): DraftText | null {
     typeof raw.action === 'object' && raw.action !== null
       ? (raw.action as Record<string, unknown>)
       : undefined;
+  const ask = askOf(raw.ask);
   return {
     title: str(raw.title),
     voice: str(raw.voice),
     variants,
     ...(action ? { action: { label: str(action.label), message: str(action.message) } } : {}),
+    ...(ask ? { ask } : {}),
   };
+}
+
+/**
+ * What answering the panel's question sends, as the person. It names the tab
+ * they copied and the option they clicked, so the agent knows both the style
+ * and what to do with it: `I copied "One paragraph" and answered "For exec".`
+ */
+export function draftAnswerMessage(label: string, answer: string): string {
+  return `I copied "${label}" and answered "${answer}".`;
+}
+
+/**
+ * What a second copy of the same style, with no answer in between, sends. Two
+ * copies count as the pick (docs/learning-how-you-work.md): the person has shown
+ * what they want twice, and a third panel asking the same question would be the
+ * form the doc refuses.
+ */
+export function draftRepeatMessage(label: string, voice: string): string {
+  return `I copied "${label}" again without answering, so treat it as the pick for ${voice}.`;
+}
+
+/**
+ * Where the last unanswered copy is kept, per workspace and voice. A per-viewer
+ * convenience: the pick itself lands in the voice file, and losing this only
+ * means the question is asked once more.
+ */
+export interface CopyMemory {
+  get(key: string): string | null;
+  set(key: string, value: string): void;
+  remove(key: string): void;
+}
+
+export function copyMemoryKey(workspace: string | null | undefined, voice: string): string {
+  return `qale.draftCopy.v1:${workspace ?? ''}:${voice.toLowerCase()}`;
+}
+
+/**
+ * `localStorage` behind {@link CopyMemory}. Every call is wrapped: a private
+ * window, cleared site data or a blocked store all read as "nothing remembered",
+ * and a failed write is not worth a broken Copy button.
+ */
+export function localCopyMemory(): CopyMemory {
+  return {
+    get(key) {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    set(key, value) {
+      try {
+        localStorage.setItem(key, value);
+      } catch {
+        /* nothing to do: the question is asked once more next time */
+      }
+    },
+    remove(key) {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        /* same */
+      }
+    },
+  };
+}
+
+/**
+ * Record a copy that got no answer, and say whether it repeats an earlier one.
+ *
+ * The earlier copy has to come from another panel: copying the same tab twice
+ * from one panel is a person making sure the clipboard took it, not a pick. A
+ * repeat clears the memory, because the message it triggers is the answer.
+ */
+export function rememberCopy(
+  store: CopyMemory,
+  key: string,
+  label: string,
+  panelId: string,
+): { repeat: boolean } {
+  let earlier: { label?: unknown; panel?: unknown } | null = null;
+  try {
+    const raw = store.get(key);
+    earlier = raw ? (JSON.parse(raw) as { label?: unknown; panel?: unknown }) : null;
+  } catch {
+    earlier = null;
+  }
+  if (earlier && earlier.label === label && earlier.panel !== panelId) {
+    store.remove(key);
+    return { repeat: true };
+  }
+  store.set(key, JSON.stringify({ label, panel: panelId }));
+  return { repeat: false };
+}
+
+/** An answer was sent, or the voice holds one style now: nothing to remember. */
+export function forgetCopy(store: CopyMemory, key: string): void {
+  store.remove(key);
 }
 
 /**

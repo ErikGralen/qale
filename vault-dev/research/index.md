@@ -1,10 +1,10 @@
 ---
-description: Research — what Qale worked out: the case for a problem, a competitor scan, the product picture
+description: Research — what Qale worked out: the case for a problem, a competitor scan
 ---
 
 # Research
 
-what Qale worked out: the case for a problem, a competitor scan, the product picture
+what Qale worked out: the case for a problem, a competitor scan
 
 * [Competitors](research/competitors.md) — Competitor notes. Insikt (cheap, report-first, weak governance) and Corvid Analytics (enterprise, slow, expensive)
 * [Enterprise Onboarding](research/enterprise-onboarding.md) — Enterprise onboarding: SSO, SCIM, audit and residency gate every deal over ~200 seats

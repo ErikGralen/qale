@@ -363,6 +363,108 @@ test('the container decides the provider, and a container nobody reads is refuse
   assert.equal(filed.length, 1);
 });
 
+test('a drafted ticket carries the labels, priority and components it was given', async () => {
+  const filed: Record<string, unknown>[] = [];
+  const tool = ticketTool(ticketCtx(filed), 'draft_ticket');
+  await out(tool, {
+    container: 'PAY',
+    title: 'Notify staff when a swap is requested',
+    body: 'Source: the Nordkap check-in, 2026-07-14',
+    labels: ['scheduling'],
+    priority: 'High',
+    components: ['Rostering'],
+    sources: ['meetings/nordkap'],
+    rationale: 'Agreed in the check-in.',
+  });
+  const payload = filed[0]!['payload'] as {
+    labels?: string[];
+    priority?: string;
+    components?: string[];
+  };
+  assert.deepEqual(payload.labels, ['scheduling']);
+  assert.equal(payload.priority, 'High');
+  assert.deepEqual(payload.components, ['Rostering']);
+
+  // A draft that set none of them files a card with none of them on it: an
+  // empty label list would still read as a decision the model made.
+  await out(tool, {
+    container: 'PAY',
+    title: 'A plain one',
+    body: 'Source: the Nordkap check-in, 2026-07-14',
+    sources: ['meetings/nordkap'],
+    rationale: 'Agreed in the check-in.',
+  });
+  const plain = filed[1]!['payload'] as Record<string, unknown>;
+  assert.ok(!('labels' in plain), JSON.stringify(plain));
+  assert.ok(!('priority' in plain));
+  assert.ok(!('components' in plain));
+});
+
+/**
+ * Draft the safe way, then ask (docs/learning-how-you-work.md ticket 6). The
+ * question rides on the card the PM is about to approve, so the two things worth
+ * pinning are that it reaches the payload whole, and that a third option is
+ * refused: three answers is a form, and a draft that needs a form has not
+ * decided anything.
+ */
+test('a draft carries the one question it could not answer', async () => {
+  const filed: Record<string, unknown>[] = [];
+  const tool = ticketTool(ticketCtx(filed), 'draft_ticket');
+  const question = {
+    text: 'Henrik has to review this for GDPR. Your other stories mark that with `needs-legal`. Add it?',
+    options: [{ label: 'Yes', labels: ['needs-legal'] }, { label: 'No' }],
+  };
+  await out(tool, {
+    container: 'PAY',
+    title: 'Notify staff when a swap is requested',
+    body: 'Source: the Nordkap check-in, 2026-07-14',
+    labels: ['scheduling'],
+    question,
+    sources: ['meetings/nordkap'],
+    rationale: 'Agreed in the check-in.',
+  });
+  const payload = filed[0]!['payload'] as Record<string, unknown>;
+  assert.deepEqual(payload['question'], question);
+  // The draft itself stays the safe one: the label it asks about is not on it.
+  assert.deepEqual(payload['labels'], ['scheduling']);
+
+  // A draft with nothing to ask files a card with no question on it.
+  await out(tool, {
+    container: 'PAY',
+    title: 'A plain one',
+    body: 'Source: the Nordkap check-in, 2026-07-14',
+    sources: ['meetings/nordkap'],
+    rationale: 'Agreed in the check-in.',
+  });
+  assert.ok(!('question' in (filed[1]!['payload'] as Record<string, unknown>)));
+});
+
+test('three answers is a form, and the draft tools refuse one', async () => {
+  for (const [name, params] of [
+    ['draft_ticket', { container: 'PAY', title: 't', body: 'b' }],
+    ['draft_ticket_comment', { ticket: 'PAY-142', body: 'b' }],
+  ] as const) {
+    const filed: Record<string, unknown>[] = [];
+    const said = await out(ticketTool(ticketCtx(filed), name), {
+      ...params,
+      question: { text: 'Which label?', options: [{ label: 'A' }, { label: 'B' }, { label: 'C' }] },
+      sources: ['meetings/nordkap'],
+      rationale: 'r',
+    });
+    assert.match(said, /^Rejected:/, name);
+    assert.equal(filed.length, 0, `${name} filed a card it should have refused`);
+  }
+});
+
+test('every draft tool says to draft the way that is easiest to undo', () => {
+  const ctx = ticketCtx([]);
+  for (const name of ['draft_ticket', 'draft_ticket_comment', 'draft_page_update']) {
+    const said = ticketTool(ctx, name).description ?? '';
+    assert.match(said, /easiest to undo/, `${name} does not say which way to draft`);
+    assert.match(said, /two options at most/, `${name} does not cap the question`);
+  }
+});
+
 test('a comment takes its provider and its key from the mirror, named either way', async () => {
   for (const ticket of ['PAY-142', 'tickets/PAY-142']) {
     const filed: Record<string, unknown>[] = [];

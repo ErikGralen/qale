@@ -1,4 +1,5 @@
-import type { ActivityDTO } from '@qale/ipc';
+import type { ActivityDTO, LearnedRowDTO } from '@qale/ipc';
+import { learnedSummary } from '@qale/domain';
 
 /**
  * The reading order of the receipt (docs/easier-tickets.md E-9).
@@ -82,4 +83,32 @@ export function groupByDay(rows: ActivityDTO[], now: number = Date.now()): Activ
 export function countToday(rows: ActivityDTO[], now: number = Date.now()): number {
   const since = startOfToday(now);
   return rows.filter((r) => !r.reverted && Date.parse(r.at) >= since).length;
+}
+
+/** The last thing Qale learned about one file, as a row shows it. */
+export interface LearnedNote {
+  /** The sentence itself, with the "Got it." opener taken off. */
+  text: string;
+  /** When it was learned, in unix ms. */
+  at: number;
+}
+
+/**
+ * The last thing learned per file, keyed by its path
+ * (docs/learning-how-you-work.md ticket 13).
+ *
+ * The channel already answers one row per file. This keeps the newest anyway,
+ * so a second row for one file can never make the page show an older line than
+ * the one in the file.
+ */
+export function learnedByPath(rows: LearnedRowDTO[]): Map<string, LearnedNote> {
+  const byPath = new Map<string, LearnedNote>();
+  for (const row of rows) {
+    const at = Date.parse(row.at);
+    if (Number.isNaN(at)) continue;
+    const held = byPath.get(row.path);
+    if (held && held.at >= at) continue;
+    byPath.set(row.path, { text: learnedSummary(row.line), at });
+  }
+  return byPath;
 }

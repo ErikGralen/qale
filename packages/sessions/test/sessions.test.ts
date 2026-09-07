@@ -14,6 +14,7 @@ import {
   VOICE_EXEC,
   HOUSE_RULES,
   HOUSE_RULES_NAME,
+  WANT_LIST_LINES,
   DEFAULT_SKILL_BY_NAME,
   DEFAULT_SKILLS,
   RETIRED_SKILLS,
@@ -343,6 +344,32 @@ test('the house rules are one file, and Your rules is its last heading', () => {
   assert.ok(DEFAULT_SKILLS.some((s) => s.file === 'skills/house-rules/SKILL.md'));
 });
 
+/**
+ * The file Qale reads before it writes into a skill or a voice
+ * (docs/learning-how-you-work.md, ticket 17). It is a rules file like the house
+ * rules: no scenarios, no capabilities, nothing to run. It ships so the PM can
+ * edit it, and it has to parse clean or the Skills page flags a file we wrote.
+ */
+test('the writing-skills skill ships, parses clean, and is a rules file', () => {
+  const seed = DEFAULT_SKILLS.find((s) => s.file === 'skills/writing-skills/SKILL.md');
+  assert.ok(seed, 'skills/writing-skills/SKILL.md is not in DEFAULT_SKILLS');
+  const c = parseRunnable(seed.content, 'writing-skills');
+  assert.deepEqual(c.errors, [], c.errors.join('; '));
+  assert.equal(c.title, 'How Qale writes skills');
+  assert.deepEqual(c.scenarios, [], 'a rules file is not work anyone picks up');
+  assert.deepEqual(c.can, [], 'a rules file performs nothing');
+  for (const heading of [
+    '## What goes where',
+    '## The sections of a skill',
+    '## The first line',
+    '## Size',
+  ]) {
+    assert.ok(c.body.includes(heading), `writing-skills has no ${heading} section`);
+  }
+  // Resolvable by name too, so a workspace that lost the file still has it.
+  assert.equal(DEFAULT_SKILL_BY_NAME['writing-skills'], seed.content);
+});
+
 test('the always-on files it replaced are gone from the pack', () => {
   const files = DEFAULT_SKILLS.map((s) => s.file);
   for (const name of ['_language', '_writing', '_filing-rules', '_your-rules']) {
@@ -402,11 +429,12 @@ test('scenarios: a list when the file writes one, empty when it does not', () =>
  * and nothing fails, which is why an unchecked rule does not hold.
  */
 test('every shipped skill the model may pick up says when to pick it up', () => {
-  // Every skill is pickable now, so the one exception is named rather than read
-  // off a key: the house rules are already in the prompt. The voices are not in
-  // this list at all any more; they live in `voices/` (SK-6), where nobody picks
-  // them up as work.
-  const exempt = ['house-rules'];
+  // Every skill is pickable now, so the exceptions are named rather than read
+  // off a key: the house rules are already in the prompt, and writing-skills is
+  // a rules file the model reads before it writes a rule, not work it picks up.
+  // The voices are not in this list at all any more; they live in `voices/`
+  // (SK-6), where nobody picks them up as work.
+  const exempt = ['house-rules', 'writing-skills'];
   const pickable = DEFAULT_SKILLS.filter(
     ({ file }) => !exempt.some((name) => file === `skills/${name}/SKILL.md`),
   );
@@ -772,12 +800,14 @@ test('the interview takes a topic, and ships under a name that is not the produc
   assert.ok(c.scenarios.some((s) => /team/.test(s)));
   // A topic comes in with the request, and the product is one of them.
   assert.match(c.body, /## Example topic: the product/);
-  // What it learns lands in the memory, on the three product pages in
-  // `research/` (docs/memory-types.md, MT-3). Nothing points at `understanding/`.
+  // What it learns lands in the memory, on the three about pages in `about/`
+  // (docs/learning-how-you-work.md, ticket 16). Nothing points at the two
+  // folders they used to live in.
   for (const area of ['product', 'technical', 'organization']) {
-    assert.ok(c.body.includes(`research/${area}.md`), `${area} is not a landing place`);
+    assert.ok(c.body.includes(`about/${area}.md`), `${area} is not a landing place`);
   }
   assert.ok(!c.body.includes('understanding/'));
+  assert.ok(!c.body.includes('research/product.md'));
   // CM-4: the interview asks for the notes they already wrote, and says the word
   // folder, because nobody drops one unless told they can.
   assert.match(c.body, /Do you keep notes from before\? Drop the folder/);
@@ -814,11 +844,16 @@ test('the interview knows how to open on what a connection just read', () => {
   // thing that stops it interviewing them a second time.
   assert.match(c.body, /When the kickoff says the picture is already there/);
   assert.match(c.body, /Do not run the interview/);
-  // Conventions are written up when the connection is made (docs/conventions.md
-  // CV-6), from the same read. The old beat three asked about them one rule at a
-  // time; it is cut, and the file has to say so or the model asks anyway.
+  // How they write is written down when the connection is made, from their own
+  // tickets and pages (docs/learning-how-you-work.md, tickets 3 and 4). The old
+  // beat three asked about it one rule at a time; it is cut, and the file has to
+  // say so or the model asks anyway. One question per system is the ceiling,
+  // and an example is never asked for.
   assert.ok(!c.body.includes('Beat three'), 'the conventions beat is cut (E-25)');
-  assert.match(c.body, /Never ask how they use Jira or Confluence one rule at a time/);
+  assert.match(c.body, /Never ask how they use Jira or Confluence one rule at a\s+time/);
+  assert.match(c.body, /at most one question per system/);
+  assert.match(c.body, /never ask them to paste an example/);
+  assert.match(c.body, /Open the debrief with the\s+link to that file/);
   assert.ok(
     c.body.includes('which they confirmed, lands verified'),
     'the confirmed-hypothesis marking rule is gone',
@@ -830,4 +865,67 @@ test('the interview knows how to open on what a connection just read', () => {
   assert.match(c.body, /Never mirror a wiki page/);
   // Tracking writes sync state, so the file has to claim it by name.
   assert.deepEqual(c.can, ['track-external']);
+});
+
+/**
+ * The "What you want from Qale" list (docs/learning-how-you-work.md ticket 8).
+ * The section is built from `WANT_LIST_LINES`, so the file and the ids the
+ * telemetry reports cannot drift. It sits right before Your rules, which stays
+ * last: `propose_instruction` appends rules to the end of the file and edits
+ * this section in place.
+ */
+test('the house rules carry the "What you want from Qale" list, built from its lines', () => {
+  const c = parseRunnable(HOUSE_RULES, HOUSE_RULES_NAME);
+  const headings = c.body.split('\n').filter((line) => /^#{1,6}\s/.test(line));
+  assert.equal(headings.at(-2), '## What you want from Qale');
+  assert.equal(headings.at(-1), '## Your rules');
+
+  const section = c.body.split('## What you want from Qale')[1]!.split('## Your rules')[0]!;
+  assert.match(section, /Qale reads this before every job/);
+  assert.match(section, /Keep it to about ten lines\./);
+  const bullets = section
+    .split('\n')
+    .filter((line) => line.startsWith('- '))
+    .map((line) => line.slice(2));
+  assert.deepEqual(
+    bullets,
+    WANT_LIST_LINES.map((line) => line.text),
+  );
+
+  // Six lines, one per pain point, each with a stable tag-shaped id.
+  assert.equal(WANT_LIST_LINES.length, 6);
+  const ids = WANT_LIST_LINES.map((line) => line.id);
+  assert.deepEqual([...new Set(ids)], ids);
+  for (const id of ids) assert.match(id, /^[a-z][a-z0-9-]*$/);
+  assert.ok(ids.includes('who-is-waiting'));
+});
+
+/**
+ * The voices ship with no pick yet (docs/learning-how-you-work.md, ticket 10).
+ * The first weekly update reads the file to know that: a first line that says
+ * so, and three `###` styles under it. A voice that lost one of the two would
+ * skip the three-style panel, and the PM would never be asked.
+ */
+test('each voice ships with the no-pick line and three named styles', () => {
+  for (const { file, content } of DEFAULT_VOICES) {
+    const body = content.split('---').slice(2).join('---');
+    const lines = body
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    // The title, then the first line the file says about itself.
+    assert.match(lines[0] ?? '', /^# /, `${file} does not open with its title`);
+    assert.match(
+      lines[1] ?? '',
+      /^I do not know how you want .* updates to read yet\. Until you pick, the first update comes in these three styles:$/,
+      `${file} does not open with the no-pick line`,
+    );
+    const styles = lines.filter((l) => l.startsWith('### '));
+    assert.equal(styles.length, 3, `${file} lists ${styles.length} styles, not three`);
+    assert.ok(lines.includes('## How it sounds'), `${file} lost its tone section`);
+    assert.ok(
+      body.includes('delete two styles and keep one'),
+      `${file} does not say the PM can pick by editing the file`,
+    );
+  }
 });

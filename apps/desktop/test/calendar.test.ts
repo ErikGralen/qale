@@ -7,6 +7,8 @@ import {
   meetingOutcome,
   meetingStanding,
   promiseState,
+  sidebarMeetingMeta,
+  upcomingSidebarMeetings,
 } from '../src/renderer/src/lib/meeting-read.js';
 
 /** Local-clock instants: the calendar reads the PO's day, not UTC. */
@@ -177,6 +179,49 @@ test('promise state names who it waits on', () => {
   assert.equal(promiseState(note('todo', 'd', { lifecycle: 'dropped' })), 'dropped');
 });
 
+// ---------------------------------------------------------------------------
+// The sidebar's Meetings row (docs/sidebar-ia.md, SB-6)
+// ---------------------------------------------------------------------------
+
+test('sidebar meetings: soonest first, capped at three, within the day only', () => {
+  const notes = [
+    meeting('far', { date: '2026-07-30', time: '09:00' }), // 2 days out
+    meeting('third', { date: '2026-07-29', time: '08:00' }),
+    meeting('first', { date: '2026-07-28', time: '10:00' }),
+    meeting('second', { date: '2026-07-28', time: '15:00' }),
+    meeting('fourth', { date: '2026-07-29', time: '09:00' }),
+  ];
+  assert.deepEqual(
+    upcomingSidebarMeetings(notes, [], NOW).map((n) => n.title),
+    ['first', 'second', 'third'],
+  );
+});
+
+test('sidebar meetings: a cancelled one never shows, even inside the window', () => {
+  const n = meeting('offsite', { date: '2026-07-28', time: '10:00', eventStatus: 'cancelled' });
+  assert.deepEqual(upcomingSidebarMeetings([n], [], NOW), []);
+});
+
+test('sidebar meetings: a dismissed occurrence drops out until it is undone', () => {
+  const n = meeting('standup', { date: '2026-07-28', time: '10:00' });
+  assert.deepEqual(upcomingSidebarMeetings([n], [n.path], NOW), []);
+  assert.deepEqual(upcomingSidebarMeetings([n], [], NOW), [n]);
+});
+
+test('sidebar meetings: one already running has left the row, not just started it', () => {
+  const live = meeting('now', { date: '2026-07-28', time: '09:00', durationMin: 60 });
+  assert.deepEqual(upcomingSidebarMeetings([live], [], NOW), []);
+});
+
+test('sidebar meeting meta: today keeps just the time, tomorrow names the day', () => {
+  const today = meeting('checkin', { date: '2026-07-28', time: '14:00' });
+  const tomorrow = meeting('qbr', { date: '2026-07-29', time: '09:00' });
+  const live = meeting('now', { date: '2026-07-28', time: '09:00', durationMin: 60 });
+  assert.equal(sidebarMeetingMeta(today, NOW), '14:00');
+  assert.equal(sidebarMeetingMeta(tomorrow, NOW), 'tomorrow, 09:00');
+  assert.equal(sidebarMeetingMeta(live, NOW), 'now');
+});
+
 test('duration reads as a person would say it', () => {
   assert.equal(durationText(30), '30 min');
   assert.equal(durationText(60), '1 hour');
@@ -185,4 +230,3 @@ test('duration reads as a person would say it', () => {
   assert.equal(durationText(undefined), null);
   assert.equal(durationText(0), null);
 });
-

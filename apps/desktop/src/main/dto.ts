@@ -287,6 +287,13 @@ export function proposalToDTO(
       // decision carry a `targetPath`. Read it the way the renderer does.
       targetPath: rec.targetPath ?? stringField(fields, 'path'),
       frontmatter: asRecord(fields['frontmatter']),
+      // The house rules hold two sections a card can touch, and the effect
+      // line names which: the levers say it, the path alone does not.
+      append: stringField(fields, 'append'),
+      body: stringField(fields, 'body'),
+      patch: Array.isArray(fields['patch'])
+        ? (fields['patch'] as { search: string; replace: string }[])
+        : undefined,
     });
   }
   return {

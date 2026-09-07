@@ -107,6 +107,33 @@ test('mirrors are raw layer: body immutable, only re-sync fields may change', ()
   assert.equal(checkFrontmatterMutation('ticket', prev, retarget).allowed, false);
 });
 
+test('a ticket mirror carries the fields the model cannot otherwise see', () => {
+  const r = parseFrontmatter({
+    ...TICKET,
+    labels: ['scheduling', 'needs-legal'],
+    issue_type: 'Story',
+    priority: 'High',
+    components: ['Rostering'],
+    reporter: 'Åsa Lindqvist',
+  });
+  assert.equal(r.ok, true, r.error);
+  const fm = r.data as Record<string, unknown>;
+  assert.deepEqual(fm['labels'], ['scheduling', 'needs-legal']);
+  assert.equal(fm['issue_type'], 'Story');
+  assert.equal(fm['priority'], 'High');
+  assert.deepEqual(fm['components'], ['Rostering']);
+  assert.equal(fm['reporter'], 'Åsa Lindqvist');
+
+  // A single label written without the dash is the one label it plainly means.
+  const loose = parseFrontmatter({ ...TICKET, labels: 'scheduling' });
+  assert.deepEqual((loose.data as Record<string, unknown>)['labels'], ['scheduling']);
+
+  // A re-sync may update them: a label added upstream must reach the mirror.
+  const prev = r.data as Frontmatter;
+  const next = { ...prev, labels: ['scheduling'], priority: 'Medium' } as Frontmatter;
+  assert.equal(checkFrontmatterMutation('ticket', prev, next).allowed, true);
+});
+
 // ---------------------------------------------------------------------------
 // Mirror paths: one folder per provider (PD-10)
 // ---------------------------------------------------------------------------
@@ -205,6 +232,32 @@ test('outbound: new-shape payloads parse and are a fixpoint of the transform', (
   assert.equal(once.system, 'jira'); // mirror filled in
   const twice = zOutboundPayload.parse(once);
   assert.deepEqual(twice, once);
+});
+
+test('outbound: a ticket draft may carry labels, priority and components, and may not', () => {
+  const base = {
+    provider: 'jira',
+    action: 'create_ticket',
+    container: 'SCH',
+    title: 'Notify staff when a swap is requested',
+    body: 'Managers cannot see a swap request today.',
+    rationale: 'agreed in the steering meeting',
+  };
+  const r = zOutboundPayload.safeParse({
+    ...base,
+    labels: ['scheduling'],
+    priority: 'High',
+    components: ['Rostering'],
+  });
+  assert.equal(r.success, true, r.success ? '' : r.error.message);
+  assert.deepEqual(r.data.labels, ['scheduling']);
+  assert.equal(r.data.priority, 'High');
+  assert.deepEqual(r.data.components, ['Rostering']);
+
+  // Every card filed before the fields existed still parses.
+  const bare = zOutboundPayload.safeParse(base);
+  assert.equal(bare.success, true);
+  assert.equal(bare.data.labels, undefined);
 });
 
 test('outbound: unknown actions and providers are rejected, not passed through', () => {

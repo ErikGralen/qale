@@ -37,6 +37,7 @@ function capitalize(word: string): string {
 function shelfLabelForType(type: NoteType): string {
   if (type === 'person') return 'People';
   if (type === 'research') return 'Research';
+  if (type === 'about') return 'About';
   if (isMirrorType(type)) return capitalize(dirForType(type));
   return `${noteTypeLabel(type)}s`;
 }

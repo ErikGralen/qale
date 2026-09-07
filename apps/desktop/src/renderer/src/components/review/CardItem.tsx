@@ -21,6 +21,7 @@ import {
   normalizeLinkTarget,
   rsvpAnswer,
   ticketFieldRows,
+  type NewPageFacts,
 } from '@qale/domain';
 import { useApp } from '../../state/app-state';
 import { invoke } from '../../lib/ipc';
@@ -41,6 +42,7 @@ import {
   bareRef,
   cardFacts,
   cardHeadline,
+  cardLeadIn,
   cardTitle,
   iconForRef,
   sourceRefOf,
@@ -209,10 +211,21 @@ function RowControls({
  * glance: a page-long redline inside one buries the eight rows under it. Nothing
  * is hidden: the fade says there is more, and the button opens all of it.
  */
-function Clamped({ children }: { children: ReactNode }) {
+function Clamped({
+  children,
+  open,
+}: {
+  children: ReactNode;
+  // The chevron is the card's collapse control, so a preview opened with Show
+  // all folds with it. Opening the card again does not unfold the preview.
+  open?: boolean;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [all, setAll] = useState(false);
   const [clipped, setClipped] = useState(false);
+  useEffect(() => {
+    if (!open) setAll(false);
+  }, [open]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || all) return;
@@ -306,6 +319,9 @@ export function CardItem({
   const known = useNoteName(target || null);
   const title = cardTitle(proposal, known?.title);
   const facts = useMemo(() => cardFacts(proposal), [proposal]);
+  // The act and the kind, in two words over the title: "New to-do", "Update
+  // document". The title alone read as the act.
+  const leadIn = useMemo(() => cardLeadIn(proposal), [proposal]);
   // What approving DOES, and where it lands. Composed in main from the payload,
   // never written by the agent, so every card of a kind says the same sentence.
   const effect = proposal.effect;
@@ -457,7 +473,12 @@ export function CardItem({
             (outbound ? (
               <OutboundTargetLine payload={outbound} onOpen={onOpen} />
             ) : (
-              <TargetTitle title={title} path={known?.path ?? null} onOpen={onOpen} />
+              <TargetTitle
+                leadIn={leadIn}
+                title={title}
+                path={known?.path ?? null}
+                onOpen={onOpen}
+              />
             ))}
           {/* When a calendar card lands. This is the fact being approved: the
               line above named the event and the system and never once said
@@ -482,7 +503,7 @@ export function CardItem({
               <OutboundDetail payload={outbound} onOpen={onOpen} />
             ) : needsPreview ? (
               preview ? (
-                <Clamped>
+                <Clamped open={open}>
                   <ChangePreview
                     kind={proposal.kind}
                     preview={preview}
@@ -695,22 +716,30 @@ export function CardItem({
 }
 
 /**
- * The thing that changes, by its own name. It opens like every other reference
- * in the app, including ⌘ and middle click into a background tab. A page that
- * does not exist yet has nothing to open, so it is plain text.
+ * What the row is about, in two lines: a small lead-in that says the act and
+ * the kind ("New to-do", "Update document"), then the thing that changes, by its
+ * own name. The name opens like every other reference in the app, including ⌘
+ * and middle click into a background tab. A page that does not exist yet has
+ * nothing to open, so it is plain text.
+ *
+ * The lead-in is there because the name alone read as the act: "File the
+ * missing story under SCH-231" looked like approving the filing.
  */
 function TargetTitle({
+  leadIn,
   title,
   path,
   onOpen,
 }: {
+  leadIn: string;
   title: string;
   path: string | null;
   onOpen: (path: string, opts?: NavOpts) => void;
 }) {
   const line = 'block text-sm leading-snug font-medium text-balance break-words text-foreground';
-  if (!path) return <span className={line}>{title}</span>;
-  return (
+  const name = !path ? (
+    <span className={line}>{title}</span>
+  ) : (
     <button
       className={`${line} text-left underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none`}
       onClick={(e) => {
@@ -727,40 +756,72 @@ function TargetTitle({
       {title}
     </button>
   );
+  return (
+    <>
+      <span className="block text-xs leading-snug text-muted-foreground">{leadIn}</span>
+      {name}
+    </>
+  );
 }
 
 /**
- * The change a new page makes, in one line: who owes the to-do and when it is
- * due, or when the meeting was and how many sat in it, then the first line of
- * what the page says. Two lines at most, because the page is one click away.
+ * The change a new page makes, under its title: the facts a person checks (who
+ * owes the to-do and when it is due, or when the meeting was and how many sat
+ * in it) on one dotted line, then the first line of what the page says. A
+ * to-do's line is what someone said, and the file writes it as a blockquote, so
+ * the row draws it as one: the same left rule the diff gives a quoted line. Two
+ * lines at most, because the page is one click away.
+ *
+ * The owner keeps their `[[people/…]]` ref, so `renderInline` draws them as the
+ * same link a person is everywhere else. A bare name with no page stays text.
  *
  * The fallback is the composed headline, for the rare card that carries no facts
  * at all. A row that says nothing about its change is the fault this replaced.
  */
 function FactsLine({
-  facts,
+  facts: { facts, line, quoted },
   fallback,
   onOpen,
 }: {
-  facts: string[];
+  facts: NewPageFacts;
   fallback: string;
   onOpen: (path: string) => void;
 }) {
-  if (facts.length === 0)
+  if (facts.length === 0 && !line)
     return <p className="line-clamp-2 text-sm text-muted-foreground">{fallback}</p>;
   return (
-    <p className="line-clamp-2 text-sm text-muted-foreground">
-      {facts.map((part, i) => (
-        <span key={i}>
-          {i > 0 && (
-            <span className="mx-1.5 text-muted-foreground/50" aria-hidden>
-              ·
+    <>
+      {facts.length > 0 && (
+        <p className="text-sm text-muted-foreground">
+          {facts.map((part, i) => (
+            <span key={i}>
+              {i > 0 && (
+                <span className="mx-1.5 text-muted-foreground/50" aria-hidden>
+                  ·
+                </span>
+              )}
+              {renderInline(part, onOpen, `fact-${i}`)}
             </span>
-          )}
-          {renderInline(part, onOpen, `fact-${i}`)}
-        </span>
-      ))}
-    </p>
+          ))}
+        </p>
+      )}
+      {line &&
+        (quoted ? (
+          <blockquote className="relative mt-1 pl-3">
+            <span
+              className="absolute top-0 bottom-0 left-0 w-0.5 rounded bg-brand/30"
+              aria-hidden
+            />
+            <p className="line-clamp-2 text-sm text-foreground/70 italic">
+              {renderInline(line, onOpen, 'line')}
+            </p>
+          </blockquote>
+        ) : (
+          <p className="line-clamp-2 text-sm text-muted-foreground">
+            {renderInline(line, onOpen, 'line')}
+          </p>
+        ))}
+    </>
   );
 }
 
@@ -936,11 +997,13 @@ function useOutboundRefMeta(ob: OutboundPayloadDTO | null): ExternalRefMetaDTO |
 }
 
 /**
- * The target line under the outbound banner — what happens, to what, in the
- * PO's words, with the touched item as a live chip that names its own kind:
- * "Comment on the Jira ticket [PAY-142 · Blocked] — SAML SSO (epic)".
- * Every branch names the system, because a card with no chip (a message, a
- * calendar event) would otherwise never say where it lands.
+ * The target line under the outbound banner: what happens, to what, in the
+ * PO's words, with the touched item as a live chip. A ticket chip carries its
+ * key, its status and its kind, so the comment line is just "Comment on
+ * [PAY-142 · Blocked]": no system, no ticket name. A page is addressed by an
+ * opaque id, so its title is what identifies it and stays on the line. Every
+ * branch without a chip (a new ticket, a calendar event) names the system,
+ * because nothing else on the card says where it lands.
  */
 function OutboundTargetLine({
   payload,
@@ -949,7 +1012,6 @@ function OutboundTargetLine({
   payload: OutboundPayloadDTO;
   onOpen: (p: string) => void;
 }) {
-  const meta = useOutboundRefMeta(payload);
   const ref = outboundRef(payload);
   const system = providerName(payload);
   const line =
@@ -1002,11 +1064,7 @@ function OutboundTargetLine({
 
   return (
     <div className={line}>
-      <span className={quiet}>
-        {payload.action === 'comment_ticket'
-          ? `Comment on the${system ? ` ${system}` : ''} ticket`
-          : 'Update'}
-      </span>
+      <span className={quiet}>{payload.action === 'comment_ticket' ? 'Comment on' : 'Update'}</span>
       {/* A page is addressed by an opaque id, so the draft's own title is the
           fallback label — an unsynced connection must never leave the PO
           approving a write to "910231". A ticket key needs no such rescue. */}
@@ -1016,20 +1074,8 @@ function OutboundTargetLine({
         onOpen={onOpen}
         kind={payload.action === 'update_page' ? `${system ?? 'Wiki'} page` : null}
       />
-      {meta?.kind === 'ticket' && ticketName(meta, ref) && (
-        <span className={quiet}>: {ticketName(meta, ref)}</span>
-      )}
     </div>
   );
-}
-
-/** A ticket's name without the key the chip beside it already carries: the
- *  mirror note is titled "SCH-118 · Payroll export (epic)", and the line read
- *  "SCH-118: SCH-118 · Payroll export (epic)". */
-function ticketName(meta: ExternalRefMetaDTO, ref: string): string {
-  const title = meta.title ?? '';
-  const lead = new RegExp(`^${ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[·:-]\\s*`);
-  return title.replace(lead, '').trim();
 }
 
 /**
@@ -1121,8 +1167,10 @@ function EventWhenLine({ payload }: { payload: OutboundPayloadDTO }) {
 /**
  * Outbound detail: the body exactly as it will be sent (rendered, never raw
  * syntax), a redline against the page's current text for `update_page`, and the
- * drafted-against-stale banner when the target moved after this was written —
- * one extra glance, never a blocked send.
+ * drafted-against-stale banner when the target moved after this was written:
+ * one extra glance, never a blocked send. A ticket comment sits on the quiet
+ * surface the draft question uses, so it reads as a comment on the ticket and
+ * not as a page of its own.
  */
 function OutboundDetail({
   payload,
@@ -1208,10 +1256,14 @@ function OutboundDetail({
         </div>
       )}
       {/* No caption over the box. The head already says "Update <page>" or
-          "Comment on the ticket", and a redline is unmistakably a redline. */}
+          "Comment on <ticket>", and a redline is unmistakably a redline. */}
       <PreviewSurface>
         {redline && diffPair ? (
           <RenderedDiff before={diffPair.before} after={diffPair.after} onOpen={onOpen} />
+        ) : payload.action === 'comment_ticket' ? (
+          <div className="rounded-md bg-muted/40 px-3 py-2">
+            <Markdown content={payload.body} onOpenNote={onOpen} />
+          </div>
         ) : (
           <Markdown content={payload.body} onOpenNote={onOpen} />
         )}

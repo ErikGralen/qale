@@ -1058,7 +1058,12 @@ function SessionThread({
       {/* `relative` so the catch-up button can sit over the foot of the
           transcript rather than taking a row from the composer. */}
       <div className="relative min-h-0 flex-1">
-        <div ref={scrollRef} className="h-full overflow-y-auto px-6">
+        {/* `relative` so this box is the containing block for anything absolute
+            inside the transcript. Without it, an `sr-only` label in a card (it
+            is `position: absolute`) hangs off the wrapper instead, escapes this
+            box, and adds its distance down the transcript to the height of the
+            whole view — which is where the second scrollbar came from. */}
+        <div ref={scrollRef} className="relative h-full overflow-y-auto px-6">
           <div ref={contentRef} className="mx-auto flex max-w-2xl flex-col gap-4 py-4">
             {messages.length === 0 && !busy && (
               <p className="mt-16 text-center text-sm text-muted-foreground">{EMPTY_HINT}</p>

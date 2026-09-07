@@ -139,7 +139,22 @@ test('a new to-do says who owes it, when it is due, and what it is', () => {
       },
       body: "> I'll re-scope SCH-240 properly.\n> — [[meetings/2026-09-07-steering]]\n",
     }),
-    ['Rebecca Holm', 'due 24 Sep', "I'll re-scope SCH-240 properly."],
+    {
+      facts: ['Waiting on [[people/rebecca-holm]]', 'Due 24 Sep'],
+      line: "I'll re-scope SCH-240 properly.",
+      quoted: true,
+    },
+  );
+});
+
+test('a bare-name owner stays a name, and a plain to-do body is not a quote', () => {
+  assert.deepEqual(
+    newPageFacts({
+      kind: 'note',
+      frontmatter: { type: 'todo', title: 'Confirm the date', owner: 'Tom Devlin' },
+      body: 'Tom confirms the SCIM date.',
+    }),
+    { facts: ['Waiting on Tom Devlin'], line: 'Tom confirms the SCIM date.', quoted: false },
   );
 });
 
@@ -150,7 +165,7 @@ test('the PM’s own to-do names no owner, and a missing date drops a part', () 
       frontmatter: { type: 'todo', title: 'Answer Marcus' },
       body: 'Say "before September" and nothing tighter.',
     }),
-    ['Say "before September" and nothing tighter.'],
+    { facts: [], line: 'Say "before September" and nothing tighter.', quoted: false },
   );
 });
 
@@ -166,14 +181,22 @@ test('a new meeting page says when it was and how many sat in it', () => {
       },
       body: '## Summary\n\nThe H2 order flipped.',
     }),
-    ['7 Sep', '3 people', 'The H2 order flipped.'],
+    { facts: ['7 Sep', '3 people'], line: 'The H2 order flipped.', quoted: false },
   );
 });
 
-test('a page with nothing but prose says its first line', () => {
+test('a page with nothing but prose says its first line, never as a quote', () => {
   assert.deepEqual(
     newPageFacts({ kind: 'decision', frontmatter: { type: 'decision' }, body: 'Swaps ship first.' }),
-    ['Swaps ship first.'],
+    { facts: [], line: 'Swaps ship first.', quoted: false },
   );
-  assert.deepEqual(newPageFacts({ kind: 'note', frontmatter: {}, body: '' }), []);
+  assert.deepEqual(
+    newPageFacts({ kind: 'decision', frontmatter: { type: 'decision' }, body: '> Swaps first.' }),
+    { facts: [], line: 'Swaps first.', quoted: false },
+  );
+  assert.deepEqual(newPageFacts({ kind: 'note', frontmatter: {}, body: '' }), {
+    facts: [],
+    line: '',
+    quoted: false,
+  });
 });

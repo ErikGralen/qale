@@ -170,11 +170,11 @@ test('a new to-do says who owes it and when, before it says anything else', () =
     } as ProposalDTO['payload'],
   });
   assert.equal(cardTitle(todo), 'Re-scope SCH-240 and give a real estimate');
-  assert.deepEqual(cardFacts(todo), [
-    'Rebecca Holm',
-    'due 24 Sep',
-    "I'll have a real estimate by next Friday.",
-  ]);
+  assert.deepEqual(cardFacts(todo), {
+    facts: ['Waiting on [[people/rebecca-holm]]', 'Due 24 Sep'],
+    line: "I'll have a real estimate by next Friday.",
+    quoted: true,
+  });
 });
 
 /**

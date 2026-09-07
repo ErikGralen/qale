@@ -10,6 +10,7 @@
  * reads and a person edits.
  */
 import type { IncomingHttpHeaders, ServerResponse } from 'node:http';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   recordingKey,
@@ -158,7 +159,11 @@ export class Recorder {
 
   append(request: RecordedRequest, response: WireResponse): string {
     const turnIndex = assistantCount(request.messages);
-    const home = this.home(request, turnIndex);
+    // A first turn has one user message to compare, and two conversations that
+    // open the same way (two drops both start "1 source just landed") would
+    // agree on it. So a first turn never joins a file: it starts one, and the
+    // conversations part ways from the first tool result on.
+    const home = turnIndex === 0 ? null : this.home(request, turnIndex);
     if (home) {
       home.recording.turns[turnIndex] = { request, response };
       // A redone turn ends the old branch: whatever followed it is stale.
@@ -171,12 +176,26 @@ export class Recorder {
     const asked = userSide(request.messages);
     const key = recordingKey(asked[0]?.text ?? 'turn');
     const loaded: LoadedRecording = {
-      file: join(this.dir, `${key}.json`),
+      file: this.freshFile(key),
       recording: { version: 1, key, turns: [{ request, response }] },
     };
     this.written.push(loaded);
     saveRecording(loaded.file, loaded.recording);
     return loaded.file;
+  }
+
+  /**
+   * A path no recording holds yet. Two conversations with the same opening line
+   * share a key, and the second must not overwrite the first, on disk or in
+   * this run: it gets `-2`, then `-3`.
+   */
+  private freshFile(key: string): string {
+    const taken = new Set(this.written.map((w) => w.file));
+    let candidate = join(this.dir, `${key}.json`);
+    for (let n = 2; taken.has(candidate) || existsSync(candidate); n++) {
+      candidate = join(this.dir, `${key}-${n}.json`);
+    }
+    return candidate;
   }
 
   /**

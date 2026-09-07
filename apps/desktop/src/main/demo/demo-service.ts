@@ -259,16 +259,6 @@ export class DemoService {
     // Any non-empty key gets past the "no key, nothing can run" gate; the replay
     // server never looks at it.
     await settings.setKey('anthropic', 'demo');
-    await settings.setConnection(ATLASSIAN_PROVIDER, ATLASSIAN_PROVIDER, {
-      siteUrl: DEMO_SITE_URL,
-      email: DEMO_ACCOUNT_EMAIL,
-      apiToken: 'demo',
-    });
-    // The Google grant, written rather than granted: the demo build bakes no
-    // OAuth client, so `connect()` would refuse before a browser ever opened.
-    // The fake answers the token refresh this stands in for, and the scopes say
-    // read and write, so an approved calendar card goes through.
-    await settings.setGoogle('demo-refresh-token', DEMO_ACCOUNT_EMAIL, CALENDAR_RW_SCOPES);
     // Finished, on the last screen, consent off. Telemetry stays off in a demo
     // build whatever this says (see telemetry.ts), but the switch should read
     // the way the build behaves.
@@ -335,7 +325,11 @@ export class DemoService {
       console.error('[qale] demo: could not reset the fake Google Calendar:', err);
     }
     this.replay?.reset();
-    // 8. The files he drags in, where he can find them.
+    // 8. The connections point at the fakes again. A dev profile that was used
+    //    against a real site before keeps its key, but the site it names is
+    //    not one the fake serves, and every card would go to the real one.
+    await this.connectFakes();
+    // 9. The files he drags in, where he can find them.
     this.copySamples(true);
 
     if (reopen) {
@@ -346,6 +340,26 @@ export class DemoService {
       }
       this.opts.onReset();
     }
+  }
+
+  /**
+   * The Atlassian connection and the Google grant the fakes answer. Written on
+   * first launch and on every Reset, so a profile that once pointed at a real
+   * site is back on the fakes. The key is left alone: record mode needs the
+   * real one, and `firstLaunch()` sets the placeholder only when there is none.
+   */
+  private async connectFakes(): Promise<void> {
+    const settings = this.opts.settings;
+    await settings.setConnection(ATLASSIAN_PROVIDER, ATLASSIAN_PROVIDER, {
+      siteUrl: DEMO_SITE_URL,
+      email: DEMO_ACCOUNT_EMAIL,
+      apiToken: 'demo',
+    });
+    // The Google grant, written rather than granted: the demo build bakes no
+    // OAuth client, so `connect()` would refuse before a browser ever opened.
+    // The fake answers the token refresh this stands in for, and the scopes say
+    // read and write, so an approved calendar card goes through.
+    await settings.setGoogle('demo-refresh-token', DEMO_ACCOUNT_EMAIL, CALENDAR_RW_SCOPES);
   }
 
   /** Put the demo files on the Desktop and open the folder. */

@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "key": "first-message-when-can-we-deliver-shift-swaps-to-caf-nord-an-87a016",
+  "turns": [
+    {
+      "request": {
+        "system": "You name conversations in a product manager's workspace, from the first thing said in one.\nReply with ONLY the name. No quotes, no final period, no preamble, no explanation.\nTwo to five words, sentence case, in the words the person used.\nName the thing itself, not the shape of it: \"Nordkap SSO renewal\", not \"Customer question\".\nKeep the names of people, products, customers and pages exactly as they are spelled.",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "First message:\nWhen can we deliver shift swaps to Café Nord, and what have they already been told?",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              }
+            ]
+          }
+        ],
+        "model": "claude-haiku-4-5"
+      },
+      "response": {
+        "model": "claude-haiku-4-5-20251001",
+        "id": "msg_011CepaJrd9HmFYatwHChBzj",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Café Nord shift swaps delivery"
+          }
+        ],
+        "stop_reason": "end_turn",
+        "stop_sequence": null,
+        "stop_details": null,
+        "usage": {
+          "input_tokens": 132,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "output_tokens": 10,
+          "service_tier": "standard",
+          "inference_geo": "not_available"
+        }
+      }
+    }
+  ]
+}

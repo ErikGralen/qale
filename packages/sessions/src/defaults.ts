@@ -823,7 +823,8 @@ Where each kind of note lives. The librarian follows these when proposing paths 
 - **decisions/**: the append-only decision spine, \`YYYY-MM-DD-<slug>.md\`. Never edit a decision's
   body. To change one, supersede it: a new file with \`supersedes\`, and the old file flipped to
   \`standing: superseded\`.
-- **insights/**: cited claims, \`<slug>.md\`. \`evidence[]\` is required, plus a \`confidence\` level.
+- **insights/**: cited claims, \`<slug>.md\`. \`evidence[]\` is required, plus a \`confidence\` level. \`tags\` names the theme
+  the claim belongs to, so a tag listing finds every claim behind a theme.
   Link each to the customer it concerns, and to the research page for its problem when one exists.
 - **customers/**: one hub per account: commitments, signals, and the ledger of what they were
   told. Carries \`relationship\` (prospect / active / churned).

@@ -52,7 +52,8 @@ session to finish before the next step. A transcript session takes minutes; that
 
 **Flow 1. Drop the steering transcript.**
 
-Drag `steering-h2-priorities.vtt` from the Desktop folder onto the app window. Wait for the arrival session to
+Drag `steering-h2-priorities.vtt` from the Desktop folder `Qale demo files` onto the app window. Not the copy in
+the repo: only the Desktop copy is dated to today. Wait for the arrival session to
 finish. You should see, roughly:
 
 - a meeting page for the steering on the day before today
@@ -75,6 +76,9 @@ In Home, Ask: `When can we deliver shift swaps to Café Nord, and what have they
 
 Then: `Draft a reply to Marcus.`
 
+In the draft panel, open the **What you can say** tab and click **Log it to Marcus**. That click sends text on
+your behalf and is part of the recording, so the presenter does the same.
+
 The answer should cite SCH-231's state, the decision you just approved, Rebecca's re-estimate todo, and Marcus's
 QBR promise. It should say there is no target date in Jira.
 
@@ -82,14 +86,15 @@ QBR promise. It should say there is no target date in Jira.
 
 Open `support-thread-brunos.md` from the Desktop folder, copy the whole body, paste it into Home's bar. Wait for the
 session. Expect an insight on shift swaps with Bruno's as the customer, an update to the Bruno's page, a comment on
-SCH-231, and a todo for Ulrika. Approve all, then the outbound comment.
+SCH-231, and a todo for Ulrika. Check the insight card carries the tag `shift-swaps`; Flow 4 finds Bruno's through
+it. Approve all, then the outbound comment. Do not click **Help me handle this** on the new todo.
 
 **Flow 4. Who needs to know.**
 
-Settings → Demo → apply **SCH-231 → Done**. Wait for the sync that follows (the ticket page for SCH-231 should read
-Done). Then Ask: `SCH-231 just went to Done. Who needs to know, and what were they told?`
+Settings → Demo → apply **SCH-231 → Done**. Wait for the sync that follows, then open the SCH-231 ticket page and
+check it reads Done. If it still reads In Progress, the connection is not on the fake: stop and tell me. Then Ask: `SCH-231 just went to Done. Who needs to know, and what were they told?`
 
-Then: `Draft the messages to each of them.`
+Then, lowercase and without a full stop, exactly: `draft a reply to each of them`
 
 Approve the cards it produces.
 

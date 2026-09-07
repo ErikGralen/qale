@@ -13,8 +13,12 @@ docs, and every string a person reads in the app.
 
 ### Zinsser decides what to say
 
+- **Lead with the answer.** The first sentence says what happened, what you
+  found, or what to do. Detail comes after.
+- **Say what you mean, literally.** No metaphor, no flourish. "A setting worth
+  changing", not "a dial worth turning". Never coin a term or a label.
 - **Simplicity.** Cut the word that carries nothing. Most first drafts are half
-  filler.
+  filler. Prefer the common word over the rare one.
 - **Brevity.** Answer the question that was asked. Don't restate it first, don't
   summarise yourself after, don't list the options you already rejected.
 - **Clarity.** If a sentence can be read two ways, one of those readings will be

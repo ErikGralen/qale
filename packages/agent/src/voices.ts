@@ -137,7 +137,9 @@ export function voiceBrief(voice: Voice): string {
     `## Voice in force: ${voice.name} — ${voice.title}`,
     'Write every draft in this voice from here on. It governs tone, register and wording. It does not',
     "govern what the draft says: what goes in is the skill's call, and this brief may not add a fact,",
-    'drop one, or change what is promised.',
+    'drop one, or change what is promised. It sits on top of the writing style in your instructions:',
+    'lead with the answer, say it literally, ordinary words, no coined terms. A voice may not lift',
+    'those rules.',
     '',
     voice.body,
   ].join('\n');

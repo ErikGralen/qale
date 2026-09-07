@@ -600,14 +600,15 @@ export interface ProposalDTO {
    */
   selfStarted?: string;
   /**
-   * What approving DOES, and where the change lands. Every card carries one.
-   * An outbound card says who the write reaches ("Posts a comment on PAY-142.
-   * Anyone watching the ticket is notified."); a card that stays in the
-   * workspace names the folder ("Creates a page in Meetings. It records a
-   * meeting that already happened; nothing is booked."). Built from the payload
-   * and what the app already knows, never written by the agent: `rationale` is
-   * where its own words go. Absent only when the payload says too little to
-   * make a true sentence.
+   * What approving DOES, when that is not already said by the headline and the
+   * title. An outbound card says who the write reaches ("Posts a comment on
+   * PAY-142. Anyone watching the ticket is notified."); a delete, a new skill,
+   * or a standing instruction each say their own consequence. A card that only
+   * writes an ordinary new page carries none: "New meeting" and the page's own
+   * title already said what is happening, so a folder-and-consequence sentence
+   * under it would only repeat that. Built from the payload and what the app
+   * already knows, never written by the agent: `rationale` is where its own
+   * words go.
    */
   effect?: string;
   rationale: string;

@@ -311,18 +311,15 @@ test('outbound: the headline is the outbound target line', () => {
 // vaultEffect
 // ---------------------------------------------------------------------------
 
-test('vaultEffect: every kind names its folder', () => {
-  assert.equal(
-    effect(meeting),
-    'Creates a page in Meetings. It records a meeting that already happened; nothing is booked.',
-  );
+test('vaultEffect: an ordinary new page says nothing here, the lead-in and title already said it', () => {
+  assert.equal(effect(meeting), undefined);
   assert.equal(
     effect({ kind: 'note', targetPath: 'people/asa-lind.md', frontmatter: { type: 'person' } }),
-    'Creates a page in People. Nobody is contacted.',
+    undefined,
   );
   assert.equal(
     effect({ kind: 'note', targetPath: 'customers/nordkap.md', frontmatter: { type: 'customer' } }),
-    'Creates a page in Customers. Nobody is contacted.',
+    undefined,
   );
   assert.equal(
     effect({
@@ -330,7 +327,7 @@ test('vaultEffect: every kind names its folder', () => {
       targetPath: 'insights/onboarding-stalls-at-sso.md',
       frontmatter: { type: 'insight' },
     }),
-    'Creates a page in Insights.',
+    undefined,
   );
   assert.equal(
     effect({
@@ -338,7 +335,7 @@ test('vaultEffect: every kind names its folder', () => {
       targetPath: 'research/onboarding-drag.md',
       frontmatter: { type: 'research' },
     }),
-    'Creates a page in Research.',
+    undefined,
   );
 });
 
@@ -357,24 +354,25 @@ test('vaultEffect: a plain update adds no line, the headline and the diff say it
 });
 
 // What a decision replaces is the card's own "Replaces <title>" chip, two lines
-// under the headline. The effect line said it a second time, so it says it once.
-test('vaultEffect: a decision never repeats what the card already shows', () => {
+// under the headline, and the headline itself already reads "Decided: …". A
+// third sentence saying the same thing again is the one that gets skipped.
+test('vaultEffect: a decision says nothing here, the headline already says it', () => {
   const decision: VaultEffectInput = {
     kind: 'decision',
     targetPath: 'decisions/defer-scim-to-q3.md',
     frontmatter: { type: 'decision' },
   };
-  assert.equal(effect(decision), 'Records the decision in Decisions. Nothing is announced.');
+  assert.equal(effect(decision), undefined);
 });
 
-test('vaultEffect: the two todo lanes say different things', () => {
+test('vaultEffect: both todo lanes say nothing here, the facts line and title carry it', () => {
   assert.equal(
     effect({
       kind: 'note',
       targetPath: 'todos/send-daniel-the-draft.md',
       frontmatter: { type: 'todo' },
     }),
-    'Adds a to-do to your list.',
+    undefined,
   );
   assert.equal(
     effect({
@@ -382,7 +380,7 @@ test('vaultEffect: the two todo lanes say different things', () => {
       targetPath: 'todos/send-erik-the-draft.md',
       frontmatter: { type: 'todo', owner: 'Daniel' },
     }),
-    'Adds “waiting on Daniel” to your ledger. Daniel is not told.',
+    undefined,
   );
 });
 
@@ -461,11 +459,8 @@ test('a new skill is a skill being written, not a rule being added to one', () =
   );
 });
 
-test('vaultEffect: no path ⇒ no folder invented', () => {
-  assert.equal(
-    effect({ kind: 'note', frontmatter: { type: 'insight' } }),
-    'Creates a page in your workspace.',
-  );
+test('vaultEffect: a new page with no path still says nothing here', () => {
+  assert.equal(effect({ kind: 'note', frontmatter: { type: 'insight' } }), undefined);
 });
 
 test('vaultEffect: outbound is not ours — outboundEffect owns those', () => {
@@ -477,16 +472,15 @@ test('vaultEffect: outbound is not ours — outboundEffect owns those', () => {
 // Regressions, named for the bug
 // ---------------------------------------------------------------------------
 
-test('regression: a meeting card never reads "New meeting", and never books one', () => {
+test('regression: a meeting card never reads "New meeting", and carries no effect line', () => {
   const line = headline(meeting);
   assert.ok(!/^New /.test(line), `headline must not lead with "New": ${line}`);
   // "meeting" as the name of the file being made is exactly what the PO read as
   // the real-world act. The subject is the meeting's own title, nothing else.
   assert.ok(!/\bmeetings?\b/i.test(line), `headline must not name the file "meeting": ${line}`);
 
-  const line2 = effect(meeting)!;
-  assert.ok(line2.includes('nothing is booked'), `effect must say nothing is booked: ${line2}`);
-  assert.ok(line2.startsWith('Creates a page in Meetings.'), line2);
+  // The headline already says "Write up …": no effect line repeats it.
+  assert.equal(effect(meeting), undefined);
 });
 
 test('regression: a customer card never reads "New customer", a person never "New person"', () => {

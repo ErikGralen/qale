@@ -36,7 +36,8 @@ import { relativeTime } from '../../lib/dates';
 import { diffLines, withContext, type DiffRow, type DiffView } from '../../lib/diff';
 import { navFromEvent, type NavOpts } from '../../lib/nav';
 import { Markdown } from '../Markdown';
-import { ExternalRefChip } from '../ExternalRef';
+import { ExternalRefChip, ticketKeyNodes, TicketKeyText } from '../ExternalRef';
+import { splitTicketKeys } from '../../lib/ticket-keys';
 import { outboundAct, providerName, rowFocusClass, useQueueFocus, WikiText } from './shared';
 import {
   bareRef,
@@ -105,21 +106,6 @@ function SelfStartedLine({ text }: { text: string }) {
     <span className="inline-flex items-center gap-1" title="You didn’t ask for this one.">
       <Clock className="size-3 shrink-0" aria-hidden />
       {text}
-    </span>
-  );
-}
-
-/** Amber flag — an unsourced claim is never the quietest thing on screen. The
- *  pill says what it means: the agent wrote this with nothing to point at. It
- *  used to say "Unverified", which is also the name of a trust tier on a note,
- *  so one word carried two facts. */
-function InferenceFlag() {
-  return (
-    <span
-      className="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
-      title="The agent inferred this and cited no source for it. Check it before you approve."
-    >
-      <AlertTriangle className="size-3" aria-hidden /> No source cited
     </span>
   );
 }
@@ -519,10 +505,9 @@ export function CardItem({
               <FactsLine facts={facts} fallback={headline} onOpen={onOpen} />
             )}
           </div>
-          {(proposal.inference || proposal.selfStarted) && (
+          {proposal.selfStarted && (
             <span className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
-              {proposal.inference && <InferenceFlag />}
-              {proposal.selfStarted && <SelfStartedLine text={proposal.selfStarted} />}
+              <SelfStartedLine text={proposal.selfStarted} />
             </span>
           )}
 
@@ -724,6 +709,11 @@ export function CardItem({
  *
  * The lead-in is there because the name alone read as the act: "File the
  * missing story under SCH-231" looked like approving the filing.
+ *
+ * A ticket key in the name is that ticket, so it wears the same chip it wears
+ * everywhere else and opens the ticket, not the page. That is why the line is a
+ * span holding one button per run of words rather than one button holding
+ * everything: a chip inside a button is neither valid nor clickable.
  */
 function TargetTitle({
   leadIn,
@@ -737,37 +727,42 @@ function TargetTitle({
   onOpen: (path: string, opts?: NavOpts) => void;
 }) {
   const line = 'block text-sm leading-snug font-medium text-balance break-words text-foreground';
-  const name = !path ? (
-    <span className={line}>{title}</span>
-  ) : (
-    <button
-      className={`${line} text-left underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none`}
-      onClick={(e) => {
-        e.stopPropagation();
-        onOpen(path, navFromEvent(e));
-      }}
-      onAuxClick={(e) => {
-        if (e.button !== 1) return;
-        e.stopPropagation();
-        onOpen(path, navFromEvent(e));
-      }}
-      title={`Open ${title}`}
-    >
-      {title}
-    </button>
-  );
+  const open = (e: React.MouseEvent) => {
+    if (!path) return;
+    e.stopPropagation();
+    onOpen(path, navFromEvent(e));
+  };
   return (
     <>
       <span className="block text-xs leading-snug text-muted-foreground">{leadIn}</span>
-      {name}
+      <span className={line}>
+        {splitTicketKeys(title).map((part, i) => {
+          if (typeof part !== 'string')
+            return <TicketKeyText key={`title-${i}`} target={part.key} onOpen={onOpen} />;
+          // Nothing to open, or nothing but spacing to hang a control on.
+          if (!path || !part.trim()) return <span key={`title-${i}`}>{part}</span>;
+          return (
+            <button
+              key={`title-${i}`}
+              className="text-left underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              onClick={open}
+              // Middle-click = open in background tab (browser semantics).
+              onAuxClick={(e) => e.button === 1 && open(e)}
+              title={`Open ${title}`}
+            >
+              {part}
+            </button>
+          );
+        })}
+      </span>
     </>
   );
 }
 
 /**
  * The change a new page makes, under its title: the facts a person checks (who
- * owes the to-do and when it is due, or when the meeting was and how many sat
- * in it) on one dotted line, then the first line of what the page says. A
+ * owes the to-do and when it is due, or the day the meeting was) on one dotted
+ * line, then the first line of what the page says. A
  * to-do's line is what someone said, and the file writes it as a blockquote, so
  * the row draws it as one: the same left rule the diff gives a quoted line. Two
  * lines at most, because the page is one click away.
@@ -1262,10 +1257,10 @@ function OutboundDetail({
           <RenderedDiff before={diffPair.before} after={diffPair.after} onOpen={onOpen} />
         ) : payload.action === 'comment_ticket' ? (
           <div className="rounded-md bg-muted/40 px-3 py-2">
-            <Markdown content={payload.body} onOpenNote={onOpen} />
+            <Markdown content={payload.body} onOpenNote={onOpen} compact />
           </div>
         ) : (
-          <Markdown content={payload.body} onOpenNote={onOpen} />
+          <Markdown content={payload.body} onOpenNote={onOpen} compact />
         )}
       </PreviewSurface>
     </div>
@@ -1424,7 +1419,7 @@ function ChangePreview({
             <RenderedDiff before={preview.before} after="" onOpen={onOpen} context={context} />
           )
         ) : (
-          <Markdown content={stripFrontmatter(preview.after)} onOpenNote={onOpen} />
+          <Markdown content={stripFrontmatter(preview.after)} onOpenNote={onOpen} compact />
         )
       )}
     </div>
@@ -1489,14 +1484,16 @@ function affixDiff(before: string, after: string): AffixDiff {
 const INLINE_RE = /\[\[([^\]]+)\]\]|\*\*([^*]+)\*\*|`([^`]+)`/g;
 
 /** Render a note line's inline syntax as it reads: references become titles,
- *  bold stays bold, code stays code — no raw `[[ ]]`, `**`, or backticks. */
+ *  bold stays bold, code stays code — no raw `[[ ]]`, `**`, or backticks. A
+ *  ticket key typed as bare text becomes the same chip its wikilink form does. */
 function renderInline(text: string, onOpen: (p: string) => void, keyBase: string): ReactNode[] {
   const nodes: ReactNode[] = [];
   let last = 0;
   let match: RegExpExecArray | null;
   INLINE_RE.lastIndex = 0;
   while ((match = INLINE_RE.exec(text)) !== null) {
-    if (match.index > last) nodes.push(text.slice(last, match.index));
+    if (match.index > last)
+      nodes.push(...ticketKeyNodes(text.slice(last, match.index), onOpen, `${keyBase}-${last}`));
     const key = `${keyBase}-${match.index}`;
     if (match[1] !== undefined) {
       const { target, alias } = normalizeLinkTarget(match[1]);
@@ -1532,7 +1529,8 @@ function renderInline(text: string, onOpen: (p: string) => void, keyBase: string
     }
     last = match.index + match[0].length;
   }
-  if (last < text.length) nodes.push(text.slice(last));
+  if (last < text.length)
+    nodes.push(...ticketKeyNodes(text.slice(last), onOpen, `${keyBase}-${last}`));
   return nodes;
 }
 

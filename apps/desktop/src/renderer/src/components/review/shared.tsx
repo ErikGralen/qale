@@ -13,7 +13,7 @@ import type { OutboundPayloadDTO } from '@qale/ipc';
 import { normalizeLinkTarget, outboundVerb } from '@qale/domain';
 import { invoke } from '../../lib/ipc';
 import { isExternalRef, providerLabelOf } from '../../lib/connections';
-import { ExternalRefChip } from '../ExternalRef';
+import { ExternalRefChip, ticketKeyNodes } from '../ExternalRef';
 
 /**
  * Real focus for the queue's roving cursor. The review drives selection with an
@@ -75,8 +75,9 @@ const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
  * Inline renderer for a short human sentence that may contain `[[wikilinks]]`
  * (e.g. a proposal's rationale). Each wikilink becomes a clickable link that
  * resolves and routes exactly like the read-view Markdown component — normalize
- * the raw target, resolve the slug to a note path over IPC, then open it. Plain
- * text passes through unchanged so the card's typography is preserved.
+ * the raw target, resolve the slug to a note path over IPC, then open it. A
+ * ticket key typed as bare text gets the same chip the wikilink form gets; the
+ * rest passes through unchanged so the card's typography is preserved.
  */
 export function WikiText({ text, onOpen }: { text: string; onOpen: (path: string) => void }) {
   const nodes: ReactNode[] = [];
@@ -84,7 +85,8 @@ export function WikiText({ text, onOpen }: { text: string; onOpen: (path: string
   let match: RegExpExecArray | null;
   WIKILINK_RE.lastIndex = 0;
   while ((match = WIKILINK_RE.exec(text)) !== null) {
-    if (match.index > last) nodes.push(text.slice(last, match.index));
+    if (match.index > last)
+      nodes.push(...ticketKeyNodes(text.slice(last, match.index), onOpen, `wiki-${last}`));
     const { target, alias } = normalizeLinkTarget(match[1] ?? '');
     nodes.push(
       isExternalRef(target) ? (
@@ -105,7 +107,7 @@ export function WikiText({ text, onOpen }: { text: string; onOpen: (path: string
     );
     last = match.index + match[0].length;
   }
-  if (last < text.length) nodes.push(text.slice(last));
+  if (last < text.length) nodes.push(...ticketKeyNodes(text.slice(last), onOpen, `wiki-${last}`));
   return <>{nodes}</>;
 }
 

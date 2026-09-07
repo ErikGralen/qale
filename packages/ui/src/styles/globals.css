@@ -274,6 +274,39 @@
     @apply bg-muted/40 font-semibold;
   }
 
+  /* A note body quoted inside something else — an approval card's comment or
+     page draft. Same markdown, read at the size of the text around it instead
+     of the reading view's scale. Every rule here overrides its .note-body twin
+     on source order, so this block must stay below that one. */
+  .note-body-sm {
+    @apply text-sm leading-normal;
+  }
+  .note-body-sm h1 {
+    @apply mt-4 mb-1.5 text-base;
+  }
+  .note-body-sm h2 {
+    @apply mt-4 mb-1;
+  }
+  .note-body-sm h3 {
+    @apply mt-3 mb-0.5 text-sm;
+  }
+  .note-body-sm p {
+    @apply my-1.5;
+  }
+  .note-body-sm ul,
+  .note-body-sm ol {
+    @apply my-1.5;
+  }
+  .note-body-sm blockquote {
+    @apply pl-2.5;
+  }
+  .note-body-sm pre {
+    @apply my-1.5 p-2.5;
+  }
+  .note-body-sm table {
+    @apply my-1.5 text-xs;
+  }
+
   /* WYSIWYG editor (TipTap) — same .note-body class as the read view. */
   .note-body p.is-editor-empty:first-child::before {
     content: attr(data-placeholder);

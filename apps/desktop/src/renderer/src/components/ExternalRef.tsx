@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { computePosition, flip, offset, shift } from '@floating-ui/dom';
 import { AlertTriangle, ArrowUpRight, BookOpen, Clock } from 'lucide-react';
@@ -13,6 +13,7 @@ import {
 } from '../lib/connections';
 import { relativeTime } from '../lib/dates';
 import { navFromEvent, type NavOpts } from '../lib/nav';
+import { splitTicketKeys } from '../lib/ticket-keys';
 
 /**
  * External-reference chips — `[[PAY-142]]` rendered as delivery truth, not a
@@ -169,6 +170,52 @@ export function ExternalRefChip({
       )}
       {meta?.stale && <StaleDot />}
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ticket keys inside running text
+// ---------------------------------------------------------------------------
+
+/**
+ * A bare key drawn as the chip a `[[SCH-231]]` wikilink gets. It stays plain
+ * text until the lookup answers: plenty of words wear a key's shape without
+ * being one ("COVID-19"), and a chip that opens nothing is worse than the word
+ * it replaced.
+ */
+export function TicketKeyText({
+  target,
+  onOpen,
+}: {
+  target: string;
+  onOpen?: (path: string, opts?: NavOpts) => void;
+}) {
+  const [meta, setMeta] = useState<ExternalRefMetaDTO | null | undefined>(undefined);
+
+  useEffect(() => {
+    let alive = true;
+    void refMetaCached(target).then((m) => alive && setMeta(m));
+    return () => {
+      alive = false;
+    };
+  }, [target]);
+
+  if (!meta) return <>{target}</>;
+  return <ExternalRefChip target={target} onOpen={onOpen} />;
+}
+
+/** Running text with every ticket key in it drawn as its chip. */
+export function ticketKeyNodes(
+  text: string,
+  onOpen?: (path: string, opts?: NavOpts) => void,
+  keyBase = '',
+): ReactNode[] {
+  return splitTicketKeys(text).map((part, i) =>
+    typeof part === 'string' ? (
+      part
+    ) : (
+      <TicketKeyText key={`${keyBase}-key-${i}`} target={part.key} onOpen={onOpen} />
+    ),
   );
 }
 

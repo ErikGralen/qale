@@ -9,6 +9,7 @@ import type {
   StateCategory,
 } from '@qale/ipc';
 import { invoke, onEvent } from './ipc';
+import { TICKET_KEY_RE } from './ticket-keys';
 
 /**
  * Connections client — the renderer's one door to external-system state
@@ -34,9 +35,6 @@ export type {
 // ---------------------------------------------------------------------------
 // External-reference detection (shared by chips, autocomplete, previews)
 // ---------------------------------------------------------------------------
-
-/** Bare ticket key, e.g. "PAY-142" — the shape POs type and providers mint. */
-const TICKET_KEY_RE = /^[A-Z][A-Z0-9]{1,9}-\d+$/;
 
 /** The reference without its anchor or extension — the lookup key, passed to
  *  the main process as written. Nothing here builds a path from it (PD-11). */

@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "packages/ui/src/styles/globals.css"
+        ],
+        "createdAt": "2026-09-07T18:31:37.342Z",
+        "reason": "Claude: L249 is the pre-existing markdown blockquote rule (2px quote bar), the standard markdown quote rendering, not a card accent; noted as a false positive in project memory"
+      }
+    ]
+  }
+}

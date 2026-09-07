@@ -23,16 +23,14 @@ import { WANT_LIST_HEADING } from './activity.js';
  * the world of things that happen: "New meeting: Nordkap QBR" reads as an act
  * about to be booked, when the card only writes a page about a meeting that
  * already took place. "New customer" reads as a customer won. So the line names
- * what the app does ("Write up", "Add a page for"), and the effect line names
- * where it lands and what does NOT happen.
+ * what the app does ("Write up", "Add a page for").
  *
- * That second clause is rationed. It appears only for the kinds with a
- * real-world twin (a meeting, a person, a customer, a commitment someone else
- * owes). On every card it would be boilerplate the reader learns to skip, and a
- * warning nobody reads protects nobody.
+ * The effect line under it is rationed hard: it speaks only when a card does
+ * something the lead-in and the title cannot already say (a delete, a new
+ * skill, a standing instruction). For an ordinary new page, "Creates a page in
+ * Meetings" only restated the lead-in in longer words, and the reader's eye
+ * learned to skip it.
  */
-
-const quote = (s: string): string => `“${s}”`;
 
 /** Strip wikilink brackets, alias and anchor, hand back the bare slug. */
 export function bareRef(ref: string): string {
@@ -344,12 +342,6 @@ export function dayLabel(value: unknown): string | null {
   return stamp ? formatStamp(stamp) : null;
 }
 
-/** How many people sat in the meeting the page records. */
-function participantCount(fm?: Record<string, unknown>): number {
-  const people = fm?.['participants'];
-  return Array.isArray(people) ? people.filter((p) => String(p).trim()).length : 0;
-}
-
 /**
  * The first line of what a new page says, with its markers taken off: a quote
  * marker, a bullet dash. A heading is skipped rather than read: "Summary" is
@@ -379,11 +371,13 @@ export interface NewPageFactsInput {
 
 /** The change a new page makes, in the two things the row draws apart. */
 export interface NewPageFacts {
-  /** The facts a person checks: who owes it and when, or when it was and how
-   *  many sat in it. Drawn as one dotted line. A person keeps their
-   *  `[[people/…]]` ref, so the row draws them as a link. */
+  /** The facts a person checks: who owes it and when, or when a meeting was.
+   *  Drawn as one dotted line. A person keeps their `[[people/…]]` ref, so the
+   *  row draws them as a link. */
   facts: string[];
-  /** The first line of what the page says. Empty when the page says nothing. */
+  /** The first line of what the page says. Empty when the page says nothing,
+   *  which is every meeting: the day is the fact, and the write-up is the page
+   *  the card opens into. */
   line: string;
   /** True when the line is a quote the file carries as one: what someone said,
    *  as `propose_todo` writes a to-do's body. The row draws it as a citation. */
@@ -392,8 +386,8 @@ export interface NewPageFacts {
 
 /**
  * The change a new page makes, in the facts a person checks before they approve
- * it: who owes a to-do and when it is due, when a meeting was and how many sat
- * in it, then the first line of what the page says.
+ * it: who owes a to-do and when it is due, or when a meeting was, then the
+ * first line of what the page says.
  *
  * The parts are handed back separately so the card can draw the line, and a
  * missing fact drops a part rather than padding it. Same two rules as the
@@ -401,7 +395,8 @@ export interface NewPageFacts {
  *
  * The owner is said as "Waiting on", the ledger's own word, and the PO's own
  * to-do names nobody: the lead-in already said it is a to-do, and the row must
- * not print a name twice.
+ * not print a name twice. A meeting card carries no first line at all: how many
+ * sat in it and what the write-up says are both in the page, not on the row.
  */
 export function newPageFacts(input: NewPageFactsInput): NewPageFacts {
   const fm = input.frontmatter;
@@ -415,8 +410,7 @@ export function newPageFacts(input: NewPageFactsInput): NewPageFacts {
   } else if (type === 'meeting') {
     const day = meetingDay(fm);
     if (day) facts.push(day);
-    const people = participantCount(fm);
-    if (people) facts.push(`${people} ${people === 1 ? 'person' : 'people'}`);
+    return { facts, line: '', quoted: false };
   }
   const { line, quoted } = firstProseLine(input.body);
   // Only a to-do's body is what someone said. Any other page's first line is
@@ -558,18 +552,24 @@ export function proposalHeadline(input: HeadlineInput): string {
 }
 
 /**
- * What approving a vault card DOES, and where it lands. The counterpart to
- * `outboundEffect`, which owns the cards that leave the machine: this one
- * returns undefined for those so the two can never both speak.
+ * What approving a vault card DOES, when that is worth a line the reader
+ * cannot get anywhere else. The counterpart to `outboundEffect`, which owns
+ * the cards that leave the machine: this one returns undefined for those so
+ * the two can never both speak.
  *
- * Every line names the destination folder. An unmarked card makes no claim, and
- * a reader with no claim in front of them supplies the worst one.
+ * A brand-new page says nothing here. Its lead-in ("New meeting", "New
+ * customer") and its title already say what is being written and about what;
+ * a line adding "Creates a page in Meetings, nothing is booked" only restated
+ * that in longer words, and the eye learned to skip it. The same goes for a
+ * decision: the headline already reads "Decided: …". What is still worth a
+ * line is a change the page itself cannot show: a delete (the page is about to
+ * be gone), a new skill (Qale will reach for it on its own), or a standing
+ * instruction (which file the rule lands in, and when it gets read).
  */
 export function vaultEffect(input: VaultEffectInput): string | undefined {
   if (input.kind === 'outbound') return undefined;
 
   const target = input.targetPath ?? '';
-  const fm = input.frontmatter;
 
   // The only card that takes something away, so it is the only one whose effect
   // line names a folder losing a page rather than gaining one.
@@ -604,33 +604,13 @@ export function vaultEffect(input: VaultEffectInput): string | undefined {
   // An update says nothing here on purpose. The headline is already "Update
   // <page>", with the page as an openable chip, and the diff under it is the
   // change itself. The sentence could only ever be "Edits a page in your
-  // workspace", which is the headline with fewer facts in it. Every other kind
-  // names a folder the page lands in, or a consequence the reader can't see.
+  // workspace", which is the headline with fewer facts in it.
   if (input.kind === 'update') return undefined;
 
-  // What it supersedes is deliberately NOT said here. The card already carries a
-  // "Replaces <title>" chip under the headline, and the sentence said the same
-  // fact a second time, two lines apart.
-  if (input.kind === 'decision') {
-    return 'Records the decision in Decisions. Nothing is announced.';
-  }
-
-  const type = noteType(fm);
-  if (type === 'meeting') {
-    return 'Creates a page in Meetings. It records a meeting that already happened; nothing is booked.';
-  }
-  if (type === 'person') return 'Creates a page in People. Nobody is contacted.';
-  if (type === 'customer') return 'Creates a page in Customers. Nobody is contacted.';
-  if (type === 'todo') {
-    const owner = todoOwnerName(fm);
-    return owner
-      ? `Adds ${quote(`waiting on ${owner}`)} to your ledger. ${owner} is not told.`
-      : 'Adds a to-do to your list.';
-  }
-  const dir = dirOf(target);
-  // The folder's own display name, so the line points at a shelf the PO can go
-  // and open. No path at all ⇒ no folder to name, and the sentence stops early.
-  return dir ? `Creates a page in ${folderLabel(dir)}.` : 'Creates a page in your workspace.';
+  // Every other note, and a decision, say nothing here either: the lead-in and
+  // the title already named the page and its kind, and the folder it lands in
+  // is a fact the reader can see the moment the card opens the page.
+  return undefined;
 }
 
 /**

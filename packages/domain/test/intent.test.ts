@@ -169,7 +169,7 @@ test('the PM’s own to-do names no owner, and a missing date drops a part', () 
   );
 });
 
-test('a new meeting page says when it was and how many sat in it', () => {
+test('a new meeting page says only the day, nothing about who sat in it or what it says', () => {
   assert.deepEqual(
     newPageFacts({
       kind: 'note',
@@ -181,7 +181,7 @@ test('a new meeting page says when it was and how many sat in it', () => {
       },
       body: '## Summary\n\nThe H2 order flipped.',
     }),
-    { facts: ['7 Sep', '3 people'], line: 'The H2 order flipped.', quoted: false },
+    { facts: ['7 Sep'], line: '', quoted: false },
   );
 });
 

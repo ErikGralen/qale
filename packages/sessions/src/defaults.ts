@@ -87,8 +87,8 @@ For a link, work from the URL and whatever came pasted with it; do not guess wha
 For a screenshot, work from what is visible and say so in the summary.
 
 ## File
-Use \`file_source\`, once per THING rather than once per file, and say in one line where each one
-went and why as it lands.
+Use \`file_source\`, once per THING rather than once per file. The trail already shows where each
+one went, so your reply never walks through the filing.
 
 - **A recording of a meeting you were in** goes in as \`as: "meeting"\`: the transcript is kept in
   \`sources/\`, and no meeting page is made. If the calendar already holds that meeting, pass
@@ -218,6 +218,10 @@ decision spine, the commitment ledger, the hubs. The meeting page waits for the 
 every todo: those are theirs. The decisions, the hub edits and the insights are Qale's memory, and
 they land as you write them. Outbound waits too, and executes upstream on approval, then files its
 link back. Each source flips new → processed when a proposal citing it lands.
+
+Then say what the source meant, in two or three sentences: the finding first, the writing itself in
+one clause, and the one thing that needs the PM, if there is one. What you filed and what you
+proposed is already on the screen above and below your message, so never list it.
 `;
 
 export const MEETING_PREP_AGENT = `---

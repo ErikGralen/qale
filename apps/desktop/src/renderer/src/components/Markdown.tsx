@@ -1,13 +1,14 @@
 import { useMemo, useRef, useState, type ComponentProps } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { remarkPlugins } from '@qale/markdown';
-import { slugFromPath } from '@qale/domain';
+import { slugFromPath, titleForRef } from '@qale/domain';
 import { invoke } from '../lib/ipc';
 import { isExternalRef } from '../lib/connections';
 import { navFromEvent, type NavOpts } from '../lib/nav';
 import { webUrl } from '../lib/urls';
 import { useApp } from '../state/app-state';
-import { ExternalRefChip } from './ExternalRef';
+import { ExternalRefChip, TicketKeyText } from './ExternalRef';
+import { splitTicketKeys } from '../lib/ticket-keys';
 
 /**
  * Read-only note renderer. Uses the SAME remark plugin array as the indexer
@@ -58,14 +59,70 @@ function CodeBlock({ node: _node, ...props }: ComponentProps<'pre'> & { node?: u
   );
 }
 
+/** One mdast node, in the shape this file has to walk. */
+interface MdNode {
+  type: string;
+  value?: string;
+  children?: MdNode[];
+  data?: Record<string, unknown>;
+}
+
+/** Nothing inside these is running prose: a link already points somewhere, a
+ *  code span is text quoted verbatim, and a heading is a label. */
+const NO_TICKET_KEYS = new Set(['link', 'linkReference', 'heading', 'inlineCode', 'code']);
+
+/**
+ * A remark plugin that turns a ticket key somebody typed into a sentence into
+ * the same chip `[[SCH-231]]` gets. It only ever rewrites text nodes, and only
+ * those in running prose — a wikilink is already a `wikiLink` node by the time
+ * this runs, so it is never touched twice.
+ */
+function remarkTicketKeys() {
+  const walk = (node: MdNode): void => {
+    const children = node.children;
+    if (!children || NO_TICKET_KEYS.has(node.type)) return;
+    const next: MdNode[] = [];
+    for (const child of children) {
+      if (child.type !== 'text' || !child.value) {
+        walk(child);
+        next.push(child);
+        continue;
+      }
+      for (const part of splitTicketKeys(child.value)) {
+        next.push(
+          typeof part === 'string'
+            ? { type: 'text', value: part }
+            : {
+                type: 'ticketKey',
+                value: part.key,
+                data: {
+                  hName: 'span',
+                  hProperties: { 'data-ticket-key': part.key },
+                  hChildren: [{ type: 'text', value: part.key }],
+                },
+              },
+        );
+      }
+    }
+    node.children = next;
+  };
+  return (tree: MdNode): void => walk(tree);
+}
+
+const PLUGINS = [...remarkPlugins, remarkTicketKeys];
+
 export function Markdown({
   content,
   onOpenNote,
+  compact = false,
 }: {
   content: string;
   /** Optional — omit for read-only renders (e.g. a past version) where links don't navigate.
    *  Receives the click's nav intent so ⌘click opens the note in a new tab. */
   onOpenNote?: (path: string, opts?: NavOpts) => void;
+  /** Draw at the size of the text around it, for a body quoted inside a card.
+   *  The reading view keeps the full scale. */
+  compact?: boolean;
 }) {
   const { tree } = useApp();
   // A link the author wrote as `[[decisions/adopt-workos]]` reads as the note's
@@ -79,11 +136,18 @@ export function Markdown({
   }, [tree]);
 
   return (
-    <div className="note-body">
+    <div className={compact ? 'note-body note-body-sm' : 'note-body'}>
       <ReactMarkdown
-        remarkPlugins={remarkPlugins}
+        remarkPlugins={PLUGINS}
         components={{
           pre: CodeBlock,
+          span: ({
+            node: _node,
+            ...props
+          }: ComponentProps<'span'> & { node?: unknown; 'data-ticket-key'?: string }) => {
+            const key = props['data-ticket-key'];
+            return key ? <TicketKeyText target={key} onOpen={onOpenNote} /> : <span {...props} />;
+          },
           a: (
             props: ComponentProps<'a'> & { 'data-target'?: string; 'data-link-type'?: string },
           ) => {
@@ -134,13 +198,16 @@ export function Markdown({
                 const path = await invoke['note:resolveLink'](target);
                 if (path) onOpenNote?.(path, opts);
               };
-              // No alias means the link prints its target, which is a slug. Show
-              // the note's name instead when the workspace holds it; a target
-              // nothing answers to stays as written, so a broken link still
-              // reads as one.
+              // No alias means the link prints its target, which is a slug.
+              // Show the note's name when the workspace holds it, and its own
+              // last segment de-slugged when it does not: a page the session is
+              // still proposing is not in the tree yet, and printing the whole
+              // storage path there was the one place a slug reached the reader.
               const written = typeof props.children === 'string' ? props.children : null;
               const title =
-                written && written === target ? titleBySlug.get(slugFromPath(target)) : undefined;
+                written && written === target
+                  ? (titleBySlug.get(slugFromPath(target)) ?? titleForRef(target))
+                  : undefined;
               return (
                 <>
                   <TypeChip label={linkType} />

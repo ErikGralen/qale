@@ -203,9 +203,9 @@ export function cardTitle(p: ProposalDTO, knownTitle?: string | null): string {
 
 /**
  * The change a card that creates a page makes, in parts: who owes a to-do and
- * when it is due, when a meeting was and how many sat in it, then the first line
- * of what the page says, marked when it is a quote. Composed in the domain, so
- * the row and the receipt say the same thing.
+ * when it is due, or the day a meeting was, then the first line of what the
+ * page says, marked when it is a quote. Composed in the domain, so the row and
+ * the receipt say the same thing.
  */
 export function cardFacts(p: ProposalDTO): NewPageFacts {
   return newPageFacts({

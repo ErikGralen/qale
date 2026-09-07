@@ -25,7 +25,7 @@ export type SkillsTab = 'skills' | 'house-rules' | 'moments' | 'voices' | 'agent
 
 export interface SkillsTabInfo {
   id: SkillsTab;
-  /** The tab's name, and the leaf in the page header. */
+  /** The tab's name, shown on the tab trigger. */
   label: string;
   /** What ONE file on this tab is called, for the badge and the delete copy. */
   item: string;
@@ -42,10 +42,6 @@ export const SKILLS_TABS: readonly SkillsTabInfo[] = [
 
 /** Where the page opens when nobody named a tab. */
 export const DEFAULT_SKILLS_TAB: SkillsTab = 'skills';
-
-export function skillsTabLabel(id: SkillsTab): string {
-  return SKILLS_TABS.find((t) => t.id === id)?.label ?? 'Skills';
-}
 
 /** What one file on this tab is called ("Voice"), for a badge or a delete line. */
 export function skillsTabItem(id: SkillsTab): string {

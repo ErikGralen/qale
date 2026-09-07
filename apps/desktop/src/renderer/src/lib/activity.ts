@@ -75,7 +75,7 @@ export function groupByDay(rows: ActivityDTO[], now: number = Date.now()): Activ
 }
 
 /**
- * What the agent has written on its own today, for the quiet number on the rail.
+ * What the agent has written on its own today.
  * A row that was put back is not something it did: undoing it is the whole
  * point of the list, and a count that ignores the undo would nag about work
  * that no longer exists.

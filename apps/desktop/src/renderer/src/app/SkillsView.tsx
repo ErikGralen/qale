@@ -27,7 +27,6 @@ import {
   DEFAULT_SKILLS_TAB,
   MOMENTS,
   SKILLS_TABS,
-  skillsTabLabel,
   tabForFile,
   type Moment,
   type SkillsTab,
@@ -532,14 +531,6 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
     [skills],
   );
 
-  const counts: Record<SkillsTab, number | undefined> = {
-    skills: runnables.length || undefined,
-    'house-rules': undefined,
-    moments: moments.length,
-    voices: voices.length || undefined,
-    agents: agents.length || undefined,
-  };
-
   // A dot on the tab that holds a broken file. Filing something behind a tab
   // costs nothing only while a failure behind it can still shout.
   const flagged: Partial<Record<SkillsTab, string>> = {};
@@ -563,12 +554,7 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader
-        icon={Wand2}
-        crumbs={[{ label: 'Skills' }]}
-        label={skillsTabLabel(active)}
-        meta={counts[active]}
-      >
+      <PageHeader icon={Wand2} label="Skills">
         {errorCount > 0 && (
           <span className="flex items-center gap-1 text-xs font-medium text-destructive">
             <TriangleAlert className="size-3.5 shrink-0" aria-hidden />

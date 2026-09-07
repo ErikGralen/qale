@@ -72,7 +72,6 @@ export function ContextView({ tag }: { tag: string }) {
         icon={Hash}
         iconClassName="text-brand"
         label={tag}
-        meta={notes.length}
         selecting={selection.count > 0}
       >
         <SelectionBar selection={selection} total={ordered.length} />

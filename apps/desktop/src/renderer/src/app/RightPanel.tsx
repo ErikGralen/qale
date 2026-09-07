@@ -436,11 +436,7 @@ function SessionFilesPanel({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex h-full flex-col bg-card/40">
-      <PageHeader
-        icon={FolderClosed}
-        label="Session files"
-        meta={files.length > 0 ? files.length : undefined}
-      />
+      <PageHeader icon={FolderClosed} label="Session files" />
       {files.length === 0 ? (
         <p className="px-4 py-3.5 text-dense leading-relaxed text-muted-foreground">
           Nothing yet. Scratch this session writes for itself (a brief, per-item notes, a draft)

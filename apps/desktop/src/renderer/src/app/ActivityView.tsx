@@ -69,11 +69,7 @@ export function ActivityView() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader
-        icon={ScrollText}
-        label="Activity"
-        meta={activity.length > 0 ? activity.length : undefined}
-      />
+      <PageHeader icon={ScrollText} label="Activity" />
 
       <div className="flex-1 overflow-y-auto px-6">
         <div className="mx-auto max-w-2xl py-4">

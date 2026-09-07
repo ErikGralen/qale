@@ -91,10 +91,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionInfo[] = [
 /** Where Settings opens when nobody named a section. */
 export const DEFAULT_SETTINGS_SECTION: SettingsSection = 'general';
 
-export function settingsSectionLabel(id: SettingsSection): string {
-  return SETTINGS_SECTIONS.find((s) => s.id === id)?.label ?? 'General';
-}
-
 export function isSettingsSection(value: string | undefined): value is SettingsSection {
   return SETTINGS_SECTIONS.some((s) => s.id === value);
 }

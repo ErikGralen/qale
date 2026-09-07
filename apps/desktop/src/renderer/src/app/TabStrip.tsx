@@ -5,6 +5,7 @@ import {
   Plus,
   PanelLeft,
   PanelRight,
+  Sparkles,
   House,
   History,
   MessageSquare,
@@ -246,6 +247,8 @@ interface RightPanelToggle {
   open: boolean;
   /** False on tabs with no rail at all — the button stays, disabled. */
   available: boolean;
+  /** 'doc' opens a chat scoped to the file; 'files' opens a session's file tree. */
+  kind: 'doc' | 'files';
   /** What it opens, in the tooltip's words: "session files", "the session". */
   name: string;
   /** Session files waiting behind a hidden rail; 0 elsewhere. */
@@ -628,13 +631,15 @@ export function TabStrip({
             fan-out writing into a shut rail is never silent. */}
         <span className="relative inline-flex">
           <ToolbarButton
-            icon={PanelRight}
+            icon={rightPanel.kind === 'doc' ? Sparkles : PanelRight}
             label={
               rightPanel.open
                 ? `Hide ${rightPanel.name}`
-                : rightPanel.count > 0
-                  ? `Show ${rightPanel.name} (${rightPanel.count})`
-                  : `Show ${rightPanel.name}`
+                : rightPanel.kind === 'doc'
+                  ? 'Start session'
+                  : rightPanel.count > 0
+                    ? `Show ${rightPanel.name} (${rightPanel.count})`
+                    : `Show ${rightPanel.name}`
             }
             keys={['⇧', '⌘', '\\']}
             onClick={rightPanel.onToggle}

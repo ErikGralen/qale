@@ -2,11 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   wantListChange,
+  kindNoun,
   nounForDir,
   outboundReceipt,
   outboundTarget,
   outboundVerb,
   proposalHeadline,
+  proposalLeadIn,
   ticketFieldRows,
   vaultEffect,
   type HeadlineInput,
@@ -188,6 +190,82 @@ test('update: the page title, or the folder noun when there is none', () => {
   assert.equal(headline({ kind: 'update' }), 'Update a page');
   // The `notes/` folder is Documents to the reader (docs/sidebar-ia.md, SB-3).
   assert.equal(nounForDir('notes'), 'a document');
+  assert.equal(nounForDir('insights'), 'an insight');
+  assert.equal(nounForDir('meetings'), 'the meeting notes');
+  assert.equal(kindNoun('todos'), 'to-do');
+  assert.equal(kindNoun('unknown'), 'page');
+});
+
+// The lead-in over a row's title: the act and the kind, in two words. The
+// title alone read as the act, so "File the missing story under SCH-231"
+// looked like approving the filing, not creating a to-do.
+
+test('the lead-in says new or update, and what kind of thing', () => {
+  const leadIn = (input: HeadlineInput): string => proposalLeadIn(input);
+  const todo = { type: 'todo', title: 'Re-scope SCH-240' };
+  // Own to-do and waiting-on to-do say the same thing; the owner is on the
+  // facts line, so the name is never printed twice.
+  assert.equal(leadIn({ kind: 'note', targetPath: 'todos/x.md', frontmatter: todo }), 'New to-do');
+  assert.equal(
+    leadIn({
+      kind: 'note',
+      targetPath: 'todos/x.md',
+      frontmatter: { ...todo, owner: '[[people/rebecca-holm]]' },
+    }),
+    'New to-do',
+  );
+  assert.equal(leadIn({ kind: 'update', targetPath: 'todos/x.md' }), 'Update to-do');
+  assert.equal(
+    leadIn({ kind: 'note', targetPath: 'meetings/x.md', frontmatter: { type: 'meeting' } }),
+    'New meeting notes',
+  );
+  assert.equal(leadIn({ kind: 'update', targetPath: 'meetings/x.md' }), 'Update meeting notes');
+  assert.equal(leadIn({ kind: 'note', targetPath: 'notes/x.md', frontmatter: {} }), 'New document');
+  assert.equal(leadIn({ kind: 'update', targetPath: 'notes/x.md' }), 'Update document');
+  assert.equal(leadIn({ kind: 'decision', targetPath: 'decisions/x.md' }), 'New decision');
+  assert.equal(leadIn({ kind: 'delete', targetPath: 'notes/x.md' }), 'Delete document');
+  assert.equal(leadIn({ kind: 'delete', targetPath: 'decisions/x.md' }), 'Delete decision');
+  // The frontmatter type wins over the folder for a new page.
+  assert.equal(
+    leadIn({ kind: 'note', targetPath: 'people/x.md', frontmatter: { type: 'customer' } }),
+    'New customer',
+  );
+  // No folder and no type ⇒ the plain word, never a blank.
+  assert.equal(leadIn({ kind: 'note' }), 'New page');
+  assert.equal(leadIn({ kind: 'update' }), 'Update page');
+});
+
+test('a rule card and a new skill keep their own lead-in', () => {
+  const leadIn = (input: HeadlineInput): string => proposalLeadIn(input);
+  assert.equal(
+    leadIn({
+      kind: 'update',
+      targetPath: 'skills/house-rules/SKILL.md',
+      append: '- Always name the customer in a todo.\n',
+    }),
+    'Remember this',
+  );
+  assert.equal(
+    leadIn({
+      kind: 'update',
+      targetPath: 'skills/house-rules/SKILL.md',
+      patch: [
+        {
+          search: '## What you want from Qale\n\n- Shorter briefs.\n',
+          replace: '## What you want from Qale\n',
+        },
+      ],
+    }),
+    'Stop this',
+  );
+  assert.equal(
+    leadIn({
+      kind: 'note',
+      targetPath: 'skills/weekly-review/SKILL.md',
+      frontmatter: { title: 'Weekly review' },
+    }),
+    'New skill',
+  );
 });
 
 test('an instruction says the rule, whether it lands as an update or a new file', () => {

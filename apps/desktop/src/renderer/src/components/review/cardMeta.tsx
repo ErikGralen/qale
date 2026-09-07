@@ -14,8 +14,11 @@ import {
   isNewSkill,
   newPageFacts,
   proposalHeadline,
+  proposalLeadIn,
+  type NewPageFacts,
   titleForRef,
   typeForDir,
+  type HeadlineInput,
   type TargetCard,
 } from '@qale/domain';
 import type { NoteType, OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
@@ -110,12 +113,18 @@ function payloadTitle(p: ProposalDTO): string {
  *  frontmatter, and the text an update adds. Same vocabulary as the effect line
  *  and the receipt, so one card never says two things. */
 function composedHeadline(p: ProposalDTO): string {
+  return proposalHeadline(headlineInput(p));
+}
+
+/** What the domain's card copy reads off a proposal: the same fields for the
+ *  headline and for the lead-in, so the two can never disagree. */
+function headlineInput(p: ProposalDTO): HeadlineInput {
   const payload = p.payload as {
     append?: string;
     body?: string;
     patch?: { search: string; replace: string }[];
   };
-  return proposalHeadline({
+  return {
     kind: p.kind,
     targetPath: targetOf(p),
     frontmatter: frontmatter(p),
@@ -123,7 +132,16 @@ function composedHeadline(p: ProposalDTO): string {
     body: payload.body,
     patch: payload.patch,
     outbound: p.kind === 'outbound' ? (p.payload as OutboundPayloadDTO) : undefined,
-  });
+  };
+}
+
+/**
+ * The small line over a row's title: the act and the kind of thing, "New to-do",
+ * "Update document". The title alone read as the act ("File the missing story"
+ * looked like approving the filing), so the row says what approving does first.
+ */
+export function cardLeadIn(p: ProposalDTO): string {
+  return proposalLeadIn(headlineInput(p));
 }
 
 /**
@@ -186,10 +204,10 @@ export function cardTitle(p: ProposalDTO, knownTitle?: string | null): string {
 /**
  * The change a card that creates a page makes, in parts: who owes a to-do and
  * when it is due, when a meeting was and how many sat in it, then the first line
- * of what the page says. Composed in the domain, so the row and the receipt say
- * the same thing.
+ * of what the page says, marked when it is a quote. Composed in the domain, so
+ * the row and the receipt say the same thing.
  */
-export function cardFacts(p: ProposalDTO): string[] {
+export function cardFacts(p: ProposalDTO): NewPageFacts {
   return newPageFacts({
     kind: p.kind,
     frontmatter: frontmatter(p),

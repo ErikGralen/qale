@@ -12,8 +12,18 @@ function ResizablePanelGroup({ className, ...props }: ResizablePrimitive.GroupPr
   );
 }
 
-function ResizablePanel({ ...props }: ResizablePrimitive.PanelProps) {
-  return <ResizablePrimitive.Panel data-slot="resizable-panel" {...props} />;
+function ResizablePanel({ style, ...props }: ResizablePrimitive.PanelProps) {
+  return (
+    <ResizablePrimitive.Panel
+      data-slot="resizable-panel"
+      // The library gives every panel `overflow: auto`, so one stray pixel of
+      // overflow in a view turns the whole panel into a second scroll surface
+      // beside the view's own. Every view here holds its own scrolling, so the
+      // panel clips instead.
+      style={{ overflow: 'hidden', ...style }}
+      {...props}
+    />
+  );
 }
 
 function ResizableHandle({

@@ -1,5 +1,5 @@
 import { refToSlug } from '../notes/decisions.js';
-import { dirForType } from '../notes/frontmatter.js';
+import { dirForType, NOTE_TYPES, type NoteType } from '../notes/frontmatter.js';
 import { titleFromSlug } from '../notes/slug.js';
 import { formatStamp, parseEventStamp, rsvpAnswer } from './event-time.js';
 // activity.ts imports titleForRef from here, so the two lean on each other.
@@ -46,25 +46,35 @@ export function titleForRef(ref?: string | null): string {
   return titleFromSlug(bareRef(ref));
 }
 
-/** dir segment (plural) → singular noun for the fallback "Update <noun>". */
+/** dir segment (plural) → the singular noun for one page in it. The one word the
+ *  card uses for that kind of thing, in the lead-in and in every fallback. */
 const NOUN_FOR_DIR: Record<string, string> = {
-  meetings: 'the meeting notes',
-  decisions: 'a decision',
-  insights: 'an insight',
-  research: 'a research page',
-  about: 'an about page',
-  customers: 'a customer',
-  people: 'a person',
-  sources: 'a source',
-  notes: 'a document',
-  todos: 'a to-do',
+  meetings: 'meeting notes',
+  decisions: 'decision',
+  insights: 'insight',
+  research: 'research page',
+  about: 'about page',
+  customers: 'customer',
+  people: 'person',
+  sources: 'source',
+  notes: 'document',
+  todos: 'to-do',
+  skills: 'skill',
 };
 
-/** What an update card calls the page it touches when it has no title to use.
- *  A folder with no noun of its own falls back to the word every effect line
- *  here already uses for a file in the workspace. */
+/** The bare noun for one page in a folder: "todos" → "to-do". A folder with no
+ *  noun of its own falls back to the word every effect line here already uses
+ *  for a file in the workspace. */
+export function kindNoun(dir: string): string {
+  return NOUN_FOR_DIR[dir] ?? 'page';
+}
+
+/** What an update card calls the page it touches when it has no title to use:
+ *  the kind noun with its article, "a to-do", "the meeting notes". */
 export function nounForDir(dir: string): string {
-  return NOUN_FOR_DIR[dir] ?? 'a page';
+  const noun = kindNoun(dir);
+  if (noun === 'meeting notes') return `the ${noun}`;
+  return /^[aeiou]/i.test(noun) ? `an ${noun}` : `a ${noun}`;
 }
 
 /**
@@ -302,11 +312,18 @@ const noteType = (fm?: Record<string, unknown>): string => fmString(fm, 'type') 
  * a card that read the same either way said the opposite of what it meant.
  */
 function todoOwnerName(fm?: Record<string, unknown>): string | null {
-  if (fmString(fm, 'type') !== 'todo') return null;
-  const owner = fmString(fm, 'owner');
+  const owner = todoOwnerRef(fm);
   if (!owner) return null;
   // Either a "[[people/…]]" ref or a bare name — both read as a person here.
   return titleForRef(owner) || null;
+}
+
+/** The owner as the file writes it: a "[[people/…]]" ref, alias and all, or a
+ *  bare name. The facts line keeps the ref so the card can draw the person as
+ *  the link the rest of the app draws; the flat sentences strip it. */
+function todoOwnerRef(fm?: Record<string, unknown>): string | null {
+  if (fmString(fm, 'type') !== 'todo') return null;
+  return fmString(fm, 'owner') || null;
 }
 
 /** The meeting day as a person says it: "4 Aug". Undefined when the frontmatter
@@ -339,17 +356,18 @@ function participantCount(fm?: Record<string, unknown>): number {
  * what the page calls the part, never what it says. Wikilinks are left as they
  * are, so the card can draw them as live references.
  */
-function firstProseLine(body?: string): string {
+function firstProseLine(body?: string): { line: string; quoted: boolean } {
   for (const raw of (body ?? '').split('\n')) {
     const trimmed = raw.trim();
     if (isHeading(trimmed)) continue;
+    const quoted = trimmed.startsWith('>');
     const line = trimmed
       .replace(/^>\s*/, '')
       .replace(/^[-*+]\s+/, '')
       .trim();
-    if (line) return line;
+    if (line) return { line, quoted };
   }
-  return '';
+  return { line: '', quoted: false };
 }
 
 /** What a row needs to say about a page it is about to create. */
@@ -357,6 +375,19 @@ export interface NewPageFactsInput {
   kind: 'note' | 'update' | 'decision' | 'outbound' | 'delete';
   frontmatter?: Record<string, unknown>;
   body?: string;
+}
+
+/** The change a new page makes, in the two things the row draws apart. */
+export interface NewPageFacts {
+  /** The facts a person checks: who owes it and when, or when it was and how
+   *  many sat in it. Drawn as one dotted line. A person keeps their
+   *  `[[people/…]]` ref, so the row draws them as a link. */
+  facts: string[];
+  /** The first line of what the page says. Empty when the page says nothing. */
+  line: string;
+  /** True when the line is a quote the file carries as one: what someone said,
+   *  as `propose_todo` writes a to-do's body. The row draws it as a citation. */
+  quoted: boolean;
 }
 
 /**
@@ -367,25 +398,61 @@ export interface NewPageFactsInput {
  * The parts are handed back separately so the card can draw the line, and a
  * missing fact drops a part rather than padding it. Same two rules as the
  * headline: nothing here costs a lookup, and nothing here is authored.
+ *
+ * The owner is said as "Waiting on", the ledger's own word, and the PO's own
+ * to-do names nobody: the lead-in already said it is a to-do, and the row must
+ * not print a name twice.
  */
-export function newPageFacts(input: NewPageFactsInput): string[] {
+export function newPageFacts(input: NewPageFactsInput): NewPageFacts {
   const fm = input.frontmatter;
-  const parts: string[] = [];
+  const facts: string[] = [];
   const type = noteType(fm);
   if (type === 'todo') {
-    const owner = todoOwnerName(fm);
-    if (owner) parts.push(owner);
+    const owner = todoOwnerRef(fm);
+    if (owner) facts.push(`Waiting on ${owner}`);
     const due = dayLabel(fmString(fm, 'due'));
-    if (due) parts.push(`due ${due}`);
+    if (due) facts.push(`Due ${due}`);
   } else if (type === 'meeting') {
     const day = meetingDay(fm);
-    if (day) parts.push(day);
+    if (day) facts.push(day);
     const people = participantCount(fm);
-    if (people) parts.push(`${people} ${people === 1 ? 'person' : 'people'}`);
+    if (people) facts.push(`${people} ${people === 1 ? 'person' : 'people'}`);
   }
-  const line = firstProseLine(input.body);
-  if (line) parts.push(line);
-  return parts;
+  const { line, quoted } = firstProseLine(input.body);
+  // Only a to-do's body is what someone said. Any other page's first line is
+  // the page's own first sentence, whatever marker it wears.
+  return { facts, line, quoted: quoted && type === 'todo' };
+}
+
+/**
+ * The small line over the title that says, in two words, what approving does
+ * and to what kind of thing: "New to-do", "Update document", "Delete decision".
+ * The title under it is the page's own name, which on its own read as the act:
+ * "File the missing story under SCH-231" looked like approving the filing.
+ *
+ * Same verbs as the receipt (Created / Updated / Deleted) in the present, and
+ * the same kind nouns as every fallback here. A rule card keeps its own words,
+ * because the rule is the thing and its file is not.
+ */
+export function proposalLeadIn(input: HeadlineInput): string {
+  const target = input.targetPath ?? '';
+  const dir = dirOf(target);
+  if (input.kind === 'delete') return `Delete ${kindNoun(dir)}`;
+  if (isNewSkill(input.kind, target)) return 'New skill';
+  if (isInstruction(input.kind, target)) {
+    const want = wantListChange(input);
+    return want?.op === 'remove' ? 'Stop this' : 'Remember this';
+  }
+  if (input.kind === 'outbound') return outboundTarget(input.outbound ?? {});
+  if (input.kind === 'decision') return 'New decision';
+  if (input.kind === 'note') {
+    // A new page says its kind in its own frontmatter; the folder is the
+    // fallback for a page filed without one.
+    const type = fmString(input.frontmatter, 'type');
+    const known = (NOTE_TYPES as readonly string[]).includes(type);
+    return `New ${kindNoun(known ? dirForType(type as NoteType) : dir)}`;
+  }
+  return `Update ${kindNoun(dir)}`;
 }
 
 /** What a row needs to name the thing that changes. */

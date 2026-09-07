@@ -44,9 +44,15 @@ export function useQueueFocus<T extends HTMLElement>(focused: boolean) {
  *  the row suppresses the browser's own outline and never paints two. It shows
  *  only for keyboard focus (:focus-visible): the roving cursor lands real DOM
  *  focus on the row, so a keyboard pass always sees its place, and a mouse
- *  click never paints a "selected" border on a card the PO is just reading. */
-export function rowFocusClass(): string {
-  return 'outline-none ring-1 ring-foreground/10 transition-shadow focus-visible:ring-2 focus-visible:ring-ring/60';
+ *  click never paints a "selected" border on a card the PO is just reading.
+ *
+ *  `resting` is the hairline a row draws when it is nothing but itself. A row
+ *  inside a group sits on the group's own surface, so it draws none: two
+ *  hairlines a pixel apart read as a box inside a box. */
+export function rowFocusClass(resting = true): string {
+  return `outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring/60 ${
+    resting ? 'ring-1 ring-foreground/10' : ''
+  }`;
 }
 
 /**
@@ -135,6 +141,10 @@ export function providerName(ob: OutboundPayloadDTO): string | null {
 export interface OutboundAct {
   /** Completes "Approve & …" — an imperative the PO would say out loud. */
   verb: string;
+  /** The same act in one word, for the row's approve control: "Post", "Update",
+   *  "Reply". A page is updated in place, so calling that "Send" would invent a
+   *  delivery that never happens. */
+  word: string;
   /** The action's own glyph. A page edit is not a paper plane. */
   Icon: LucideIcon;
 }
@@ -152,7 +162,13 @@ const ACTION_ICON: Record<string, LucideIcon> = {
 };
 
 export function outboundAct(ob: OutboundPayloadDTO): OutboundAct {
-  return { verb: outboundVerb(ob.action), Icon: ACTION_ICON[ob.action] ?? Check };
+  const verb = outboundVerb(ob.action);
+  const first = verb.split(' ')[0] ?? verb;
+  return {
+    verb,
+    word: first.charAt(0).toUpperCase() + first.slice(1),
+    Icon: ACTION_ICON[ob.action] ?? Check,
+  };
 }
 
 // The outbound sentences live with the rest of the card vocabulary now, so the

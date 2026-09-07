@@ -73,7 +73,8 @@ export interface FiledWrite {
 
 /**
  * File one write, and apply it on the spot when the policy says it needs no card
- * (docs/easier-tickets.md E-3). The ONE place a write is graded.
+ * (docs/easier-tickets.md E-3, docs/review-rework.md RR-1). The ONE place the
+ * policy is asked.
  *
  * The row is created either way. A silent write is still a proposal: the payload
  * is the record of what changed, the accept path is the only code that knows how
@@ -83,8 +84,8 @@ export interface FiledWrite {
  * honest outcome: the work is not lost, the PM sees it, and the tool tells the
  * model the truth about where it stands.
  *
- * `grouped` behaves exactly like `ask` today. Workstream B1 builds the grouped
- * card; until then a grouped write waits on its own, which is what it did before.
+ * The policy has two answers: `silent` applies now, `ask` waits for the PM in
+ * the review.
  */
 export async function fileProposal(
   ctx: UseCaseContext,

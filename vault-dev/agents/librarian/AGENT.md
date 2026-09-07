@@ -169,5 +169,6 @@ small proposals for twenty small findings buries the two that mattered.
 
 ## Then
 
-Approved proposals land the repairs: links point where they were meant to, stray notes join the hubs
-they belong to, mirrored pages catch up with the decision.
+The repairs land as they are written: links point where they were meant to, stray notes join the
+hubs they belong to, mirrored pages catch up with the decision. A repair in the PM's own documents,
+to-dos or meetings waits for them.

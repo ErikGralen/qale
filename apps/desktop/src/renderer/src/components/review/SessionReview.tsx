@@ -6,35 +6,46 @@ import { useApp } from '../../state/app-state';
 import { waitingElsewhere } from '../../lib/attention';
 import { invoke } from '../../lib/ipc';
 import {
-  cardIntents,
+  batchCount,
+  batchSource,
   causeSentence,
   groupCause,
+  cardGroups,
   orderCards,
   receiptOf,
   receiptSummary,
 } from './cardMeta';
+import { useNoteName } from './titles';
 import { ReviewAsks, SentReceipts, useApprovals } from './approvals';
 import { ApproveAll, CardRows } from './CardRows';
 import { ReceiptLines } from './Receipt';
 
-/** One row of the review, as the cards draw: a grouped intent is ONE stop with
- *  N cards behind it, because that is what the reader sees. A cursor that
- *  walked six cards nobody can see is a cursor that vanished. */
-type ReviewRow =
-  { kind: 'card'; proposal: ProposalDTO } | { kind: 'intent'; key: string; cards: ProposalDTO[] };
-
-/** What a row is called. `CardRows` keys itself with the same id, so nothing
- *  here has to count positions and stay in step with the render order. */
-function reviewRowId(row: ReviewRow): string {
-  return row.kind === 'card' ? row.proposal.id : row.key;
+/** The cards in the order they draw in: every card is one row, and a group of
+ *  two changes to one page is two stops under one name. The cursor walks what
+ *  the reader sees, so grouping never hides a card from it. */
+function rowsOf(cards: ProposalDTO[]): ProposalDTO[] {
+  return cardGroups(cards).flatMap((g) => g.cards);
 }
 
-/** A session's cards as the rows they draw as. */
-function rowsOf(cards: ProposalDTO[]): ReviewRow[] {
-  return cardIntents(cards).map((g) =>
-    g.cards.length > 1
-      ? { kind: 'intent', key: g.key, cards: g.cards }
-      : { kind: 'card', proposal: g.cards[0]! },
+/**
+ * The batch's one source, as an openable chip with the page's real name. Nine
+ * cards from one transcript said "from Steering H2 Priorities" nine times, in a
+ * prettified filename that was not even the page's title.
+ */
+function SourceChip({ ref: source, onOpen }: { ref: string; onOpen: (path: string) => void }) {
+  const known = useNoteName(source);
+  if (!known) return null;
+  return (
+    <>
+      {' from '}
+      <button
+        className="rounded-md text-brand underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        onClick={() => onOpen(known.path)}
+        title={`Open ${known.title}`}
+      >
+        {known.title}
+      </button>
+    </>
   );
 }
 
@@ -75,10 +86,10 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
     setFocusIdx((i) => (i < 0 ? i : Math.min(i, rows.length - 1)));
   }, [rows.length]);
 
-  /** Where each row sits, by its own id: the cursor's only map. */
+  /** Where each row sits, by its card's id: the cursor's only map. */
   const focusIndex = useMemo(() => {
     const m = new Map<string, number>();
-    rows.forEach((row, i) => m.set(reviewRowId(row), i));
+    rows.forEach((row, i) => m.set(row.id, i));
     return m;
   }, [rows]);
 
@@ -91,7 +102,7 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
   );
 
   const current = focusIdx >= 0 ? (rows[focusIdx] ?? null) : null;
-  const focusedId = current ? reviewRowId(current) : null;
+  const focusedId = current?.id ?? null;
 
   /** The focused outbound card's send button. ↵ moves to it instead of pressing
    *  it for you. */
@@ -123,17 +134,14 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
     } else if ((e.key === 'Enter' || e.key === 'a') && current && !approvals.busy) {
       e.preventDefault();
       // A send leaves the workspace, so the one-tap approve never fires one:
-      // the same rule the batch path keeps. ↵ carries you to the send button,
+      // the same rule the batch path keeps. ↵ carries you to the send control,
       // and pressing it there is the decision. Everything internal stays one
-      // tap. A grouped row is one decision, so ↵ takes the whole group. That is
-      // what the row says it is, and what its "Approve all" button does.
-      if (current.kind === 'intent') approvals.acceptAll(current.cards);
-      else if (current.proposal.kind === 'outbound') focusSend(current.proposal.id);
-      else approvals.accept(current.proposal);
+      // tap.
+      if (current.kind === 'outbound') focusSend(current.id);
+      else approvals.accept(current);
     } else if ((e.key === 'Backspace' || e.key === 'x') && current && !approvals.busy) {
       e.preventDefault();
-      if (current.kind === 'intent') approvals.rejectAll(current.cards);
-      else approvals.reject(current.proposal);
+      approvals.reject(current);
     }
   };
 
@@ -206,9 +214,17 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
   // decision. The head says the cause, so the PO judges the premise once
   // instead of reading the same edit N times.
   const cause = groupCause(cards);
+  // One count for one list. A send is its own decision and never rides along in
+  // the batch, so the heading says how many of each are waiting rather than
+  // leaving "9 changes" to explain a button that says 7.
+  const sends = cards.filter((c) => c.kind === 'outbound').length;
   const heading = cause
     ? causeSentence(cause, cards.length)
-    : `${cards.length} change${cards.length === 1 ? '' : 's'} to review`;
+    : batchCount(cards.length - sends, sends);
+  // The one source the whole batch came from, said once in the heading. When
+  // they came from several, or when there is no heading because one card needs
+  // no announcement, each row names its own behind its chevron.
+  const source = cause || cards.length < 2 ? null : batchSource(cards);
 
   return (
     /* A heading over the cards, not a container around them. Each card already
@@ -262,7 +278,10 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
         // and the batch button earn a header row only on a pile.
         cards.length > 1 && (
           <div className="mb-1.5 flex items-center gap-3 px-0.5">
-            <h3 className="min-w-0 flex-1 text-sm font-semibold text-foreground">{heading}</h3>
+            <h3 className="min-w-0 flex-1 text-sm font-semibold text-foreground">
+              {heading}
+              {source && <SourceChip ref={source} onOpen={openDoc} />}
+            </h3>
             <ApproveAll cards={cards} approvals={approvals} className="shrink-0" />
           </div>
         )
@@ -273,6 +292,7 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
         focusedId={focusedId}
         onFocus={focusRow}
         onOpen={openDoc}
+        showSource={!source}
       />
     </section>
   );

@@ -214,10 +214,10 @@ documents up against each other is the synthesis skill's work.
 
 ## Then
 The sources are filed and stay filed. Your proposals land everything else: the meeting page, the
-decision spine, the commitment ledger, the hubs. A new page lands as you write it; a rewrite of a
-page the memory already has waits for the PM, and so does every todo. Outbound waits too, and
-executes upstream on approval, then files its link back. Each source flips new → processed when a
-proposal citing it lands.
+decision spine, the commitment ledger, the hubs. The meeting page waits for the PM, and so does
+every todo: those are theirs. The decisions, the hub edits and the insights are Qale's memory, and
+they land as you write them. Outbound waits too, and executes upstream on approval, then files its
+link back. Each source flips new → processed when a proposal citing it lands.
 `;
 
 export const MEETING_PREP_AGENT = `---
@@ -378,8 +378,9 @@ If a fragment is ambiguous, keep it verbatim and ask one concrete question. Gues
 meant puts words in your notes.
 
 ## Then
-Approved proposals clean the note and propagate it: hubs updated, loops closed, new todos, insights,
-and decisions filed. The note stays your scratch pad. More gets dumped, the button gets hit
+Your proposals clean the note and propagate it: hubs updated, loops closed, new todos, insights,
+and decisions filed. The edits to the note itself wait for you, and so does every todo; the hub
+edits, the insights and the decisions land as they are written. The note stays your scratch pad. More gets dumped, the button gets hit
 again, and only the new material is touched.
 `;
 
@@ -1627,8 +1628,9 @@ Raise the few most valuable repairs and leave the rest for the next pass. This r
 small proposals for twenty small findings buries the two that mattered.
 
 ## Then
-Approved proposals land the repairs: links point where they were meant to, stray notes join the hubs
-they belong to, mirrored pages catch up with the decision.
+The repairs land as they are written: links point where they were meant to, stray notes join the
+hubs they belong to, mirrored pages catch up with the decision. A repair in the PM's own documents,
+to-dos or meetings waits for them.
 `;
 
 /**
@@ -2008,8 +2010,9 @@ that belongs upstream. Say that the reasoning is in this session, so it is one c
 
 ## Then
 
-The rounds stay in this session with the answers, so the thinking is readable later. New pages
-land as they are written; a rewrite of something the memory already says waits for you.
+The rounds stay in this session with the answers, so the thinking is readable later. Pages and
+edits in Qale's memory land as they are written; anything in your documents, your to-dos or your
+meetings waits for you.
 `;
 
 /** One file the pack seeds into a new workspace. */

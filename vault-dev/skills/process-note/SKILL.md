@@ -55,6 +55,7 @@ meant puts words in your notes.
 
 ## Then
 
-Approved proposals clean the note and propagate it: hubs updated, loops closed, new todos, insights,
-and decisions filed. The note stays your scratch pad. More gets dumped, the button gets hit
+Your proposals clean the note and propagate it: hubs updated, loops closed, new todos, insights,
+and decisions filed. The edits to the note itself wait for you, and so does every todo; the hub
+edits, the insights and the decisions land as they are written. The note stays your scratch pad. More gets dumped, the button gets hit
 again, and only the new material is touched.

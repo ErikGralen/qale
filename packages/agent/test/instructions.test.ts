@@ -566,7 +566,7 @@ test('a line the PM asked for lands on the list on the spot, above Your rules', 
   assert.ok(body.trimEnd().endsWith('delete it to drop it.'), 'Your rules gained nothing');
 });
 
-test('a line Qale worked out from repeated questions is a card', async () => {
+test('a line Qale worked out from repeated questions lands, and cites no note', async () => {
   const ctx = rulesCtx({ [RULES]: { body: `${HOUSE}\n` } });
   const said = await out(tool(ctx), {
     rule: API_LINE,
@@ -574,8 +574,10 @@ test('a line Qale worked out from repeated questions is a card', async () => {
     why: 'You asked what changed in the API three times this month.',
   });
 
-  assert.match(said, /^Proposed a line for what you want from Qale \(p1\)/);
-  assert.match(said, /Awaiting review/);
+  // The house rules are Qale's own file, so the line lands and Activity keeps
+  // the row (docs/review-rework.md RR-1). The card is gone; the file is the
+  // record, and the rationale still says the line was worked out, not stated.
+  assert.match(said, /^Applied: Learned "Tell me what changed in the API/);
   const card = ctx.filed[0] as unknown as WantFiled;
   assert.equal(card.asked, false);
   assert.match(card.rationale, /^You asked what changed in the API three times this month\./);
@@ -602,15 +604,12 @@ test('with no house-rules file, the add writes the whole document with the line 
   assert.ok(body.trimEnd().endsWith('delete it to drop it.'));
 });
 
-test('taking a line off is always a card, anchored on the section', async () => {
+test('taking a line off is one patch, anchored on the section', async () => {
   const ctx = rulesCtx({ [RULES]: { body: `${HOUSE}\n` } });
   const said = await out(tool(ctx), { rule: 'who is waiting for something', list: 'remove' });
 
-  assert.match(
-    said,
-    /^Proposed taking a line off what you want from Qale \(p1\): "Tell me who is waiting/,
-  );
-  assert.match(said, /removing is always the PM's call/);
+  assert.match(said, /^Applied: Learned that "Tell me who is waiting/);
+  assert.match(said, /off the list of what you want from Qale/);
   const card = ctx.filed[0] as unknown as WantFiled;
   assert.equal(card.kind, 'update');
   assert.equal(card.asked, false);

@@ -1,151 +1,179 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  cardDisposition,
-  groupIntents,
-  intentKey,
-  intentSentence,
-  type IntentCard,
+  cardTargetTitle,
+  groupByTarget,
+  newPageFacts,
+  targetKey,
+  type TargetCard,
 } from '../src/index.js';
 
-// One card per intent (docs/easier-tickets.md E-6). The rule the whole thing
-// rests on: a group is what the PM would say out loud, so two cards group only
-// when approving both is one act, and the sentence names it.
+// One row per thing that changes (docs/review-rework.md RR-3). The rule the
+// whole thing rests on: two cards sit together only when they change the same
+// thing, so a person reads the review by asking "what happens to this?".
 
 let n = 0;
-const patch = (path: string, from = 'sources/2026-07-14-standup'): IntentCard => ({
+const patch = (path: string): TargetCard => ({
   id: `p${++n}`,
   kind: 'update',
   targetPath: path,
-  evidence: [`[[${from}]]`],
-  payload: { path, patch: [{ search: 'a', replace: 'b' }] },
+  payload: { path },
 });
 
-test('a patch over existing text is grouped; a send, a delete and a to-do are not', () => {
-  assert.equal(cardDisposition(patch('insights/pricing.md')), 'grouped');
-  assert.equal(cardDisposition({ id: 'x', kind: 'outbound' }), 'ask');
-  assert.equal(cardDisposition({ id: 'x', kind: 'delete', targetPath: 'notes/old.md' }), 'ask');
+test('the key is the file, whatever the card does to it', () => {
+  assert.equal(targetKey(patch('todos/reply-marcus.md')), 'path:todos/reply-marcus.md');
+  // A new page carries its path in the payload only.
   assert.equal(
-    cardDisposition({ id: 'x', kind: 'update', targetPath: 'todos/ship-scim.md' }),
-    'ask',
-  );
-  // A rule file does not group either. A rule the PM stated applied silently and
-  // never became a card, so a rule file sitting in the queue is one the agent
-  // wrote on its own, and that asks on its own row.
-  assert.equal(
-    cardDisposition({ id: 'x', kind: 'update', targetPath: 'skills/jira/SKILL.md' }),
-    'ask',
+    targetKey({ id: 'x', kind: 'note', payload: { path: 'todos/re-scope.md' } }),
+    'path:todos/re-scope.md',
   );
 });
 
-test('an append-only update lands silently, so it is not in the queue to group', () => {
-  const card: IntentCard = {
+test('a send keys on the item it touches, so it never joins a page edit', () => {
+  const comment: TargetCard = {
     id: 'x',
-    kind: 'update',
-    targetPath: 'meetings/2026-07-14-standup.md',
-    payload: { append: 'The team agreed to ship on Friday.' },
+    kind: 'outbound',
+    payload: { targetId: 'SCH-118' },
   };
-  assert.equal(cardDisposition(card), 'silent');
-  assert.equal(intentKey(card), null);
+  assert.equal(targetKey(comment), 'ref:SCH-118');
+  // A new ticket and a calendar event name nothing that exists yet.
+  assert.equal(targetKey({ id: 'y', kind: 'outbound', payload: {} }), null);
 });
 
-test('cards from one reading of one source are one intent', () => {
-  const cards = [
-    patch('insights/pricing.md'),
-    patch('insights/onboarding.md'),
-    patch('insights/support.md'),
-  ];
-  const groups = groupIntents(cards);
-  assert.equal(groups.length, 1);
-  assert.equal(groups[0]!.cards.length, 3);
-  assert.equal(groups[0]!.sentence, 'Edit 3 insights, from Standup');
-});
-
-test('the sentence names the folder only when they all share one', () => {
-  const groups = groupIntents([patch('insights/pricing.md'), patch('research/pricing.md')]);
-  assert.equal(groups.length, 1);
-  assert.equal(groups[0]!.sentence, 'Edit 2 pages, from Standup');
-});
-
-test('two sources are two intents, because they are two sentences', () => {
-  const groups = groupIntents([
-    patch('insights/pricing.md', 'sources/2026-07-14-standup'),
-    patch('insights/onboarding.md', 'meetings/2026-07-15-nordkap'),
-  ]);
+test('two changes to one to-do are one group', () => {
+  const due: TargetCard = {
+    id: 'a',
+    kind: 'update',
+    targetPath: 'todos/reply-marcus.md',
+    payload: { path: 'todos/reply-marcus.md' },
+  };
+  const text = patch('todos/reply-marcus.md');
+  const groups = groupByTarget([due, text, patch('customers/cafe-nord.md')]);
   assert.equal(groups.length, 2);
+  assert.deepEqual(groups[0]!.cards, [due, text]);
+  assert.equal(groups[0]!.key, 'path:todos/reply-marcus.md');
+  assert.equal(groups[1]!.cards.length, 1);
+});
+
+test('cards from one meeting that touch different pages stay apart', () => {
+  const groups = groupByTarget([
+    patch('customers/fjord-sports.md'),
+    patch('customers/cafe-nord.md'),
+    patch('todos/reply-marcus.md'),
+  ]);
   assert.deepEqual(
     groups.map((g) => g.cards.length),
-    [1, 1],
+    [1, 1, 1],
   );
 });
 
-test('setting one field is its own intent, and the value is part of it', () => {
-  const set = (path: string, status: string): IntentCard => ({
-    id: `s${++n}`,
-    kind: 'update',
-    targetPath: path,
-    evidence: ['[[meetings/2026-07-14-standup]]'],
-    payload: { path, frontmatter: { status } },
-  });
-  const groups = groupIntents([
-    set('tickets/jira/PAY-1.md', 'done'),
-    set('tickets/jira/PAY-2.md', 'done'),
-    set('tickets/jira/PAY-3.md', 'blocked'),
-  ]);
+test('a card that names no target keeps a row of its own', () => {
+  const alone = (id: string): TargetCard => ({ id, kind: 'outbound', payload: {} });
+  const groups = groupByTarget([alone('a'), alone('b')]);
   assert.equal(groups.length, 2);
-  assert.equal(groups[0]!.sentence, 'Set status to done on 2 tickets, from Standup');
-  assert.equal(groups[1]!.sentence, 'Set status to blocked on 1 ticket, from Standup');
-});
-
-test('a decision says so, and never joins the patches beside it', () => {
-  const decision = (path: string): IntentCard => ({
-    id: `d${++n}`,
-    kind: 'decision',
-    targetPath: path,
-    evidence: ['[[meetings/2026-07-14-standup]]'],
-    payload: { path },
-  });
-  const groups = groupIntents([
-    decision('decisions/ship-friday.md'),
-    decision('decisions/drop-sso.md'),
-    patch('insights/pricing.md', 'meetings/2026-07-14-standup'),
-  ]);
-  assert.equal(groups.length, 2);
-  assert.equal(groups[0]!.sentence, 'Record 2 decisions, from Standup');
 });
 
 test('what is left after a partial approval is still the same group', () => {
   const cards = [
-    patch('insights/pricing.md'),
-    patch('insights/onboarding.md'),
-    patch('insights/support.md'),
-    patch('insights/churn.md'),
+    patch('todos/reply-marcus.md'),
+    patch('todos/reply-marcus.md'),
+    patch('todos/reply-marcus.md'),
   ];
-  const before = groupIntents(cards)[0]!;
-  // The PM approved two. The other two key the same way, so the row stays put
-  // and only its count changes — they never read as orphans.
-  const after = groupIntents(cards.slice(2))[0]!;
+  const before = groupByTarget(cards)[0]!;
+  const after = groupByTarget(cards.slice(1))[0]!;
   assert.equal(before.key, after.key);
-  assert.equal(after.sentence, 'Edit 2 insights, from Standup');
+  assert.equal(after.cards.length, 2);
 });
 
-test('a card that groups with nobody comes back as itself, in its own place', () => {
-  const alone = patch('insights/pricing.md', 'meetings/2026-07-15-nordkap');
-  const pair = [patch('research/pricing.md'), patch('research/support.md')];
-  const groups = groupIntents([alone, ...pair]);
-  assert.deepEqual(
-    groups.map((g) => g.cards.length),
-    [1, 2],
-  );
-  assert.equal(groups[0]!.cards[0]!.id, alone.id);
+test('the cards come back as the very ones that went in', () => {
+  const cards = [patch('notes/h2-capacity.md'), patch('notes/h2-capacity.md')];
+  assert.equal(groupByTarget(cards)[0]!.cards[0], cards[0]);
 });
 
-test('with no source to name, the sentence stops rather than pads', () => {
+// The row leads with the page's real name (docs/review-rework.md). A prettified
+// filename is the last resort, never the first answer.
+
+test('an existing page is named by the workspace, not by its filename', () => {
   assert.equal(
-    intentSentence([
-      { id: 'a', kind: 'update', targetPath: 'notes/one.md', payload: { patch: [] } },
-      { id: 'b', kind: 'update', targetPath: 'notes/two.md', payload: { patch: [] } },
-    ]),
-    'Edit 2 documents',
+    cardTargetTitle({
+      kind: 'update',
+      targetPath: 'todos/tell-fjord-sports-payroll-timeline.md',
+      knownTitle: 'Tell Fjord Sports the payroll timeline',
+    }),
+    'Tell Fjord Sports the payroll timeline',
   );
+  // Nothing knows it yet: the filename, de-slugged, is all there is.
+  assert.equal(
+    cardTargetTitle({ kind: 'update', targetPath: 'todos/reply-marcus-swap-eta.md' }),
+    'Reply Marcus Swap Eta',
+  );
+});
+
+test('a new page names itself, because nothing else knows it', () => {
+  assert.equal(
+    cardTargetTitle({
+      kind: 'note',
+      targetPath: 'todos/2026-09-07-re-scope-sch-240.md',
+      frontmatter: { type: 'todo', title: 'Re-scope SCH-240 and give a real estimate' },
+    }),
+    'Re-scope SCH-240 and give a real estimate',
+  );
+});
+
+test('a card with nothing to name says what kind of page it is', () => {
+  assert.equal(cardTargetTitle({ kind: 'update', targetPath: '' }), 'a page');
+});
+
+// Line two of a row that creates a page: the facts a person checks, then what
+// the page says.
+
+test('a new to-do says who owes it, when it is due, and what it is', () => {
+  assert.deepEqual(
+    newPageFacts({
+      kind: 'note',
+      frontmatter: {
+        type: 'todo',
+        title: 'Re-scope SCH-240',
+        due: '2026-09-24',
+        owner: '[[people/rebecca-holm]]',
+      },
+      body: "> I'll re-scope SCH-240 properly.\n> — [[meetings/2026-09-07-steering]]\n",
+    }),
+    ['Rebecca Holm', 'due 24 Sep', "I'll re-scope SCH-240 properly."],
+  );
+});
+
+test('the PM’s own to-do names no owner, and a missing date drops a part', () => {
+  assert.deepEqual(
+    newPageFacts({
+      kind: 'note',
+      frontmatter: { type: 'todo', title: 'Answer Marcus' },
+      body: 'Say "before September" and nothing tighter.',
+    }),
+    ['Say "before September" and nothing tighter.'],
+  );
+});
+
+test('a new meeting page says when it was and how many sat in it', () => {
+  assert.deepEqual(
+    newPageFacts({
+      kind: 'note',
+      frontmatter: {
+        type: 'meeting',
+        title: 'Steering: H2 priorities',
+        date: '2026-09-07',
+        participants: ['Åsa Lindgren', 'Rebecca Holm', 'Erik'],
+      },
+      body: '## Summary\n\nThe H2 order flipped.',
+    }),
+    ['7 Sep', '3 people', 'The H2 order flipped.'],
+  );
+});
+
+test('a page with nothing but prose says its first line', () => {
+  assert.deepEqual(
+    newPageFacts({ kind: 'decision', frontmatter: { type: 'decision' }, body: 'Swaps ship first.' }),
+    ['Swaps ship first.'],
+  );
+  assert.deepEqual(newPageFacts({ kind: 'note', frontmatter: {}, body: '' }), []);
 });

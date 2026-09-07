@@ -621,8 +621,9 @@ test('a proposed meeting is the whole page: date, summary and recording in one c
     participants: ['[[people/asa-lind]]'],
   });
 
-  // A new page, so it lands as it is written (docs/easier-tickets.md E-5).
-  assert.match(said, /^Applied: Created Nordkap QBR\./);
+  // A meeting page is the PM's, so the whole page waits for them
+  // (docs/review-rework.md RR-1).
+  assert.match(said, /^Proposed meeting \(p1\): meetings\/2026-08-04-nordkap-qbr\.md/);
   const card = filed[0]!;
   assert.equal(card['kind'], 'note');
   assert.equal(card['targetPath'], 'meetings/2026-08-04-nordkap-qbr.md');
@@ -687,9 +688,9 @@ test('a meeting nobody is on is refused, unless the source really names nobody',
   assert.match(refused, /^Rejected: nobody is on this meeting/);
   assert.equal(filed.length, 0);
 
-  // Speaker labels only: the flag says the model looked, and the card lands.
+  // Speaker labels only: the flag says the model looked, and the card is filed.
   const said = await out(tool, { ...MEETING, participants_unknown: true });
-  assert.match(said, /^Applied: Created Nordkap QBR\./);
+  assert.match(said, /^Proposed meeting \(p1\): meetings\/2026-08-04-nordkap-qbr\.md/);
   assert.match(said, /say so in your closing line/);
   const fm = (filed[0]!['payload'] as { frontmatter: Record<string, unknown> }).frontmatter;
   assert.equal(fm['participants'], undefined);
@@ -699,7 +700,7 @@ test('a meeting nobody is on is refused, unless the source really names nobody',
     ...MEETING,
     participants: ['Åsa Lind'],
   });
-  assert.match(named, /^Applied: Created Nordkap QBR\./);
+  assert.match(named, /^Proposed meeting \(p2\): meetings\/2026-08-04-nordkap-qbr\.md/);
   assert.deepEqual(
     (filed[1]!['payload'] as { frontmatter: Record<string, unknown> }).frontmatter['participants'],
     ['Åsa Lind'],
@@ -727,22 +728,41 @@ test('a meeting page that already exists is an update, and the refusal says so',
 
 function pendingCtx(pending: { kind: string; targetPath: string | null }[]): UseCaseContext {
   const filed: Record<string, unknown>[] = [];
+  const rows = new Map<string, Record<string, unknown>>();
   return {
     index: {
       resolve: (t: string) => (t === 'sources/gong-call' ? 'sources/gong-call.md' : null),
       get: () => null,
+      reindex: () => {},
     },
     clock: { now: () => '2026-08-07T09:00:00.000Z' },
     // Nothing is on disk beyond what the index above admits to — the create
     // tools ask before proposing, so that a note the PM already approved cannot
     // come back as a card that could never be applied.
-    vault: { exists: async () => false },
+    vault: {
+      exists: async () => false,
+      writeNote: async (p: string, frontmatter: Record<string, unknown>, body: string) => ({
+        path: p,
+        slug: p.replace(/\.md$/, ''),
+        type: frontmatter['type'],
+        frontmatter,
+        body,
+      }),
+    },
+    git: { commitPaths: async () => {}, history: async () => [] },
     proposals: {
       create: (input: Record<string, unknown>) => {
+        const rec = { ...input, id: `p${filed.length + 1}`, status: 'pending' };
         filed.push(input);
-        return { id: `p${filed.length}` };
+        rows.set(rec.id, rec);
+        return rec;
       },
       list: (status?: string) => (status === 'pending' ? pending : []),
+      get: (id: string) => rows.get(id) ?? null,
+      setStatus: (id: string, status: string) => {
+        const rec = rows.get(id);
+        if (rec) rows.set(id, { ...rec, status });
+      },
     },
     filed,
   } as unknown as UseCaseContext & { filed: Record<string, unknown>[] };
@@ -786,8 +806,10 @@ test('a card the PM asked for files with no sources, and does not read as a gues
   assert.match(bare, /asked:true/);
   assert.equal(filed.length, 0);
 
+  // A todo they dictated still asks: a promise is their word, whoever asked
+  // for it. The card carries the flag so it does not read as a guess.
   const said = await out(todoTool(ctx), { ...TODO, sources: [], asked: true });
-  assert.match(said, /Proposed todo/);
+  assert.match(said, /^Proposed todo /);
   assert.equal(filed.length, 1);
   assert.equal(filed[0]!['asked'], true);
   assert.equal(filed[0]!['inference'], false);
@@ -829,13 +851,15 @@ test('a page nobody has written and nobody has proposed is still refused', async
  * search/replace had nothing to match and the write-up had nowhere to go.
  */
 
-function updateCtx(filed: Record<string, unknown>[], body: string): UseCaseContext {
-  const note = {
+function updateCtx(
+  filed: Record<string, unknown>[],
+  body: string,
+  page: { path: string; type: string } = {
     path: 'meetings/2026-08-04-nordkap-qbr.md',
     type: 'meeting',
-    frontmatter: { type: 'meeting' },
-    body,
-  };
+  },
+): UseCaseContext {
+  const note = { path: page.path, type: page.type, frontmatter: { type: page.type }, body };
   const rows = new Map<string, Record<string, unknown>>();
   return {
     vault: {
@@ -849,7 +873,7 @@ function updateCtx(filed: Record<string, unknown>[], body: string): UseCaseConte
     },
     index: {
       resolve: (t: string) =>
-        t === 'meetings/2026-08-04-nordkap-qbr' || t === 'sources/gong-call' ? `${t}.md` : null,
+        t === page.path.replace(/\.md$/, '') || t === 'sources/gong-call' ? `${t}.md` : null,
       get: () => null,
       reindex: () => {},
     },
@@ -911,18 +935,30 @@ test('an anchor that is not in the note is refused while the agent can still loo
   assert.equal(filed.length, 0);
 });
 
-test('append carries the write-up onto a page that has nothing to anchor to', async () => {
+test('append lands on a page Qale keeps, and waits on a meeting page', async () => {
+  const hub: Record<string, unknown>[] = [];
+  const landed = await out(
+    updateTool(updateCtx(hub, '\n\n', { path: 'customers/nordkap.md', type: 'customer' })),
+    {
+      ...UPDATE,
+      path: 'customers/nordkap.md',
+      append: '## Signals\n\nThey confirmed the go-live.',
+    },
+  );
+
+  // Qale's memory takes the edit as it is written (docs/review-rework.md RR-1).
+  assert.match(landed, /^Applied: Updated /);
+  const payload = hub[0]!['payload'] as { append: string; patch?: unknown };
+  assert.match(payload.append, /They confirmed the go-live/);
+  assert.equal(payload.patch, undefined);
+
+  // The meeting page is the PM's, so the same write-up waits for them.
   const filed: Record<string, unknown>[] = [];
-  const said = await out(updateTool(updateCtx(filed, '\n\n')), {
+  const waiting = await out(updateTool(updateCtx(filed, '\n\n')), {
     ...UPDATE,
     append: '## Summary\n\nThey confirmed the go-live.',
   });
-
-  // Adding at the end rewrites nothing, so it lands (docs/easier-tickets.md E-5).
-  assert.match(said, /^Applied: Updated Nordkap QBR\./);
-  const payload = filed[0]!['payload'] as { append: string; patch?: unknown };
-  assert.match(payload.append, /They confirmed the go-live/);
-  assert.equal(payload.patch, undefined);
+  assert.match(waiting, /^Proposed update \(p1\) to meetings\/2026-08-04-nordkap-qbr\.md/);
 });
 
 test('a card that changes nothing at all is still refused', async () => {

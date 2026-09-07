@@ -169,7 +169,7 @@ documents up against each other is the synthesis skill's work.
 ## Then
 
 The sources are filed and stay filed. Your proposals land everything else: the meeting page, the
-decision spine, the commitment ledger, the hubs. A new page lands as you write it; a rewrite of a
-page the memory already has waits for the PM, and so does every todo. Outbound waits too, and
-executes upstream on approval, then files its link back. Each source flips new → processed when a
-proposal citing it lands.
+decision spine, the commitment ledger, the hubs. The meeting page waits for the PM, and so does
+every todo: those are theirs. The decisions, the hub edits and the insights are Qale's memory, and
+they land as you write them. Outbound waits too, and executes upstream on approval, then files its
+link back. Each source flips new → processed when a proposal citing it lands.

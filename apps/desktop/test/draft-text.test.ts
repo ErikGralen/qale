@@ -1,11 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  copyMemoryKey,
+  draftAnswerMessage,
+  draftRepeatMessage,
   draftTextOf,
   draftTextShown,
   draftUseMessage,
   draftVoiceMessage,
   draftWordCount,
+  forgetCopy,
+  rememberCopy,
+  type CopyMemory,
 } from '../src/renderer/src/lib/draft-text.js';
 
 /**
@@ -123,4 +129,102 @@ test('the word count counts prose, not the markdown holding it up', () => {
   assert.equal(draftWordCount('## What changed\n\n- Exports land\n- Imports do not\n'), 7);
   assert.equal(draftWordCount('Run it:\n\n```\nnpm run build\n```\n'), 2);
   assert.equal(draftWordCount(''), 0);
+});
+
+/**
+ * The panel's question (docs/learning-how-you-work.md, ticket 10). It rides the
+ * tool input like everything else, so a malformed one has to read as no
+ * question rather than a broken panel.
+ */
+
+test('an `ask` with one sentence and up to three options reads as a question', () => {
+  const draft = draftTextOf({
+    variants: VARIANTS,
+    ask: {
+      text: 'Write updates this way from now on?',
+      options: ['For exec', ' For every audience ', 'Not now'],
+    },
+  });
+  assert.deepEqual(draft?.ask, {
+    text: 'Write updates this way from now on?',
+    options: ['For exec', 'For every audience', 'Not now'],
+  });
+});
+
+test('a malformed `ask` is dropped and the panel is otherwise unchanged', () => {
+  for (const ask of [
+    undefined,
+    null,
+    'Which?',
+    { text: 'Which?' },
+    { options: ['a'] },
+    { text: '', options: ['a'] },
+    { text: 'Which?', options: [] },
+    { text: 'Which?', options: [1, 2] },
+    { text: 'Which?', options: ['a', 'b', 'c', 'd'] },
+  ]) {
+    const draft = draftTextOf({ variants: VARIANTS, ask });
+    assert.equal(draft?.ask, undefined, JSON.stringify(ask ?? null));
+    assert.equal(draft?.variants.length, 2);
+  }
+});
+
+test('the answer names the copied tab and the option', () => {
+  assert.equal(
+    draftAnswerMessage('One paragraph', 'For exec'),
+    'I copied "One paragraph" and answered "For exec".',
+  );
+});
+
+test('a second copy of the same style says it is the pick', () => {
+  assert.equal(
+    draftRepeatMessage('One paragraph', 'exec'),
+    'I copied "One paragraph" again without answering, so treat it as the pick for exec.',
+  );
+});
+
+/** A stand-in for localStorage. */
+function memory(): CopyMemory & { map: Map<string, string> } {
+  const map = new Map<string, string>();
+  return {
+    map,
+    get: (k) => map.get(k) ?? null,
+    set: (k, v) => void map.set(k, v),
+    remove: (k) => void map.delete(k),
+  };
+}
+
+test('the same style copied from a later panel is a repeat, and clears the memory', () => {
+  const store = memory();
+  const key = copyMemoryKey('/vaults/tavla', 'exec');
+  assert.deepEqual(rememberCopy(store, key, 'One paragraph', 'panel-1'), { repeat: false });
+  // Copying again from the same panel is making sure the clipboard took it.
+  assert.deepEqual(rememberCopy(store, key, 'One paragraph', 'panel-1'), { repeat: false });
+  assert.deepEqual(rememberCopy(store, key, 'One paragraph', 'panel-2'), { repeat: true });
+  assert.equal(store.get(key), null);
+});
+
+test('a different style from a later panel is a fresh copy, not a repeat', () => {
+  const store = memory();
+  const key = copyMemoryKey('/vaults/tavla', 'exec');
+  rememberCopy(store, key, 'One paragraph', 'panel-1');
+  assert.deepEqual(rememberCopy(store, key, 'Three lines', 'panel-2'), { repeat: false });
+  assert.deepEqual(JSON.parse(store.get(key)!), { label: 'Three lines', panel: 'panel-2' });
+});
+
+test('an answer forgets the copy, and a broken value reads as nothing remembered', () => {
+  const store = memory();
+  const key = copyMemoryKey('/vaults/tavla', 'exec');
+  rememberCopy(store, key, 'One paragraph', 'panel-1');
+  forgetCopy(store, key);
+  assert.equal(store.get(key), null);
+
+  store.set(key, '{not json');
+  assert.deepEqual(rememberCopy(store, key, 'One paragraph', 'panel-2'), { repeat: false });
+});
+
+test('the memory is keyed by workspace and voice, so two workspaces never share a pick', () => {
+  assert.notEqual(copyMemoryKey('/a', 'exec'), copyMemoryKey('/b', 'exec'));
+  assert.notEqual(copyMemoryKey('/a', 'exec'), copyMemoryKey('/a', 'cs'));
+  assert.equal(copyMemoryKey('/a', 'Exec'), copyMemoryKey('/a', 'exec'));
 });

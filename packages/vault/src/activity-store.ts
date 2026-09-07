@@ -90,6 +90,23 @@ export class ActivityStore implements ActivityPort {
     return rows.map((r) => this.toRecord(r));
   }
 
+  /**
+   * The newest learned row per file (docs/learning-how-you-work.md ticket 13).
+   *
+   * `MAX(at)` with the columns beside it: SQLite answers with the row that holds
+   * the maximum, so each file's line is its newest one. A row that was put back
+   * is left out, because the file no longer says what it says.
+   */
+  latestLearned(): { path: string; line: string; at: number }[] {
+    return this.db
+      .prepare(
+        `SELECT path, line, MAX(at) AS at FROM activity
+          WHERE action IN ('learned', 'remembered') AND path IS NOT NULL AND reverted IS NULL
+          GROUP BY path`,
+      )
+      .all() as { path: string; line: string; at: number }[];
+  }
+
   get(id: string): ActivityRecord | null {
     const row = this.db.prepare('SELECT * FROM activity WHERE id = ?').get(id) as Row | undefined;
     return row ? this.toRecord(row) : null;

@@ -42,7 +42,7 @@ test('a meeting belongs to the Calendar, so the rail never holds one', () => {
 });
 
 test('no memory page pins: the rail refuses all six shelves', () => {
-  for (const type of ['source', 'decision', 'insight', 'theme', 'customer', 'person'] as const) {
+  for (const type of ['source', 'decision', 'insight', 'research', 'customer', 'person'] as const) {
     assert.equal(isPinnable(type), false, type);
   }
 });
@@ -66,7 +66,7 @@ test('a source nobody has read is counted, never pinned', () => {
 test("only a source counts: an unread meeting is the Calendar's business", () => {
   const t = tree([
     note('meeting', 'kranelund', { date: '2026-07-27', lifecycle: 'new' }),
-    note('theme', 'checkout-drop-off', { lifecycle: 'new' }),
+    note('research', 'checkout-drop-off', { lifecycle: 'new' }),
   ]);
   assert.equal(unprocessedSourceCount(t), 0);
 });

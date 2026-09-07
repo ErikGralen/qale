@@ -1,54 +1,40 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isFolderIndex } from '@qale/domain';
-import {
-  Button,
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuLabel,
-  ContextMenuTrigger,
-} from '@qale/ui';
-import {
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-  Files,
-  Folder,
-  FolderPlus,
-  Pencil,
-  Plus,
-  Trash2,
-} from 'lucide-react';
+import { Button } from '@qale/ui';
+import { Files, FolderPlus, Plus } from 'lucide-react';
 import type { NoteRefDTO } from '@qale/ipc';
 import type { PageCrumb } from '../components/PageHeader';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { navFromEvent } from '../lib/nav';
 import { useNewNote } from '../lib/new-note';
-import { InlineRename } from '../components/InlineRename';
 import { HeaderAction, PageHeader } from '../components/PageHeader';
-import { DocumentRow, INDENT, MODIFIED_COL } from './DocumentRow';
+import { FileList } from '../components/FileList';
+import { FileRow, META_COL, formatMtime } from '../components/FileRow';
+import { SortRail, type SortColumn } from '../components/SortRail';
+import { FolderListRow, NewFolderRow } from './FolderListRow';
 import { ScopedAskComposer } from '../components/ScopedAskComposer';
 import { SelectionBar } from '../components/SelectionBar';
 import { UndoStrip, useUndoOffer } from '../components/UndoStrip';
 import { useToast } from '../components/toast';
-import { DROP_ZONE_CLASS, useFolderDropZones, type AttachRef } from '../lib/dnd';
+import { DROP_ZONE_CLASS, useFolderDropZones } from '../lib/dnd';
 import {
+  DEFAULT_SORT,
+  DOCUMENT_SORT_KEYS,
   docCount,
   documentFolder,
   documentFolders,
   folderMtimes,
   isDocument,
-  nextDocumentSort,
-  parseDocumentSort,
   sortDocuments,
   sortFolders,
   toggleExpanded,
   visibleRows,
-  type DocumentFolder,
   type DocumentSort,
   type DocumentSortKey,
 } from '../lib/documents';
+import { readListSort, writeListSort } from '../lib/list-sort';
+import { deleteDoc, moveDocs } from '../lib/move-documents';
 import { moveRowFocus } from '../lib/row-focus';
 import { selectionKeyDown, useSelection } from '../lib/selection';
 
@@ -60,276 +46,31 @@ function reason(err: unknown): string {
 /** ⌥⌘N, from the app's key handler to whichever Documents tab is in front. */
 export const NEW_FOLDER_EVENT = 'qale:new-folder';
 
-/** Where the sort pick is kept between launches. */
-const SORT_KEY = 'qale.documents.sort';
-
-/** How many documents a folder holds, with the unit. A bare number on a row of
- *  mixed things says nothing about what it counts. */
-function countLabel(count: number): string {
-  if (count === 0) return 'empty';
-  return `${count} ${count === 1 ? 'document' : 'documents'}`;
-}
+/** What this page is called where its sort pick is kept between launches. */
+const SORT_SURFACE = 'documents';
 
 /** The name of a folder key, for a sentence. '' is the top level. */
 function folderLabel(key: string): string {
   return key ? key.slice(key.lastIndexOf('/') + 1) : 'Documents';
 }
 
-/**
- * The column rail over the list: what the two columns hold, and the two ways to
- * order them.
- *
- * It is the Finder's header, and it does the Finder's one job: click a column
- * to sort by it, click it again to turn it around. There is no third column and
- * no menu; a browse page with two facts per row needs two controls.
- */
-function SortRail({
-  sort,
-  onSort,
-}: {
-  sort: DocumentSort;
-  onSort: (key: DocumentSortKey) => void;
-}) {
-  const column = (key: DocumentSortKey, label: string) => {
-    const active = sort.key === key;
-    const Chevron = sort.dir === 'asc' ? ChevronUp : ChevronDown;
-    return (
-      <button
-        className={`flex h-6 items-center gap-1 rounded px-1 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${
-          active ? 'text-foreground' : ''
-        }`}
-        aria-label={
-          key === 'name'
-            ? `Sort by name, ${sort.key === 'name' && sort.dir === 'asc' ? 'Z to A' : 'A to Z'}`
-            : `Sort by modified, ${sort.key === 'modified' && sort.dir === 'desc' ? 'oldest first' : 'newest first'}`
-        }
-        onClick={() => onSort(key)}
-      >
-        {label}
-        {active && <Chevron className="size-3" aria-hidden />}
-      </button>
-    );
-  };
-  return (
-    <div className="sticky top-0 z-10 flex h-7 items-center border-b border-border bg-background pr-6 pl-4 text-xs font-medium text-muted-foreground">
-      {column('name', 'Name')}
-      <span className="flex-1" />
-      <span className={`${MODIFIED_COL} flex justify-end`}>{column('modified', 'Modified')}</span>
-    </div>
-  );
-}
-
-/**
- * A folder in the list, by the same Finder rules the documents follow: a click
- * picks it, a double-click (or ↵) goes into it, and the chevron opens it in
- * place without leaving this level.
- *
- * The row reads as a container: the chevron and the folder glyph on the left,
- * the recursive document count under the Modified column with its unit.
- *
- * Right-click renames it in place or deletes it. A folder that still holds
- * documents cannot be deleted, and the menu says so rather than failing after
- * the click: emptying it is the PM's decision, one document at a time.
- *
- * Documents dropped on the row go into the folder.
- */
-function FolderListRow({
-  folder,
-  count,
-  depth,
-  open,
-  picked,
-  renaming,
-  onToggle,
-  onPick,
-  onOpen,
-  onStartRename,
-  onRename,
-  onDoneRename,
-  onDelete,
-  dropRef,
-  dropOver,
-}: {
-  folder: DocumentFolder;
-  count: number;
-  /** 0 at the level the page is standing in. */
-  depth: number;
-  open: boolean;
-  picked: boolean;
-  renaming: boolean;
-  onToggle: () => void;
-  onPick: () => void;
-  onOpen: (nav: ReturnType<typeof navFromEvent>) => void;
-  onStartRename: () => void;
-  onRename: (name: string) => void;
-  onDoneRename: () => void;
-  onDelete: () => void;
-  dropRef: AttachRef;
-  dropOver: boolean;
-}) {
-  const [confirming, setConfirming] = useState(false);
-  const pad = { paddingLeft: `${1 + depth * INDENT}rem` };
-  const row = (
-    <li
-      ref={dropRef}
-      role="none"
-      className={`relative ${dropOver ? DROP_ZONE_CLASS : picked ? 'bg-brand/8' : 'hover:bg-accent/40'}`}
-    >
-      {renaming ? (
-        <div className="flex h-7 w-full items-center gap-2 pr-6" style={pad}>
-          <span className="size-5 shrink-0" aria-hidden />
-          <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <InlineRename
-            value={folder.name}
-            label={`Rename ${folder.name}`}
-            className="w-full max-w-xs rounded-md border border-border bg-background px-1.5 py-0.5 text-dense font-medium focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onCommit={onRename}
-            onDone={onDoneRename}
-          />
-        </div>
-      ) : (
-        <>
-          {/* The stretched button: the row picks the folder, and a double-click
-              goes into it. The chevron floats above it and keeps its own
-              click. */}
-          <button
-            data-note-row
-            data-folder-key={folder.key}
-            role="treeitem"
-            aria-level={depth + 1}
-            aria-selected={picked}
-            aria-expanded={open}
-            className="absolute inset-0 w-full cursor-default focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset focus-visible:outline-none"
-            onClick={(e) => {
-              // ⌘⇧click still opens a tab (middle-click does too, on auxclick). A
-              // plain ⌘click is a selection gesture here, so it only picks.
-              if ((e.metaKey || e.ctrlKey) && e.shiftKey)
-                return onOpen({ newTab: true, foreground: true });
-              onPick();
-            }}
-            onDoubleClick={(e) => onOpen(e.metaKey || e.ctrlKey ? { newTab: true } : {})}
-            onAuxClick={(e) => e.button === 1 && onOpen(navFromEvent(e))}
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter') return;
-              e.preventDefault();
-              e.stopPropagation();
-              onOpen(e.metaKey || e.ctrlKey ? { newTab: true, foreground: true } : {});
-            }}
-            aria-label={`${folder.name}, ${countLabel(count)}`}
-            title={`Open ${folder.name}`}
-          />
-          <div
-            className="pointer-events-none relative flex h-7 items-center gap-2 pr-6"
-            style={pad}
-          >
-            <button
-              className="pointer-events-auto flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-              aria-label={open ? `Collapse ${folder.name}` : `Expand ${folder.name}`}
-              tabIndex={-1}
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggle();
-              }}
-            >
-              <ChevronRight
-                className={`size-3.5 transition-transform ${open ? 'rotate-90' : ''}`}
-                aria-hidden
-              />
-            </button>
-            <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <span className="min-w-0 flex-1 truncate text-dense font-medium">{folder.name}</span>
-            <span className={`${MODIFIED_COL} text-xs text-muted-foreground`}>
-              {countLabel(count)}
-            </span>
-          </div>
-        </>
-      )}
-    </li>
-  );
-
-  return (
-    <ContextMenu
-      onOpenChange={(menuOpen) => {
-        if (!menuOpen) setConfirming(false);
-      }}
-    >
-      <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
-      <ContextMenuContent className="w-56">
-        {confirming ? (
-          <>
-            <ContextMenuLabel>Delete this folder?</ContextMenuLabel>
-            <ContextMenuItem variant="destructive" onSelect={onDelete}>
-              <Trash2 className="size-4" aria-hidden /> Delete
-            </ContextMenuItem>
-            <ContextMenuItem
-              onSelect={(e) => {
-                e.preventDefault();
-                setConfirming(false);
-              }}
-            >
-              Cancel
-            </ContextMenuItem>
-          </>
-        ) : (
-          <>
-            <ContextMenuItem onSelect={onStartRename}>
-              <Pencil className="size-4 text-muted-foreground" aria-hidden />
-              Rename folder
-            </ContextMenuItem>
-            <ContextMenuItem
-              variant="destructive"
-              disabled={count > 0}
-              onSelect={(e) => {
-                // Keep the menu open: the question is asked here.
-                e.preventDefault();
-                setConfirming(true);
-              }}
-            >
-              <Trash2 className="size-4" aria-hidden /> Delete folder
-            </ContextMenuItem>
-            {/* A disabled row takes no hover, so the reason is written out
-                rather than left in a tooltip nobody can reach. */}
-            {count > 0 && (
-              <ContextMenuLabel className="font-normal">
-                Empty it first: {countLabel(count)} inside.
-              </ContextMenuLabel>
-            )}
-          </>
-        )}
-      </ContextMenuContent>
-    </ContextMenu>
-  );
-}
-
-/**
- * The row a new folder is born on: a folder line with its name already in an
- * input, the way the Finder makes one. Enter keeps the name, Escape takes the
- * row away again. No dialog, because there is nothing to decide but the name.
- */
-function NewFolderRow({
-  onCreate,
-  onCancel,
-}: {
-  onCreate: (name: string) => void;
-  onCancel: () => void;
-}) {
-  return (
-    <li role="none" className="relative bg-brand/8">
-      <div className="flex h-7 w-full items-center gap-2 pr-6 pl-4">
-        <span className="size-5 shrink-0" aria-hidden />
-        <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <InlineRename
-          value="untitled folder"
-          label="Name the new folder"
-          commitUnchanged
-          className="w-full max-w-xs rounded-md border border-border bg-background px-1.5 py-0.5 text-dense font-medium focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-          onCommit={onCreate}
-          onDone={onCancel}
-        />
-      </div>
-    </li>
-  );
-}
+/** The two columns, and how each one opens: names from A, dates from the
+ *  newest. */
+const COLUMNS: SortColumn<DocumentSortKey>[] = [
+  {
+    key: 'name',
+    label: 'Name',
+    openDir: 'asc',
+    ariaLabel: (s) => `Sort by name, ${s.key === 'name' && s.dir === 'asc' ? 'Z to A' : 'A to Z'}`,
+  },
+  {
+    key: 'modified',
+    label: 'Modified',
+    openDir: 'desc',
+    ariaLabel: (s) =>
+      `Sort by modified, ${s.key === 'modified' && s.dir === 'desc' ? 'oldest first' : 'newest first'}`,
+  },
+];
 
 /**
  * Documents — the pages the PM writes: scratch notes, briefs, PRDs, specs.
@@ -344,9 +85,9 @@ function NewFolderRow({
  * controls: Name and Modified, each a sort you can turn around, and the pick is
  * remembered. Modified is the file's own time, never a frontmatter date.
  *
- * The rows behave like a file manager's, which is the point (see
- * {@link DocumentRow} for the whole mouse and key vocabulary): a click picks a
- * row, ⌘click adds one, ⇧click takes a range, and a double-click or ↵ opens the
+ * The rows behave like a file manager's, which is the point (see {@link
+ * FileRow} for the whole mouse and key vocabulary): a click picks a row,
+ * ⌘click adds one, ⇧click takes a range, and a double-click or ↵ opens the
  * document or goes into the folder. A folder's chevron opens it in place
  * instead, one level deeper and by the same rule. Breadcrumbs go back up. There
  * is no flat all-documents dump; search covers cross-folder finding.
@@ -383,7 +124,7 @@ export function DocumentsView({
   folder: string;
   expanded?: string[];
 }) {
-  const { tree, renameNote, deleteNotes, openDocuments, setDocumentsExpanded } = useApp();
+  const { tree, renameNote, deleteNotes, openDocuments, setExpanded } = useApp();
   const { create, busy: creating } = useNewNote();
   const toast = useToast();
   const { offer: undoable, offerUndo, runUndo } = useUndoOffer();
@@ -394,13 +135,9 @@ export function DocumentsView({
   // somewhere visible, so the row wears the same ink wash a picked document
   // does.
   const [pickedFolder, setPickedFolder] = useState<string | null>(null);
-  const [sort, setSort] = useState<DocumentSort>(() => {
-    try {
-      return parseDocumentSort(localStorage.getItem(SORT_KEY));
-    } catch {
-      return parseDocumentSort(null);
-    }
-  });
+  const [sort, setSort] = useState<DocumentSort>(
+    () => readListSort(SORT_SURFACE, DEFAULT_SORT, DOCUMENT_SORT_KEYS) as DocumentSort,
+  );
 
   const expanded = useMemo(() => new Set(expandedKeys ?? []), [expandedKeys]);
 
@@ -411,9 +148,8 @@ export function DocumentsView({
     () => (group?.notes ?? []).filter((n) => isDocument(n.path)).map((n) => n.path),
     [group],
   );
-  // The documents. By path, not by type: the understanding notes are notes too,
-  // and they are the agent's, not the PM's. Index files are out from here on —
-  // they are navigation, never rows.
+  // The documents, by path. Index files are out from here on: they are
+  // navigation, never rows.
   const notes = useMemo(
     () => (group?.notes ?? []).filter((n) => isDocument(n.path) && !isFolderIndex(n.path)),
     [group],
@@ -447,19 +183,14 @@ export function DocumentsView({
   );
   const selection = useSelection(ordered);
 
-  const pickSort = (key: DocumentSortKey) => {
-    const next = nextDocumentSort(sort, key);
+  const pickSort = (next: DocumentSort) => {
     setSort(next);
-    try {
-      localStorage.setItem(SORT_KEY, JSON.stringify(next));
-    } catch {
-      /* ignore quota */
-    }
+    writeListSort(SORT_SURFACE, next);
   };
 
   const toggleFolder = useCallback(
-    (key: string) => setDocumentsExpanded(viewKey, toggleExpanded(expandedKeys ?? [], key)),
-    [expandedKeys, setDocumentsExpanded, viewKey],
+    (key: string) => setExpanded(viewKey, toggleExpanded(expandedKeys ?? [], key)),
+    [expandedKeys, setExpanded, viewKey],
   );
 
   const pickFolder = (key: string) => {
@@ -547,53 +278,22 @@ export function DocumentsView({
     return () => window.removeEventListener(NEW_FOLDER_EVENT, open);
   }, []);
 
-  /**
-   * Move documents into `target`, one file at a time. A move can be refused
-   * per file (a name already taken in that folder), so the ones that go, go:
-   * the toast names how many stayed and why the first one did.
-   *
-   * It answers with where each document that moved came from, which is the
-   * whole of the undo.
-   */
-  const moveDocs = async (paths: string[], target: string) => {
-    const moved: { path: string; folder: string }[] = [];
-    const failed: string[] = [];
-    let first = '';
-    for (const path of paths) {
-      const from = documentFolder(path);
-      try {
-        const note = await invoke['note:move']({ path, folder: target });
-        moved.push({ path: note.path, folder: from });
-      } catch (err) {
-        failed.push(path);
-        if (!first) first = reason(err);
-      }
-    }
-    if (failed.length > 0)
-      toast(
-        `${failed.length} of ${paths.length} ${paths.length === 1 ? 'document' : 'documents'} did not move: ${first}`,
-      );
-    if (moved.length > 0) {
-      const one = notes.find((n) => n.path === paths[0]);
-      offerUndo({
-        label: 'Moved',
-        title: moved.length === 1 ? (one?.title ?? countLabel(1)) : countLabel(moved.length),
-        suffix: `to ${folderLabel(target)}`,
-        // Each document goes back to its own folder, not to one shared one:
-        // a selection can be swept up from several levels at once.
-        undo: () => {
-          for (const m of moved) void invoke['note:move']({ path: m.path, folder: m.folder });
-        },
-      });
-    }
-  };
+  /** File documents somewhere else. The undo strip is the page's, so the write
+   *  is handed what it needs to draw one. */
+  const move = (paths: string[], target: string) =>
+    moveDocs(paths, target, {
+      targetLabel: folderLabel(target),
+      titleOf: (path) => notes.find((n) => n.path === path)?.title,
+      toast,
+      offerUndo,
+    });
 
   // The selection bar's move. It empties the bar and follows the documents, so
   // the PM ends up looking at where they just put them.
   const moveSelected = async (target: string) => {
     const { paths } = selection;
     selection.clear();
-    await moveDocs(paths, target);
+    await move(paths, target);
     openDocuments(target);
   };
 
@@ -602,7 +302,7 @@ export function DocumentsView({
   // open that folder either.
   const dropDocs = async (paths: string[], target: string) => {
     selection.clear();
-    await moveDocs(paths, target);
+    await move(paths, target);
   };
 
   // "New folder: <typed>" in the picker. The folder is made first, at this
@@ -614,7 +314,7 @@ export function DocumentsView({
         folder: selected ? `${selected}/${folderName}` : folderName,
       });
       selection.clear();
-      await moveDocs(paths, made.folder);
+      await move(paths, made.folder);
       openDocuments(made.folder);
     } catch (err) {
       toast(`Folder not created: ${reason(err)}`);
@@ -643,33 +343,6 @@ export function DocumentsView({
     }
   };
 
-  /**
-   * Delete one document, and offer the way back.
-   *
-   * The undo is the app's one undo (`history:revert`), aimed at the commit the
-   * delete just wrote. A workspace with no git keeps no commits, so there is
-   * nothing to offer there and the row simply goes.
-   */
-  const deleteDoc = async (note: NoteRefDTO) => {
-    const { failed } = await deleteNotes([note.path]);
-    if (failed.length > 0) {
-      toast('That document could not be deleted.');
-      return;
-    }
-    const history = await invoke['note:history'](note.path).catch(() => []);
-    const hash = history[0]?.hash;
-    if (!hash) return;
-    offerUndo({
-      label: 'Deleted',
-      title: note.title,
-      undo: () => {
-        void invoke['history:revert']({ path: note.path, hash }).catch((err) =>
-          toast(`Not put back: ${reason(err)}`),
-        );
-      },
-    });
-  };
-
   const empty = folders.length === 0 && notes.length === 0;
 
   return (
@@ -677,42 +350,48 @@ export function DocumentsView({
       className="flex h-full flex-col"
       onKeyDown={(e) => {
         if (e.key === 'Escape') setPickedFolder(null);
-        selectionKeyDown(e, selection, { alwaysSelectAll: true });
+        selectionKeyDown(e, selection);
       }}
     >
       <PageHeader
         icon={Files}
         crumbs={crumbs}
         label={selected ? folderLabel(selected) : 'Documents'}
+        selecting={selection.count > 0}
       >
-        <HeaderAction
-          icon={FolderPlus}
-          label="New folder"
-          title="New folder (⌥⌘N)"
-          onClick={() => setNaming(true)}
-        />
-        <Button
-          size="sm"
-          disabled={creating}
-          onClick={(e) => newDocument(navFromEvent(e))}
-          title="New document (⌘N): a blank page in this folder, named as you type"
-        >
-          <Plus className="size-3.5" /> New document
-        </Button>
+        {/* One cluster, two jobs. While a batch is ticked, the batch owns it:
+            "New document" is not what you are doing with six rows in hand. */}
+        {selection.count > 0 ? (
+          <SelectionBar
+            selection={selection}
+            total={ordered.length}
+            noun="document"
+            moveTo={{
+              folders,
+              current: selected,
+              onMove: (target) => void moveSelected(target),
+              onCreateAndMove: (folderName) => void createFolderAndMove(folderName),
+            }}
+          />
+        ) : (
+          <>
+            <HeaderAction
+              icon={FolderPlus}
+              label="New folder"
+              title="New folder (⌥⌘N)"
+              onClick={() => setNaming(true)}
+            />
+            <Button
+              size="sm"
+              disabled={creating}
+              onClick={(e) => newDocument(navFromEvent(e))}
+              title="New document (⌘N): a blank page in this folder, named as you type"
+            >
+              <Plus className="size-3.5" /> New document
+            </Button>
+          </>
+        )}
       </PageHeader>
-
-      <SelectionBar
-        selection={selection}
-        total={ordered.length}
-        noun="document"
-        wide
-        moveTo={{
-          folders,
-          current: selected,
-          onMove: (target) => void moveSelected(target),
-          onCreateAndMove: (folderName) => void createFolderAndMove(folderName),
-        }}
-      />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {empty && !naming ? (
@@ -733,7 +412,7 @@ export function DocumentsView({
           </div>
         ) : (
           <>
-            <SortRail sort={sort} onSort={pickSort} />
+            <SortRail sort={sort} columns={COLUMNS} onSort={pickSort} />
             {rows.length === 0 && !naming ? (
               <div className="px-4 py-3">
                 <p className="text-sm text-muted-foreground">Nothing in this folder yet.</p>
@@ -753,13 +432,7 @@ export function DocumentsView({
             ) : (
               /* One list, folders and documents together. One focus order, one
                  selection order, and both are what the eye sees. */
-              <ul
-                role="tree"
-                aria-label="Documents"
-                aria-multiselectable
-                className="flex flex-col divide-y divide-border/70"
-                onKeyDown={onTreeKeyDown}
-              >
+              <FileList label="Documents" multiselectable onKeyDown={onTreeKeyDown}>
                 {naming && (
                   <NewFolderRow
                     onCreate={(name) => void newFolder(name)}
@@ -787,20 +460,33 @@ export function DocumentsView({
                       dropOver={isOver(`list:${row.folder.key}`)}
                     />
                   ) : (
-                    <DocumentRow
+                    <FileRow
                       key={row.note.path}
                       note={row.note}
                       depth={row.depth}
                       selection={selection}
+                      // A picked row drags the whole picked set; an unpicked row
+                      // drags itself.
+                      draggable={
+                        selection.isSelected(row.note.path) ? selection.paths : [row.note.path]
+                      }
                       onFocusRow={() => setPickedFolder(null)}
+                      meta={
+                        <span className={`${META_COL} text-xs text-muted-foreground tabular-nums`}>
+                          {formatMtime(row.note.mtime)}
+                        </span>
+                      }
                       actions={{
-                        folders,
-                        // Where this document sits, which may be deeper than
-                        // the level the page is on. "Move to" greys out the
-                        // folder it is already in, never the one you are
-                        // standing in.
-                        current: documentFolder(row.note.path),
-                        onMove: (note, target) => void moveDocs([note.path], target),
+                        openInNewTab: true,
+                        moveTo: {
+                          folders,
+                          // Where this document sits, which may be deeper than
+                          // the level the page is on. "Move to" greys out the
+                          // folder it is already in, never the one you are
+                          // standing in.
+                          current: documentFolder(row.note.path),
+                          onMove: (note, target) => void move([note.path], target),
+                        },
                         onRename: (note, title) => {
                           // A refused rename (a name already taken) leaves the
                           // row as it was; the toast is the only thing that
@@ -809,12 +495,12 @@ export function DocumentsView({
                             toast(`Not renamed: ${reason(err)}`),
                           );
                         },
-                        onDelete: (note) => void deleteDoc(note),
+                        onDelete: (note) => void deleteDoc(note, { deleteNotes, toast, offerUndo }),
                       }}
                     />
                   ),
                 )}
-              </ul>
+              </FileList>
             )}
           </>
         )}

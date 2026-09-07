@@ -322,6 +322,7 @@ test('a label the pass wrote can be put back from its Activity row', async () =>
       },
       list: () => [...rows].reverse(),
       get: (id: string) => rows.find((r) => r.id === id) ?? null,
+      latestLearned: () => [],
       markReverted: () => {},
     },
   } as unknown as UseCaseContext;

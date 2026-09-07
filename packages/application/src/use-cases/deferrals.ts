@@ -24,7 +24,7 @@ import type { UseCaseContext } from '../ports.js';
  *
  * ## Why `kind`
  * M7 ("things end with a reason") wants the same shape for a different question:
- * a todo dropped, a capture row waved off, a theme moved to wont-do, each with
+ * a todo dropped, a capture row waved off, a question parked, each with
  * one line saying why. That is this record with a different `kind`, not a second
  * mechanism. Adding one is adding a string to {@link ReasonKind} and a caller;
  * the storage, the sanitising, the decay and the "clear it when the note gets

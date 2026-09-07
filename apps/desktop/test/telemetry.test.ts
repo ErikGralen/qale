@@ -6,6 +6,7 @@ import {
   COUNT_BANDS,
   DURATION_BANDS,
   KNOWN_SKILLS,
+  STYLE_WORDS,
   TELEMETRY_ENVS,
   TELEMETRY_EVENTS,
   TELEMETRY_EVENT_IDS,
@@ -14,18 +15,30 @@ import {
   TELEMETRY_LIMIT,
   TELEMETRY_NEVER,
   TELEMETRY_PROCESSOR,
+  WANT_LIST_WORDS,
   ageBand,
   countBand,
   durationBand,
   filterTelemetryProps,
   providerWord,
   skillWord,
+  styleAnswerWord,
+  styleWord,
   telemetryAllows,
   telemetryEvent,
+  voiceWord,
+  wantLineWord,
 } from '@qale/ipc';
 import { CODEBASE_MODELS } from '@qale/agent';
 import { CONNECTOR_PROVIDERS } from '@qale/connectors';
-import { DEFAULT_AGENTS, DEFAULT_SKILLS } from '@qale/sessions';
+import {
+  DEFAULT_AGENTS,
+  DEFAULT_SKILLS,
+  VOICE_CS,
+  VOICE_EXEC,
+  WANT_LIST_LINES,
+  wantLineId,
+} from '@qale/sessions';
 import {
   TELEMETRY_ENV,
   TELEMETRY_ENV_IS_KNOWN,
@@ -273,6 +286,127 @@ test('every model the codebase card offers has a word telemetry can report', () 
     assert.ok(CODEBASE_MODEL_WORDS.includes(model.id as never), model.id);
   }
   assert.equal(CODEBASE_MODEL_WORDS.length, CODEBASE_MODELS.length);
+});
+
+test('a line on the want list is reported by its id, never by its words', () => {
+  assert.equal(telemetryAllows(true, 'want_list.changed'), true);
+  assert.deepEqual(
+    filterTelemetryProps('want_list.changed', {
+      line: wantLineWord(
+        wantLineId(
+          'Tell me who is waiting for something before it ships, and what they were told.',
+        ),
+      ),
+      change: 'added',
+      asked: true,
+      // What a careless caller might add, and what is the PM's own sentence.
+      text: 'Tell me who is waiting for something before it ships, and what they were told.',
+      file: 'skills/house-rules/SKILL.md',
+    }),
+    { line: 'who-is-waiting', change: 'added', asked: true },
+  );
+  // A line the PM wrote is theirs, so it goes out as `custom` and nothing else.
+  assert.deepEqual(
+    filterTelemetryProps('want_list.changed', {
+      line: wantLineWord(wantLineId('Warn me when the API team changes a contract.')),
+      change: 'removed',
+      asked: false,
+    }),
+    { line: 'custom', change: 'removed', asked: false },
+  );
+  // A change word we did not write loses itself rather than the event.
+  assert.deepEqual(
+    filterTelemetryProps('want_list.changed', { line: 'promises', change: 'edited' }),
+    {
+      line: 'promises',
+    },
+  );
+});
+
+test('every line the want list ships with has a word of its own', () => {
+  // The ids live in `@qale/sessions` and are repeated in the allowlist, the
+  // same way the skills are. If they drift, a shipped line reads as `custom`
+  // and "which line do PMs keep" answers the wrong question.
+  for (const line of WANT_LIST_LINES) {
+    assert.ok(WANT_LIST_WORDS.includes(line.id as never), line.id);
+    assert.equal(wantLineWord(line.id), line.id);
+    // And the text maps back to the id, which is the whole hinge: the payload
+    // carries the line, and only the id may go out.
+    assert.equal(wantLineId(line.text), line.id, line.id);
+  }
+  assert.equal(WANT_LIST_WORDS.length, WANT_LIST_LINES.length + 1);
+});
+
+test('a line we cannot match reports as custom', () => {
+  assert.equal(wantLineId('Warn me when the API team changes a contract.'), null);
+  assert.equal(wantLineId(''), null);
+  assert.equal(wantLineId(null), null);
+  assert.equal(wantLineWord(null), 'custom');
+  assert.equal(wantLineWord('who-is-waiting-for-me'), 'custom');
+  // Spacing, a curly apostrophe and a missing full stop still match: the PM
+  // edits this file by hand, and a reflowed line is the same line.
+  assert.equal(
+    wantLineId('  Write the week’s news once  and give it to me in the words each group needs  '),
+    'one-news-many-words',
+  );
+});
+
+test('a style pick reports three words, and none of them is a heading', () => {
+  assert.equal(telemetryAllows(true, 'style.picked'), true);
+  assert.deepEqual(
+    filterTelemetryProps('style.picked', {
+      voice: voiceWord('voices/exec.md'),
+      style: styleWord('One paragraph'),
+      answer: styleAnswerWord('For exec'),
+      // What the panel holds and what must never leave.
+      draft: 'We ship SCIM on the 14th.',
+      label: 'One paragraph',
+    }),
+    { voice: 'exec', style: 'one-paragraph', answer: 'this-voice' },
+  );
+  assert.equal(styleAnswerWord('For every audience'), 'every-voice');
+  assert.equal(styleAnswerWord('Not now'), 'not-now');
+  // The second copy that counts as the pick, in the words the skill uses.
+  assert.equal(styleAnswerWord('again'), 'again');
+  // An answer we did not write sends nothing, so the caller reports no answer
+  // rather than a guess.
+  assert.equal(styleAnswerWord('Maybe later'), undefined);
+  assert.equal(styleAnswerWord(''), undefined);
+});
+
+test('a voice or a style the PM wrote folds to custom', () => {
+  assert.equal(voiceWord('voices/board.md'), 'custom');
+  assert.equal(voiceWord(null), 'custom');
+  assert.equal(voiceWord('CS'), 'cs');
+  assert.equal(styleWord('The way I always write it'), 'custom');
+  assert.equal(styleWord(null), 'custom');
+  // Which is what the event accepts, and a stray word is dropped outright.
+  assert.deepEqual(
+    filterTelemetryProps('style.picked', {
+      voice: voiceWord('voices/board.md'),
+      style: styleWord('The way I always write it'),
+      answer: 'yes please',
+    }),
+    { voice: 'custom', style: 'custom' },
+  );
+});
+
+test('every style the voices offer has a word of its own', () => {
+  // The panel labels the tabs with the `###` headings out of the voice file, so
+  // a heading nobody gave a word to would report as a style nobody picked.
+  const headings = (voice: string): string[] =>
+    voice
+      .split('\n')
+      .filter((line) => line.startsWith('### '))
+      .map((line) => line.slice(4).trim());
+  const styles = [...headings(VOICE_EXEC), ...headings(VOICE_CS)];
+  assert.equal(styles.length, 6);
+  for (const label of styles) {
+    assert.notEqual(styleWord(label), 'custom', `${label} has no word`);
+    assert.ok(STYLE_WORDS.includes(styleWord(label) as never), label);
+  }
+  // One word per style, plus `custom`.
+  assert.equal(STYLE_WORDS.length, styles.length + 1);
 });
 
 test('the screen says who we are, where it goes, and what never leaves', () => {

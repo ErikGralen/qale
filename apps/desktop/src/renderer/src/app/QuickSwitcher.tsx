@@ -155,7 +155,7 @@ export function QuickSwitcher({
       {
         id: 'memory',
         label: 'Open Memory: what Qale knows, and where it got it',
-        keywords: 'sources decisions insights themes customers people',
+        keywords: 'about sources decisions insights research customers people',
         icon: Library,
         run: openMemory,
       },

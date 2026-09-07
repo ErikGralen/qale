@@ -815,6 +815,7 @@ function SessionThread({
     openSessionFile,
     sessionSeeds,
     takeSessionSeed,
+    vault,
   } = useApp();
   const [needsKey, setNeedsKey] = useState(false);
   const onSessionIdRef = useRef(onSessionId);
@@ -1167,6 +1168,8 @@ function SessionThread({
                       onUse={send}
                       onOpenNote={openDoc}
                       disabled={busy || backgroundBusy || askPending}
+                      workspace={vault?.path ?? null}
+                      panelId={`${message.id}-${i}`}
                     />,
                   );
                   return;

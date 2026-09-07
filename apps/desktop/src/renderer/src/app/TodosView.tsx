@@ -3,9 +3,7 @@ import {
   Calendar,
   Check,
   Clock,
-  CornerDownRight,
   ListTodo,
-  RotateCcw,
   Sparkles,
   TriangleAlert,
   User,
@@ -18,7 +16,7 @@ import { useApp } from '../state/app-state';
 import { navFromEvent, type NavOpts } from '../lib/nav';
 import { useToast } from '../components/toast';
 import { PageHeader } from '../components/PageHeader';
-import { AtRiskMarker, riskFor, useAtRisk } from '../components/ExternalRef';
+import { riskFor, useAtRisk } from '../components/ExternalRef';
 import { localDateStr } from '../lib/dates';
 import { addDays, dueLabel } from '../lib/due-date';
 import { DatePicker } from '../components/DatePicker';
@@ -49,13 +47,10 @@ const LANE_LABEL: Record<TodoLane, string> = {
   closed: 'Done',
 };
 
-const todayHeadFmt = new Intl.DateTimeFormat('en-GB', {
-  weekday: 'short',
-  day: 'numeric',
-  month: 'short',
-});
-
-/** "[[people/jonas]]" or "people/jonas" → slug; plain names return null. */
+/** "[[people/jonas]]" or "people/jonas" → slug; plain names return null.
+ *  Looser than `refSlug` in lib/frontmatter: it takes a bare path too, drops a
+ *  `.md` tail, and stops at a `|` or a `#`. A todo's owner is written both
+ *  ways. */
 function refSlug(ref: string): string | null {
   const m = /^\[\[([^\]|#]+)/.exec(ref.trim());
   return m?.[1]?.replace(/\.md$/, '') ?? (ref.includes('/') ? ref.replace(/\.md$/, '') : null);
@@ -131,14 +126,6 @@ function QuickAdd() {
           aria-label="Add a todo"
           autoFocus
         />
-        {!value.trim() && (
-          // The input holds its floor (min-w-32, flex-basis 0) while this
-          // truncates: at the 900px minimum window the example gives way, the
-          // field never does.
-          <span className="hidden min-w-0 truncate text-xs text-muted-foreground/70 md:block">
-            try “email Åsa tomorrow” or “@Jonas update the docs”
-          </span>
-        )}
         {showChips && (
           <span className="flex shrink-0 items-center gap-1.5" aria-live="polite">
             {parsed.due && (
@@ -200,7 +187,7 @@ function TodoRowItem({
   /** Move the due date; `null` clears it and the todo drops to Someday. */
   onSnooze: (due: string | null) => void;
 }) {
-  const { openDoc, openSession } = useApp();
+  const { openSession } = useApp();
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const n = row.note;
   const closed = row.lane === 'closed';
@@ -214,9 +201,6 @@ function TodoRowItem({
       ?.replace(/^\[\[|\]\]$/g, '')
       .split('/')
       .pop();
-
-  const srcSlug = n.sourceRef ? refSlug(n.sourceRef) : null;
-  const srcNote = srcSlug ? peopleBySlug.get(srcSlug) : undefined;
 
   return (
     <li className={`group relative hover:bg-accent/40 ${closed ? 'opacity-65' : ''}`}>
@@ -280,47 +264,6 @@ function TodoRowItem({
         >
           {n.title}
         </span>
-
-        {risk && !closed && (
-          <span className="pointer-events-auto shrink-0">
-            <AtRiskMarker risk={risk} onOpen={(p) => void openDoc(p)} />
-          </span>
-        )}
-
-        {ownerName && row.lane !== 'waiting' && !closed && (
-          <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-            <User className="size-3" aria-hidden />
-            {ownerName}
-          </span>
-        )}
-        {ownerName &&
-          (row.lane === 'waiting' || closed) &&
-          (ownerNote ? (
-            <button
-              className="pointer-events-auto flex shrink-0 items-center gap-1 rounded text-xs text-muted-foreground transition-colors hover:text-brand focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-              onClick={() => void openDoc(ownerNote.path)}
-              title={`Open ${ownerNote.title}`}
-            >
-              <User className="size-3" aria-hidden />
-              {ownerName}
-            </button>
-          ) : (
-            <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-              <User className="size-3" aria-hidden />
-              {ownerName}
-            </span>
-          ))}
-
-        {srcNote && (
-          <button
-            className="pointer-events-auto flex min-w-0 max-w-32 shrink-0 items-center gap-1 rounded text-xs text-muted-foreground transition-colors hover:text-brand focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-            onClick={() => void openDoc(srcNote.path)}
-            title={`From ${srcNote.title}`}
-          >
-            <CornerDownRight className="size-3 shrink-0" aria-hidden />
-            <span className="truncate">{srcNote.title}</span>
-          </button>
-        )}
 
         {closed ? (
           <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
@@ -520,10 +463,6 @@ export function TodosView() {
     return map;
   }, [todos, pending, today]);
 
-  const openCount = todos.filter(
-    (n) => (pending[n.path] ?? n.lifecycle ?? 'open') === 'open' && !n.owner,
-  ).length;
-  const waitingCount = lanes.get('waiting')?.length ?? 0;
   const closedRows = lanes.get('closed') ?? [];
 
   // The board reads by time-horizon. "Now" fuses overdue + due-today into the one
@@ -543,7 +482,6 @@ export function TodosView() {
 
   const ownOverdue = overdueRows.length;
   const waitingOverdue = waitingRows.filter((r) => r.overdue).length;
-  const todayHead = todayHeadFmt.format(new Date(`${today}T00:00`));
 
   const flip = async (path: string, commitment: 'open' | 'done' | 'dropped') => {
     setPending((p) => ({ ...p, [path]: commitment }));
@@ -621,23 +559,7 @@ export function TodosView() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader
-        icon={ListTodo}
-        label="Todos"
-        meta={
-          empty ? undefined : (
-            <>
-              {openCount} open
-              {ownOverdue > 0 && (
-                <span className="font-semibold text-warning"> · {ownOverdue} overdue</span>
-              )}
-              {waitingCount > 0 ? ` · ${waitingCount} waiting` : ''}
-            </>
-          )
-        }
-      >
-        <span className="text-xs text-muted-foreground tabular-nums">{todayHead}</span>
-      </PageHeader>
+      <PageHeader icon={ListTodo} label="Todos" />
 
       <div
         className="mx-auto w-full max-w-4xl flex-1 overflow-y-auto px-8 py-5"
@@ -790,12 +712,6 @@ export function TodosView() {
           </section>
         )}
 
-        {closedRows.length > 0 && (
-          <p className="mt-3 flex items-center gap-1 px-2 pb-4 text-xs text-muted-foreground/70">
-            <RotateCcw className="size-3" aria-hidden />
-            Done and dropped todos stay here. Nothing is thrown away.
-          </p>
-        )}
       </div>
 
       {peek && (

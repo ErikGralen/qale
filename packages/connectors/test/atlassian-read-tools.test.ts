@@ -23,6 +23,11 @@ function fakeClient(over: Partial<Record<string, unknown>> = {}): AtlassianClien
       description: 'Customers want SCIM.',
       parentKey: null,
       links: [],
+      labels: ['scheduling', 'needs-legal'],
+      issueType: 'Story',
+      priority: 'High',
+      components: ['Rostering'],
+      reporter: 'Åsa Lindqvist',
     }),
     searchIssues: async () => [
       {
@@ -36,6 +41,11 @@ function fakeClient(over: Partial<Record<string, unknown>> = {}): AtlassianClien
         description: '',
         parentKey: null,
         links: [],
+        labels: ['scheduling'],
+        issueType: 'Bug',
+        priority: null,
+        components: [],
+        reporter: null,
       },
     ],
     getPage: async (id: string) => ({
@@ -82,6 +92,47 @@ test('external reads come back with the origin they came from', async () => {
   const pages = await t['confluence_search']!.execute({ cql: 'text ~ "SSO"' });
   assert.equal(pages.external, 'confluence:search');
   assert.match(pages.text, /an excerpt/);
+});
+
+test('the reads print the fields the description never says', async () => {
+  const t = atlassian();
+
+  // One issue, one line: type, labels, priority, components, who filed it.
+  const issue = await t['jira_get_issue']!.execute({ key: 'PAY-142' });
+  assert.match(
+    issue.text,
+    /Story · labels: scheduling, needs-legal · priority: High · components: Rostering · filed by Åsa Lindqvist/,
+  );
+
+  // A search row prints only the fields the issue has — no empty labels.
+  const issues = await t['jira_search']!.execute({ jql: 'project = PAY' });
+  assert.match(issues.text, /Bug · labels: scheduling/);
+  assert.ok(!issues.text.includes('priority:'), issues.text);
+  assert.ok(!issues.text.includes('components:'), issues.text);
+});
+
+test('an issue with none of the extra fields prints no extra line', async () => {
+  const t = atlassian({
+    getIssue: async (key: string) => ({
+      key,
+      summary: 'bare',
+      status: 'To Do',
+      statusCategory: null,
+      assignee: null,
+      updated: null,
+      url: 'u',
+      description: 'body',
+      parentKey: null,
+      links: [],
+      labels: [],
+      issueType: '',
+      priority: null,
+      components: [],
+      reporter: null,
+    }),
+  });
+  const issue = await t['jira_get_issue']!.execute({ key: 'PAY-9' });
+  assert.equal(issue.text, '# PAY-9: bare\nStatus: To Do\nu\n\nbody');
 });
 
 test('an empty result set stays a plain sentence, not an empty envelope', async () => {

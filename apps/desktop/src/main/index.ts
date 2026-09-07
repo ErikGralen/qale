@@ -227,6 +227,10 @@ function createWindow(): void {
       const delay = Number(devEnv('QALE_SCREENSHOT_DELAY') ?? 2500);
       setTimeout(async () => {
         try {
+          // An occluded window stops painting on macOS, and capturePage then
+          // returns the last frame it drew, from before any step below ran.
+          mainWindow!.webContents.setBackgroundThrottling(false);
+          mainWindow!.moveTop();
           const click = devEnv('QALE_SCREENSHOT_CLICK');
           for (const sel of (click ?? '').split('|').filter(Boolean)) {
             // `js:` runs an arbitrary expression in the renderer — the only way

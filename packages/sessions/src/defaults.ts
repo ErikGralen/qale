@@ -46,6 +46,8 @@
  * has a copy keeps it, whatever we change here.
  */
 
+import { WANT_LIST_HEADING } from '@qale/domain';
+
 export const ARRIVAL_SKILL = `---
 type: skill
 title: Handle new sources
@@ -76,8 +78,8 @@ instruction: it settles the question, so do not ask it again.
 Start with \`files_list\` and \`input.md\`, which lists what arrived. Then skim each piece: enough
 to know what it is, who is in it, when it happened, and whether anything in it is still live.
 
-Then only the memory it touches: the customer page, the theme hubs it names, live decisions it
-might contradict, and the mirror notes (tickets/) of any ticket it mentions.
+Then only the memory it touches: the customer page, the research pages it bears on, live decisions
+it might contradict, and the mirror notes (tickets/) of any ticket it mentions.
 
 For a link, work from the URL and whatever came pasted with it; do not guess what the page says.
 For a screenshot, work from what is visible and say so in the summary.
@@ -122,8 +124,8 @@ again, and when a meeting already holds transcripts read only the ones that are 
 
 Up to five pieces: read them in this session. More than five, or names that say the source is
 old, treat it as a backlog:
-- Write \`brief.md\` first: what the workspace currently believes, the themes in play, what a good
-  reading looks like. Every child reads it.
+- Write \`brief.md\` first: what the workspace currently believes, the research pages in play, what
+  a good reading looks like. Every child reads it.
 - \`spawn\` one skim per piece on a quick model. Each child returns the title, the date, what kind
   of thing it is, and whose voice is in it.
 - File from the results, start full reads only where something looks live, and say plainly what
@@ -133,8 +135,8 @@ old, treat it as a backlog:
 
 Before you propose anything from a source, write out what it claims and call \`check_claims\` once:
 who committed to what, dates, owners, numbers, decisions. One claim per entry, in the words the
-source used, each scoped to the pages it is about (the meeting, the customer, the theme) or to a
-tag.
+source used, each scoped to the pages it is about (the meeting, the customer, the research page) or to
+a tag.
 
 Each one comes back as already known (do nothing), new (propose it below as you would anyway), in
 conflict with a note we hold, implying something that is not there, or no answer. No answer means
@@ -146,6 +148,13 @@ answer says how many of them to ask.
 ## Produce
 The smallest set of proposals the source actually forces. Filing is not a proposal; everything
 written ABOUT the source is. One finding, one proposal, however many documents it spans.
+
+Before you decide what a meeting forces, read the list in house rules under 'What you want from
+Qale'. With the line about who is waiting on, check the customer and people pages for anyone
+whose last update touches what the meeting changed, and propose those updates and a todo naming
+who to tell. With it off, file the meeting, the decisions and the todos, and propose none of that.
+With the line about writing the actions into Jira and Confluence on, propose the outbound cards.
+With it off, stop at the todos.
 
 **A meeting you were in:**
 - **Decisions** made in the meeting, with the decider and the reason (propose_decision). Set
@@ -188,7 +197,9 @@ written ABOUT the source is. One finding, one proposal, however many documents i
 **A link, screenshot, or pasted thread**: its summary went on the source as you filed it, so the
 source is finished and nothing more is written about it. Never propose a note that only says what
 one source says, and never propose an edit to a source: the body is immutable. Then:
-- Add links to it from the hubs it concerns (propose_update), where it genuinely adds signal.
+- Add links to it from the hubs it concerns (propose_update), where it genuinely adds signal. A
+  signal about a problem extends the research page for that problem, if one exists; otherwise
+  tag the insight and leave it. One signal makes no page.
 - File any commitment or date hiding in it as a todo.
 - If it names a person or customer with no page yet, ask before creating one.
 - If what it is for is not clear, ask one concrete question instead of guessing.
@@ -219,7 +230,7 @@ people and the account, on the page, before they walk in.
 ## Read
 - The meeting note.
 - Each participant's people page: what they care about, their \`last_told\` entries.
-- The customer hub and theme hubs the meeting touches.
+- The customer hub and the research pages the meeting touches.
 - Prior decisions involving these people.
 - When the meeting has a \`series\`: the previous meeting in it, for open actions, unanswered
   questions, and what was promised.
@@ -253,7 +264,7 @@ after-meeting pass later checks which prep questions were answered.
  * rather than each spelling them out.
  */
 export const MEETING_PREP_INSTRUCTION =
-  "read the participants' people pages (last_told), the customer/theme hubs this meeting touches, and the previous meeting in its series, then propose a ## Prep section for the meeting page as one proposal.";
+  "read the participants' people pages (last_told), the customer hub and research pages this meeting touches, and the previous meeting in its series, then propose a ## Prep section for the meeting page as one proposal.";
 
 /**
  * The one built-in, never seeded as a file. Every session opens as this, and so
@@ -276,7 +287,7 @@ can: [keep-working-files, draft-outbound]
 ## When
 Every session starts here: a question about the product, a customer, a decision or what was
 said, and open-ended thinking with everything the workspace remembers, across meetings,
-decisions, insights and themes. When the conversation turns into work a skill already describes,
+decisions, insights and research. When the conversation turns into work a skill already describes,
 load that skill rather than improvising it.
 
 ## Read
@@ -289,6 +300,11 @@ Before saying something does not exist, search for it by every plausible name an
 A cited, dated answer, external systems cited by their deep link. When a decision was
 superseded, give the reason it changed. When the evidence is thin (few insights, one account,
 old dates), say so plainly.
+
+When the question is when something will be delivered, read the list in house rules under 'What
+you want from Qale'. With the line about answering from the record on, end every delivery answer
+with the date that was given, who gave it, and where. When Jira holds no date, say so in one
+plain line rather than guess one.
 
 Nothing lands in the memory on its own, but you do have session files: a question too big for
 one context ("read these nine transcripts and tell me what's there") is worked in the folder
@@ -324,7 +340,7 @@ You dumped rough text into a note (half-sentences from a call, a day's running l
 today's raw additions at the bottom.
 
 ## Read
-The note first. Then the memory it touches: search_vault for the people, customers, themes, and
+The note first. Then the memory it touches: search_vault for the people, customers, research pages, and
 decisions it mentions. Existing wikilinks mean an earlier run already handled those parts; leave
 them alone and work on what is new or still raw.
 
@@ -347,8 +363,10 @@ Each piece its own proposal:
   a copy edit, not a rewrite: keep your wording and your meaning, and add nothing the dump does
   not say. If the note is untitled or its title no longer fits, set the proposal's \`title\` to a short
   descriptive one.
-- **Updates to other notes**: the customer or theme hub the dump adds signal to, an open question
-  elsewhere it answers, a person's \`last_told\` when it says who was told what.
+- **Updates to other notes**: the customer hub the dump adds signal to, an open question elsewhere
+  it answers, a person's \`last_told\` when it says who was told what. A signal about a problem
+  extends the research page for that problem, if one exists; otherwise tag the insight and
+  leave it. One signal makes no page.
 - **New notes the dump implies**: commitments become todos (propose_todo, with \`owner\` when
   someone else owes it), claims worth keeping become insights (propose_note type insight), and a
   real decision with a named decider becomes a decision proposal (propose_decision). A line with no
@@ -364,103 +382,8 @@ again, and only the new material is touched.
 `;
 
 /**
- * The product orientation note (SK-5), seeded into the memory of every
- * workspace: what the three understanding notes hold, at what level, and how
- * they are kept true.
- *
- * It shipped as an always-on skill (`skills/_understanding/SKILL.md`) while a
- * file could declare that, which put a document ABOUT the memory on the Skills
- * page and into every prompt. It is memory content, so it lives in the memory: a
- * session finds it by retrieval like any other note, and the interview
- * (`tell-qale`) fills the notes it names.
- *
- * It is seeded thin on purpose. The area notes it points at do not exist until
- * somebody says what the product is, and a note that admits that is what the
- * interview offer hangs on.
- *
- * It sits in `understanding/`, not in `notes/`. Nobody asks for these notes: a
- * first look writes them from what a connection read, and the interview drafts
- * them from what the PM said. `notes/` is the Documents screen, which is the
- * PM's own folder and is never written into unasked (E-14).
- */
-export const UNDERSTANDING_NOTE = `---
-type: note
-title: Product understanding
-summary: The three notes that hold what we know about the product, and how they are kept true.
-sources: []
----
-
-# Product understanding
-
-Qale keeps this up to date. Correct anything wrong.
-
-What this workspace holds about the product itself, so every session starts from the same picture.
-Three notes, and deliberately no more:
-
-- \`understanding/product.md\`: what the product is, who it is for, and what it is trying to
-  do right now.
-- \`understanding/technical.md\`: the shape of the system in general terms, the big
-  constraints, and the names of the moving parts.
-- \`understanding/organization.md\`: the teams, who owns what, and the names that keep coming
-  up.
-
-If they do not exist yet, the way to get them is the interview (\`tell-qale\`), which asks
-the PM and drafts from what they say. Nobody writes them from synced sources alone: a picture
-mined out of this quarter's tickets is confident and narrow at the same time.
-
-A source the PM hands over on purpose to answer one of these questions is the exception, such as
-a technical overview generated from their own code (\`product-overview.md\`). It gets filed like
-anything else, and the note it was for is proposed in the same session, citing it, unverified
-until they confirm it.
-
-## High level, everywhere
-These notes record the shape, not the detail: the five boxes and the arrows between them, who
-owns what, what the product does for whoever pays for it.
-
-The detail already lives in the sources; the understanding cites them instead of repeating them.
-A paragraph that could be replaced by a link should be the link.
-
-An empty area is an honest answer. "Nobody has said who pays for this yet" is worth more than a
-paragraph assembled out of guesses.
-
-## Where it lives
-The default is those three notes, in this workspace. A team that keeps this on a wiki page names
-that page here instead, and it works: writing to a mirrored page already goes through the
-ordinary approval path (a \`draft_page_update\` proposal the PM approves). This note is the setting.
-
-## Changing what is there
-Tighten only. Sharpen a sentence, replace what has changed, strike what is stale. An edit that
-makes one of these notes longer without making it truer is the wrong edit.
-
-Where a claim came from decides how it is marked:
-
-- **The PM said it themselves.** It lands verified: \`verified\` is set on the note. It is a list of
-  entries, and each entry carries both keys: \`by: human:<their name>\` and
-  \`at: <that day's date, YYYY-MM-DD>\`.
-
-  \`\`\`yaml
-  verified:
-    - by: human:asa
-      at: 2026-03-04
-  \`\`\`
-
-- **Qale inferred it from a synced source.** It lands unverified, which is simply the absence of
-  that field, and cites the page or ticket it came from. It stays that way until the PM confirms
-  it.
-
-Freshness applies either way, so a picture nobody has touched in six months admits its age.
-
-## What to watch
-When a synced source contradicts what is recorded here, the correction comes as its own proposal and
-says which sentence disagreed with what. Silence is not disagreement: a source that simply does
-not mention something contradicts nothing.
-
-Nothing here is written without a proposal, these notes included.
-`;
-
-/**
  * The interview, generalized (SK-11). It shipped as `learn-the-product`, one
- * conversation that filled the three understanding notes from the PM's own head.
+ * conversation that filled the three about pages from the PM's own head.
  * The mechanic was never about the product: somebody says what they know, the
  * session asks until it has it, and the memory gets a note. So the topic became
  * an argument the caller hands in, and the product is one example of it.
@@ -506,9 +429,9 @@ time, and the section below says what to do with that. Everything else here appl
 
 ## Read first
 Before asking anything, see what the workspace already holds on the topic. Search for it, read
-the notes it turns up, and read \`understanding/what-goes-here.md\` and the area notes it points at
-whenever the topic touches the product, the system or the organization. Never ask for something
-the memory already knows: read it back and ask whether it is still true.
+the notes it turns up, and read the three about pages in \`about/\` (product, technical,
+organization) whenever the topic touches the product, the system or the organization. Never ask
+for something the memory already knows: read it back and ask whether it is still true.
 
 ## Open with one big ask
 Name the topic, ask for everything at once, then stop and listen. For a narrow topic that is one
@@ -550,9 +473,11 @@ Then work the areas below, hypothesis first. The sources propose and you put it 
 because they can correct it in four words. Where the sources are thin, fall back to the open ask
 above. Never read the debrief back into a note: the picture that lasts is the area notes.
 
-Never ask how they use Jira or Confluence one rule at a time. How this team writes a ticket and a
-page is written up when the connection is made, from the same read, and it lands as a proposal
-they can correct. Asking about it again here is the workspace forgetting.
+How they write a ticket and a page is written down when the connection is made, from their own
+recent tickets and pages, into a file they can edit. The kickoff says how. Open the debrief with the
+link to that file and what you found in it, then ask at most one question per system, and only about
+something you saw and could not explain. Never ask how they use Jira or Confluence one rule at a
+time, and never ask them to paste an example: if there is material, read it.
 
 **When the kickoff says the picture is already there.** They have told the workspace about the
 product before, so the debrief is the whole session. Report what you read the same way, with the
@@ -577,16 +502,25 @@ drop arrives as an ordinary source, and what you draft from it cites it as their
 ## Where what you hear lands
 Every topic ends in the memory, as proposals.
 
-- **The product, the system, or the organization** go in the area notes:
-  \`understanding/product.md\`, \`understanding/technical.md\`,
-  \`understanding/organization.md\`. \`understanding/what-goes-here.md\` is the map over them. It
-  says what belongs in each, how short to keep them, and how a claim is marked. Follow it.
-- **Anything else** goes in the note that already owns the subject: the customer, the theme, the
-  person. Write a new note only when nothing owns it yet, and say in the proposal what it will hold.
+- **The product, the system, or the organization** go in the three about pages, each an about
+  page (type \`about\`): \`about/product.md\` (what the product is, who it is for,
+  and what it is trying to do right now), \`about/technical.md\` (the shape of the system, the
+  big constraints, and the names of the moving parts) and \`about/organization.md\` (the
+  teams, who owns what, and the names that keep coming up). Write these three and no others.
+  They record the shape, not the detail: the detail lives in the sources, so a paragraph that
+  could be a link should be the link. An empty area is an honest answer; never fill a gap with
+  something plausible. When one exists, tighten only: an edit that makes it longer without
+  making it truer is the wrong edit.
+- **Anything else** goes in the note that already owns the subject: the customer, the research
+  page, the person. Write a new note only when nothing owns it yet, and say in the proposal what
+  it will hold.
 
 How a claim is marked is the same wherever it lands:
 
 - A claim that came out of the conversation lands verified. It came from the person who knows.
+  Verified is the \`verified\` list on the page, one entry per confirmation, each with
+  \`by: human:<their name>\` and \`at: <that day, YYYY-MM-DD>\`. Unverified is the absence of that
+  field.
 - A claim that came out of a source lands unverified, and cites the source.
 - A claim you read in a source and then put to them, which they confirmed, lands verified and
   still cites the source. Their yes is what verifies it; the citation is what makes it
@@ -676,8 +610,9 @@ actually work on: ONE \`ask_user\` call, every row ticked, one confirm. Never a 
   row \`checked\`, each carrying its reason ("yours, moved on Tuesday"). Call \`track_external\`
   for each row they leave ticked. A tracked ticket is where context gathers around the work. It
   is never a copy of the ticket.
-- **Themes**, at most 3, from the epics they just confirmed matter. A second question in the same
-  call, same shape. Propose the theme note with \`propose_note\` for each row they leave ticked.
+- **Research pages**, at most 3, one per problem the epics they just confirmed are about. A
+  second question in the same call, same shape. Write the page with \`propose_note\` (type
+  \`research\`, path \`research/<slug>.md\`) for each row they leave ticked, citing the epic.
 
 Never mirror a wiki page. A page is cited, never copied. No people and no todos: those come out
 of meetings, not out of a first read.
@@ -713,7 +648,80 @@ this does not need running again on the same topic unless a whole area is still 
  * "Your rules" is last on purpose: `propose_instruction` appends a bullet to the
  * end of the file, which only lands inside that section while it is the final
  * heading. Moving it up would silently start a new section on every rule.
+ *
+ * "What you want from Qale" sits right before it (docs/learning-how-you-work.md
+ * ticket 8). It is the one section `propose_instruction` edits in place rather
+ * than appends to, so it can stay above the rules and keep its own lines.
  */
+
+/**
+ * The six lines the "What you want from Qale" list ships with, one per pain
+ * point in docs/learning-how-you-work.md. The `id` is what telemetry reports
+ * when a line is added or removed (ticket 15): never the text, which the PM
+ * may have rewritten. The section in {@link HOUSE_RULES} is built from this
+ * list, so the file and the ids cannot drift.
+ */
+export const WANT_LIST_LINES: readonly { id: string; text: string }[] = [
+  {
+    id: 'write-into-tools',
+    text: 'When a meeting ends, write the actions into Jira and Confluence for me.',
+  },
+  {
+    id: 'delivery-from-record',
+    text: 'Answer "when can we deliver this?" from the record, not from my memory.',
+  },
+  {
+    id: 'who-is-waiting',
+    text: 'Tell me who is waiting for something before it ships, and what they were told.',
+  },
+  {
+    id: 'priority-changed',
+    text: 'When a priority changes in a room I was in, change the record so the team reads it.',
+  },
+  {
+    id: 'one-news-many-words',
+    text: "Write the week's news once and give it to me in the words each group needs.",
+  },
+  {
+    id: 'promises',
+    text: 'Keep track of what I promised and tell me before the date, not after.',
+  },
+];
+
+/** Straight quotes, one space between words, lower case, no trailing stop. */
+function plainWantLine(text: string): string {
+  return text
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.]+$/, '')
+    .toLowerCase();
+}
+
+/**
+ * Which shipped line this is, or null for a line the PM wrote or Qale proposed.
+ *
+ * The match is on the text as it ships, read straight out of the house rules,
+ * so a PM who rewrote a line in their own words gets no id. That is the right
+ * answer: telemetry reports the id and never the text (ticket 15), and a
+ * rewritten line is their sentence about their own work.
+ */
+export function wantLineId(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const key = plainWantLine(text);
+  if (!key) return null;
+  return WANT_LIST_LINES.find((line) => plainWantLine(line.text) === key)?.id ?? null;
+}
+
+/** The list as it appears in the house rules: the heading, the intro, the lines. */
+const WANT_LIST_SECTION = `${WANT_LIST_HEADING}
+
+What you want from Qale. Qale reads this before every job and adds to it as it learns what you
+ask for. Edit it any time. Keep it to about ten lines.
+
+${WANT_LIST_LINES.map((line) => `- ${line.text}`).join('\n')}`;
+
 export const HOUSE_RULES = `---
 type: skill
 title: House rules
@@ -809,13 +817,22 @@ Where each kind of note lives. The librarian follows these when proposing paths 
   body. To change one, supersede it: a new file with \`supersedes\`, and the old file flipped to
   \`standing: superseded\`.
 - **insights/**: cited claims, \`<slug>.md\`. \`evidence[]\` is required, plus a \`confidence\` level.
-  Link each to the customer and theme it concerns.
+  Link each to the customer it concerns, and to the research page for its problem when one exists.
 - **customers/**: one hub per account: commitments, signals, and the ledger of what they were
   told. Carries \`relationship\` (prospect / active / churned).
-- **themes/**: the durable things worth solving: a problem, a pain, an opportunity, an idea.
-  Carries \`stance\` (exploring / watching / committed / wont-do). Themes accrue evidence even when
-  \`wont-do\`; the declined ones are exactly the ones whose reasoning is expensive to rebuild. A
-  theme never requires a ticket, and a ticket never requires a theme.
+- **research/**: Qale's own pages, what it worked out: the case for a problem, a competitor
+  scan, a scan of a codebase. One
+  folder, flat: every page is \`research/<slug>.md\` and there are no subfolders. Every page cites
+  its \`sources\`, states its case in one voice and links the insights that hold the quotes. A page
+  lands without a card, Qale keeps it fresh, and the PM corrects anything wrong. Only synthesis
+  opens a page unasked; everything else extends the page for that problem, if one exists, and
+  one signal makes no page. A declined problem keeps its page: its reasoning is expensive to
+  rebuild. A research page never requires a ticket, and a ticket never requires a research page.
+- **about/**: what is true about you and the company: the product, how it is built, who owns
+  what. One folder, flat: every page is \`about/<slug>.md\`. It holds \`product.md\`,
+  \`technical.md\` and \`organization.md\` today. Qale reads these and never copies the facts into
+  a skill. The interview writes them, and a correction about a fact lands here, not in a skill:
+  a skill says how to do a piece of work, an about page says what is true.
 - **people/**: stakeholders: what they care about, and \`last_told\`.
 - **todos/**: the commitment ledger, one file per commitment, \`YYYY-MM-DD-<slug>.md\`. Carries
   \`commitment\` (open / done / dropped), optional \`due\`, and \`owner\` only when someone other than
@@ -826,8 +843,6 @@ Where each kind of note lives. The librarian follows these when proposing paths 
   the workspace that a person made. Write here only when they asked for the page in this
   conversation, and send \`asked\` when you do. Everything else you write goes in the memory
   folder that owns the subject. Anything dropped in from outside goes to sources/ instead.
-- **understanding/**: what the workspace knows about the product itself, in three area notes plus
-  the map over them. Nobody asks for these; the interview and the first look fill them.
 - **attachments/**: dropped images and screenshots, each referenced by a capture note in
   sources/.
 - **sessions/**: replayable session receipts, written by the harness. Never hand-edited.
@@ -835,6 +850,8 @@ Where each kind of note lives. The librarian follows these when proposing paths 
 Every derived note lists its \`sources\` or \`evidence\` as wikilinks. Prefer linking to an existing
 hub over creating a new file; near-duplicate pages split the memory. Ticket keys and URLs are
 cited, never invented.
+
+${WANT_LIST_SECTION}
 
 ## Your rules
 
@@ -844,50 +861,168 @@ chat. Change a line to change the rule, or delete it to drop it.
 `;
 
 /**
- * How this team uses Jira, and how it uses Confluence (docs/conventions.md).
+ * The one file Qale reads before it writes into a skill or a voice
+ * (docs/learning-how-you-work.md, ticket 17).
  *
- * Every team bends its tools into a house shape: a label that must be on every
- * ticket, one project for bugs, specs that live in one space. Qale drafts
- * tickets and page updates and knows none of it, so the first draft is generic
- * and the PM fixes the same things every time. These two files are where the
- * shape is written down, and they are read when something is drafted for that
- * system.
+ * The rules for that used to live inside the `propose_skill` and
+ * `propose_instruction` tool descriptions, where the PM could neither read nor
+ * change them. Here they are a shipped file like the house rules: a fact goes
+ * to a note, a way of working to the skill that owns it, taste to a voice, a
+ * one-off nowhere, plus the section layout, the first-line convention, one
+ * bullet per thing learned, and the size cap. The tool descriptions point at
+ * this file and keep only their own mechanics.
+ *
+ * Claude Code ships a skill about writing skills for the same reason: the
+ * rules for a file the model writes belong in a file the person can edit.
+ *
+ * No `scenarios` and no `can`: this is a rules file, not work anyone runs.
+ * Unlike the house rules it does not ride in every prompt. It is read on
+ * demand, at the moment a rule is about to be written.
+ */
+export const WRITING_SKILLS_SKILL = `---
+type: skill
+title: How Qale writes skills
+summary: What Qale reads before it writes into a skill or a voice. What goes where, what a rule looks like, and how a file says what it has learned.
+---
+
+# How Qale writes skills
+
+Read this before you write into a skill or a voice: after a correction, after the first read of
+Jira or Confluence, after a style pick, and before propose_skill or propose_instruction.
+
+## What goes where
+
+Qale keeps what it learns in three kinds of file. A fact goes in none of them.
+
+- A fact about the PM, the team, the product or a customer goes to the note that holds it, or to
+  an about page in Memory (product, technical, organization). "The pilot starts in October" is a
+  fact: fix the note, never a skill. A skill reads the about pages and never copies a fact into
+  itself.
+- A way of working goes to the skill that owns it. How a ticket or a ticket comment is written
+  goes to \`skills/jira/SKILL.md\`. How a page is written goes to \`skills/confluence/SKILL.md\`.
+  How a transcript is filed goes to arrival. A rule that no one skill owns goes under "Your rules"
+  in the house rules, the one file every session reads.
+- A matter of taste goes to a voice in \`voices/\` when it is about one audience. "Never open a
+  customer email with an apology" goes to the CS voice. If it holds for every voice, it goes to
+  the house rules.
+- A one-off goes nowhere. A typo, a misread, a fluke: say that nothing needs filing and carry on.
+
+A correction becomes a rule only if it would repeat. A one-off correction never does. Ask three
+questions before you write. Is this about what is true? Then it is a fact. Is it about how the
+work is done? Then it is a way of working. Is it about how a draft sounds? Then it is taste.
+
+## The sections of a skill
+
+A skill has four sections, in this order. Each one is a few short lines.
+
+- **When**: the work this skill applies to, so a session can tell that the conversation has
+  turned into it.
+- **Read**: what to look at first, in what order, and what not to trust.
+- **Produce**: what to propose, what every claim cites, and when the honest answer is that there
+  is nothing to do.
+- **Then**: what happens after it runs. Leave it out when there is nothing to say.
+
+Write a new skill from the work you just did, and name the real files and tools it used. Rules
+learned later go in one more section at the end, "Standing instructions", as bullets. That
+section stays last: a new rule is appended at the end of the file, and a section after it would
+take the rule instead.
+
+## The first line
+
+A file Qale learns into starts with one line that says what Qale knows and where it came from.
+It has two forms.
+
+- No pick yet: "I do not know how you want exec updates to read yet. Until you pick, the first
+  update comes in these three styles:" with the styles listed under it.
+- Learned: "Read from your last thirty tickets in SCH, APP and PLT on 2 September. A guess from
+  your tickets, not a rule you gave me." Or: "Exec updates are one paragraph, result first.
+  Learned from the style you copied on 5 September. Change this line and the next update follows
+  it."
+
+When you learn something new, rewrite this line with the new source and date. Never add a second
+first line. When the material was thin, the line says so: "Only four recent tickets were written
+here, so this is thin." When the material was not the PM's own, the line says whose it was:
+"Almost none of these were written by you, so this is how your team writes them."
+
+## One line per thing learned
+
+Every rule is one bullet with its source and date. "Start summaries with a verb. From your edit
+on 2 September." A rule the PM said in chat cites the chat: "From what you said on 5 September."
+A rule read from material cites the material: "From your SCH stories, read on 2 September." The
+PM reads the file, sees where each line came from, and deletes any line they do not want.
+
+## Styles that were not picked
+
+A voice ships with three styles and keeps all three until the PM picks one. After the pick, the
+picked style stays and the other two go. The first line changes to the learned form. If the PM
+asks for another way, the three styles come back.
+
+## Size
+
+A rule is one imperative sentence, at most 300 characters. The reason stays out of the rule: it
+goes in the "why" that the card shows. A rules section stays around ten lines. A whole file stays
+short enough to read in a minute. When a file grows past that, merge the rules that say the same
+thing and delete the rules that no longer hold. Every file read at the start of a session costs
+in every session.
+
+This file is yours to edit. Add "always ask before you write a rule" here and Qale will.
+`;
+
+/**
+ * How the PM writes tickets, and how they write pages
+ * (docs/conventions.md, docs/learning-how-you-work.md tickets 3 to 5).
+ *
+ * Every PM has a way of writing a ticket: which issue type for what, how a title
+ * reads, how the description is laid out, which labels mean what. Qale drafts
+ * tickets and page updates and used to know none of it, so the first draft was
+ * generic and the PM fixed the same things every time. These two files are where
+ * Qale writes down what it saw, and they are read when something is drafted for
+ * that system.
+ *
+ * The body is a template Qale fills from the PM's own recent work. The first
+ * look after a connection reads their last thirty tickets and their recent
+ * pages, writes each file whole with `propose_note`, and the file lands without
+ * a card: it is Qale's own notes on how the PM works, and the file is the record
+ * (`isStyleFile` in the domain policy). The first line under the title says
+ * what it was read from, when, and that it is a guess. The PM edits any line.
  *
  * They are NOT seeded. A workspace without Jira should not carry an empty Jira
- * skill, so the file is created on first use, from this template, by whichever
- * feeder gets there first: a standing instruction the PM states in a chat, or a
- * convention the first-look debrief observed and they confirmed. That is why
- * these constants sit outside {@link DEFAULT_SKILLS} and are reached through
- * {@link conventionsSkill} instead.
+ * file, so it is created by whichever feeder gets there first: the first look,
+ * or a standing instruction the PM states in a chat before any read happened.
+ * That is why these constants sit outside {@link DEFAULT_SKILLS} and are reached
+ * through {@link conventionsSkill} instead. The italic lines are what the file
+ * says until a read fills it, and each one is harmless if a draft follows it.
  *
- * Two things about the body are load-bearing. The sections are the drafting
- * MOMENTS, so a rule has an obvious place to land and the model reads the ones
- * that apply to what it is doing. And `## Standing instructions` is last, for
- * the same reason "Your rules" is last in the house rules: `propose_instruction`
- * appends at the end of the file, and a section with prose after it would take a
- * fresh heading instead of the bullet.
+ * Two things about the body are load-bearing. The headings are quoted by the
+ * first-look kickoff (`conventionsBlock` in the desktop sync service), so a
+ * renamed heading has to move there too. And `## Standing instructions` is last,
+ * for the same reason "Your rules" is last in the house rules:
+ * `propose_instruction` appends at the end of the file, and a section with
+ * prose after it would take a fresh heading instead of the bullet.
  *
  * The frontmatter follows the house rules: `type`, `title`, `summary`, nothing
- * else. There is no key that says "read me at drafting time" because there is no
- * such key any more, and there is nothing to run: these files hold rules, not
- * work.
- *
- * The italic line under each heading is a placeholder the first real rule
- * replaces. Each one is harmless if a draft follows it literally, because until
- * the PM writes their first rule that is exactly what happens.
+ * else. There is nothing to run: these files hold how the PM writes, not work.
  */
 export const JIRA_CONVENTIONS = `---
 type: skill
-title: How we use Jira
-summary: The rules Qale follows when it drafts tickets and comments.
+title: How you write tickets
+summary: How Qale drafts tickets and comments so they read like yours.
 ---
 
-Qale follows these rules when it drafts for Jira. Edit them freely; short imperative bullets work
-best. Keep them high level: what the team wants done, not a copy of the Jira setup.
+Qale reads this before it drafts a ticket or a comment. It is a guess from your own tickets, not a
+rule you gave it. Change any line and it drafts the new way from the next ticket on.
+
+_Not read from your tickets yet. This file was created for the rule under Standing instructions,
+and Qale fills the sections below the first time it reads your tickets._
 
 ## When you draft a ticket
 
 _Example, replace this line: say the problem in one sentence before the acceptance criteria._
+
+## Labels
+
+_One line per label once tickets have been read: what it seems to mean, and how many tickets
+carried it._
 
 ## When you comment
 
@@ -895,18 +1030,26 @@ _Example, replace this line: say what changed and what you need back, in three s
 
 ## Standing instructions
 
-Rules you asked for in a chat land here.
+Rules you asked for in a chat, and answers you gave to a question, land here.
 `;
 
-/** How this team uses Confluence. Same file, one drafting moment. See {@link JIRA_CONVENTIONS}. */
+/** How the PM writes pages. Same kind of file, read from their own pages. See {@link JIRA_CONVENTIONS}. */
 export const CONFLUENCE_CONVENTIONS = `---
 type: skill
-title: How we use Confluence
-summary: The rules Qale follows when it drafts page updates.
+title: How you write pages
+summary: How Qale drafts page updates so they read like yours.
 ---
 
-Qale follows these rules when it drafts for Confluence. Edit them freely; short imperative bullets
-work best. Keep them high level: what the team wants done, not a copy of the space setup.
+Qale reads this before it drafts a page update. It is a guess from your own pages, not a rule
+you gave it. Change any line and it drafts the new way from the next page on.
+
+_Not read from your pages yet. This file was created for the rule under Standing instructions,
+and Qale fills the sections below the first time it reads your pages._
+
+## How a page is laid out
+
+_Once pages have been read: which headings repeat, how long a page runs, and one worked example
+cited by page._
 
 ## When you update a page
 
@@ -914,7 +1057,7 @@ _Example, replace this line: keep the headings the page already has and add unde
 
 ## Standing instructions
 
-Rules you asked for in a chat land here.
+Rules you asked for in a chat, and answers you gave to a question, land here.
 `;
 
 /**
@@ -953,6 +1096,10 @@ got blocked. Use the "This week" lens as the scope.
 One draft per voice in this list, and what belongs in each. Add a voice here to draft for it. Take
 one out and the next run stops writing it.
 
+One draft per voice holds while the line about the week's news in the words each group needs is
+on the list in house rules under 'What you want from Qale'. With that line off, write one draft,
+plainly, and read no voice.
+
 - **exec**: the decisions and who made them, what reached customers, and the one thing that could
   go wrong next. Put a number on it wherever a number exists: the date, the count, the money at
   risk. Leave the process out.
@@ -977,8 +1124,35 @@ It gets forwarded word for word, so hold it to these whatever the sources say:
   pasted to anyone.
 - No date that nothing backs. No decision and no shipped ticket means no date.
 
+## The first time
+A voice that still lists three styles has no pick yet: its first line says so, or it holds more
+than one \`###\` style. For that voice, draw one \`draft_text\` panel with one tab per style, the
+style's name as the label, Full only, and the same news in all three. Set \`ask\` to the question
+{ text: "Write updates this way from now on?", options: ["For exec", "For every audience", "Not now"] },
+with the voice's own name in the first option. When the PM copies a tab, the question appears under
+the panel, and the answer comes back as a turn: \`I copied "One paragraph" and answered "For exec".\`
+
+What each answer means:
+- "For <voice>": vault_read \`skills/writing-skills/SKILL.md\`, read the voice with \`get_voice\`, then
+  \`propose_update\` the voice file with \`patch\` blocks. The first line becomes the learned form:
+  "Exec updates are one paragraph, result first. Learned from the style you copied on 5 September.
+  Change this line and the next update follows it." The picked \`###\` style stays, the other two go,
+  and "How it sounds" stays as it is. Set \`learned\` to what you now know and where it came from.
+  The write lands without a card. Then reply with one line: "Got it. Exec updates: one paragraph,
+  result first. [[voices/exec|Exec voice]]".
+- "For every audience": the same for every voice under "Who it goes to", in one turn, one receipt
+  line per voice.
+- "Not now": change nothing. The three styles come back next Friday.
+- \`I copied "One paragraph" again without answering, so treat it as the pick for exec.\`: the same
+  as "For exec", and the receipt says that two copies counted as the pick and that the file is
+  where to change it.
+
+After a pick the voice holds one style, and the drafts come as Full and Short as under "Produce".
+If the PM asks for another way, draw the three styles again, with the same \`ask\`.
+
 ## Produce
-One \`draft_text\` call per voice, with \`voice\` set and two variants in the same panel:
+One \`draft_text\` call per voice, with \`voice\` set and two variants in the same panel (a voice
+with no pick yet gets the panel under "The first time" instead):
 
 - **Full**: every heading in the shape below, in order. It goes in the mail.
 - **Short**: the one thing that audience would act on, in a line or two. It gets pasted into a
@@ -1003,7 +1177,8 @@ back, and the mirror re-syncs on the next pull.
 ## The shape of the drafts
 Where a line has nothing behind it, write "nothing this week" and keep the line. A week with nothing
 in it at all still produces nothing at all: the fallback covers one empty line, never a whole empty
-week. A voice added later brings its own shape, so ask once what belongs in it.
+week. A voice added later brings its own shape, so ask once what belongs in it. A voice with no
+pick yet takes the shape of each of its three styles instead of the Full shape below.
 
 The bracketed label names the draft and its variant. It is not part of the draft.
 
@@ -1063,15 +1238,15 @@ ways. Nothing in the memory yet says which accounts said the same thing. Finding
 
 ## Read
 Scope first: decide which documents are in and say the list back before reading anything. Use
-vault_list and search_vault over the tag, customer, or theme the request named. Read the claims
-insights/ already makes before the material: they are what you will extend rather than duplicate.
-Then read what you will weigh the material against: the existing themes and their current
-\`stance\`, the decisions that touched them, and the ticket mirrors where a theme links tracked
+vault_list and search_vault over the tag, customer, or research page the request named. Read the
+claims insights/ already makes before the material: they are what you will extend rather than
+duplicate. Then read what you will weigh the material against: the research pages that already
+make a case, the decisions that touched them, and the ticket mirrors where a page links tracked
 work.
 
-Write \`brief.md\` before reading the material: what we currently believe, the themes in play and
-their stances, the live decisions a source might contradict, and what a good answer looks like
-for this question. Every child reads it; without it, a reader handed one transcript in isolation
+Write \`brief.md\` before reading the material: what we currently believe, the research pages in
+play and the case each one makes, the live decisions a source might contradict, and what a good
+answer looks like for this question. Every child reads it; without it, a reader handed one transcript in isolation
 cannot tell a new fact from a contradiction.
 
 Then spawn the reading. One \`spawn\` entry with \`over\` set to the document list gives every
@@ -1093,31 +1268,32 @@ Two different things get called evidence, and proposals break when they are conf
 \`sources\` argument cites content already on disk: the original transcripts and sources, never
 your session files (those get deleted) and never a note this run has only proposed. A note's
 \`evidence\` frontmatter is written into the note itself and may point at anything, including the
-insights a theme rests on.
+insights a research page rests on.
 
 The proposals:
 - **Insights** (propose_note, type insight): one claim, stated in your own voice, with every
   account that backs it gathered inside it. An insight is the smallest thing we believe, and the
-  one place a transcript quote belongs. The bar is a claim someone could act on or a future theme
-  could rest on, never a summary line. List the backing accounts under \`evidence\`, quote each of
+  one place a transcript quote belongs. The bar is a claim someone could act on or a future research
+  page could rest on, never a summary line. List the backing accounts under \`evidence\`, quote each of
   them in the body, one short quote per account, and set \`confidence\` (high, med or low) from how
   many accounts back it and how directly they say it. Check insights/ first: a second account
   making the same claim extends the existing insight rather than filing a near-copy. Extending is
   a propose_update that restates the whole \`evidence\` list with the new account added, plus that
   account's quote in the body; an update replaces a field, so a list you shorten is a list you
   lose.
-- **A new theme** (propose_note, type theme) where several sources converge on something the
-  memory does not hold: state the problem worth solving (not the feature someone asked for), open
-  with an honest \`stance\` (\`exploring\` unless the evidence is overwhelming), and make the body an
-  argument over insights. A theme never quotes a transcript directly; if a quote is worth using,
-  it is worth keeping as an insight first. \`evidence\` lists the insights the theme rests on, and
-  the proposal's \`sources\` cite the transcripts underneath them.
-- **Evidence added to an existing theme** (propose_update): extend \`evidence\` and say in the
-  rationale what the addition changes about how strong the theme now is.
-- **A stance change** (propose_update setting \`stance\`) only where the evidence genuinely moved,
-  and \`wont-do\` only where the memory shows a deliberate decline (cite the decision). Never
-  \`committed\` from here: committing is a decision with a decider, so use \`propose_decision\`
-  and let the decider own it.
+- **A research page where several sources converge on one problem** (propose_note, type
+  research, path \`research/<slug>.md\`) the memory does not hold yet: state the problem worth
+  solving (not the feature someone asked for), open with one honest line on where it stands
+  (exploring, unless the evidence is overwhelming), and make the body an argument over insights.
+  A research page never quotes a transcript directly; if a quote is worth using, it is worth
+  keeping as an insight first. The page's \`sources\` lists the insights it rests on, and the
+  proposal's \`sources\` cite the transcripts underneath them. This is the one skill that opens a
+  research page unasked, so open one for a problem several sources share, never for one signal.
+- **Sources added to an existing research page** (propose_update): extend \`sources\`, and say in
+  the rationale what the addition changes about how strong the case now is. Move its opening line
+  only where the evidence genuinely moved, and to declined only where the memory shows a
+  deliberate decline (cite the decision). Never to committed from here: committing is a decision
+  with a decider, so use \`propose_decision\` and let the decider own it.
 - **Disagreement**: a live insight the material contradicts is never quietly rewritten: propose
   the corrected insight and point it at the old one with a \`supersedes\` link, so the old one
   carries a pointer to what replaced it.
@@ -1131,19 +1307,19 @@ Promote before you delete. Every per-item finding a cluster ends up leaning on b
 proposal, new or extended, and the cluster's proposal names those insights in its \`evidence\`. Do that
 while the session files are still there; the quotes live nowhere else.
 
-Themes written before insights existed carry their quotes inline. Leave them until a run touches
-one, then decompose the quotes it leans on into insights as part of that run's normal proposals.
+Research pages written before insights existed carry their quotes inline. Leave them until a run
+touches one, then decompose the quotes it leans on into insights as part of that run's normal proposals.
 
-Only when a theme is already \`committed\` does tracked work follow: draft_ticket for what no
-ticket covers, citing the theme and the decision that committed to it. Any other stance produces
-no ticket; \`watching\` and \`wont-do\` exist precisely to stay real and unbuilt. Never invent a
-theme to give an existing ticket a parent; themes come from evidence.
+Only when a live decision commits to a research page does tracked work follow: draft_ticket for
+what no ticket covers, citing the page and that decision. Without the decision no ticket follows;
+a page still exploring, watched or declined exists precisely to stay real and unbuilt. Never
+invent a research page to give an existing ticket a parent; pages come from evidence.
 
 Counting rules:
 - Every claim names its sources and how many distinct accounts back it. A pattern from one
   account is a signal, not a pattern; say which second account would confirm it.
-- An insight's strength is how many accounts its \`evidence\` lists, so a theme citing it reads the
-  count off the insight rather than recounting the transcripts.
+- An insight's strength is how many accounts its \`evidence\` lists, so a research page citing it reads
+  the count off the insight rather than recounting the transcripts.
 - Every document in scope gets a pass, and the ones that said nothing are named as silent. If
   some failed to read, report "six of nine"; do not write "the interviews show" over a partial
   read.
@@ -1151,8 +1327,7 @@ Counting rules:
   document.
 
 ## Then
-Approved proposals file the themes and insights and move the stances that moved; the sources stay
-exactly as they were. Session files are working material, not memory: anything worth keeping from
+The research pages and insights land, and the sources stay exactly as they were. Session files are working material, not memory: anything worth keeping from
 them was worth proposing as a note, and any quote worth keeping belongs in an insight.
 `;
 
@@ -1174,6 +1349,13 @@ them was worth proposing as a note, and any quote worth keeping belongs in an in
  * quantified" is a fair description of the exec voice and still leaves a note to
  * the CEO looking like it belongs to no voice at all. Who it is for is the part
  * that makes it pickable, and the body then says how it sounds.
+ *
+ * Both ship with three styles and a first line that says no pick yet
+ * (docs/learning-how-you-work.md, ticket 10). The first weekly update draws all
+ * three, the PM copies one, and the pick rewrites the file: the first line turns
+ * into the learned form, the picked `###` style stays, the other two go. The
+ * "How it sounds" bullets hold whichever style is picked, so they are written to
+ * fit a three-liner and a paragraph alike.
  */
 export const VOICE_EXEC = `---
 type: skill
@@ -1183,15 +1365,33 @@ summary: For leadership and the board. Short, decided, quantified. No process.
 
 # Exec voice
 
+I do not know how you want exec updates to read yet. Until you pick, the first update comes in these three styles:
+
+### Three lines
+Decided, shipped, watch. One line each, with a number on every line.
+No greeting, no reason, nothing else.
+
+### One paragraph
+The result in the first sentence, then the reason. No labels.
+Four sentences at most.
+
+### What changed, what's next
+Two short lists. "What changed" holds this week. "What's next" holds the one or two things after it.
+A number or a date on every line that has one.
+
+## How it sounds
+
 The reader runs the company and reads this on a phone between two meetings.
 
 - Put the outcome or the decision in the first sentence. Reasoning comes after it.
-- Three sentences. If a fourth is needed, make it a number.
+- Short. Three sentences, or one line per item. If more is needed, make it a number.
 - Say it flat. "We ship on the 14th", not "we are hoping to be able to ship".
 - Use the number instead of the adjective: "two accounts, 180k SEK", not "significant risk".
 - Plain words over trade words: "we stopped work on X", not "we deprioritised the X workstream".
 - No greeting, no sign-off, no "hope you are well".
 - Never write: "just wanted to", "circle back", "synergy", "leverage" as a verb, "touch base".
+
+To pick now, delete two styles and keep one, or write your own in their place. The first update then comes in that style only.
 `;
 
 export const VOICE_CS = `---
@@ -1202,6 +1402,22 @@ summary: For customers, and anyone outside the company. Warm, plain, exact about
 
 # CS voice
 
+I do not know how you want CS updates to read yet. Until you pick, the first update comes in these three styles:
+
+### Three dated lines
+Live now, committed, no date yet. One line each, and a date on every line that has one.
+Each line can be pasted to a customer on its own.
+
+### A short note
+One warm paragraph: a one-line greeting, what customers can use and since when, what is promised and its date, then the open part said plainly.
+Five sentences at most.
+
+### Use now, coming next
+Two short lists. "What you can use" holds what is live and since when. "What's coming" holds what is promised, each with a date or "no date yet".
+No line without a date or a plain "no date yet".
+
+## How it sounds
+
 The reader talks to customers all day and will quote this word for word.
 
 - Warm and direct. A one-line greeting is fine, then say the thing.
@@ -1210,6 +1426,8 @@ The reader talks to customers all day and will quote this word for word.
 - Say the uncertain part out loud. "We do not have a date yet" is a usable sentence.
 - One idea per sentence. Short sentences are easier to quote.
 - Never write: "should be fine", "soon", "we are working on it" without a date, "as you know".
+
+To pick now, delete two styles and keep one, or write your own in their place. The first update then comes in that style only.
 `;
 
 export const VOICE_SALES = `---
@@ -1220,6 +1438,22 @@ summary: For sales to relay to a prospect or account. Short, date-first, no engi
 
 # Sales voice
 
+I do not know how you want sales updates to read yet. Until you pick, the first update comes in these three styles:
+
+### Three dated lines
+Shipping, promised, no date yet. One line each, with a date on every line that has one.
+Each line can be pasted to a prospect or account on its own.
+
+### One line to forward
+The single line the reader pastes straight into their own message: the date first, then the fact, nothing else.
+No greeting, no reasoning.
+
+### What you can tell them
+A short list of what can be promised, one line each, date first.
+No line without a date or a plain "no date yet".
+
+## How it sounds
+
 The reader is closing or renewing a deal and will paste this straight into their own message.
 
 - The date first. "Shift swaps ship in Q4" before any reasoning.
@@ -1228,6 +1462,8 @@ The reader is closing or renewing a deal and will paste this straight into their
   no team names. If it isn't a date or a fact they can repeat to their boss, cut it.
 - One idea per sentence. This gets forwarded, so it has to survive on its own.
 - Never write: "should be fine", "soon", "in progress" without a date, "we're working on it".
+
+To pick now, delete two styles and keep one, or write your own in their place. The first update then comes in that style only.
 `;
 
 export const LIBRARIAN_AGENT = `---
@@ -1245,7 +1481,7 @@ right, ask.
 ## Two places
 The workspace has two places, and your job is different in each.
 
-**Memory** is what Qale keeps: themes, insights, decisions, customers, people, and mirrored pages.
+**Memory** is what Qale keeps: research pages, insights, decisions, customers, people, and mirrored pages.
 Here you are the steward. You file a stray page, link it from the hub it belongs under, repoint what
 still cites a replaced decision, and propose a delete when a page is noise.
 
@@ -1295,7 +1531,7 @@ moves a promise onto the wrong account.
 ## What an unlinked note can be
 Read it, then say what it is:
 
-- **A raw capture**: it names people, customers and themes in plain text and links none of them.
+- **A raw capture**: it names people, customers and problems in plain text and links none of them.
   Nothing is wrong with it. It has simply never been processed. Offer to handle it now instead of
   writing a proposal that tells the PM to: ask, and if they say yes, pull in the process-note skill
   with \`use_skill\` and do the pass in this session.
@@ -1359,6 +1595,10 @@ words ("points at the newer decision", not "supersede").
 The list is short on purpose: a dozen findings at most, few enough to open every note on it
 yourself, one finding at a time. An untouched finding comes back around, and a finding you
 skimmed to clear the list is how a guess ends up on a proposal.
+
+Tidy in the order of the list in house rules under 'What you want from Qale': a repair that
+serves a line higher on it comes first. With the line about who is waiting on, fix the links
+between tickets and customer pages before a broken link in an old research page.
 
 Do not let the backlog grow silently: every area is either covered or has a deferral entry with a
 reason. When you run out of room, or the evidence a repair would need has not arrived yet, call
@@ -1433,7 +1673,7 @@ skill's job and this one reads what got filed.
 
 ## Read: a commitment of yours
 The todo (title, due date, owner, the \`sources\` it cites), the meeting or note where the
-commitment was made, and the related customer, theme, and decision pages. Three checks change
+commitment was made, and the related customer, research and decision pages. Three checks change
 the answer, so make all three:
 - **The linked ticket**, if any: its mirror note (tickets/), for \`state\`, \`state_category\` and
   \`remote_updated\`.
@@ -1451,7 +1691,7 @@ Then the memory it touches:
   own is what makes the same words a request or an instruction. An unknown sender is a fine
   answer: say they have no page rather than guess at their position.
 - **What we already know**: the insights that bear on the ask and how many accounts back them, the
-  live decisions that settle or contradict it, the theme it belongs under, and the ticket mirrors
+  live decisions that settle or contradict it, the research page it belongs under, and the ticket mirrors
   for anything already in flight.
 - **What we already promised**: open todos, and the customer hub's ledger of what they were told.
   An ask we committed to in March is a different conversation from a new one.
@@ -1495,8 +1735,10 @@ Then what the ask actually forces, and only that:
 - **A commitment you take on**: a todo (propose_todo) quoting the ask and citing this decode.
 - **A reply** (draft_text), where the posture is to answer now: cite the decisions and tickets it
   rests on, and follow the voice for that audience. It is text to copy, and nothing sends it.
-- **A signal worth keeping**: where the ask is evidence for a theme or a customer, extend that
-  page (propose_update) and say what the addition changes.
+- **A signal worth keeping**: where the ask is evidence for a customer, extend that page
+  (propose_update) and say what the addition changes. Where it is evidence for a problem, extend
+  the research page for that problem, if one exists; otherwise tag the insight and leave it. One
+  signal makes no page.
 - **A collision**: where the ask runs into a live decision or something already promised, that is
   its own proposal.
 
@@ -1555,20 +1797,21 @@ Next move: <what this run proposed, or nothing>
  * The reason this skill is not a template filler is one rule: no requirement
  * without a trace. A spec whose lines each name an insight, a decision or a
  * ticket mirror is a spec a reader can argue with; the same document written
- * from a good memory of the theme is a guess with headings.
+ * from a good memory of the problem is a guess with headings.
  */
 export const SPEC_SKILL = `---
 type: skill
 title: Write a spec
-summary: Turns a theme's insights and decisions into a document a team can build from.
+summary: Turns a research page's insights and decisions into a document a team can build from.
 scenarios:
-  - turning a theme the workspace already backs into something a team can build ("write a spec for the pricing theme")
+  - turning a research page or a tag the workspace already backs into something a team can build ("write a spec for the pricing page")
   - writing up what we are committing to, from insights and decisions already filed ("draft the PRD for scheduled exports")
   - checking whether the evidence carries a spec yet ("is there enough here to spec onboarding")
 ---
 
 ## When
-You point at a theme and want the document a team builds from. The material is already here.
+You point at a research page, or a \`#tag\`, and want the document a team builds from. The material
+is already here.
 
 Every line traces to something filed. A line the workspace cannot back does not go in; it gets
 named as missing instead.
@@ -1577,42 +1820,46 @@ Reading raw material and working out what it adds up to is the synthesis skill's
 starts where that one stopped: it reads the conclusions, never the transcripts under them.
 
 ## Read
-- **The theme**: its \`stance\`, its body, and the insights listed under \`evidence\`.
+- **The research page**: where it stands, its body, and the insights listed under \`sources\`. For
+  a \`#tag\`, its Context page: the research pages first, then the insights.
 - **Each of those insights**: the claim, and how many accounts its own \`evidence\` lists. That
   count is the strength of anything you build on it.
-- **The decisions** that touched the theme.
-- **The ticket mirrors** the theme links: what is built, in flight, or blocked.
+- **The decisions** that touched the page or the tag.
+- **The ticket mirrors** the page links: what is built, in flight, or blocked.
 - **The customer hubs** the insights name, for who has this problem and what they were told.
-- **The three understanding notes**, for the constraints anything built here has to live inside.
-- **Any spec this workspace already holds for this theme.** Extend that one rather than file a
-  second.
+- **The three about pages** in \`about/\` (product, technical, organization), for the
+  constraints anything built here has to live inside.
+- **Any spec this workspace already holds for this page or tag.** Extend that one rather than
+  file a second.
 
 ## Say the scope back first
-Before writing anything, say which theme this is, which insights and decisions are in, and what
-is being left out. That is the cheapest moment to be corrected. Where the choice is not yours to
-make (which of two themes, whether a neighbouring theme is in scope), ask. Where it is, decide,
+Before writing anything, say which page or tag this is, which insights and decisions are in, and
+what is being left out. That is the cheapest moment to be corrected. Where the choice is not
+yours to make (which of two pages, whether a neighbouring problem is in scope), ask. Where it is, decide,
 and say what was decided.
 
 ## When the evidence does not carry a spec
 A spec claims we know enough to build. Say plainly that we do not, and propose nothing, when:
-- the theme holds fewer than two insights, or every insight rests on a single account;
-- nothing commits to it: no live decision, and a \`stance\` of \`exploring\` or \`watching\`;
+- the page or tag holds fewer than two insights, or every insight rests on a single account;
+- nothing commits to it: no live decision, and the page itself says it is still exploring or
+  watching;
 - the problem is written as the feature somebody asked for, with no account behind it.
 
 Then name what would change that: which decision has to be made, which second account would
 confirm the claim. A run that ends there has done its job.
 
 ## Produce
-One proposal, the spec (propose_note, type \`note\`, path \`notes/spec-<theme-slug>.md\`), with \`sources\`
-citing the theme, the insights and the decisions it rests on. Take \`tags\` from the theme. Send
-\`asked\` with it: the spec is the document the PM pointed at a theme and asked for, and \`notes/\`
-is their own folder, which nothing writes into unasked.
+One proposal, the spec (propose_note, type \`note\`, path \`notes/spec-<slug>.md\`), with \`sources\`
+citing the research page, the insights and the decisions it rests on. Take \`tags\` from the page,
+or the tag itself. Send \`asked\` with it: the spec is the document the PM pointed at a page and
+asked for, and \`notes/\` is their own folder, which nothing writes into unasked.
 
 One addition to the writing rules: no requirement without a trace. Every requirement names the
 insight, decision or ticket mirror behind it. One that cites nothing is not a requirement, it is
 your idea, and it belongs under Assumptions with what would settle it.
 
-A second proposal where the theme does not link the spec yet: a propose_update adding the link.
+A second proposal where the research page does not link the spec yet: a propose_update adding
+the link. A tag has no page to link from.
 
 Tickets are not this skill's work. Breaking a spec into tracked work comes after the spec is read
 and accepted.
@@ -1620,11 +1867,11 @@ and accepted.
 ## Then
 The spec sits with the PM's own documents and cites its way back down: a reader follows a
 requirement to the insight, and the insight to the account that said it. A later run over the
-same theme extends this one instead of filing a rival.
+same page or tag extends this one instead of filing a rival.
 
 ## The shape of the spec
 \`\`\`
-[propose_note, type note, notes/spec-<theme-slug>.md]
+[propose_note, type note, notes/spec-<slug>.md]
 # <what is being built, in the words a person would use>
 
 ## Problem
@@ -1812,6 +2059,13 @@ export const TELL_QALE_NAME = 'tell-qale';
 export const HOUSE_RULES_NAME = 'house-rules';
 
 /**
+ * The file Qale reads before it writes into a skill or a voice. A name for the
+ * same reason as {@link HOUSE_RULES_NAME}: the workspace's copy wins, the
+ * shipped text stands in when there is none.
+ */
+export const WRITING_SKILLS_NAME = 'writing-skills';
+
+/**
  * The conventions skills, by the name that addresses them: `skills/jira/SKILL.md`
  * is `jira` (docs/conventions.md). The names are the outbound provider ids
  * (`OUTBOUND_PROVIDERS` in @qale/domain), written out here rather than imported,
@@ -1873,6 +2127,7 @@ export const DEFAULT_SKILLS: DefaultSkill[] = [
   { file: 'skills/iterate/SKILL.md', content: ITERATE_SKILL },
   { file: 'skills/tell-qale/SKILL.md', content: TELL_QALE_SKILL },
   { file: 'skills/house-rules/SKILL.md', content: HOUSE_RULES },
+  { file: 'skills/writing-skills/SKILL.md', content: WRITING_SKILLS_SKILL },
 ];
 
 /**
@@ -1909,13 +2164,13 @@ export const DEFAULT_AGENTS: DefaultSkill[] = [
  * same call and by the same rule: a file already there is the PM's and is never
  * overwritten.
  *
- * One so far. It is knowledge about the product, so a session reaches it the way
- * it reaches every other note, through the folder map and search, and no prompt
- * carries it.
+ * None today. The product picture (`about/product.md` and its two siblings)
+ * used to have an orientation note here; what it said now lives in the
+ * house-rules `about/` entry and in the interview (`tell-qale`), which writes
+ * those pages. An about page that does not exist yet is an honest gap, not a
+ * stub (docs/learning-how-you-work.md, ticket 16).
  */
-export const DEFAULT_NOTES: DefaultSkill[] = [
-  { file: 'understanding/what-goes-here.md', content: UNDERSTANDING_NOTE },
-];
+export const DEFAULT_NOTES: DefaultSkill[] = [];
 
 /**
  * What "New skill" writes. Every shipped file is finished and confident, which
@@ -2021,4 +2276,5 @@ export const DEFAULT_SKILL_BY_NAME: Record<string, string> = {
   spec: SPEC_SKILL,
   iterate: ITERATE_SKILL,
   'tell-qale': TELL_QALE_SKILL,
+  'writing-skills': WRITING_SKILLS_SKILL,
 };

@@ -15,7 +15,8 @@ export type NoteType =
   | 'decision'
   | 'insight'
   | 'customer'
-  | 'theme'
+  | 'research'
+  | 'about'
   | 'person'
   | 'session'
   | 'skill'
@@ -24,8 +25,6 @@ export type NoteType =
   | 'note'
   | 'ticket'
   | 'wikipage';
-
-export type ThemeStance = 'exploring' | 'watching' | 'committed' | 'wont-do';
 
 /** How far material has got through the workspace (sources/meetings/insights/
  *  notes/mirrors) — always enum, never free text. Mirrors @qale/domain. */
@@ -118,6 +117,10 @@ export interface NoteRefDTO {
   assignee?: string;
   /** Ticket mirror: ISO timestamp of the last upstream change. */
   remoteUpdated?: string;
+  /** The door back to the original, in the system that owns it: a mirror's
+   *  Jira or Confluence page, a synced meeting's calendar event. It rides the
+   *  ref so a list row can offer "Open in Jira" without reading the note. */
+  remoteUrl?: string;
 }
 
 /** A meeting a person is (or was) in — the preview card's "last met"/"next" line. */
@@ -239,12 +242,6 @@ export interface SearchHitDTO {
   summary: string;
   snippet: string;
   score: number;
-}
-
-export interface ThemeHeatDTO extends NoteRefDTO {
-  stance: ThemeStance;
-  evidenceCount: number;
-  newest: string | null;
 }
 
 export interface MaintenanceReportDTO {
@@ -539,6 +536,18 @@ export interface OutboundPayloadDTO {
   /** Where a create lands: a tracker project, a wiki space. */
   container?: string;
   issueType?: string;
+  /** Ticket fields a draft may set, when the team's conventions call for them. */
+  labels?: string[];
+  priority?: string;
+  components?: string[];
+  /** The one thing the draft could not work out, asked on the card above the
+   *  button. Picking an option adds what it carries and records the answer;
+   *  approving without picking leaves the draft as drafted. */
+  question?: {
+    text: string;
+    options: { label: string; labels?: string[]; priority?: string; components?: string[] }[];
+    answer?: string;
+  };
   /** The provider's own id for the item addressed: a ticket key, a page id.
    *  Main parses every payload through the domain schema, so rows filed under
    *  the old `issueKey`/`pageId` names arrive here as `targetId`. */
@@ -646,6 +655,15 @@ export interface CaptureNudgeDismissDTO extends CaptureNudgeStateDTO {
   mutedNow?: string;
 }
 
+/**
+ * Meetings the PO waved off the sidebar's Meetings row (docs/sidebar-ia.md,
+ * SB-6). A dismissal hides that one occurrence; it never mutes a series and
+ * never touches the capture nudge's own memory of the same meeting.
+ */
+export interface SidebarMeetingStateDTO {
+  dismissed: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Agent / chat / sessions
 // ---------------------------------------------------------------------------
@@ -717,6 +735,10 @@ export interface ChatRefDTO {
   lifecycle: SessionLifecycle;
   /** The model this session was moved to, or null when it follows Settings. */
   modelId: string | null;
+  /** True while no person has ever driven a turn in this session — a clock's
+   *  slot or an unattended arrival, never a reply. The Sessions page filters
+   *  these out by default. */
+  automatic: boolean;
 }
 
 /**
@@ -1343,7 +1365,7 @@ export interface AtRiskLinkDTO {
  */
 export interface ActivityDTO {
   id: string;
-  /** created / updated / remembered / deleted / labelled. */
+  /** created / updated / remembered / deleted / labelled / learned. */
   action: string;
   /** "I created the Nordkap SSO write-up." */
   line: string;
@@ -1387,4 +1409,20 @@ export interface DemoInfoDTO {
   /** The day the bundled workspace is written around, YYYY-MM-DD. */
   anchor: string;
   steps: DemoStepDTO[];
+}
+
+/**
+ * The last thing Qale learned about one file
+ * (docs/learning-how-you-work.md ticket 13).
+ *
+ * The Skills page shows one of these under each row, so it reads what it needs
+ * and not a week of everything else. One row per file, the newest.
+ */
+export interface LearnedRowDTO {
+  /** The file it was written into, as a vault path. */
+  path: string;
+  /** The row's own sentence, opener and all: "Got it. …". */
+  line: string;
+  /** ISO timestamp. */
+  at: string;
 }

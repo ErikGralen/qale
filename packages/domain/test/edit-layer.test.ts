@@ -65,7 +65,7 @@ test('a note calls itself a document, the word the rail and the menus use', () =
   assert.equal(noteTypeLabel('note'), 'Document');
   assert.equal(NEW_NOTE_PURPOSE.note, 'A blank document for anything you write');
   // Nothing else changes name: the map holds the one type we renamed.
-  assert.equal(noteTypeLabel('theme'), 'Theme');
+  assert.equal(noteTypeLabel('research'), 'Research');
   assert.equal(noteTypeLabel('person'), 'Person');
 });
 

@@ -16,6 +16,7 @@ import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { navFromEvent } from '../lib/nav';
 import { relativeTime } from '../lib/dates';
+import { learnedByPath, type LearnedNote } from '../lib/activity';
 import { PageHeader } from '../components/PageHeader';
 import { NoteEditor } from '../components/NoteEditor';
 import { CanChips } from '../components/RunnableConfig';
@@ -94,12 +95,40 @@ const LIST =
   'flex flex-col divide-y divide-border overflow-hidden rounded-xl bg-card ring-1 ring-border';
 
 /**
+ * The last thing Qale learned about one file
+ * (docs/learning-how-you-work.md ticket 13).
+ *
+ * One line, under the row that opens the file. There is no page that says what
+ * Qale knows about the PM: the files are the record, and this is the way in.
+ * Nothing shows when Qale has learned nothing about that file yet, because an
+ * empty line under every row would say less than no line at all.
+ */
+function LearnedLine({ learned }: { learned?: LearnedNote }) {
+  if (!learned) return null;
+  return (
+    <p className="mt-1 text-xs text-muted-foreground/70">
+      {learned.text} <span className="whitespace-nowrap">Learned {relativeTime(learned.at)}.</span>
+    </p>
+  );
+}
+
+/**
  * A file the whole row opens. The Skills, Moments and Voices tabs all use it:
  * the row is a door, and the file behind it is the editor for everything.
- * `above` is the one line the tab adds, and it is always code-owned — a
+ * `above` is the one line the tab adds, and it is always code-owned: a
  * moment's trigger, never anything the file claims about itself.
  */
-function FileRow({ file, above, meta }: { file: SkillDTO; above?: string; meta?: ReactNode }) {
+function FileRow({
+  file,
+  above,
+  meta,
+  learned,
+}: {
+  file: SkillDTO;
+  above?: string;
+  meta?: ReactNode;
+  learned?: LearnedNote;
+}) {
   const { openDoc } = useApp();
   return (
     <li>
@@ -120,6 +149,7 @@ function FileRow({ file, above, meta }: { file: SkillDTO; above?: string; meta?:
           </div>
           <p className="mt-0.5 text-dense text-muted-foreground">{file.summary}</p>
           {meta}
+          <LearnedLine learned={learned} />
           <RowErrors errors={file.errors} />
         </div>
         <ChevronRight
@@ -166,7 +196,7 @@ function MissingMoment({ moment }: { moment: Moment }) {
  * hide the row. The whole row is still the door, so the title button's ::after
  * stretches over it and the switch sits above that on its own `relative`.
  */
-function AgentRow({ agent }: { agent: AgentDTO }) {
+function AgentRow({ agent, learned }: { agent: AgentDTO; learned?: LearnedNote }) {
   const { openDoc, setAgentEnabled } = useApp();
   return (
     <li className="group relative flex items-start gap-3 px-4 py-3 transition-colors hover:bg-accent/50">
@@ -183,6 +213,7 @@ function AgentRow({ agent }: { agent: AgentDTO }) {
         </div>
         <p className="mt-0.5 text-dense text-muted-foreground">{agent.summary}</p>
         <AgentLifeSigns agent={agent} className="mt-1" />
+        <LearnedLine learned={learned} />
         <AgentBlockedNotice agent={agent} className="mt-2" />
       </div>
 
@@ -210,7 +241,7 @@ function AgentRow({ agent }: { agent: AgentDTO }) {
  * page (title, history, delete) is one click away for the rare time it is
  * wanted.
  */
-function HouseRulesPanel({ file }: { file: SkillDTO | undefined }) {
+function HouseRulesPanel({ file, learned }: { file: SkillDTO | undefined; learned?: LearnedNote }) {
   const { docData, loadDoc, saveNote, openDoc, openSession, search } = useApp();
   const path = file?.path;
 
@@ -235,9 +266,10 @@ function HouseRulesPanel({ file }: { file: SkillDTO | undefined }) {
     <div>
       <p className="mb-3 text-dense text-muted-foreground">
         Every session reads this before it starts: which language things come out in, how a note is
-        written, where it lands, and the rules you have given Qale yourself. It is always in
-        force. Edit a line and the next session works the new way.
+        written, where it lands, and the rules you have given Qale yourself. It is always in force.
+        Edit a line and the next session works the new way.
       </p>
+      <LearnedLine learned={learned} />
       <RowErrors errors={file.errors} />
 
       {/* pl-8 on top of the panel's own px-6 makes the 56px left gutter the
@@ -519,6 +551,16 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
 
   const errorCount = skills.reduce((n, s) => n + (s.errors.length > 0 ? 1 : 0), 0);
 
+  // The last thing Qale learned about each file (ticket 13). Read once when the
+  // page opens: the rows only change when a session writes one, and a page that
+  // is open while that happens shows it the next time it is opened.
+  const [learned, setLearned] = useState<Map<string, LearnedNote>>(() => new Map());
+  useEffect(() => {
+    void invoke['activity:latestByPath']()
+      .then((rows) => setLearned(learnedByPath(rows)))
+      .catch(() => setLearned(new Map()));
+  }, []);
+
   return (
     <div className="flex h-full flex-col">
       <PageHeader
@@ -570,8 +612,8 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
           <div className="w-full max-w-2xl">
             {/* The one sentence that says what the whole page is. */}
             <p className="mb-4 text-dense text-muted-foreground">
-              Skills are work you run, house rules are always in force, moments are what Qale
-              does the second something happens, voices shape a draft, and agents run on a clock.
+              Skills are work you run, house rules are always in force, moments are what Qale does
+              the second something happens, voices shape a draft, and agents run on a clock.
             </p>
 
             <TabsContent value="skills">
@@ -593,7 +635,12 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
                   </p>
                   <ul className={LIST}>
                     {runnables.map((s) => (
-                      <FileRow key={s.path} file={s} meta={<SkillMeta skill={s} />} />
+                      <FileRow
+                        key={s.path}
+                        file={s}
+                        meta={<SkillMeta skill={s} />}
+                        learned={learned.get(s.path)}
+                      />
                     ))}
                   </ul>
                 </>
@@ -601,19 +648,27 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
             </TabsContent>
 
             <TabsContent value="house-rules">
-              <HouseRulesPanel file={houseRules} />
+              <HouseRulesPanel
+                file={houseRules}
+                learned={houseRules ? learned.get(houseRules.path) : undefined}
+              />
             </TabsContent>
 
             <TabsContent value="moments">
               <p className="mb-2 text-dense text-muted-foreground">
-                What Qale does the second something happens. These cannot be switched off, and
-                what sets them off lives in the app, not in the file. The instructions are yours to
-                edit. Each row below says when it runs.
+                What Qale does the second something happens. These cannot be switched off, and what
+                sets them off lives in the app, not in the file. The instructions are yours to edit.
+                Each row below says when it runs.
               </p>
               <ul className={LIST}>
                 {moments.map(({ moment, file }) =>
                   file ? (
-                    <FileRow key={moment.name} file={file} above={moment.when} />
+                    <FileRow
+                      key={moment.name}
+                      file={file}
+                      above={moment.when}
+                      learned={learned.get(file.path)}
+                    />
                   ) : (
                     <MissingMoment key={moment.name} moment={moment} />
                   ),
@@ -634,7 +689,7 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
               ) : (
                 <ul className={LIST}>
                   {voices.map((v) => (
-                    <FileRow key={v.path} file={v} />
+                    <FileRow key={v.path} file={v} learned={learned.get(v.path)} />
                   ))}
                 </ul>
               )}
@@ -652,7 +707,7 @@ export function SkillsView({ viewKey, section }: { viewKey: string; section?: Sk
               ) : (
                 <ul className={LIST}>
                   {agents.map((a) => (
-                    <AgentRow key={a.id} agent={a} />
+                    <AgentRow key={a.id} agent={a} learned={learned.get(a.path)} />
                   ))}
                 </ul>
               )}

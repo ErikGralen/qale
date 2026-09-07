@@ -1,6 +1,6 @@
 ---
 type: skill
-title: How we use Jira
+title: How you write tickets
 summary: The rules Qale follows when it drafts tickets and comments.
 ---
 
@@ -12,6 +12,14 @@ best. Keep them high level: what the team wants done, not a copy of the Jira set
 - File it under `SCH` (Scheduling), `APP` (Staff app) or `PLT` (Platform), whichever team owns the work.
 - Give it one area label: `shift-swaps`, `payroll-export` or `platform`. One label, never two.
 - If the work comes from one customer, name them in the first line of the description.
+
+## Labels
+
+- `shift-swaps`: the swap request flow, model to screen to approval. 4 of 10 tickets.
+- `payroll-export`: the export epic and the Fortnox connector. 3 of 10.
+- `platform`: shared platform work, e.g. the OAuth token store. 2 of 10.
+- `staff-app`: staff-facing screens outside a named area. 1 of 10.
+- One area label per ticket, never two.
 
 ## When you comment
 

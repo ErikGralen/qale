@@ -14,6 +14,7 @@ interface Row {
   target_path: string | null;
   base_hash: string | null;
   payload_json: string;
+  edited_payload_json: string | null;
   rationale: string;
   evidence_json: string;
   inference: number;
@@ -58,6 +59,12 @@ export class ProposalStore implements ProposalPort {
     if (!cols.some((c) => c.name === 'asked')) {
       this.db.exec('ALTER TABLE proposals ADD COLUMN asked INTEGER NOT NULL DEFAULT 0');
     }
+    // What the PM changed on the card before they approved it, beside what the
+    // agent wrote (docs/learning-how-you-work.md ticket 7). Null on every row
+    // written before the column, and on every card kept as drafted.
+    if (!cols.some((c) => c.name === 'edited_payload_json')) {
+      this.db.exec('ALTER TABLE proposals ADD COLUMN edited_payload_json TEXT');
+    }
   }
 
   create(input: CreateProposalInput, now: number): ProposalRecord {
@@ -70,6 +77,7 @@ export class ProposalStore implements ProposalPort {
       target_path: input.targetPath,
       base_hash: input.baseHash,
       payload_json: JSON.stringify(input.payload),
+      edited_payload_json: null,
       rationale: input.rationale,
       evidence_json: JSON.stringify(input.evidence),
       inference: input.inference ? 1 : 0,
@@ -81,9 +89,9 @@ export class ProposalStore implements ProposalPort {
     this.db
       .prepare(
         `INSERT INTO proposals (id, kind, session_id, skill, target_path, base_hash, payload_json,
-           rationale, evidence_json, inference, asked, status, created, resolved)
+           edited_payload_json, rationale, evidence_json, inference, asked, status, created, resolved)
          VALUES (@id, @kind, @session_id, @skill, @target_path, @base_hash, @payload_json,
-           @rationale, @evidence_json, @inference, @asked, @status, @created, @resolved)`,
+           @edited_payload_json, @rationale, @evidence_json, @inference, @asked, @status, @created, @resolved)`,
       )
       .run(row);
     return this.toRecord(row);
@@ -115,6 +123,12 @@ export class ProposalStore implements ProposalPort {
       .run(JSON.stringify(payload), id);
   }
 
+  setEditedPayload(id: string, payload: unknown): void {
+    this.db
+      .prepare('UPDATE proposals SET edited_payload_json = ? WHERE id = ?')
+      .run(JSON.stringify(payload), id);
+  }
+
   pendingCount(): number {
     const row = this.db
       .prepare("SELECT COUNT(*) AS c FROM proposals WHERE status = 'pending'")
@@ -133,6 +147,7 @@ export class ProposalStore implements ProposalPort {
       targetPath: row.target_path,
       baseHash: row.base_hash,
       payload: JSON.parse(row.payload_json),
+      editedPayload: row.edited_payload_json ? JSON.parse(row.edited_payload_json) : null,
       rationale: row.rationale,
       evidence: JSON.parse(row.evidence_json),
       inference: row.inference === 1,

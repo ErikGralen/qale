@@ -110,3 +110,27 @@ test('the session is told where each of its own cards stands, oldest first', () 
     "only this session's cards, in the order it made them, with what became of each",
   );
 });
+
+/**
+ * The list also carries what the PM did to a card before approving it
+ * (docs/learning-how-you-work.md ticket 7). Both versions go, because the lesson
+ * is the difference between them: the session names the field and both readings
+ * and, when the change would happen again, writes it down as a rule.
+ */
+test('a card the PM changed hands the session both versions', () => {
+  const ctx = worldWith([
+    card('Swap request notifications', {
+      status: 'accepted',
+      payload: { title: 'Swap request notifications' },
+      editedPayload: { title: 'Notify staff when a swap is requested' },
+    }),
+    card('Tell Nordkap about the domain', { status: 'accepted' }),
+  ]);
+
+  const [changed, kept] = sessionCards(ctx, 's1');
+  assert.deepEqual(changed?.payload, { title: 'Swap request notifications' });
+  assert.deepEqual(changed?.editedPayload, { title: 'Notify staff when a swap is requested' });
+  // Nothing was changed on the second one, and it says nothing rather than
+  // repeating the draft as if it were their words.
+  assert.equal(kept?.editedPayload, undefined);
+});

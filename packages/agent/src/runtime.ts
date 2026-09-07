@@ -15,6 +15,7 @@ import {
   markRunnableUsed,
   normalizeNoteFrontmatter,
   sessionCards,
+  type FiledWrite,
   type GitTouch,
   type IndexedNote,
   type IndexPort,
@@ -603,6 +604,10 @@ export interface ChatRef {
    * it follows the workspace default, including when that default later changes.
    */
   modelId: string | null;
+  /** True while no person has ever driven a turn in this session — only a
+   *  clock's slot or a source arriving unattended. The Sessions page's
+   *  default filter hides these; the PM's first reply clears it for good. */
+  automatic: boolean;
 }
 
 /** Lifecycle signal — fired when a run starts and when it settles (any outcome). */
@@ -922,6 +927,12 @@ export class AgentRuntime {
   /** sessionId → the model the PM pinned to it; only pinned sessions are stored. */
   private sessionModels: Record<string, string> = {};
   /**
+   * sessionId → true while every turn so far has been a clock's slot or a
+   * source arriving unattended, never a person. Only `true` entries are
+   * stored; the moment a person drives a turn the entry comes out for good.
+   */
+  private automaticSessions: Record<string, true> = {};
+  /**
    * listChats() re-reads and replays every transcript in full — cache the result
    * keyed by a cheap stat signature of the sessions dir so the frequent sidebar
    * refresh with nothing changed costs a readdir + stats, not N file reads.
@@ -944,6 +955,13 @@ export class AgentRuntime {
    * what has landed rather than only that something is happening.
    */
   onSourceFiled: ((sessionId: string, filed: SourceFiled) => void) | null = null;
+  /**
+   * A session's write landed without a card. Main hears of a card through the
+   * queue, but a silent write never enters it, so this is the one place main
+   * can count what the chat changed on its own (docs/learning-how-you-work.md
+   * ticket 15: a list line added with "I want...").
+   */
+  onProposalApplied: ((sessionId: string, filed: FiledWrite) => void) | null = null;
   /**
    * A fan-out is waiting on the PM (`request`), or its card has settled
    * (`null`). The only moment the PM steers before money is spent.
@@ -982,6 +1000,7 @@ export class AgentRuntime {
     this.chatListCache = null;
     this.lifecycles = this.loadLifecycles();
     this.sessionModels = this.loadSessionModels();
+    this.automaticSessions = this.loadAutomaticSessions();
     // pi folded AuthStorage and ModelRegistry into one ModelRuntime whose
     // construction is async, and configure() has a dozen synchronous callers.
     // So the build is kicked off here and awaited by whatever needs a model.
@@ -1424,6 +1443,47 @@ export class AgentRuntime {
     }
   }
 
+  /**
+   * Which sessions no person has ever driven — the Sessions page's default
+   * filter (a librarian tick reads as noise beside a real conversation). Kept
+   * beside the shelf state, off pi's own files, for the same reason.
+   */
+  private automaticSessionFile(): string {
+    if (!this.config) throw new Error('agent runtime not configured');
+    return join(this.config.userDataDir, 'session-automatic.json');
+  }
+
+  private loadAutomaticSessions(): Record<string, true> {
+    try {
+      const parsed = JSON.parse(readFileSync(this.automaticSessionFile(), 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      const out: Record<string, true> = {};
+      for (const [id, v] of Object.entries(parsed)) if (v === true) out[id] = true;
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
+  isAutomatic(sessionId: string): boolean {
+    return !!this.automaticSessions[sessionId];
+  }
+
+  /** A person's own turn clears the mark for good; a clock's or a source's sets it. */
+  private markAutomatic(sessionId: string, automatic: boolean): void {
+    if (this.automaticSessions[sessionId] === (automatic || undefined)) return;
+    if (automatic) this.automaticSessions[sessionId] = true;
+    else delete this.automaticSessions[sessionId];
+    this.chatListCache = null;
+    try {
+      writeFileSync(this.automaticSessionFile(), JSON.stringify(this.automaticSessions));
+    } catch (err) {
+      console.error('[qale] session automatic-flag save failed:', err);
+    }
+  }
+
   /** pi names session files `<timestamp>_<id>.jsonl`; find by id, newest first. */
   private findSessionFile(sessionId: string): string | null {
     try {
@@ -1576,8 +1636,9 @@ export class AgentRuntime {
       // The rail only ever adds a row to what the PM sees, never removes one
       // on its own (docs/remove-inbox.md RI-5): a card that lands in a session
       // the PM had unpinned puts it back on the active list.
-      ...createProposeTools(ctx, id, harness, () => {
+      ...createProposeTools(ctx, id, harness, (filed) => {
         if (this.getLifecycle(id) === 'unpinned') this.setLifecycle(id, 'active');
+        if (filed.disposition === 'silent') this.onProposalApplied?.(id, filed);
       }),
       createWithdrawTool(ctx, id, harness),
       // One voice gate per session, shared: `get_voice` is one tool, and the
@@ -1893,6 +1954,7 @@ export class AgentRuntime {
     // Per turn, like `scheduled`: the moment the PM writes into an arrival
     // session, somebody is waiting and silence stops being an outcome.
     state.turn.unattended = !!input.unattended;
+    this.markAutomatic(sessionId, state.turn.scheduled || state.turn.unattended);
     state.turn.ended = false;
     state.turn.asked = false;
     state.turn.blocked = false;
@@ -2554,6 +2616,7 @@ export class AgentRuntime {
         preview: truncate(info.allMessagesText, 140) ?? '',
         lifecycle: this.getLifecycle(info.id),
         modelId: this.getSessionModel(info.id),
+        automatic: this.isAutomatic(info.id),
       }))
       // The one door to the Sessions list, the rail, the unread-result count and
       // every badge derived from them (renderer `lib/attention.ts`). A scheduled
@@ -2595,6 +2658,7 @@ export class AgentRuntime {
     if (file) rmSync(file, { force: true });
     if (this.lifecycles[sessionId]) this.setLifecycle(sessionId, 'active');
     this.setSessionModel(sessionId, null);
+    this.markAutomatic(sessionId, false);
   }
 
   async abort(streamId: string, ctx?: UseCaseContext): Promise<void> {

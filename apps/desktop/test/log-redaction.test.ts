@@ -147,7 +147,7 @@ test('every failure a pass hit comes out as one scrubbed line', () => {
   resetSecretsForTest();
   const line = failureReport('maintenance', [
     { item: 'connector sync', reason: new Error('pull failed for ada@northwind.example') },
-    { item: 'orientation maps', reason: new Error('could not write /Users/ada/w/themes/index.md') },
+    { item: 'orientation maps', reason: new Error('could not write /Users/ada/w/research/index.md') },
     { item: 'new-space survey', reason: 'timed out' },
   ]);
 

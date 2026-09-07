@@ -7,7 +7,6 @@ import {
   isMirrorType,
   isNormalizable,
   isReservedFile,
-  isUnderstandingPath,
   isVoicePath,
   labelLine,
   NEEDS_SUMMARY_FIELD,
@@ -63,7 +62,7 @@ import { contentHash, logError, recordActivityRow } from './proposals.js';
  *
  * The two halves cover different types. The summary is for documents and
  * meetings. A tag is for anything the team wrote (a decision, an insight, a
- * customer, a theme, a todo, a source too), and for none of the machinery: a
+ * customer, a research page, a todo, a source too), and for none of the machinery: a
  * mirror carries the upstream site's own labels, and a person, a session or a
  * skill is reached by name.
  *
@@ -87,7 +86,8 @@ const TAGGED_TYPES: readonly NoteType[] = [
   'decision',
   'insight',
   'customer',
-  'theme',
+  'research',
+  'about',
   'todo',
   'note',
   'source',
@@ -236,7 +236,7 @@ function hasTag(value: unknown): boolean {
  */
 function labellable(n: IndexedNote): boolean {
   if (isMirrorType(n.type)) return false;
-  if (isReservedFile(n.path) || isUnderstandingPath(n.path) || isVoicePath(n.path)) return false;
+  if (isReservedFile(n.path) || isVoicePath(n.path)) return false;
   if (!isNormalizable(n.path)) return false;
   if (!SUMMARISED_TYPES.includes(n.type) && !TAGGED_TYPES.includes(n.type)) return false;
   return n.hasBody;

@@ -15,7 +15,7 @@ import type {
   SettingsDTO,
   TelemetryValue,
 } from '@qale/ipc';
-import { ageBand, countBand, durationBand, providerWord, skillWord } from '@qale/ipc';
+import { ageBand, countBand, durationBand, providerWord, skillWord, wantLineWord } from '@qale/ipc';
 import {
   AgentRuntime,
   isOffered,
@@ -37,6 +37,9 @@ import {
   deleteDocumentFolder,
   dismissCaptureNudge,
   undoCaptureNudge,
+  sidebarMeetingState,
+  dismissSidebarMeeting,
+  undoSidebarMeeting,
   deleteNote,
   renameDocumentFolder,
   ensureDefaultSkills,
@@ -44,7 +47,6 @@ import {
   createVoice,
   getBacklinks,
   getNote,
-  getThemesByHeat,
   getMaintenanceReport,
   getNoteHistory,
   getNoteVersion,
@@ -55,7 +57,9 @@ import {
   listPeople,
   listSkills,
   listAgentFiles,
+  migrateProductPagesToAbout,
   migrateRunnableFolders,
+  migrateThemesToResearch,
   normalizeVaultFrontmatter,
   runSummaryPass,
   retireDefaultSkills,
@@ -95,8 +99,9 @@ import {
   providerName,
   readableAs,
   refToSlug,
-  UNDERSTANDING_DIR,
+  isProductPicturePath,
   unreadableReason,
+  wantListChange,
   type Frontmatter,
   type HandCreatableType,
 } from '@qale/domain';
@@ -114,6 +119,7 @@ import {
   MAINTENANCE_AGENTS,
   MEETING_PREP_INSTRUCTION,
   TELL_QALE_NAME,
+  wantLineId,
 } from '@qale/sessions';
 import { handle, pushEvent } from './ipc.js';
 import { failureReport, type PassFailure } from './log.js';
@@ -149,19 +155,11 @@ import {
   agentFileToDTO,
   noteToDTO,
   outboundEffectFacts,
-  themeHeatToDTO,
   proposalToDTO,
   skillToDTO,
   treeToDTO,
   vaultInfoToDTO,
 } from './dto.js';
-
-/**
- * Where the product understanding lives (docs/product-understanding.md U-1).
- * `understanding/what-goes-here.md` names these three notes; main only needs the
- * folder, to know when the first one has actually been kept.
- */
-const UNDERSTANDING_PREFIX = `${UNDERSTANDING_DIR}/`;
 
 /**
  * Any of the PO's own open commitments due today or already slipped. `owner`
@@ -374,7 +372,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const told = Boolean(checklist['understanding'] || checklist['about-us']);
     await fireSession(
       TELL_QALE_NAME,
-      buildKickoff({ skill: TELL_QALE_NAME, instruction: firstLookInstruction(reads, told) }),
+      buildKickoff({
+        skill: TELL_QALE_NAME,
+        instruction: firstLookInstruction(reads, told, {
+          name: settings.getIdentity().name,
+          emails: settings.selfEmails(),
+        }),
+      }),
       // Not `scheduled`: a clock did not start this, their connect did, and a
       // scheduled run refuses to park a question at all, and that question is
       // this run's whole output. `unattended` is the honest word: nobody is at the
@@ -617,6 +621,30 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         console.warn(
           `[qale] ${path} differs from its folder copy — left both in place, nothing lost`,
         );
+      // Themes and understanding pages are research pages now (MT-8). Move
+      // them before the seed runs, so a seeded research page never shadows the
+      // PM's own copy still sitting in the old folder. One commit, one Activity
+      // row; a workspace that has already moved returns at once.
+      const research = await migrateThemesToResearch(ctx);
+      if (research.changed.length > 0) {
+        console.log(
+          `[qale] moved ${research.themes.length} theme(s) and ${research.understanding.length} understanding page(s) into research/`,
+        );
+        pushEvent(getWindow(), { channel: 'vault:changed', paths: research.changed });
+      }
+      for (const path of research.left)
+        console.warn(`[qale] ${path} stayed: research/ already has a page by that name`);
+      // The three company pages have their own shelf now (ticket 16). This runs
+      // after the fold above, so a workspace still on `understanding/` lands in
+      // `research/` first and then in `about/`. One commit, one Activity row; a
+      // workspace that has already moved returns at once.
+      const about = await migrateProductPagesToAbout(ctx);
+      if (about.changed.length > 0) {
+        console.log(`[qale] moved ${about.moved.length} product page(s) into about/`);
+        pushEvent(getWindow(), { channel: 'vault:changed', paths: about.changed });
+      }
+      for (const path of about.left)
+        console.warn(`[qale] ${path} stayed: about/ already has a page by that name`);
       // Take out of force what the pack has stopped shipping. Renamed, never
       // deleted, so a file the PM edited keeps every word (see
       // `retireDefaultSkills`). The name still resolves, through its alias.
@@ -1202,6 +1230,14 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     pushBatch(batch);
   };
 
+  // A write that landed without a card. The queue never saw it, so this is
+  // where a list line the PM added in the chat gets counted, by id only
+  // (docs/learning-how-you-work.md ticket 15).
+  agent.onProposalApplied = (_sessionId, filed) => {
+    const want = wantFacts(filed.rec.id);
+    if (want) telemetry.send('want_list.changed', want);
+  };
+
   // A conversation named itself a moment after its first message. Nothing else
   // to do here: the name is already in the transcript, so the tab, the rail and
   // the Sessions row all follow from this one push.
@@ -1769,6 +1805,12 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   // sent.
   handle('telemetry:meetingTool', (tool) => {
     telemetry.send('source.tool', { tool });
+  });
+  // Which update style the PM picked, and for which voice (ticket 15). Three
+  // words, folded renderer-side and folded again by the allowlist here, so a
+  // heading the PM rewrote in their own voice file lands as `custom`.
+  handle('telemetry:stylePick', (voice, style, answer) => {
+    telemetry.send('style.picked', { voice, style, answer });
   });
   // The chosen provider's shortlist. No key needed: the list is what the app
   // OFFERS, so Settings can show it before anybody has pasted anything.
@@ -2349,10 +2391,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     searchNotes(vaultService.requireContext(), query, limit).map(hitToDTO),
   );
 
-  handle('themes:byHeat', () =>
-    getThemesByHeat(vaultService.requireContext()).map((r) => themeHeatToDTO(r)),
-  );
-
   handle('proposals:list', (status) => {
     const ctx = vaultService.requireContext();
     // A card from a run the app started on its own clock carries the line that
@@ -2448,8 +2486,34 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       return null;
     }
   };
+  /**
+   * Did this card add a line to, or take one off, the "What you want from
+   * Qale" list (docs/learning-how-you-work.md ticket 15)? Null when it did
+   * neither, which is almost every card.
+   *
+   * Read before the accept for the same reason {@link cardFacts} is, and it
+   * reports the line by id only. The text is the PM's own words: they edit the
+   * file, so even a shipped line can come back rewritten. A line we cannot
+   * match reports as `custom`. Catches like the one above, for the same reason.
+   */
+  const wantFacts = (id: string): { line: string; change: string; asked: boolean } | null => {
+    try {
+      const rec = vaultService.context()?.proposals.get(id);
+      if (!rec) return null;
+      const change = wantListChange((rec.payload ?? {}) as Parameters<typeof wantListChange>[0]);
+      if (!change) return null;
+      return {
+        line: wantLineWord(wantLineId(change.line)),
+        change: change.op === 'add' ? 'added' : 'removed',
+        asked: rec.asked === true,
+      };
+    } catch {
+      return null;
+    }
+  };
   handle('proposals:accept', async (id, edited) => {
     const card = cardFacts(id);
+    const want = wantFacts(id);
     // Read before the accept: the record is resolved by the time it returns.
     const target = vaultService.context()?.proposals.get(id)?.targetPath ?? null;
     const result = await acceptProposal(vaultService.requireContext(), id, edited);
@@ -2460,6 +2524,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         edited: edited !== undefined,
         ...(card ?? {}),
       });
+      // The write has landed, so the list now reads the new way. This is how we
+      // learn what PMs want; the id says which line, never the sentence.
+      if (want) telemetry.send('want_list.changed', want);
       await fireSupersedeReactions(id).catch(() => {});
       // Demo build only: the scheduler is off (DM-7), so an approved Jira or
       // Confluence write would sit in the fake tracker with nothing to bring it
@@ -2474,7 +2541,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // Keeping the first thing the interview drafted is what "tell it about your
     // product" now means (docs/product-understanding.md U-4). The step is the
     // approval, not a file save: you talk, it drafts, you approve.
-    if (result.ok && target?.startsWith(UNDERSTANDING_PREFIX)) {
+    if (result.ok && target && isProductPicturePath(target)) {
       markFirstStep(
         'understanding',
         'Told it about your product, and every session reads this now',
@@ -2518,6 +2585,17 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       reverted: row.reverted ? new Date(row.reverted).toISOString() : null,
     }));
   });
+  // The last thing Qale learned about each file it learns into, for the line
+  // under every row on the Skills page (docs/learning-how-you-work.md ticket
+  // 13). One row per file, so the page reads what it shows and nothing else.
+  handle('activity:latestByPath', () => {
+    const ctx = vaultService.requireContext();
+    return (ctx.activity?.latestLearned() ?? []).map((row) => ({
+      path: row.path,
+      line: row.line,
+      at: new Date(row.at).toISOString(),
+    }));
+  });
   // Put one row back. The commit comes from the row itself, never from the
   // renderer: a row can only undo the write it is the receipt for, so no click
   // in the app can aim an undo at a note nobody named. The use-case is the same
@@ -2547,6 +2625,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('captureNudge:undo', (path, series) =>
     undoCaptureNudge(vaultService.requireContext(), path, series),
   );
+  handle('sidebarMeeting:state', () => sidebarMeetingState(vaultService.requireContext()));
+  handle('sidebarMeeting:dismiss', (path) =>
+    dismissSidebarMeeting(vaultService.requireContext(), path, Date.now()),
+  );
+  handle('sidebarMeeting:undo', (path) => undoSidebarMeeting(vaultService.requireContext(), path));
   handle('librarian:report', () => getMaintenanceReport(vaultService.requireContext()));
   handle('agent:run', async (input) => {
     const ctx = vaultService.requireContext();

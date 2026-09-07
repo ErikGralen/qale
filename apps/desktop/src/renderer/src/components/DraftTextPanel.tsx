@@ -10,13 +10,20 @@ import {
 } from '@qale/ui';
 import { Check, ChevronDown, Copy, PenLine } from 'lucide-react';
 import {
+  copyMemoryKey,
+  draftAnswerMessage,
+  draftRepeatMessage,
   draftUseMessage,
   draftVoiceMessage,
   draftWordCount,
+  forgetCopy,
+  localCopyMemory,
+  rememberCopy,
   type DraftText,
 } from '../lib/draft-text';
 import { Markdown } from './Markdown';
 import type { NavOpts } from '../lib/nav';
+import { trackStylePick } from '../lib/telemetry-style';
 
 /** One voice the workspace holds, as the footer's picker needs it. */
 export interface DraftVoice {
@@ -58,6 +65,13 @@ export interface DraftVoice {
  *
  * Which tab is open is local state. It is never written down and never told to
  * the model, because the message the Use button sends says it out loud.
+ *
+ * A panel may carry one question (`ask`). It stays hidden until a tab is copied
+ * or used, then appears under the footer with its answers as small buttons. An
+ * answer is sent the way Use this is sent: a turn from the person, naming the
+ * copied tab and the option. Copy alone still sends nothing. The one thing kept
+ * outside the panel is the last unanswered copy per voice, so that copying the
+ * same style from a later panel can count as the answer.
  */
 export function DraftTextPanel({
   draft,
@@ -65,6 +79,8 @@ export function DraftTextPanel({
   onUse,
   onOpenNote,
   disabled,
+  workspace,
+  panelId,
 }: {
   draft: DraftText;
   /** Every voice the workspace holds. Empty hides the picker. */
@@ -74,11 +90,62 @@ export function DraftTextPanel({
   onOpenNote?: (path: string, opts?: NavOpts) => void;
   /** A turn is running, or the session is parked on a question. */
   disabled?: boolean;
+  /** The open workspace, which keys the copy memory. Null before one is open. */
+  workspace?: string | null;
+  /** Tells this panel apart from an earlier one showing the same styles. */
+  panelId?: string;
 }) {
   const id = useId();
   const [active, setActive] = useState(0);
   const [flash, setFlash] = useState<'idle' | 'copied' | 'failed'>('idle');
+  // The tab last copied or used here, which the answer names, and whether the
+  // question is on screen. It shows once and stays until answered.
+  const [copied, setCopied] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  const memory = useRef(localCopyMemory());
+  const memoryKey = draft.voice ? copyMemoryKey(workspace, draft.voice) : null;
+
+  /**
+   * A tab left the panel by Copy or by Use this. With a question on the panel
+   * it now shows. With a voice, the copy is remembered against that voice, and
+   * a second copy of the same style from another panel is sent as the pick
+   * instead of asking again. A panel with a voice and no question means the
+   * voice holds one style now, so nothing is left to remember.
+   */
+  const noteCopied = (label: string, how: 'copy' | 'use') => {
+    setCopied(label);
+    if (!memoryKey) {
+      if (draft.ask) setAsking(true);
+      return;
+    }
+    if (!draft.ask) {
+      forgetCopy(memory.current, memoryKey);
+      return;
+    }
+    // While a turn runs the Use button is off, so a repeat is not sent either:
+    // the copy shows the question and is remembered on the next quiet copy.
+    if (how === 'copy' && panelId && !disabled) {
+      const { repeat } = rememberCopy(memory.current, memoryKey, label, panelId);
+      if (repeat) {
+        setAsking(false);
+        trackStylePick({ voice: draft.voice!, styleLabel: label, answerLabel: 'again' });
+        onUse(draftRepeatMessage(label, draft.voice!));
+        return;
+      }
+    }
+    setAsking(true);
+  };
+
+  const answer = (option: string) => {
+    if (!copied) return;
+    if (memoryKey) forgetCopy(memory.current, memoryKey);
+    setAsking(false);
+    if (draft.voice)
+      trackStylePick({ voice: draft.voice, styleLabel: copied, answerLabel: option });
+    onUse(draftAnswerMessage(copied, option));
+  };
 
   // A revision is a new panel, so the set never changes under an open one —
   // except while the first call is still streaming, where a tab can arrive
@@ -114,8 +181,12 @@ export function DraftTextPanel({
   // app: a refusal that says nothing leaves the person pasting an old buffer
   // into a stakeholder thread.
   const copy = () => {
+    const label = open.label;
     void navigator.clipboard.writeText(open.body).then(
-      () => setFlash('copied'),
+      () => {
+        setFlash('copied');
+        noteCopied(label, 'copy');
+      },
       () => setFlash('failed'),
     );
   };
@@ -316,12 +387,38 @@ export function DraftTextPanel({
             variant="outline"
             disabled={disabled}
             title={draft.action?.label ? undefined : 'Tell the agent to use this version'}
-            onClick={() => onUse(draftUseMessage(open.label, draft.action?.message))}
+            onClick={() => {
+              onUse(draftUseMessage(open.label, draft.action?.message));
+              noteCopied(open.label, 'use');
+            }}
           >
             {draft.action?.label ?? 'Use this'}
           </Button>
         </span>
       </div>
+
+      {/* The question, once a tab has left the panel. It sits under the
+          footer, not above the text, so the panel reads as text first and a
+          question second. The answers are the same size as Copy and Use this:
+          three small buttons, not a form. */}
+      {draft.ask && asking && copied && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border/60 px-3.5 py-2.5">
+          <span className="min-w-0 text-xs text-muted-foreground">{draft.ask.text}</span>
+          <span className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
+            {draft.ask.options.map((option) => (
+              <Button
+                key={option}
+                size="sm"
+                variant="outline"
+                disabled={disabled}
+                onClick={() => answer(option)}
+              >
+                {option}
+              </Button>
+            ))}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

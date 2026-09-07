@@ -364,7 +364,7 @@ pass (so "six of nine accounts" is a fact and not an impression), or when you wa
 SAME document that cannot colour each other.
 
 **Write \`brief.md\` first.** Every child reads it before starting: what is currently believed, the
-themes in play and their stances, what a good answer looks like. Without it fan-out makes the work
+research pages in play and the case each one makes, what a good answer looks like. Without it fan-out makes the work
 *dumber* than one big read, because a child handed one document in isolation cannot flag a
 contradiction. The brief is what every child needs to KNOW, not the question — in a per-item sweep it
 carries the shared question too, but in a three-lens fan over one document each entry's own prompt

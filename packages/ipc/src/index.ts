@@ -1,5 +1,6 @@
 import type {
   ActivityDTO,
+  LearnedRowDTO,
   AgentDTO,
   AgentRunInput,
   AgentRunHandle,
@@ -32,7 +33,6 @@ import type {
   ProposalPreviewDTO,
   NoteDTO,
   ProposalDTO,
-  ThemeHeatDTO,
   PeopleDirectoryDTO,
   PersonCardDTO,
   MoveNoteInput,
@@ -61,6 +61,7 @@ import type {
   AskAnswerDTO,
   LiveSessionDTO,
   SettingsDTO,
+  SidebarMeetingStateDTO,
   SkillDTO,
   TodoCommitment,
   VaultInfoDTO,
@@ -217,7 +218,6 @@ export interface InvokeMap {
    * revert path in the app; Activity is its caller.
    */
   'history:revert': { args: [input: RevertChangeInput]; result: RevertResultDTO };
-  'themes:byHeat': { args: []; result: ThemeHeatDTO[] };
 
   // People (participant chips + their preview cards)
   'people:directory': { args: []; result: PeopleDirectoryDTO };
@@ -290,6 +290,13 @@ export interface InvokeMap {
    */
   'activity:list': { args: [limit?: number]; result: ActivityDTO[] };
   /**
+   * The last thing Qale learned about each file it learns into (ticket 13).
+   * The Skills page asks for these rather than filter the list above: what it
+   * needs is one row per file, and the newest one can be older than any limit
+   * a list read would carry.
+   */
+  'activity:latestByPath': { args: []; result: LearnedRowDTO[] };
+  /**
    * Put one Activity row back, by its id. The row already holds the commit to
    * undo, so main reads it from there and the renderer never handles a hash:
    * a row can only ever undo its own write. It runs the same use-case
@@ -303,6 +310,13 @@ export interface InvokeMap {
   'captureNudge:dismiss': { args: [path: string]; result: CaptureNudgeDismissDTO };
   /** Take one dismissal back, series mute included. */
   'captureNudge:undo': { args: [path: string, series?: string]; result: CaptureNudgeStateDTO };
+
+  // The sidebar Meetings row's own memory (docs/sidebar-ia.md, SB-6) — which
+  // upcoming meetings the PO waved off that row for. Separate from the capture
+  // nudge above: dismissing a sidebar row says nothing about filing notes.
+  'sidebarMeeting:state': { args: []; result: SidebarMeetingStateDTO };
+  'sidebarMeeting:dismiss': { args: [path: string]; result: SidebarMeetingStateDTO };
+  'sidebarMeeting:undo': { args: [path: string]; result: SidebarMeetingStateDTO };
 
   // Agent / sessions
   'agent:run': { args: [input: AgentRunInput]; result: AgentRunHandle };
@@ -404,6 +418,15 @@ export interface InvokeMap {
    * is not one of ours, so the channel can carry nothing else. Fire and forget.
    */
   'telemetry:meetingTool': { args: [tool: string]; result: void };
+  /**
+   * Which update style the PM picked under the first draft, and for which
+   * voice (docs/learning-how-you-work.md ticket 15). The panel is the only
+   * place that knows, and its labels are headings out of the voice file, which
+   * the PM may have rewritten. So the renderer folds all three to words from
+   * the allowlist before they reach this channel, and the allowlist folds
+   * again main-side. Fire and forget.
+   */
+  'telemetry:stylePick': { args: [voice: string, style: string, answer: string]; result: void };
   'connections:searchIndex': {
     args: [query: string, limit?: number];
     result: ShallowIndexItemDTO[];
@@ -496,7 +519,6 @@ export const INVOKE_CHANNELS = [
   'note:restoreVersion',
   'git:status',
   'history:revert',
-  'themes:byHeat',
   'people:directory',
   'people:create',
   'todos:capture',
@@ -515,10 +537,14 @@ export const INVOKE_CHANNELS = [
   'proposals:reject',
   'meeting:markReviewed',
   'activity:list',
+  'activity:latestByPath',
   'activity:revert',
   'captureNudge:state',
   'captureNudge:dismiss',
   'captureNudge:undo',
+  'sidebarMeeting:state',
+  'sidebarMeeting:dismiss',
+  'sidebarMeeting:undo',
   'agent:run',
   'agent:abort',
   'chats:list',
@@ -547,6 +573,7 @@ export const INVOKE_CHANNELS = [
   'connections:recommend',
   'telemetry:view',
   'telemetry:meetingTool',
+  'telemetry:stylePick',
   'connections:searchIndex',
   'connections:refMeta',
   'connections:atRisk',

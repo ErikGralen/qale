@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  wantListChange,
   nounForDir,
   outboundReceipt,
   outboundTarget,
   outboundVerb,
   proposalHeadline,
+  ticketFieldRows,
   vaultEffect,
   type HeadlineInput,
   type VaultEffectInput,
@@ -116,14 +118,14 @@ test('person: the explicit title wins, since the slug folds away diacritics', ()
   );
 });
 
-test('theme: recorded, not raised', () => {
+test('research: recorded, not raised', () => {
   assert.equal(
     headline({
       kind: 'note',
-      targetPath: 'themes/onboarding-drag.md',
-      frontmatter: { type: 'theme', title: 'Onboarding drag' },
+      targetPath: 'research/onboarding-drag.md',
+      frontmatter: { type: 'research', title: 'Onboarding drag' },
     }),
-    'Record a theme: Onboarding drag',
+    'Record a research page: Onboarding drag',
   );
 });
 
@@ -255,10 +257,10 @@ test('vaultEffect: every kind names its folder', () => {
   assert.equal(
     effect({
       kind: 'note',
-      targetPath: 'themes/onboarding-drag.md',
-      frontmatter: { type: 'theme' },
+      targetPath: 'research/onboarding-drag.md',
+      frontmatter: { type: 'research' },
     }),
-    'Creates a page in Themes.',
+    'Creates a page in Research.',
   );
 });
 
@@ -324,13 +326,13 @@ test('vaultEffect: a conventions rule says when it is read, not that everything 
   // (docs/conventions.md). The house-rules sentence would promise the opposite.
   assert.equal(
     effect({ kind: 'update', targetPath: 'skills/jira/SKILL.md' }),
-    'Adds the rule to How we use Jira. Read whenever it drafts for Jira.',
+    'Adds the rule to How you write tickets. Read whenever it drafts for Jira.',
   );
   // The file is written on first use, so the card that creates it is a `note`
   // and has to read the same as the one that appends to it.
   assert.equal(
     effect({ kind: 'note', targetPath: 'skills/confluence/SKILL.md' }),
-    'Adds the rule to How we use Confluence. Read whenever it drafts for Confluence.',
+    'Adds the rule to How you write pages. Read whenever it drafts for Confluence.',
   );
   // Every other skill keeps the sentence it had.
   assert.equal(
@@ -440,6 +442,25 @@ test('outboundVerb: one verb per action, and a default that claims nothing', () 
   assert.equal(outboundVerb('respond_to_event'), 'reply');
   assert.equal(outboundVerb('who_knows'), 'apply it');
   assert.equal(outboundVerb(undefined), 'apply it');
+});
+
+test('ticketFieldRows: a row per field the draft set, and nothing for the rest', () => {
+  assert.deepEqual(
+    ticketFieldRows({
+      action: 'create_ticket',
+      labels: ['scheduling', ' '],
+      priority: 'High',
+      components: ['Rostering', 'Identity'],
+    }),
+    [
+      { label: 'Labels', value: 'scheduling' },
+      { label: 'Priority', value: 'High' },
+      { label: 'Components', value: 'Rostering, Identity' },
+    ],
+  );
+  // A draft that set none of them adds no rows: the card says what it does.
+  assert.deepEqual(ticketFieldRows({ action: 'create_ticket', labels: [] }), []);
+  assert.deepEqual(ticketFieldRows({ action: 'create_ticket' }), []);
 });
 
 test('outboundTarget: the same strings the renderer returned', () => {
@@ -593,4 +614,56 @@ test('a deletion with no path still says something true', () => {
     effect({ kind: 'delete' }),
     'Deletes the page from your workspace. Nothing else changes.',
   );
+});
+
+/**
+ * A line on the "What you want from Qale" list (docs/learning-how-you-work.md
+ * ticket 8) lands as a patch over the whole section, so the card reads the
+ * line back off the patch: what was added, or what comes off.
+ */
+const WANT_SECTION =
+  '## What you want from Qale\n\n' +
+  'What you want from Qale. Keep it to about ten lines.\n\n' +
+  '- Tell me who is waiting for something before it ships, and what they were told.';
+
+test('a line on the "What you want from Qale" list says the line, and which way it goes', () => {
+  const added = {
+    kind: 'update' as const,
+    targetPath: 'skills/house-rules/SKILL.md',
+    patch: [
+      { search: WANT_SECTION, replace: `${WANT_SECTION}\n- Tell me what changed in the API.` },
+    ],
+  };
+  assert.equal(headline(added), 'Remember this: Tell me what changed in the API.');
+  assert.equal(
+    effect(added),
+    'Adds to what you want from Qale. Every session reads the list before it starts.',
+  );
+
+  const removed = {
+    kind: 'update' as const,
+    targetPath: 'skills/house-rules/SKILL.md',
+    patch: [{ search: WANT_SECTION, replace: WANT_SECTION.split('\n').slice(0, -1).join('\n') }],
+  };
+  assert.equal(
+    headline(removed),
+    'Stop this: Tell me who is waiting for something before it ships, and what they were told.',
+  );
+  assert.equal(effect(removed), 'Removes from what you want from Qale. Nothing else changes.');
+
+  // A patch on another section of a rules file is an ordinary instruction card.
+  const other = {
+    kind: 'update' as const,
+    targetPath: 'skills/house-rules/SKILL.md',
+    patch: [{ search: '## Your rules\n\n- Old', replace: '## Your rules\n\n- Old\n- New' }],
+  };
+  assert.equal(headline(other), 'A new standing instruction');
+  assert.equal(effect(other), 'Adds the rule to House Rules. Every session reads it from now on.');
+
+  // A bullet appended under the heading by hand reads as an add too.
+  assert.deepEqual(
+    wantListChange({ append: '\n\n## What you want from Qale\n\n- Keep me posted.' }),
+    { op: 'add', line: 'Keep me posted.' },
+  );
+  assert.equal(wantListChange({ append: '\n- Keep me posted.' }), null);
 });

@@ -2,6 +2,10 @@ import { refToSlug } from '../notes/decisions.js';
 import { dirForType } from '../notes/frontmatter.js';
 import { titleFromSlug } from '../notes/slug.js';
 import { formatStamp, parseEventStamp, rsvpAnswer } from './event-time.js';
+// activity.ts imports titleForRef from here, so the two lean on each other.
+// Both use the other's export inside a function only, never at load, which is
+// what keeps the cycle harmless.
+import { WANT_LIST_HEADING } from './activity.js';
 
 /**
  * Every word on a proposal card except the agent's own rationale: the headline
@@ -47,7 +51,8 @@ const NOUN_FOR_DIR: Record<string, string> = {
   meetings: 'the meeting notes',
   decisions: 'a decision',
   insights: 'an insight',
-  themes: 'a theme',
+  research: 'a research page',
+  about: 'an about page',
   customers: 'a customer',
   people: 'a person',
   sources: 'a source',
@@ -98,6 +103,27 @@ export interface OutboundCopyInput {
   targetId?: string;
   title?: string;
   responseStatus?: string;
+  labels?: string[];
+  priority?: string;
+  components?: string[];
+}
+
+/**
+ * The ticket fields a draft set beyond its summary and body: labels, priority,
+ * components. They go on the card because they land in Jira under the PM's
+ * name, and a label the team does not use is the kind of thing a person catches
+ * in one glance and only in that glance. A field the draft left alone is not a
+ * row: the card says what it does, not what it could have done.
+ */
+export function ticketFieldRows(ob: OutboundCopyInput): { label: string; value: string }[] {
+  const rows: { label: string; value: string }[] = [];
+  const clean = (list?: string[]): string[] => (list ?? []).map((v) => v.trim()).filter(Boolean);
+  const labels = clean(ob.labels);
+  const components = clean(ob.components);
+  if (labels.length) rows.push({ label: 'Labels', value: labels.join(', ') });
+  if (ob.priority?.trim()) rows.push({ label: 'Priority', value: ob.priority.trim() });
+  if (components.length) rows.push({ label: 'Components', value: components.join(', ') });
+  return rows;
 }
 
 export interface HeadlineInput {
@@ -110,6 +136,9 @@ export interface HeadlineInput {
    *  read back out of it, so the card says the rule and not just the file. */
   append?: string;
   body?: string;
+  /** An update's search/replace blocks. A line on the "What you want from
+   *  Qale" list is added or removed with one, so the card reads it back. */
+  patch?: readonly { search: string; replace: string }[];
   /** For outbound: the parsed payload, so the line names its own target. */
   outbound?: OutboundCopyInput;
 }
@@ -118,6 +147,11 @@ export interface VaultEffectInput {
   kind: 'note' | 'update' | 'decision' | 'outbound' | 'delete';
   targetPath?: string | null;
   frontmatter?: Record<string, unknown>;
+  /** The same levers the headline reads, for the one effect line that
+   *  depends on WHICH section of the house rules a card touches. */
+  append?: string;
+  body?: string;
+  patch?: readonly { search: string; replace: string }[];
 }
 
 /** The name a skill or agent is filed under: `skills/jira/SKILL.md` → `jira`,
@@ -172,6 +206,16 @@ const conventionsSystem = (path: string): string => {
   return name === 'jira' || name === 'confluence' ? titleForRef(name) : '';
 };
 
+/**
+ * What each conventions file is called on screen. Duplicated from the shipped
+ * template's `title` (`JIRA_CONVENTIONS` in `@qale/sessions`), because the
+ * domain imports nothing; the two have to move together.
+ */
+const CONVENTIONS_TITLES: Record<string, string> = {
+  Jira: 'How you write tickets',
+  Confluence: 'How you write pages',
+};
+
 /** The rule such a card teaches, best-effort: the last bullet of the appended
  *  text, or of the body a new rules file is filed with. */
 function instructionRule(input: HeadlineInput): string {
@@ -180,6 +224,65 @@ function instructionRule(input: HeadlineInput): string {
     .map((line) => line.trim())
     .filter((line) => line.startsWith('- '));
   return lines.at(-1)?.slice(2).trim() ?? '';
+}
+
+/** The words of a heading line, whatever its level: "## Your rules" → "your rules". */
+const headingWords = (line: string): string =>
+  line
+    .trim()
+    .replace(/^#{1,6}\s+/, '')
+    .trim()
+    .toLowerCase();
+
+const isHeading = (line: string): boolean => /^#{1,6}\s/.test(line.trim());
+
+/** The bullets in a piece of text, in order, without their dashes. */
+function bulletsIn(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => /^\s*[-*]\s+(.*\S)\s*$/.exec(line)?.[1] ?? '')
+    .filter((line) => line.length > 0);
+}
+
+/** What one card does to the "What you want from Qale" list. */
+export interface WantListChange {
+  op: 'add' | 'remove';
+  /** The line added or removed, in the PM's words. */
+  line: string;
+}
+
+/**
+ * Does this card add a line to, or take one off, the "What you want from Qale"
+ * list in the house rules? Read back off the payload, so the card and the
+ * telemetry event (docs/learning-how-you-work.md ticket 15) see the same thing.
+ *
+ * `propose_instruction` edits the list with one patch anchored on the whole
+ * section, so the search opens with the list's heading and the replace holds
+ * one bullet more or one fewer. A text appended under that heading is an add
+ * too, for a file written by hand the same way.
+ */
+export function wantListChange(input: {
+  append?: string;
+  body?: string;
+  patch?: readonly { search: string; replace: string }[];
+}): WantListChange | null {
+  const wanted = headingWords(WANT_LIST_HEADING);
+  for (const block of input.patch ?? []) {
+    const first = block.search.split('\n').find((line) => line.trim().length > 0) ?? '';
+    if (!isHeading(first) || headingWords(first) !== wanted) continue;
+    const before = bulletsIn(block.search);
+    const after = bulletsIn(block.replace);
+    const added = after.filter((line) => !before.includes(line));
+    const removed = before.filter((line) => !after.includes(line));
+    if (added.length > 0 && removed.length === 0) return { op: 'add', line: added.at(-1)! };
+    if (removed.length > 0 && added.length === 0) return { op: 'remove', line: removed[0]! };
+    return null;
+  }
+  const text = input.append ?? input.body ?? '';
+  const last = text.split('\n').filter(isHeading).at(-1);
+  if (!last || headingWords(last) !== wanted) return null;
+  const line = bulletsIn(text).at(-1);
+  return line ? { op: 'add', line } : null;
 }
 
 const fmString = (fm: Record<string, unknown> | undefined, key: string): string => {
@@ -240,6 +343,10 @@ export function proposalHeadline(input: HeadlineInput): string {
   // The rule in the PO's own words, since a card saying "Update Your rules"
   // never says which rule it is. Nothing to quote ⇒ say the plain thing.
   if (isInstruction(input.kind, target)) {
+    // A line on the "What you want from Qale" list, in the PM's words. Taking
+    // one off is the one rules card that ends something, so it says so.
+    const want = wantListChange(input);
+    if (want) return want.op === 'add' ? `Remember this: ${want.line}` : `Stop this: ${want.line}`;
     const rule = instructionRule(input);
     return rule ? `Remember this: ${rule}` : 'A new standing instruction';
   }
@@ -276,7 +383,8 @@ export function proposalHeadline(input: HeadlineInput): string {
     if (type === 'person' || type === 'customer') {
       return `Add a page for ${fmString(fm, 'title') || titleForRef(target) || subject}`;
     }
-    if (type === 'theme') return `Record a theme: ${subject}`;
+    if (type === 'research') return `Record a research page: ${subject}`;
+    if (type === 'about') return `Write down what is true: ${subject}`;
     return `Write a document: ${subject}`;
   }
 
@@ -314,9 +422,15 @@ export function vaultEffect(input: VaultEffectInput): string | undefined {
   }
 
   if (isInstruction(input.kind, target)) {
+    const want = wantListChange(input);
+    if (want) {
+      return want.op === 'add'
+        ? 'Adds to what you want from Qale. Every session reads the list before it starts.'
+        : 'Removes from what you want from Qale. Nothing else changes.';
+    }
     const system = conventionsSystem(target);
     if (system) {
-      return `Adds the rule to How we use ${system}. Read whenever it drafts for ${system}.`;
+      return `Adds the rule to ${CONVENTIONS_TITLES[system]}. Read whenever it drafts for ${system}.`;
     }
     const file = titleForRef(target) || 'your house rules';
     return `Adds the rule to ${file}. Every session reads it from now on.`;

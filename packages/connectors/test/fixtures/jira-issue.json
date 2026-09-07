@@ -4,6 +4,11 @@
     "summary": "SAML SSO (epic)",
     "status": { "name": "Blocked", "statusCategory": { "key": "indeterminate" } },
     "assignee": { "displayName": "Mika Ranta" },
+    "reporter": { "displayName": "Åsa Lindqvist" },
+    "issuetype": { "name": "Story" },
+    "priority": { "name": "High" },
+    "labels": ["scheduling", "needs-legal"],
+    "components": [{ "name": "Rostering" }, { "name": "Identity" }],
     "updated": "2026-07-21T14:03:00.000+0200",
     "description": {
       "type": "doc",

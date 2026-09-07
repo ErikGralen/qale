@@ -304,7 +304,7 @@ export function excerptFor(raw: string, claim: string): string {
  * A page in `about` brings its neighbours with it: the notes it links to and the
  * notes that link to it, one hop. That hop is what makes the check work at all.
  * The claim comes from a transcript that names a meeting; the note that
- * contradicts it is the OTHER meeting on the same theme, not the page the claim
+ * contradicts it is the OTHER meeting on the same subject, not the page the claim
  * named. A tag scopes the same way without a page to start from.
  *
  * Folder index pages are left out: they are generated summaries of the notes

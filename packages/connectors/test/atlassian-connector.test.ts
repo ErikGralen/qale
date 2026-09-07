@@ -239,6 +239,31 @@ test('pullChanges(wikipage): EXACT CQL by space with version + last-modified map
   assert.equal(r.highWaterMark, '2026-07-21T11:05:00.000+0200');
 });
 
+test('fetchFull(ticket): carries the fields the description never states', async () => {
+  const { fetchImpl, calls } = makeFetch([
+    ...unscopedProbe,
+    { url: '/rest/api/3/issue/PAY-142/comment', json: fx('jira-comments') },
+    { url: '/rest/api/3/issue/PAY-142', json: fx('jira-issue') },
+  ]);
+  const c = atlassianConnector.create(AUTH, { fetchImpl });
+  const full = await c.fetchFull('ticket', 'PAY-142');
+
+  assert.deepEqual(full.labels, ['scheduling', 'needs-legal']);
+  assert.equal(full.issueType, 'Story');
+  assert.equal(full.priority, 'High');
+  assert.deepEqual(full.components, ['Rostering', 'Identity']);
+  assert.equal(full.reporter, 'Åsa Lindqvist');
+
+  // Jira sends only the fields the request names: a field left out of the ask
+  // is a field nothing downstream can ever hold.
+  const asked = new URL(calls.find((x) => x.url.includes('/issue/PAY-142?'))!.url).searchParams.get(
+    'fields',
+  );
+  for (const field of ['labels', 'issuetype', 'priority', 'components', 'reporter']) {
+    assert.ok(asked?.split(',').includes(field), `${field} missing from ${asked}`);
+  }
+});
+
 test('fetchFull(ticket): description + recent comments as chronological markdown', async () => {
   const { fetchImpl } = makeFetch([
     ...unscopedProbe,
@@ -347,6 +372,36 @@ test('execute(create_ticket): posts ADF description, returns key + browse link',
   const fields = (post.body as { fields: Record<string, unknown> }).fields;
   assert.deepEqual(fields['project'], { key: 'PAY' });
   assert.equal((fields['description'] as { type: string }).type, 'doc'); // markdown → ADF
+  // A draft that set none of them sends none of them: an empty list is still a
+  // write, and a project without the field on its create screen refuses it.
+  assert.ok(!('labels' in fields), JSON.stringify(fields));
+  assert.ok(!('priority' in fields));
+  assert.ok(!('components' in fields));
+});
+
+test('execute(create_ticket): labels, priority and components land in the Jira fields', async () => {
+  const { fetchImpl, calls } = makeFetch([
+    ...unscopedProbe,
+    { url: '/rest/api/3/issue', method: 'POST', json: misc['createIssue'] },
+  ]);
+  const c = atlassianConnector.create(AUTH, { fetchImpl });
+  await c.execute({
+    provider: 'jira',
+    action: 'create_ticket',
+    container: 'PAY',
+    title: 'Notify staff when a swap is requested',
+    body: 'Managers cannot see a swap request today.',
+    labels: ['scheduling', ' '],
+    priority: 'High',
+    components: ['Rostering'],
+    rationale: 'agreed in the Jul 14 check-in',
+  });
+
+  const post = calls.find((x) => x.method === 'POST' && x.url.endsWith('/rest/api/3/issue'))!;
+  const fields = (post.body as { fields: Record<string, unknown> }).fields;
+  assert.deepEqual(fields['labels'], ['scheduling']); // a blank entry is not a label
+  assert.deepEqual(fields['priority'], { name: 'High' });
+  assert.deepEqual(fields['components'], [{ name: 'Rostering' }]);
 });
 
 test('execute: LEGACY payload (system + add_comment) normalizes and still executes', async () => {

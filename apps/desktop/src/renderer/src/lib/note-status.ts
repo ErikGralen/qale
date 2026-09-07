@@ -225,8 +225,8 @@ export function isUnreadMeeting(m: {
  * Calendar is a meeting's home, so a meeting never holds a rail row. Calendar
  * shows what is coming and Home shows today (docs/sidebar-ia.md, SB-1).
  *
- * The six memory types are here too (docs/memory-placement.md). Memory is a
- * quiet row in the footer now, and nothing hangs under it: a theme or a person
+ * The seven memory types are here too (docs/memory-placement.md). Memory is a
+ * quiet row in the footer now, and nothing hangs under it: a research page or a person
  * is agent output, and a rail full of it is not a working set. What the PO
  * writes pins under Documents, and a mirror pins under the system it came from.
  */
@@ -239,7 +239,8 @@ const UNPINNABLE: ReadonlySet<string> = new Set([
   'source',
   'decision',
   'insight',
-  'theme',
+  'research',
+  'about',
   'customer',
   'person',
 ]);

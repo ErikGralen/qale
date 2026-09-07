@@ -263,47 +263,139 @@ test('the instruction hands over the names and the numbers', () => {
 });
 
 /**
- * The conventions write-up (docs/easier-tickets.md E-25). A connection's first
- * read is the one moment the evidence is all there, so the house shape is
- * written up then, once, as a card the PM can correct.
+ * The style write-up (docs/learning-how-you-work.md, tickets 3 to 5). A
+ * connection's first read is the one moment the evidence is all there, so how
+ * the PM writes is written down then, from their own tickets, into a file that
+ * lands without a card.
  */
-test('the first read is also told to write up how the team uses its tools', () => {
+test('the first read is also told to write down how the PM writes', () => {
   const said = firstLookInstruction([TRACKER_READ]);
-  assert.match(said, /Before the knock, write up how this team uses its tools/);
+  assert.match(said, /Before the knock, write down how they write their tickets and pages/);
   // It runs whether or not they want a walkthrough, so it cannot sit behind
   // beat one's "propose nothing".
   assert.match(said, /whether or not they want a walkthrough/);
-  assert.match(said, /this write-up is the exception/);
+  assert.match(said, /this is the exception/);
+  // It reads the skill about writing skills before it writes.
+  assert.match(said, /Read `skills\/writing-skills\/SKILL\.md` first/);
   // One file per system, each named with what it is written from.
   assert.match(said, /`skills\/jira\/SKILL\.md`, written from Nordkap Platform \(NORD\)/);
   assert.match(said, /`skills\/confluence\/SKILL\.md`, written from Kranelund \(KRAN\)/);
-  assert.match(said, /`title: How we use Jira`/);
-  assert.match(said, /`title: How we use Confluence`/);
+  assert.match(said, /`title: How you write tickets`/);
+  assert.match(said, /`title: How you write pages`/);
   // A container with nothing in it is not evidence of anything.
   assert.doesNotMatch(said, /Bergman/);
-  // One proposal per file, and it is how the run asks. Rules asked one at a time
-  // land silently, which is the thing this replaces.
-  assert.match(said, /One proposal per file, and it is how you ask/);
-  assert.match(said, /Never ask about conventions one rule at a time/);
+});
+
+/** The read is the PM's own work, newest first, thirty tickets and ten opened. */
+test("the read is the PM's own last thirty tickets and their own pages", () => {
+  const said = firstLookInstruction([TRACKER_READ]);
+  assert.match(
+    said,
+    /`\(assignee = currentUser\(\) OR reporter = currentUser\(\)\) AND project in \(NORD\) ORDER BY updated DESC`/,
+  );
+  assert.match(said, /Take the first thirty\. Open ten of them in full with `jira_get_issue`/);
+  assert.match(
+    said,
+    /creator = currentUser\(\) OR contributor = currentUser\(\)\) AND space in \(KRAN\)/,
+  );
+  assert.match(said, /Open five of them in full with `confluence_get_page`/);
+  // Never ask for an example: read what there is, and say when it is thin or
+  // when it is the team's rather than theirs.
+  assert.match(said, /Never ask them to paste an example/);
+  assert.match(said, /Only four recent tickets were written here, so this is thin/);
+  assert.match(
+    said,
+    /Almost none of these were written by you, so this is how your team writes them/,
+  );
+  // Two projects go in one query, so the file is written from all of them.
+  const two = firstLookInstruction([
+    {
+      ...TRACKER_READ,
+      containers: [
+        { id: 'NORD', kind: 'ticket', name: 'Nordkap', count: 9, provider: 'jira' },
+        { id: 'APP', kind: 'ticket', name: 'App', count: 4, provider: 'jira' },
+      ],
+    },
+  ]);
+  assert.match(two, /project in \(NORD, APP\)/);
+  assert.match(two, /Read from your last thirty tickets in NORD, APP on/);
+});
+
+/** Who "you" is rides in when Settings → You says, and is left out when it does not. */
+test('the kickoff names the PM when the workspace knows them', () => {
+  const named = firstLookInstruction([TRACKER_READ], false, {
+    name: 'Erik Gralén',
+    emails: ['erik@leveret.io'],
+  });
+  assert.match(
+    named,
+    /They are Erik Gralén, erik@leveret\.io: a reporter, an assignee or an author/,
+  );
+  const unnamed = firstLookInstruction([TRACKER_READ], false, { name: null, emails: [] });
+  assert.doesNotMatch(unnamed, /They are/);
+  assert.doesNotMatch(firstLookInstruction([TRACKER_READ]), /They are/);
+});
+
+/**
+ * The file lands without a card, the debrief opens with the link to it, and the
+ * one question per system comes after, only about what the tickets could not
+ * answer (tickets 4 and 5).
+ */
+test('the file lands without a card and the debrief opens with its link', () => {
+  const said = firstLookInstruction([TRACKER_READ]);
+  assert.match(
+    said,
+    /Write each file whole with `propose_note` and `inference: true`\. It lands without a card/,
+  );
+  assert.match(
+    said,
+    /start with the link to the file, then what you found, with a ticket or a page cited on every line/,
+  );
+  assert.match(said, /\[\[skills\/jira\/SKILL\]\]/);
+  assert.match(said, /at most one `ask_user` question per system \(jira and confluence\)/);
+  assert.match(said, /only about something you saw and could not explain/);
+  assert.match(said, /make "Stop using it" one of them/);
+  assert.match(said, /call `propose_instruction` with `target: jira`/);
+  assert.match(said, /If everything you saw is explained, ask nothing/);
+  // The old rule is gone: the write-up is no longer a card the PM approves.
+  assert.doesNotMatch(said, /One proposal per file/);
+  assert.doesNotMatch(said, /Awaiting review/);
 });
 
 /**
  * The headings are quoted from the shipped template, never typed again: the
  * write-up has to land in the shape the file keeps, and renaming a heading in
- * `defaults.ts` must not leave the kickoff pointing at the old one.
+ * `defaults.ts` must not leave the kickoff pointing at the old one. Every
+ * heading also has a guide for what it holds, so a renamed heading is loud.
  */
-test('the write-up is given the shipped headings, in file order', () => {
+test('the write-up is given the shipped headings, in file order, each with what it holds', () => {
   const said = firstLookInstruction([TRACKER_READ]);
   const jira = parseRunnable(JIRA_CONVENTIONS, 'jira').body;
   const headings = [...jira.matchAll(/^## (.+)$/gm)].map((m) => m[1]!.trim());
   assert.deepEqual(headings, [
     'When you draft a ticket',
+    'Labels',
     'When you comment',
     'Standing instructions',
   ]);
-  assert.match(said, new RegExp(headings.map((h) => `"${h}"`).join(', ')));
-  // The last one stays empty: it is where a rule stated in a chat lands.
-  assert.match(said, /Leave the last heading empty/);
+  const quoted = headings.map((h) => said.indexOf(`"${h}": `));
+  assert.ok(
+    quoted.every((i) => i >= 0),
+    'a template heading has no guide in the kickoff',
+  );
+  assert.deepEqual(
+    quoted,
+    [...quoted].sort((a, b) => a - b),
+    'headings out of file order',
+  );
+  assert.doesNotMatch(said, /as the template shows/);
+  assert.match(
+    said,
+    /"Labels": one line per label seen, what it seems to mean, and how many tickets carried it/,
+  );
+  assert.match(said, /"Standing instructions": last, and only its one line/);
+  // The comment section is honest about what the fetch tool returns.
+  assert.match(said, /`jira_get_issue` returns no comments/);
 });
 
 /** No tracker, no conventions: a calendar has no house shape to write up, and a
@@ -319,12 +411,12 @@ test('a first look with nothing to draft for says nothing about conventions', ()
       ],
     },
   ]);
-  assert.doesNotMatch(calendarOnly, /write up how this team uses its tools/);
+  assert.doesNotMatch(calendarOnly, /write down how they write their tickets and pages/);
   assert.match(calendarOnly, /"First look" section of the skill/);
   const unmirrored = firstLookInstruction([
     { ...TRACKER_READ, containers: [{ id: 'NORD', kind: 'ticket', name: 'Nordkap', count: 9 }] },
   ]);
-  assert.doesNotMatch(unmirrored, /write up how this team uses its tools/);
+  assert.doesNotMatch(unmirrored, /write down how they write their tickets and pages/);
 });
 
 /**

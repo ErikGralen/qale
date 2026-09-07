@@ -47,7 +47,37 @@ export interface JiraIssue {
   /** Epic/parent key, when the issue has one. */
   parentKey: string | null;
   links: JiraIssueLink[];
+  /** The labels on the issue, as the site spells them. Empty when it has none. */
+  labels: string[];
+  /** The issue type's name ("Story", "Bug"), or '' when Jira did not say. */
+  issueType: string;
+  /** The priority's name ("High"), null on a site that does not use priorities. */
+  priority: string | null;
+  /** Component names on the issue. Empty when it has none. */
+  components: string[];
+  /** Who filed the issue, by display name. */
+  reporter: string | null;
 }
+
+/**
+ * The fields a full issue read asks Jira for. Jira sends only what the caller
+ * names, so a field missing here is a field the model never sees: how the team
+ * labels work, which type they file it as, who wrote it.
+ */
+const ISSUE_FIELDS = [
+  'summary',
+  'status',
+  'assignee',
+  'updated',
+  'description',
+  'parent',
+  'issuelinks',
+  'labels',
+  'issuetype',
+  'priority',
+  'components',
+  'reporter',
+];
 
 export interface ConfluenceResult {
   id: string;
@@ -165,7 +195,7 @@ export class AtlassianClient {
         } catch (err) {
           throw new Error(
             timeoutSignal.aborted
-              ? "Your Atlassian site did not respond in time — check your connection."
+              ? 'Your Atlassian site did not respond in time — check your connection.'
               : "Couldn't reach your Atlassian site — check your connection.",
             { cause: err },
           );
@@ -204,7 +234,7 @@ export class AtlassianClient {
     const body = JSON.stringify({
       jql,
       maxResults: max,
-      fields: ['summary', 'status', 'assignee', 'updated', 'description', 'parent', 'issuelinks'],
+      fields: ISSUE_FIELDS,
     });
     const data = await this.request<{ issues?: RawIssue[] }>('/rest/api/3/search/jql', {
       method: 'POST',
@@ -244,6 +274,11 @@ export class AtlassianClient {
           description: _description,
           parentKey: _parentKey,
           links: _links,
+          labels: _labels,
+          issueType: _issueType,
+          priority: _priority,
+          components: _components,
+          reporter: _reporter,
           ...meta
         } = this.toIssue(raw);
         out.push(meta);
@@ -271,7 +306,7 @@ export class AtlassianClient {
 
   async getIssue(key: string): Promise<JiraIssue> {
     const data = await this.request<RawIssue>(
-      `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,status,assignee,updated,description,parent,issuelinks`,
+      `/rest/api/3/issue/${encodeURIComponent(key)}?fields=${ISSUE_FIELDS.join(',')}`,
     );
     return this.toIssue(data);
   }
@@ -446,13 +481,23 @@ export class AtlassianClient {
   // approval, never by an agent tool. Links are built from the API response.
   // ---------------------------------------------------------------------------
 
-  /** Create a Jira issue from a markdown description. Returns the deterministic link. */
+  /**
+   * Create a Jira issue from a markdown description. Returns the deterministic
+   * link. `labels`, `priority` and `components` are only sent when the draft
+   * carries them: an empty list on a site that does not use the field is still
+   * a write, and Jira rejects a field the project's create screen does not have.
+   */
   async createIssue(input: {
     projectKey: string;
     issueType?: string;
     summary: string;
     descriptionMarkdown?: string;
+    labels?: string[];
+    priority?: string;
+    components?: string[];
   }): Promise<{ key: string; url: string }> {
+    const labels = (input.labels ?? []).filter((l) => !!l.trim());
+    const components = (input.components ?? []).filter((c) => !!c.trim());
     const data = await this.request<{ key: string }>('/rest/api/3/issue', {
       method: 'POST',
       body: JSON.stringify({
@@ -461,6 +506,11 @@ export class AtlassianClient {
           issuetype: { name: input.issueType ?? 'Task' },
           summary: input.summary,
           description: markdownToAdf(input.descriptionMarkdown ?? ''),
+          ...(labels.length ? { labels } : {}),
+          ...(input.priority?.trim() ? { priority: { name: input.priority.trim() } } : {}),
+          ...(components.length
+            ? { components: components.map((name) => ({ name: name.trim() })) }
+            : {}),
         },
       }),
     });
@@ -536,6 +586,13 @@ export class AtlassianClient {
       description: raw.fields?.description ? adfToMarkdown(raw.fields.description) : '',
       parentKey: raw.fields?.parent?.key ?? null,
       links,
+      labels: (raw.fields?.labels ?? []).filter((l): l is string => typeof l === 'string' && !!l),
+      issueType: raw.fields?.issuetype?.name ?? '',
+      priority: raw.fields?.priority?.name ?? null,
+      components: (raw.fields?.components ?? [])
+        .map((c) => c.name)
+        .filter((n): n is string => typeof n === 'string' && !!n),
+      reporter: raw.fields?.reporter?.displayName ?? null,
     };
   }
 }
@@ -554,6 +611,11 @@ interface RawIssue {
       inwardIssue?: { key?: string };
       outwardIssue?: { key?: string };
     }[];
+    labels?: string[];
+    issuetype?: { name?: string };
+    priority?: { name?: string } | null;
+    components?: { name?: string }[];
+    reporter?: { displayName?: string } | null;
   };
 }
 interface RawComment {

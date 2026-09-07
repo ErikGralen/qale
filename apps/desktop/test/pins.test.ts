@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { NoteRefDTO, NoteType, VaultTreeDTO } from '@qale/ipc';
-import { documentPins, mirrorPins } from '../src/renderer/src/lib/pins.js';
+import { documentPins, mirrorPins, movedPin } from '../src/renderer/src/lib/pins.js';
 
 const DAY = 86_400_000;
 const NOW = new Date(2026, 8, 5, 9).getTime();
@@ -36,9 +36,8 @@ function tree(notes: NoteRefDTO[]): VaultTreeDTO {
 const DOC = note('notes/q3-priorities.md', 'note');
 const DOC_IN_FOLDER = note('notes/specs/checkout.md', 'note', { mtime: NOW - DAY });
 const FOLDER_INDEX = note('notes/specs/index.md', 'note');
-const UNDERSTANDING = note('understanding/product.md', 'note');
 const PERSON = note('people/lina-berg.md', 'person');
-const THEME = note('themes/checkout-drop-off.md', 'theme', { mtime: NOW - DAY });
+const RESEARCH = note('research/checkout-drop-off.md', 'research', { mtime: NOW - DAY });
 const TICKET = note('tickets/jira/PAY-142.md', 'ticket', { mtime: NOW - 2 * DAY });
 const OTHER_TICKET = note('tickets/jira/PAY-9.md', 'ticket', { mtime: NOW });
 const FLAT_TICKET = note('tickets/PAY-1.md', 'ticket');
@@ -52,9 +51,8 @@ const ALL = [
   DOC,
   DOC_IN_FOLDER,
   FOLDER_INDEX,
-  UNDERSTANDING,
   PERSON,
-  THEME,
+  RESEARCH,
   TICKET,
   MEETING,
   TODO,
@@ -72,13 +70,8 @@ test('a pin goes to its own place: documents under Documents', () => {
 
 test('nothing else lands under Documents: not a memory page, not a mirror', () => {
   const shown = documentPins(tree(ALL), EVERY_PATH).map((n) => n.path);
-  for (const other of [PERSON, THEME, TICKET, MEETING, TODO, SESSION])
+  for (const other of [PERSON, RESEARCH, TICKET, MEETING, TODO, SESSION])
     assert.ok(!shown.includes(other.path), other.path);
-});
-
-test('an understanding note is not a document: the path says so, not the type', () => {
-  const paths = documentPins(tree(ALL), EVERY_PATH).map((n) => n.path);
-  assert.ok(!paths.includes(UNDERSTANDING.path));
 });
 
 test('a folder index is navigation, so it never holds a row', () => {
@@ -98,27 +91,14 @@ test('todos, sessions, skills and agents stay in the places that own them', () =
   for (const type of ['todo', 'session'] as const) assert.ok(!shown.includes(type), type);
 });
 
-test('each list is flat and most recent first', () => {
+test('each list is flat, in the order the pin set holds, and dates decide nothing', () => {
   const older = note('notes/old.md', 'note', { mtime: NOW - 5 * DAY });
   const newest = note('notes/new.md', 'note', { mtime: NOW });
   const middle = note('notes/middle.md', 'note', { mtime: NOW - DAY });
   const rows = documentPins(tree([older, newest, middle]), [older.path, newest.path, middle.path]);
   assert.deepEqual(
     rows.map((n) => n.path),
-    [newest.path, middle.path, older.path],
-  );
-});
-
-test('the frontmatter date wins over mtime when a page carries one', () => {
-  const old = note('notes/old.md', 'note', { mtime: NOW - DAY });
-  const dated = note('notes/dated.md', 'note', {
-    mtime: NOW - 10 * DAY,
-    date: new Date(NOW).toISOString(),
-  });
-  const rows = documentPins(tree([old, dated]), [old.path, dated.path]);
-  assert.deepEqual(
-    rows.map((n) => n.path),
-    [dated.path, old.path],
+    [older.path, newest.path, middle.path],
   );
 });
 
@@ -166,10 +146,41 @@ test('a folder index is navigation here too, so it never holds a row', () => {
   );
 });
 
-test('the mirrors under a system read most recent first', () => {
+test('the mirrors under a system keep the pin set order too', () => {
   const t = tree([TICKET, OTHER_TICKET]);
   assert.deepEqual(
-    mirrorPins(t, [TICKET.path, OTHER_TICKET.path], 'tickets/jira').map((n) => n.path),
+    mirrorPins(t, [OTHER_TICKET.path, TICKET.path], 'tickets/jira').map((n) => n.path),
     [OTHER_TICKET.path, TICKET.path],
+  );
+});
+
+test('a drag puts a row above or below another one', () => {
+  const set = ['a.md', 'b.md', 'c.md'];
+  assert.deepEqual(movedPin(set, 'c.md', 'a.md', 'before'), ['c.md', 'a.md', 'b.md']);
+  assert.deepEqual(movedPin(set, 'a.md', 'c.md', 'after'), ['b.md', 'c.md', 'a.md']);
+  assert.deepEqual(movedPin(set, 'a.md', 'c.md', 'before'), ['b.md', 'a.md', 'c.md']);
+  assert.deepEqual(movedPin(set, 'c.md', 'b.md', 'after'), ['a.md', 'b.md', 'c.md']);
+});
+
+test('a move onto itself, or to a row nobody pinned, changes nothing', () => {
+  const set = ['a.md', 'b.md'];
+  assert.equal(movedPin(set, 'a.md', 'a.md', 'before'), set);
+  assert.equal(movedPin(set, 'a.md', 'gone.md', 'after'), set);
+  assert.equal(movedPin(set, 'gone.md', 'a.md', 'after'), set);
+});
+
+test('one list is a view of the set, so a move inside it holds for both', () => {
+  // The rail draws documents under Documents and mirrors under Jira, out of the
+  // one set. Moving a document past another leaves the tickets where they were.
+  const t = tree([DOC, DOC_IN_FOLDER, TICKET, OTHER_TICKET]);
+  const set = [DOC.path, TICKET.path, DOC_IN_FOLDER.path, OTHER_TICKET.path];
+  const next = movedPin(set, DOC_IN_FOLDER.path, DOC.path, 'before');
+  assert.deepEqual(
+    documentPins(t, next).map((n) => n.path),
+    [DOC_IN_FOLDER.path, DOC.path],
+  );
+  assert.deepEqual(
+    mirrorPins(t, next, 'tickets/jira').map((n) => n.path),
+    [TICKET.path, OTHER_TICKET.path],
   );
 });

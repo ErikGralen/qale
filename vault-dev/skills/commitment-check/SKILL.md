@@ -28,7 +28,7 @@ skill's job and this one reads what got filed.
 ## Read: a commitment of yours
 
 The todo (title, due date, owner, the `sources` it cites), the meeting or note where the
-commitment was made, and the related customer, theme, and decision pages. Three checks change
+commitment was made, and the related customer, research and decision pages. Three checks change
 the answer, so make all three:
 - **The linked ticket**, if any: its mirror note (tickets/), for `state`, `state_category` and
   `remote_updated`.
@@ -47,7 +47,7 @@ Then the memory it touches:
   own is what makes the same words a request or an instruction. An unknown sender is a fine
   answer: say they have no page rather than guess at their position.
 - **What we already know**: the insights that bear on the ask and how many accounts back them, the
-  live decisions that settle or contradict it, the theme it belongs under, and the ticket mirrors
+  live decisions that settle or contradict it, the research page it belongs under, and the ticket mirrors
   for anything already in flight.
 - **What we already promised**: open todos, and the customer hub's ledger of what they were told.
   An ask we committed to in March is a different conversation from a new one.
@@ -93,8 +93,10 @@ Then what the ask actually forces, and only that:
 - **A commitment you take on**: a todo (propose_todo) quoting the ask and citing this decode.
 - **A reply** (draft_text), where the posture is to answer now: cite the decisions and tickets it
   rests on, and follow the voice for that audience. It is text to copy, and nothing sends it.
-- **A signal worth keeping**: where the ask is evidence for a theme or a customer, extend that
-  page (propose_update) and say what the addition changes.
+- **A signal worth keeping**: where the ask is evidence for a customer, extend that page
+  (propose_update) and say what the addition changes. Where it is evidence for a problem, extend
+  the research page for that problem, if one exists; otherwise tag the insight and leave it. One
+  signal makes no page.
 - **A collision**: where the ask runs into a live decision or something already promised, that is
   its own proposal.
 

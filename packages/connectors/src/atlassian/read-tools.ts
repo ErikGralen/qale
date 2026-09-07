@@ -1,5 +1,5 @@
 import { Type } from 'typebox';
-import { AtlassianClient } from '@qale/atlassian';
+import { AtlassianClient, type JiraIssue } from '@qale/atlassian';
 import type { FetchLike, ProviderReadTool } from '../types.js';
 import type { AtlassianAuth } from './probe.js';
 
@@ -15,11 +15,27 @@ import type { AtlassianAuth } from './probe.js';
  * *why*.
  */
 export function atlassianReadTools(client: AtlassianClient): ProviderReadTool[] {
+  /**
+   * The fields a description never states: the type the team files it as, the
+   * labels they put on it, its priority, its components, who wrote it. One
+   * line, and only the parts the issue has — a row of empty labels on every
+   * result would bury the summary it sits under.
+   */
+  const jiraFacts = (i: JiraIssue): string => {
+    const parts: string[] = [];
+    if (i.issueType) parts.push(i.issueType);
+    if (i.labels.length) parts.push(`labels: ${i.labels.join(', ')}`);
+    if (i.priority) parts.push(`priority: ${i.priority}`);
+    if (i.components.length) parts.push(`components: ${i.components.join(', ')}`);
+    if (i.reporter) parts.push(`filed by ${i.reporter}`);
+    return parts.join(' · ');
+  };
+
   const jiraSearch: ProviderReadTool = {
     name: 'jira_search',
     label: 'Search Jira',
     description:
-      'Search Jira issues with a JQL query. Returns key, summary, status, assignee and a deep link.',
+      'Search Jira issues with a JQL query. Returns key, summary, status, assignee, issue type, labels, priority, components, reporter and a deep link.',
     parameters: Type.Object({ jql: Type.String({ description: 'A JQL query.' }) }),
     async execute(params) {
       const issues = await client.searchIssues(params['jql'] as string);
@@ -29,10 +45,13 @@ export function atlassianReadTools(client: AtlassianClient): ProviderReadTool[] 
       return {
         external: 'jira:search',
         text: issues
-          .map(
-            (i) =>
-              `- ${i.key} [${i.status}] ${i.summary}${i.assignee ? ` (@${i.assignee})` : ''}\n    ${i.url}`,
-          )
+          .map((i) => {
+            const facts = jiraFacts(i);
+            return (
+              `- ${i.key} [${i.status}] ${i.summary}${i.assignee ? ` (@${i.assignee})` : ''}` +
+              `${facts ? `\n    ${facts}` : ''}\n    ${i.url}`
+            );
+          })
           .join('\n'),
       };
     },
@@ -42,13 +61,16 @@ export function atlassianReadTools(client: AtlassianClient): ProviderReadTool[] 
     name: 'jira_get_issue',
     label: 'Get Jira issue',
     description:
-      'Fetch a single Jira issue by key (e.g. ENG-214), including its description as markdown.',
+      'Fetch a single Jira issue by key (e.g. ENG-214), including its description as markdown, its issue type, labels, priority, components and reporter.',
     parameters: Type.Object({ key: Type.String() }),
     async execute(params) {
       const i = await client.getIssue(params['key'] as string);
+      const facts = jiraFacts(i);
       return {
         external: `jira:${i.key}`,
-        text: `# ${i.key}: ${i.summary}\nStatus: ${i.status}${i.assignee ? ` · @${i.assignee}` : ''}\n${i.url}\n\n${i.description}`,
+        text:
+          `# ${i.key}: ${i.summary}\nStatus: ${i.status}${i.assignee ? ` · @${i.assignee}` : ''}\n` +
+          `${facts ? `${facts}\n` : ''}${i.url}\n\n${i.description}`,
       };
     },
   };

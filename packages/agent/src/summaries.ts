@@ -1,3 +1,4 @@
+import { WANT_LIST_LINES } from '@qale/sessions';
 import { wrapExternal } from './external.js';
 
 /**
@@ -47,8 +48,21 @@ export const TAG_RULES =
   'A tag is one word, in lower case, with a hyphen instead of a space.\n' +
   'Take the tags from the list of tags in use. A tag that nothing else carries finds nothing.\n' +
   'Make a new word only when nothing in the list says what the document is about.\n' +
+  'A document that relates to a line on the list of what the PM wants from Qale gets the tag ' +
+  'given with that line, and it counts as one of the two.\n' +
   'Not every document needs a tag. A scratch line, or a document too thin to say what it is ' +
   'about, gets none.';
+
+/**
+ * The "What you want from Qale" list, with the tag for each line
+ * (docs/learning-how-you-work.md ticket 8). The tag is the line's id, so a
+ * document about who is waiting is found under the same word the telemetry and
+ * the list itself use, whatever the PM has done to the wording.
+ */
+export const WANT_LIST_TAGS =
+  'What the PM wants from Qale, with the tag for each line: ' +
+  WANT_LIST_LINES.map((line) => `${line.id} (${line.text})`).join('; ') +
+  '.';
 
 export const FOLDER_PURPOSE_SYSTEM_PROMPT =
   "You write the one-line purpose a product manager's workspace keeps for each folder of documents.\n" +
@@ -108,6 +122,6 @@ export function summaryPrompt(subject: SummarySubject): { system: string; user: 
       : 'No tags are in use yet, so this document sets the first word. Pick one only if it is a word other documents will carry too.';
   return {
     system: SUMMARY_SYSTEM_PROMPT + TAG_RULES,
-    user: `Summarise this document and tag it.\n\n${vocabulary}\n\n${material}`,
+    user: `Summarise this document and tag it.\n\n${vocabulary}\n${WANT_LIST_TAGS}\n\n${material}`,
   };
 }

@@ -16,7 +16,7 @@ today's raw additions at the bottom.
 
 ## Read
 
-The note first. Then the memory it touches: search_vault for the people, customers, themes, and
+The note first. Then the memory it touches: search_vault for the people, customers, research pages, and
 decisions it mentions. Existing wikilinks mean an earlier run already handled those parts; leave
 them alone and work on what is new or still raw.
 
@@ -41,8 +41,10 @@ Each piece its own proposal:
   a copy edit, not a rewrite: keep your wording and your meaning, and add nothing the dump does
   not say. If the note is untitled or its title no longer fits, set the proposal's `title` to a short
   descriptive one.
-- **Updates to other notes**: the customer or theme hub the dump adds signal to, an open question
-  elsewhere it answers, a person's `last_told` when it says who was told what.
+- **Updates to other notes**: the customer hub the dump adds signal to, an open question elsewhere
+  it answers, a person's `last_told` when it says who was told what. A signal about a problem
+  extends the research page for that problem, if one exists; otherwise tag the insight and
+  leave it. One signal makes no page.
 - **New notes the dump implies**: commitments become todos (propose_todo, with `owner` when
   someone else owes it), claims worth keeping become insights (propose_note type insight), and a
   real decision with a named decider becomes a decision proposal (propose_decision). A line with no

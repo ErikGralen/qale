@@ -348,8 +348,8 @@ export function NoteView({ path }: { path: string }) {
       : null;
   // The note's own lifecycle value, read under whatever key its type calls it.
   // One value wears a badge: superseded. It changes how you read the page,
-  // because this is the old answer. A theme's stance said nothing extra, and asked
-  // the PO to keep a word true that no code ever reads.
+  // because this is the old answer. A customer's relationship says nothing extra,
+  // and asks the PO to keep a word true that no code ever reads.
   const lifecycle = lifecycleValue(currentNote.type, currentNote.frontmatter);
   const supersededBadge =
     lifecycle === 'superseded' ? lifecycleValueLabel(currentNote.type, lifecycle) : null;
@@ -529,16 +529,16 @@ export function NoteView({ path }: { path: string }) {
                     transcripts: meetingTranscripts.length,
                     typed: currentNote.body.trim().length > 0,
                   }),
-                  title: `Go through: ${currentNote.title}`,
+                  title: `Review: ${currentNote.title}`,
                   fresh: true,
                 })
               }
-              title="Go through what this meeting holds, typed notes and recordings alike, and turn what it changes into proposals."
+              title="Review what this meeting holds, typed notes and recordings alike, and turn what it changes into proposals."
             >
               {/* One label for both, because from the PO's side it is one act:
                   read this meeting. Whether they typed it or recorded it is the
                   run's business. */}
-              <Sparkles className="size-3.5" /> Go through this meeting
+              <Sparkles className="size-3.5" /> Review this meeting
             </Button>
           )}
           {todoOpen && (

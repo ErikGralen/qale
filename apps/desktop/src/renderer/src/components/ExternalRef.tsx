@@ -104,7 +104,7 @@ export function ExternalRefChip({
    * Name the object on the chip itself, e.g. "Confluence page". A ticket key
    * announces its own kind — "PAY-142" could be nothing else — but a page title
    * is an ordinary human phrase, so "Enterprise Onboarding" reads as a note, a
-   * theme, or a heading unless the chip says otherwise. On approval surfaces,
+   * research page, or a heading unless the chip says otherwise. On approval surfaces,
    * where the PO is deciding whether something may leave the workspace, it must
    * say otherwise. Passed in rather than read off the mirror, so an unsynced
    * connection still names what it is. Suppressed when a state pill already

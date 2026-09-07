@@ -4,7 +4,7 @@ import { selectDriftPairs } from '../src/index.js';
 import { inote, resolverFor } from './drift-helpers.js';
 
 // Candidate selection is DETERMINISTIC: only deep-tracked wikipages linked
-// from a theme hub / decision chain, paired only with the ACTIVE
+// from a research page / decision chain, paired only with the ACTIVE
 // head of a decision chain. No LLM anywhere near this file.
 
 const wikipageFm = (externalId: string, version: number): Record<string, unknown> => ({
@@ -24,8 +24,8 @@ function tavlaNotes() {
     frontmatter: wikipageFm('910231', 12),
   });
   const hub = inote({
-    path: 'themes/enterprise-onboarding.md',
-    type: 'theme',
+    path: 'research/enterprise-onboarding.md',
+    type: 'research',
     links: [
       'decisions/2026-04-15-defer-scim-to-q3',
       'decisions/2026-05-20-adopt-workos',
@@ -39,10 +39,9 @@ function tavlaNotes() {
     mtime: 500,
     frontmatter: {
       standing: 'active',
-      theme: '[[themes/enterprise-onboarding]]',
       date: '2026-04-15',
     },
-    links: ['themes/enterprise-onboarding'],
+    links: ['research/enterprise-onboarding'],
   });
   const workos = inote({
     path: 'decisions/2026-05-20-adopt-workos.md',
@@ -51,7 +50,6 @@ function tavlaNotes() {
     frontmatter: {
       standing: 'active',
       supersedes: '[[decisions/2026-02-10-use-firebase-auth]]',
-      theme: '[[themes/enterprise-onboarding]]',
     },
     links: ['decisions/2026-02-10-use-firebase-auth'],
   });
@@ -79,7 +77,7 @@ test('pairs a hub-linked wikipage with every active decision in the hub orbit', 
     scimPair.key,
     'page-drift:wikipages/enterprise-onboarding:decisions/2026-04-15-defer-scim-to-q3',
   );
-  assert.equal(scimPair.via, 'themes/enterprise-onboarding.md');
+  assert.equal(scimPair.via, 'research/enterprise-onboarding.md');
 });
 
 test('a superseded decision never heads a pair, but rides along as chain context', () => {

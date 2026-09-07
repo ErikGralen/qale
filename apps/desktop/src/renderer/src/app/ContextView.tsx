@@ -4,6 +4,7 @@ import { dirForType, noteTypeLabel } from '@qale/domain';
 import type { NoteRefDTO, NoteType } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { NoteList } from './NoteList';
+import { ListSection } from '../components/ListSection';
 import { PageHeader } from '../components/PageHeader';
 import { ScopedAskComposer } from '../components/ScopedAskComposer';
 import { SelectionBar } from '../components/SelectionBar';
@@ -15,8 +16,9 @@ import { selectionKeyDown, useSelection } from '../lib/selection';
  * types get one: sessions and skills are chrome, never sections here.
  */
 const SECTION_LABEL: Partial<Record<NoteType, string>> = {
+  about: 'About',
   decision: 'Decisions',
-  theme: 'Themes',
+  research: 'Research',
   insight: 'Insights',
   todo: 'Todos',
   customer: 'Customers',
@@ -62,10 +64,19 @@ export function ContextView({ tag }: { tag: string }) {
   const selection = useSelection(ordered);
 
   return (
+    // The rows ARE the selection here, so ⌘A belongs to the list whether or not
+    // something is picked already. Escape drops the selection, in the same
+    // helper.
     <div className="flex h-full flex-col" onKeyDown={(e) => void selectionKeyDown(e, selection)}>
-      <PageHeader icon={Hash} iconClassName="text-brand" label={tag} meta={notes.length} />
-
-      <SelectionBar selection={selection} total={ordered.length} />
+      <PageHeader
+        icon={Hash}
+        iconClassName="text-brand"
+        label={tag}
+        meta={notes.length}
+        selecting={selection.count > 0}
+      >
+        <SelectionBar selection={selection} total={ordered.length} />
+      </PageHeader>
 
       <div className="flex-1 overflow-y-auto px-8 py-4">
         <div className="mx-auto w-full max-w-2xl">
@@ -82,16 +93,8 @@ export function ContextView({ tag }: { tag: string }) {
                 const label = SECTION_LABEL[s.type] ?? dirName;
                 const truncated = s.rows.length > s.shown.length;
                 return (
-                  <section key={s.type}>
-                    {/* `pl-8` lands the label on the title column, past the
-                        row's checkbox gutter (see NoteList). */}
-                    <div className="mb-1 flex items-baseline gap-2 pl-8">
-                      <h2 className="text-xs font-medium text-muted-foreground">{label}</h2>
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {s.rows.length}
-                      </span>
-                    </div>
-                    <NoteList rows={s.shown} empty="" selection={selection} />
+                  <ListSection key={s.type} label={label} count={s.rows.length}>
+                    <NoteList rows={s.shown} empty="" label={label} selection={selection} />
                     {truncated && (
                       <button
                         className="mt-1 rounded px-2 text-xs font-medium text-brand hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
@@ -100,7 +103,7 @@ export function ContextView({ tag }: { tag: string }) {
                         See all {s.rows.length} {label.toLowerCase()} →
                       </button>
                     )}
-                  </section>
+                  </ListSection>
                 );
               })}
             </div>

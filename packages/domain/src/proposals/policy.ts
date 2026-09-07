@@ -26,6 +26,8 @@
  * writes, the file it aims at, and whether the PM asked for it.
  */
 
+import { isVoicePath } from '../notes/slug.js';
+
 export const WRITE_DISPOSITIONS = ['silent', 'grouped', 'ask'] as const;
 export type WriteDisposition = (typeof WRITE_DISPOSITIONS)[number];
 
@@ -71,6 +73,26 @@ function isTodo(facts: WriteFacts): boolean {
 /** A file that says how the app behaves: a skill, an agent, the house rules. */
 function isRuleFile(facts: WriteFacts): boolean {
   return facts.noteType === 'skill' || facts.noteType === 'agent';
+}
+
+/**
+ * The two files Qale writes from the PM's own tickets and pages
+ * (docs/learning-how-you-work.md, ticket 5): how they write tickets, how they
+ * write pages. Named here rather than imported from `@qale/sessions`, because
+ * the domain depends on nothing. The names are the outbound provider ids this
+ * package already owns, so a third file would be added in both places.
+ */
+export const STYLE_FILES = ['skills/jira/SKILL.md', 'skills/confluence/SKILL.md'] as const;
+
+/**
+ * A file Qale keeps its own notes on how the PM works in: one of
+ * {@link STYLE_FILES}, or a voice (`voices/exec.md`), which a style pick
+ * rewrites. Writing one is Qale taking notes, not Qale changing something the
+ * PM wrote, and the file itself is the record the PM reads and edits.
+ */
+export function isStyleFile(path: string | null | undefined): boolean {
+  if (!path) return false;
+  return (STYLE_FILES as readonly string[]).includes(path) || isVoicePath(path);
 }
 
 /**
@@ -138,11 +160,17 @@ export function isMachineryField(field: string): boolean {
  * 2. A delete takes something away, and there is no undelete either.
  * 3. A todo is a promise, and a promise is the PM's word to somebody. Creating
  *    one, closing one or moving its date all ask.
- * 4. A standing rule the PM stated is remembered without a card. The chat says
- *    "Added to rules" and Activity keeps the row (E-8). A rule file the agent
- *    wrote on its own asks: reading a team's Jira and writing up how they work
- *    (E-25) is a whole file nobody watched being made.
- * 5. What the PM asked for in the chat applies on the spot. The card was asking
+ * 4. Qale's own notes on how the PM works land without a card
+ *    (docs/learning-how-you-work.md, ticket 5): the Jira and Confluence files
+ *    written from their own tickets and pages, and a voice rewritten after a
+ *    style pick. The file is the record, it is linked in the chat, and Activity
+ *    keeps the row. A rule the PM stated into one of them still takes rule 5's
+ *    reason, because "you said so" is the truer sentence there.
+ * 5. A standing rule the PM stated is remembered without a card. The chat says
+ *    "Added to rules" and Activity keeps the row (E-8). Any other rule file the
+ *    agent wrote on its own asks: a new skill is a whole file nobody watched
+ *    being made.
+ * 6. What the PM asked for in the chat applies on the spot. The card was asking
  *    them to confirm their own instruction (E-4).
  */
 function rulingEverywhere(facts: WriteFacts): WriteRuling | null {
@@ -157,6 +185,12 @@ function rulingEverywhere(facts: WriteFacts): WriteRuling | null {
   }
   if (isTodo(facts)) {
     return { disposition: 'ask', reason: 'A promise is your word, so you decide it.' };
+  }
+  if (isStyleFile(facts.targetPath) && !facts.asked) {
+    return {
+      disposition: 'silent',
+      reason: "Qale's own notes about how you work, and the file is the record.",
+    };
   }
   if (isRuleFile(facts)) {
     return facts.asked
@@ -245,14 +279,22 @@ export interface WritePolicyPlace {
 const A_DOCUMENT = `${USER_DOCUMENTS_DIR}pricing-brief.md`;
 
 /** A page in Memory, for the same question. */
-const A_MEMORY_PAGE = 'themes/pricing.md';
+const A_MEMORY_PAGE = 'research/pricing.md';
 
 /**
  * The writes the screen explains, in the order it lists them. Each one is a real
  * set of facts, so the answer beside it comes from the policy and not from a
  * copy of it.
+ *
+ * A write with a `targetPath` of its own lands in that file wherever the place
+ * is, so it is listed under Memory only: the style files and the voices live
+ * there, and asking the policy about `notes/` for them would be a question
+ * nobody asks.
  */
-const EXPLAINED_WRITES: readonly { what: string; facts: Omit<WriteFacts, 'targetPath'> }[] = [
+const EXPLAINED_WRITES: readonly {
+  what: string;
+  facts: Omit<WriteFacts, 'targetPath'> & { targetPath?: string };
+}[] = [
   {
     what: 'Anything sent to Jira, Confluence or the calendar',
     facts: { kind: 'outbound' },
@@ -269,6 +311,10 @@ const EXPLAINED_WRITES: readonly { what: string; facts: Omit<WriteFacts, 'target
   {
     what: 'A rule Qale wrote up on its own',
     facts: { kind: 'note', noteType: 'skill' },
+  },
+  {
+    what: 'The notes Qale keeps on how you write tickets, pages and updates',
+    facts: { kind: 'note', noteType: 'skill', targetPath: STYLE_FILES[0] },
   },
   {
     what: 'A page or an edit you asked for in the chat',
@@ -319,15 +365,20 @@ const MACHINERY_ROWS: readonly WritePolicyRow[] = [
  * voice.
  */
 export function describeWritePolicy(): WritePolicyPlace[] {
-  const rowsFor = (targetPath: string): WritePolicyRow[] => [
-    ...EXPLAINED_WRITES.map(({ what, facts }) => {
-      const { disposition, reason } = writePolicy({ ...facts, targetPath });
-      return { what, disposition, reason };
-    }),
+  const rowsFor = (place: WritePolicyPlace['place'], targetPath: string): WritePolicyRow[] => [
+    ...EXPLAINED_WRITES.filter(({ facts }) => place === 'memory' || !facts.targetPath).map(
+      ({ what, facts }) => {
+        const { disposition, reason } = writePolicy({
+          ...facts,
+          targetPath: facts.targetPath ?? targetPath,
+        });
+        return { what, disposition, reason };
+      },
+    ),
     ...MACHINERY_ROWS.map((row) => ({ ...row })),
   ];
   return [
-    { place: 'documents', title: 'In your documents', rows: rowsFor(A_DOCUMENT) },
-    { place: 'memory', title: 'In its memory', rows: rowsFor(A_MEMORY_PAGE) },
+    { place: 'documents', title: 'In your documents', rows: rowsFor('documents', A_DOCUMENT) },
+    { place: 'memory', title: 'In its memory', rows: rowsFor('memory', A_MEMORY_PAGE) },
   ];
 }

@@ -186,7 +186,7 @@ test('the Documents tree gets one map per folder, and a folder keeps its descrip
     inote('notes/scratch.md', 'note', 'Loose ends.'),
     inote('notes/specs/sso.md', 'note', 'The SSO spec.'),
     inote('notes/specs/2026/roadmap.md', 'note', 'Next year.'),
-    inote('understanding/product.md', 'note', 'What the product is.'),
+    inote('research/product.md', 'research', 'What the product is.'),
   ];
   const { ctx, files } = fakeCtx(notes);
   // An empty folder exists because its stub is on disk; a filled one has a
@@ -201,7 +201,7 @@ test('the Documents tree gets one map per folder, and a folder keeps its descrip
   assert.match(root, /\* \[Briefs\]\(notes\/briefs\/index\.md\) — Briefs, a folder of your documents \(0\)/);
   assert.match(root, /\* \[Specs\]\(notes\/specs\/index\.md\) — what we are building, one page each \(2\)/);
   assert.match(root, /## Documents\n\n\* \[scratch\]\(notes\/scratch\.md\) — Loose ends\.\n/);
-  assert.doesNotMatch(root, /sso\.md|roadmap\.md|product\.md/, 'only this level, never understanding');
+  assert.doesNotMatch(root, /sso\.md|roadmap\.md|product\.md/, 'only this level, never research');
 
   const specs = files.get('notes/specs/index.md')!;
   assert.match(specs, /^---\ndescription: what we are building, one page each\n---\n/, 'kept');
@@ -211,7 +211,7 @@ test('the Documents tree gets one map per folder, and a folder keeps its descrip
   const deep = files.get('notes/specs/2026/index.md')!;
   assert.match(deep, /# 2026\n\n2026, a folder of your documents\n\n\* \[roadmap\]/);
   assert.match(files.get('notes/briefs/index.md')!, /# Briefs\n\nBriefs, a folder of your documents\n$/);
-  assert.match(files.get('understanding/index.md')!, /product\.md/, 'understanding has its own map');
+  assert.match(files.get('research/index.md')!, /product\.md/, 'research has its own map');
   assert.match(files.get('index.md')!, /\* \[Notes\]\(notes\/index\.md\) — .* \(3\)/, 'root counts every document');
 
   // A second pass keeps the written purpose and changes nothing.

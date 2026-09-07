@@ -5,7 +5,10 @@ import {
   activityLine,
   appliedReceipt,
   labelLine,
+  learnedRow,
+  learnedSummary,
   readAppliedReceipt,
+  WANT_LIST_HEADING,
 } from '../src/index.js';
 
 // The receipt for a write that needed no card: the Activity row's sentence, and
@@ -62,9 +65,9 @@ test('a rule appended to a skill quotes the rule, not the file', () => {
 test('a rules file written whole reads the rule off the end of the body', () => {
   const input = {
     kind: 'note',
-    targetPath: 'skills/jira/SKILL.md',
-    frontmatter: { title: 'How we use Jira' },
-    body: '# How we use Jira\n\n## Standing instructions\n\n- Put the roadmap label on every ticket.',
+    targetPath: 'skills/arrival/SKILL.md',
+    frontmatter: { title: 'Filing what arrives' },
+    body: '# Filing what arrives\n\n## Standing instructions\n\n- Put the roadmap label on every ticket.',
   };
   assert.equal(activityAction(input), 'remembered');
   assert.equal(activityLine(input), 'I remembered a rule: Put the roadmap label on every ticket.');
@@ -79,6 +82,62 @@ test('a skill with no rule in it is a skill the agent created', () => {
   };
   assert.equal(activityAction(input), 'created');
   assert.equal(activityLine(input), 'I created Weekly roadmap update.');
+});
+
+// What Qale worked out about the PM, apart from what the PM told it
+// (docs/learning-how-you-work.md ticket 12).
+
+test('a write into a voice is something Qale learned', () => {
+  const input = {
+    kind: 'update',
+    targetPath: 'voices/exec.md',
+    append: '\n- Exec updates: one paragraph, result first.',
+  };
+  assert.equal(activityAction(input), 'learned');
+  assert.equal(activityLine(input), 'Got it. Exec updates: one paragraph, result first.');
+});
+
+test('a write into the Jira file is learned, not remembered', () => {
+  const input = {
+    kind: 'update',
+    targetPath: 'skills/jira/SKILL.md',
+    append: '\n- Stories open with what a manager cannot do today.',
+  };
+  assert.equal(activityAction(input), 'learned');
+  assert.equal(activityLine(input), 'Got it. Stories open with what a manager cannot do today.');
+  assert.equal(activityAction({ ...input, targetPath: 'skills/confluence/SKILL.md' }), 'learned');
+});
+
+test('a line added to the want list is learned', () => {
+  const input = {
+    kind: 'update',
+    targetPath: 'skills/house-rules/SKILL.md',
+    append: `\n\n${WANT_LIST_HEADING}\n\n- Tell me who is waiting for something before it ships.`,
+  };
+  assert.equal(activityAction(input), 'learned');
+});
+
+test('a rule the PM stated in Your rules is still remembered', () => {
+  const input = {
+    kind: 'update',
+    targetPath: 'skills/house-rules/SKILL.md',
+    append: '\n\n## Your rules\n\n- Write every summary in Swedish.',
+  };
+  assert.equal(activityAction(input), 'remembered');
+});
+
+test('a caller that knows the source says so, and the row carries it', () => {
+  const row = learnedRow({
+    path: 'voices/exec.md',
+    what: 'Exec updates: one paragraph, result first.',
+    from: 'the style you copied on 5 September',
+    sessionId: 's1',
+  });
+  assert.equal(row.action, 'learned');
+  assert.equal(row.line, 'Got it. Exec updates: one paragraph, result first.');
+  assert.equal(row.reason, 'from the style you copied on 5 September');
+  assert.equal(row.path, 'voices/exec.md');
+  assert.equal(learnedSummary(row.line), 'Exec updates: one paragraph, result first.');
 });
 
 test('a delete says what went', () => {

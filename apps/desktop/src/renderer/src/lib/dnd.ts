@@ -13,12 +13,17 @@
  *
  * A drop moves documents. It never navigates: the PM stays where they are and
  * watches the rows leave, the way a desktop file manager works.
+ *
+ * The rail's pinned rows use the same library for a different job: a drag there
+ * reorders the list rather than moving a file. {@link useReorderableRow} is that
+ * one.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   draggable,
   dropTargetForElements,
 } from '@atlaskit/pragmatic-drag-and-drop/adapter/element-adapter';
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { setCustomNativeDragPreview } from '@atlaskit/pragmatic-drag-and-drop/utils/set-custom-native-drag-preview';
 import { acceptsDocuments, documentDragData, draggedDocuments } from './documents';
 
@@ -146,4 +151,78 @@ export function useFolderDropZones(onDrop: (paths: string[], folder: string) => 
   const isOver = useCallback((id: string) => over === id, [over]);
 
   return { zone, isOver };
+}
+
+/** What a reorder drag carries: the list it belongs to, and the row it is. */
+const REORDER_LIST = 'qale/reorder-list';
+const REORDER_ROW = 'qale/reorder-row';
+
+/** Which half of a row the pointer is over, and so where the row would land. */
+export type DropEdge = 'before' | 'after';
+
+/**
+ * Makes one row of a list both a drag source and a drop target, so the PO can
+ * put it where they want it. Used by the rail's pinned rows.
+ *
+ * `list` is the name of the list this row belongs to. Only rows of the same
+ * list accept each other, so a pinned ticket cannot land among the documents.
+ *
+ * A drop reports the row it landed on and which half of it the pointer was
+ * over. The caller owns the order and does the move.
+ */
+export function useReorderableRow(
+  list: string,
+  row: string,
+  onDrop: (row: string, target: string, place: DropEdge) => void,
+): {
+  ref: AttachRef;
+  /** True while this row is the one in the air. Fade it. */
+  dragging: boolean;
+  /** The edge to draw the insert line on, or null when nothing hovers. */
+  edge: DropEdge | null;
+} {
+  const [dragging, setDragging] = useState(false);
+  const [edge, setEdge] = useState<DropEdge | null>(null);
+  // The handler may change every render; it is read at drop time.
+  const latest = useRef(onDrop);
+  useEffect(() => {
+    latest.current = onDrop;
+  });
+
+  const ref = useCallback(
+    (el: HTMLElement | null) => {
+      if (!el) return;
+      // Top half means "above this row", bottom half "below it". That is the
+      // reading a file manager gives an insert line.
+      const edgeAt = (y: number): DropEdge => {
+        const box = el.getBoundingClientRect();
+        return y < box.top + box.height / 2 ? 'before' : 'after';
+      };
+      return combine(
+        draggable({
+          element: el,
+          getInitialData: () => ({ [REORDER_LIST]: list, [REORDER_ROW]: row }),
+          onDragStart: () => setDragging(true),
+          onDrop: () => setDragging(false),
+        }),
+        dropTargetForElements({
+          element: el,
+          // A row takes no drop from another list, and none from itself.
+          canDrop: ({ source }) =>
+            source.data[REORDER_LIST] === list && source.data[REORDER_ROW] !== row,
+          onDrag: ({ location }) => setEdge(edgeAt(location.current.input.clientY)),
+          onDragLeave: () => setEdge(null),
+          onDrop: ({ source, location }) => {
+            setEdge(null);
+            const dragged = source.data[REORDER_ROW];
+            if (typeof dragged === 'string')
+              latest.current(dragged, row, edgeAt(location.current.input.clientY));
+          },
+        }),
+      );
+    },
+    [list, row],
+  );
+
+  return { ref, dragging, edge };
 }

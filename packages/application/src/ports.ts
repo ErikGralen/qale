@@ -7,7 +7,6 @@ import type {
   NoteType,
   SchemaMiss,
   SearchHit,
-  ThemeStance,
 } from '@qale/domain';
 
 /**
@@ -125,6 +124,13 @@ export interface VaultPort {
   writeBinary(relPath: string, data: Uint8Array): Promise<void>;
   /** Delete a file. Throws {@link VaultBoundaryError} if the path escapes. */
   remove(relPath: string): Promise<void>;
+  /**
+   * Delete an EMPTY folder. A folder with anything left in it stays, without an
+   * error: the caller has already moved what it meant to move, and a leftover
+   * file is a reason to leave the folder standing, not a failure. Optional so a
+   * stand-in vault in a test only has to answer what that test asks.
+   */
+  removeDir?(relPath: string): Promise<void>;
   exists(relPath: string): Promise<boolean>;
   /** Every `.md` file under the vault. */
   list(): Promise<FileListing[]>;
@@ -225,6 +231,13 @@ export interface ProposalRecord {
    *  moved underneath a card that still fits. */
   baseHash: string | null;
   payload: unknown;
+  /**
+   * The card as the PM changed it before approving, or null when they kept it
+   * as drafted (docs/learning-how-you-work.md ticket 7). The original stays in
+   * `payload`, so the pair is the whole record of what they did to the draft:
+   * the session reads it next turn and learns from the difference.
+   */
+  editedPayload?: unknown;
   rationale: string;
   evidence: { ref: string; label?: string; resolved: boolean }[];
   inference: boolean;
@@ -265,6 +278,13 @@ export interface ProposalPort {
    * make them choose between two versions of the same message.
    */
   updatePayload(id: string, payload: unknown): void;
+  /**
+   * Keep what the PM approved when it is not what was drafted. It sits beside
+   * the original rather than over it: the difference between the two is the one
+   * thing that says how they want this written, and overwriting the draft would
+   * throw that away the moment it became useful.
+   */
+  setEditedPayload(id: string, payload: unknown): void;
   pendingCount(): number;
 }
 
@@ -278,6 +298,16 @@ export interface ActivityPort {
   /** Newest first. `limit` caps the read; the log itself is never trimmed. */
   list(limit?: number): ActivityRecord[];
   get(id: string): ActivityRecord | null;
+  /**
+   * The newest 'learned' or 'remembered' row for each file, for the line under
+   * every row on the Skills page (docs/learning-how-you-work.md ticket 13).
+   *
+   * Its own query rather than a filter over {@link list}: what the page needs is
+   * one row per file, and the newest one for a file can be older than any limit
+   * a list read would carry. Rows that were put back are left out, because what
+   * they say is no longer in the file.
+   */
+  latestLearned(): { path: string; line: string; at: number }[];
   /** Stamp a row as put back. Workstream A1's revert path calls this last. */
   markReverted(id: string, at: number): void;
 }
@@ -467,4 +497,4 @@ export interface UseCaseContext {
   activity?: ActivityPort;
 }
 
-export type { Note, SchemaMiss, SearchHit, ThemeStance, NoteType, Frontmatter };
+export type { Note, SchemaMiss, SearchHit, NoteType, Frontmatter };

@@ -101,17 +101,14 @@ export async function createNote(ctx: UseCaseContext, input: CreateNoteInput): P
       : `${dir}/${slugify(title) || 'untitled'}.md`;
   const path = await freePath(ctx, desired);
 
-  // The lifecycle values a new page starts on: a problem you have just written
-  // down is one you are exploring, and an account you bothered to make a page
-  // for is one you are working. Both are one click away on the page itself.
+  // The lifecycle value a new page starts on: an account you bothered to make
+  // a page for is one you are working. It is one click away on the page itself.
   const lifecycle =
-    input.type === 'theme'
-      ? { stance: 'exploring' as const, evidence: [] }
-      : input.type === 'customer'
-        ? { relationship: 'active' as const }
-        : input.type === 'note'
-          ? { sources: [] }
-          : {};
+    input.type === 'customer'
+      ? { relationship: 'active' as const }
+      : input.type === 'note'
+        ? { sources: [] }
+        : {};
   const frontmatter = { type: input.type, title, summary: title, ...lifecycle } as Frontmatter;
 
   const note = await ctx.vault.writeNote(path, frontmatter, '');

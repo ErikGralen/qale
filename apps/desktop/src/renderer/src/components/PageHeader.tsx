@@ -21,6 +21,9 @@ import { cn } from '@qale/ui';
  *   - Actions live in the right cluster: icon-only `HeaderAction`s for the
  *     standing ones, at most one labelled `<Button size="sm">` for the
  *     contextual primary, `HeaderMenu` for the rare and the destructive.
+ *   - A ticked batch borrows that same cluster (see `SelectionBar` and
+ *     `selecting`). The header never grows a second row, and the list below it
+ *     never moves.
  */
 export interface PageCrumb {
   label: string;
@@ -42,6 +45,7 @@ export function PageHeader({
   crumbs,
   label,
   labelClassName,
+  selecting = false,
   /** Full text for the tooltip when the leaf truncates (paths, session titles). */
   labelTitle,
   meta,
@@ -54,10 +58,21 @@ export function PageHeader({
   labelClassName?: string;
   labelTitle?: string;
   meta?: ReactNode;
+  /**
+   * A batch is ticked in the list below, so `children` is the selection's
+   * actions rather than the view's own. It only paints: the wash tells you the
+   * header has changed hands, and the rule between the two is the bar's.
+   */
+  selecting?: boolean;
   children?: ReactNode;
 }) {
   return (
-    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4">
+    <div
+      className={cn(
+        'flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 transition-colors',
+        selecting && 'bg-brand/5',
+      )}
+    >
       <nav aria-label="Location" className="flex min-w-0 items-center gap-1 text-xs">
         {Icon && (
           <Icon

@@ -122,13 +122,18 @@ function payloadTitle(p: ProposalDTO): string {
  *  frontmatter, and the text an update adds. Same vocabulary as the effect line
  *  and the receipt, so one card never says two things. */
 function composedHeadline(p: ProposalDTO): string {
-  const payload = p.payload as { append?: string; body?: string };
+  const payload = p.payload as {
+    append?: string;
+    body?: string;
+    patch?: { search: string; replace: string }[];
+  };
   return proposalHeadline({
     kind: p.kind,
     targetPath: targetOf(p),
     frontmatter: frontmatter(p),
     append: payload.append,
     body: payload.body,
+    patch: payload.patch,
     outbound: p.kind === 'outbound' ? (p.payload as OutboundPayloadDTO) : undefined,
   });
 }

@@ -62,7 +62,7 @@ test('cards from one reading of one source are one intent', () => {
 });
 
 test('the sentence names the folder only when they all share one', () => {
-  const groups = groupIntents([patch('insights/pricing.md'), patch('themes/pricing.md')]);
+  const groups = groupIntents([patch('insights/pricing.md'), patch('research/pricing.md')]);
   assert.equal(groups.length, 1);
   assert.equal(groups[0]!.sentence, 'Edit 2 pages, from Standup');
 });
@@ -131,7 +131,7 @@ test('what is left after a partial approval is still the same group', () => {
 
 test('a card that groups with nobody comes back as itself, in its own place', () => {
   const alone = patch('insights/pricing.md', 'meetings/2026-07-15-nordkap');
-  const pair = [patch('themes/pricing.md'), patch('themes/support.md')];
+  const pair = [patch('research/pricing.md'), patch('research/support.md')];
   const groups = groupIntents([alone, ...pair]);
   assert.deepEqual(
     groups.map((g) => g.cards.length),

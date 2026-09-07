@@ -19,8 +19,11 @@ A card either stays in the workspace or leaves it.
 - **Stays.** A note, an update, a decision. The effect line comes from
   `vaultEffect` and names the folder the page lands in.
 - **Leaves.** An outbound write to Jira, Confluence or the calendar. The card
-  carries the "Leaves your workspace" strip, and the effect line comes from
-  `outboundEffect`, which names who the write reaches.
+  says so by shape, not by a label: an ink arrow where the other cards wear
+  their note glyph, an ink ring, the system named on the target chip, and a
+  button that names the act ("Approve & update the page"). The effect line
+  comes from `outboundEffect`, which names who the write reaches. The old
+  "Leaves your workspace" strip restated all four and went on 2026-09-06.
 
 `vaultEffect` returns undefined for an outbound card, so the two can never both
 speak. `proposalToDTO` (`apps/desktop/src/main/dto.ts`) picks one per card and
@@ -48,10 +51,14 @@ below the change or behind a fold.
 2. The effect line, where the kind has one (see the table below).
 3. One provenance line in the head: "from your Nordkap check-in", or the
    "You asked for this" / "No source cited" flag. It reads the same open or shut.
-4. The change: a rendered diff, or the page as it will read.
-5. **Why this, and where it came from** — one collapsed row holding the model's
-   `rationale` and the full "Based on" list. Shut by default.
-6. Approve, Edit, Discard.
+4. The change: a rendered diff, or the page as it will read. It sits on the
+   card's own surface under one hairline, with no caption. "How the page
+   changes" over a redline named what the eye had already read, and the inset
+   box it sat in made a card inside a card.
+5. Approve, Edit, Discard, and at the far end of the same row a quiet
+   **Why this** toggle ("Based on" when the card has sources but no rationale).
+6. The footnote it unfolds, under the buttons: the model's `rationale` and the
+   full "Based on" list. Shut by default.
 
 The fold exists because a session that read twelve things cites twelve. Listed
 flat, the chips took more of the card than the change did and pushed Approve off
@@ -83,7 +90,7 @@ before you change a line. The table is a map, not a copy.
 | Decision                          | `Decided: <title>`            | Records the decision in Decisions. Nothing is announced. It replaces "<title>".            |
 | Update                            | `Update <title>`              | None. See below.                                                                           |
 | Standing instruction              | `Remember this: <rule>`       | Adds the rule to `<file>`. Every session reads it from now on.                             |
-| Standing instruction, conventions | `Remember this: <rule>`       | Adds the rule to How we use Jira. Read whenever it drafts for Jira.                        |
+| Standing instruction, conventions | `Remember this: <rule>`       | Adds the rule to How you write tickets. Read whenever it drafts for Jira.                        |
 | Outbound                          | `Comment on PAY-142`          | See `outboundEffect` in `effect.ts`.                                                       |
 
 ## Two rules it inherits

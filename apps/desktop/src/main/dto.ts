@@ -12,7 +12,6 @@ import {
 import type {
   Backlink,
   IndexedNote,
-  ThemeHeatRow,
   ProposalRecord,
   RunnableSummary,
   UseCaseContext,
@@ -24,8 +23,6 @@ import type {
   BacklinkDTO,
   NoteDTO,
   NoteRefDTO,
-  ThemeHeatDTO,
-  ThemeStance,
   ProposalDTO,
   SearchHitDTO,
   SkillDTO,
@@ -99,6 +96,7 @@ export function indexedToRefDTO(n: IndexedNote): NoteRefDTO {
     state: typeof fm['state'] === 'string' ? fm['state'] : undefined,
     assignee: typeof fm['assignee'] === 'string' ? fm['assignee'] : undefined,
     remoteUpdated: typeof fm['remote_updated'] === 'string' ? fm['remote_updated'] : undefined,
+    remoteUrl: typeof fm['url'] === 'string' ? fm['url'] : undefined,
   };
 }
 
@@ -220,15 +218,6 @@ export function vaultInfoToDTO(info: VaultInfo): VaultInfoDTO {
   };
 }
 
-export function themeHeatToDTO(row: ThemeHeatRow): ThemeHeatDTO {
-  return {
-    ...indexedToRefDTO(row.note),
-    stance: ((row.note.frontmatter['stance'] as string) ?? 'exploring') as ThemeStance,
-    evidenceCount: row.count,
-    newest: row.newest,
-  };
-}
-
 /**
  * The lookups the outbound effect line needs, gathered ONCE per list call: who
  * an attendee address belongs to, and what the page/event behind an external id
@@ -298,6 +287,13 @@ export function proposalToDTO(
       // decision carry a `targetPath`. Read it the way the renderer does.
       targetPath: rec.targetPath ?? stringField(fields, 'path'),
       frontmatter: asRecord(fields['frontmatter']),
+      // The house rules hold two sections a card can touch, and the effect
+      // line names which: the levers say it, the path alone does not.
+      append: stringField(fields, 'append'),
+      body: stringField(fields, 'body'),
+      patch: Array.isArray(fields['patch'])
+        ? (fields['patch'] as { search: string; replace: string }[])
+        : undefined,
     });
   }
   return {

@@ -82,15 +82,8 @@ test('a hub page is named after the thing, with no date in the path', async () =
   assert.deepEqual(committed, ['customers/nordkap-payments.md']);
 });
 
-test('a theme starts on a stance, a note keeps its date prefix', async () => {
+test('a note keeps its date prefix', async () => {
   const { ctx, store } = fakeContext();
-  const theme = await createNote(ctx, { type: 'theme', title: 'On-prem deployment' });
-  assert.equal(theme.path, 'themes/on-prem-deployment.md');
-  assert.equal(
-    (store.get(theme.path)!.frontmatter as Record<string, unknown>)['stance'],
-    'exploring',
-  );
-
   const note = await createNote(ctx, { type: 'note' });
   assert.equal(note.path, 'notes/2026-08-14-untitled.md');
   assert.equal((store.get(note.path)!.frontmatter as Record<string, unknown>)['title'], 'Untitled');

@@ -454,6 +454,13 @@ class AtlassianConnector implements Connector {
         ...(issue.assignee ? { assignee: issue.assignee } : {}),
         ...(issue.parentKey ? { parentKey: issue.parentKey } : {}),
         ...(links.length ? { links } : {}),
+        // How the team works, in fields the description never says: which
+        // labels they put on a story, what type they file it as, who wrote it.
+        ...(issue.labels.length ? { labels: issue.labels } : {}),
+        ...(issue.issueType ? { issueType: issue.issueType } : {}),
+        ...(issue.priority ? { priority: issue.priority } : {}),
+        ...(issue.components.length ? { components: issue.components } : {}),
+        ...(issue.reporter ? { reporter: issue.reporter } : {}),
         ...(issue.updated ? { remote_updated: issue.updated } : {}),
       };
     }
@@ -492,6 +499,9 @@ class AtlassianConnector implements Connector {
         issueType: p.issueType,
         summary: p.title ?? '',
         descriptionMarkdown: p.body,
+        ...(p.labels?.length ? { labels: p.labels } : {}),
+        ...(p.priority ? { priority: p.priority } : {}),
+        ...(p.components?.length ? { components: p.components } : {}),
       });
       return { externalId: out.key, url: out.url };
     }

@@ -43,7 +43,7 @@ export const LINK_TYPES: LinkTypeDef[] = [
     type: 'supersedes',
     forwardLabel: 'supersedes',
     inverseLabel: 'superseded by',
-    targets: ['decision', 'insight', 'note', 'theme', 'skill', 'wikipage'],
+    targets: ['decision', 'insight', 'note', 'research', 'skill', 'wikipage'],
   },
   {
     type: 'evidence',
@@ -62,13 +62,13 @@ export const LINK_TYPES: LinkTypeDef[] = [
     type: 'blocks',
     forwardLabel: 'blocks',
     inverseLabel: 'blocked by',
-    targets: ['todo', 'ticket', 'decision', 'theme', 'note'],
+    targets: ['todo', 'ticket', 'decision', 'research', 'note'],
   },
   {
     type: 'part-of',
     forwardLabel: 'part of',
     inverseLabel: 'contains',
-    targets: ['theme', 'customer', 'ticket', 'wikipage', 'skill', 'note'],
+    targets: ['research', 'customer', 'ticket', 'wikipage', 'skill', 'note'],
   },
   // `about` and `relates` are the untyped-adjacent catch-alls — they fit
   // anything, which is what keeps a person link from having an empty list.
@@ -78,7 +78,7 @@ export const LINK_TYPES: LinkTypeDef[] = [
     type: 'duplicates',
     forwardLabel: 'duplicates',
     inverseLabel: 'duplicated by',
-    targets: ['ticket', 'todo', 'note', 'insight', 'theme', 'decision'],
+    targets: ['ticket', 'todo', 'note', 'insight', 'research', 'decision'],
   },
 ];
 

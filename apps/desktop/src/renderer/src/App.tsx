@@ -81,8 +81,10 @@ function Center() {
           expanded={activeTab.expanded}
         />
       );
+    // The key stays "memory" for the same reason Documents keeps its own: what
+    // is expanded comes in as a prop, so one component holds the page.
     case 'memory':
-      return <MemoryView />;
+      return <MemoryView key="memory" viewKey={activeTab.key} expanded={activeTab.expanded} />;
     case 'activity':
       return <ActivityView />;
     case 'folder':

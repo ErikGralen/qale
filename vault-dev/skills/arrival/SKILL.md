@@ -31,8 +31,8 @@ instruction: it settles the question, so do not ask it again.
 Start with `files_list` and `input.md`, which lists what arrived. Then skim each piece: enough
 to know what it is, who is in it, when it happened, and whether anything in it is still live.
 
-Then only the memory it touches: the customer page, the theme hubs it names, live decisions it
-might contradict, and the mirror notes (tickets/) of any ticket it mentions.
+Then only the memory it touches: the customer page, the research pages it bears on, live decisions
+it might contradict, and the mirror notes (tickets/) of any ticket it mentions.
 
 For a link, work from the URL and whatever came pasted with it; do not guess what the page says.
 For a screenshot, work from what is visible and say so in the summary.
@@ -79,8 +79,8 @@ again, and when a meeting already holds transcripts read only the ones that are 
 
 Up to five pieces: read them in this session. More than five, or names that say the source is
 old, treat it as a backlog:
-- Write `brief.md` first: what the workspace currently believes, the themes in play, what a good
-  reading looks like. Every child reads it.
+- Write `brief.md` first: what the workspace currently believes, the research pages in play, what
+  a good reading looks like. Every child reads it.
 - `spawn` one skim per piece on a quick model. Each child returns the title, the date, what kind
   of thing it is, and whose voice is in it.
 - File from the results, start full reads only where something looks live, and say plainly what
@@ -90,8 +90,8 @@ old, treat it as a backlog:
 
 Before you propose anything from a source, write out what it claims and call `check_claims` once:
 who committed to what, dates, owners, numbers, decisions. One claim per entry, in the words the
-source used, each scoped to the pages it is about (the meeting, the customer, the theme) or to a
-tag.
+source used, each scoped to the pages it is about (the meeting, the customer, the research page) or to
+a tag.
 
 Each one comes back as already known (do nothing), new (propose it below as you would anyway), in
 conflict with a note we hold, implying something that is not there, or no answer. No answer means
@@ -104,6 +104,13 @@ answer says how many of them to ask.
 
 The smallest set of proposals the source actually forces. Filing is not a proposal; everything
 written ABOUT the source is. One finding, one proposal, however many documents it spans.
+
+Before you decide what a meeting forces, read the list in house rules under 'What you want from
+Qale'. With the line about who is waiting on, check the customer and people pages for anyone
+whose last update touches what the meeting changed, and propose those updates and a todo naming
+who to tell. With it off, file the meeting, the decisions and the todos, and propose none of that.
+With the line about writing the actions into Jira and Confluence on, propose the outbound cards.
+With it off, stop at the todos.
 
 **A meeting you were in:**
 - **Decisions** made in the meeting, with the decider and the reason (propose_decision). Set
@@ -146,7 +153,9 @@ written ABOUT the source is. One finding, one proposal, however many documents i
 **A link, screenshot, or pasted thread**: its summary went on the source as you filed it, so the
 source is finished and nothing more is written about it. Never propose a note that only says what
 one source says, and never propose an edit to a source: the body is immutable. Then:
-- Add links to it from the hubs it concerns (propose_update), where it genuinely adds signal.
+- Add links to it from the hubs it concerns (propose_update), where it genuinely adds signal. A
+  signal about a problem extends the research page for that problem, if one exists; otherwise
+  tag the insight and leave it. One signal makes no page.
 - File any commitment or date hiding in it as a todo.
 - If it names a person or customer with no page yet, ask before creating one.
 - If what it is for is not clear, ask one concrete question instead of guessing.

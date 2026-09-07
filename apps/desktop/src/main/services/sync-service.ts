@@ -145,10 +145,22 @@ export interface FirstLookRead {
   }[];
 }
 
-/** One conventions file the first look would write, and what it is written from. */
+/**
+ * Who the PM is, so the first read can tell their own tickets from the team's
+ * (docs/learning-how-you-work.md, ticket 3). The name is the one from
+ * Settings → You; the addresses are every one that means them.
+ */
+export interface FirstLookSelf {
+  name: string | null;
+  emails: string[];
+}
+
+/** One style file the first look writes, and what it is written from. */
 interface ConventionsJob {
+  /** The name that addresses it: `jira`, `confluence`. */
+  name: string;
   path: string;
-  /** What the file is called on screen ("How we use Jira"). */
+  /** What the file is called on screen ("How you write tickets"). */
   title: string;
   /** The one line under the title, quoted so the file reads the same either way. */
   summary: string;
@@ -156,25 +168,30 @@ interface ConventionsJob {
   headings: string[];
   /** The containers it is written from, named the way the rows above name them. */
   from: string[];
+  /** The container ids, for the query. */
+  ids: string[];
 }
 
 /**
- * What the first look writes up about the team's own house shape
- * (docs/easier-tickets.md E-25, docs/conventions.md CV-6).
+ * What the first look writes down about how the PM writes
+ * (docs/learning-how-you-work.md, tickets 3 to 5).
  *
- * Every team bends its tools into a shape: a title format, a description that
- * always opens the same way, one project for bugs. The workspace could only
- * learn it by being told, one rule at a time, so most workspaces never learned
- * it at all. A connection's first read is the one moment the evidence is all
- * there, so the write-up happens then.
+ * Every PM has a way of writing a ticket: which issue type for what, how a
+ * title reads, how the description is laid out, which labels mean what. The
+ * workspace could only learn it by being told, one rule at a time, so most
+ * workspaces never learned it at all. A connection's first read is the one
+ * moment the evidence is all there, so the file is written then, from the PM's
+ * own last thirty tickets and their own recent pages.
  *
  * The headings and the title are quoted from the shipped template rather than
- * typed again here: the write-up has to land in the shape the file keeps, and
- * two copies of those headings would drift the first time one is renamed.
+ * typed again here: the file has to land in the shape the template keeps, and
+ * two copies of those headings would drift the first time one is renamed. What
+ * each heading holds is said in {@link SECTION_GUIDES}, keyed by the heading,
+ * so a renamed heading is loud in the tests rather than silent in the kickoff.
  *
  * A container the connector mirrors nowhere, an empty one, and a kind with no
- * conventions file (a calendar) all drop out, so a Google-only first look says
- * nothing about conventions.
+ * style file (a calendar) all drop out, so a Google-only first look says
+ * nothing about it.
  */
 function conventionsJobs(reads: FirstLookRead[]): ConventionsJob[] {
   const jobs = new Map<string, ConventionsJob>();
@@ -185,13 +202,16 @@ function conventionsJobs(reads: FirstLookRead[]): ConventionsJob[] {
       if (!skill) continue;
       const shipped = parseRunnable(skill.template, skill.name);
       const job = jobs.get(skill.name) ?? {
+        name: skill.name,
         path: `skills/${skill.name}/SKILL.md`,
         title: shipped.title,
         summary: shipped.summary,
         headings: [...skill.template.matchAll(/^## (.+)$/gm)].map((m) => m[1]!.trim()),
         from: [],
+        ids: [],
       };
       job.from.push(`${container.name} (${container.id})`);
+      job.ids.push(container.id);
       jobs.set(skill.name, job);
     }
   }
@@ -199,46 +219,141 @@ function conventionsJobs(reads: FirstLookRead[]): ConventionsJob[] {
 }
 
 /**
- * The conventions half of the kickoff: read a sample of what just arrived and
- * say how this team writes one, as one proposal per system.
+ * How each system is read: the PM's own work, newest first. The connection is
+ * signed in as them, so `currentUser()` means them in both query languages.
+ */
+const READ_PLANS: Record<string, (ids: string[]) => string> = {
+  jira: (ids) =>
+    [
+      `Search with \`jira_search\`: \`(assignee = currentUser() OR reporter = currentUser()) AND project in (${ids.join(', ')}) ORDER BY updated DESC\`.`,
+      'Take the first thirty. Open ten of them in full with `jira_get_issue`, newest first.',
+    ].join(' '),
+  confluence: (ids) =>
+    [
+      `Search with \`confluence_search\`: \`type = page AND (creator = currentUser() OR contributor = currentUser()) AND space in (${ids.join(', ')}) ORDER BY lastmodified DESC\`.`,
+      'Take about ten. Open five of them in full with `confluence_get_page`.',
+    ].join(' '),
+};
+
+/**
+ * What each section of a style file holds, keyed by the template's heading.
+ * The kickoff walks the template's headings in file order and reads the guide
+ * for each, so the file lands in the shape the template keeps.
+ */
+const SECTION_GUIDES: Record<string, string> = {
+  'When you draft a ticket':
+    'which issue type for what, how a title reads, how the description is laid out with one worked ' +
+    'example copied from a real ticket and its key cited, and which fields they fill and which stay ' +
+    'empty (assignee, parent, priority, components).',
+  Labels:
+    'one line per label seen, what it seems to mean, and how many tickets carried it. A label you ' +
+    'cannot explain gets "(not sure yet)".',
+  'When you comment':
+    "how their comments read. `jira_get_issue` returns no comments, so keep the template's example " +
+    'line unless you have read some.',
+  'How a page is laid out':
+    'which headings repeat, how long a page runs, and one worked example cited by page title and id.',
+  'When you update a page':
+    'how they make a change, adding under the headings that are there or rewriting the page, from ' +
+    'what the pages show.',
+  'Standing instructions': 'last, and only its one line. Rules they state later land there.',
+};
+
+/** The line under the title, per system: what it was read from, when, and that it is a guess. */
+const FIRST_LINES: Record<string, (from: string) => string> = {
+  jira: (from) =>
+    `"Read from your last thirty tickets in ${from} on <today's date>. A guess from your tickets, not a ` +
+    'rule you gave me. Change any line and I draft the new way from the next ticket on."',
+  confluence: (from) =>
+    `"Read from your last ten pages in ${from} on <today's date>. A guess from your pages, not a rule ` +
+    'you gave me. Change any line and I draft the new way from the next page on."',
+};
+
+/** Who "you" is in the kickoff, when Settings → You says. */
+function selfLine(self: FirstLookSelf | undefined): string {
+  if (!self) return '';
+  const who = [self.name, ...self.emails].filter((x): x is string => !!x);
+  if (who.length === 0) return '';
+  return ` They are ${who.join(', ')}: a reporter, an assignee or an author with that name or address is them.`;
+}
+
+/**
+ * The style half of the kickoff: read the PM's own recent work and write down
+ * how they write, one file per system, with no card.
  *
  * It is in the kickoff rather than in the skill, which is the one place this
- * instruction departs from "facts only" above. The reason is that this job is
- * not the interview: it runs whether or not the PM wants a walkthrough, it ends
- * in a file rather than in a conversation, and only the caller knows a
- * connection has just arrived with nothing written about it. The file it writes
- * is the durable copy, and the PM edits that.
+ * instruction departs from "facts only" below. This job is not the interview:
+ * it runs whether or not the PM wants a walkthrough, it ends in a file rather
+ * than in a conversation, and only the caller knows a connection has just
+ * arrived with nothing written about it. The file is the durable copy, and the
+ * PM edits that.
  *
- * The last sentence is doing real work. The skill used to ask about conventions
- * one rule at a time, and a rule that lands silently is never checked. One
- * write-up on one card is the thing the PM can read and correct.
+ * Three rules from docs/learning-how-you-work.md are doing real work here.
+ * Never ask the PM for an example: thirty tickets say more than any question.
+ * At most one question per system, and only about something seen and not
+ * explained. And the file lands without a card (the domain policy's style-file
+ * row), so the debrief opens with a link to it rather than with a card to
+ * approve.
  */
-function conventionsBlock(jobs: ConventionsJob[]): string[] {
+function conventionsBlock(jobs: ConventionsJob[], self?: FirstLookSelf): string[] {
   if (jobs.length === 0) return [];
-  const rows = jobs.map((job) =>
-    [
-      `- \`${job.path}\`, written from ${job.from.join(' and ')}.`,
-      `Frontmatter: \`type: skill\`, \`title: ${job.title}\`, \`summary: ${job.summary}\``,
-      `Headings, in this order: ${job.headings.map((h) => `"${h}"`).join(', ')}.`,
-    ].join(' '),
-  );
+  const rows = jobs.map((job) => {
+    const plan = READ_PLANS[job.name]?.(job.ids) ?? "Search with the connection's own tools.";
+    const firstLine = FIRST_LINES[job.name]?.(job.ids.join(', ')) ?? '';
+    const sections = job.headings.map(
+      (h) => `"${h}": ${SECTION_GUIDES[h] ?? 'as the template shows.'}`,
+    );
+    return [
+      `- \`${job.path}\`, written from ${job.from.join(' and ')}. ${plan}`,
+      `Frontmatter: \`type: skill\`, \`title: ${job.title}\`, \`summary: ${job.summary}\`.`,
+      `The line under the title says what it was read from, when, and that it is a guess: ${firstLine}`,
+      `Then the sections, with these headings in this order. ${sections.join(' ')}`,
+    ].join(' ');
+  });
+  const systems = jobs.map((job) => job.name).join(' and ');
+  // The example cites the PM's own project, so it reads as their tickets and
+  // not as somebody else's.
+  const key = jobs.find((job) => job.name === 'jira')?.ids[0] ?? jobs[0]?.ids[0] ?? 'NORD';
   return [
     [
-      'Before the knock, write up how this team uses its tools. Do this whether or not they want a',
-      'walkthrough. Beat one says to propose nothing; this write-up is the exception, and the only one.',
+      'Before the knock, write down how they write their tickets and pages. Do this whether or not they',
+      'want a walkthrough. Beat one says to propose nothing; this is the exception, and the only one.',
+      'Read `skills/writing-skills/SKILL.md` first: it says how Qale writes into a file like this.',
     ].join(' '),
     [
-      "Read a sample of what just arrived, with the connection's own search and fetch tools: about ten",
-      'recent tickets per project and five recent pages per space, and open a few of them in full. Then',
-      'say how this team writes one. What a good title looks like, what the description holds, the tone,',
-      'where things get filed, and anything else that repeats. Only what you can see in what you read.',
+      "Read their own work, not the team's. The connection is signed in as them, so `currentUser()` in a",
+      `query means them.${selfLine(self)} If fewer come back than asked for, read what there is and say so`,
+      'in the first line of the file: "Only four recent tickets were written here, so this is thin. I kept',
+      'it short and I will ask when a draft needs more." If almost none are theirs, run the same query',
+      "without the `currentUser()` clause, read the team's newest instead, and say so in the first line:",
+      '"Almost none of these were written by you, so this is how your team writes them."',
     ].join(' '),
-    'Propose each write-up as one note, with `inference: true`, in the shape it is given here:',
+    'One file per system, a template you fill from what you read. Only what you can see in it:',
     rows.join('\n'),
     [
-      'Leave the last heading empty: rules they state later land there. One proposal per file, and it is',
-      'how you ask, so say in the rationale that they should read it and change what is wrong. Leave a',
-      'file that already exists alone. Never ask about conventions one rule at a time.',
+      'Write each file whole with `propose_note` and `inference: true`. It lands without a card: it is',
+      "Qale's own notes about how they work, and the file is the record. If the file is already there",
+      'and its first line says nothing was read yet, fill the sections with `propose_update` and leave',
+      '"Standing instructions" as it is. If it already holds a real read, leave it alone.',
+    ].join(' '),
+    [
+      'When the debrief opens (beat two, or the whole session when the picture is already there), start',
+      'with the link to the file, then what you found, with a ticket or a page cited on every line: "I read',
+      `your last thirty tickets in ${key} and wrote down how you write them: [[skills/jira/SKILL]]. Stories`,
+      'start with one sentence about what a user cannot do today, then acceptance criteria as a checklist',
+      `(${key}-214). Bugs get steps and the app version (${key}-198). This is a guess from your tickets, not a`,
+      'rule you gave me. Change any line and I draft the new way from the next ticket on."',
+    ].join(' '),
+    [
+      `Then at most one \`ask_user\` question per system (${systems}), and only about something you saw and`,
+      'could not explain: a label on some tickets and not others, a field that is sometimes set. Put the',
+      'count in the question, give two or three options, and make "Stop using it" one of them; they can',
+      'always write their own answer beside the options. "Nine of your NORD stories carry the label',
+      '`needs-legal` and the rest do not. I can see when you add it, but not why. What does it tell you?"',
+      'The answer becomes one line in the file: call `propose_instruction` with `target: jira` (or',
+      '`confluence`) and the answer as the rule. "Stop using it" writes "Do not add `needs-legal` to',
+      'drafts". If everything you saw is explained, ask nothing. Never ask them to paste an example, and',
+      'never ask about how they write one rule at a time. The question waits if they close the app.',
     ].join(' '),
   ];
 }
@@ -262,8 +377,9 @@ function itemWords(kind: string, count: number): string {
  * is the skill's own "First look" section, which the PM can read and edit, so
  * this names the section rather than repeating it.
  *
- * The conventions write-up is the one job stated here (E-25). See
- * {@link conventionsBlock} for why it is not in the skill.
+ * The style write-up is the one job stated here (docs/learning-how-you-work.md
+ * ticket 3). See {@link conventionsBlock} for why it is not in the skill. `self`
+ * is who the PM is, so the read can tell their tickets from the team's.
  *
  * It takes every read that is owed, not one (CM-5). Two connections made in the
  * same onboarding are one haul to the PM, and two knocks would be the app asking
@@ -276,7 +392,11 @@ function itemWords(kind: string, count: number): string {
  * heard the pitch still deserves to hear what its new connection just read
  * (2026-08-31).
  */
-export function firstLookInstruction(reads: FirstLookRead[], told = false): string {
+export function firstLookInstruction(
+  reads: FirstLookRead[],
+  told = false,
+  self?: FirstLookSelf,
+): string {
   const blocks = reads.map((read) => {
     const rows = read.containers
       .filter((c) => c.count > 0)
@@ -291,7 +411,7 @@ export function firstLookInstruction(reads: FirstLookRead[], told = false): stri
     blocks.join('\n\n'),
     'This is a first look. Follow the "First look" section of the skill, and the topic is the product.',
     ...(told ? ['The workspace already holds the product picture, so skip the interview.'] : []),
-    ...conventionsBlock(conventionsJobs(reads)),
+    ...conventionsBlock(conventionsJobs(reads), self),
   ].join('\n\n');
 }
 
@@ -1648,6 +1768,14 @@ export class SyncService {
               // these into `synced` edges (parent → part-of, links verbatim).
               ...(full.parentKey ? { parent: full.parentKey } : {}),
               ...(full.links?.length ? { links: full.links } : {}),
+              // How this team files work, which the description never says:
+              // the labels they use, the type, the priority, the area, who
+              // wrote it. A skill that learns their conventions reads these.
+              ...(full.labels?.length ? { labels: full.labels } : {}),
+              ...(full.issueType ? { issue_type: full.issueType } : {}),
+              ...(full.priority ? { priority: full.priority } : {}),
+              ...(full.components?.length ? { components: full.components } : {}),
+              ...(full.reporter ? { reporter: full.reporter } : {}),
               remote_updated: normalizeIso(full.remote_updated ?? change.remote_updated, nowMs),
               url: full.url,
             } as unknown as Frontmatter)

@@ -125,7 +125,7 @@ export function readOnlyReason(
  * What is left is the four pages the PM owns outright — the desk, and the three
  * hubs that stand for a durable thing rather than a moment.
  */
-export const HAND_CREATABLE_TYPES = ['note', 'theme', 'customer', 'person'] as const;
+export const HAND_CREATABLE_TYPES = ['note', 'customer', 'person'] as const;
 export type HandCreatableType = (typeof HAND_CREATABLE_TYPES)[number];
 
 /** May a person create one of these from scratch? */
@@ -140,7 +140,6 @@ export function isHandCreatable(type: NoteType): type is HandCreatableType {
  */
 export const NEW_NOTE_PURPOSE: Record<HandCreatableType, string> = {
   note: 'A blank document for anything you write',
-  theme: 'A problem worth solving',
   customer: 'An account to hang meetings on',
   person: 'A stakeholder and what they care about',
 };

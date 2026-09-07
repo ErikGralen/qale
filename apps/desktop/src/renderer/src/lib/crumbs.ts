@@ -28,13 +28,16 @@ function capitalize(word: string): string {
 /**
  * The shelf's own name: the plural of the type's label, which is exactly what
  * the Memory page prints on the shelf row. `person` is the one irregular
- * plural, and `note` reads "Documents" because its label is "Document".
+ * plural, `research` has no plural, and `note` reads "Documents" because its
+ * label is "Document".
  *
  * A mirror type keeps its folder's name. One page is a "Jira mirror", but the
  * folder holds every system's, so naming one of them there would be a lie.
  */
 function shelfLabelForType(type: NoteType): string {
   if (type === 'person') return 'People';
+  if (type === 'research') return 'Research';
+  if (type === 'about') return 'About';
   if (isMirrorType(type)) return capitalize(dirForType(type));
   return `${noteTypeLabel(type)}s`;
 }
@@ -66,8 +69,7 @@ export function documentsFolder(dir: string): string | null {
  * shelf. The type decides the surface (`surfaceForType`), so a page is only
  * ever offered one home.
  *
- * A document is one that lives under `notes/`, so the path has the last word:
- * `understanding/` files carry `type: note` and are not documents.
+ * A document is one that lives under `notes/`, so the path has the last word.
  *
  * Empty for a file at the workspace root: there is nothing above it to name.
  */

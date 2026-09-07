@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
-import type { IndexedNote, UseCaseContext } from '@qale/application';
+import type { FiledWrite, IndexedNote, UseCaseContext } from '@qale/application';
 import {
   applyPatch,
   createProposal,
@@ -37,11 +37,13 @@ import {
   sameLanguage,
   typeForDir,
   validateEvidence,
+  isStyleFile,
   zNotePayload,
   zUpdatePayload,
   zDecisionPayload,
   zDeletePayload,
   TYPE_RULES,
+  WANT_LIST_HEADING,
 } from '@qale/domain';
 import {
   buildSkillBrief,
@@ -56,6 +58,7 @@ import {
 } from '@qale/sessions';
 import type { ProviderReadTool } from '@qale/connectors';
 import { wrapExternal } from './external.js';
+import { placementError } from './placement.js';
 import { voiceBrief, voiceRoster, resolveVoice, type Voice } from './voices.js';
 
 /**
@@ -526,7 +529,7 @@ export function createVaultTools(
     name: 'vault_list',
     label: 'List notes',
     description:
-      'List notes in the workspace, filtered by any of type, lifecycle, day and tag. Each type has its OWN lifecycle field with its own values: sources/meetings/insights/notes/mirrors have `processing` (new/processed/stale), decisions have `standing` (active/superseded), customers have `relationship` (prospect/active/churned), themes have `stance` (exploring/watching/committed/wont-do), todos have `commitment` (open/done/dropped). Returns path, type, lifecycle value, day and one-line summary. ' +
+      'List notes in the workspace, filtered by any of type, lifecycle, day and tag. Each type has its OWN lifecycle field with its own values: sources/meetings/insights/research/about/notes/mirrors have `processing` (new/processed/stale), decisions have `standing` (active/superseded), customers have `relationship` (prospect/active/churned), todos have `commitment` (open/done/dropped). Returns path, type, lifecycle value, day and one-line summary. ' +
       'A folder\'s "index.md" map (e.g. "insights/index.md") is orientation only: it groups that one folder by lifecycle, and it shows neither days nor tags. Every time question comes here instead. `since` and `until` are days written YYYY-MM-DD and both bounds are inclusive; the day is the type\'s own field, `date` on a meeting or decision, `due` on a todo, and the day the file last changed on everything else. A day field written any other way counts as undated: it matches no filter and sorts last. `sort` gives `date` (newest day first), `title` (A to Z) or `modified` (newest change first). ' +
       '`tags` matches a note carrying ANY of the tags you give. Tags cut across types (a project, a product, an area), one note can carry more than one, and the maps do not list them, so this is the only way to reach them.',
     parameters: Type.Object({
@@ -668,7 +671,7 @@ export function createVaultTools(
     name: 'vault_backlinks',
     label: 'List backlinks',
     description:
-      'List the notes that link TO one note, grouped by relationship. Use this from a hub (customer, person, theme) to find the meetings, decisions and todos that mention it. It is the second way in after the folder maps. ' +
+      'List the notes that link TO one note, grouped by relationship. Use this from a hub (customer, person, research page) to find the meetings, decisions and todos that mention it. It is the second way in after the folder maps. ' +
       'Takes the note\'s path ("customers/nordkap.md") or its slug ("nordkap"). Rows read exactly like vault_list rows, so a vault_list with `since`/`until` narrows the same ground by day.',
     parameters: Type.Object({
       path: Type.String({ description: 'Workspace-relative path to the note, or its slug.' }),
@@ -917,6 +920,42 @@ function rulesSectionIsLast(body: string, heading: string): boolean {
 }
 
 /**
+ * One section of a body, from its heading to the line before the next one,
+ * with the blank lines at its end left off. Null when the heading is not there.
+ *
+ * The "What you want from Qale" list is edited with a patch anchored on the
+ * whole section (docs/learning-how-you-work.md ticket 8): the section sits
+ * above Your rules, so an `append` cannot reach it, and a patch anchored on
+ * one bullet would miss the moment the PM reworded that bullet. The heading
+ * makes the anchor unique, and the section is short by rule.
+ */
+function sectionOf(body: string, heading: string): { text: string; bullets: string[] } | null {
+  const lines = body.split('\n');
+  const start = lines.findIndex((line) => isRulesHeading(line, heading));
+  if (start === -1) return null;
+  let end = lines.findIndex((line, i) => i > start && /^#{1,6}\s/.test(line));
+  if (end === -1) end = lines.length;
+  while (end > start + 1 && (lines[end - 1] ?? '').trim() === '') end--;
+  const text = lines.slice(start, end).join('\n');
+  return { text, bullets: existingRules(text, heading) };
+}
+
+/**
+ * The bullet on the list that a line the PM said points at: the same words, or
+ * one that contains them (or is contained in them). Two candidates is no
+ * answer, and the caller says so rather than guess.
+ */
+function matchWantLine(bullets: string[], said: string): string[] {
+  const want = normalizeRule(said);
+  const exact = bullets.filter((bullet) => normalizeRule(bullet) === want);
+  if (exact.length) return exact;
+  return bullets.filter((bullet) => {
+    const have = normalizeRule(bullet);
+    return have.includes(want) || want.includes(have);
+  });
+}
+
+/**
  * The two ways a card may carry no sources[], offered as separate flags because
  * they are opposite things to the PM. `asked` is their own words coming back;
  * `inference` is the agent's own reasoning with nothing behind it. One flag for
@@ -971,9 +1010,11 @@ export function createProposeTools(
    * rail's "system only ever adds, never silently removes" rule: a session the
    * PM unpinned still has to hand back a card the moment one lands, so the
    * caller re-pins it here rather than leaving a proposal stuck behind the
-   * Unpinned tab.
+   * Unpinned tab. It is handed the write, because a card that landed silently
+   * is the only sign main ever gets of it (docs/learning-how-you-work.md
+   * ticket 15 counts a list line added from the chat off this).
    */
-  onProposed?: () => void,
+  onProposed?: (filed: FiledWrite) => void,
 ): ToolDefinition[] {
   /**
    * Stop a card that repeats one already in the queue, and say so in words the
@@ -984,6 +1025,13 @@ export function createProposeTools(
    * used to fill the review with pairs, and neither could see the other because
    * a pending card is not a note on disk for `vault_list` to find.
    */
+  /**
+   * A folder under `notes/` the PM already made: anything indexed sits in it,
+   * its own index file included. The one folder shape a write may go into.
+   */
+  const knownFolder = (dir: string): boolean =>
+    ctx.index.all().some((n) => n.path.startsWith(`${dir}/`));
+
   const alreadyProposed = (candidate: {
     kind: string;
     targetPath?: string | null;
@@ -1028,7 +1076,7 @@ export function createProposeTools(
     facts?: Parameters<typeof fileProposal>[2],
   ): ReturnType<typeof fileProposal> =>
     fileProposal(ctx, input, facts).then((filed) => {
-      onProposed?.();
+      onProposed?.(filed);
       return filed;
     });
 
@@ -1110,7 +1158,7 @@ export function createProposeTools(
     name: 'propose_note',
     label: 'Propose note',
     description:
-      'Propose a NEW note (insight, meeting summary, customer/theme hub, person, or generic note). frontmatter must include type + summary; claim-like notes must list evidence/sources[] (wikilinks). Include tags[] with 1-2 contexts (kebab-case project/product/area, e.g. "pricing") drawn from tags already in use; name any brand-new context in the rationale. Every source must resolve unless asked:true or inference:true. For decisions use propose_decision.',
+      'Propose a NEW note: an insight, a customer hub, a person, a research page, an about page, or a document in notes/ the PM asked for. `research` is the type for a page you keep for yourself: an analysis, a scan of a codebase, a competitor scan. It lives at research/<name>.md, cites its sources, and lands without a card. `about` is the type for a fact about the PM and the company: what the product is, how it is built, who owns what. It lives at about/<name>.md. Every path is <folder>/<name>.md, one level deep, in the folder the type owns; Qale makes no folders, so a subfolder is refused. frontmatter must include type + summary; claim-like notes must list evidence/sources[] (wikilinks). Include tags[] with 1-2 contexts (kebab-case project/product/area, e.g. "pricing") drawn from tags already in use; name any brand-new context in the rationale. Every source must resolve unless asked:true or inference:true. For decisions use propose_decision.',
     parameters: Type.Object({
       path: Type.String({ description: 'Workspace path, e.g. "insights/acme-wants-scim.md".' }),
       frontmatter: Type.Record(Type.String(), Type.Any()),
@@ -1136,6 +1184,8 @@ export function createProposeTools(
       const fm = parsed.data.frontmatter;
       const invalid = badFrontmatter(fm);
       if (invalid) return invalid;
+      const misplaced = placementError(parsed.data.path, fm['type'] as string, knownFolder);
+      if (misplaced) return text(misplaced);
       const dup = alreadyProposed({
         kind: 'note',
         targetPath: parsed.data.path,
@@ -1481,6 +1531,23 @@ export function createProposeTools(
       sources: Type.Optional(Type.Array(Type.String())),
       asked: ASKED_PARAM,
       inference: INFERENCE_PARAM,
+      learned: Type.Optional(
+        Type.Object(
+          {
+            what: Type.String({
+              description:
+                'What you now know, one sentence: "Exec updates: one paragraph, result first."',
+            }),
+            from: Type.String({
+              description: 'Where it came from: "the style you copied on 5 September".',
+            }),
+          },
+          {
+            description:
+              'Only on a write into a voice or the Jira or Confluence file: what this update taught you, for the Activity row. Ignored on any other note.',
+          },
+        ),
+      ),
     }),
     async execute(_id, params: unknown) {
       const parsed = zUpdatePayload.safeParse(params);
@@ -1490,6 +1557,8 @@ export function createProposeTools(
       if (!target) return text(`Rejected: target note not found: ${parsed.data.path}`);
       const note = await ctx.vault.readNote(target);
       if (!note) return text(`Rejected: cannot read ${target}`);
+      const misplaced = placementError(target, note.type, knownFolder);
+      if (misplaced) return text(misplaced);
       // Mutability guards at FILING time (same rules acceptUpdate enforces) —
       // reject where the agent can react, not at approval.
       if ((parsed.data.patch?.length || parsed.data.append?.trim()) && !isBodyEditable(note.type)) {
@@ -1537,13 +1606,25 @@ export function createProposeTools(
           if (invalid) return invalid;
         }
       }
-      const p = params as { sources?: string[]; inference?: boolean; asked?: boolean };
+      const p = params as {
+        sources?: string[];
+        inference?: boolean;
+        asked?: boolean;
+        learned?: { what?: string; from?: string };
+      };
       const sources = p.sources ?? [];
       const check = validateEvidence(sources, resolves, {
         inference: !!p.inference,
         asked: !!p.asked,
       });
       if (!check.ok) return text(`Rejected: ${check.reason}`);
+      // What this write taught Qale, for the Activity row. Only a file Qale
+      // learns into can carry it: on any other note a 'learned' row would call a
+      // plain edit a lesson. The zod parse above strips it, so it is read here.
+      const learned =
+        isStyleFile(target) && p.learned?.what?.trim() && p.learned.from?.trim()
+          ? { what: p.learned.what.trim(), from: p.learned.from.trim() }
+          : undefined;
       // An update has no title of its own, so what it is FOR is its rationale —
       // and two updates to one page are only duplicates if they say the same
       // thing, because a hub can legitimately collect several distinct edits.
@@ -1568,7 +1649,7 @@ export function createProposeTools(
           skill: harness?.activeSkillName,
           targetPath: target,
           baseHash: contentHash(note.body),
-          payload: { ...parsed.data, path: target },
+          payload: { ...parsed.data, path: target, ...(learned ? { learned } : {}) },
           rationale: parsed.data.rationale,
           evidence: evidenceRows(sources),
           inference: !!p.inference,
@@ -1578,7 +1659,11 @@ export function createProposeTools(
       );
       harness?.recordWrite(target, filed.rec.id, 'update');
       if (filed.disposition === 'silent') {
-        return applied('updated', titleForRef(target), ` The note is ${target}.`);
+        return applied(
+          learned ? 'learned' : 'updated',
+          learned ? `"${learned.what}"` : titleForRef(target),
+          ` The note is ${target}.`,
+        );
       }
       return text(
         `Proposed update (${filed.rec.id}) to ${target}. Awaiting review.${notApplied(filed.error)}`,
@@ -1797,12 +1882,14 @@ export function createProposeTools(
    * the `append` lever, which cannot miss its anchor the way a patch can; a
    * workspace with no house-rules file yet takes a `note` card that creates one.
    *
-   * The description also says when NOT to reach for this tool. A rule was the
-   * only move the model had when the PM corrected it, so a wrong fact became a
-   * standing rule and a typo became one too. Both belong somewhere else: a fact
-   * belongs in the note that holds it, and a slip belongs nowhere. The branches
-   * live in this description rather than in the house rules because the choice
-   * is between two tools, and this is the one that gets over-reached for.
+   * A rule was the only move the model had when the PM corrected it, so a wrong
+   * fact became a standing rule and a typo became one too. Both belong somewhere
+   * else: a fact belongs in the note that holds it, and a slip belongs nowhere.
+   * Those branches used to live in this description. They now live in
+   * `skills/writing-skills/SKILL.md` (How Qale writes skills), the one file the
+   * PM can read and change, and the description points at it. What stays here
+   * is the tool's own mechanics: the parameters, the cap, the refusals, and the
+   * one cross-tool line that sends a corrected fact to `propose_update`.
    */
   const proposeInstruction = defineTool({
     name: 'propose_instruction',
@@ -1810,23 +1897,25 @@ export function createProposeTools(
     description:
       'Propose a standing instruction: something the PM said should hold from now on, not just in this ' +
       'conversation ("remember to create person notes too", "articles with no project get the inspiration tag"). ' +
+      'Read skills/writing-skills/SKILL.md (How Qale writes skills) before you call this: it says what becomes a ' +
+      'rule, what goes to a note or a voice instead, and what a rule looks like. A corrected fact is ' +
+      'propose_update on the note that holds it, not a rule. ' +
       'It lands as a bullet under "Standing instructions" in the skill or agent that owns the behavior, and every ' +
       'session that runs that file reads it from then on. Name `target` when one skill or agent clearly owns it ' +
       '(arrival, librarian, meeting-prep). A rule about drafting tickets or ticket comments belongs to "jira", ' +
       'and one about pages to "confluence"; those two files are created by the proposal when they do not exist ' +
       'yet. Leave `target` out when nothing owns the rule: it then goes under "Your rules" in the house rules, ' +
-      'the one document every session reads. Not every correction is a rule. A correction about what is TRUE ' +
-      '("the pilot starts in October, not September") means the note that holds that fact is wrong: ' +
-      'propose_update that note instead. A correction about HOW the work is done ("read the ticket mirror before ' +
-      'you draft the update") is this tool, aimed at the owning skill. A correction about taste ("never open a ' +
-      'customer email with an apology") is this tool with no `target`, or propose_update on the voice file when ' +
-      'it is about one voice. A one-off slip (a typo, a misread, a fluke) needs no file: say nothing needs filing ' +
-      'here and carry on. Keep `rule` to one short imperative sentence, and keep ' +
-      'answering the PM normally in the same turn. Never say you will remember something without this proposal.',
+      'the one document every session reads. Keep `rule` to one short imperative sentence, and keep ' +
+      'answering the PM normally in the same turn. Never say you will remember something without this proposal. ' +
+      'The house rules also hold the list under "What you want from Qale": what the PM wants Qale to do for ' +
+      'them, one line each. `list: "add"` puts `rule` on that list, and `list: "remove"` takes the line that ' +
+      'says `rule` off it. A want ("I want to know who is waiting before it ships") is a line on the list; a way ' +
+      'of working ("create person notes too") is a rule. When `list` is set, `target` is ignored: the list has ' +
+      'one home. Removing always comes as a card.',
     parameters: Type.Object({
       rule: Type.String({
         description:
-          'The rule, one short imperative sentence, e.g. "When filing a source that mentions a person, create their person note too."',
+          'The rule, one short imperative sentence, e.g. "When filing a source that mentions a person, create their person note too." With `list: "remove"`, the line to take off, or enough of it to find it.',
       }),
       target: Type.Optional(
         Type.String({
@@ -1834,11 +1923,32 @@ export function createProposeTools(
             'The skill or agent that owns this behavior, by name ("arrival", "librarian"). Use "jira" for a rule about drafting tickets or ticket comments, and "confluence" for one about pages. Leave it out when no single one does.',
         }),
       ),
+      list: Type.Optional(
+        Type.Union([Type.Literal('add'), Type.Literal('remove')], {
+          description:
+            'Edit the "What you want from Qale" list in the house rules instead of filing a rule: "add" puts `rule` on it as a new line, "remove" takes the line that says `rule` off it.',
+        }),
+      ),
+      asked: Type.Optional(
+        Type.Boolean({
+          description:
+            'With `list: "add"` only. True when the PM said in this chat that they want it: the line then lands on the spot. Leave it out when you worked it out from their questions, and the line comes as a card.',
+        }),
+      ),
       why: Type.Optional(
         Type.String({ description: 'Why the PM wants it, in one line. Shown on the proposal.' }),
       ),
     }),
-    async execute(_id, params: { rule: string; target?: string; why?: string }) {
+    async execute(
+      _id,
+      params: {
+        rule: string;
+        target?: string;
+        list?: 'add' | 'remove';
+        asked?: boolean;
+        why?: string;
+      },
+    ) {
       const rule = params.rule.replace(/\s+/g, ' ').trim();
       if (!rule) {
         return text('Rejected: say the rule itself, one sentence about what to do from now on.');
@@ -1867,6 +1977,187 @@ export function createProposeTools(
         }
         return null;
       };
+
+      // The "What you want from Qale" list (docs/learning-how-you-work.md
+      // ticket 8). It has one home, the house rules, and it sits above Your
+      // rules, so a line is added or removed with a patch over the whole
+      // section rather than an append. The payload carries `learned`, so the
+      // Activity row says what Qale now knows rather than "updated a page".
+      if (params.list) {
+        const home = await read(HOUSE_RULES_NAME);
+        const shippedRules = parseRunnable(HOUSE_RULES, HOUSE_RULES_NAME);
+        const body = home?.note.body ?? shippedRules.body;
+        const section = sectionOf(body, WANT_LIST_HEADING);
+        const listName = WANT_LIST_HEADING.replace(/^#+\s*/, '');
+        if (!section) {
+          return text(
+            `Rejected: the house rules have no "${listName}" section, so there is no list to change. ` +
+              `The PM can put the heading back in ${HOUSE_RULES_NAME}.`,
+          );
+        }
+        const path = home?.path ?? runnableEntryPath('skills', HOUSE_RULES_NAME);
+        const pendingPatches = ctx.proposals
+          .list('pending')
+          .filter((rec) => rec.kind === 'update' && rec.targetPath === path)
+          .map((rec) => ({
+            id: rec.id,
+            patch: (rec.payload as { patch?: { search: string; replace: string }[] } | null)?.patch,
+          }));
+        const from = 'what you said in the chat';
+
+        if (params.list === 'remove') {
+          if (!home) {
+            return text(
+              'Rejected: there is no house rules file yet, so there is no list to remove from.',
+            );
+          }
+          const found = matchWantLine(section.bullets, rule);
+          if (found.length === 0) {
+            const holds = section.bullets.length
+              ? ` The list holds:\n${section.bullets.map((b) => `- ${b}`).join('\n')}`
+              : ' The list is empty.';
+            return text(`Rejected: no line says that.${holds}`);
+          }
+          if (found.length > 1) {
+            return text(
+              `Rejected: more than one line says that. Quote the one you mean:\n${found.map((b) => `- ${b}`).join('\n')}`,
+            );
+          }
+          const line = found[0]!;
+          const replace = section.text
+            .split('\n')
+            .filter((row) => /^\s*[-*]\s+(.+)$/.exec(row)?.[1]?.trim() !== line)
+            .join('\n');
+          const waiting = pendingPatches.find(({ patch }) =>
+            patch?.some((block) => block.search === section.text && block.replace === replace),
+          );
+          if (waiting) {
+            return text(
+              `Not proposed: a proposal already waiting on the PM takes that line off (${waiting.id}). ` +
+                'Nothing was created, and you do not need to do anything about it.',
+            );
+          }
+          const rationale = `${params.why?.trim() || 'You said so in chat.'} Comes off the list of what you want from Qale.`;
+          // Never `asked`: taking a line off is always the PM's call on a card,
+          // so the card has no basis to claim and no source to cite.
+          const filed = await propose(
+            {
+              kind: 'update',
+              sessionId,
+              skill: harness?.activeSkillName,
+              targetPath: path,
+              baseHash: contentHash(home.note.body),
+              payload: {
+                path,
+                patch: [{ search: section.text, replace }],
+                rationale,
+                headline: `Stop this: ${line}`,
+                learned: { what: `Off the list: ${line}`, from },
+              },
+              rationale,
+              evidence: [],
+              inference: false,
+              asked: false,
+            },
+            { noteType: home.note.type },
+          );
+          harness?.recordWrite(path, filed.rec.id, 'update');
+          return text(
+            `Proposed taking a line off what you want from Qale (${filed.rec.id}): "${line}". ` +
+              `Awaiting review: removing is always the PM's call.${notApplied(filed.error)}`,
+          );
+        }
+
+        const already = section.bullets.find(
+          (bullet) => normalizeRule(bullet) === normalizeRule(rule),
+        );
+        if (already) {
+          return text(
+            `Not proposed: that line is already on the list ("${already}"). Nothing was created, ` +
+              'and you do not need to do anything about it.',
+          );
+        }
+        const replace = `${section.text}\n${section.bullets.length ? '' : '\n'}- ${rule}`;
+        const waiting = pendingPatches.find(({ patch }) =>
+          patch?.some((block) =>
+            existingRules(block.replace, WANT_LIST_HEADING).some(
+              (bullet) => normalizeRule(bullet) === normalizeRule(rule),
+            ),
+          ),
+        );
+        if (waiting) {
+          return text(
+            `Not proposed: a proposal already waiting on the PM adds that same line (${waiting.id}). ` +
+              'Nothing was created, and you do not need to do anything about it.',
+          );
+        }
+        const patch = [{ search: section.text, replace }];
+        const patched = applyPatch(body, patch);
+        if (patched === null) {
+          return text(
+            `Rejected: the "${listName}" section appears more than once in ${HOUSE_RULES_NAME}, so the line has nowhere sure to land. The PM can merge them.`,
+          );
+        }
+        const rationale = `${params.why?.trim() || 'You asked for this in chat.'} Goes on the list of what you want from Qale, in the house rules every session reads.`;
+        const headline = `Remember this: ${rule}`;
+        const learned = { what: rule, from: params.asked ? from : 'what you keep asking for' };
+        // The PM's own words land on the spot; a line Qale worked out from
+        // their questions is a card. Either way the card cites no note.
+        const basis = params.asked
+          ? chatIsTheSource
+          : { evidence: [], inference: false, asked: false };
+        const filed = home
+          ? await propose(
+              {
+                kind: 'update',
+                sessionId,
+                skill: harness?.activeSkillName,
+                targetPath: path,
+                baseHash: contentHash(home.note.body),
+                payload: { path, patch, rationale, headline, learned },
+                rationale,
+                ...basis,
+              },
+              { noteType: home.note.type },
+            )
+          : await propose(
+              {
+                kind: 'note',
+                sessionId,
+                skill: harness?.activeSkillName,
+                targetPath: path,
+                baseHash: null,
+                payload: {
+                  path,
+                  frontmatter: {
+                    type: 'skill',
+                    title: shippedRules.title,
+                    summary: shippedRules.summary,
+                  },
+                  body: patched.trim(),
+                  rationale,
+                  headline,
+                  learned,
+                },
+                rationale,
+                ...basis,
+              },
+              { noteType: 'skill' },
+            );
+        harness?.recordWrite(path, filed.rec.id, home ? 'update' : 'note');
+        if (filed.disposition === 'silent') {
+          return text(
+            `${appliedReceipt('learned', `"${rule}"`)}.\n` +
+              `It is on the list in house rules under '${listName}' now, and every session reads it. ` +
+              'Nothing is waiting on the PM: say you have noted it, in one short line, and carry on.',
+          );
+        }
+        return text(
+          `Proposed a line for what you want from Qale (${filed.rec.id}): "${rule}". Awaiting review.` +
+            notApplied(filed.error),
+        );
+      }
+
       // A conventions skill is written on demand and seeded nowhere, so "always
       // set the roadmap label on tickets" usually arrives before
       // skills/jira/SKILL.md exists (docs/conventions.md CV-3). A name that IS
@@ -2035,12 +2326,12 @@ export function createProposeTools(
     description:
       'Propose a NEW skill: what you just did, written down so the next run does it the same way. ' +
       'Reach for it when the PM asks ("turn this into a skill", "remember how to do this", "do it ' +
-      'this way from now on"), never on your own. Draft `body` from THIS session: when the skill ' +
-      'applies, what to read and in what order, what to produce, and what happens after. Use the ' +
-      'sections "## When", "## Read", "## Produce", "## Then", short imperative sentences, and name ' +
-      'the real files and tools the work used. It lands as a file in skills/ that runs only once the ' +
-      'PM approves it. One rule about work an existing skill already covers is not a new skill: that ' +
-      'is propose_instruction, aimed at the file that owns the behavior.',
+      'this way from now on"), never on your own. Read skills/writing-skills/SKILL.md (How Qale writes ' +
+      'skills) before you call this: it says how a skill is laid out and what belongs in one. Draft ' +
+      '`body` from THIS session, in the sections "## When", "## Read", "## Produce", "## Then". It ' +
+      'lands as a file in skills/ that runs only once the PM approves it. One rule about work an ' +
+      'existing skill already covers is not a new skill: that is propose_instruction, aimed at the ' +
+      'file that owns the behavior.',
     parameters: Type.Object({
       title: Type.String({
         description:
@@ -2299,6 +2590,27 @@ function cleanVariants(raw: { label?: string; body?: string }[] | undefined): Va
     .filter((v) => v.body.length > 0);
 }
 
+/** The question a panel may carry: one sentence, one to three answers. */
+interface DraftAsk {
+  text: string;
+  options: string[];
+}
+
+/**
+ * Read the `ask` a draft was called with. Absent reads as none. Present but
+ * empty, or with more than three options, reads as invalid: the panel draws the
+ * options as small buttons under the footer, and a fourth would make a form.
+ */
+function cleanAsk(
+  raw: { text?: string; options?: string[] } | undefined,
+): DraftAsk | null | 'invalid' {
+  if (raw === undefined || raw === null) return null;
+  const askText = (raw.text ?? '').trim();
+  const options = (raw.options ?? []).map((o) => (o ?? '').trim()).filter((o) => o.length > 0);
+  if (!askText || options.length === 0 || options.length > 3) return 'invalid';
+  return { text: askText, options };
+}
+
 export const GET_VOICE_TOOL_NAME = 'get_voice';
 export const DRAFT_TEXT_TOOL_NAME = 'draft_text';
 
@@ -2479,6 +2791,9 @@ export function createTextTools(gate: VoiceGate): ToolDefinition[] {
       'Optional `action`: it renames the Use button and adds your own sentence to the message it sends, so ' +
       '{ label: "Post on PAY-142", message: "Post it as a comment on PAY-142." } comes back to you as an ordinary turn asking for exactly that. ' +
       'Leave it out and the button says "Use this" and sends only which version they picked. ' +
+      'Optional `ask`: one question, one sentence, with two or three short options. It appears under the panel only after they copy or use a tab, ' +
+      'and their answer comes back as a turn naming the tab and the option: `I copied "One paragraph" and answered "For exec".` ' +
+      'Copy alone sends nothing. Use it when the pick itself is what you need to learn, as the weekly update does the first time. ' +
       gate.voiceNote,
     parameters: Type.Object({
       title: Type.Optional(Type.String({ description: 'A heading for the panel.' })),
@@ -2510,6 +2825,21 @@ export function createTextTools(gate: VoiceGate): ToolDefinition[] {
           { description: 'Rename the Use button and say what clicking it asks you for.' },
         ),
       ),
+      ask: Type.Optional(
+        Type.Object(
+          {
+            text: Type.String({ description: 'The question, one sentence.' }),
+            options: Type.Array(Type.String(), {
+              description:
+                'Two or three short answers, e.g. ["For exec", "For every audience", "Not now"].',
+            }),
+          },
+          {
+            description:
+              'A question shown under the panel after they copy or use a tab. Their answer comes back as a turn.',
+          },
+        ),
+      ),
     }),
     async execute(
       _id,
@@ -2518,12 +2848,19 @@ export function createTextTools(gate: VoiceGate): ToolDefinition[] {
         voice?: string;
         variants: { label: string; body: string }[];
         action?: { label: string; message: string };
+        ask?: { text: string; options: string[] };
       },
     ) {
       const variants = cleanVariants(params.variants);
       if (variants.length === 0) {
         return text(
           'Rejected: give at least one variant, each with a label for its tab and the whole text as its body.',
+        );
+      }
+      const ask = cleanAsk(params.ask);
+      if (ask === 'invalid') {
+        return text(
+          'Rejected: `ask` needs one sentence of text and one to three short options. Trim it or leave it out.',
         );
       }
       const spoken = await gate.forVoice(params.voice);
@@ -2533,7 +2870,9 @@ export function createTextTools(gate: VoiceGate): ToolDefinition[] {
       return text(
         `Showed ${variants.length === 1 ? '1 version' : `${variants.length} versions`} in the chat: ` +
           `${variants.map((v) => v.label).join(', ')}. Nothing was filed and nothing was sent. ` +
-          'If they pick one they will say so.',
+          (ask
+            ? `If they copy one, the panel asks "${ask.text}" and their answer comes back as a turn.`
+            : 'If they pick one they will say so.'),
       );
     },
   });
@@ -2615,6 +2954,76 @@ export function createDraftTools(
       description: 'A voice name from this workspace, e.g. "exec". Leave it out to write plainly.',
     }),
   );
+
+  /**
+   * Draft the safe way, then ask (docs/learning-how-you-work.md ticket 6).
+   *
+   * A draft that guesses wrong costs the PM an edit in Jira or Confluence, where
+   * the workspace cannot help them. A draft that leaves the doubtful thing out
+   * and asks costs one click, and the answer teaches the next draft.
+   */
+  const safeDraftNote =
+    'When two ways of writing this are both plausible, draft the one that is easiest to undo: leave the label off, leave the assignee out, add under a heading instead of rewriting the passage. Then set `question` and ask about the one thing you left out. One question, one sentence, two options at most, and never a question the Jira or Confluence file or the tickets you read already answer. Most drafts need no question at all.';
+
+  /** One answer button on a ticket a draft creates: the fields a yes adds. */
+  const ticketOption = Type.Object({
+    label: Type.String({ description: 'What the button says, e.g. "Yes" or "No".' }),
+    labels: Type.Optional(
+      Type.Array(Type.String(), {
+        description: 'Labels this answer adds to the ticket, on top of the ones you set.',
+      }),
+    ),
+    priority: Type.Optional(Type.String({ description: 'The priority this answer sets.' })),
+    components: Type.Optional(
+      Type.Array(Type.String(), { description: 'Components this answer adds.' }),
+    ),
+  });
+
+  /** One answer button on a comment or a page update. There is no field to set
+   *  there, so the answer is the whole of it: it tells you how to write the next. */
+  const plainOption = Type.Object({
+    label: Type.String({ description: 'What the button says, e.g. "Yes" or "No".' }),
+  });
+
+  const questionParam = <T extends typeof ticketOption | typeof plainOption>(option: T) =>
+    Type.Optional(
+      Type.Object(
+        {
+          text: Type.String({
+            description:
+              'One sentence, ending in the question. Say what you saw that raised it: "Henrik has to review this for GDPR. Your other SCH stories mark that with `needs-legal`. Add it?"',
+          }),
+          options: Type.Array(option, {
+            minItems: 1,
+            maxItems: 2,
+            description: 'One or two answers, in the words of the button, e.g. "Yes" and "No".',
+          }),
+        },
+        {
+          description:
+            'The one thing you could not work out, asked on the card above the button. Leave it out when the material answered everything.',
+        },
+      ),
+    );
+
+  type DraftQuestion = {
+    text: string;
+    options: { label: string; labels?: string[]; priority?: string; components?: string[] }[];
+  };
+
+  /** Why a question cannot go on a card, or null when it can. */
+  const questionProblem = (q?: {
+    text?: string;
+    options?: { label?: string }[];
+  }): string | null => {
+    if (!q) return null;
+    if (!q.text?.trim()) return 'a question needs a sentence to ask.';
+    const options = q.options ?? [];
+    if (options.length < 1 || options.length > 2)
+      return 'a question takes one or two options. Three answers is a form: decide the rest yourself.';
+    if (options.some((o) => !o.label?.trim())) return 'every option needs a label for its button.';
+    return null;
+  };
 
   /**
    * Drafted-against snapshot (the staleness baseline): when the target has a
@@ -2742,8 +3151,10 @@ export function createDraftTools(
     name: 'draft_ticket',
     label: 'Draft a tracker ticket',
     description:
-      'Draft a NEW ticket as a proposal (never created until approved). `container` is the project or team it goes in, named by its key; the proposal shows which tracker that is. Give a title and a markdown body ending with a provenance line ("Source: <meeting>, <date>"). Cite sources[] (the meeting or decision it came from). Optionally linkBack: a workspace note path to append the created ticket\'s link to on approval. ' +
+      'Draft a NEW ticket as a proposal (never created until approved). `container` is the project or team it goes in, named by its key; the proposal shows which tracker that is. Give a title and a markdown body ending with a provenance line ("Source: <meeting>, <date>"). Cite sources[] (the meeting or decision it came from). Optionally linkBack: a workspace note path to append the created ticket\'s link to on approval. Labels, priority and components go on the ticket only when the Jira file (skills/jira/SKILL.md) or the tickets you read show this team uses them. Never invent a label. ' +
       conventionsNote('skills/jira/SKILL.md') +
+      ' ' +
+      safeDraftNote +
       ' ' +
       voiceNote,
     parameters: Type.Object({
@@ -2755,6 +3166,25 @@ export function createDraftTools(
       ),
       title: Type.String(),
       body: Type.String(),
+      labels: Type.Optional(
+        Type.Array(Type.String(), {
+          description:
+            'Labels to put on the ticket. Set one only when the Jira file (skills/jira/SKILL.md) or the tickets you read say this team uses it, and spell it the way they spell it. Never invent a label.',
+        }),
+      ),
+      priority: Type.Optional(
+        Type.String({
+          description:
+            'The priority, in the tracker\'s own words ("High"). Set it only when the material says what it should be.',
+        }),
+      ),
+      components: Type.Optional(
+        Type.Array(Type.String(), {
+          description:
+            'Components to put on the ticket, spelled as the project spells them. Same rule as labels: only what the material shows.',
+        }),
+      ),
+      question: questionParam(ticketOption),
       voice: voiceParam,
       sources: Type.Array(Type.String()),
       linkBack: Type.Optional(Type.String()),
@@ -2767,6 +3197,10 @@ export function createDraftTools(
         kind?: string;
         title: string;
         body: string;
+        labels?: string[];
+        priority?: string;
+        components?: string[];
+        question?: DraftQuestion;
         voice?: string;
         sources: string[];
         linkBack?: string;
@@ -2775,6 +3209,8 @@ export function createDraftTools(
     ) {
       const check = validateEvidence(params.sources ?? [], resolves);
       if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const badQuestion = questionProblem(params.question);
+      if (badQuestion) return text(`Rejected: ${badQuestion}`);
       // The container decides the provider, so an unknown one is not a detail
       // to fix at approval: there is nothing to address the card to.
       const container = containerFor(params.container);
@@ -2791,6 +3227,10 @@ export function createDraftTools(
           issueType: params.kind,
           title: params.title,
           body: params.body,
+          ...(params.labels?.length ? { labels: params.labels } : {}),
+          ...(params.priority ? { priority: params.priority } : {}),
+          ...(params.components?.length ? { components: params.components } : {}),
+          ...(params.question ? { question: params.question } : {}),
           linkBackPath: params.linkBack,
           rationale: params.rationale,
         },
@@ -2809,12 +3249,15 @@ export function createDraftTools(
       'Draft a comment on an existing ticket as a proposal. `ticket` is the item itself: its key (PAY-142) or its mirror note (tickets/PAY-142). Take the key from the mirror note (tickets/, frontmatter external_id) when one exists, and cite that mirror in sources[] alongside the meeting or decision. The proposal shows which tracker it goes to. End the body with a provenance line ("Source: <meeting>, <date>"). ' +
       conventionsNote('skills/jira/SKILL.md') +
       ' ' +
+      safeDraftNote +
+      ' ' +
       voiceNote +
       ' ' +
       fromDraftNote,
     parameters: Type.Object({
       ticket: Type.String({ description: 'The ticket key, or the path of its mirror note.' }),
       body: Type.String(),
+      question: questionParam(plainOption),
       voice: voiceParam,
       sources: Type.Array(Type.String()),
       linkBack: Type.Optional(Type.String()),
@@ -2825,6 +3268,7 @@ export function createDraftTools(
       params: {
         ticket: string;
         body: string;
+        question?: DraftQuestion;
         voice?: string;
         sources: string[];
         linkBack?: string;
@@ -2833,6 +3277,8 @@ export function createDraftTools(
     ) {
       const check = validateEvidence(params.sources ?? [], resolves);
       if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const badQuestion = questionProblem(params.question);
+      if (badQuestion) return text(`Rejected: ${badQuestion}`);
       const mirror = mirrorFor('ticket', params.ticket);
       const provider = providerFor('ticket', mirror);
       if (!provider) return text(unknownTarget('ticket', params.ticket));
@@ -2851,6 +3297,7 @@ export function createDraftTools(
           voice: spoken.voice?.name,
           targetId,
           body: params.body,
+          ...(params.question ? { question: params.question } : {}),
           linkBackPath: params.linkBack,
           rationale: params.rationale,
           ...draftSnapshot('ticket', targetId),
@@ -2869,6 +3316,8 @@ export function createDraftTools(
     description:
       'Draft a change to a wikipage as a proposal. There are two ways to change a page; pick the one that fits. With `patch` (search + replace) that ONE passage is rewritten in place on the live page and the rest of it is left untouched, which is what you want when the page now says something wrong. The search text must be copied word for word from the page as it stands, with enough of it around the change that it appears only once. Anchor it on a plain run of prose, never on a line carrying markup (a **bold** span, a `- ` bullet, a `## ` heading, a [text](url) link): here it is checked against the page\'s mirror note, which is markdown, but on approval it is matched against the live page, where that markup is not written the same way, and the edit fails then with "the page\'s text changed". Give `provenance` with a patch: the redline is only the corrected sentence, so that one line ("Source: <origin>, <date>") is how the page says where the change came from. Without a patch, `body` is appended to the page as a new section, which is what you want when you are adding something the page does not say yet; end it with a provenance line of its own and leave the `provenance` field out, because the page gets that line as written and a second one would be added underneath. `page` is the page itself: its id, or its mirror note (wikipages/…). Cite that mirror in sources[] when one exists. The proposal shows which wiki it goes to. ' +
       conventionsNote('skills/confluence/SKILL.md') +
+      ' ' +
+      safeDraftNote +
       ' ' +
       voiceNote +
       ' ' +
@@ -2899,6 +3348,7 @@ export function createDraftTools(
             'One line naming where the change came from ("Source: <origin>, <date>"), added at the very end of the page rather than beside the edit. Give it with a patch; leave it out when you are appending a body that already ends with its own.',
         }),
       ),
+      question: questionParam(plainOption),
       sources: Type.Array(Type.String()),
       linkBack: Type.Optional(Type.String()),
       rationale: Type.String(),
@@ -2911,6 +3361,7 @@ export function createDraftTools(
         body?: string;
         patch?: { search: string; replace: string };
         provenance?: string;
+        question?: DraftQuestion;
         sources: string[];
         linkBack?: string;
         rationale: string;
@@ -2918,6 +3369,8 @@ export function createDraftTools(
     ) {
       const check = validateEvidence(params.sources ?? [], resolves);
       if (!check.ok) return text(`Rejected: ${check.reason}`);
+      const badQuestion = questionProblem(params.question);
+      if (badQuestion) return text(`Rejected: ${badQuestion}`);
       const mirror = mirrorFor('wikipage', params.page);
       const provider = providerFor('wikipage', mirror);
       if (!provider) return text(unknownTarget('wikipage', params.page));
@@ -2962,6 +3415,7 @@ export function createDraftTools(
           body,
           ...(params.patch ? { patch: params.patch } : {}),
           ...(params.provenance?.trim() ? { provenance: params.provenance.trim() } : {}),
+          ...(params.question ? { question: params.question } : {}),
           linkBackPath: params.linkBack,
           rationale: params.rationale,
           ...draftSnapshot('wikipage', targetId),

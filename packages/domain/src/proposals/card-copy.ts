@@ -114,6 +114,12 @@ export interface OutboundCopyInput {
   labels?: string[];
   priority?: string;
   components?: string[];
+  /** google-calendar: the event the card addresses. */
+  eventId?: string;
+  /** Where the item lives at the provider, stamped on the payload once the send
+   *  landed. It is how a receipt line opens a ticket the workspace has not
+   *  mirrored yet. */
+  url?: string;
 }
 
 /**
@@ -545,25 +551,6 @@ export function appliedVerb(input: ChangeLineInput): AppliedVerb {
   return input.kind === 'update' ? 'Changed' : 'New';
 }
 
-/**
- * Who owes a to-do, in the word the row says: the person's name when somebody
- * else committed, "you" when the PM did. A to-do with no owner is the PM's own,
- * which is what the ledger already means by an empty owner.
- */
-function todoOwner(fm?: Record<string, unknown>): string {
-  return todoOwnerName(fm) ?? 'you';
-}
-
-/**
- * The line a to-do row says: who, then when. The parts are dotted apart because
- * each one is a fact the PM checks on its own. Whether Qale heard the to-do or
- * worked it out is not said here: the Todos view carries that mark, and on a
- * receipt line it was noise.
- */
-function todoLine(parts: readonly string[]): string {
-  return parts.join(' · ');
-}
-
 /** "one line", "3 lines". The count only appears when it is worth saying. */
 const lineCount = (n: number): string => (n === 1 ? 'one line' : `${n} lines`);
 
@@ -696,9 +683,13 @@ export function changeLine(input: ChangeLineInput): string {
   const fm = input.frontmatter;
 
   if (input.kind === 'note' || input.kind === 'decision') {
+    // A to-do says when. Not who: the title is the promise, the owner sits on
+    // the todo itself, and on a receipt line the name was noise (Erik,
+    // 2026-09-08). Whether Qale heard it or worked it out is the Todos view's
+    // mark, for the same reason.
     if (noteType(fm) === 'todo' || isTodoWrite(input)) {
       const due = dayLabel(fmString(fm, 'due'));
-      return todoLine([todoOwner(fm), due ? `due ${due}` : 'no date']);
+      return due ? `due ${due}` : 'no date';
     }
     const sections = sectionsIn(input.body ?? '');
     if (sections.length > 0) return sections.join(', ');
@@ -710,9 +701,6 @@ export function changeLine(input: ChangeLineInput): string {
   const fields: string[] = [];
   const todo = isTodoWrite(input);
   for (const [key, after] of Object.entries(fm ?? {})) {
-    // A to-do row leads with the owner, so "waiting on Åsa" behind it would say
-    // the same name twice in one line.
-    if (todo && key === 'owner') continue;
     const phrase = fieldPhrase(key, input.before?.[key], after);
     if (phrase) fields.push(phrase);
   }
@@ -723,16 +711,10 @@ export function changeLine(input: ChangeLineInput): string {
       ? parts.join(', ')
       : `${parts.slice(0, 2).join(', ')}, and ${parts.length - 2} more`;
   if (!todo) return moved;
-
-  // A to-do that was edited says the same three things a new one says, so the
-  // two rows read alike. The owner comes off the file as it stands, which is
-  // the note before the write with this write's own keys over it.
-  const owner = todoOwner({ ...input.before, ...fm, type: 'todo' });
-  if (closesTodo(input)) {
-    return todoLine([owner, fmString(fm, 'commitment') === 'dropped' ? 'dropped' : 'done']);
-  }
-  if (!moved) return '';
-  return todoLine([owner, moved]);
+  // A to-do that closed says so and nothing else: the verb already says "done",
+  // and "dropped" is the one case the word has to correct.
+  if (closesTodo(input)) return fmString(fm, 'commitment') === 'dropped' ? 'dropped' : 'done';
+  return moved;
 }
 
 /**
@@ -951,5 +933,61 @@ export function outboundReceipt(ob: OutboundCopyInput): string {
       return `Replied ${rsvpAnswer(ob.responseStatus)} to ${ob.title ?? 'an invite'}`;
     default:
       return `Applied ${ob.title ?? 'the change'}`;
+  }
+}
+
+/**
+ * One line on the green "Left your workspace" card, with the item split out of
+ * the sentence so the card can draw it as a chip.
+ *
+ * Every line names a real thing and every line opens it. A sentence that says
+ * "Created a task in Nordkap" tells the PM a ticket exists somewhere and gives
+ * them no way to it, which is the one thing they want the second after they
+ * approve a send. So the send stamps where it landed onto the card, and the
+ * line reads act, item, tail: "Commented on [PAY-142]", "Created [PAY-171] in
+ * Nordkap", "Added [Kickoff] to your calendar".
+ *
+ * A send whose item has no address keeps the whole sentence in `act` and draws
+ * no chip. Cards accepted before the stamp existed take that path.
+ */
+export interface SentLine {
+  /** The words before the item, or the whole sentence when there is no item. */
+  act: string;
+  /** The item, as a reference chip draws it: a ticket key, a page id, an event id. */
+  item?: string;
+  /** What to call the item until the workspace has its own copy. */
+  name?: string;
+  /** The item's address at the provider. */
+  url?: string;
+  /** The words after the item. */
+  tail?: string;
+}
+
+export function sentLine(ob: OutboundCopyInput): SentLine {
+  const url = ob.url?.trim() ? ob.url : undefined;
+  const sentence = { act: outboundReceipt(ob) };
+  const item = ob.targetId ?? ob.eventId;
+  if (!item) return sentence;
+  switch (ob.action) {
+    case 'comment_ticket':
+      return { act: 'Commented on', item, url };
+    case 'update_page':
+      return { act: 'Updated', item, name: ob.title, url };
+    case 'create_ticket':
+      return {
+        act: 'Created',
+        item,
+        name: item,
+        url,
+        ...(ob.container ? { tail: `in ${ob.container}` } : {}),
+      };
+    case 'create_event':
+      return { act: 'Added', item, name: ob.title, url, tail: 'to your calendar' };
+    case 'update_event':
+      return { act: 'Changed', item, name: ob.title, url, tail: 'in your calendar' };
+    case 'respond_to_event':
+      return { act: `Replied ${rsvpAnswer(ob.responseStatus)} to`, item, name: ob.title, url };
+    default:
+      return sentence;
   }
 }

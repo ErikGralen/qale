@@ -276,6 +276,10 @@ export interface InvokeMap {
       staleReason?: 'unanchored' | 'duplicate' | 'missing';
       error?: string;
       url?: string;
+      /** What the send touched at the provider: the key of the ticket it just
+       *  created, the id of the event it added. The green receipt draws it as a
+       *  chip, so the line the PM reads is a way to the item itself. */
+      externalId?: string;
       review?: MeetingReviewAskDTO;
       /** The vault note the accept wrote, after any rename it also made — the
        *  rail pins what the PM approves (docs/autopinning.md). */

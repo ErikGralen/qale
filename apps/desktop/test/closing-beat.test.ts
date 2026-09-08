@@ -125,7 +125,7 @@ test('every kind of card lands as the row a silent write would have left', () =>
   );
 });
 
-test('an approved to-do says who and when, and skips the mark', () => {
+test('an approved to-do says when, and nothing else', () => {
   const row = appliedRowForCard(
     card('a', {
       kind: 'note',
@@ -137,7 +137,7 @@ test('an approved to-do says who and when, and skips the mark', () => {
     }),
   );
   assert.equal(row.verb, 'New todo');
-  assert.equal(row.change, 'you · due 11 Sep');
+  assert.equal(row.change, 'due 11 Sep');
 });
 
 test('the Activity row an approval left is the row’s way back', () => {

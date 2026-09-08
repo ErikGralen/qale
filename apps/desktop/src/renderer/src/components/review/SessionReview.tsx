@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@qale/ui';
-import type { ProposalDTO } from '@qale/ipc';
+import type { OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 import { invoke } from '../../lib/ipc';
 import {
@@ -14,9 +14,24 @@ import {
   receiptPaths,
 } from './cardMeta';
 import { useNoteName, useNoteNames } from './titles';
-import { ReviewAsks, SentReceipts, useApprovals } from './approvals';
+import {
+  ReviewAsks,
+  SentReceipts,
+  sentReceiptOf,
+  useApprovals,
+  type SentReceipt,
+} from './approvals';
 import { ApproveAll, CardRows } from './CardRows';
 import { LandedRows } from './LandedRows';
+
+/** The approved sends, in the shape the green card reads: the same line, off
+ *  the same payload, as the card showed the moment each one left. */
+function sentOf(resolved: readonly ProposalDTO[]): SentReceipt[] {
+  return resolved
+    .filter((p) => p.kind === 'outbound' && p.status === 'accepted')
+    .sort((a, b) => a.created - b.created)
+    .map((p) => sentReceiptOf(p.id, p.payload as OutboundPayloadDTO));
+}
 
 /** The cards in the order they draw in: every card is one row, and a group of
  *  two changes to one page is two stops under one name. The cursor walks what
@@ -172,11 +187,18 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
     return (
       <section aria-label="What you approved" className="mt-1">
         <ReviewAsks approvals={approvals} />
-        {/* An approved card is a landed write, so it draws as one: the same
-            line, the same way back (RC-3). No tally over it and no door to
-            other sessions: the lines are the count, and what waits elsewhere
-            is Home's job. */}
-        <LandedRows rows={receipt.rows} sessionId={sessionId} onOpen={openDoc} label={null} />
+        {/* A send keeps the green card it was given the moment it left: the
+            same card, from the stored cards now, so nothing on the screen
+            changes shape when the last card is judged. Every other approved
+            card is a landed write and draws as one line (RC-3). No tally and
+            no door to other sessions: what waits elsewhere is Home's job. */}
+        <SentReceipts sent={sentOf(resolved)} onOpen={openDoc} />
+        <LandedRows
+          rows={receipt.rows.filter((r) => r.verb !== 'Sent')}
+          sessionId={sessionId}
+          onOpen={openDoc}
+          label={null}
+        />
       </section>
     );
   }
@@ -217,7 +239,7 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
       {/* A send that just left needs its own banner while cards remain. Once
           the last one is judged the receipt above says it, in the same words,
           with everything else the sitting did. */}
-      <SentReceipts sent={approvals.sent} />
+      <SentReceipts sent={approvals.sent} onOpen={openDoc} />
       <ReviewAsks approvals={approvals} />
 
       {cause ? (

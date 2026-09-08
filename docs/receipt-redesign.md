@@ -311,3 +311,49 @@ Two more cuts the same evening, after Erik saw the lines: the to-do line no long
 "Undo", not "Put back", on the receipt line and in Activity, with "Undone" as the state and the
 toasts and errors reworded to match. A session recorded before this keeps the old change line
 in its transcript, because the line is packed into the tool result at write time.
+
+Third pass, same evening, after Erik saw the lines with a decision's whole body on one of them:
+"way too much text". The line is now a dot, a chip and, for a change, what moved. The dot says
+what happened (green new, amber changed, red removed). The chip is the thing it happened to,
+drawn the way a ticket is drawn inside a page: the kind's icon and the name, and it opens the
+page. A new page or a new todo says nothing after the chip. A to-do line never says who or when
+(`changeLine` for a to-do is now "due 11 Sep" / "no date" / "done" / "dropped" / what moved, with
+no owner in front), and hover shows the verb, the name and the full change. The chevron and Undo
+stay. Old transcripts keep the owner-first line they recorded.
+
+And the green "Left your workspace" card now stays for approved sends: once every card is judged,
+the closing branch draws the sends through `SentReceipts` from the stored cards (every send, not
+the last three) and only the other approved cards as lines. Before, the card turned into lines the
+moment the last card was judged, which read as a second thing happening.
+
+Checked: types 11 of 11, every package's tests green, eslint 0 errors, two screenshots on a scratch
+copy of the demo profile (copy the db's -wal and -shm too, or the stored cards are empty).
+
+Fourth pass, 2026-09-08. Two things Erik saw next.
+
+**The marks lost their colours.** Four verbs in four tones read as a chart with a legend nobody was
+given, and the tones quiet enough for a chat were too dim to tell apart at 14px ("one color is like
+dark red orange"). The shape carries the meaning now: plus, pencil, check, minus, all in one ink
+tone a shade darker than the line, at `size-4`. The one exception is a line that took something
+away, which stays red. `MARK` is a `Record<AppliedVerb, LucideIcon>` again, with no tone in it.
+
+**Every line on the green card opens its item.** "Created a task in Nordkap" said a ticket exists
+somewhere and gave no way to it. `sentLine(payload)` in `card-copy.ts` splits the receipt sentence
+into act, item, tail, so the card draws the item as the chip a ticket wears in a page: "Commented on
+[PAY-142]", "Created [PAY-171] in Nordkap", "Added [Kickoff] to your calendar". A send whose item has
+no address keeps the whole sentence and draws no chip.
+
+For that to work a week later the send stamps where it landed: `acceptOutbound` writes
+`targetId` and `url` onto the DRAFTED payload (never onto the edited one, which is the record of how
+the PM writes), and `AcceptResult` carries `externalId` so the line drawn the second after a send
+says the same thing as the line drawn when the session is reopened. `zOutboundPayload` and
+`OutboundPayloadDTO` gained `url`. A chip whose item has no mirror yet — a ticket created a second
+ago — opens the provider: `ExternalRefChip` takes a `url`, and `openExternalRef` uses it only after
+the mirror and the link lookup have both come up empty.
+
+Checked: types 11 of 11, every package's tests green (domain 297, application 314, desktop 478),
+eslint 0 errors, and one screenshot of the demo session that sent three things: the marks read at a
+glance in ink, and the green card says "Commented on SCH-118", "Commented on SCH-231", "Updated
+Roadmap H2", each one a chip that opens the item. A copied profile only finds its own cards when
+`vaultPath` still points at the workspace it was written under: the app db is named for a hash of
+that path, so pointing a scratch profile at a copied workspace hands you an empty store.

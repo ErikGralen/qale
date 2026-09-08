@@ -95,6 +95,7 @@ export function ExternalRefChip({
   alias,
   onOpen,
   kind,
+  url,
 }: {
   /** Wikilink target — "tickets/jira/PAY-142", "wikipages/…", or a bare key. */
   target: string;
@@ -112,6 +113,12 @@ export function ExternalRefChip({
    * types the reference.
    */
   kind?: string | null;
+  /**
+   * The item's address at the provider, for a chip drawn before the workspace
+   * has a copy of it: the ticket a send made a second ago. The mirror wins the
+   * moment it exists; this is only what the click falls back to.
+   */
+  url?: string | null;
 }) {
   const [meta, setMeta] = useState<ExternalRefMetaDTO | null | undefined>(undefined);
 
@@ -154,7 +161,12 @@ export function ExternalRefChip({
       onClick={(e) => {
         e.stopPropagation();
         const opts = navFromEvent(e);
-        void openExternalRef(target, meta ?? null, onOpen && ((path) => onOpen(path, opts)));
+        void openExternalRef(
+          target,
+          meta ?? null,
+          onOpen && ((path) => onOpen(path, opts)),
+          url ?? undefined,
+        );
       }}
     >
       {meta?.kind === 'wikipage' && (

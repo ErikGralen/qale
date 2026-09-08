@@ -16,6 +16,7 @@ export {
   outboundTarget,
   outboundReceipt,
   outboundVerb,
+  sentLine,
   ticketFieldRows,
   bareRef,
   titleForRef,
@@ -40,6 +41,7 @@ export {
   type HeadlineInput,
   type VaultEffectInput,
   type OutboundCopyInput,
+  type SentLine,
 } from './card-copy.js';
 
 /** Which writes wait for the PM: a send, a delete, a rewrite of their own prose
@@ -269,6 +271,12 @@ export const zOutboundPayload = z.preprocess(
       responseStatus: z.enum(['accepted', 'declined', 'tentative']).optional(),
       /** Workspace note to append the resulting deterministic link back to. */
       linkBackPath: z.string().optional(),
+      /**
+       * Where the item landed at the provider, stamped onto the card once the
+       * send went through. Never something a draft sets: it is the receipt's
+       * way to the ticket it just made, for the week before the mirror has one.
+       */
+      url: z.string().optional(),
       rationale: z.string().min(1),
     })
     // Required target per action, enforced at FILING time — a card missing its

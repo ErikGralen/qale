@@ -1,11 +1,21 @@
 import { useCallback, useRef, useState, type MouseEvent } from 'react';
 import { Spinner } from '@qale/ui';
-import { ChevronDown, Undo2 } from 'lucide-react';
-import type { AppliedRow } from '@qale/domain';
-import type { OutboundPayloadDTO, ProposalDTO, UpdatePayloadDTO } from '@qale/ipc';
+import {
+  Check,
+  ChevronDown,
+  FileText,
+  Minus,
+  Pencil,
+  Plus,
+  Undo2,
+  type LucideIcon,
+} from 'lucide-react';
+import { typeForDir, type AppliedRow, type AppliedVerb } from '@qale/domain';
+import type { ProposalDTO, UpdatePayloadDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 import { invoke } from '../../lib/ipc';
 import { navFromEvent, type NavOpts } from '../../lib/nav';
+import { noteTypeIcon } from '../../lib/note-icons';
 import { useToast } from '../toast';
 import { orderLanded, putRowBack } from '../../lib/receipt-block';
 import { ChangePreview } from './CardItem';
@@ -15,21 +25,21 @@ import { ChangePreview } from './CardItem';
  *
  * A write that needs no card still has to be seen, and seen where the PM is
  * already looking. But it is not a decision they have to make, so it must not
- * look like one: a card asks, and these lines only report. Each is one muted
- * line, "New todo: Send the dates · you · due Fri", with the page as a link.
- * The chevron opens the diff and the Undo.
+ * look like one: a card asks, and these lines only report. Each is one line and
+ * never more: a mark for what happened (plus, pencil, check, minus), the thing
+ * it happened to as the chip a ticket wears in a page, and for a change, what
+ * moved. The chevron opens the diff and the Undo.
  *
  * The lines sit in the order the PM reads them: todos first, then the meeting,
- * their documents, what went out, and last Qale's own record. No word over a
- * group and no control for the whole turn (docs/receipt-redesign.md, notes at
- * the bottom): a heading over two lines weighed more than the lines did.
+ * their documents, and last Qale's own record. No word over a group and no
+ * control for the whole turn (docs/receipt-redesign.md, notes at the bottom).
  *
  * Activity stays the long-term ledger with the same mechanism. This is the same
  * undo, said at the moment it is cheapest to use.
  *
  * The session review draws its approved cards through here too, once every card
- * is judged: an approved card is a landed write from the moment it is approved,
- * so it reads the same way (docs/receipt-redesign.md RC-3).
+ * is judged, apart from a send: what left the workspace keeps the green card it
+ * was given the moment it left (docs/receipt-redesign.md RC-3, revised).
  */
 export function LandedRows({
   rows,
@@ -123,12 +133,6 @@ function useCards(sessionId: string | null) {
  */
 function landedPreview(card: ProposalDTO): { before: string; after: string } | null {
   if (card.kind === 'delete') return null;
-  // A send cannot be taken back, so the whole message stays readable: what left
-  // the workspace in the PM's name is the one thing they may need to answer for.
-  if (card.kind === 'outbound') {
-    const body = (card.payload as OutboundPayloadDTO).body ?? '';
-    return body.trim() ? { before: '', after: body } : null;
-  }
   if (card.kind !== 'update') {
     const body = (card.payload as { body?: string }).body ?? '';
     return body.trim() ? { before: '', after: body } : null;
@@ -140,6 +144,80 @@ function landedPreview(card: ProposalDTO): { before: string; after: string } | n
     .filter((part) => part.trim())
     .join('\n\n');
   return before.trim() || after.trim() ? { before, after } : null;
+}
+
+/**
+ * The mark in front of the line, by what happened: plus for new, a pencil for
+ * changed, a check for done, minus for removed.
+ *
+ * The shape carries the meaning, not the colour. Colour-coding four verbs made
+ * a stack of lines read as a chart with a legend nobody was handed, and the
+ * tones quiet enough to sit in a chat were too dim to tell apart at this size
+ * (Erik, 2026-09-08). So every mark is ink, one tone, a shade darker than the
+ * line it stands in front of, and big enough to read. The one exception is a
+ * line that took something away: that one stays red, because it is the line you
+ * must not miss. A send never draws here.
+ */
+const MARK: Record<AppliedVerb, LucideIcon> = {
+  New: Plus,
+  'New todo': Plus,
+  Changed: Pencil,
+  'Todo changed': Pencil,
+  Done: Check,
+  'Todo done': Check,
+  Removed: Minus,
+  Sent: Plus,
+};
+
+/** Whether the line says what moved. A new page and a removed one have nothing
+ *  to add: the mark and the name are the whole story. */
+const SAYS_CHANGE = new Set<AppliedVerb>(['Changed', 'Todo changed', 'Done', 'Todo done']);
+
+/**
+ * The thing a write touched, drawn the way a ticket is drawn inside a page:
+ * a small chip with the kind's icon and the name, that opens it. A removed
+ * page, and a row from before this block existed, have nothing to open and
+ * draw as plain words.
+ */
+function TargetChip({
+  row,
+  onOpen,
+}: {
+  row: AppliedRow;
+  onOpen: (path: string, opts?: NavOpts) => void;
+}) {
+  const title = row.title ?? 'a page';
+  const path = row.verb === 'Removed' ? null : (row.path ?? null);
+  const dir = (row.path ?? '').split('/')[0] ?? '';
+  const type = typeForDir(dir);
+  const Icon = type ? noteTypeIcon(type) : FileText;
+  const open = (e: MouseEvent) => {
+    if (!path) return;
+    e.stopPropagation();
+    onOpen(path, navFromEvent(e));
+  };
+  const shape =
+    'inline-flex max-w-full min-w-0 items-center gap-1 rounded-sm px-1 py-px font-medium';
+  if (!path)
+    return (
+      <span className={`${shape} bg-muted text-muted-foreground`}>
+        <Icon className="size-3 shrink-0 opacity-70" aria-hidden />
+        <span className="truncate">{title}</span>
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      className={`${shape} bg-brand/8 text-brand transition-colors hover:bg-brand/15 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none`}
+      onClick={open}
+      // Middle-click = open in background tab, as every other link in the app.
+      onAuxClick={(e) => e.button === 1 && open(e)}
+      title={`Open ${title}`}
+    >
+      <Icon className="size-3 shrink-0 opacity-70" aria-hidden />
+      <span className="truncate">{title}</span>
+    </button>
+  );
 }
 
 /** One landed write, on one line. */
@@ -164,41 +242,29 @@ function LandedRow({
 }) {
   const [open, setOpen] = useState(false);
   const { load, loading, card: stored } = card(row.proposalId);
-  const sent = row.verb === 'Sent';
-  const title = row.title ?? 'a page';
-  // A page that was removed has nothing to open, and neither has a line from a
-  // session filed before this block existed.
-  const path = row.verb === 'Removed' ? null : (row.path ?? null);
   const preview = stored ? landedPreview(stored) : null;
   // The chevron has something to show only when the card is still there to read.
   const canOpen = !!row.proposalId;
-  const openPage = (e: MouseEvent) => {
-    if (!path) return;
-    e.stopPropagation();
-    onOpen(path, navFromEvent(e));
-  };
+  const change = SAYS_CHANGE.has(row.verb) ? row.change : undefined;
+  const Mark = MARK[row.verb];
+  // The whole story on hover, for the one line in ten where the mark and the
+  // name are not enough.
+  const hover = [row.verb, row.title, row.change].filter(Boolean).join(' · ');
 
   return (
     <li className="text-sm text-muted-foreground">
-      <div className="flex min-w-0 items-start gap-1">
-        {/* Wraps rather than truncates: the mark at the end of a to-do line
-            ("Qale heard this") is the part the PM most needs to see. */}
-        <p className={`min-w-0 flex-1 break-words ${undone ? 'line-through opacity-60' : ''}`}>
-          <span>{row.verb}: </span>
-          {path ? (
-            <button
-              className="rounded text-foreground underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-              onClick={openPage}
-              // Middle-click = open in background tab, as every other link in the app.
-              onAuxClick={(e) => e.button === 1 && openPage(e)}
-              title={`Open ${title}`}
-            >
-              {title}
-            </button>
-          ) : (
-            <span className="text-foreground">{title}</span>
-          )}
-          {row.change && <span> · {row.change}</span>}
+      <div className="flex min-w-0 items-center gap-1.5" title={hover}>
+        <Mark
+          className={`size-4 shrink-0 ${row.verb === 'Removed' ? 'text-destructive' : 'text-foreground/70'}`}
+          strokeWidth={2.25}
+          aria-hidden
+        />
+        <span className="sr-only">{row.verb}: </span>
+        <p
+          className={`flex min-w-0 flex-1 items-center gap-1.5 ${undone ? 'line-through opacity-60' : ''}`}
+        >
+          <TargetChip row={row} onOpen={onOpen} />
+          {change && <span className="truncate">{change}</span>}
         </p>
         {undone && (
           // The same word Activity uses once a row has gone back, so the two
@@ -230,7 +296,7 @@ function LandedRow({
           ) : preview && stored ? (
             <ChangePreview kind={stored.kind} preview={preview} onOpen={onOpen} context={0} />
           ) : (
-            <p>{sent ? 'It carried no message.' : 'Only the properties changed.'}</p>
+            <p>Only the properties changed.</p>
           )}
           {row.activityId && !undone && (
             <button

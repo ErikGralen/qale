@@ -554,14 +554,6 @@ export interface OutboundPayloadDTO {
   labels?: string[];
   priority?: string;
   components?: string[];
-  /** The one thing the draft could not work out, asked on the card above the
-   *  button. Picking an option adds what it carries and records the answer;
-   *  approving without picking leaves the draft as drafted. */
-  question?: {
-    text: string;
-    options: { label: string; labels?: string[]; priority?: string; components?: string[] }[];
-    answer?: string;
-  };
   /** The provider's own id for the item addressed: a ticket key, a page id.
    *  Main parses every payload through the domain schema, so rows filed under
    *  the old `issueKey`/`pageId` names arrive here as `targetId`. */
@@ -647,6 +639,12 @@ export interface ProposalDTO {
    * no row at all (docs/receipt-redesign.md RC-3).
    */
   activityId?: string;
+  /**
+   * The write landed on its own, because the policy said it needed no card.
+   * Only ever on an accepted card. The chat draws it once, off the tool result
+   * that landed it, so the list of what the PM judged leaves it out.
+   */
+  silent?: boolean;
 }
 
 /**

@@ -161,22 +161,6 @@ export function waitingOnYou(items: readonly AttentionItem[]): AttentionItem[] {
   return items.filter((i) => WAITING_KINDS.has(i.kind) && !i.quiet);
 }
 
-/**
- * What is waiting on the PO somewhere other than one session. It is the count on a
- * session's own door into Sessions ("3 more waiting", docs/closing-beat.md).
- *
- * The same filter as {@link waitingOnYou}, minus the cards this session put up
- * itself: a door that counted a session's own cards would send the PO away to
- * judge what is on the screen in front of them.
- */
-export function waitingElsewhere(
-  items: readonly AttentionItem[],
-  ownCardIds: readonly string[],
-): number {
-  const own = new Set(ownCardIds.map((id) => `card:${id}`));
-  return waitingOnYou(items).filter((i) => !own.has(i.id)).length;
-}
-
 /** How many of one kind the list holds — the shape every "N of these" label
  *  uses, so no surface ever re-derives a count of its own. */
 export function countOf(items: readonly AttentionItem[], kind: AttentionKind): number {

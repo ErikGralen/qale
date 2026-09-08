@@ -335,7 +335,7 @@ export function appliedReceipt(action: ActivityAction, subject: string): string 
  * describe one write two ways.
  */
 export interface AppliedRow {
-  /** The Activity row to put back. Absent when the workspace kept no history. */
+  /** The Activity row to undo. Absent when the workspace kept no history. */
   activityId?: string;
   /** The card the write applied, so the row can draw its diff. */
   proposalId?: string;
@@ -347,12 +347,6 @@ export interface AppliedRow {
   verb: AppliedVerb;
   /** What changed, in one line: "summary, 3 next steps". */
   change?: string;
-  /**
-   * Qale worked this write out rather than heard it said (FA-7). Only a to-do
-   * draws it today, as the mark the Todos view wears, because a promise nobody
-   * made is the write the PM most needs to catch.
-   */
-  inferred?: boolean;
 }
 
 /**
@@ -374,7 +368,6 @@ export function appliedRowLine(row: AppliedRow | undefined): string {
   if (row.path) packed['path'] = row.path;
   if (row.title) packed['title'] = row.title;
   if (row.change) packed['change'] = row.change;
-  if (row.inferred) packed['inferred'] = true;
   return `${ROW_OPEN}${JSON.stringify(packed)}${ROW_CLOSE}`;
 }
 

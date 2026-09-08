@@ -3099,14 +3099,12 @@ export function createDraftTools(
   );
 
   /**
-   * Draft the safe way, then ask (docs/learning-how-you-work.md ticket 6).
-   *
-   * A draft that guesses wrong costs the PM an edit in Jira or Confluence, where
-   * the workspace cannot help them. A draft that leaves the doubtful thing out
-   * and asks costs one click, and the answer teaches the next draft.
+   * A draft carries no question of its own. The one place a draft may ask is
+   * ask_user, before it writes, so the answer shapes the draft instead of
+   * riding on the card as a second control (Erik, 2026-09-08).
    */
-  const safeDraftNote =
-    'When two ways of writing this are both plausible, draft the one that is easiest to undo: leave the label off, leave the assignee out, add under a heading instead of rewriting the passage. Then set `question` and ask about the one thing you left out. One question, one sentence, two options at most, and never a question the Jira or Confluence file or the tickets you read already answer. Most drafts need no question at all.';
+  const conflictNote =
+    'A draft carries no question. When what you read disagrees with a decision the workspace holds (decisions/), the decision wins: draft it that way and cite the decision. When two sources disagree and no decision settles it, ask_user before you draft, with the two readings as the options, then draft what they chose.';
 
   /**
    * The one rule no flag, no skill and no answer moves (docs/fewer-approvals.md,
@@ -3114,66 +3112,6 @@ export function createDraftTools(
    * can reach outside the workspace says the opposite in the same words.
    */
   const sendWaitsNote = 'This waits for the PM. Nothing is sent until they approve it.';
-
-  /** One answer button on a ticket a draft creates: the fields a yes adds. */
-  const ticketOption = Type.Object({
-    label: Type.String({ description: 'What the button says, e.g. "Yes" or "No".' }),
-    labels: Type.Optional(
-      Type.Array(Type.String(), {
-        description: 'Labels this answer adds to the ticket, on top of the ones you set.',
-      }),
-    ),
-    priority: Type.Optional(Type.String({ description: 'The priority this answer sets.' })),
-    components: Type.Optional(
-      Type.Array(Type.String(), { description: 'Components this answer adds.' }),
-    ),
-  });
-
-  /** One answer button on a comment or a page update. There is no field to set
-   *  there, so the answer is the whole of it: it tells you how to write the next. */
-  const plainOption = Type.Object({
-    label: Type.String({ description: 'What the button says, e.g. "Yes" or "No".' }),
-  });
-
-  const questionParam = <T extends typeof ticketOption | typeof plainOption>(option: T) =>
-    Type.Optional(
-      Type.Object(
-        {
-          text: Type.String({
-            description:
-              'One sentence, ending in the question. Say what you saw that raised it: "Henrik has to review this for GDPR. Your other SCH stories mark that with `needs-legal`. Add it?"',
-          }),
-          options: Type.Array(option, {
-            minItems: 1,
-            maxItems: 2,
-            description: 'One or two answers, in the words of the button, e.g. "Yes" and "No".',
-          }),
-        },
-        {
-          description:
-            'The one thing you could not work out, asked on the card above the button. Leave it out when the material answered everything.',
-        },
-      ),
-    );
-
-  type DraftQuestion = {
-    text: string;
-    options: { label: string; labels?: string[]; priority?: string; components?: string[] }[];
-  };
-
-  /** Why a question cannot go on a card, or null when it can. */
-  const questionProblem = (q?: {
-    text?: string;
-    options?: { label?: string }[];
-  }): string | null => {
-    if (!q) return null;
-    if (!q.text?.trim()) return 'a question needs a sentence to ask.';
-    const options = q.options ?? [];
-    if (options.length < 1 || options.length > 2)
-      return 'a question takes one or two options. Three answers is a form: decide the rest yourself.';
-    if (options.some((o) => !o.label?.trim())) return 'every option needs a label for its button.';
-    return null;
-  };
 
   /**
    * Drafted-against snapshot (the staleness baseline): when the target has a
@@ -3305,7 +3243,7 @@ export function createDraftTools(
       ' Draft a NEW ticket as a proposal. `container` is the project or team it goes in, named by its key; the proposal shows which tracker that is. Give a title and a markdown body ending with a provenance line ("Source: <meeting>, <date>"). Cite sources[] (the meeting or decision it came from). Optionally linkBack: a workspace note path to append the created ticket\'s link to on approval. Labels, priority and components go on the ticket only when the Jira file (skills/jira/SKILL.md) or the tickets you read show this team uses them. Never invent a label. ' +
       conventionsNote('skills/jira/SKILL.md') +
       ' ' +
-      safeDraftNote +
+      conflictNote +
       ' ' +
       voiceNote,
     parameters: Type.Object({
@@ -3335,7 +3273,6 @@ export function createDraftTools(
             'Components to put on the ticket, spelled as the project spells them. Same rule as labels: only what the material shows.',
         }),
       ),
-      question: questionParam(ticketOption),
       voice: voiceParam,
       sources: Type.Array(Type.String()),
       linkBack: Type.Optional(Type.String()),
@@ -3351,7 +3288,6 @@ export function createDraftTools(
         labels?: string[];
         priority?: string;
         components?: string[];
-        question?: DraftQuestion;
         voice?: string;
         sources: string[];
         linkBack?: string;
@@ -3360,8 +3296,6 @@ export function createDraftTools(
     ) {
       const check = validateEvidence(params.sources ?? [], resolves);
       if (!check.ok) return text(`Rejected: ${check.reason}`);
-      const badQuestion = questionProblem(params.question);
-      if (badQuestion) return text(`Rejected: ${badQuestion}`);
       // The container decides the provider, so an unknown one is not a detail
       // to fix at approval: there is nothing to address the card to.
       const container = containerFor(params.container);
@@ -3381,7 +3315,6 @@ export function createDraftTools(
           ...(params.labels?.length ? { labels: params.labels } : {}),
           ...(params.priority ? { priority: params.priority } : {}),
           ...(params.components?.length ? { components: params.components } : {}),
-          ...(params.question ? { question: params.question } : {}),
           linkBackPath: params.linkBack,
           rationale: params.rationale,
         },
@@ -3401,7 +3334,7 @@ export function createDraftTools(
       ' Draft a comment on an existing ticket as a proposal. `ticket` is the item itself: its key (PAY-142) or its mirror note (tickets/PAY-142). Take the key from the mirror note (tickets/, frontmatter external_id) when one exists, and cite that mirror in sources[] alongside the meeting or decision. The proposal shows which tracker it goes to. End the body with a provenance line ("Source: <meeting>, <date>"). ' +
       conventionsNote('skills/jira/SKILL.md') +
       ' ' +
-      safeDraftNote +
+      conflictNote +
       ' ' +
       voiceNote +
       ' ' +
@@ -3409,7 +3342,6 @@ export function createDraftTools(
     parameters: Type.Object({
       ticket: Type.String({ description: 'The ticket key, or the path of its mirror note.' }),
       body: Type.String(),
-      question: questionParam(plainOption),
       voice: voiceParam,
       sources: Type.Array(Type.String()),
       linkBack: Type.Optional(Type.String()),
@@ -3420,7 +3352,6 @@ export function createDraftTools(
       params: {
         ticket: string;
         body: string;
-        question?: DraftQuestion;
         voice?: string;
         sources: string[];
         linkBack?: string;
@@ -3429,8 +3360,6 @@ export function createDraftTools(
     ) {
       const check = validateEvidence(params.sources ?? [], resolves);
       if (!check.ok) return text(`Rejected: ${check.reason}`);
-      const badQuestion = questionProblem(params.question);
-      if (badQuestion) return text(`Rejected: ${badQuestion}`);
       const mirror = mirrorFor('ticket', params.ticket);
       const provider = providerFor('ticket', mirror);
       if (!provider) return text(unknownTarget('ticket', params.ticket));
@@ -3449,7 +3378,6 @@ export function createDraftTools(
           voice: spoken.voice?.name,
           targetId,
           body: params.body,
-          ...(params.question ? { question: params.question } : {}),
           linkBackPath: params.linkBack,
           rationale: params.rationale,
           ...draftSnapshot('ticket', targetId),
@@ -3470,7 +3398,7 @@ export function createDraftTools(
       ' Draft a change to a wikipage as a proposal. There are two ways to change a page; pick the one that fits. With `patch` (search + replace) that ONE passage is rewritten in place on the live page and the rest of it is left untouched, which is what you want when the page now says something wrong. The search text must be copied word for word from the page as it stands, with enough of it around the change that it appears only once. Anchor it on a plain run of prose, never on a line carrying markup (a **bold** span, a `- ` bullet, a `## ` heading, a [text](url) link): here it is checked against the page\'s mirror note, which is markdown, but on approval it is matched against the live page, where that markup is not written the same way, and the edit fails then with "the page\'s text changed". Give `provenance` with a patch: the redline is only the corrected sentence, so that one line ("Source: <origin>, <date>") is how the page says where the change came from. Without a patch, `body` is appended to the page as a new section, which is what you want when you are adding something the page does not say yet; end it with a provenance line of its own and leave the `provenance` field out, because the page gets that line as written and a second one would be added underneath. `page` is the page itself: its id, or its mirror note (wikipages/…). Cite that mirror in sources[] when one exists. The proposal shows which wiki it goes to. ' +
       conventionsNote('skills/confluence/SKILL.md') +
       ' ' +
-      safeDraftNote +
+      conflictNote +
       ' ' +
       voiceNote +
       ' ' +
@@ -3501,7 +3429,6 @@ export function createDraftTools(
             'One line naming where the change came from ("Source: <origin>, <date>"), added at the very end of the page rather than beside the edit. Give it with a patch; leave it out when you are appending a body that already ends with its own.',
         }),
       ),
-      question: questionParam(plainOption),
       sources: Type.Array(Type.String()),
       linkBack: Type.Optional(Type.String()),
       rationale: Type.String(),
@@ -3514,7 +3441,6 @@ export function createDraftTools(
         body?: string;
         patch?: { search: string; replace: string };
         provenance?: string;
-        question?: DraftQuestion;
         sources: string[];
         linkBack?: string;
         rationale: string;
@@ -3522,8 +3448,6 @@ export function createDraftTools(
     ) {
       const check = validateEvidence(params.sources ?? [], resolves);
       if (!check.ok) return text(`Rejected: ${check.reason}`);
-      const badQuestion = questionProblem(params.question);
-      if (badQuestion) return text(`Rejected: ${badQuestion}`);
       const mirror = mirrorFor('wikipage', params.page);
       const provider = providerFor('wikipage', mirror);
       if (!provider) return text(unknownTarget('wikipage', params.page));
@@ -3568,7 +3492,6 @@ export function createDraftTools(
           body,
           ...(params.patch ? { patch: params.patch } : {}),
           ...(params.provenance?.trim() ? { provenance: params.provenance.trim() } : {}),
-          ...(params.question ? { question: params.question } : {}),
           linkBackPath: params.linkBack,
           rationale: params.rationale,
           ...draftSnapshot('wikipage', targetId),

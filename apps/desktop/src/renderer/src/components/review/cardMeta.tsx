@@ -256,7 +256,6 @@ export function appliedRowForCard(p: ProposalDTO, knownTitle?: string | null): A
     append: payload.append,
     body: payload.body,
     patch: payload.patch,
-    inferred: p.inference,
   };
   const title = payload.title?.trim() || cardTitle(p, knownTitle);
   const change = changeLine(input);
@@ -267,7 +266,6 @@ export function appliedRowForCard(p: ProposalDTO, knownTitle?: string | null): A
     ...(target ? { path: target } : {}),
     ...(title ? { title } : {}),
     ...(change ? { change } : {}),
-    ...(p.inference ? { inferred: true } : {}),
   };
 }
 
@@ -286,19 +284,23 @@ export interface Receipt {
   rows: AppliedRow[];
 }
 
+/** A card the PM answered. A write that landed on its own is an accepted card
+ *  too, but the PM never saw it as one, and the turn that landed it already
+ *  draws it. */
+const judgedByPM = (p: ProposalDTO): boolean =>
+  (p.status === 'accepted' && !p.silent) || p.status === 'rejected';
+
 /**
  * The receipt for cards the PM has already judged. Accepted and rejected both
- * count in the tally; only accepted ones changed anything, so only they get a
- * row. Anything withdrawn or gone stale was never a decision of theirs and is
- * left out of both.
+ * count; only accepted ones changed anything, so only they get a row. Anything
+ * withdrawn, gone stale, or landed without a card was never a decision of
+ * theirs and is left out of both.
  */
 export function receiptOf(
   resolved: readonly ProposalDTO[],
   knownTitle?: (path: string) => string | null,
 ): Receipt {
-  const judged = [...resolved]
-    .filter((p) => p.status === 'accepted' || p.status === 'rejected')
-    .sort((a, b) => a.created - b.created);
+  const judged = [...resolved].filter(judgedByPM).sort((a, b) => a.created - b.created);
   return {
     accepted: judged.filter((p) => p.status === 'accepted').length,
     rejected: judged.filter((p) => p.status === 'rejected').length,
@@ -313,7 +315,7 @@ export function receiptPaths(resolved: readonly ProposalDTO[]): string[] {
   return [
     ...new Set(
       resolved
-        .filter((p) => p.status === 'accepted' && p.kind !== 'outbound')
+        .filter((p) => judgedByPM(p) && p.status === 'accepted' && p.kind !== 'outbound')
         .map(targetOf)
         .filter(Boolean),
     ),
@@ -341,14 +343,6 @@ export function causeSentence(cause: string, n: number): string {
   const notes = `${n} note${n === 1 ? '' : 's'}`;
   const point = n === 1 ? 'points' : 'point';
   return `Because you decided “${titleForRef(cause)}”, ${notes} still ${point} at the old plan`;
-}
-
-/** The receipt's head line: what the PO just did, in the buttons' own words. */
-export function receiptSummary(receipt: { accepted: number; rejected: number }): string {
-  const { accepted, rejected } = receipt;
-  if (rejected === 0) return `Approved ${accepted}`;
-  if (accepted === 0) return `Discarded ${rejected}`;
-  return `Approved ${accepted}, discarded ${rejected}`;
 }
 
 /**

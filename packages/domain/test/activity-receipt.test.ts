@@ -5,7 +5,6 @@ import {
   activityLine,
   appliedReceipt,
   appliedRowLine,
-  INFERRED_TODO_MARK,
   labelLine,
   learnedRow,
   learnedSummary,
@@ -160,15 +159,14 @@ test('the chat line survives the round trip through a tool result', () => {
   );
 });
 
-test('the fields of a landed to-do survive the round trip, mark and all', () => {
+test('the fields of a landed to-do survive the round trip', () => {
   const row = {
     verb: 'New todo' as const,
     activityId: 'a_1',
     proposalId: 'p_1',
     path: 'todos/2026-09-08-send-nordkap-the-sso-dates.md',
     title: 'Send Nordkap the SSO dates',
-    change: `you · due 11 Sep · ${INFERRED_TODO_MARK}`,
-    inferred: true,
+    change: 'you · due 11 Sep',
   };
   const output = `${appliedReceipt('created', 'Send Nordkap the SSO dates')}.\n${appliedRowLine(row)}`;
   assert.deepEqual(readAppliedReceipt(output)?.row, row);

@@ -652,7 +652,7 @@ function ReceiptBlock({
   const rows = blockRows({ question: !!ask, landed, waiting });
   if (rows.length === 0 && !hostsSession) return null;
   return (
-    <div className="my-2 flex flex-col gap-2">
+    <div className="my-2 flex flex-col gap-1">
       {rows[0]?.kind === 'question' && ask && <QuestionCard request={ask} />}
       <LandedRows rows={landed} sessionId={sessionId} onOpen={onOpen} />
       {/* SessionReview draws the waiting rows, and stays the one place a card

@@ -106,10 +106,6 @@ function appliedRowFor(
   // The store types a row's kind as a plain string; every one it can hold is a
   // proposal kind, which is what the card vocabulary asks for.
   const kind = rec.kind as ChangeLineInput['kind'];
-  // The card's own basis, carried onto the row: a to-do Qale worked out of a
-  // transcript wears the same mark in the chat that it wears in the Todos view
-  // (docs/receipt-redesign.md RC-2).
-  const inferred = rec.inference === true;
   const input = {
     kind,
     targetPath: target,
@@ -118,7 +114,6 @@ function appliedRowFor(
     append: payload.append,
     body: payload.body,
     patch: payload.patch,
-    inferred,
   };
   const title =
     payload.title?.trim() ||
@@ -136,7 +131,6 @@ function appliedRowFor(
     ...(target ? { path: target } : {}),
     ...(title ? { title } : {}),
     ...(change ? { change } : {}),
-    ...(inferred ? { inferred } : {}),
   };
 }
 

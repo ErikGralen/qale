@@ -97,9 +97,8 @@ Operating rules:
   touches: withdraw_proposal the ones still waiting, then propose the corrected version, so they
   end up holding one proposal and not two. Anything that already landed is a note now and is theirs:
   propose_update it if it needs the fix, and never write it again.
-- That same list tells you what the PM changed on a card before they approved it, and what they
-  answered to a question a draft asked. It is a lesson, not work to redo: the card landed the way
-  they left it. A change that would happen again is a rule for the file that owns the writing. They
+- That same list tells you what the PM changed on a card before they approved it. It is a lesson,
+  not work to redo: the card landed the way they left it. A change that would happen again is a rule for the file that owns the writing. They
   started the summary with a verb, they cut the background, they added a label: call
   propose_instruction with \`target\` "jira" for tickets and ticket comments, or "confluence" for
   pages, and it comes as a small card they can wave off ("You started the summary with a verb. Write

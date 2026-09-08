@@ -28,11 +28,10 @@ Where things landed that the tickets did not spell out:
   said in chat. `learnedRow()` builds a row for a caller that knows the source.
 - `propose_instruction` takes `list: "add" | "remove"`. A remove is always a card.
 - `propose_update` takes `learned: { what, from }`, honoured only on a style file.
-- `draft_text` takes `ask: { text, options }` (up to three). `draft_ticket`,
-  `draft_ticket_comment` and `draft_page_update` take `question: { text, options }` (up to
-  two; a ticket option may carry `labels`, `priority`, `components`).
+- `draft_text` takes `ask: { text, options }` (up to three). The draft tools carry no
+  question (ticket 6 was removed on 2026-09-08, see below).
 - The edited payload is stored beside the original (`edited_payload_json`). The card list
-  the model reads says what the PM changed and what they answered.
+  the model reads says what the PM changed.
 - Telemetry: `want_list.changed` (line id or `custom`, added or removed, asked) fires from the
   card path and from a silent chat write through a new `agent.onProposalApplied` hook;
   `style.picked` (voice, style, answer words) fires from the panel.
@@ -68,9 +67,9 @@ PM works, and instead it asks the PM to do the work. So:
   weekly update comes in three styles. The one the PM copies is the one Qale keeps.
 - The PM can always go first. Every file Qale writes preferences into is open and editable
   from day one. If the PM pastes an example in chat, Qale uses it. Qale just never asks for it.
-- Qale asks a question only as a last resort. The question sits on the card it affects, is one
-  sentence with two or three options, and only asks something the material could not answer.
-  Never a form. Never on a schedule.
+- Qale asks a question only as a last resort, and always through `ask_user` before it writes.
+  One sentence with two or three options, and only something the material could not answer.
+  Never a form. Never on a schedule. A proposal card never carries a question of its own.
 
 After the PM has picked a style, Qale shows one style. If the PM corrects it in chat, the
 correction goes into the file. If the PM asks for "another way", the three styles come back.
@@ -396,11 +395,14 @@ Checked against the code on `main`. Sizes are guesses.
    comes as a card today. Add one policy row: a style file written from a first read, and a
    voice file changed by a pick, are saved directly and listed in Settings and Activity. The
    debrief opens with the link. Half a day. Depends on 3.
-6. **Draft the safe way and put the question on the card.** A draft cannot carry a question
-   today. Add an optional one-sentence question with up to two options to the outbound
-   payload and the three draft tools. The card draws it above the body. Tell the draft tools:
-   when two ways are both plausible, draft the one that is easiest to undo and set the
-   question. One to two days.
+6. **Draft the safe way and put the question on the card.** REMOVED 2026-09-08. It was built
+   on 2026-09-07 and the first live use showed why it is wrong: the model used the card
+   question to ask about a factual conflict ("this entry says payroll export first, which Åsa
+   reversed, correct it too?") instead of about a label. That put a second question channel
+   on the approve button, with a "leave it" that reads as a shrug. Erik's rule: a draft
+   carries no question. If what the model read disagrees with a decision, the decision wins.
+   If two sources disagree and no decision settles it, the model calls `ask_user` before it
+   drafts. The payload field, the tool parameter and the card block are gone.
 7. **Keep the edit the PM makes before approving, and show it to the model.** The card sends
    the edited text upstream, but only the original is stored and telemetry keeps a boolean.
    Store the edited payload beside the original. Each turn, the card list shows one line per

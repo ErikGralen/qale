@@ -1,7 +1,6 @@
 import { refToSlug } from '../notes/decisions.js';
 import { dirForType, NOTE_TYPES, type NoteType } from '../notes/frontmatter.js';
 import { titleFromSlug } from '../notes/slug.js';
-import { INFERRED_TODO_MARK } from '../todos/index.js';
 import { formatStamp, parseEventStamp, rsvpAnswer } from './event-time.js';
 // activity.ts imports titleForRef from here, so the two lean on each other.
 // Both use the other's export inside a function only, never at load, which is
@@ -513,9 +512,6 @@ export interface ChangeLineInput {
   body?: string;
   append?: string;
   patch?: readonly { search: string; replace: string }[];
-  /** Qale worked this out rather than heard it said, so the row wears the mark
-   *  the Todos view wears (docs/fewer-approvals.md FA-7). */
-  inferred?: boolean;
 }
 
 /** Whether a write is about a to-do. The folder decides, because an update's
@@ -559,12 +555,13 @@ function todoOwner(fm?: Record<string, unknown>): string {
 }
 
 /**
- * The line a to-do row says: who, when, and whether Qale heard it. The parts are
- * dotted apart because each one is a fact the PM checks on its own, and the mark
- * is the string the Todos view uses, so the two surfaces cannot drift.
+ * The line a to-do row says: who, then when. The parts are dotted apart because
+ * each one is a fact the PM checks on its own. Whether Qale heard the to-do or
+ * worked it out is not said here: the Todos view carries that mark, and on a
+ * receipt line it was noise.
  */
-function todoLine(parts: readonly string[], inferred?: boolean): string {
-  return [...parts, ...(inferred ? [INFERRED_TODO_MARK] : [])].join(' · ');
+function todoLine(parts: readonly string[]): string {
+  return parts.join(' · ');
 }
 
 /** "one line", "3 lines". The count only appears when it is worth saying. */
@@ -701,7 +698,7 @@ export function changeLine(input: ChangeLineInput): string {
   if (input.kind === 'note' || input.kind === 'decision') {
     if (noteType(fm) === 'todo' || isTodoWrite(input)) {
       const due = dayLabel(fmString(fm, 'due'));
-      return todoLine([todoOwner(fm), due ? `due ${due}` : 'no date'], input.inferred);
+      return todoLine([todoOwner(fm), due ? `due ${due}` : 'no date']);
     }
     const sections = sectionsIn(input.body ?? '');
     if (sections.length > 0) return sections.join(', ');
@@ -735,7 +732,7 @@ export function changeLine(input: ChangeLineInput): string {
     return todoLine([owner, fmString(fm, 'commitment') === 'dropped' ? 'dropped' : 'done']);
   }
   if (!moved) return '';
-  return todoLine([owner, moved], input.inferred);
+  return todoLine([owner, moved]);
 }
 
 /**

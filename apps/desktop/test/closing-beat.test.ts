@@ -1,13 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ProposalDTO } from '@qale/ipc';
-import { waitingElsewhere, type AttentionItem } from '../src/renderer/src/lib/attention.js';
-import { INFERRED_TODO_MARK } from '@qale/domain';
 import {
   appliedRowForCard,
   receiptOf,
   receiptPaths,
-  receiptSummary,
 } from '../src/renderer/src/components/review/cardMeta.js';
 
 /**
@@ -42,16 +39,6 @@ function card(id: string, extra: Partial<ProposalDTO> = {}): ProposalDTO {
     ...extra,
   };
 }
-
-// ---------------------------------------------------------------------------
-// The session review: the tally
-// ---------------------------------------------------------------------------
-
-test('the tally names only what happened', () => {
-  assert.equal(receiptSummary({ accepted: 2, rejected: 1 }), 'Approved 2, discarded 1');
-  assert.equal(receiptSummary({ accepted: 2, rejected: 0 }), 'Approved 2');
-  assert.equal(receiptSummary({ accepted: 0, rejected: 2 }), 'Discarded 2');
-});
 
 // ---------------------------------------------------------------------------
 // Chat: the resolved-cards receipt
@@ -138,7 +125,7 @@ test('every kind of card lands as the row a silent write would have left', () =>
   );
 });
 
-test('an approved to-do wears the mark the Todos view wears', () => {
+test('an approved to-do says who and when, and skips the mark', () => {
   const row = appliedRowForCard(
     card('a', {
       kind: 'note',
@@ -150,8 +137,7 @@ test('an approved to-do wears the mark the Todos view wears', () => {
     }),
   );
   assert.equal(row.verb, 'New todo');
-  assert.equal(row.inferred, true);
-  assert.equal(row.change, `you · due 11 Sep · ${INFERRED_TODO_MARK}`);
+  assert.equal(row.change, 'you · due 11 Sep');
 });
 
 test('the Activity row an approval left is the row’s way back', () => {
@@ -223,34 +209,20 @@ test('a session that proposed nothing gets no receipt', () => {
   assert.deepEqual(receiptOf([]), { accepted: 0, rejected: 0, rows: [] });
 });
 
-// ---------------------------------------------------------------------------
-// The door
-// ---------------------------------------------------------------------------
-
-function item(id: string, extra: Partial<AttentionItem> = {}): AttentionItem {
-  return {
-    id,
-    kind: 'card',
-    label: id,
-    meta: 'to approve',
-    tone: 'brand',
-    target: { open: 'session', sessionId: 'session-1', title: 'Session' },
-    ...extra,
-  };
-}
-
-test('the door counts what waits elsewhere, never this session’s own cards', () => {
-  const items = [
-    item('card:p1'),
-    item('card:p2'),
-    item('card:p3'),
-    item('question:s2', { kind: 'question' }),
-    // The librarian's own question can always wait, so no door counts it.
-    item('question:s3', { kind: 'question', quiet: true }),
-    // The clock's items are attention, but no session is waiting on them.
-    item('todo:todos/a.md', { kind: 'todo' }),
+test('a write that landed on its own is not something the PM approved', () => {
+  // A silent write is an accepted card in the store, but the PM never saw it as
+  // one, and the turn that landed it already draws it. Counting it here drew
+  // the same to-do twice, under "Approved 2".
+  const resolved = [
+    card('a', { status: 'accepted', targetPath: 'todos/tell-petra.md', silent: true }),
+    card('b', { status: 'accepted', targetPath: 'customers/brunos.md', silent: true }),
+    card('c', { status: 'accepted', targetPath: 'notes/runbook.md', created: NOW + 1 }),
   ];
-  assert.equal(waitingElsewhere(items, ['p1', 'p2']), 2);
-  assert.equal(waitingElsewhere(items, []), 4);
-  assert.equal(waitingElsewhere([], ['p1']), 0);
+  const receipt = receiptOf(resolved);
+  assert.equal(receipt.accepted, 1);
+  assert.deepEqual(
+    receipt.rows.map((r) => r.path),
+    ['notes/runbook.md'],
+  );
+  assert.deepEqual(receiptPaths(resolved), ['notes/runbook.md']);
 });

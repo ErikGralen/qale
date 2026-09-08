@@ -5,7 +5,8 @@ scores, churn signals, on-prem asks. The 42-interview research in `transcripts2/
 a PO at a mid-size Nordic product company who spends most of the week in meetings with people who want something,
 and then hand-copies the results into Jira, Confluence and four chat threads. The demo data should be that job.
 
-Settled: everything in English (Swedish names only). The Jira flip in Flow 4 is a demo step you apply on cue. Slack is copy-out only.
+Settled: everything in English (Swedish names only). Nothing is typed during the demo and nothing in it is a demo-only
+control; every step is a drop, a paste, a click or a menu pick the product has anyway. Slack is copy-out only.
 
 ## 1. The pains the demo must hit, in priority order
 
@@ -115,21 +116,17 @@ approve the three outbound cards one by one and open Jira to show the comment la
 
 ### Flow 2 — "When can we deliver?" (P2)
 
-**Sales pings → Ask → copy a cited answer.** Run right after Flow 1.
+**Todo → Help me handle this → copy the reply.** Run right after Flow 1.
 
-Marcus writes in `#sales` for the fourth time: "When can we deliver shift swaps to Café Nord? They're asking again."
+Marcus has asked in `#sales` three times this week. The seeded todo "Reply to Marcus about the swap ETA" is due
+today and holds the pings. Click **Help me handle this**. The commitment-check skill answers from the record:
+`SCH-231`'s state from the mirror (two of three stories done, last remote update), the steering decision approved
+two minutes ago, Rebecca's pending re-estimate, and what Marcus promised at the QBR with the date. It says plainly
+that there is no target date anywhere but the one sales gave. The reply comes in the sales voice, copy-only, and a
+card logs on Marcus's page what he was told.
 
-Ask: *"When can we deliver shift swaps to Café Nord, and what have they already been told?"*
-
-Expected answer: `SCH-231` state from the mirror (In Progress, two of three stories done, last remote update), the
-steering decision approved two minutes ago, Rebecca's pending re-estimate todo, and what Marcus promised at the QBR
-with the date. It should say plainly that there is no target date in Jira and that the only date in circulation is
-the one sales gave. Cite-or-decline, no invented ETA.
-
-Follow up: *"Draft a reply to Marcus."* The sales voice is picked from the audience, unprompted. Copy from the `draft_text` panel into Slack by hand.
-
-Presenter beat: the same question comes in four chats; this answer is the same every time because it reads from an
-approved log, not from the PO's memory.
+Presenter beat: the same question comes in four chats; the answer is the same every time because it reads from an
+approved log, not from the PO's memory. Nothing is typed.
 
 ### Flow 3 — "The support thread" (P4, and the setup for P7)
 
@@ -149,27 +146,15 @@ the link that did not exist at Albacross.
 
 ### Flow 4 — "Who needs to know?" (P7, the payoff)
 
-**Ticket goes Done → Ask who needs to know → approve the messages.**
+**Todos → Help me handle this on each → approve the messages.**
 
-`SCH-231` goes Done on cue, from inside the app: **Settings → Demo → Script steps → "Flow 4: SCH-231 (shift swaps
-epic) → Done"**. The step adds Rebecca's closing comment, flips the epic, and brings the Flow 2 step ("SCH-240 (last
-swap story) → Done") with it if you have not run that one yet. A sync tick follows the step, so wait a moment for
-`tickets/jira/SCH-231.md` to read Done before you Ask. Both steps run once per demo and a Reset gives them back.
+The steering decision changed what customers were told, and the app already turned that into todos: Fjord Sports
+(told Q4 for payroll export, now Q1) from Flow 1, and Bruno's (asked for swaps in March, never answered) from
+Flow 3. Open Todos and click **Help me handle this** on each. Each one comes back as a CS-voice message citing the
+steering decision and the customer's own ask, plus a card that logs what they were told and when.
 
-For a demo against a real Atlassian site there is a CLI path to the same state: `pnpm reset:done` (or
-`pnpm refresh-demo:done` plus `pnpm reset-atlassian:done`) lays the overlay in `scripts/demo-overlays/done/` over
-the vault and flips `SCH-231` and `SCH-240` to Done in Jira before the date shift. That one stages the close up
-front, so Flow 2's answer has to say "the last story closed today, not yet released".
-
-Ask: *"SCH-231 just went to Done. Who needs to know, and what were they told?"*
-
-Expected answer, each line with its source: Bruno's asked via support in March and was never told (Flow 3); Café
-Nord was promised it at the QBR by Marcus; Fjord Sports was told "Q4" for payroll export and that is now Q1 (Flow
-1); Jonas needs a support macro. Then: *"Draft the messages to each of them."* CS voice for the customers, plain for Jonas, picked without being told.
-Cards: per-recipient drafts to copy, an update to `last_told` on each person, todos for Ulrika and Marcus.
-
-Presenter beat: this is the churn that does not happen. The recipients were not recalled from memory; each one is
-there because of an approved note with a date.
+Presenter beat: this is the churn that does not happen. Nobody recalled these people from memory; each one is on
+the list because of an approved note with a date. Open the Bruno's page afterwards to show the last-told line.
 
 ### Flow 5 — "Friday update" (P9)
 
@@ -196,9 +181,9 @@ the open re-estimate.
 |---|---|---|
 | 0-1 | Setup | Finder: the vault is markdown. Jira and Confluence in another tab, real. |
 | 1-5 | Flow 1 | Drop the steering transcript. Cards. Supersede. Approve all, outbound one by one, show Jira. |
-| 5-6 | Flow 2 | Marcus's fourth ping. Cited answer, sales-voice reply. |
+| 5-6 | Flow 2 | Marcus's todo, Help me handle this, sales-voice reply. |
 | 6-8 | Flow 3 | Paste the March support thread. Insight, Jira comment, todo for Ulrika. |
-| 8-10 | Flow 4 | SCH-231 Done. Who needs to know. Messages. |
+| 8-10 | Flow 4 | Todos: Fjord Sports and Bruno's. Help me handle this. Messages. |
 | 10-12 | Flow 5 | Friday update in three voices. |
 
 Paste the support thread (Flow 3) before starting Flow 1 if you want its cards ready when you get there; a drop is a
@@ -245,7 +230,6 @@ Connector seeds:
 - `steering-h2-priorities.vtt` (Flow 1). Teams-style, four speakers, must contain the supersede, the not-doing,
   three owned actions, one GDPR mention, and Marcus repeating the Café Nord promise.
 - `support-thread-brunos.md` (Flow 3). Slack export style, three messages, ends unresolved.
-- `chat-prompts.md` with the Flow 2 and Flow 4 prompts and the follow-ups.
 - `README.md` rewritten to map files to flows; remove the "Inbox" and "After-Meeting skill" references.
 
 ## 6. Sharp edges that survive the rewrite

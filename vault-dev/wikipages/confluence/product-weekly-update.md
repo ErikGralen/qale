@@ -24,7 +24,7 @@ before anyone gives a date. Nothing on the page moves until that number exists.
 
 **Payroll export.** The approved-hours CSV shipped on 2026-06-24 with a column set both
 Fortnox and Visma accept. The Fortnox connector works against the sandbox and is waiting on the
-platform token store. H2 order is unchanged: payroll export first, shift swaps in Q4.
+platform token store.
 
 ## 2026-07-03
 
@@ -32,5 +32,5 @@ platform token store. H2 order is unchanged: payroll export first, shift swaps i
 systems rather than one per customer. The Fortnox connector starts next week.
 
 **Shift swaps.** The request model and API are done and the staff-app screen is about a week
-out. Both epics are on the same team, so if the H2 order changes, one of them slips a quarter —
-the capacity numbers are with the CPO.
+out. Both epics are on the same team, so a change of order moves one of them a quarter; the
+capacity numbers are with the CPO.

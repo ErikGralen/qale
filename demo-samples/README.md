@@ -23,7 +23,6 @@ pnpm desktop             # then open the .vault-dev workspace
 | ------------------------------ | ------------------------------------------- | ---------------------- |
 | `steering-h2-priorities.vtt`   | Drop it on the window                       | Flow 1 (a meeting you were in) |
 | `support-thread-brunos.md`     | Paste it into Home's bar                    | Flow 3 (a pasted source) |
-| `chat-prompts.md`              | n/a — type these into Ask or a chat         | Flow 2 and Flow 4 prompts |
 
 Dropping or pasting starts (or adds to) the `arrival` session: the one place new material lands,
 reads itself, and works out where it belongs. Nothing is pre-filed; that reading is the point.
@@ -62,17 +61,13 @@ the customer; an update to the Bruno's customer page; a Jira comment on `SCH-231
 asked for this via support in March, with the thread linked; and a todo for Ulrika to tell Bruno's
 once `SCH-231` ships.
 
-### Flow 2 and Flow 4: chat prompts
+### Flow 2 and Flow 4: no files, no typing
 
-`chat-prompts.md` is not something you ingest. It holds the Ask prompts (and their follow-ups)
-for two flows that run entirely in a chat, after Flow 1 and Flow 3 have landed:
+Nothing is typed in these two flows. Both run from Todos with **Help me handle this**:
 
-- **Flow 2** answers "when can we deliver shift swaps to Café Nord, and what have they already
-  been told", citing the ticket mirror, the fresh steering decision, and Marcus's promise from the
-  QBR, then drafts a reply in the sales voice.
-- **Flow 4** runs once `SCH-231` is switched to its Done snapshot: "who needs to know, and what
-  were they told", pulling together Bruno's (never told), Café Nord (promised at the QBR), and
-  Fjord Sports (told Q4, now Q1), then drafts the messages, CS voice for the customers, one line
-  for Jonas.
+- **Flow 2**: the seeded todo "Reply to Marcus about the swap ETA", due today. The reply comes in
+  the sales voice, citing the ticket mirror, the fresh steering decision and Marcus's promise from
+  the QBR, and a card logs what he was told.
+- **Flow 4**: the "tell" todos that Flow 1 and Flow 3 created, Fjord Sports and Bruno's. Each one
+  comes back as a CS-voice message and a card that logs what the customer was told.
 
-Type each prompt into Ask and copy the drafted replies out by hand once you're happy with them.

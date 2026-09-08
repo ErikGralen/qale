@@ -122,10 +122,28 @@ export class DemoService {
    * fixture and every other provider is left alone.
    */
   readonly fetchImplFor = (providerId: string): FetchLike | undefined => {
-    if (providerId === ATLASSIAN_PROVIDER) return this.fake?.fetchImpl ?? undefined;
-    if (providerId === GOOGLE_PROVIDER) return this.google?.fetchImpl ?? undefined;
+    if (!this.enabled) return undefined;
+    // Resolved per request, not once. A connector is built when its credential
+    // is first read and kept until the credential changes, and on a profile
+    // that already holds the demo connections that happens before `start()`
+    // has made the fakes. A transport captured then would be the real fetch
+    // for the whole session.
+    if (providerId === ATLASSIAN_PROVIDER)
+      return (url, init) => this.fakeFetch('Atlassian', this.fake?.fetchImpl, url, init);
+    if (providerId === GOOGLE_PROVIDER)
+      return (url, init) => this.fakeFetch('Google Calendar', this.google?.fetchImpl, url, init);
     return undefined;
   };
+
+  private fakeFetch(
+    name: string,
+    impl: FetchLike | undefined,
+    url: string,
+    init?: RequestInit,
+  ): Promise<Response> {
+    if (!impl) return Promise.reject(new Error(`demo: the fake ${name} has not started`));
+    return Promise.resolve(impl(url, init));
+  }
 
   /**
    * The same fake, for the OAuth service: its token refresh is the one Google

@@ -3,6 +3,7 @@ import {
   CONNECTOR_PROVIDERS,
   type Connector,
   type ConnectorProvider,
+  type FetchLike,
 } from '@qale/connectors';
 import type { OutboundPort } from '@qale/application';
 
@@ -41,19 +42,25 @@ export function outboundConnections(
   settings: OutboundSettings,
   google: GoogleOutboundAuth,
   registry: readonly ConnectorProvider<unknown>[] = CONNECTOR_PROVIDERS,
+  /** The transport a provider's connector writes through. The demo build hands
+   *  the fakes over here, the same seam the sync service uses; absent, every
+   *  connector uses the global fetch. */
+  fetchImplFor?: (providerId: string) => FetchLike | undefined,
 ): OutboundConnection[] {
   const out: OutboundConnection[] = [];
   for (const provider of registry) {
+    const fetchImpl = fetchImplFor?.(provider.id);
+    const opts = fetchImpl ? { fetchImpl } : undefined;
     if (provider.id === GOOGLE_PROVIDER) {
       if (!settings.getGoogle()) continue;
       out.push({
-        connector: provider.create({ getAccessToken: () => google.getAccessToken() }),
+        connector: provider.create({ getAccessToken: () => google.getAccessToken() }, opts),
         ensureWriteAccess: () => google.ensureWriteScope(),
       });
       continue;
     }
     const stored = settings.getConnection(provider.id);
-    const connector = stored ? connectorFrom(provider, stored.fields) : null;
+    const connector = stored ? connectorFrom(provider, stored.fields, opts) : null;
     if (connector) out.push({ connector });
   }
   return out;

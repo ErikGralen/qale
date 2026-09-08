@@ -718,10 +718,16 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // connections have a credential right now. Google's write scope is secured
     // via incremental consent at push time, never pre-emptively.
     ctx.outbound = makeOutbound(
-      outboundConnections(settings, {
-        getAccessToken: () => googleOAuth.getAccessToken(),
-        ensureWriteScope: () => googleOAuth.ensureWriteScope(),
-      }),
+      outboundConnections(
+        settings,
+        {
+          getAccessToken: () => googleOAuth.getAccessToken(),
+          ensureWriteScope: () => googleOAuth.ensureWriteScope(),
+        },
+        undefined,
+        // Demo build only: writes go to the fakes, like the sync reads do.
+        demo?.fetchImplFor,
+      ),
     );
     // Whether a codebase question is even possible: a configured folder AND a
     // `claude` on the machine. The probe is async, so this sets what is known

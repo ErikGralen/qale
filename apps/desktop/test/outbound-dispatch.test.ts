@@ -117,3 +117,35 @@ test('the connections come from the registry and the stored credentials', () => 
   );
   assert.equal(makeOutbound(built) !== undefined, true);
 });
+
+test('the transport handed to outboundConnections reaches every connector it builds', () => {
+  const seen: Array<{ id: string; fetchImpl: unknown }> = [];
+  const provider = (id: string): ConnectorProvider<unknown> =>
+    ({
+      id,
+      label: id,
+      authSchema: z.object({ apiToken: z.string().min(1) }),
+      authFields: [{ key: 'apiToken', label: 'API token', secret: true }],
+      renewFieldKeys: ['apiToken'],
+      create: (_creds: unknown, opts?: { fetchImpl?: unknown }) => {
+        seen.push({ id, fetchImpl: opts?.fetchImpl });
+        return fakeConnector(id, { ticket: id }, []);
+      },
+    }) as unknown as ConnectorProvider<unknown>;
+  const settings = {
+    getConnection: (connectionId: string) => ({ providerId: connectionId, fields: { apiToken: 't' } }),
+    getGoogle: () => ({ refreshToken: 'r' }),
+  };
+  const google = { getAccessToken: async () => 'tok', ensureWriteScope: async () => {} };
+  const fake = async () => new Response('{}');
+
+  outboundConnections(settings, google, [provider('atlassian'), provider('google-calendar')], (id) =>
+    id === 'atlassian' ? fake : undefined,
+  );
+
+  // The demo fake goes to the provider it is for, and only that one.
+  assert.deepEqual(seen, [
+    { id: 'atlassian', fetchImpl: fake },
+    { id: 'google-calendar', fetchImpl: undefined },
+  ]);
+});

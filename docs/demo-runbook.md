@@ -46,64 +46,65 @@ Reset also rewrites the Desktop folder, so the sample files are always the curre
 
 ### The script
 
-Type the prompts exactly as written. Copy them from `chat-prompts.md` on the Desktop rather than retyping. Approve
-cards as they are, without editing, so the recording matches what the vault will contain at replay. Wait for each
-session to finish before the next step. A transcript session takes minutes; that is normal.
+Nothing is typed. Every step is a drop, a paste, a click, or a menu pick, so the recording matches at replay no
+matter who presents. Approve cards as they are, without editing. Wait for each session to finish before the next
+step. A transcript session takes minutes; that is normal.
 
 **Flow 1. Drop the steering transcript.**
 
 Drag `steering-h2-priorities.vtt` from the Desktop folder `Qale demo files` onto the app window. Not the copy in
-the repo: only the Desktop copy is dated to today. Wait for the arrival session to
-finish. You should see, roughly:
+the repo: only the Desktop copy is dated to today. Wait for the arrival session to finish. You should see, roughly:
 
 - a meeting page for the steering on the day before today
 - a decision "shift swaps before payroll export" that supersedes the H2-order decision, with offline mode declined
-- todos for Rebecca (re-estimate SCH-240), Henrik (GDPR review), and you (tell Fjord Sports)
+- todos with owners: Rebecca re-estimates SCH-240, Henrik reviews swap notifications, you tell Fjord Sports the new
+  payroll-export timeline
 - three outbound cards: a comment on SCH-118, a new SCH story for swap notifications, a patch to Roadmap H2
 
-Press **Approve all**. Then approve the three outbound cards one at a time.
+If the model asks a question (a card with options) before it files anything, answer it and write down the exact
+option you picked; the presenter must pick the same one. A question about the meeting date means the sample dating
+is broken again. Stop and tell me.
 
-If the model asks a question (a card with options) before it files anything, answer it and write down the
-exact option you picked; the demo presenter must pick the same one. A question about the meeting date means the
-sample dating is broken again. Stop and tell me.
+Press **Approve all**. Then approve the three outbound cards one at a time. Open the SCH-118 ticket page and check
+the comment is there; if it is not, the connection is not on the fake. Stop and tell me.
 
 If the cards are wrong in a way you would not show an audience, stop here and tell me. We fix the transcript or the
 skill, Reset, and start again. A recording of a bad session is worthless.
 
-**Flow 2. Ask when we can deliver.**
+**Flow 2. Marcus's fourth ping.**
 
-In Home, Ask: `When can we deliver shift swaps to Café Nord, and what have they already been told?`
-
-Then: `Draft a reply to Marcus.`
-
-In the draft panel, open the **What you can say** tab and click **Log it to Marcus**. That click sends text on
-your behalf and is part of the recording, so the presenter does the same.
-
-The answer should cite SCH-231's state, the decision you just approved, Rebecca's re-estimate todo, and Marcus's
-QBR promise. It should say there is no target date in Jira.
+Open Todos. "Reply to Marcus about the swap ETA" is due today; its body holds his three pings. Click **Help me
+handle this**. Expect a reply he can send, in the sales voice, that names SCH-231's state, the decision you just
+approved, and what he promised at the QBR, and says there is no date yet. Approve what it proposes (the reply is
+copy-only; the logging of what Marcus was told is a card).
 
 **Flow 3. Paste the support thread.**
 
-Open `support-thread-brunos.md` from the Desktop folder, copy the whole body, paste it into Home's bar. Wait for the
-session. Expect an insight on shift swaps with Bruno's as the customer, an update to the Bruno's page, a comment on
-SCH-231, and a todo for Ulrika. Check the insight card carries the tag `shift-swaps`; Flow 4 finds Bruno's through
-it. Approve all, then the outbound comment. Do not click **Help me handle this** on the new todo.
+Open `support-thread-brunos.md` from the Desktop folder, copy the whole body, paste it into Home's bar. Wait.
+Expect an insight on shift swaps with Bruno's as the customer, an update to the Bruno's page, a comment on
+SCH-231, and a todo to tell Bruno's. Check the insight card carries the tag `shift-swaps`. Approve all, then the
+outbound comment.
 
 **Flow 4. Who needs to know.**
 
-Settings → Demo → apply **SCH-231 → Done**. Wait for the sync that follows, then open the SCH-231 ticket page and
-check it reads Done. If it still reads In Progress, the connection is not on the fake: stop and tell me. Then Ask: `SCH-231 just went to Done. Who needs to know, and what were they told?`
+Open Todos again. The app has collected the people the decision affects: Fjord Sports (told Q4, now Q1), from
+Flow 1, and Bruno's (asked in March, never answered), from Flow 3. Click **Help me handle this** on each, one at a
+time, and wait between them. Expect a message in the CS voice for each, citing the steering decision, and a card
+that logs what they were told. Approve. Open the Fjord Sports or Bruno's customer page to show the last-told line.
 
-Then, lowercase and without a full stop, exactly: `draft a reply to each of them`
+The Fjord Sports one asks two questions before it drafts. Pick the first option on both, and the presenter does
+the same:
 
-Approve the cards it produces.
+- "Which date": **Q4 is gone: Fortnox Q1, Visma after Q1, no firm month yet**
+- "Ulrika first": **Yes, a short note to Ulrika, then the mail to Oskar**
 
 **Flow 5. Weekly update.**
 
-Type `/` in Home, pick **Write the weekly update**. Wait. Approve the three drafts.
+Type `/` in Home, pick **Write the weekly update**. Wait. Expect drafts for Åsa (exec), customers (CS) and sales,
+each with what changed this week: the decision, the messages just sent, SCH-231's state. Approve the three drafts.
 
-**Stop.** Do not run the librarian or meeting prep with Run now, do not ask anything extra, do not open Settings →
-Demo → Reset. Quit the app. Tell me it is done.
+**Stop.** Do not run the librarian or meeting prep with Run now, do not use Ask, do not open Settings → Demo →
+Reset. Quit the app. Tell me it is done.
 
 ### If something breaks mid-run
 
@@ -130,9 +131,9 @@ run.
 - An installer named "Qale Demo". Windows shows "Windows protected your PC" because it is unsigned. The path is
   **More info → Run anyway**. It installs per user, no admin prompt.
 - On first launch the app builds the demo workspace, and puts the four demo files in `Desktop\Qale demo files`.
-- The five flows in order, with the prompts in `chat-prompts.md`. Prompts must be pasted as written.
-- Settings → Demo has the SCH-231 → Done step for Flow 4, and Reset to start over.
-- Anything typed off-script gets the line "I'm the demo build, so I only know the walkthrough."
+- The five flows in order, from the README in the Desktop folder. Nothing is typed.
+- Settings → Demo has Reset, for starting over between demos. Nothing in there is part of the walkthrough.
+- Anything typed into Ask gets the line "I'm the demo build, so I only know the walkthrough."
 - No API key, no Jira, no Confluence, no Google account. Everything is faked inside the app.
 
 ## Known limits

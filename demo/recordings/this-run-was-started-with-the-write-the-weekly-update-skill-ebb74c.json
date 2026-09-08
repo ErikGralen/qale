@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "key": "first-message-sch-231-just-went-to-done-who-needs-to-know-an-01f07b",
+  "key": "this-run-was-started-with-the-write-the-weekly-update-skill-ebb74c",
   "turns": [
     {
       "request": {
@@ -11,7 +11,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "First message:\nSCH-231 just went to Done. Who needs to know, and what were they told?",
+                "text": "This run was started with the \"Write the weekly update\" skill.",
                 "cache_control": {
                   "type": "ephemeral"
                 }
@@ -23,27 +23,27 @@
       },
       "response": {
         "model": "claude-haiku-4-5-20251001",
-        "id": "msg_011CepbC1WbkWZNNFnLvMazo",
+        "id": "msg_011CerATYbe6g1nt6ouRGNGL",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "text",
-            "text": "SCH-231 went to Done"
+            "text": "Weekly update"
           }
         ],
         "stop_reason": "end_turn",
         "stop_sequence": null,
         "stop_details": null,
         "usage": {
-          "input_tokens": 133,
+          "input_tokens": 122,
           "cache_creation_input_tokens": 0,
           "cache_read_input_tokens": 0,
           "cache_creation": {
             "ephemeral_5m_input_tokens": 0,
             "ephemeral_1h_input_tokens": 0
           },
-          "output_tokens": 11,
+          "output_tokens": 5,
           "service_tier": "standard",
           "inference_geo": "not_available"
         }

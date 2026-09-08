@@ -1,4 +1,4 @@
-import type { Connector, ConnectorProvider, ProviderReadTool } from './types.js';
+import type { Connector, ConnectorProvider, ProviderReadTool, FetchLike } from './types.js';
 
 /**
  * Stored credential fields, and what gets built from them. Three callers build
@@ -51,9 +51,10 @@ export function collectFields(
 export function connectorFrom(
   provider: ConnectorProvider<unknown>,
   fields: Record<string, string>,
+  opts?: { fetchImpl?: FetchLike },
 ): Connector | null {
   const parsed = provider.authSchema.safeParse(collectFields(provider, fields));
-  return parsed.success ? provider.create(parsed.data) : null;
+  return parsed.success ? provider.create(parsed.data, opts) : null;
 }
 
 /** The provider's agent-facing reads from stored fields. Empty when the

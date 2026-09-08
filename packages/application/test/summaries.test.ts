@@ -60,6 +60,7 @@ function fakeActivity() {
     list: () => [...rows].reverse(),
     get: (id: string) => rows.find((r) => r.id === id) ?? null,
     latestLearned: () => [],
+    forProposal: (id: string) => rows.find((r) => r.proposalId === id) ?? null,
     markReverted: () => {},
   };
   return { rows, port };

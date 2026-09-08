@@ -452,6 +452,8 @@ export const QUESTION_RATION = `How many of these to ask about:
 - One card, not one question per finding. Aim for two questions and stop there.
 - Ask only where the answer changes what somebody does: a date, an owner, a number, a promise
   nobody is carrying out, a decision that is now two decisions.
+- A conflict over one of those is always worth a question, and it is asked before you write either
+  side. Once they answer, write what they chose and set \`asked\`.
 - Never ask about our own filing: where a note lives, what it is called, which tag it carries,
   whether to write something up. Those are yours to settle.
 - More than two is right when each extra question clears something the PM has to settle this week.
@@ -567,14 +569,16 @@ export function createCheckClaimsTool(
     label: 'Check claims',
     description:
       'Look up what new material says against what the workspace already holds. Call it once, after you have read ' +
-      'the material and before you propose anything from it. Write out what the material CLAIMS: who committed to ' +
+      'the material and before you propose the todos and the decisions from it. Write out what the material CLAIMS: who committed to ' +
       'what, dates, owners, numbers, decisions, and one claim per entry in the words the material used. Each claim ' +
       'needs a scope: "about" the pages it concerns, or a "tag". The lookup reads those pages and their ' +
       'neighbours, never the whole workspace. Every claim comes back as one of five things: already known (do ' +
       'nothing), new (file it as you normally would), in conflict with a note we hold, implying something that is ' +
       'not there, or no answer. The last one means the lookup could not settle it: treat it as if you had not ' +
-      'asked, and never raise a question from it. A conflict or a missing thing can earn ONE short question to the ' +
-      'PM about their world, never about our filing. The answer tells you how many to ask.',
+      'asked, and never raise a question from it. A `conflict` verdict is a question to ask, and to ask before ' +
+      'you write either side: name what the material says, name the note as a link, and give the two answers as ' +
+      'options. A missing thing can earn a short question too. Both are questions about their world, never about ' +
+      'our filing. The answer tells you how many to ask.',
     parameters: Type.Object({
       claims: Type.Array(
         Type.Object({
@@ -601,7 +605,7 @@ export function createCheckClaimsTool(
     }),
     promptGuidelines: [
       'After reading new material, write out what it claims and call check_claims once, before proposing anything from it.',
-      'A conflict or a gap it finds can earn a short question to the PM about their world. Our own filing never can.',
+      'A conflict it finds is a question, asked before you write either side. A gap can earn one too. Both are about their world; our own filing never is.',
     ],
     async execute(_id, params) {
       const planned = planClaims(params);

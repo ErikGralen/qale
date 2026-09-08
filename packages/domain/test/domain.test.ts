@@ -15,6 +15,9 @@ import {
   todoAddedOn,
   isOverdueTodo,
   isExternalTodo,
+  isInferredTodo,
+  withoutInferenceMark,
+  droppedInferredTodoLine,
   byDue,
   type DecisionNode,
   type Frontmatter,
@@ -217,6 +220,56 @@ test('todoAddedOn: the day a todo was written down, off its file name', () => {
   assert.equal(todoAddedOn('todos/email-asa-about-rollout.md'), null);
   assert.equal(todoAddedOn('todos/2026-13-01-not-a-month.md'), null);
   assert.equal(todoAddedOn('todos/2026-07-17.md'), null);
+});
+
+// --- FA-7: the mark on a todo Qale heard rather than was told ---
+
+test('the todo schema keeps `inference`, so the mark survives the write', () => {
+  const parsed = parseFrontmatter({
+    type: 'todo',
+    summary: 'Send Nordkap the SSO dates',
+    title: 'Send Nordkap the SSO dates',
+    commitment: 'open',
+    sources: ['[[meetings/2026-09-04-nordkap-check-in]]'],
+    inference: true,
+  });
+  // Unknown keys are dropped on the way through, so a field the schema does not
+  // hold never reaches the file. The mark is only in the file because it is here.
+  assert.equal(parsed.ok, true, parsed.error);
+  assert.equal((parsed.data as Record<string, unknown>)['inference'], true);
+});
+
+test('a todo with no mark is not an inferred one', () => {
+  assert.equal(isInferredTodo({}), false);
+  assert.equal(isInferredTodo({ inference: false }), false);
+  assert.equal(isInferredTodo({ inference: true }), true);
+});
+
+test('withoutInferenceMark drops the field and touches nothing else', () => {
+  const before = { type: 'todo', title: 'Email Åsa', commitment: 'open', inference: true };
+  const after = withoutInferenceMark(before);
+  assert.deepEqual(after, { type: 'todo', title: 'Email Åsa', commitment: 'open' });
+  // The original is left alone: the callers write the copy, not this.
+  assert.equal(before.inference, true);
+  // Nothing to clear is not an error, and costs no copy.
+  const plain = { type: 'todo', title: 'Email Åsa' };
+  assert.equal(withoutInferenceMark(plain), plain);
+});
+
+test('the dropped row says what was removed, where Qale heard it, and why', () => {
+  assert.equal(
+    droppedInferredTodoLine({ title: 'Send Nordkap the SSO dates', source: 'Nordkap check-in' }),
+    'Removed Send Nordkap the SSO dates. Qale had heard it in Nordkap check-in and you said it was not a commitment.',
+  );
+  // No source, a shorter sentence — never a dangling "in".
+  assert.equal(
+    droppedInferredTodoLine({ title: 'Send Nordkap the SSO dates' }),
+    'Removed Send Nordkap the SSO dates. Qale had heard it and you said it was not a commitment.',
+  );
+  assert.equal(
+    droppedInferredTodoLine({ title: 'Email Åsa', source: '  ' }),
+    'Removed Email Åsa. Qale had heard it and you said it was not a commitment.',
+  );
 });
 
 test('byDue: dated before undated, earlier first', () => {

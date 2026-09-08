@@ -21,6 +21,7 @@ import { localDateStr } from '../lib/dates';
 import { addDays, dueLabel } from '../lib/due-date';
 import { DatePicker } from '../components/DatePicker';
 import { parseTodoInput } from '../lib/todo-parse';
+import { todoRowCopy } from '../lib/todo-row';
 import { handleTodoSeed } from '../lib/agent-nudges';
 import type { AtRiskLinkDTO } from '../lib/connections';
 import { TodoDetail } from '../components/TodoDetail';
@@ -192,6 +193,7 @@ function TodoRowItem({
   const n = row.note;
   const closed = row.lane === 'closed';
   const dropped = n.lifecycle === 'dropped';
+  const copy = todoRowCopy(n);
 
   const ownerSlug = n.owner ? refSlug(n.owner) : null;
   const ownerNote = ownerSlug ? peopleBySlug.get(ownerSlug) : undefined;
@@ -223,6 +225,8 @@ function TodoRowItem({
         aria-label={`${n.title}${n.due ? `, due ${dueLabel(n.due, today)}` : ''}${
           row.overdue ? ', overdue' : ''
         }${ownerName ? `, waiting on ${ownerName}` : ''}${
+          copy.mark && !closed ? `, ${copy.mark}` : ''
+        }${
           risk && !closed
             ? `, at risk: ${risk.externalId} ${risk.reason === 'blocked' ? 'blocked' : 'changed'}`
             : ''
@@ -264,6 +268,14 @@ function TodoRowItem({
         >
           {n.title}
         </span>
+
+        {/* Where the commitment came from, in the same quiet voice as the date
+            beside it (PRODUCT.md: what the PO said and what the agent inferred
+            stay visibly different). No colour, no badge: it is a fact about the
+            row, not a warning about it. */}
+        {copy.mark && !closed && (
+          <span className="shrink-0 text-xs text-muted-foreground">{copy.mark}</span>
+        )}
 
         {closed ? (
           <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
@@ -342,7 +354,7 @@ function TodoRowItem({
               onClick={onDrop}
               disabled={busy}
               aria-label={`Drop "${n.title}"`}
-              title="Drop: keeps the record, closes the todo"
+              title={copy.dropHint}
             >
               <X className="size-3.5" aria-hidden />
             </button>

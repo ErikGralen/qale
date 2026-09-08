@@ -29,9 +29,7 @@ export interface DraftText {
   title?: string;
   voice?: string;
   variants: DraftVariant[];
-  /** The agent's own button and the sentence it adds to the sent message. */
-  action?: { label?: string; message?: string };
-  /** Shown under the footer after Copy or Use this. Absent on an ordinary panel. */
+  /** Shown under the footer after Copy. Absent on an ordinary panel. */
   ask?: DraftAsk;
 }
 
@@ -87,21 +85,16 @@ export function draftTextOf(input: unknown): DraftText | null {
     const v = item as Record<string, unknown>;
     const body = str(v.body);
     if (body === undefined) continue;
-    // A variant is a tab, and a tab with no name cannot be picked or named in
-    // the message the Use button sends. Number it rather than drop the text.
+    // A variant is a tab, and a tab with no name cannot be named in the
+    // message an answer sends. Number it rather than drop the text.
     variants.push({ label: str(v.label) ?? `Version ${variants.length + 1}`, body });
   }
   if (variants.length === 0) return null;
-  const action =
-    typeof raw.action === 'object' && raw.action !== null
-      ? (raw.action as Record<string, unknown>)
-      : undefined;
   const ask = askOf(raw.ask);
   return {
     title: str(raw.title),
     voice: str(raw.voice),
     variants,
-    ...(action ? { action: { label: str(action.label), message: str(action.message) } } : {}),
     ...(ask ? { ask } : {}),
   };
 }
@@ -223,20 +216,10 @@ export function draftWordCount(body: string): number {
 }
 
 /**
- * What the Use button sends, as the person: the open tab by name, then the
- * agent's own sentence when the call carried one. The panel keeps no state the
- * model can read, so this sentence is the only thing that says which version
- * they picked.
- */
-export function draftUseMessage(label: string, actionMessage?: string): string {
-  const picked = `Use the "${label}" version.`;
-  return actionMessage ? `${picked} ${actionMessage}` : picked;
-}
-
-/**
- * What picking a voice sends, as the person. Same move as the Use button: the
- * panel changes nothing and asks for nothing, it says out loud what the person
- * wants and the agent drafts again. A new panel arrives; this one stays.
+ * What picking a voice sends, as the person. Same move as answering the
+ * panel's question: the panel changes nothing and asks for nothing, it says
+ * out loud what the person wants and the agent drafts again. A new panel
+ * arrives; this one stays.
  *
  * It asks for the WHOLE panel, never the open tab. A voice is how the draft
  * sounds, and the variants are takes on the same draft: rewriting one of them

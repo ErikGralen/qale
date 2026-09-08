@@ -223,7 +223,9 @@ export interface InvokeMap {
 
   // Todos (the commitment ledger)
   'todos:capture': { args: [input: CaptureTodoInputDTO]; result: NoteDTO };
-  'todos:setStatus': { args: [path: string, commitment: TodoCommitment]; result: NoteDTO };
+  /** Null when the todo went away: dropping one Qale only heard deletes the
+   *  file rather than leaving a closed row (docs/fewer-approvals.md FA-7). */
+  'todos:setStatus': { args: [path: string, commitment: TodoCommitment]; result: NoteDTO | null };
   /** Snooze: move the due date, or `null` to clear it (→ Someday). */
   'todos:setDue': { args: [path: string, due: string | null]; result: NoteDTO };
 
@@ -276,6 +278,10 @@ export interface InvokeMap {
       /** The vault note the accept wrote, after any rename it also made — the
        *  rail pins what the PM approves (docs/autopinning.md). */
       path?: string;
+      /** The Activity row the approved write left, so the chat can draw it as a
+       *  landed row with a put-back (docs/receipt-redesign.md RC-4). Absent for
+       *  a send, and for a workspace that kept no history. */
+      activityId?: string;
     };
   };
   'proposals:reject': { args: [id: string]; result: { ok: boolean; review?: MeetingReviewAskDTO } };

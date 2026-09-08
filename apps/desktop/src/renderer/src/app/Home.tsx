@@ -17,6 +17,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Button } from '@qale/ui';
 import { isFolderIndex } from '@qale/domain';
 import type { NoteRefDTO } from '@qale/ipc';
+import { buildKickoff } from '@qale/sessions';
 import { useApp } from '../state/app-state';
 import { useChatMentions } from './ChatMentions';
 import { SkillPicker } from './SkillPicker';
@@ -239,12 +240,18 @@ function HomeComposer({
 
   const run = () => {
     const q = ask.trim();
-    if (!q) return;
+    // A picked skill is instruction enough on its own — typing is only
+    // required for the plain, skill-less ask.
+    if (!q && !pickedSkill) return;
     setAsk('');
     // One start, not a mode: the pick is spent on the session it opens, so the
     // bar you come back to is the plain front door again.
     setPickedSkill(null);
-    openSession(pickedSkill ?? 'ask', { initialPrompt: q });
+    // No text but a skill picked is a bare kickoff — composed prose, not
+    // something the PO typed, so it goes through buildKickoff and renders as
+    // a run row rather than a message bubble.
+    const prompt = q || buildKickoff({ skill: pickedSkill!, instruction: '' });
+    openSession(pickedSkill ?? 'ask', { initialPrompt: prompt });
   };
 
   return (
@@ -324,7 +331,7 @@ function HomeComposer({
         {/* The lead carries its own word already; the hint steps aside as soon
             as a skill is picked so the strip never runs two deep. */}
         <MentionHint show={!ask.trim() && !pickedSkill} />
-        <SendButton ready={!!ask.trim()} onClick={run} />
+        <SendButton ready={!!ask.trim() || !!pickedSkill} onClick={run} />
       </div>
     </div>
   );

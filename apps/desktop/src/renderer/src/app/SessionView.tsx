@@ -18,8 +18,8 @@ import {
   RotateCcw,
   Wand2,
 } from 'lucide-react';
-import type { NoteRefDTO, SessionFileDTO, SessionScopeDTO } from '@qale/ipc';
-import { readAppliedReceipt, titleFromSlug } from '@qale/domain';
+import type { AskRequestDTO, NoteRefDTO, SessionFileDTO, SessionScopeDTO } from '@qale/ipc';
+import { readAppliedReceipt, titleFromSlug, type AppliedRow } from '@qale/domain';
 import { parseKickoff, type Kickoff } from '@qale/sessions';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { navFromEvent, type NavOpts } from '../lib/nav';
@@ -27,11 +27,13 @@ import { draftTextShown } from '../lib/draft-text';
 import { noteTypeIcon } from '../lib/note-icons';
 import { fileIconFor } from '../lib/session-files';
 import { isPile, progressLine, receiptLine } from '../lib/source-batch';
+import { blockRows, landedWrites } from '../lib/receipt-block';
 import { HeaderAction, HeaderActions, PageHeader } from '../components/PageHeader';
 import { InkWriting } from '../components/InkWriting';
 import { Markdown } from '../components/Markdown';
 import { DraftTextPanel } from '../components/DraftTextPanel';
 import { SessionReview } from '../components/review/SessionReview';
+import { LandedRows } from '../components/review/LandedRows';
 import { SpawnCard } from '../components/review/SpawnCard';
 import { CodebaseCard } from '../components/review/CodebaseCard';
 import { QuestionCard } from '../components/review/QuestionCard';
@@ -145,33 +147,16 @@ function stepLabel(part: AnyPart): { verb: string; detail?: string } {
 }
 
 /**
- * The write that applied on its own, if this step was one
- * (docs/easier-tickets.md E-3).
- *
- * Most of what the agent writes no longer waits on a card, so the trail cannot
- * keep saying "Proposed a note" for something already in the workspace. The
- * tool's own result carries the line, written once in the domain, and this reads
- * it back: "Created the Nordkap write-up", "Added to rules". Null for everything
- * still waiting on the PM.
+ * The write that applied on its own, if this step was one, for the expanded
+ * trail's own row: "Created the Nordkap write-up", "Added to rules". The block
+ * above the closing line is what the PM reads; this keeps the trail from saying
+ * "Proposed a note" about something already in the workspace.
  */
 function appliedLabel(part: AnyPart): { verb: string; detail?: string } | null {
   if (isFailedStep(part) || typeof part.output !== 'string') return null;
-  return readAppliedReceipt(part.output);
-}
-
-/**
- * The writes this turn made on its own, in order, for the quiet line under the
- * collapsed activity row. Erik's rule for E-8: it should be visible without
- * opening anything, and it should not be loud.
- */
-function appliedWrites(parts: AnyPart[]): { verb: string; detail?: string }[] {
-  const out: { verb: string; detail?: string }[] = [];
-  for (const part of parts) {
-    if (!isToolPart(part)) continue;
-    const applied = appliedLabel(part);
-    if (applied) out.push(applied);
-  }
-  return out;
+  const receipt = readAppliedReceipt(part.output);
+  if (!receipt) return null;
+  return receipt.detail ? { verb: receipt.verb, detail: receipt.detail } : { verb: receipt.verb };
 }
 
 /** The verb table: one entry per tool, past tense, plain and sentence case. */
@@ -472,10 +457,6 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
   // make room for it: "Working…" alone, "Working for 12s" with a clock.
   const step = liveLabel(parts[parts.length - 1]);
   const running = clock ? step.replace(/…$/, '') : step;
-  // What landed without asking. It sits under the collapsed row rather than
-  // inside it: a write that needed no card still has to be visible without
-  // opening anything, and one small line each is as loud as it should be.
-  const wrote = live ? [] : appliedWrites(parts);
   const bits: string[] = [];
   // How long it took, first: it is the thing the PM was watching a second ago.
   if (!live && clock) bits.push(`worked for ${clock}`);
@@ -504,16 +485,6 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
           className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
         />
       </button>
-      {!open && wrote.length > 0 && (
-        <ul className="mt-0.5 ml-1.5 flex flex-col gap-0.5 text-muted-foreground">
-          {wrote.map((w, i) => (
-            <li key={i} className="truncate">
-              <span className="font-medium">{w.verb}</span>
-              {w.detail && <span> {w.detail}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
       {open && (
         <div className="mt-1 ml-2 flex flex-col border-l border-border pl-3">
           {parts.map((part, i) => {
@@ -548,16 +519,13 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
  * sources on <the files>" while the turn is in flight, "Ran …" once it
  * settled. Sources handed over with the run (the arrival drop) show as file
  * chips exactly like vault targets show as page links — a run is never "on"
- * nothing when there was a something. The skill's own one-line summary sits
- * beneath, because a title like "Handle new sources" names the skill without
- * saying what it does. The raw instruction text stops there: it is machine
- * prose composed for the model, not for the PM to read.
+ * nothing when there was a something. The raw instruction text stops there:
+ * it is machine prose composed for the model, not for the PM to read.
  */
 function RunRow({
   kickoff,
   notes,
   skillTitle,
-  skillSummary,
   live,
   sources = [],
   onOpen,
@@ -567,8 +535,6 @@ function RunRow({
   /** Each target's tree entry, keyed by path, for the ones the workspace knows. */
   notes: Map<string, NoteRefDTO>;
   skillTitle: string;
-  /** The skill's plain one-liner, when the roster knows it. */
-  skillSummary?: string;
   /** True while this kickoff's turn is the one in flight. */
   live?: boolean;
   /** Session files handed over with this run (`source/…`) — what an arrival ran on. */
@@ -647,9 +613,52 @@ function RunRow({
               );
             })}
           </div>
-          {skillSummary && <p className="mt-0.5 text-xs text-muted-foreground">{skillSummary}</p>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The receipt for a turn (docs/fewer-approvals.md FA-4).
+ *
+ * One block above the agent's closing sentences, in the order the PM reads it:
+ * the question that holds the turn up, then what landed with a way back on each
+ * row, then what still waits for a yes. A landed row and a waiting row are the
+ * same shape with different controls, so the eye reads the set once instead of
+ * learning two vocabularies.
+ *
+ * The question and the waiting cards belong to the session rather than to one
+ * turn, so only the last turn draws them (`hostsSession`).
+ */
+function ReceiptBlock({
+  landed,
+  sessionId,
+  ask,
+  hostsSession,
+  onOpen,
+}: {
+  landed: readonly AppliedRow[];
+  sessionId: string | null;
+  /** The parked question, when this block hosts it. */
+  ask: AskRequestDTO | null;
+  hostsSession: boolean;
+  onOpen: (path: string, opts?: NavOpts) => void;
+}) {
+  const { proposals } = useApp();
+  const waiting = hostsSession
+    ? proposals.filter((p) => p.status === 'pending' && p.sessionId === sessionId).length
+    : 0;
+  const rows = blockRows({ question: !!ask, landed, waiting });
+  if (rows.length === 0 && !hostsSession) return null;
+  return (
+    <div className="my-2 flex flex-col gap-2">
+      {rows[0]?.kind === 'question' && ask && <QuestionCard request={ask} />}
+      <LandedRows rows={landed} sessionId={sessionId} onOpen={onOpen} />
+      {/* SessionReview draws the waiting rows, and stays the one place a card
+          is judged. It also carries the closing beat once every card is judged,
+          which is why it renders even when nothing is waiting. */}
+      {hostsSession && sessionId && <SessionReview sessionId={sessionId} />}
     </div>
   );
 }
@@ -942,6 +951,18 @@ function SessionThread({
     }
   }
 
+  // The turn that hosts the session's own block: the question waiting on the PM
+  // and the cards still waiting for a yes (FA-4). They belong to the session
+  // rather than to one turn, so they hang off the last turn there is. A session
+  // that has not answered yet has none, and they draw under the transcript.
+  let blockIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]!.role !== 'user') {
+      blockIdx = i;
+      break;
+    }
+  }
+
   // Voices ride the same roster as skills, told apart by the folder they sit in
   // (SkillDTO.kind). A draft panel offers them so a take the PM does not like
   // can be asked for again in another tone without typing the sentence out.
@@ -1086,7 +1107,6 @@ function SessionThread({
                       kickoff={kickoff}
                       notes={noteByPath}
                       skillTitle={skillMeta?.title ?? kickoff.skill}
-                      skillSummary={skillMeta?.summary}
                       live={mi === lastUserIdx && (busy || backgroundBusy)}
                       // The opening kickoff of a drop ran on the handed-over
                       // files; naming them here is the row's whole point.
@@ -1156,6 +1176,30 @@ function SessionThread({
                 );
                 pending = [];
               };
+              // The receipt for this turn, above its closing sentences: what
+              // landed, what waits, and the question that holds the turn up
+              // (docs/fewer-approvals.md FA-4). One key wherever it goes, so it
+              // moves when the answer arrives instead of being built again.
+              const landed = landedWrites(parts);
+              const hostsSession = mi === blockIdx;
+              let receipted = false;
+              const receipt = () => {
+                if (receipted) return;
+                receipted = true;
+                if (landed.length === 0 && !hostsSession) return;
+                nodes.push(
+                  <ReceiptBlock
+                    key="receipt"
+                    landed={landed}
+                    sessionId={boundSessionId ?? null}
+                    ask={
+                      hostsSession && boundSessionId ? (askRequests[boundSessionId] ?? null) : null
+                    }
+                    hostsSession={hostsSession}
+                    onOpen={openDoc}
+                  />,
+                );
+              };
               parts.forEach((part, i) => {
                 // A call still running, refused, or with no usable variants reads
                 // as null and folds into the trail like any other step.
@@ -1181,6 +1225,7 @@ function SessionThread({
                 }
                 if (part.type === 'text' && (i === answerIdx || handover(part, i))) {
                   flush(false);
+                  if (i === answerIdx) receipt();
                   nodes.push(
                     <Markdown
                       key={`text-${i}`}
@@ -1196,6 +1241,9 @@ function SessionThread({
                 }
               });
               flush(liveTail);
+              // A turn with no closing sentences yet (still running, or one that
+              // only wrote) ends on its receipt instead.
+              receipt();
               return (
                 <div key={message.id} className="w-full">
                   {nodes}
@@ -1273,13 +1321,6 @@ function SessionThread({
               </p>
             )}
 
-            {/* The turn is parked on the PM. First of everything below the
-              transcript: the agent is holding its whole reading open waiting
-              for this, and nothing else here can move until it settles. */}
-            {boundSessionId && askRequests[boundSessionId] && (
-              <QuestionCard request={askRequests[boundSessionId]!} />
-            )}
-
             {/* A fan-out waiting on approval. Above the proposal cards: nothing
               else in this session can move until it settles. */}
             {boundSessionId && spawnRequests[boundSessionId] && (
@@ -1292,9 +1333,18 @@ function SessionThread({
               <CodebaseCard request={codebaseRequests[boundSessionId]!} />
             )}
 
-            {/* The cards this session proposed — approvable right here, so the PO
-              never has to leave the session to close out a meeting. */}
-            {boundSessionId && <SessionReview sessionId={boundSessionId} />}
+            {/* The block hangs off the last turn, above its closing sentences.
+              A session with no turn yet has nowhere to hang it, so the question
+              and the cards draw here instead. */}
+            {blockIdx === -1 && boundSessionId && (
+              <ReceiptBlock
+                landed={[]}
+                sessionId={boundSessionId}
+                ask={askRequests[boundSessionId] ?? null}
+                hostsSession
+                onOpen={openDoc}
+              />
+            )}
           </div>
         </div>
 

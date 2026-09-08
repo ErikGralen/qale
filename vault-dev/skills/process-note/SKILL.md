@@ -30,12 +30,15 @@ Each one comes back as already known (do nothing), new (file it below as you wou
 conflict with a note we hold, implying something that is not there, or no answer. No answer means
 nothing was settled, so treat it as if you had never asked.
 
-A conflict or a gap can earn one short question about their world, never about our filing. The
-answer says how many of them to ask.
+A conflict is a question every time, asked before you write either side: what the material says,
+the note as a link, one question, and the two answers as options. Write what they chose and set
+`asked`. A gap you can fill from the source is not a question at all; fill it. A gap only the PM
+can fill can earn one. Ask about their world, never about our filing. The answer says how many of
+them to ask.
 
 ## Produce
 
-Each piece its own proposal:
+Each piece its own write:
 - **The note itself**, as one propose_update: fix typos and half-sentences, group related lines
   under short headings, and turn plain-text mentions into wikilinks to pages that exist. This is
   a copy edit, not a rewrite: keep your wording and your meaning, and add nothing the dump does
@@ -55,7 +58,8 @@ meant puts words in your notes.
 
 ## Then
 
-Your proposals clean the note and propagate it: hubs updated, loops closed, new todos, insights,
-and decisions filed. The edits to the note itself wait for you, and so does every todo; the hub
-edits, the insights and the decisions land as they are written. The note stays your scratch pad. More gets dumped, the button gets hit
-again, and only the new material is touched.
+Your writes clean the note and propagate it: hubs updated, loops closed, new todos, insights, and
+decisions filed. The todos, the hub edits, the insights and the decisions land as you write them,
+and the chat lists them. A rewrite of the lines you typed waits for you, because those are your
+words. Anything sent to Jira, Confluence or the calendar waits for you too. The note stays your
+scratch pad. More gets dumped, the button gets hit again, and only the new material is touched.

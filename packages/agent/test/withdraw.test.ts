@@ -38,7 +38,19 @@ function world(opts: { onDisk?: string[] } = {}): UseCaseContext & { rows: Row[]
       get: () => null,
     },
     clock: { now: () => '2026-08-07T09:00:00.000Z' },
-    vault: { exists: async (path: string) => onDisk.has(path) },
+    vault: {
+      exists: async (path: string) => onDisk.has(path),
+      readNote: async (path: string) =>
+        onDisk.has(path)
+          ? {
+              path,
+              slug: path.replace(/\.md$/, ''),
+              type: 'note',
+              frontmatter: { type: 'note', title: 'Register kale.ai', summary: 'the domain' },
+              body: 'Buy kale.ai.',
+            }
+          : null,
+    },
     proposals: {
       create: (input: Record<string, unknown>) => {
         const row: Row = {
@@ -77,21 +89,25 @@ const noteTool = (ctx: UseCaseContext, harness?: SessionHarness) =>
   createProposeTools(ctx, 's1', harness).find((t) => t.name === 'propose_note')!;
 
 /**
- * The withdraw tests run on todos, because a todo is the PM's and waits for
- * them (docs/review-rework.md RR-1). A page in Qale's memory lands as it is
- * written, and there is nothing to take back from a write that already landed:
- * that is a propose_update, which is what the refusal says. The todos here are
- * not `asked`, because a todo the PM dictated lands too.
+ * The withdraw tests run on a patch over a document the PM wrote, because that
+ * is a write that waits for them (docs/fewer-approvals.md FA-1). Everything
+ * that lands is already in the workspace, and there is nothing to take back
+ * from a write that landed: that is a propose_update, which is what the refusal
+ * says.
  */
-const todoTool = (ctx: UseCaseContext, harness?: SessionHarness) =>
-  createProposeTools(ctx, 's1', harness).find((t) => t.name === 'propose_todo')!;
+const updateTool = (ctx: UseCaseContext, harness?: SessionHarness) =>
+  createProposeTools(ctx, 's1', harness).find((t) => t.name === 'propose_update')!;
 
-const TODO = {
-  title: 'Register kale.ai',
+const UPDATE = {
+  path: 'notes/domain.md',
+  patch: [{ search: 'Buy kale.ai.', replace: 'Buy kale.ai this week.' }],
   sources: [],
   inference: true,
   rationale: 'Erik said he wanted the domain.',
 };
+
+/** The workspace these cards patch: one document, with the PM's line in it. */
+const written = { onDisk: ['notes/domain.md'] };
 
 const NOTE = {
   path: 'notes/domain.md',
@@ -102,9 +118,9 @@ const NOTE = {
 };
 
 test('a card can be taken back, and the corrected one takes its place', async () => {
-  const ctx = world();
+  const ctx = world(written);
   const withdraw = createWithdrawTool(ctx, 's1');
-  await run(todoTool(ctx), TODO);
+  await run(updateTool(ctx), UPDATE);
 
   const said = await run(withdraw, {
     ids: ['p1'],
@@ -115,15 +131,18 @@ test('a card can be taken back, and the corrected one takes its place', async ()
 
   // The replacement lands cleanly: the withdrawn card is not pending, so the
   // duplicate check does not read it as "already proposed".
-  const again = await run(todoTool(ctx), { ...TODO, title: 'Register qale.ai' });
-  assert.match(again, /Proposed todo/);
+  const again = await run(updateTool(ctx), {
+    ...UPDATE,
+    rationale: 'They said qale.ai, not kale.',
+  });
+  assert.match(again, /Proposed update/);
   assert.equal(ctx.proposals.list('pending').length, 1, 'the PM is left holding one card, not two');
 });
 
 test('a card the PM approved is refused, and the refusal points at propose_update', async () => {
-  const ctx = world();
+  const ctx = world(written);
   const withdraw = createWithdrawTool(ctx, 's1');
-  await run(todoTool(ctx), TODO);
+  await run(updateTool(ctx), UPDATE);
   ctx.proposals.setStatus('p1', 'accepted', 0);
 
   const said = await run(withdraw, { ids: ['p1'], reason: 'wrong domain' });
@@ -132,10 +151,10 @@ test('a card the PM approved is refused, and the refusal points at propose_updat
 });
 
 test('a mixed batch reports each card by name, never a bare count', async () => {
-  const ctx = world();
+  const ctx = world(written);
   const withdraw = createWithdrawTool(ctx, 's1');
-  await run(todoTool(ctx), TODO);
-  await run(todoTool(ctx), { ...TODO, title: 'Tell Nordkap about kale.ai' });
+  await run(updateTool(ctx), UPDATE);
+  await run(updateTool(ctx), { ...UPDATE, rationale: 'Tell Nordkap about the domain.' });
   ctx.proposals.setStatus('p2', 'accepted', 0);
 
   const said = await run(withdraw, { ids: ['p1', 'p2', 'p9'], reason: 'wrong domain' });
@@ -145,7 +164,7 @@ test('a mixed batch reports each card by name, never a bare count', async () => 
 });
 
 test('the receipt forgets a withdrawn card — a session that undid its work did none', async () => {
-  const ctx = world();
+  const ctx = world(written);
   const harness = new SessionHarness(
     's1',
     { name: 'base', title: 'Base', summary: '', instructions: '', can: [] } as never,
@@ -153,7 +172,7 @@ test('the receipt forgets a withdrawn card — a session that undid its work did
   );
   harness.beginTurn('write it up', '2026-08-07T09:00:00.000Z');
   const withdraw = createWithdrawTool(ctx, 's1', harness);
-  await run(todoTool(ctx, harness), TODO);
+  await run(updateTool(ctx, harness), UPDATE);
   assert.equal(harness.writes.length, 1);
 
   await run(withdraw, { ids: ['p1'], reason: 'wrong domain' });

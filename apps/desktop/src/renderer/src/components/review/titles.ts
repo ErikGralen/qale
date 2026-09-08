@@ -46,6 +46,33 @@ export function noteName(ref: string): Promise<NoteName | null> {
   return hit;
 }
 
+/**
+ * The names of a set of pages, for a surface that draws many rows at once (the
+ * receipt in the chat). One state for the set, because a hook per row is not a
+ * thing a list can do.
+ */
+export function useNoteNames(refs: readonly string[]): Map<string, NoteName> {
+  // The set as one string: a fresh array every render must not re-run the read.
+  const key = refs.join('\n');
+  const [names, setNames] = useState<Map<string, NoteName>>(new Map());
+  useEffect(() => {
+    const list = key ? key.split('\n') : [];
+    if (list.length === 0) {
+      setNames(new Map());
+      return;
+    }
+    let alive = true;
+    void Promise.all(list.map(async (ref) => [ref, await noteName(ref)] as const)).then((pairs) => {
+      if (!alive) return;
+      setNames(new Map(pairs.filter((pair): pair is [string, NoteName] => pair[1] !== null)));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [key]);
+  return names;
+}
+
 /** The name of one page, for a component that draws it. */
 export function useNoteName(ref: string | null): NoteName | null {
   const [name, setName] = useState<NoteName | null>(null);

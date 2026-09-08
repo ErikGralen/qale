@@ -10,9 +10,10 @@ import { fileProposal } from '../src/index.js';
 import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../src/ports.js';
 
 // Filing a write: the policy decides, one place, and a silent one lands on the
-// spot with an Activity row behind it (docs/easier-tickets.md E-3, E-9). Two
-// spheres since docs/review-rework.md RR-1: the PM's documents, todos and
-// meetings wait for them, and Qale's memory lands.
+// spot with an Activity row behind it (docs/easier-tickets.md E-3, E-9). Since
+// docs/fewer-approvals.md FA-1 the answer comes from what the write does: a
+// send, a delete, a rewrite of the PM's own prose and anything Qale assumed
+// wait, and this is where the last two facts are worked out.
 
 interface Stored {
   frontmatter: Frontmatter;
@@ -128,6 +129,7 @@ function fakeContext(files: Record<string, Stored> = {}) {
       list: () => [...activity].reverse(),
       get: (id: string) => activity.find((r) => r.id === id) ?? null,
       latestLearned: () => [],
+      forProposal: (id: string) => activity.find((r) => r.proposalId === id) ?? null,
       markReverted: () => {},
     },
   } as unknown as UseCaseContext;
@@ -170,7 +172,7 @@ test('a new note lands on the spot and leaves one Activity row', async () => {
   assert.deepEqual(activity[0]!.revert, { commit: 'c0ffee', undo: 'delete' });
 });
 
-test('a todo waits, and writes nothing', async () => {
+test('a todo lands on the spot', async () => {
   const { ctx, store, rows, activity } = fakeContext();
   const filed = await fileProposal(
     ctx,
@@ -193,10 +195,11 @@ test('a todo waits, and writes nothing', async () => {
     { noteType: 'todo' },
   );
 
-  assert.equal(filed.disposition, 'ask');
-  assert.equal(store.size, 0);
-  assert.equal(rows.get(filed.rec.id)!.status, 'pending');
-  assert.equal(activity.length, 0);
+  assert.equal(filed.disposition, 'silent');
+  assert.equal(filed.reason, 'Your list stays on your machine, for you to read.');
+  assert.ok(store.has('todos/2026-09-02-send-the-dates.md'));
+  assert.equal(rows.get(filed.rec.id)!.status, 'accepted');
+  assert.equal(activity.length, 1);
 });
 
 test('a write in the memory lands, whether it adds or rewrites', async () => {
@@ -251,16 +254,27 @@ test('a write in the memory lands, whether it adds or rewrites', async () => {
   assert.equal(patched.store.get('customers/nordkap.md')!.body, 'The new line.');
 });
 
-test('a write on a meeting page waits, even one that only adds', async () => {
+// What a write does to the PM's own text (docs/fewer-approvals.md FA-1). The
+// meeting page below is the layout the app writes: `## Notes` is theirs, and
+// the write-up under `## Summary` is Qale's.
+
+const MEETING = {
+  'meetings/2026-09-01-standup.md': {
+    frontmatter: {
+      type: 'meeting',
+      title: 'Standup',
+      summary: 'Standup',
+      date: '2026-09-01',
+    } as unknown as Frontmatter,
+    body: '## Notes\n\nÅsa wants the dates by Friday.\n\n## Summary\n\nThe old line.\n',
+  },
+};
+
+test('a write-up added to a meeting page lands', async () => {
   const { ctx, store, rows, activity } = fakeContext({
     'meetings/2026-09-01-standup.md': {
-      frontmatter: {
-        type: 'meeting',
-        title: 'Standup',
-        summary: 'Standup',
-        date: '2026-09-01',
-      } as unknown as Frontmatter,
-      body: 'The old line.',
+      ...MEETING['meetings/2026-09-01-standup.md'],
+      body: '## Notes\n',
     },
   });
   const filed = await fileProposal(
@@ -277,8 +291,174 @@ test('a write on a meeting page waits, even one that only adds', async () => {
     },
     { noteType: 'meeting', appendOnly: true },
   );
+  assert.equal(filed.disposition, 'silent');
+  assert.match(store.get('meetings/2026-09-01-standup.md')!.body, /It went fine\./);
+  assert.equal(rows.get(filed.rec.id)!.status, 'accepted');
+  assert.equal(activity.length, 1);
+});
+
+test("a patch into the PM's notes on a meeting page waits", async () => {
+  const { ctx, store, rows } = fakeContext(MEETING);
+  const filed = await fileProposal(
+    ctx,
+    {
+      ...base,
+      kind: 'update',
+      targetPath: 'meetings/2026-09-01-standup.md',
+      payload: {
+        path: 'meetings/2026-09-01-standup.md',
+        patch: [
+          { search: 'Åsa wants the dates by Friday.', replace: 'Åsa wants the dates by Monday.' },
+        ],
+        rationale: 'Because.',
+      },
+    },
+    { noteType: 'meeting' },
+  );
   assert.equal(filed.disposition, 'ask');
-  assert.equal(store.get('meetings/2026-09-01-standup.md')!.body, 'The old line.');
+  assert.equal(filed.reason, 'This rewrites what you wrote, so you see it first.');
+  assert.match(store.get('meetings/2026-09-01-standup.md')!.body, /by Friday\./);
+  assert.equal(rows.get(filed.rec.id)!.status, 'pending');
+});
+
+test("a patch into the write-up on a meeting page lands, because it is Qale's", async () => {
+  const { ctx, store } = fakeContext(MEETING);
+  const filed = await fileProposal(
+    ctx,
+    {
+      ...base,
+      kind: 'update',
+      targetPath: 'meetings/2026-09-01-standup.md',
+      payload: {
+        path: 'meetings/2026-09-01-standup.md',
+        patch: [{ search: 'The old line.', replace: 'The new line.' }],
+        rationale: 'Because.',
+      },
+    },
+    { noteType: 'meeting' },
+  );
+  assert.equal(filed.disposition, 'silent');
+  assert.match(store.get('meetings/2026-09-01-standup.md')!.body, /The new line\./);
+});
+
+test('a patch into a document waits, whatever section it hits', async () => {
+  const files = {
+    'notes/rollout-runbook.md': {
+      frontmatter: {
+        type: 'note',
+        title: 'Rollout runbook',
+        summary: 'x',
+      } as unknown as Frontmatter,
+      body: '## Steps\n\nTurn Entra on first.\n',
+    },
+  };
+  const patched = fakeContext(files);
+  const filed = await fileProposal(
+    patched.ctx,
+    {
+      ...base,
+      kind: 'update',
+      targetPath: 'notes/rollout-runbook.md',
+      payload: {
+        path: 'notes/rollout-runbook.md',
+        patch: [{ search: 'Turn Entra on first.', replace: 'Turn Entra on last.' }],
+        rationale: 'Because.',
+      },
+    },
+    { noteType: 'note' },
+  );
+  assert.equal(filed.disposition, 'ask');
+  assert.equal(filed.reason, 'This rewrites what you wrote, so you see it first.');
+  assert.equal(
+    patched.store.get('notes/rollout-runbook.md')!.body,
+    '## Steps\n\nTurn Entra on first.\n',
+  );
+
+  // The same page, added to at the end, rewrites nothing they wrote.
+  const appended = fakeContext(files);
+  const two = await fileProposal(
+    appended.ctx,
+    {
+      ...base,
+      kind: 'update',
+      targetPath: 'notes/rollout-runbook.md',
+      payload: {
+        path: 'notes/rollout-runbook.md',
+        append: 'One line under Entra.',
+        rationale: 'Because.',
+      },
+    },
+    { noteType: 'note', appendOnly: true },
+  );
+  assert.equal(two.disposition, 'silent');
+  assert.match(appended.store.get('notes/rollout-runbook.md')!.body, /One line under Entra\./);
+});
+
+test('a rewrite the PM asked for in the chat lands', async () => {
+  const { ctx, store } = fakeContext({
+    'notes/rollout-runbook.md': {
+      frontmatter: {
+        type: 'note',
+        title: 'Rollout runbook',
+        summary: 'x',
+      } as unknown as Frontmatter,
+      body: 'Turn Entra on first.\n',
+    },
+  });
+  const filed = await fileProposal(
+    ctx,
+    {
+      ...base,
+      kind: 'update',
+      targetPath: 'notes/rollout-runbook.md',
+      asked: true,
+      payload: {
+        path: 'notes/rollout-runbook.md',
+        patch: [{ search: 'Turn Entra on first.', replace: 'Turn Entra on last.' }],
+        rationale: 'You asked for this in chat.',
+      },
+    },
+    { noteType: 'note' },
+  );
+  assert.equal(filed.disposition, 'silent');
+  assert.match(store.get('notes/rollout-runbook.md')!.body, /on last\./);
+});
+
+test('a write the run had to assume waits, wherever it points', async () => {
+  const { ctx, store, rows } = fakeContext();
+  const filed = await fileProposal(ctx, {
+    ...base,
+    kind: 'note',
+    targetPath: 'research/pricing.md',
+    rationale: 'Assumed: this transcript is the Nordkap check-in, not the Kranelund one.',
+    payload: {
+      path: 'research/pricing.md',
+      frontmatter: { type: 'research', title: 'Pricing', summary: 'x' },
+      body: 'x',
+      rationale: 'Assumed: this transcript is the Nordkap check-in, not the Kranelund one.',
+    },
+  });
+  assert.equal(filed.disposition, 'ask');
+  assert.equal(filed.reason, 'Qale assumed something here, so it waits for you.');
+  assert.equal(store.size, 0);
+  assert.equal(rows.get(filed.rec.id)!.status, 'pending');
+});
+
+test('a send waits, and writes nothing', async () => {
+  const { ctx, rows, activity } = fakeContext();
+  const filed = await fileProposal(ctx, {
+    ...base,
+    kind: 'outbound',
+    rationale: 'Because.',
+    payload: {
+      type: 'comment',
+      provider: 'jira',
+      target: 'PAY-142',
+      body: 'The dates are confirmed.',
+    },
+  });
+  assert.equal(filed.disposition, 'ask');
+  assert.equal(filed.reason, 'Nothing sent to another system can be taken back.');
   assert.equal(rows.get(filed.rec.id)!.status, 'pending');
   assert.equal(activity.length, 0);
 });

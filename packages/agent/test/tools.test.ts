@@ -621,9 +621,9 @@ test('a proposed meeting is the whole page: date, summary and recording in one c
     participants: ['[[people/asa-lind]]'],
   });
 
-  // A meeting page is the PM's, so the whole page waits for them
-  // (docs/review-rework.md RR-1).
-  assert.match(said, /^Proposed meeting \(p1\): meetings\/2026-08-04-nordkap-qbr\.md/);
+  // A meeting page from a transcript lands: every line of it cites what the PM
+  // handed over, and `## Notes` stays theirs (docs/fewer-approvals.md FA-1).
+  assert.match(said, /^Applied: Created Nordkap QBR\./);
   const card = filed[0]!;
   assert.equal(card['kind'], 'note');
   assert.equal(card['targetPath'], 'meetings/2026-08-04-nordkap-qbr.md');
@@ -690,7 +690,7 @@ test('a meeting nobody is on is refused, unless the source really names nobody',
 
   // Speaker labels only: the flag says the model looked, and the card is filed.
   const said = await out(tool, { ...MEETING, participants_unknown: true });
-  assert.match(said, /^Proposed meeting \(p1\): meetings\/2026-08-04-nordkap-qbr\.md/);
+  assert.match(said, /^Applied: Created Nordkap QBR\./);
   assert.match(said, /say so in your closing line/);
   const fm = (filed[0]!['payload'] as { frontmatter: Record<string, unknown> }).frontmatter;
   assert.equal(fm['participants'], undefined);
@@ -700,7 +700,7 @@ test('a meeting nobody is on is refused, unless the source really names nobody',
     ...MEETING,
     participants: ['Åsa Lind'],
   });
-  assert.match(named, /^Proposed meeting \(p2\): meetings\/2026-08-04-nordkap-qbr\.md/);
+  assert.match(named, /^Applied: Created Nordkap QBR\./);
   assert.deepEqual(
     (filed[1]!['payload'] as { frontmatter: Record<string, unknown> }).frontmatter['participants'],
     ['Åsa Lind'],
@@ -734,6 +734,9 @@ function pendingCtx(pending: { kind: string; targetPath: string | null }[]): Use
       resolve: (t: string) => (t === 'sources/gong-call' ? 'sources/gong-call.md' : null),
       get: () => null,
       reindex: () => {},
+      // An empty ledger: the duplicate check against open todos (FA-8) has its
+      // own tests in todo-duplicates.test.ts.
+      listByType: () => [],
     },
     clock: { now: () => '2026-08-07T09:00:00.000Z' },
     // Nothing is on disk beyond what the index above admits to — the create
@@ -783,7 +786,7 @@ test('a todo can cite the meeting card sitting next to it in the queue', async (
     sources: ['[[meetings/2026-08-04-nordkap-qbr]]'],
   });
 
-  assert.match(said, /Proposed todo/);
+  assert.match(said, /^Applied: Created Send Nordkap the SSO rollout dates\./);
   const card = (ctx as unknown as { filed: Record<string, unknown>[] }).filed[0]!;
   // Honest about which half of the rule let it through: the page is not there yet.
   assert.deepEqual(card['evidence'], [
@@ -806,10 +809,10 @@ test('a card the PM asked for files with no sources, and does not read as a gues
   assert.match(bare, /asked:true/);
   assert.equal(filed.length, 0);
 
-  // A todo they dictated still asks: a promise is their word, whoever asked
-  // for it. The card carries the flag so it does not read as a guess.
+  // A todo lands (docs/fewer-approvals.md FA-1). The row still carries the flag,
+  // so what they dictated does not read as a guess.
   const said = await out(todoTool(ctx), { ...TODO, sources: [], asked: true });
-  assert.match(said, /^Proposed todo /);
+  assert.match(said, /^Applied: Created Send Nordkap the SSO rollout dates\./);
   assert.equal(filed.length, 1);
   assert.equal(filed[0]!['asked'], true);
   assert.equal(filed[0]!['inference'], false);
@@ -821,9 +824,23 @@ test('a claim the agent worked out itself still wears the flag it earns', async 
 
   const said = await out(todoTool(ctx), { ...TODO, sources: [], inference: true });
 
-  assert.match(said, /Proposed todo/);
+  assert.match(said, /^Applied: Created Send Nordkap the SSO rollout dates\./);
   assert.equal(filed[0]!['inference'], true);
   assert.equal(filed[0]!['asked'], false);
+  // And the flag rides into the file, not just onto the card (FA-7): a todo
+  // lands without a card now, so the row is where the PM learns Qale heard it.
+  const payload = filed[0]!['payload'] as { frontmatter: Record<string, unknown> };
+  assert.equal(payload.frontmatter['inference'], true);
+});
+
+test('a todo the PM stated carries no mark into the file', async () => {
+  const ctx = pendingCtx([]);
+  const filed = (ctx as unknown as { filed: Record<string, unknown>[] }).filed;
+
+  await out(todoTool(ctx), { ...TODO, sources: [], asked: true });
+
+  const payload = filed[0]!['payload'] as { frontmatter: Record<string, unknown> };
+  assert.equal('inference' in payload.frontmatter, false);
 });
 
 test('a page nobody has written and nobody has proposed is still refused', async () => {
@@ -935,7 +952,7 @@ test('an anchor that is not in the note is refused while the agent can still loo
   assert.equal(filed.length, 0);
 });
 
-test('append lands on a page Qale keeps, and waits on a meeting page', async () => {
+test("append lands anywhere, and a patch over the PM's own notes waits", async () => {
   const hub: Record<string, unknown>[] = [];
   const landed = await out(
     updateTool(updateCtx(hub, '\n\n', { path: 'customers/nordkap.md', type: 'customer' })),
@@ -946,18 +963,31 @@ test('append lands on a page Qale keeps, and waits on a meeting page', async () 
     },
   );
 
-  // Qale's memory takes the edit as it is written (docs/review-rework.md RR-1).
+  // Text added at the end rewrites nothing (docs/fewer-approvals.md FA-1).
   assert.match(landed, /^Applied: Updated /);
   const payload = hub[0]!['payload'] as { append: string; patch?: unknown };
   assert.match(payload.append, /They confirmed the go-live/);
   assert.equal(payload.patch, undefined);
 
-  // The meeting page is the PM's, so the same write-up waits for them.
-  const filed: Record<string, unknown>[] = [];
-  const waiting = await out(updateTool(updateCtx(filed, '\n\n')), {
+  // The write-up on a meeting page lands too, for the same reason.
+  const added: Record<string, unknown>[] = [];
+  const alsoLanded = await out(updateTool(updateCtx(added, '## Notes\n\n')), {
     ...UPDATE,
     append: '## Summary\n\nThey confirmed the go-live.',
   });
+  assert.match(alsoLanded, /^Applied: Updated /);
+
+  // A patch over the lines the PM typed under `## Notes` waits for them.
+  const filed: Record<string, unknown>[] = [];
+  const waiting = await out(
+    updateTool(updateCtx(filed, '## Notes\n\nÅsa wants the dates by Friday.\n')),
+    {
+      ...UPDATE,
+      patch: [
+        { search: 'Åsa wants the dates by Friday.', replace: 'Åsa wants the dates by Monday.' },
+      ],
+    },
+  );
   assert.match(waiting, /^Proposed update \(p1\) to meetings\/2026-08-04-nordkap-qbr\.md/);
 });
 

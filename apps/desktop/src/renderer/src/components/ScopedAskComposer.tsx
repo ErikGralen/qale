@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from 'react';
 import { Folder, Hash } from 'lucide-react';
 import type { SessionScopeDTO } from '@qale/ipc';
+import { buildKickoff } from '@qale/sessions';
 import { useApp } from '../state/app-state';
 import { useChatMentions } from '../app/ChatMentions';
 import { SkillPicker } from '../app/SkillPicker';
@@ -99,7 +100,9 @@ export function ScopedAskComposer({
 
   const runAsk = () => {
     const q = ask.trim();
-    if (!q) return;
+    // A picked skill is instruction enough on its own — typing is only
+    // required for the plain, skill-less ask.
+    if (!q && !pickedSkill) return;
     update('');
     // One start, not a mode — the pick is spent on the session it opens.
     setPickedSkill(null);
@@ -108,9 +111,15 @@ export function ScopedAskComposer({
     const title = skill
       ? `${skill.title} · ${scope.kind === 'context' ? scopeName : scope.label}`
       : sessionTitle;
+    // No text but a skill picked is a bare kickoff — composed prose, not
+    // something the PO typed, so it goes through buildKickoff and renders as
+    // a run row rather than a message bubble.
+    const initialPrompt = q
+      ? `${scopePrefix} ${q}`
+      : buildKickoff({ skill: pickedSkill!, instruction: scopePrefix });
     openSession(pickedSkill ?? 'ask', {
       title,
-      initialPrompt: `${scopePrefix} ${q}`,
+      initialPrompt,
       ...(scope.filter ? { scope: scope.filter } : {}),
     });
   };
@@ -173,7 +182,7 @@ export function ScopedAskComposer({
               <span className="max-w-40 truncate">{scope.label}</span>
             </span>
             <MentionHint show={!ask.trim()} />
-            <SendButton ready={!!ask.trim()} onClick={() => runAsk()} />
+            <SendButton ready={!!ask.trim() || !!pickedSkill} onClick={() => runAsk()} />
           </div>
         </div>
         <p id={hintId} className="sr-only">

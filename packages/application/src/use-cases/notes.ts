@@ -10,6 +10,7 @@ import {
   isHandCreatable,
   slugify,
   titleFromSlug,
+  withoutInferenceMark,
   TYPE_RULES,
   type HandCreatableType,
   type Frontmatter,
@@ -371,7 +372,19 @@ export async function saveAuthoredNote(
   // Body-only edit: splice under the raw frontmatter block. Writing
   // `existing.frontmatter` here would persist the coerced fallback for notes
   // whose frontmatter failed validation, erasing the user's real fields.
-  const note = await ctx.vault.writeBody(path, body);
+  //
+  // The one exception is a todo the PM has just written in: their words answer
+  // the "Qale heard this" mark, so it comes off with the same save (FA-7). The
+  // guard is safe against the coerced fallback, because a todo whose frontmatter
+  // failed reads back as a plain `note` and never gets here.
+  const note =
+    existing.type === 'todo' && (existing.frontmatter as Record<string, unknown>)['inference']
+      ? await ctx.vault.writeNote(
+          path,
+          withoutInferenceMark(existing.frontmatter as Record<string, unknown>) as Frontmatter,
+          body,
+        )
+      : await ctx.vault.writeBody(path, body);
   ctx.index.reindex(note);
   await ctx.git.commitPaths([note.path], label ?? `edit: ${note.slug}`);
   return note;
@@ -681,7 +694,11 @@ export async function saveFrontmatter(
   // write path (IPC properties form, MCP) funnels through this use-case.
   const check = checkFrontmatterMutation(existing.type, prev, next);
   if (!check.allowed) throw new Error(check.reason ?? 'immutable frontmatter field');
-  const note = await ctx.vault.writeNote(path, next, existing.body);
+  // The properties form is the PM's hand, so a save through it answers the
+  // "Qale heard this" mark whichever field they changed (FA-7). Cleared after
+  // the mutation check, so the check still reads the fields as the file holds them.
+  const written = withoutInferenceMark(next as Record<string, unknown>) as Frontmatter;
+  const note = await ctx.vault.writeNote(path, written, existing.body);
   ctx.index.reindex(note);
   await ctx.git.commitPaths([note.path], `properties: ${note.slug}`);
   return note;

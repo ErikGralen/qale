@@ -109,6 +109,9 @@ export interface NoteRefDTO {
   resolvedOn?: string;
   /** First `sources` ref (todos) — the note the commitment came from. */
   sourceRef?: string;
+  /** Todos: Qale worked this one out from a source rather than being told it,
+   *  and the PM has not touched it since. The row says so. */
+  inference?: boolean;
   /** Ticket mirror: normalized workflow state — the Kanban grouping axis. */
   stateCategory?: StateCategory;
   /** Ticket mirror: raw provider state label the PO reads (e.g. "In Review"). */
@@ -399,6 +402,11 @@ export interface RevertChangeInput {
    * only after the files are, so a row never claims an undo that failed.
    */
   activityId?: string;
+  /**
+   * The card that change applied, when there was one. Its evidence names the
+   * sources the accept marked as read, and the undo puts those back too.
+   */
+  proposalId?: string;
 }
 
 export interface RevertResultDTO {
@@ -409,6 +417,12 @@ export interface RevertResultDTO {
    * that was gone, `removed` took away a note that change had created.
    */
   outcome: 'restored' | 'undeleted' | 'removed';
+  /**
+   * `patch` took out the change's own lines and left everything written since.
+   * `snapshot` wrote the whole file as it read before, so anything typed after
+   * the change went with it, and the app says so.
+   */
+  method: 'patch' | 'snapshot';
 }
 
 export interface RenameNoteInput {
@@ -626,6 +640,13 @@ export interface ProposalDTO {
   status: ProposalStatus;
   created: number;
   resolved: number | null;
+  /**
+   * The Activity row this card left when the PM approved it (RC-4), so the
+   * receipt in the chat can put it back. Only ever on a resolved card: a card
+   * still waiting has written nothing, and a send writes no file, so it leaves
+   * no row at all (docs/receipt-redesign.md RC-3).
+   */
+  activityId?: string;
 }
 
 /**
@@ -736,9 +757,9 @@ export interface ChatRefDTO {
   lifecycle: SessionLifecycle;
   /** The model this session was moved to, or null when it follows Settings. */
   modelId: string | null;
-  /** True while no person has ever driven a turn in this session — a clock's
-   *  slot or an unattended arrival, never a reply. The Sessions page filters
-   *  these out by default. */
+  /** True while nobody has asked for anything in this session: a clock's own
+   *  slot started it, not the PM. The Sessions page filters these out by
+   *  default. */
   automatic: boolean;
 }
 

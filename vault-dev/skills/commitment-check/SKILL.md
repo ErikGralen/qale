@@ -52,9 +52,20 @@ Then the memory it touches:
 - **What we already promised**: open todos, and the customer hub's ledger of what they were told.
   An ask we committed to in March is a different conversation from a new one.
 
+## Check what it claims
+
+Before you close a todo, move its date, or write an owner or a number, call `check_claims` once
+with what you are about to write, the way the arrival skill does. Scope each claim to the pages it
+is about: the todo, the person, the customer.
+
+A conflict is a question every time, asked before the write: what you have, the note as a link, one
+question, and the two answers as options. Then write what they chose and set `asked`. A close the
+PM said out loud in a source is theirs, so write it. A close you worked out yourself is a question
+("Åsa said the dates went out. Mark [[todos/2026-07-09-send-nordkap-the-dates]] done?").
+
 ## Produce: a commitment of yours
 
-The right handling for this one commitment, each option as its own proposal. Pick what fits;
+The right handling for this one commitment, each option as its own write. Pick what fits;
 do not produce all of them.
 - **A plan**, the default when it is live and just needs doing: a short `## Plan` section on the
   todo (propose_update, body patch) with 2-4 concrete next steps grounded in the memory. A
@@ -105,12 +116,13 @@ decision it rests on, and draft the reply only where it has to be said out loud.
 
 ## Then
 
-Approved proposals update this one commitment: the plan lands on the todo, a close flips
-`commitment`, a reschedule moves `due`. Nothing else in the memory is touched.
+Your writes update this one commitment: the plan lands on the todo, a close flips `commitment`, a
+reschedule moves `due`. Nothing else in the memory is touched.
 
 The decode sits with the PM's own documents as the record of what was asked and what we said
 back, so the same ask arriving next month from somebody else lands on something. Todos join the
-commitment ledger once the PM approves them.
+commitment ledger as you write them. Anything sent to Jira, Confluence or the calendar waits for
+the PM.
 
 A nudge and a reply are not proposals. Both wait in the chat for you to copy and send yourself.
 

@@ -90,6 +90,14 @@ test('relationship is off the screen and still in the file', () => {
   }
 });
 
+test('the "Qale heard this" mark is Qale’s, and never a row (FA-7)', () => {
+  assert.equal(OFF_ROW_OWNERS['inference'], 'agent');
+  assert.ok(HIDDEN_KEYS.has('inference'));
+  for (const type of TYPES) {
+    assert.ok(!fieldKeys(type).includes('inference'), `${type} draws an inference row`);
+  }
+});
+
 test('a research page draws the same rows a document does', () => {
   assert.deepEqual(fieldKeys('research'), fieldKeys('note'));
 });

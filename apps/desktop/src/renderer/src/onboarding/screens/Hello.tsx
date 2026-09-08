@@ -38,22 +38,20 @@ export function Hello({ onNext }: { onNext: () => void }) {
         <div className="space-y-3 text-body text-muted-foreground">
           <p>
             Everything here is a plain text file on your computer. Your notes, meetings and
-            decisions live in one folder that you pick, and you can open it with any other app,
-            with Qale closed.
+            decisions live in one folder that you pick, and you can open it with any other app, with
+            Qale closed.
           </p>
           {/* "You approve before anything counts" was the old last sentence,
-              and the write policy made it untrue: what Qale keeps in its own
-              memory lands on its own (docs/review-rework.md RR-1). The screen
-              says which writes wait and which do not, in the same words as
-              PRODUCT.md, because the one thing worse than a surprise is a
-              promise that broke. */}
+              and the write policy made it untrue: most writes land on their own
+              (docs/fewer-approvals.md FA-1). The screen says which writes wait
+              and which do not, in the same words as PRODUCT.md, because the one
+              thing worse than a surprise is a promise that broke. */}
           <p>
             That folder is where you work. Write notes, drop in transcripts, ask questions. The AI
-            reads what you give it, files it, and drafts the follow-ups. Your documents, your to-dos
-            and your meetings are yours: it asks before it writes there. It asks before it sends
-            anything to Jira, Confluence or a calendar, and before it deletes. What it keeps for
-            itself, a decision, a customer page, an insight, lands as it writes it, listed in
-            Activity, where one press puts it back.
+            reads what you give it, files it, and drafts the follow-ups. Most of that lands as it is
+            written, listed in Activity, where one press puts it back. Four things wait for you
+            first: anything sent to Jira, Confluence or a calendar, a page deleted, a rewrite of
+            something you wrote, and anything the AI had to assume.
           </p>
           {/* The why, then the limit of the promise in the same breath (OW10).
               "Nothing leaves" was never true of the model, and a boundary

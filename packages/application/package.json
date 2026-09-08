@@ -9,7 +9,7 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test --experimental-test-module-mocks --disable-warning=ExperimentalWarning test/*.test.ts"
   },
   "dependencies": {
     "@qale/domain": "workspace:*",

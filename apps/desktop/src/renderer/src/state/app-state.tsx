@@ -31,6 +31,7 @@ import type {
   PeopleDirectoryDTO,
   PersonCardDTO,
   ProposalDTO,
+  RevertResultDTO,
   SearchHitDTO,
   SettingsDTO,
   SessionFileDTO,
@@ -216,8 +217,8 @@ export interface SessionOverview {
   lifecycle: SessionLifecycle;
   /** The model this session was moved to, or null when it follows Settings. */
   modelId: string | null;
-  /** No person has driven a turn in this session yet — a clock or an
-   *  unattended arrival started it. Sessions filters these out by default. */
+  /** Nobody asked for this session: a clock's own slot started it. Sessions
+   *  filters these out by default. */
   automatic: boolean;
 }
 
@@ -288,8 +289,11 @@ interface AppState {
    */
   activity: ActivityDTO[];
   refreshActivity: () => Promise<void>;
-  /** Put one row back, and refresh what the undo touched. */
-  revertActivity: (id: string) => Promise<void>;
+  /**
+   * Put one row back, and refresh what the undo touched. Answers with what the
+   * undo did, because a whole-page put-back is news the view has to pass on.
+   */
+  revertActivity: (id: string) => Promise<RevertResultDTO>;
   /** Merged session rows (stored + live + cards + seen) — rail, Sessions, Home. */
   sessions: SessionOverview[];
   /** The parsed skill catalogue (Skills v2) — refreshed on skill-file changes. */
@@ -489,6 +493,9 @@ interface AppState {
     error?: string;
     url?: string;
     review?: MeetingReviewAskDTO;
+    /** The Activity row the approved write left, so the chat can offer a put
+     *  back on it (docs/receipt-redesign.md RC-4). A send leaves none. */
+    activityId?: string;
   }>;
   rejectProposal: (id: string) => Promise<{ ok: boolean; review?: MeetingReviewAskDTO }>;
   /** The PO's answer to that ask: take the meeting out of "needs review". */
@@ -1490,6 +1497,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const result = await invoke['activity:revert'](id);
       await Promise.all([refreshActivity(), refreshTree()]);
       if (docData[result.path]) await loadDoc(result.path);
+      return result;
     },
     [refreshActivity, refreshTree, loadDoc, docData],
   );

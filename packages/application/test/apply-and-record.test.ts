@@ -120,6 +120,7 @@ function fakeContext(files: Record<string, Stored> = {}) {
       list: () => [...activity].reverse(),
       get: (id: string) => activity.find((r) => r.id === id) ?? null,
       latestLearned: () => [],
+      forProposal: (id: string) => activity.find((r) => r.proposalId === id) ?? null,
       markReverted: () => {},
     },
   } as unknown as UseCaseContext;

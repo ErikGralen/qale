@@ -1,4 +1,9 @@
-import { isFolderIndex, proposalHeadline, type OutboundCopyInput } from '@qale/domain';
+import {
+  INFERRED_TODO_MARK,
+  isFolderIndex,
+  proposalHeadline,
+  type OutboundCopyInput,
+} from '@qale/domain';
 import type {
   AskRequestDTO,
   CaptureNudgeStateDTO,
@@ -89,6 +94,13 @@ export interface AttentionItem {
   target: AttentionTarget;
   /** The one note this row's label names, when its label names one. */
   link?: AttentionLink;
+  /**
+   * A quiet second fact, printed after the label in the row's secondary voice.
+   * One case today: a todo Qale worked out of a transcript rather than being
+   * told, until the PM touches it (docs/fewer-approvals.md FA-7). Absent
+   * everywhere else.
+   */
+  mark?: string;
   /** The instant the item is about, when it has one — a meeting's start, a due
    *  date, a card's creation. Surfaces that count down format this themselves. */
   when?: number;
@@ -386,6 +398,9 @@ export function buildAttention(input: AttentionInput, now: number = Date.now()):
       tone: 'warning',
       target: { open: 'doc', path: n.path },
       when: Date.parse(n.due!),
+      // A commitment Qale heard reads the same as one the PM made, and the two
+      // are not the same promise. The row says which (FA-7).
+      ...(n.inference ? { mark: INFERRED_TODO_MARK } : {}),
     });
   }
 

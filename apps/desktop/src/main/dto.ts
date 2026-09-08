@@ -92,6 +92,9 @@ export function indexedToRefDTO(n: IndexedNote): NoteRefDTO {
       Array.isArray(fm['sources']) && typeof fm['sources'][0] === 'string'
         ? (fm['sources'][0] as string)
         : undefined,
+    // Only ever true or absent: the row shows a mark, and "inference: false"
+    // would be a second way to say the same nothing.
+    inference: fm['inference'] === true ? true : undefined,
     stateCategory: isStateCategory(fm['state_category']) ? fm['state_category'] : undefined,
     state: typeof fm['state'] === 'string' ? fm['state'] : undefined,
     assignee: typeof fm['assignee'] === 'string' ? fm['assignee'] : undefined,

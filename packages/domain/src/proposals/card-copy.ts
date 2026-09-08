@@ -1,6 +1,7 @@
 import { refToSlug } from '../notes/decisions.js';
 import { dirForType, NOTE_TYPES, type NoteType } from '../notes/frontmatter.js';
 import { titleFromSlug } from '../notes/slug.js';
+import { INFERRED_TODO_MARK } from '../todos/index.js';
 import { formatStamp, parseEventStamp, rsvpAnswer } from './event-time.js';
 // activity.ts imports titleForRef from here, so the two lean on each other.
 // Both use the other's export inside a function only, never at load, which is
@@ -473,6 +474,268 @@ export function cardTargetTitle(input: TargetTitleInput): string {
     return known || filed || nounForDir(dirOf(target));
   }
   return payloadTitle(input.frontmatter) || known || filed || nounForDir(dirOf(target));
+}
+
+// ---------------------------------------------------------------------------
+// The landed row: the same write, after it happened (docs/fewer-approvals.md FA-4)
+// ---------------------------------------------------------------------------
+
+/**
+ * The words a landed row leads with.
+ *
+ * A todo has three of its own, because a promise made in the PM's name is the
+ * write they most want to catch, and "New" over a row said nothing about what
+ * kind of thing was new (docs/receipt-redesign.md RC-2).
+ */
+export const APPLIED_VERBS = [
+  'New',
+  'Changed',
+  'Done',
+  'Removed',
+  'New todo',
+  'Todo changed',
+  'Todo done',
+  /** A card the PM approved that left the workspace. It writes no file, so it
+   *  is the one row with nothing to open and no way back
+   *  (docs/receipt-redesign.md RC-3). */
+  'Sent',
+] as const;
+export type AppliedVerb = (typeof APPLIED_VERBS)[number];
+
+/** What a row needs to say what one write did. */
+export interface ChangeLineInput {
+  kind: 'note' | 'update' | 'decision' | 'outbound' | 'delete';
+  targetPath?: string | null;
+  /** A new page's frontmatter, or the keys an update sets. */
+  frontmatter?: Record<string, unknown>;
+  /** The note's frontmatter before an update, so a field that moved says so. */
+  before?: Record<string, unknown>;
+  body?: string;
+  append?: string;
+  patch?: readonly { search: string; replace: string }[];
+  /** Qale worked this out rather than heard it said, so the row wears the mark
+   *  the Todos view wears (docs/fewer-approvals.md FA-7). */
+  inferred?: boolean;
+}
+
+/** Whether a write is about a to-do. The folder decides, because an update's
+ *  payload carries only the keys it sets and never the type. */
+function isTodoWrite(input: ChangeLineInput): boolean {
+  return dirOf(input.targetPath ?? '') === dirForType('todo');
+}
+
+/** Whether an update closes a to-do: the one edit that is neither new nor a
+ *  plain change, and the one the PM most wants to see named. */
+function closesTodo(input: ChangeLineInput): boolean {
+  if (input.kind !== 'update') return false;
+  if (!isTodoWrite(input)) return false;
+  const commitment = fmString(input.frontmatter, 'commitment');
+  return commitment === 'done' || commitment === 'dropped';
+}
+
+/**
+ * The word a landed row leads with: New for a page that was not there, Changed
+ * for an edit, Removed for a page that went, Sent for a card that left the
+ * workspace, and one of the three to-do words for a promise, so the lead-in
+ * names the kind.
+ */
+export function appliedVerb(input: ChangeLineInput): AppliedVerb {
+  if (input.kind === 'outbound') return 'Sent';
+  if (input.kind === 'delete') return 'Removed';
+  if (isTodoWrite(input)) {
+    if (closesTodo(input)) return 'Todo done';
+    return input.kind === 'update' ? 'Todo changed' : 'New todo';
+  }
+  return input.kind === 'update' ? 'Changed' : 'New';
+}
+
+/**
+ * Who owes a to-do, in the word the row says: the person's name when somebody
+ * else committed, "you" when the PM did. A to-do with no owner is the PM's own,
+ * which is what the ledger already means by an empty owner.
+ */
+function todoOwner(fm?: Record<string, unknown>): string {
+  return todoOwnerName(fm) ?? 'you';
+}
+
+/**
+ * The line a to-do row says: who, when, and whether Qale heard it. The parts are
+ * dotted apart because each one is a fact the PM checks on its own, and the mark
+ * is the string the Todos view uses, so the two surfaces cannot drift.
+ */
+function todoLine(parts: readonly string[], inferred?: boolean): string {
+  return [...parts, ...(inferred ? [INFERRED_TODO_MARK] : [])].join(' · ');
+}
+
+/** "one line", "3 lines". The count only appears when it is worth saying. */
+const lineCount = (n: number): string => (n === 1 ? 'one line' : `${n} lines`);
+
+/** The lines of a block that are real content: no blanks, no headings. */
+const contentLines = (text: string): string[] =>
+  text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !isHeading(line));
+
+/** A heading as the file writes it: the hashes off, the words as they stand.
+ *  The section is the file's own name for that part, so the line keeps its
+ *  capitals ("Entra" is a product, not a heading word). */
+const headingText = (line: string): string =>
+  line
+    .trim()
+    .replace(/^#{1,6}\s+/, '')
+    .trim();
+
+/** How deep a heading sits. 0 for a line that is not one. */
+const headingLevel = (line: string): number => /^(#{1,6})\s/.exec(line.trim())?.[1]?.length ?? 0;
+
+/**
+ * The sections a piece of writing fills, named by their own headings:
+ * "Summary, 3 Next steps". A section of bullets says how many; a section of
+ * prose says only that it is there, because a count of paragraphs tells nobody
+ * anything.
+ *
+ * A top-level heading is skipped: a page whose body opens with its own title is
+ * not a page with a section called after itself.
+ */
+function sectionsIn(text: string): string[] {
+  const lines = text.split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (headingLevel(line) < 2) continue;
+    const heading = headingText(line);
+    if (!heading) continue;
+    let bullets = 0;
+    let prose = 0;
+    for (let j = i + 1; j < lines.length && !isHeading(lines[j]!); j++) {
+      const body = lines[j]!.trim();
+      if (!body) continue;
+      if (/^[-*+]\s+/.test(body)) bullets++;
+      else prose++;
+    }
+    if (bullets > 1) out.push(`${bullets} ${heading}`);
+    else if (bullets + prose > 0) out.push(heading);
+  }
+  return out;
+}
+
+/** A day field said the way a person says a move: "12 to 24 Sep" keeps the
+ *  month once when both days share it. */
+function dayMove(before: unknown, after: unknown): string | null {
+  const to = dayLabel(after);
+  if (!to) return null;
+  const from = dayLabel(before);
+  if (!from) return `set to ${to}`;
+  const month = to.slice(to.indexOf(' '));
+  const short = from.endsWith(month) ? from.slice(0, from.length - month.length) : from;
+  return `moved ${short} to ${to}`;
+}
+
+/** One field an update sets, said in the PM's words. Null for a field nobody
+ *  reads (the filing keys) or a value too shapeless to print. */
+function fieldPhrase(key: string, before: unknown, after: unknown): string | null {
+  if (isFilingKey(key)) return null;
+  if (JSON.stringify(before) === JSON.stringify(after)) return null;
+  if (key === 'due') {
+    const move = dayMove(before, after);
+    return move ? `due ${move}` : null;
+  }
+  if (key === 'owner') {
+    const who = titleForRef(typeof after === 'string' ? after : '');
+    return who ? `waiting on ${who}` : null;
+  }
+  if (key === 'commitment' && after === 'done') return 'closed';
+  if (key === 'commitment' && after === 'dropped') return 'dropped';
+  if (typeof after === 'string' && after.trim() && after.trim().length <= 40) {
+    return `${key.replace(/_/g, ' ')} now ${after.trim()}`;
+  }
+  if (typeof after === 'number' || typeof after === 'boolean') return `${key} now ${after}`;
+  return null;
+}
+
+/** What one search/replace block did to the body. */
+function patchPhrase(block: { search: string; replace: string }): string {
+  const before = contentLines(block.search);
+  const after = contentLines(block.replace);
+  const added = after.filter((line) => !before.includes(line));
+  const removed = before.filter((line) => !after.includes(line));
+  // The heading the block is anchored on, when it is anchored on one: "one
+  // line under Entra" says where to look, which a bare count never does.
+  const head = block.search.split('\n').find(isHeading);
+  const under = head ? ` under ${headingText(head)}` : '';
+  if (added.length > 0 && removed.length === 0) return `${lineCount(added.length)}${under}`;
+  if (removed.length > 0 && added.length === 0)
+    return `${lineCount(removed.length)}${under} taken out`;
+  return `${lineCount(Math.max(added.length, 1))}${under} rewritten`;
+}
+
+/** What an update did to the body, or an empty string when it touched none. */
+function bodyPhrase(input: ChangeLineInput): string {
+  const patch = input.patch ?? [];
+  if (patch.length > 1) return `${patch.length} places changed`;
+  if (patch.length === 1) return patchPhrase(patch[0]!);
+  const append = input.append ?? '';
+  if (!append.trim()) return '';
+  const sections = sectionsIn(append);
+  if (sections.length > 0) return sections.join(', ');
+  return `${lineCount(contentLines(append).length)} added`;
+}
+
+/**
+ * What one write changed, in one line: "summary, 3 next steps", "due moved 12 to
+ * 24 Sep", "one line under Entra".
+ *
+ * The row above it already says the page and the act, so this says only the
+ * thing neither of them can. Same two rules as the headline: nothing here is
+ * authored by the model, and nothing here costs a lookup beyond the note's own
+ * frontmatter as it read before the write.
+ *
+ * Empty is a real answer. A page that was removed, and a write whose whole story
+ * is its title, both leave the line off rather than pad it.
+ */
+export function changeLine(input: ChangeLineInput): string {
+  if (input.kind === 'delete' || input.kind === 'outbound') return '';
+  const fm = input.frontmatter;
+
+  if (input.kind === 'note' || input.kind === 'decision') {
+    if (noteType(fm) === 'todo' || isTodoWrite(input)) {
+      const due = dayLabel(fmString(fm, 'due'));
+      return todoLine([todoOwner(fm), due ? `due ${due}` : 'no date'], input.inferred);
+    }
+    const sections = sectionsIn(input.body ?? '');
+    if (sections.length > 0) return sections.join(', ');
+    return firstProseLine(input.body).line;
+  }
+
+  // An update: what moved in the properties, then what moved in the body. Two
+  // phrases is the ceiling: a third is a diff, and the diff is one click away.
+  const fields: string[] = [];
+  const todo = isTodoWrite(input);
+  for (const [key, after] of Object.entries(fm ?? {})) {
+    // A to-do row leads with the owner, so "waiting on Åsa" behind it would say
+    // the same name twice in one line.
+    if (todo && key === 'owner') continue;
+    const phrase = fieldPhrase(key, input.before?.[key], after);
+    if (phrase) fields.push(phrase);
+  }
+  const body = bodyPhrase(input);
+  const parts = [...fields, ...(body ? [body] : [])];
+  const moved =
+    parts.length <= 2
+      ? parts.join(', ')
+      : `${parts.slice(0, 2).join(', ')}, and ${parts.length - 2} more`;
+  if (!todo) return moved;
+
+  // A to-do that was edited says the same three things a new one says, so the
+  // two rows read alike. The owner comes off the file as it stands, which is
+  // the note before the write with this write's own keys over it.
+  const owner = todoOwner({ ...input.before, ...fm, type: 'todo' });
+  if (closesTodo(input)) {
+    return todoLine([owner, fmString(fm, 'commitment') === 'dropped' ? 'dropped' : 'done']);
+  }
+  if (!moved) return '';
+  return todoLine([owner, moved], input.inferred);
 }
 
 /**

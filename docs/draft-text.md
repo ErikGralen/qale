@@ -32,18 +32,10 @@ or ask about, because nothing is pending.
 A turn may draw several panels ("draft three different intros"). Each call is a
 new panel. A revision is a new panel too. Nothing is edited in place.
 
-Two actions on a panel:
-
-- **Copy** puts the open variant's markdown on the clipboard. This is the main
-  way text leaves the app.
-- **Use this** sends a message as the person, naming the variant they have open.
-  The agent reads it as an ordinary turn and does whatever it implies: post it on
-  a ticket (a real approval card follows), keep it in a note (a `propose_note`
-  card follows), or write another take.
-
-That second button is why nothing else is needed. The panel stays dumb. It knows
-about text and tabs. Every destination stays the agent's problem, decided in a
-turn, with the real card that destination already has.
+One action on a panel: **Copy** puts the open variant's markdown on the
+clipboard. That is the only way text leaves the panel. What happens to it next
+(pasted into a ticket, an email, a chat) is the person's, not the agent's. The
+panel stays dumb. It knows about text and tabs and nothing else.
 
 ## The tool
 
@@ -52,7 +44,6 @@ draft_text({
   title?:    string        // heading for the panel, e.g. "Exec update"
   voice?:    string        // a voice name from the workspace
   variants:  [{ label, body }]   // at least one; body is the whole text, markdown
-  action?:   { label, message }  // overrides the Use button, see below
 })
 ```
 
@@ -83,29 +74,6 @@ The tool result the model sees is one plain sentence, for example:
 
 > Showed 2 versions in the chat: Short, Friendly. Nothing was filed and nothing
 > was sent. If they pick one they will say so.
-
-### The Use button
-
-Clicking sends a user turn built by the renderer:
-
-```
-Use the "<open tab label>" version.
-```
-
-With `action` set, the button carries the agent's own label and the message gets
-its sentence:
-
-```
-action: { label: "Post on PAY-142", message: "Post it as a comment on PAY-142." }
-→ button reads "Post on PAY-142"
-→ sends: Use the "Short" version. Post it as a comment on PAY-142.
-```
-
-The sent text appears in the transcript as a normal user message, because that is
-what it is.
-
-The button is disabled while a turn is running, and while the session is parked on
-a question card.
 
 ### Permission
 
@@ -159,7 +127,7 @@ word every tool in the workspace refuses with.
 - Tabs when there is more than one variant. Pill tablist, arrow keys move between
   them, same as the current message draft.
 - The body as rendered markdown.
-- A footer row: **Use this** on the left, **Copy** on the right.
+- A footer row: **Copy** on the right.
 - Nothing else. No approve, no discard, no edit, no "Based on", no rationale, no
   effect line, no outbound arrow or ring.
 
@@ -167,9 +135,9 @@ The panel sits in the flow of the conversation, not in a card frame that implies
 a pending decision.
 
 Which tab is open is local state. It is not persisted and not reported to the
-model, because the Use button names the variant in the message it sends. If
-someone types "make that one shorter" without clicking, the agent asks or takes
-the last one, the way it would with any other ambiguous reference.
+model. If someone types "make that one shorter" without clicking, the agent
+asks or takes the last one, the way it would with any other ambiguous
+reference.
 
 ## What gets deleted
 

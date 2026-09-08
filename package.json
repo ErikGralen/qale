@@ -19,11 +19,15 @@
     "uninstall-app": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/uninstall.ts",
     "reset-atlassian": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/reset-atlassian.ts",
     "seed-google-calendar": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/seed-google-calendar.ts",
+    "session-stats": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/session-stats.ts",
     "reset": "pnpm refresh-demo && pnpm reset-atlassian && pnpm seed-google-calendar"
   },
   "devDependencies": {
     "prettier": "^3.4.2",
     "turbo": "^2.10.4",
     "typescript": "~5.9.2"
+  },
+  "dependencies": {
+    "@qale/agent": "workspace:*"
   }
 }

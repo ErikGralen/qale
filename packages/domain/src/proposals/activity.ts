@@ -1,4 +1,4 @@
-import { titleForRef } from './card-copy.js';
+import { APPLIED_VERBS, titleForRef, type AppliedVerb } from './card-copy.js';
 import { isStyleFile } from './policy.js';
 
 /**
@@ -327,13 +327,90 @@ export function appliedReceipt(action: ActivityAction, subject: string): string 
 }
 
 /**
- * Read that line back out of a tool result, for the session view's trail. Null
- * when the write is still waiting on the PM, which is every other case.
+ * The row the chat draws for a write that landed (docs/fewer-approvals.md FA-4).
+ *
+ * The prose above says what happened, for the model. This says the same write in
+ * fields, for the receipt block: the page to open, the way back, and the change
+ * in one line. Both ride in one tool result, so the chat and the model can never
+ * describe one write two ways.
  */
-export function readAppliedReceipt(output: string | undefined): {
+export interface AppliedRow {
+  /** The Activity row to put back. Absent when the workspace kept no history. */
+  activityId?: string;
+  /** The card the write applied, so the row can draw its diff. */
+  proposalId?: string;
+  /** The note it wrote. */
+  path?: string;
+  /** The note's own title, as the row names it. */
+  title?: string;
+  /** New, Changed, Done, Removed, Sent, or one of the three to-do words. */
+  verb: AppliedVerb;
+  /** What changed, in one line: "summary, 3 next steps". */
+  change?: string;
+  /**
+   * Qale worked this write out rather than heard it said (FA-7). Only a to-do
+   * draws it today, as the mark the Todos view wears, because a promise nobody
+   * made is the write the PM most needs to catch.
+   */
+  inferred?: boolean;
+}
+
+/**
+ * The machine-readable half of a landed receipt, on its own last line.
+ *
+ * It says so in its own words rather than in a rule somewhere else, because the
+ * model reads this line before it reads anything about it.
+ */
+const ROW_OPEN = '<!-- qale:landed (for the app, not for you) ';
+const ROW_CLOSE = ' -->';
+
+/** That line, for a tool result to append. Empty for a write that landed
+ *  nothing a row could point at. */
+export function appliedRowLine(row: AppliedRow | undefined): string {
+  if (!row) return '';
+  const packed: Record<string, unknown> = { verb: row.verb };
+  if (row.activityId) packed['activityId'] = row.activityId;
+  if (row.proposalId) packed['proposalId'] = row.proposalId;
+  if (row.path) packed['path'] = row.path;
+  if (row.title) packed['title'] = row.title;
+  if (row.change) packed['change'] = row.change;
+  if (row.inferred) packed['inferred'] = true;
+  return `${ROW_OPEN}${JSON.stringify(packed)}${ROW_CLOSE}`;
+}
+
+/** Read that line back. Null for a result written before FA-4, which is why a
+ *  row from an old session shows with no way back. */
+function readAppliedRow(output: string): AppliedRow | null {
+  const start = output.lastIndexOf(ROW_OPEN);
+  if (start === -1) return null;
+  const end = output.indexOf(ROW_CLOSE, start);
+  if (end === -1) return null;
+  try {
+    const parsed: unknown = JSON.parse(output.slice(start + ROW_OPEN.length, end));
+    if (!parsed || typeof parsed !== 'object') return null;
+    const row = parsed as AppliedRow;
+    return APPLIED_VERBS.includes(row.verb) ? row : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What one tool result says about a write that landed. */
+export interface AppliedReceipt {
+  /** The prose verb from the first line: "Created", "Added to rules". */
   verb: string;
+  /** What the prose names after the verb. */
   detail?: string;
-} | null {
+  /** The fields the receipt block draws. Absent on a result from before FA-4. */
+  row?: AppliedRow;
+}
+
+/**
+ * Read a landed write back out of a tool result, for the receipt block in the
+ * chat. Null when the write is still waiting on the PM, which is every other
+ * case.
+ */
+export function readAppliedReceipt(output: string | undefined): AppliedReceipt | null {
   if (!output) return null;
   const first = output.split('\n')[0] ?? '';
   if (!first.startsWith(APPLIED_TAG)) return null;
@@ -343,5 +420,6 @@ export function readAppliedReceipt(output: string | undefined): {
   );
   if (!verb) return null;
   const detail = rest.slice(verb.length).trim();
-  return detail ? { verb, detail } : { verb };
+  const row = readAppliedRow(output);
+  return { verb, ...(detail ? { detail } : {}), ...(row ? { row } : {}) };
 }

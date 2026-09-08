@@ -1,8 +1,23 @@
 # Demo runbook: record the walkthrough, ship the Windows installer
 
-The demo build answers every prompt from recordings. Today `demo/recordings/` holds only the fallback line, so the
-next step is one clean recorded walkthrough of Flows 1 to 5 from `docs/demo-flows.md`. This file is the script for
-that session: what you do, what I do after, and how to tell when something went wrong.
+> **A first full take was recorded on 2026-09-08.** 36 files in `demo/recordings/`, all five flows, every
+> conversation ending cleanly. It is usable but it is not the keeper: the fake Jira no longer closes `SCH-231`,
+> so flow 4's premise contradicts the tracker and the run needed three answers to get past it (below).
+> `docs/demo-scenarios.md` recuts the five so each stands alone and none of those questions is asked.
+>
+> **The three answers this take needs**, in order, or the presenter gets different messages:
+>
+> | Flow | Question | Pick |
+> |---|---|---|
+> | 4 | Jira still has SCH-231 and SCH-240 In Progress. What does "done" mean here? | **2**, complete and the flag is on for customers |
+> | 4 | Has Henrik's review of the swap notifications landed? | **2**, cleared with no change needed |
+> | 5 | Can I tell CS and sales that shift swaps are live for customers since 8 September? | **1**, yes, live 8 September |
+>
+> Do not open `SCH-231` in the Jira tab during flows 4 and 5. It reads In Progress, and the drafts say shipped.
+> Flow 1 only opens `SCH-118`, which is fine.
+
+The demo build answers every prompt from recordings. This file is the script for a recording session: what you
+do, what I do after, and how to tell when something went wrong.
 
 ## How recording works, in four sentences
 
@@ -71,9 +86,6 @@ A question about the meeting date means the sample dating is broken again. Stop 
 
 Press **Approve all**. Then approve the three outbound cards one at a time. Open the SCH-118 ticket page and check
 the comment is there; if it is not, the connection is not on the fake. Stop and tell me.
-
-The first approved outbound card also closes the shift-swaps epic in the fake Jira, as if Rebecca did it while you
-were approving. After the sync that follows, the SCH-231 page reads Done. Check it does before Flow 2.
 
 If the cards are wrong in a way you would not show an audience, stop here and tell me. We fix the transcript or the
 skill, Reset, and start again. A recording of a bad session is worthless.

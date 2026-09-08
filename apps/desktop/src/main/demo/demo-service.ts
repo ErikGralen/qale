@@ -28,7 +28,7 @@ import { isDemoBuild } from '../build-env.js';
 import type { SettingsService } from '../services/settings-service.js';
 import type { VaultService } from '../services/vault-service.js';
 import { CALENDAR_RW_SCOPES } from '../services/google-oauth-service.js';
-import { createFakeAtlassian, type DemoStep, type FakeAtlassian } from './fake-atlassian.js';
+import { createFakeAtlassian, type FakeAtlassian } from './fake-atlassian.js';
 import { createFakeGoogleCalendar, type FakeGoogleCalendar } from './fake-google-calendar.js';
 import { startReplayServer, type ReplayServer } from './replay-server.js';
 
@@ -51,7 +51,6 @@ export interface DemoInfo {
   today: string;
   /** The day `vault-dev/` is written around, YYYY-MM-DD. */
   anchor: string;
-  steps: DemoStep[];
 }
 
 export interface DemoServiceOptions {
@@ -234,27 +233,7 @@ export class DemoService {
 
   /** What the Demo section in Settings draws. */
   info(): DemoInfo {
-    if (!this.enabled) return { enabled: false, today: this.today(), anchor: ANCHOR, steps: [] };
-    return { enabled: true, today: this.today(), anchor: ANCHOR, steps: this.steps() };
-  }
-
-  steps(): DemoStep[] {
-    try {
-      return this.fake?.steps() ?? [];
-    } catch (err) {
-      console.error('[qale] demo: could not read the scripted steps:', err);
-      return [];
-    }
-  }
-
-  /** Apply one scripted change to the fake tracker. Unknown ids do nothing. */
-  applyStep(id: string): DemoStep[] {
-    try {
-      this.fake?.applyStep(id);
-    } catch (err) {
-      console.error(`[qale] demo: step "${id}" failed:`, err);
-    }
-    return this.steps();
+    return { enabled: this.enabled, today: this.today(), anchor: ANCHOR };
   }
 
   /**

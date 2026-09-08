@@ -231,84 +231,6 @@ test('reset puts the fixture back', async () => {
   );
 });
 
-/** State of one key after a fresh pull: `SCH-240 Done/done`. */
-async function stateOf(f: FakeAtlassian, key: string): Promise<string> {
-  const pull = await connectorFor(f).pullChanges(TICKETS, null);
-  const hit = pull.changes.find((c) => c.external_id === key);
-  if (!hit || hit.kind !== 'ticket') return 'missing';
-  return `${hit.state}/${hit.state_category}`;
-}
-
-test('the fixture ships the two steps the script needs, in order', () => {
-  assert.deepEqual(fake().steps(), [
-    { id: 'sch-240-done', label: 'Flow 2: SCH-240 (last swap story) → Done', applied: false },
-    { id: 'sch-231-done', label: 'Flow 4: SCH-231 (shift swaps epic) → Done', applied: false },
-  ]);
-});
-
-test('a scripted step moves the tracker and the next pull sees it', async () => {
-  const f = fake();
-  assert.equal(f.applyStep('no-such-step'), false);
-  assert.equal(f.applyStep('sch-240-done'), true);
-  // Applying twice would double the comment.
-  assert.equal(f.applyStep('sch-240-done'), false);
-  assert.equal(f.steps()[0]?.applied, true);
-  // The epic is a separate step, so the story closing does not close it.
-  assert.equal(f.steps()[1]?.applied, false);
-
-  const connector = connectorFor(f);
-  const pull = await connector.pullChanges(TICKETS, null);
-  const done = pull.changes.find((c) => c.external_id === 'SCH-240');
-  assert.equal(done?.kind === 'ticket' && done.state, 'Done');
-  assert.equal(done?.kind === 'ticket' && done.state_category, 'done');
-  assert.equal(await stateOf(f, 'SCH-231'), 'In Progress/in_progress');
-  // The step lands last, so it is the new high-water mark.
-  assert.equal(pull.changes.at(-1)?.external_id, 'SCH-240');
-  const item = await connector.fetchFull('ticket', 'SCH-240');
-  assert.match(item.bodyMarkdown, /the overtime check is already covered by the contract-hours guard/);
-});
-
-test('the epic step brings the story step with it', async () => {
-  // Flow 4 straight from the top: the presenter skips Flow 2's step, and the
-  // epic must not close over a story that still reads In Progress.
-  const f = fake();
-  assert.equal(f.applyStep('sch-231-done'), true);
-  assert.deepEqual(
-    f.steps().map((s) => s.applied),
-    [true, true],
-  );
-  assert.equal(await stateOf(f, 'SCH-231'), 'Done/done');
-  assert.equal(await stateOf(f, 'SCH-240'), 'Done/done');
-
-  const connector = connectorFor(f);
-  const epic = await connector.fetchFull('ticket', 'SCH-231');
-  assert.match(epic.bodyMarkdown, /All three stories done, swap approval flow shipped to staging/);
-  // One closing comment each, not two.
-  assert.equal(epic.bodyMarkdown.match(/release train Tuesday/g)?.length, 1);
-  const story = await connector.fetchFull('ticket', 'SCH-240');
-  assert.equal(story.bodyMarkdown.match(/contract-hours guard/g)?.length, 1);
-});
-
-test('the steps are idempotent in either order', async () => {
-  const f = fake();
-  assert.equal(f.applyStep('sch-240-done'), true);
-  assert.equal(f.applyStep('sch-231-done'), true);
-  // Both are spent now, whichever way the presenter got here.
-  assert.equal(f.applyStep('sch-240-done'), false);
-  assert.equal(f.applyStep('sch-231-done'), false);
-  assert.equal(await stateOf(f, 'SCH-231'), 'Done/done');
-  const story = await connectorFor(f).fetchFull('ticket', 'SCH-240');
-  assert.equal(story.bodyMarkdown.match(/contract-hours guard/g)?.length, 1);
-
-  // Reset forgets them, so the next demo can run the script again.
-  f.reset();
-  assert.deepEqual(
-    f.steps().map((s) => s.applied),
-    [false, false],
-  );
-  assert.equal(await stateOf(f, 'SCH-231'), 'In Progress/in_progress');
-});
-
 test('the footprint survey finds the project and the space', async () => {
   // Slide the cast onto today, or the survey's 90-day window would age out.
   const offset = Math.round((Date.now() - Date.parse('2026-07-17T00:00:00Z')) / 86_400_000);
@@ -330,23 +252,11 @@ test('the generated fixture is valid JSON with the cast in it', () => {
     spaces: unknown[];
     issues: { key: string; comments: unknown[]; labels: string[] }[];
     pages: { id: string; body: string }[];
-    steps: { id: string; requires?: string[]; changes: { key?: string }[] }[];
   };
   assert.equal(fixture.anchor, '2026-07-17');
   assert.equal(fixture.siteUrl, SITE);
   assert.equal(fixture.projects.length, 3);
   assert.equal(fixture.spaces.length, 1);
-  assert.deepEqual(
-    fixture.steps.map((s) => s.id),
-    ['sch-240-done', 'sch-231-done'],
-  );
-  assert.deepEqual(fixture.steps[1]?.requires, ['sch-240-done']);
-  // A step may only name a key the fixture has.
-  const keys = new Set(fixture.issues.map((i) => i.key));
-  assert.equal(
-    fixture.steps.every((s) => s.changes.every((c) => !c.key || keys.has(c.key))),
-    true,
-  );
   assert.deepEqual(
     fixture.issues.map((i) => i.key),
     [
@@ -372,35 +282,6 @@ test('the generated fixture is valid JSON with the cast in it', () => {
     ['4521985', '4784129'],
   );
   assert.match(fixture.pages[0]?.body ?? '', /^<h1>Roadmap H2<\/h1>/);
-});
-
-test('the first approved write closes the epic on its own', async () => {
-  const f = fake();
-  const connector = connectorFor(f);
-  // Reads change nothing: the epic is still open after a pull.
-  const before = await connector.fetchFull('ticket', 'SCH-231');
-  assert.equal(before.state, 'In Progress');
-  assert.deepEqual(f.steps().filter((s) => s.applied).map((s) => s.id), []);
-
-  await connector.execute({
-    provider: 'jira',
-    system: 'jira',
-    action: 'comment_ticket',
-    targetId: 'SCH-118',
-    body: 'Payroll export moves to Q1 after the steering call.',
-    rationale: 'Decided in the steering meeting.',
-  });
-
-  // The write applied the self-applying step and the one it requires.
-  assert.deepEqual(
-    f.steps().filter((s) => s.applied).map((s) => s.id).sort(),
-    ['sch-231-done', 'sch-240-done'],
-  );
-  const epic = await connector.fetchFull('ticket', 'SCH-231');
-  assert.equal(epic.state, 'Done');
-  assert.match(epic.bodyMarkdown, /release train/);
-  const story = await connector.fetchFull('ticket', 'SCH-240');
-  assert.equal(story.state, 'Done');
 });
 
 test('a patch that spans two paragraphs lands, and stays two paragraphs', async () => {

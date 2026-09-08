@@ -71,7 +71,7 @@ const MODEL_IDS = [
 
 export async function startReplayServer(opts: ReplayServerOptions): Promise<ReplayServer> {
   const pacing = { ...DEFAULT_PACING, ...(opts.pacing ?? {}) };
-  const recorder = new Recorder(opts.recordingsDir);
+  const recorder = new Recorder(opts.recordingsDir, opts.dateOffsetDays);
   let recordings: LoadedRecording[] = [];
   let fallback: Recording | null = null;
 
@@ -125,7 +125,11 @@ export async function startReplayServer(opts: ReplayServerOptions): Promise<Repl
     const turnIndex = assistantCount(messages);
     const match = matchRequest({ system: flattenSystem(request.system), messages }, recordings);
     const recorded = match?.turn.response ?? fallbackResponse(fallback, request.model);
-    const response = shiftResponseDates(recorded, opts.dateOffsetDays);
+    // How far this demo day is from the day the answer was recorded. A recording
+    // replayed on its own record day moves nothing, which is what makes the
+    // paths inside it keep resolving.
+    const slide = opts.dateOffsetDays - (match?.loaded.recording.offsetDays ?? 0);
+    const response = shiftResponseDates(recorded, slide);
     const leadMs = turnIndex === 0 ? pacing.firstTurnDelayMs : pacing.turnDelayMs;
 
     if (!request.stream) {

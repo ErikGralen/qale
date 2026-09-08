@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button } from '@qale/ui';
-import { Check, FolderOpen, RotateCcw } from 'lucide-react';
+import { FolderOpen, RotateCcw } from 'lucide-react';
 import type { DemoInfoDTO } from '@qale/ipc';
 import { invoke } from '../lib/ipc';
 import { useToast } from '../components/toast';
@@ -11,20 +11,13 @@ import { Setting, SettingPanel } from '../components/Setting';
  * nowhere else: `demo:info` answers `enabled: false` in the product and
  * SettingsView never appends the tab.
  *
- * Three things, and nothing that looks like a debug panel. He opens this in
+ * Two things, and nothing that looks like a debug panel. He opens this in
  * front of customers, so it reads as a page of the app.
  */
-export function DemoSettings({
-  info,
-  onChange,
-}: {
-  info: DemoInfoDTO;
-  onChange: (info: DemoInfoDTO) => void;
-}) {
+export function DemoSettings({ info }: { info: DemoInfoDTO }) {
   const toast = useToast();
   const [confirming, setConfirming] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [busyStep, setBusyStep] = useState<string | null>(null);
 
   const reset = async () => {
     setConfirming(false);
@@ -45,16 +38,6 @@ export function DemoSettings({
     } catch (err) {
       toast(`Could not open the folder: ${err instanceof Error ? err.message : 'unknown error'}`);
     }
-  };
-
-  const applyStep = async (id: string) => {
-    setBusyStep(id);
-    try {
-      onChange({ ...info, steps: await invoke['demo:applyStep'](id) });
-    } catch (err) {
-      toast(`That step failed: ${err instanceof Error ? err.message : 'nothing changed.'}`);
-    }
-    setBusyStep(null);
   };
 
   return (
@@ -105,28 +88,6 @@ export function DemoSettings({
           </Button>
         }
       />
-
-      {info.steps.length > 0 && (
-        <Setting
-          title="Script steps"
-          description="Changes you can make happen on cue, the way they would if someone else moved a ticket while you talked. Each one runs once per demo, and a later step brings the earlier ones with it."
-        >
-          <div className="flex flex-col items-start gap-2">
-            {info.steps.map((step) => (
-              <Button
-                key={step.id}
-                size="sm"
-                variant="outline"
-                disabled={step.applied || busyStep !== null}
-                onClick={() => void applyStep(step.id)}
-              >
-                {step.applied && <Check className="size-3.5 text-brand" aria-hidden />}
-                {step.label}
-              </Button>
-            ))}
-          </div>
-        </Setting>
-      )}
     </SettingPanel>
   );
 }

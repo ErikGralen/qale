@@ -1,6 +1,7 @@
 {
   "version": 1,
   "key": "this-run-was-started-with-the-handle-a-commitment-skill-it-w-ff7ac8",
+  "offsetDays": 53,
   "turns": [
     {
       "request": {
@@ -23,7 +24,7 @@
       },
       "response": {
         "model": "claude-haiku-4-5-20251001",
-        "id": "msg_011CerF8mcHLwnaPVt6Wv9e9",
+        "id": "msg_011CerbHL9g3TJo8ZLsgfkFf",
         "type": "message",
         "role": "assistant",
         "content": [
@@ -32,6 +33,7 @@
             "text": "Reply to Marcus about the swap ETA"
           }
         ],
+        "container": null,
         "stop_reason": "end_turn",
         "stop_sequence": null,
         "stop_details": null,

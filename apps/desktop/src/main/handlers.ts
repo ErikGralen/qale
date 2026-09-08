@@ -163,6 +163,17 @@ import {
 } from './dto.js';
 
 /**
+ * The dropped files, named, for the sentence that opens an arrival session.
+ * A long batch is cut short: the full list is in `input.md`, which the agent is
+ * told to read in the next sentence.
+ */
+function nameList(files: readonly string[], cap = 6): string {
+  const shown = files.slice(0, cap).map((f) => `\`${f}\``);
+  const rest = files.length - shown.length;
+  return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
+}
+
+/**
  * Any of the PO's own open commitments due today or already slipped. `owner`
  * set means the commitment is waiting on someone else — that one is a follow-up
  * to make, not a debt the dock should nag about. A missing `status` reads as
@@ -1718,19 +1729,12 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
 
   // Demo build only (docs/demo-mode.md DM-9). In the product `demo` is null, so
   // `demo:info` reports that it is off and the Settings section is not drawn.
-  handle('demo:info', () => demo?.info() ?? { enabled: false, today: '', anchor: '', steps: [] });
+  handle('demo:info', () => demo?.info() ?? { enabled: false, today: '', anchor: '' });
   handle('demo:reset', async () => {
     await demo?.reset();
   });
   handle('demo:openSamples', async () => {
     await demo?.openSamples();
-  });
-  handle('demo:applyStep', async (id) => {
-    const steps = demo?.applyStep(id) ?? [];
-    // The step changed the fake tracker; the mirror in the workspace has to
-    // follow, or the presenter shows a ticket that still reads the old status.
-    await syncService.tick().catch((err) => console.error('[qale] demo: sync failed:', err));
-    return steps;
   });
   handle('settings:setSchedule', async (skill, patch) => {
     // Enabling starts the schedule from now — otherwise the next tick sees
@@ -2354,7 +2358,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const prompt = buildKickoff({
       skill: ARRIVAL_AGENT_NAME,
       instruction: [
-        `${written.length} source${written.length === 1 ? '' : 's'} just landed in your session folder, unfiled.`,
+        // The names, not just the count. The agent knows what it is holding
+        // before it reads anything, and two drops stop opening with the same
+        // sentence, which is what a demo recording is matched on
+        // (docs/demo-mode.md DM-4).
+        `${written.length} source${written.length === 1 ? '' : 's'} just landed in your session folder, unfiled: ${nameList(written.map((w) => w.file))}.`,
         `Read \`input.md\` for the list, work out what each thing is, file it, and read what is worth reading.`,
         instruction?.trim()
           ? `What I asked for when I handed them over, which takes precedence: ${instruction.trim()}`

@@ -1,6 +1,7 @@
 {
   "version": 1,
-  "key": "summarise-this-document-and-tag-it-tags-in-use-most-used-fir-f28a1c",
+  "key": "summarise-this-document-and-tag-it-tags-in-use-most-used-fir-93895f",
+  "offsetDays": 53,
   "turns": [
     {
       "request": {
@@ -11,7 +12,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "Summarise this document and tag it.\n\nTags in use, most used first: shift-swaps, payroll-export, auto-schedule, churn, offline-mode, platform, scheduling, week-templates, gdpr, staff-app.\nWhat the PM wants from Qale, with the tag for each line: write-into-tools (When a meeting ends, write the actions into Jira and Confluence for me.); delivery-from-record (Answer \"when can we deliver this?\" from the record, not from my memory.); who-is-waiting (Tell me who is waiting for something before it ships, and what they were told.); priority-changed (When a priority changes in a room I was in, change the record so the team reads it.); one-news-many-words (Write the week's news once and give it to me in the words each group needs.); promises (Keep track of what I promised and tell me before the date, not after.).\n\n<<<EXTERNAL_MATERIAL id=c69a92b8 origin=\"todos/2026-09-08-file-the-fourth-swap-notification-story-under-sc.md\">>>\nTitle: File the fourth swap-notification story under SCH-231\n\n> \"I'll make sure it exists, whether I write it or someone on the team does.\"\n> — [[meetings/2026-09-07-steering]]\n<<<END_EXTERNAL_MATERIAL id=c69a92b8>>>",
+                "text": "Summarise this document and tag it.\n\nTags in use, most used first: shift-swaps, payroll-export, auto-schedule, churn, offline-mode, platform, scheduling, week-templates, gdpr, staff-app.\nWhat the PM wants from Qale, with the tag for each line: write-into-tools (When a meeting ends, write the actions into Jira and Confluence for me.); delivery-from-record (Answer \"when can we deliver this?\" from the record, not from my memory.); who-is-waiting (Tell me who is waiting for something before it ships, and what they were told.); priority-changed (When a priority changes in a room I was in, change the record so the team reads it.); one-news-many-words (Write the week's news once and give it to me in the words each group needs.); promises (Keep track of what I promised and tell me before the date, not after.).\n\n<<<EXTERNAL_MATERIAL id=577b92f2 origin=\"meetings/2026-09-12-cafe-nord-qbr-prep.md\">>>\nTitle: Café Nord QBR prep\n\n## Prep\n\n- Close the swap-date gap in the room. Marcus told Lena \"before September\" at the Q2 QBR and she\n  wrote that down ([[meetings/2026-06-05-cafe-nord-qbr]]). Say out loud that the date has passed\n  and what replaces it: swaps is now first in the H2 order, ahead of payroll export\n  ([[decisions/2026-09-07-h2-order-swaps-first]]).\n- Give no month. The last story is being re-estimated and the estimate lands 2026-09-18\n  ([[tickets/jira/SCH-240]]). Offer to come back to Lena with a date the week after.\n- Carries [[todos/reply-marcus-swap-eta]]; deck is [[todos/cafe-nord-qbr-prep-deck]].\n<<<END_EXTERNAL_MATERIAL id=577b92f2>>>",
                 "cache_control": {
                   "type": "ephemeral"
                 }
@@ -23,27 +24,28 @@
       },
       "response": {
         "model": "claude-haiku-4-5-20251001",
-        "id": "msg_011CerEsWex4JAeaj8Et3TFw",
+        "id": "msg_011Cerbqhm5b9rscboTm6oFw",
         "type": "message",
         "role": "assistant",
         "content": [
           {
             "type": "text",
-            "text": "A task to create a story for swap notifications under SCH-231, committed in a steering meeting.\ntags: shift-swaps"
+            "text": "Prep notes for Café Nord QBR covering revised swap-date commitment, payroll export prioritization, and re-estimated delivery timeline.\ntags: promises, shift-swaps"
           }
         ],
+        "container": null,
         "stop_reason": "end_turn",
         "stop_sequence": null,
         "stop_details": null,
         "usage": {
-          "input_tokens": 666,
+          "input_tokens": 824,
           "cache_creation_input_tokens": 0,
           "cache_read_input_tokens": 0,
           "cache_creation": {
             "ephemeral_5m_input_tokens": 0,
             "ephemeral_1h_input_tokens": 0
           },
-          "output_tokens": 31,
+          "output_tokens": 42,
           "service_tier": "standard",
           "inference_geo": "not_available"
         }

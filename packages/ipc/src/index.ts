@@ -50,7 +50,6 @@ import type {
   CodebaseRequestDTO,
   CodebaseStatusDTO,
   DemoInfoDTO,
-  DemoStepDTO,
   GitStatusDTO,
   RevertChangeInput,
   RevertResultDTO,
@@ -467,8 +466,6 @@ export interface InvokeMap {
   'demo:reset': { args: []; result: void };
   /** Put the drag-in files on the Desktop and open the folder. */
   'demo:openSamples': { args: []; result: void };
-  /** Apply one scripted change to the fake tracker; answers the new step list. */
-  'demo:applyStep': { args: [id: string]; result: DemoStepDTO[] };
 }
 
 export type InvokeChannel = keyof InvokeMap;
@@ -594,7 +591,6 @@ export const INVOKE_CHANNELS = [
   'demo:info',
   'demo:reset',
   'demo:openSamples',
-  'demo:applyStep',
 ] as const satisfies readonly InvokeChannel[];
 
 // Compile-time completeness guard: every InvokeMap key must appear above. A

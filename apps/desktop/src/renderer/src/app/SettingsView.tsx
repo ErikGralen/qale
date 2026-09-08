@@ -820,7 +820,7 @@ export function SettingsView({ viewKey, section }: { viewKey: string; section?: 
 
             {demo && (
               <TabsContent value="demo">
-                <DemoSettings info={demo} onChange={setDemo} />
+                <DemoSettings info={demo} />
               </TabsContent>
             )}
           </div>

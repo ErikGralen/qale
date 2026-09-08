@@ -7,7 +7,12 @@ import {
   prefixLength,
   userSide,
 } from '../src/main/demo/replay-matcher.js';
-import { shiftDatesDeep, shiftDay, shiftResponseDates } from '../src/main/demo/replay-dates.js';
+import {
+  shiftDatesDeep,
+  shiftDatesInText,
+  shiftDay,
+  shiftResponseDates,
+} from '../src/main/demo/replay-dates.js';
 import type {
   LoadedRecording,
   RecordedTurn,
@@ -177,4 +182,39 @@ test('a recorded answer is slid to the demo day, and only the answer', () => {
   // The recording itself is untouched, so the next replay slides the same days.
   assert.equal(recorded.content[0]?.text, 'The workshop is on 2026-07-25.');
   assert.equal(shiftDatesDeep({ a: ['2026-07-17'] }, 1).a[0], '2026-07-18');
+});
+
+test('a date inside a path or a wikilink never slides', () => {
+  // The vault shift renames nothing, so a dated filename is that file's name on
+  // every demo day. Sliding one points a recorded tool call at nothing.
+  const cases: [string, string][] = [
+    ['due 2026-09-15, agreed on the call', 'due 2026-09-25, agreed on the call'],
+    ['See [[decisions/2026-05-18-h2-order]] now', 'See [[decisions/2026-05-18-h2-order]] now'],
+    ['read decisions/2026-05-18-h2-order', 'read decisions/2026-05-18-h2-order'],
+    ['2026-09-07-steering.md', '2026-09-07-steering.md'],
+    [
+      'file meetings/2026-09-07-steering.md before 2026-09-15',
+      'file meetings/2026-09-07-steering.md before 2026-09-25',
+    ],
+    ['Recorded at 2026-09-08T14:20:00Z', 'Recorded at 2026-09-18T14:20:00Z'],
+  ];
+  for (const [before, after] of cases) assert.equal(shiftDatesInText(before, 10), after);
+});
+
+test('a tool input keeps its path and moves its dates', () => {
+  const recorded: WireResponse = {
+    ...response('filing'),
+    content: [
+      {
+        type: 'tool_use',
+        id: 'tu_1',
+        name: 'propose_todo',
+        input: { path: 'todos/2026-09-08-tell-oskar.md', due: '2026-09-15' },
+      },
+    ],
+  };
+  assert.deepEqual(shiftResponseDates(recorded, 10).content[0]?.input, {
+    path: 'todos/2026-09-08-tell-oskar.md',
+    due: '2026-09-25',
+  });
 });

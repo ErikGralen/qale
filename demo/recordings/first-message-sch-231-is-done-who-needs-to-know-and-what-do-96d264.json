@@ -1,6 +1,7 @@
 {
   "version": 1,
   "key": "first-message-sch-231-is-done-who-needs-to-know-and-what-do-96d264",
+  "offsetDays": 53,
   "turns": [
     {
       "request": {
@@ -23,7 +24,7 @@
       },
       "response": {
         "model": "claude-haiku-4-5-20251001",
-        "id": "msg_011CerFSaQbMbQPF4nDRSvVu",
+        "id": "msg_011Cerc599uoNanfKY23wHSM",
         "type": "message",
         "role": "assistant",
         "content": [
@@ -32,6 +33,7 @@
             "text": "SCH-231 completion notification"
           }
         ],
+        "container": null,
         "stop_reason": "end_turn",
         "stop_sequence": null,
         "stop_details": null,

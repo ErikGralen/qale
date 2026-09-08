@@ -165,13 +165,31 @@ Assistant messages are not compared. That is what makes hand edits possible: aft
 a recorded answer, the app sends the changed text back in the next request, and the matcher
 still finds the conversation because it only reads the user side.
 
-Recorded responses are stored anchored to 2026-07-17 like the vault. At replay, every date
-token in a response is slid by the same offset Reset used. A recorded todo due "2026-07-25"
-comes out due eight days from the demo day, the same day the vault says.
+Recorded responses carry the dates of the day they were recorded. Each recording stores the
+vault offset in force that day (`offsetDays`), and at replay the answers slide by today's
+offset minus that one, so a recording replayed on its own record day moves nothing. A recorded
+todo due in a week comes out a week from the demo day, whichever day that is.
+
+A date inside a path or a wikilink never slides. The vault shift renames no files (`shiftProse`
+masks wikilinks for the same reason), so `decisions/2026-05-18-h2-order-payroll-first` is that
+file's name on every demo day.
 
 **Decision:** build (Erik, 2026-09-05)
 
-**Notes:** Built (`replay-matcher.ts`). Eligible when the turn index exists, the first user message matches, and the user side matches fully or the first mismatch is a tool result with ≥50% matched (`MIN_PREFIX_RATIO`). A mismatch on typed text is never tolerated. `_fallback.json` shipped. A single-turn `completeSimple` call (naming, a summary, a claim check) is a
+**Notes:** Built (`replay-matcher.ts`). **Fixed 2026-09-08:** the shift slid by the vault's whole
+offset from the anchor rather than by the distance from the record day, and it slid paths as well
+as prose. Measured against the first real recordings, all 89 date-bearing paths in the recorded
+tool calls pointed at files that do not exist, on every demo day including the record day itself.
+`replay-dates.ts` now masks paths and wikilinks, `Recording.offsetDays` carries the record day,
+and the server slides by the difference. All 89 resolve at offsets 0, 12 and 65.
+
+**Second fix, same day.** Two drops opened with the same sentence ("1 source just landed in your
+session folder, unfiled"), because the filename lived only in `input.md`, which the agent has not
+read at turn 0. Nothing on the user side told the two conversations apart, so the tie fell to the
+system-prompt comparison and the cold replay served the wrong one: a dropped steering transcript
+read `source/support-thread-brunos.md` and fell through to the fallback line. The arrival kickoff
+now names the files it hands over (`nameList` in `handlers.ts`), so the first message differs and
+a typed mismatch is never tolerated. The two arrival recordings have to be made again. Eligible when the turn index exists, the first user message matches, and the user side matches fully or the first mismatch is a tool result with ≥50% matched (`MIN_PREFIX_RATIO`). A mismatch on typed text is never tolerated. `_fallback.json` shipped. A single-turn `completeSimple` call (naming, a summary, a claim check) is a
 conversation of length one. Same mechanism. One recording file per conversation under
 `demo/recordings/<short-key>.json`, where the key is the first user line, slugged, so the
 folder reads like the demo script.
@@ -255,7 +273,7 @@ the build is a demo build. One branch, one file.
 
 **Decision:** build (Erik, 2026-09-05)
 
-**Notes:** Built: `demo/fake-atlassian.ts` (735 lines), fixture from `scripts/build-demo-fixture.ts` (re-run after cast or mirror changes; nothing runs it for you), cast moved to `scripts/lib/atlassian-cast.ts`. `SyncService` takes `fetchImplFor` as its 7th constructor arg. Steps come from the fixture (`pay-161-done` for Tavla). Tests drive the real connector against the fake. The static mirrors already carry `tavla.atlassian.net` and the `PAY-*` keys, so no
+**Notes:** Built: `demo/fake-atlassian.ts` (735 lines), fixture from `scripts/build-demo-fixture.ts` (re-run after cast or mirror changes; nothing runs it for you), cast moved to `scripts/lib/atlassian-cast.ts`. `SyncService` takes `fetchImplFor` as its 7th constructor arg. Tests drive the real connector against the fake. The scripted steps this once carried (a ticket moved to Done on cue, and one that fired itself on the first approved write) were deleted on 2026-09-08: they were the coupling that made the flows an ordered chain (docs/demo-scenarios.md). The static mirrors already carry `tavla.atlassian.net` and the `PAY-*` keys, so no
 reconcile step is needed. That is the whole reason to fake the API instead of pointing at the
 live demo site. Google Calendar is faked the same way; see "Google Calendar in demo builds"
 below.
@@ -306,7 +324,7 @@ whatever he did in the last demo.
 
 **Decision:** build (Erik, 2026-09-05)
 
-**Notes:** Built: `DemoService.reset()`; Settings → Demo tab (`DemoSettings.tsx`) with Reset (inline confirm), Open demo files (`~/Desktop/Qale demo files/`), step buttons. Shift logic now lives in `@qale/domain/demo` (`packages/domain/src/demo/shift.ts`), shared with `refresh-demo.ts` (dry output byte-identical). Unit-tested against temp dirs; the button was NOT clicked in a live window. Open point: the reset workspace has no `.git`, so "put it back" is unavailable during a demo. The demo files he drags in have to be somewhere he can find them. Reset also copies
+**Notes:** Built: `DemoService.reset()`; Settings → Demo tab (`DemoSettings.tsx`) with Reset (inline confirm) and Open demo files (`~/Desktop/Qale demo files/`). The step buttons were deleted on 2026-09-08. Shift logic now lives in `@qale/domain/demo` (`packages/domain/src/demo/shift.ts`), shared with `refresh-demo.ts` (dry output byte-identical). Unit-tested against temp dirs; the button was NOT clicked in a live window. Open point: the reset workspace has no `.git`, so "put it back" is unavailable during a demo. The demo files he drags in have to be somewhere he can find them. Reset also copies
 `demo-samples/` to `~/Desktop/Qale demo files/`, and the Demo section has an "Open demo
 files" button.
 

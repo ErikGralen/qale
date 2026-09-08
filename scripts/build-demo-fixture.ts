@@ -222,61 +222,10 @@ const fixture = {
   spaces: [{ id: '65537', key: SPACE_KEY, name: SPACE_NAME }],
   issues,
   pages,
-  // The two scripted steps the walkthrough needs, in the order the script
-  // reaches them (docs/demo-flows.md). The presenter applies them from
-  // Settings → Demo, and the sync tick that follows carries the change into
-  // the mirror in tickets/jira/. The live-site path to the same state is
-  // `pnpm reset:done`, which uses `doneSnapshotCast()` instead.
-  //
-  // Step 2 REQUIRES step 1: the epic cannot close before its last story, and
-  // the presenter has to be able to jump straight to Flow 4. `requires` is
-  // what the fake reads (apps/desktop/src/main/demo/fake-atlassian.ts).
-  //
-  // Step 2 also applies ITSELF: `after: 'first-write'` means the first approved
-  // outbound card (Flow 1's comment on SCH-118) closes the epic, as if Rebecca
-  // did it while the PM was approving. Nothing in Settings has to be pressed
-  // during a demo; the tracker moves on its own, the way a real one does.
-  //
-  // The comment and the transition are stamped with the clock at apply time,
-  // so the close reads as today without a date in the fixture.
-  steps: [
-    {
-      id: 'sch-240-done',
-      label: 'Flow 2: SCH-240 (last swap story) → Done',
-      changes: [
-        {
-          kind: 'comment',
-          key: 'SCH-240',
-          author: 'Rebecca Holm',
-          body:
-            'Re-scoped this morning: the overtime check is already covered by the contract-hours ' +
-            'guard, so the story was smaller than the estimate. Merged. Closing.',
-        },
-        { kind: 'transition', key: 'SCH-240', to: 'Done' },
-      ],
-    },
-    {
-      id: 'sch-231-done',
-      label: 'Flow 4: SCH-231 (shift swaps epic) → Done',
-      requires: ['sch-240-done'],
-      after: 'first-write',
-      changes: [
-        {
-          kind: 'comment',
-          key: 'SCH-231',
-          author: 'Rebecca Holm',
-          body:
-            'All three stories done, swap approval flow shipped to staging; release train ' +
-            'Tuesday.',
-        },
-        { kind: 'transition', key: 'SCH-231', to: 'Done' },
-      ],
-    },
-  ],
 };
 
 mkdirSync(join(ROOT, 'demo'), { recursive: true });
 writeFileSync(OUT, `${JSON.stringify(fixture, null, 2)}\n`);
 console.log(
-  `Wrote ${OUT}: ${issues.length} issues, ${pages.length} pages, ${fixture.steps.length} step(s), anchored ${ANCHOR}.`,
+  `Wrote ${OUT}: ${issues.length} issues, ${pages.length} pages, anchored ${ANCHOR}.`,
 );

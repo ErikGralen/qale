@@ -150,7 +150,11 @@ function safeJson(raw: string): unknown {
 export class Recorder {
   private readonly written: LoadedRecording[] = [];
 
-  constructor(private readonly dir: string) {}
+  /** `offsetDays` is stamped on each file so replay can slide by the difference. */
+  constructor(
+    private readonly dir: string,
+    private readonly offsetDays = 0,
+  ) {}
 
   /** Files touched this run, for a test or a log line. */
   files(): string[] {
@@ -177,7 +181,7 @@ export class Recorder {
     const key = recordingKey(asked[0]?.text ?? 'turn');
     const loaded: LoadedRecording = {
       file: this.freshFile(key),
-      recording: { version: 1, key, turns: [{ request, response }] },
+      recording: { version: 1, key, offsetDays: this.offsetDays, turns: [{ request, response }] },
     };
     this.written.push(loaded);
     saveRecording(loaded.file, loaded.recording);

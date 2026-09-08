@@ -1411,17 +1411,6 @@ export interface ActivityDTO {
 }
 
 /**
- * One scripted change the presenter can trigger during the demo, e.g. a ticket
- * moving to Done (docs/demo-mode.md DM-8). `applied` is what greys the button
- * out: a step happens once per demo, and Reset forgets them all.
- */
-export interface DemoStepDTO {
-  id: string;
-  label: string;
-  applied: boolean;
-}
-
-/**
  * What the Demo section in Settings draws (docs/demo-mode.md DM-9). `enabled`
  * is false in every ordinary build, and the section is not rendered at all.
  */
@@ -1431,7 +1420,6 @@ export interface DemoInfoDTO {
   today: string;
   /** The day the bundled workspace is written around, YYYY-MM-DD. */
   anchor: string;
-  steps: DemoStepDTO[];
 }
 
 /**

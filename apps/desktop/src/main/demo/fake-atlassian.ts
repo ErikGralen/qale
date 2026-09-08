@@ -10,8 +10,7 @@
  * the same slide Reset gives the vault.
  *
  * Writes (create issue, add comment, transition, update page) mutate the store
- * and persist to `statePath`, so a relaunch keeps them until Reset. Scripted
- * steps let the presenter move the tracker on cue, e.g. "PAY-161 goes Done".
+ * and persist to `statePath`, so a relaunch keeps them until Reset.
  *
  * The query languages are the thin part. This answers the exact JQL and CQL
  * shapes the connector builds (project/space filter, key list, relative
@@ -39,19 +38,10 @@ export interface FakeAtlassianOptions {
 }
 
 /** A scripted change the presenter can trigger (e.g. "WO-231 goes Done"). */
-export interface DemoStep {
-  id: string;
-  label: string;
-  applied: boolean;
-}
-
 export interface FakeAtlassian {
   fetchImpl: FetchLike;
-  /** Back to the fixture, mutations and steps forgotten. */
+  /** Back to the fixture, every mutation forgotten. */
   reset(): void;
-  steps(): DemoStep[];
-  /** Apply one scripted step. False if unknown or already applied. */
-  applyStep(id: string): boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,31 +114,6 @@ export interface FakeSpace {
   name: string;
 }
 
-export type FakeChange =
-  | { kind: 'transition'; key: string; to: string }
-  | { kind: 'comment'; key: string; author: string; body: string }
-  | { kind: 'page'; id: string; body: string };
-
-export interface FakeStep {
-  id: string;
-  label: string;
-  changes: FakeChange[];
-  /**
-   * Ids of the steps this one comes after. `applyStep` applies each of them
-   * first if it is not applied yet, so a presenter can jump straight to a late
-   * step and still get a tracker that reads in order. Steps that have nothing
-   * to do with each other name nothing here and stay independent.
-   */
-  requires?: string[];
-  /**
-   * What applies the step without anyone clicking it. `first-write`: the first
-   * write the fake receives (an approved comment, ticket or page update), so
-   * the tracker moves on its own the way a real one does while the PM works,
-   * and nothing in the demo has to be pressed to make it move.
-   */
-  after?: 'first-write';
-}
-
 export interface AtlassianFixture {
   /** The date every date token in the fixture is written against. */
   anchor: string;
@@ -158,9 +123,6 @@ export interface AtlassianFixture {
   spaces: FakeSpace[];
   issues: FakeIssue[];
   pages: FakePage[];
-  steps?: FakeStep[];
-  /** Steps already applied. Absent in a fixture, written in a saved state. */
-  appliedStepIds?: string[];
 }
 
 type StatusCategory = 'new' | 'indeterminate' | 'done';
@@ -297,21 +259,13 @@ function parseQuery(raw: string, field: 'updated' | 'lastmodified', now: number)
 // The store
 // ---------------------------------------------------------------------------
 
-interface Store extends AtlassianFixture {
-  steps: FakeStep[];
-  appliedStepIds: string[];
-}
+type Store = AtlassianFixture;
 
 function loadStore(path: string, dateOffsetDays: number, fromFixture: boolean): Store {
   const raw = JSON.parse(readFileSync(path, 'utf8')) as AtlassianFixture;
   // A saved state was slid when it was seeded; sliding it again would move
   // every date twice.
-  const data = fromFixture ? slide(raw, dateOffsetDays) : raw;
-  return {
-    ...data,
-    steps: data.steps ?? [],
-    appliedStepIds: data.appliedStepIds ?? [],
-  };
+  return fromFixture ? slide(raw, dateOffsetDays) : raw;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -512,46 +466,7 @@ export function createFakeAtlassian(opts: FakeAtlassianOptions): FakeAtlassian {
     target.updated = stamp();
   }
 
-  function applyChange(change: FakeChange): void {
-    if (change.kind === 'page') {
-      const target = page(change.id);
-      if (!target) return;
-      target.body = change.body;
-      target.version += 1;
-      target.updated = stamp();
-      return;
-    }
-    const target = issue(change.key);
-    if (!target) return;
-    if (change.kind === 'transition') transition(target, change.to);
-    else addComment(target, change.author, change.body);
-  }
-
   // -- the router -----------------------------------------------------------
-
-  /** The write methods; a successful one is what an `after: 'first-write'`
-   *  step waits for. */
-  const WRITES = new Set(['POST', 'PUT', 'DELETE']);
-
-  async function route(url: string, init?: RequestInit): Promise<Response> {
-    const res = await handle(url, init);
-    const method = (init?.method ?? 'GET').toUpperCase();
-    const path = pathOf(url) ?? '';
-    // Searches are POSTs too, and they change nothing.
-    if (res.ok && WRITES.has(method) && !path.includes('/search/')) applyAutoSteps();
-    return res;
-  }
-
-  /** Steps that wait for a write, applied once the first one has landed. */
-  function applyAutoSteps(): void {
-    let applied = false;
-    for (const step of store.steps) {
-      if (step.after === 'first-write' && !store.appliedStepIds.includes(step.id)) {
-        applied = applyStepWithRequires(step.id, new Set()) || applied;
-      }
-    }
-    if (applied) persist();
-  }
 
   async function handle(url: string, init?: RequestInit): Promise<Response> {
     const path = pathOf(url);
@@ -749,35 +664,11 @@ export function createFakeAtlassian(opts: FakeAtlassianOptions): FakeAtlassian {
     return null;
   }
 
-  /** One step and, before it, every step it requires that is still open.
-   *  `pending` breaks a cycle in a hand-edited fixture. */
-  function applyStepWithRequires(id: string, pending: Set<string>): boolean {
-    const step = store.steps.find((s) => s.id === id);
-    if (!step || store.appliedStepIds.includes(id) || pending.has(id)) return false;
-    pending.add(id);
-    for (const required of step.requires ?? []) applyStepWithRequires(required, pending);
-    for (const change of step.changes) applyChange(change);
-    store.appliedStepIds.push(id);
-    return true;
-  }
-
   return {
-    fetchImpl: (url, init) => route(url, init),
+    fetchImpl: (url, init) => handle(url, init),
     reset(): void {
       rmSync(opts.statePath, { force: true });
       store = seed();
-    },
-    steps(): DemoStep[] {
-      return store.steps.map((s) => ({
-        id: s.id,
-        label: s.label,
-        applied: store.appliedStepIds.includes(s.id),
-      }));
-    },
-    applyStep(id: string): boolean {
-      const applied = applyStepWithRequires(id, new Set());
-      if (applied) persist();
-      return applied;
     },
   };
 }

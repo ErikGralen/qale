@@ -148,9 +148,9 @@ the link that did not exist at Albacross.
 
 **The epic closed → one question → approve the messages.**
 
-The shift-swaps epic closes on its own during Flow 1: the first approved outbound card makes the fake Jira close
-`SCH-231` with a comment from Rebecca, as a real tracker would move while the PM works. Nothing is pressed to make
-it happen, and Settings → Demo is never opened during a demo. By Flow 4 the ticket page has read Done for a while.
+> Out of date since 2026-09-08. The fake Jira no longer closes `SCH-231` behind the presenter, because that was
+> what made this flow depend on Flow 1. `docs/demo-scenarios.md` recuts this flow onto `SCH-121`, which the seed
+> already ships Done.
 
 In Home, one sentence, always the same: *"SCH-231 is done. Who needs to know, and what do I tell them?"* The
 answer lists each person with what they were told and when: Café Nord, promised at the QBR by Marcus; Bruno's,

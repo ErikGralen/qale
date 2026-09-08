@@ -52,6 +52,13 @@ export interface Recording {
   version: 1;
   /** The slugged first user line. It makes the folder read like the demo script. */
   key: string;
+  /**
+   * The vault's date offset on the day this was recorded (record day − anchor).
+   * At replay the answers slide by today's offset MINUS this one, so a recording
+   * replayed on the day it was made is served unchanged. Absent in a recording
+   * made before this field existed, which reads as the anchor.
+   */
+  offsetDays?: number;
   turns: RecordedTurn[];
 }
 

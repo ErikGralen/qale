@@ -155,7 +155,6 @@ test('an ordinary build reports the demo as off and does nothing', async () => {
   const { demo, vault } = service(assets);
   const info = demo.info();
   assert.equal(info.enabled, false);
-  assert.deepEqual(info.steps, []);
   await demo.start();
   await demo.reset();
   assert.equal(await demo.firstLaunch(), false);

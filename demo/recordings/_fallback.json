@@ -1,6 +1,7 @@
 {
   "version": 1,
   "key": "_fallback",
+  "offsetDays": 0,
   "turns": [
     {
       "request": {
@@ -21,7 +22,10 @@
         ],
         "stop_reason": "end_turn",
         "stop_sequence": null,
-        "usage": { "input_tokens": 0, "output_tokens": 32 }
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 32
+        }
       }
     }
   ]

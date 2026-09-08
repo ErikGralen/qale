@@ -181,74 +181,6 @@ const LEGACY_TARGET_FIELDS = ['issueKey', 'pageId'] as const;
  */
 export const zOutboundSearchReplace = z.object({ search: z.string().min(1), replace: z.string() });
 
-/**
- * The one thing a draft could not work out, asked on the card it belongs to
- * (docs/learning-how-you-work.md ticket 6).
- *
- * An option carries the ticket fields answering it would add, and nothing else.
- * A free `Partial<payload>` patch would be the shorter type and the wrong one:
- * it would let an option rewrite `action`, `targetId` or `container`, so a click
- * meant to add a label could send the draft somewhere else. Three named fields
- * cannot redirect anything, and they are the only fields a yes ever adds.
- *
- * Two options at most. A question with three answers is a form, and the draft is
- * supposed to have decided.
- */
-export const zOutboundQuestionOption = z.object({
-  /** What the button says: "Yes", "No". */
-  label: z.string().min(1),
-  labels: z.array(z.string()).optional(),
-  priority: z.string().optional(),
-  components: z.array(z.string()).optional(),
-});
-
-export const zOutboundQuestion = z.object({
-  /** One sentence, ending in the question itself. */
-  text: z.string().min(1),
-  options: z.array(zOutboundQuestionOption).min(1).max(2),
-  /** The option the PM picked, written by the card on approval. Absent means
-   *  they approved the draft as drafted, which is the safe way by construction. */
-  answer: z.string().optional(),
-});
-export type OutboundQuestion = z.infer<typeof zOutboundQuestion>;
-
-/** The parts of an outbound payload an answer touches. The domain payload and
- *  the renderer's DTO both satisfy it, so the card needs no cast. */
-export interface AnswerableOutbound {
-  labels?: string[];
-  priority?: string;
-  components?: string[];
-  question?: OutboundQuestion;
-}
-
-/**
- * The payload as it reads once the PM picks an option: what the option adds,
- * plus the answer itself.
- *
- * Labels and components are added to what the draft already set, never swapped
- * for it. The draft chose those from the tickets it read; the question only ever
- * asks about one more. A payload with no such question, or a label that names no
- * option, comes back untouched.
- */
-export function answerOutboundQuestion<T extends AnswerableOutbound>(payload: T, label: string): T {
-  const question = payload.question;
-  const picked = question?.options.find((o) => o.label === label);
-  if (!question || !picked) return payload;
-  const add = (had: string[] | undefined, more: string[] | undefined): string[] | undefined => {
-    if (!more?.length) return had;
-    return [...new Set([...(had ?? []), ...more])];
-  };
-  const labels = add(payload.labels, picked.labels);
-  const components = add(payload.components, picked.components);
-  return {
-    ...payload,
-    ...(labels ? { labels } : {}),
-    ...(components ? { components } : {}),
-    ...(picked.priority ? { priority: picked.priority } : {}),
-    question: { ...question, answer: label },
-  };
-}
-
 export const zOutboundPayload = z.preprocess(
   (val) => {
     if (!val || typeof val !== 'object') return val;
@@ -295,9 +227,6 @@ export const zOutboundPayload = z.preprocess(
       labels: z.array(z.string()).optional(),
       priority: z.string().optional(),
       components: z.array(z.string()).optional(),
-      /** The one open question this draft could not answer from what it read,
-       *  asked on the card. See `zOutboundQuestion`. */
-      question: zOutboundQuestion.optional(),
       /** The provider's own id for the item addressed: a ticket key, a page id. */
       targetId: z.string().optional(),
       /** Ticket summary / page title / event summary. */

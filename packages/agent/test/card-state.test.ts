@@ -68,26 +68,6 @@ test('a comment says comment, because that is what the PM sees', () => {
   assert.equal(line?.startsWith('The PM changed the comment:'), true);
 });
 
-test('an answered question is on the line, with the question it answered', () => {
-  const question = {
-    text: 'Henrik has to review this for GDPR. Add `needs-legal`?',
-    options: [{ label: 'Yes', labels: ['needs-legal'] }, { label: 'No' }],
-  };
-  const line = describeCardEdit(
-    { ...TICKET, question },
-    {
-      ...TICKET,
-      labels: ['scheduling', 'needs-legal'],
-      question: { ...question, answer: 'Yes' },
-    },
-  );
-  assert.equal(
-    line,
-    'The PM added the label needs-legal. ' +
-      'The PM answered "Yes" to "Henrik has to review this for GDPR. Add `needs-legal`?"',
-  );
-});
-
 test('the change rides under the card it belongs to, and comes off for display', () => {
   const prompt = 'thanks';
   const block = withCardState(prompt, [

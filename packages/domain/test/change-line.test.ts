@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appliedVerb, changeLine, INFERRED_TODO_MARK } from '../src/index.js';
+import { appliedVerb, changeLine } from '../src/index.js';
 
 /**
  * The one line a landed row says about what changed (docs/fewer-approvals.md
@@ -74,24 +74,24 @@ test('an undated to-do says so, rather than saying nothing', () => {
   );
 });
 
-test('a to-do Qale worked out wears the mark the Todos view wears', () => {
+test('a to-do line says who and when, and nothing about how Qale got it', () => {
+  // The Todos view carries the "Qale heard this" mark. On a receipt line it was
+  // noise, so the line stops at the date.
   assert.equal(
     changeLine({
       kind: 'note',
       targetPath: 'todos/2026-09-08-send-nordkap-the-sso-dates.md',
       frontmatter: { type: 'todo', due: '2026-09-11' },
-      inferred: true,
     }),
-    `you · due 11 Sep · ${INFERRED_TODO_MARK}`,
+    'you · due 11 Sep',
   );
   assert.equal(
     changeLine({
       kind: 'note',
       targetPath: 'todos/2026-09-08-asa-scope-the-pilot.md',
       frontmatter: { type: 'todo', owner: 'Åsa Lind' },
-      inferred: true,
     }),
-    `Åsa Lind · no date · ${INFERRED_TODO_MARK}`,
+    'Åsa Lind · no date',
   );
 });
 

@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@qale/ui';
-import { ArrowRight, Check } from 'lucide-react';
 import type { ProposalDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
-import { waitingElsewhere } from '../../lib/attention';
 import { invoke } from '../../lib/ipc';
 import {
   batchCount,
@@ -14,7 +12,6 @@ import {
   orderCards,
   receiptOf,
   receiptPaths,
-  receiptSummary,
 } from './cardMeta';
 import { useNoteName, useNoteNames } from './titles';
 import { ReviewAsks, SentReceipts, useApprovals } from './approvals';
@@ -59,13 +56,13 @@ function SourceChip({ ref: source, onOpen }: { ref: string; onOpen: (path: strin
  * rows, the batch button, the keyboard pass over them, the question a fully
  * discarded pile leaves behind, and the banner for what left the workspace.
  *
- * Once every card is judged, the block does not vanish. It becomes the receipt
- * for what the session changed, and that receipt is built from the stored cards
+ * Once every card is judged, the block does not vanish. What was approved stays
+ * as the same small lines a silent write leaves, built from the stored cards
  * rather than from this sitting's state, so it is still there next week
- * (docs/closing-beat.md).
+ * (docs/closing-beat.md, thinned in docs/receipt-redesign.md).
  */
 export function SessionReview({ sessionId }: { sessionId: string }) {
-  const { attention, proposals, openDoc, openChats } = useApp();
+  const { proposals, openDoc } = useApp();
   const approvals = useApprovals();
   // Where the roving cursor sits, by position. -1 is "nowhere yet": the block
   // sits under a composer the PO is probably typing in, so it paints no ring
@@ -165,68 +162,21 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
     () => receiptOf(resolved, (path) => names.get(path)?.title ?? null),
     [resolved, names],
   );
-  // The door counts what is waiting anywhere else, off the one attention list,
-  // never a fresh arithmetic. It drops this session's own cards, which are on the
-  // screen already.
-  const elsewhere = waitingElsewhere(
-    attention,
-    cards.map((c) => c.id),
-  );
 
   if (cards.length === 0) {
-    const judged = receipt.accepted + receipt.rejected > 0;
-    // A session that never proposed anything gets no receipt. There is nothing
-    // to report, and a landing block would invent one. The review ask is the
-    // exception: a pile discarded down to zero leaves that question behind, and
-    // this is the spot its cards just vacated.
-    if (!judged && approvals.reviewAsks.length === 0) return null;
+    // A session that never proposed anything, or whose cards were all
+    // discarded, gets no receipt: nothing changed, and a block would invent
+    // something. The review ask is the exception: a pile discarded down to zero
+    // leaves that question behind, and this is the spot its cards just vacated.
+    if (receipt.rows.length === 0 && approvals.reviewAsks.length === 0) return null;
     return (
-      /* The closing beat as one block on one left rail: a mark, what it came
-         to, what it touched, and the door. The tally used to sit as a bare bold
-         string among three other loose lines, and the door wore the same ink as
-         the note links, so a stack of four things read as four unrelated
-         fragments in three shades of blue. The check marks the close, the notes
-         keep the ink because opening one is the point, and the door steps back
-         to muted until the pointer is on it. */
-      <section
-        aria-label={judged ? 'What you approved' : 'Mark the meeting reviewed'}
-        className="mt-1 px-0.5"
-      >
+      <section aria-label="What you approved" className="mt-1">
         <ReviewAsks approvals={approvals} />
-        {judged && (
-          <>
-            <div className="flex items-center gap-2">
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-brand/10">
-                <Check className="size-3.5 text-brand" />
-              </span>
-              <h3 className="text-sm font-semibold text-foreground">{receiptSummary(receipt)}</h3>
-            </div>
-            {/* Hung off the mark's column, so head and rows share one text edge.
-                An approved card is a landed write, so it draws as one: the same
-                groups, the same change line, the same way back (RC-3). A
-                discarded card draws nothing; the tally above counts it. */}
-            <div className="mt-1.5 pl-7">
-              <LandedRows
-                rows={receipt.rows}
-                sessionId={sessionId}
-                onOpen={openDoc}
-                // The block around it is already called "What you approved".
-                label={null}
-                // The rows are a sitting's approvals, not one turn's writes, so
-                // there is no turn to put back. Each row keeps its own control.
-                turnBack={false}
-              />
-            </div>
-            {elsewhere > 0 && (
-              <button
-                className="mt-2.5 ml-7 flex items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:text-brand focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                onClick={() => openChats()}
-              >
-                {elsewhere} more waiting in Sessions <ArrowRight className="size-3.5" />
-              </button>
-            )}
-          </>
-        )}
+        {/* An approved card is a landed write, so it draws as one: the same
+            line, the same way back (RC-3). No tally over it and no door to
+            other sessions: the lines are the count, and what waits elsewhere
+            is Home's job. */}
+        <LandedRows rows={receipt.rows} sessionId={sessionId} onOpen={openDoc} label={null} />
       </section>
     );
   }

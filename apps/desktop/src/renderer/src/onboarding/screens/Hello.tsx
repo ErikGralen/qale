@@ -60,7 +60,7 @@ export function Hello({ onNext }: { onNext: () => void }) {
               words, and this is the first screen anyone reads. */}
           <p>
             We built it this way so you stay in control: files any app can open are never locked in,
-            and what the AI does on its own can always be put back. When the AI reads your notes,
+            and what the AI does on its own can always be undone. When the AI reads your notes,
             they go to the AI service you pick, and nothing reaches your team or your tools without
             your approval.
           </p>

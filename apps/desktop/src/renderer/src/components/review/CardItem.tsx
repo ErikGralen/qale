@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import type { OutboundPayloadDTO, ProposalDTO, UpdatePayloadDTO } from '@qale/ipc';
 import {
-  answerOutboundQuestion,
   basename,
   dayLabel,
   describeEventWhen,
@@ -278,16 +277,7 @@ export function CardItem({
   const [draftAppend, setDraftAppend] = useState<string | null>(null);
   const ref = useQueueFocus<HTMLLIElement>(focused);
 
-  // The option the PM picked on the draft's own question, if it asked one. Not
-  // picking is an answer too: the draft was written the safe way, so approving
-  // it untouched leaves the label off (docs/learning-how-you-work.md ticket 6).
-  const [answer, setAnswer] = useState<string | null>(null);
-
-  const drafted = proposal.kind === 'outbound' ? (proposal.payload as OutboundPayloadDTO) : null;
-  const question = drafted?.question ?? null;
-  // The draft as it now reads: what the answer adds is on the card before they
-  // approve it, not only after it lands in Jira.
-  const outbound = drafted && answer ? answerOutboundQuestion(drafted, answer) : drafted;
+  const outbound = proposal.kind === 'outbound' ? (proposal.payload as OutboundPayloadDTO) : null;
   // A card that takes a page away. It has no text to edit and its control names
   // the act, because "Approve" on a row that removes something is the one label
   // a person can press without knowing what they agreed to.
@@ -405,14 +395,8 @@ export function CardItem({
   // Retry rather than offer the same refusal again.
   const retryable = !preview?.stale || !!outbound;
 
-  // What approving sends up: nothing when the card stands as drafted, so the
-  // stored payload is what lands. An answered question is a change like any
-  // other edit, and travels the same way.
-  const approvePayload = (): unknown =>
-    drafted && answer ? answerOutboundQuestion(drafted, answer) : undefined;
-
   const approveEdited = () => {
-    const base =
+    const edited =
       proposal.kind === 'update'
         ? {
             ...(proposal.payload as UpdatePayloadDTO),
@@ -420,10 +404,6 @@ export function CardItem({
             ...(draftAppend !== null ? { append: draftAppend } : {}),
           }
         : { ...(proposal.payload as unknown as Record<string, unknown>), body: draftBody };
-    const edited =
-      drafted && answer
-        ? answerOutboundQuestion(base as unknown as OutboundPayloadDTO, answer)
-        : base;
     setEditing(false);
     onAccept(edited);
   };
@@ -572,48 +552,13 @@ export function CardItem({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => onAccept(approvePayload())}
+                    onClick={() => onAccept()}
                     disabled={busy}
                   >
                     Retry
                   </Button>
                 )
               )}
-            </div>
-          )}
-
-          {/* The one thing the draft could not work out, asked where the
-              decision is made: between the text they just read and the control
-              that sends it. The draft was written the safe way, so leaving it
-              alone is a complete answer and the card says so. */}
-          {question && (
-            <div
-              role="group"
-              aria-label="Question about this draft"
-              className="mt-2 rounded-md border border-border/60 bg-muted/40 px-3 py-2"
-            >
-              <p className="text-sm leading-snug text-balance break-words text-foreground">
-                {question.text}
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                {question.options.map((option) => (
-                  <Button
-                    key={option.label}
-                    size="sm"
-                    variant={answer === option.label ? 'default' : 'outline'}
-                    aria-pressed={answer === option.label}
-                    disabled={busy}
-                    onClick={() => setAnswer(answer === option.label ? null : option.label)}
-                  >
-                    {option.label}
-                  </Button>
-                ))}
-                {!answer && (
-                  <span className="text-xs text-muted-foreground">
-                    Approve without answering and it goes as drafted.
-                  </span>
-                )}
-              </div>
             </div>
           )}
 
@@ -639,7 +584,7 @@ export function CardItem({
           busy={busy}
           blocked={!!preview?.stale || editing}
           open={open}
-          onAccept={() => onAccept(approvePayload())}
+          onAccept={() => onAccept()}
           onReject={onReject}
           onToggle={() => setOpen((v) => !v)}
         />

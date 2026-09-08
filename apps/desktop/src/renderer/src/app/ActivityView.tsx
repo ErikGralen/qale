@@ -66,10 +66,10 @@ export function ActivityView() {
     try {
       const result = await revertActivity(row.id);
       if (result.method === 'snapshot') {
-        toast('Put back as a whole page. Anything you wrote after this went with it.');
+        toast('Undone as a whole page. Anything you wrote after this went with it.');
       }
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'That could not be put back.');
+      toast(err instanceof Error ? err.message : 'That could not be undone.');
     } finally {
       setUndoing(null);
     }
@@ -85,7 +85,7 @@ export function ActivityView() {
               top, rather than as a shrug on each row that has no button. */}
           {git && !git.repo && activity.length > 0 && (
             <p className="mb-4 rounded-lg border border-border bg-card/50 px-3 py-2 text-xs text-muted-foreground">
-              This workspace keeps no history, so nothing below can be put back.
+              This workspace keeps no history, so nothing below can be undone.
               {git.hint ? ` ${git.hint}` : ''}
             </p>
           )}
@@ -203,16 +203,16 @@ function Row({
         </p>
       </div>
       {row.reverted ? (
-        <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">Put back</span>
+        <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">Undone</span>
       ) : row.revertable ? (
         <button
           className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
           onClick={onPutBack}
           disabled={busy}
-          title="Put it back the way it was. The undo is itself undoable."
+          title="Undo this write. The undo is itself undoable."
         >
           {busy ? <Spinner className="size-3" /> : <Undo2 className="size-3" aria-hidden />}
-          Put it back
+          Undo
         </button>
       ) : null}
     </li>

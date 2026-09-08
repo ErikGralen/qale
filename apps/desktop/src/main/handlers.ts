@@ -102,6 +102,7 @@ import {
   isProductPicturePath,
   unreadableReason,
   wantListChange,
+  APPROVED_REASON,
   type Frontmatter,
   type HandCreatableType,
 } from '@qale/domain';
@@ -2356,11 +2357,18 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const effectFacts = outboundEffectFacts(ctx, settings.selfEmails());
     return resolvedProposals(ctx, sessionId).map((rec) => {
       const dto = proposalToDTO(rec, ctx.checks?.get(selfPrepKey(rec.sessionId)), effectFacts);
-      // The Activity row the approval left (RC-4), read back by the card's own
-      // id so the receipt still offers Put back in a chat reopened next week.
-      // A row already put back is left off: the way back is gone with it.
+      // The Activity row the write left, read back by the card's own id so the
+      // receipt still offers Put back in a chat reopened next week. A row
+      // already put back is left off: the way back is gone with it. The row's
+      // reason says whether the PM approved the card or it landed on its own.
       const row = ctx.activity?.forProposal(rec.id);
-      return row && !row.reverted ? { ...dto, activityId: row.id } : dto;
+      if (!row) return dto;
+      const silent = row.reason !== APPROVED_REASON;
+      return {
+        ...dto,
+        ...(row.reverted ? {} : { activityId: row.id }),
+        ...(silent ? { silent: true } : {}),
+      };
     });
   });
   handle('proposals:preview', (id) => previewProposal(vaultService.requireContext(), id));
@@ -2559,9 +2567,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const ctx = vaultService.requireContext();
     const row = ctx.activity?.get(id);
     if (!row) throw new Error('that row is no longer here');
-    if (row.reverted !== null) throw new Error('that one is already put back');
+    if (row.reverted !== null) throw new Error('that one is already undone');
     if (!row.path || !row.revert.commit)
-      throw new Error('this workspace kept no history of that write, so it cannot be put back');
+      throw new Error('this workspace kept no history of that write, so it cannot be undone');
     const result = await revertNoteChange(ctx, {
       path: row.path,
       hash: row.revert.commit,

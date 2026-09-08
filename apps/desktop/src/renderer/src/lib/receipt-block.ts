@@ -95,26 +95,12 @@ export function blockRows(input: {
 /**
  * The spheres a turn's writes fall into (docs/receipt-redesign.md RC-1).
  *
- * 'sent' is the group an approved outbound card lands in, once the session's
- * cards are all judged and the review draws them as rows (RC-3).
- * 'other' is the row a session filed before FA-4 left: it has no path, so it
- * cannot be placed, and it draws last with no word over it (RC-5).
+ * 'sent' is where an approved outbound card goes once the session's cards are
+ * all judged and the review draws them as lines (RC-3). 'other' is the line a
+ * session filed before FA-4 left: it has no path, so it cannot be placed, and
+ * it draws last (RC-5).
  */
 export type LandedGroup = 'todos' | 'meeting' | 'documents' | 'sent' | 'memory' | 'other';
-
-/**
- * The word over a group. The sidebar's own words, so the block coins nothing,
- * and no counts: the rows are the count. Null for the group that cannot be
- * named.
- */
-export const GROUP_WORD: Record<LandedGroup, string | null> = {
-  todos: 'Todos',
-  meeting: 'Meeting',
-  documents: 'Documents',
-  sent: 'Sent',
-  memory: 'Memory',
-  other: null,
-};
 
 /** The order the block reads in: what Qale promised in the PM's name first,
  *  then the meeting, then their pages, then what went out, then Qale's own
@@ -141,18 +127,12 @@ export function groupForRow(row: AppliedRow): LandedGroup {
   return 'memory';
 }
 
-/** One group of the block. */
-export interface LandedGrouping {
-  group: LandedGroup;
-  rows: AppliedRow[];
-}
-
 /**
- * A turn's writes by sphere, in reading order. An empty group is left out.
- * Inside a group the rows keep the order they landed in, because that is the
- * order the agent did the work and the order the PM heard it.
+ * A turn's writes in reading order: by sphere first, and inside a sphere in
+ * the order they landed. No word over a group: the lines are small and few,
+ * and a heading over two of them weighed more than the lines did.
  */
-export function groupLanded(rows: readonly AppliedRow[]): LandedGrouping[] {
+export function orderLanded(rows: readonly AppliedRow[]): AppliedRow[] {
   const byGroup = new Map<LandedGroup, AppliedRow[]>();
   for (const row of rows) {
     const group = groupForRow(row);
@@ -160,33 +140,7 @@ export function groupLanded(rows: readonly AppliedRow[]): LandedGrouping[] {
     if (held) held.push(row);
     else byGroup.set(group, [row]);
   }
-  return GROUP_ORDER.flatMap((group) => {
-    const held = byGroup.get(group);
-    return held ? [{ group, rows: held }] : [];
-  });
-}
-
-/** How many memory titles the folded line names before it counts the rest. */
-export const MEMORY_TITLES = 4;
-
-/**
- * The folded memory line: the titles it names, and how many it does not.
- *
- * Four is enough to recognise what Qale recorded without the line wrapping. The
- * rest are a number, and the chevron opens every one of them.
- */
-export function memoryFold(
-  rows: readonly AppliedRow[],
-  limit = MEMORY_TITLES,
-): { shown: AppliedRow[]; more: number } {
-  if (rows.length <= limit) return { shown: [...rows], more: 0 };
-  return { shown: rows.slice(0, limit), more: rows.length - limit };
-}
-
-/** The rows a "Put this turn back" control can act on: the ones that left an
- *  Activity row, which is the only handle an undo has. */
-export function revertableIds(landed: readonly AppliedRow[]): string[] {
-  return landed.map((row) => row.activityId).filter((id): id is string => !!id);
+  return GROUP_ORDER.flatMap((group) => byGroup.get(group) ?? []);
 }
 
 /** What putting one row back came to. */
@@ -213,56 +167,7 @@ export async function putRowBack(
     return {
       ok: false,
       snapshot: false,
-      error: err instanceof Error ? err.message : 'that could not be put back',
+      error: err instanceof Error ? err.message : 'that could not be undone',
     };
   }
-}
-
-/** What putting a whole turn back came to. */
-export interface TurnBack {
-  /** The rows that went back, in the order they were put back. */
-  done: string[];
-  /** The row that would not, and why. Everything after it was left alone. */
-  failed?: { id: string; error: string };
-  /** True when any row had to go back as a whole page, so anything typed since
-   *  went with it. The toast says so, once, exactly as one row does. */
-  snapshot: boolean;
-}
-
-/**
- * Put a turn's writes back, newest first.
- *
- * Newest first because the writes were made in order and may sit on top of one
- * another: undoing the last edit to a page before the one that made it is the
- * only order that can work. The run stops at the first failure and says which
- * row it stopped on, rather than carrying on and leaving the PM to work out
- * which half of the turn is still there.
- */
-export async function putTurnBack(
-  ids: readonly string[],
-  revert: (id: string) => Promise<RevertResultDTO>,
-): Promise<TurnBack> {
-  const done: string[] = [];
-  let snapshot = false;
-  for (const id of [...ids].reverse()) {
-    const result = await putRowBack(id, revert);
-    if (!result.ok) {
-      return { done, failed: { id, error: result.error ?? 'it could not be put back' }, snapshot };
-    }
-    if (result.snapshot) snapshot = true;
-    done.push(id);
-  }
-  return { done, snapshot };
-}
-
-/** What the block says after a "Put this turn back" that did not finish. */
-export function turnBackMessage(result: TurnBack): string | null {
-  if (!result.failed) {
-    return result.snapshot
-      ? 'Put back as whole pages. Anything you wrote after those changes went with them.'
-      : null;
-  }
-  const done = result.done.length;
-  const sofar = done === 0 ? 'Nothing went back' : `${done} went back`;
-  return `${sofar}, then one would not: ${result.failed.error}. The rest was left alone.`;
 }

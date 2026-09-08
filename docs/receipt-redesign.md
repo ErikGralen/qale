@@ -276,3 +276,38 @@ body for an outbound card, so the full text sits behind the chevron.
 Checked: desktop 485 pass 0 fail (7 new tests), domain 303, application 313, vault 58 pass with the
 12 pre-existing skips; `pnpm check-types` 11 of 11; eslint 0 errors, 34 pre-existing warnings. Not
 run in the app.
+
+## Thinned to lines (2026-09-08, later the same day)
+
+Erik saw the built block in the app and it was worse: the landed rows wore the same chrome as an
+approval card, the same to-do drew twice (once in the turn, once under "Approved 2"), and the
+tally and the "3 more waiting in Sessions" door added weight to something that is not a decision.
+His rule: a landed write is a small line, "New todo: ABC", "Todo changed: XYZ · you · due moved
+12 to 24 Sep", expandable, and nothing more.
+
+What changed:
+
+- **One line per write.** `LandedRows` draws each write as one muted line: the verb, the title as
+  a link, the change line after a middle dot, and a small chevron. Open, it shows the diff and the
+  Put back button. No group words, no memory fold, no checkbox or type glyph, no card surface.
+  The order by sphere stays (`orderLanded`: todos, meeting, documents, sent, memory, then rows
+  with no path). `GROUP_WORD`, `groupLanded`, `memoryFold`, `revertableIds`, `putTurnBack` and
+  `turnBackMessage` are gone, and so is "Put this turn back": each line has its own way back.
+- **No tally, no door.** Once every card is judged, `SessionReview` draws only the approved
+  cards as the same lines, under the review ask if there is one. `receiptSummary` and
+  `waitingElsewhere` are deleted. What waits in other sessions is Home's job.
+- **A silent write is not an approval.** A write that landed on its own is an accepted card in
+  the store, so `receiptOf` counted it and drew it a second time under "Approved N". The
+  `proposals:resolved` handler now reads the write's Activity row and marks the card
+  `silent: true` when the row's reason is not `APPROVED_REASON`; `receiptOf` and
+  `receiptPaths` leave those out. A card approved before RC-4 has no row and still counts.
+
+Checked: `pnpm check-types` 11 of 11, `pnpm test` green in every package (desktop 478), eslint 0
+errors on the touched files. Not run in the app.
+
+Two more cuts the same evening, after Erik saw the lines: the to-do line no longer ends in
+"Qale heard this" (noise on a receipt; the Todos view keeps the mark), so `todoLine` takes no
+`inferred` and `AppliedRow.inferred` / `ChangeLineInput.inferred` are gone. And the control is
+"Undo", not "Put back", on the receipt line and in Activity, with "Undone" as the state and the
+toasts and errors reworded to match. A session recorded before this keeps the old change line
+in its transcript, because the line is packed into the tool result at write time.

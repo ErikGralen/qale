@@ -40,9 +40,9 @@ test('a section with one thing in it says the section, not a count of one', () =
   assert.equal(line, 'Summary, Next steps');
 });
 
-test('a to-do says who owes it and when', () => {
-  // The PM's own to-do names them, because "you" is the fact they are checking:
-  // a promise made in their name is the write they most want to catch (RC-2).
+test('a to-do says when, and never who', () => {
+  // The title is the promise and the owner sits on the todo itself. On a
+  // receipt line the name was noise, so the line is the date alone.
   assert.equal(
     changeLine({
       kind: 'note',
@@ -50,7 +50,7 @@ test('a to-do says who owes it and when', () => {
       frontmatter: { type: 'todo', due: '2026-09-11' },
       body: '> I will put the dates in writing this week.',
     }),
-    'you · due 11 Sep',
+    'due 11 Sep',
   );
   assert.equal(
     changeLine({
@@ -59,43 +59,11 @@ test('a to-do says who owes it and when', () => {
       frontmatter: { type: 'todo', owner: '[[people/asa-lindqvist|Åsa]]' },
       body: '',
     }),
-    'Asa Lindqvist · no date',
+    'no date',
   );
 });
 
-test('an undated to-do says so, rather than saying nothing', () => {
-  assert.equal(
-    changeLine({
-      kind: 'note',
-      targetPath: 'todos/2026-09-08-scope-the-pilot.md',
-      frontmatter: { type: 'todo' },
-    }),
-    'you · no date',
-  );
-});
-
-test('a to-do line says who and when, and nothing about how Qale got it', () => {
-  // The Todos view carries the "Qale heard this" mark. On a receipt line it was
-  // noise, so the line stops at the date.
-  assert.equal(
-    changeLine({
-      kind: 'note',
-      targetPath: 'todos/2026-09-08-send-nordkap-the-sso-dates.md',
-      frontmatter: { type: 'todo', due: '2026-09-11' },
-    }),
-    'you · due 11 Sep',
-  );
-  assert.equal(
-    changeLine({
-      kind: 'note',
-      targetPath: 'todos/2026-09-08-asa-scope-the-pilot.md',
-      frontmatter: { type: 'todo', owner: 'Åsa Lind' },
-    }),
-    'Åsa Lind · no date',
-  );
-});
-
-test('a to-do that closed says who owed it and that it is done', () => {
+test('a to-do that closed says so, and a dropped one says dropped', () => {
   assert.equal(
     changeLine({
       kind: 'update',
@@ -103,7 +71,7 @@ test('a to-do that closed says who owed it and that it is done', () => {
       frontmatter: { commitment: 'done' },
       before: { type: 'todo', owner: 'Tom Berg', due: '2026-09-11' },
     }),
-    'Tom Berg · done',
+    'done',
   );
   assert.equal(
     changeLine({
@@ -112,7 +80,7 @@ test('a to-do that closed says who owed it and that it is done', () => {
       frontmatter: { commitment: 'dropped' },
       before: { type: 'todo' },
     }),
-    'you · dropped',
+    'dropped',
   );
 });
 
@@ -136,7 +104,7 @@ test('a due date that moved says both ends, and keeps the month once', () => {
       frontmatter: { due: '2026-09-24' },
       before: { due: '2026-09-12' },
     }),
-    'you · due moved 12 to 24 Sep',
+    'due moved 12 to 24 Sep',
   );
   assert.equal(
     changeLine({
@@ -145,7 +113,7 @@ test('a due date that moved says both ends, and keeps the month once', () => {
       frontmatter: { due: '2026-10-02' },
       before: { due: '2026-09-12' },
     }),
-    'you · due moved 12 Sep to 2 Oct',
+    'due moved 12 Sep to 2 Oct',
   );
   assert.equal(
     changeLine({
@@ -153,7 +121,7 @@ test('a due date that moved says both ends, and keeps the month once', () => {
       targetPath: 'todos/2026-09-08-send-the-dates.md',
       frontmatter: { due: '2026-09-24' },
     }),
-    'you · due set to 24 Sep',
+    'due set to 24 Sep',
   );
 });
 
@@ -209,7 +177,7 @@ test('a field and a body change both get said, and a third is counted', () => {
       before: { due: '2026-09-12' },
       append: '\n- Åsa has the numbers.\n',
     }),
-    'you · due moved 12 to 24 Sep, one line added',
+    'due moved 12 to 24 Sep, one line added',
   );
   assert.equal(
     changeLine({
@@ -219,7 +187,7 @@ test('a field and a body change both get said, and a third is counted', () => {
       before: { due: '2026-09-12' },
       append: '\n- Åsa has the numbers.\n',
     }),
-    'you · due moved 12 to 24 Sep, summary now Send the SSO dates, and 1 more',
+    'due moved 12 to 24 Sep, summary now Send the SSO dates, and 1 more',
   );
 });
 

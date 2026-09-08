@@ -578,6 +578,9 @@ export interface OutboundPayloadDTO {
   attendeeEmail?: string;
   responseStatus?: 'accepted' | 'declined' | 'tentative';
   linkBackPath?: string;
+  /** Where the item landed at the provider, stamped on once the send went
+   *  through. A draft never carries it. */
+  url?: string;
   rationale: string;
 }
 

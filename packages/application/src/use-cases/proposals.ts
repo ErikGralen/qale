@@ -980,6 +980,10 @@ export interface AcceptResult {
   error?: string;
   /** Deterministic link produced by an outbound write, if any. */
   url?: string;
+  /** The provider's own id for what the send touched: the key of the ticket it
+   *  just created, the id of the event it added. The receipt draws it as a chip
+   *  (docs/receipt-redesign.md, fourth pass). */
+  externalId?: string;
   /** The vault note this accept wrote, after any rename it also made. The PM
    *  approved it, so the rail pins it — see docs/autopinning.md. */
   path?: string;
@@ -1397,6 +1401,23 @@ async function acceptOutbound(
   // a link-back failure can't leave the card pending and invite a double-post.
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
 
+  // Stamp where it landed onto the card. The card is the receipt for this send,
+  // and a receipt that cannot name the ticket it created is a sentence about
+  // something the PM has no way to. Stamped on the DRAFTED payload, not on
+  // `p`: an edited card keeps the difference between the two, which is how the
+  // session learns how the PM writes.
+  try {
+    const drafted = (rec.payload ?? {}) as Record<string, unknown>;
+    ctx.proposals.updatePayload(rec.id, {
+      ...drafted,
+      targetId: out.externalId,
+      ...(out.url ? { url: out.url } : {}),
+    });
+  } catch {
+    // Bookkeeping. The send happened; a store that cannot hold the address
+    // costs the receipt its link and nothing else.
+  }
+
   // Link-back: append the deterministic API link (the created key, e.g.
   // "PAY-171") to the spawning note. Best-effort — the push already happened.
   if (p.linkBackPath) {
@@ -1420,7 +1441,7 @@ async function acceptOutbound(
     }
   }
 
-  return { ok: true, url: out.url };
+  return { ok: true, url: out.url, externalId: out.externalId };
 }
 
 /**

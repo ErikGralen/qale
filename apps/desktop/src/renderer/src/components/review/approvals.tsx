@@ -3,12 +3,38 @@ import { Button } from '@qale/ui';
 import { ArrowUpRight, Check } from 'lucide-react';
 import type { MeetingReviewAskDTO, OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
+import type { NavOpts } from '../../lib/nav';
+import { ExternalRefChip } from '../ExternalRef';
 import { useToast } from '../toast';
-import { outboundAct, outboundReceipt, staleAcceptMessage } from './shared';
+import { outboundAct, sentLine, staleAcceptMessage, type SentLine } from './shared';
 
-interface SentReceipt {
+/** One thing that left the workspace, as the green card says it. */
+export interface SentReceipt extends SentLine {
   id: string;
-  target: string;
+}
+
+/**
+ * The receipt line for one send: the sentence, with the item split out so the
+ * card can draw it as the chip a ticket wears in a page.
+ *
+ * The send's own result is folded in, because the card in memory was written
+ * before the send and a ticket created a second ago has no key on it yet. Once
+ * a session is reopened the same line comes off the stored card, which the
+ * accept stamped with the same two facts.
+ */
+export function sentReceiptOf(
+  id: string,
+  ob: OutboundPayloadDTO,
+  landed?: { externalId?: string; url?: string },
+): SentReceipt {
+  return {
+    id,
+    ...sentLine({
+      ...ob,
+      ...(landed?.externalId ? { targetId: ob.targetId ?? landed.externalId } : {}),
+      ...(landed?.url ? { url: ob.url ?? landed.url } : {}),
+    }),
+  };
 }
 
 /**
@@ -115,7 +141,7 @@ export function useApprovals(): Approvals {
           });
           if (p.kind === 'outbound') {
             const ob = p.payload as OutboundPayloadDTO;
-            setSent((s) => [...s, { id: p.id, target: outboundReceipt(ob) }]);
+            setSent((s) => [...s, sentReceiptOf(p.id, ob, r)]);
           }
           return true;
         }
@@ -134,7 +160,10 @@ export function useApprovals(): Approvals {
           // shows its own stale banner, so no accept can pass unseen.
           setError(p.id, staleAcceptMessage(r.staleReason));
         } else {
-          setError(p.id, r.error ?? 'Could not apply this proposal: the workspace rejected the write.');
+          setError(
+            p.id,
+            r.error ?? 'Could not apply this proposal: the workspace rejected the write.',
+          );
         }
         return false;
       } catch (err) {
@@ -182,7 +211,9 @@ export function useApprovals(): Approvals {
           if (!(await acceptOne(card))) failed++;
         }
         if (failed > 0)
-          toast(`${failed} of ${batch.length} proposals failed to apply. See the proposals for details.`);
+          toast(
+            `${failed} of ${batch.length} proposals failed to apply. See the proposals for details.`,
+          );
       } finally {
         release();
       }
@@ -223,8 +254,16 @@ export function useApprovals(): Approvals {
   };
 }
 
-/** The receipt for what left the workspace, in the banner's own past tense. */
-export function SentReceipts({ sent }: { sent: SentReceipt[] }) {
+/** The receipt for what left the workspace, in the banner's own past tense.
+ *  Each line opens the thing it touched, so "Commented on PAY-142" is a way to
+ *  the ticket and not only a sentence about it. */
+export function SentReceipts({
+  sent,
+  onOpen,
+}: {
+  sent: SentReceipt[];
+  onOpen: (path: string, opts?: NavOpts) => void;
+}) {
   if (sent.length === 0) return null;
   return (
     <div className="mb-3 flex items-start gap-2 rounded-lg border border-success/30 bg-success/8 px-3 py-2 text-sm">
@@ -234,9 +273,16 @@ export function SentReceipts({ sent }: { sent: SentReceipt[] }) {
             left, in the same words and in past tense. */}
         <span className="font-medium text-foreground">Left your workspace</span>
         <ul className="mt-0.5 text-muted-foreground">
-          {sent.slice(-3).map((s) => (
+          {sent.map((s) => (
             <li key={s.id} className="truncate">
-              {s.target}
+              {s.act}
+              {s.item && (
+                <>
+                  {' '}
+                  <ExternalRefChip target={s.item} alias={s.name} url={s.url} onOpen={onOpen} />
+                </>
+              )}
+              {s.tail ? ` ${s.tail}` : ''}
             </li>
           ))}
         </ul>
@@ -308,4 +354,3 @@ function persistDismissedReviewAsk(vaultPath: string, path: string): void {
     /* ignore quota */
   }
 }
-

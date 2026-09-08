@@ -166,7 +166,7 @@ test('the fields of a landed to-do survive the round trip', () => {
     proposalId: 'p_1',
     path: 'todos/2026-09-08-send-nordkap-the-sso-dates.md',
     title: 'Send Nordkap the SSO dates',
-    change: 'you · due 11 Sep',
+    change: 'due 11 Sep',
   };
   const output = `${appliedReceipt('created', 'Send Nordkap the SSO dates')}.\n${appliedRowLine(row)}`;
   assert.deepEqual(readAppliedReceipt(output)?.row, row);

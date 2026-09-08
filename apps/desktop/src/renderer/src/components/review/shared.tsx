@@ -176,4 +176,4 @@ export function outboundAct(ob: OutboundPayloadDTO): OutboundAct {
 // The outbound sentences live with the rest of the card vocabulary now, so the
 // review and the main process say the same thing. Re-exported here because every
 // call site in the review already reads its card words from this file.
-export { outboundReceipt, outboundTarget } from '@qale/domain';
+export { outboundReceipt, outboundTarget, sentLine, type SentLine } from '@qale/domain';

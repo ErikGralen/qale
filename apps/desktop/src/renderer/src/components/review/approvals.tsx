@@ -4,17 +4,12 @@ import { ArrowUpRight, Check } from 'lucide-react';
 import type { MeetingReviewAskDTO, OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 import { useToast } from '../toast';
-import { receiptEntry, type ReceiptEntry } from './cardMeta';
 import { outboundAct, outboundReceipt, staleAcceptMessage } from './shared';
 
 interface SentReceipt {
   id: string;
   target: string;
 }
-
-/** How many consequence lines a receipt keeps. Past five it is a log of the
- *  sitting rather than what the last few taps did. */
-const TOUCHED_MAX = 5;
 
 /**
  * The one approve path. Every surface that shows a card drives it through this
@@ -34,12 +29,6 @@ export interface Approvals {
   staleSends: Record<string, boolean>;
   receipt: { accepted: number; rejected: number };
   sent: SentReceipt[];
-  /**
-   * What this sitting's approvals touched, oldest dropped past five. The review
-   * reads it to say what clearing the cards set in motion, so that surface needs
-   * no second query: the hook already knows, because it did the writes.
-   */
-  touched: ReceiptEntry[];
   reviewAsks: MeetingReviewAskDTO[];
   answerReviewAsk: (ask: MeetingReviewAskDTO) => void;
   dismissReviewAsk: (ask: MeetingReviewAskDTO) => void;
@@ -59,7 +48,6 @@ export function useApprovals(): Approvals {
   const [staleSends, setStaleSends] = useState<Record<string, boolean>>({});
   const [receipt, setReceipt] = useState({ accepted: 0, rejected: 0 });
   const [sent, setSent] = useState<SentReceipt[]>([]);
-  const [touched, setTouched] = useState<ReceiptEntry[]>([]);
   const [reviewAsks, setReviewAsks] = useState<MeetingReviewAskDTO[]>([]);
   const toast = useToast();
   const vaultPath = vault?.path ?? '';
@@ -120,7 +108,6 @@ export function useApprovals(): Approvals {
         noteReviewAsk(r.review);
         if (r.ok) {
           setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
-          setTouched((t) => [...t, receiptEntry(p)].slice(-TOUCHED_MAX));
           setStaleSends((s) => {
             const next = { ...s };
             delete next[p.id];
@@ -226,7 +213,6 @@ export function useApprovals(): Approvals {
     staleSends,
     receipt,
     sent,
-    touched,
     reviewAsks,
     answerReviewAsk,
     dismissReviewAsk,

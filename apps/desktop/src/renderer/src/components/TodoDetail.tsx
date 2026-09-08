@@ -10,6 +10,7 @@ import { handleTodoSeed } from '../lib/agent-nudges';
 import type { AtRiskLinkDTO } from '../lib/connections';
 import { resolveParticipant } from '../lib/people';
 import { splitTodoWords } from '../lib/todo-words';
+import { todoRowCopy } from '../lib/todo-row';
 import { AtRiskMarker } from './ExternalRef';
 import { DatePicker } from './DatePicker';
 import { Markdown } from './Markdown';
@@ -388,7 +389,7 @@ export function TodoDetail({
                 className="ml-auto text-muted-foreground hover:text-destructive"
                 disabled={busy}
                 onClick={onDrop}
-                title="Keeps the record, closes the todo"
+                title={todoRowCopy(note).dropHint}
               >
                 <X aria-hidden />
                 Drop

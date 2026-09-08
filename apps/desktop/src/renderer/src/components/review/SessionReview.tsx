@@ -13,12 +13,13 @@ import {
   cardGroups,
   orderCards,
   receiptOf,
+  receiptPaths,
   receiptSummary,
 } from './cardMeta';
-import { useNoteName } from './titles';
+import { useNoteName, useNoteNames } from './titles';
 import { ReviewAsks, SentReceipts, useApprovals } from './approvals';
 import { ApproveAll, CardRows } from './CardRows';
-import { ReceiptLines } from './Receipt';
+import { LandedRows } from './LandedRows';
 
 /** The cards in the order they draw in: every card is one row, and a group of
  *  two changes to one page is two stops under one name. The cursor walks what
@@ -157,7 +158,13 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
     };
   }, [sessionId, proposals]);
 
-  const receipt = useMemo(() => receiptOf(resolved), [resolved]);
+  // The pages the receipt names, by the name the workspace holds for them: a
+  // path de-slugged is not what the page calls itself (RR-3).
+  const names = useNoteNames(useMemo(() => receiptPaths(resolved), [resolved]));
+  const receipt = useMemo(
+    () => receiptOf(resolved, (path) => names.get(path)?.title ?? null),
+    [resolved, names],
+  );
   // The door counts what is waiting anywhere else, off the one attention list,
   // never a fresh arithmetic. It drops this session's own cards, which are on the
   // screen already.
@@ -194,8 +201,22 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
               </span>
               <h3 className="text-sm font-semibold text-foreground">{receiptSummary(receipt)}</h3>
             </div>
-            {/* Hung off the mark's column, so head and rows share one text edge. */}
-            <ReceiptLines entries={receipt.entries} onOpen={openDoc} className="mt-1.5 pl-7" />
+            {/* Hung off the mark's column, so head and rows share one text edge.
+                An approved card is a landed write, so it draws as one: the same
+                groups, the same change line, the same way back (RC-3). A
+                discarded card draws nothing; the tally above counts it. */}
+            <div className="mt-1.5 pl-7">
+              <LandedRows
+                rows={receipt.rows}
+                sessionId={sessionId}
+                onOpen={openDoc}
+                // The block around it is already called "What you approved".
+                label={null}
+                // The rows are a sitting's approvals, not one turn's writes, so
+                // there is no turn to put back. Each row keeps its own control.
+                turnBack={false}
+              />
+            </div>
             {elsewhere > 0 && (
               <button
                 className="mt-2.5 ml-7 flex items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:text-brand focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"

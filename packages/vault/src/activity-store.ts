@@ -50,6 +50,7 @@ export class ActivityStore implements ActivityPort {
         reverted INTEGER
       );
       CREATE INDEX IF NOT EXISTS idx_activity_at ON activity(at);
+      CREATE INDEX IF NOT EXISTS idx_activity_proposal ON activity(proposal_id);
     `);
   }
 
@@ -105,6 +106,18 @@ export class ActivityStore implements ActivityPort {
           GROUP BY path`,
       )
       .all() as { path: string; line: string; at: number }[];
+  }
+
+  /**
+   * The row one card left. The newest wins: a card approved, put back and
+   * approved again writes a second row, and the last one is the live handle.
+   */
+  forProposal(proposalId: string): ActivityRecord | null {
+    if (!proposalId) return null;
+    const row = this.db
+      .prepare('SELECT * FROM activity WHERE proposal_id = ? ORDER BY at DESC LIMIT 1')
+      .get(proposalId) as Row | undefined;
+    return row ? this.toRecord(row) : null;
   }
 
   get(id: string): ActivityRecord | null {

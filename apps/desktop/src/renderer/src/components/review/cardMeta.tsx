@@ -8,8 +8,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import {
+  type AppliedRow,
+  appliedVerb,
   bareRef,
   cardTargetTitle,
+  changeLine,
+  type ChangeLineInput,
   groupByTarget,
   isNewSkill,
   newPageFacts,
@@ -101,14 +105,6 @@ function frontmatter(p: ProposalDTO): Record<string, unknown> {
   return (p.payload as { frontmatter?: Record<string, unknown> }).frontmatter ?? {};
 }
 
-/** An authored title/summary from the payload, when the note carries one. Only
- *  the receipt needs it now; the headline reads the frontmatter in the domain. */
-function payloadTitle(p: ProposalDTO): string {
-  const fm = frontmatter(p);
-  const title = fm['title'] ?? fm['summary'];
-  return typeof title === 'string' && title.trim() ? title.trim() : '';
-}
-
 /** The card's line, composed from what the card already carries: the path, the
  *  frontmatter, and the text an update adds. Same vocabulary as the effect line
  *  and the receipt, so one card never says two things. */
@@ -198,7 +194,7 @@ export function cardTitle(p: ProposalDTO, knownTitle?: string | null): string {
     targetPath: targetOf(p),
     frontmatter: frontmatter(p),
     knownTitle,
-    });
+  });
 }
 
 /**
@@ -216,69 +212,112 @@ export function cardFacts(p: ProposalDTO): NewPageFacts {
 }
 
 // ---------------------------------------------------------------------------
-// The receipt: the same card, in the past tense (docs/closing-beat.md)
+// The receipt: the same card, as a landed row (docs/receipt-redesign.md RC-3)
 // ---------------------------------------------------------------------------
 
-/** What one approved card did. The card says what will happen; this says what
- *  happened, in the same nouns. */
-export interface ReceiptEntry {
-  id: string;
-  /** The one verb for what landed. */
-  verb: 'Created' | 'Updated' | 'Decided' | 'Sent' | 'Deleted';
-  /** The note it touched, when it touched one. It is the receipt's link. */
-  note?: { title: string; path: string };
-  /** Outbound only: the sentence for what left the workspace. */
-  sent?: string;
-  /** A deletion only: the name of the page that is gone. Its own field rather
-   *  than a note, because there is nothing left to open. */
-  gone?: string;
+/**
+ * What one approved card did, in the shape a landed write has.
+ *
+ * An approved card IS a landed write from the moment it is approved, so the
+ * receipt says it in the same words, in the same groups, with the same change
+ * line and the same way back. It used to have five verbs of its own in a
+ * two-column list, which meant one write read two ways depending on whether the
+ * PM was asked about it.
+ *
+ * The same fields `appliedRowFor` fills in the application layer, off the same
+ * payload. The one it cannot fill is `before`: the note as it read before the
+ * write is gone by the time the card is judged, so an update's line says what
+ * moved without saying what it moved from. `knownTitle` is what the workspace
+ * holds for the file, looked up by the caller (see `titles.ts`).
+ */
+export function appliedRowForCard(p: ProposalDTO, knownTitle?: string | null): AppliedRow {
+  const target = targetOf(p);
+  // A send writes no file. It has no page to open and no way back, so the row
+  // carries the thing it touched and the sentence for what happened to it.
+  if (p.kind === 'outbound') {
+    const ob = p.payload as OutboundPayloadDTO;
+    return {
+      verb: 'Sent',
+      proposalId: p.id,
+      title: outboundSubject(ob),
+      change: outboundReceipt(ob),
+    };
+  }
+  const payload = p.payload as {
+    append?: string;
+    body?: string;
+    patch?: { search: string; replace: string }[];
+    title?: string;
+  };
+  const input: ChangeLineInput = {
+    kind: p.kind,
+    targetPath: target,
+    frontmatter: frontmatter(p),
+    append: payload.append,
+    body: payload.body,
+    patch: payload.patch,
+    inferred: p.inference,
+  };
+  const title = payload.title?.trim() || cardTitle(p, knownTitle);
+  const change = changeLine(input);
+  return {
+    verb: appliedVerb(input),
+    proposalId: p.id,
+    ...(p.activityId ? { activityId: p.activityId } : {}),
+    ...(target ? { path: target } : {}),
+    ...(title ? { title } : {}),
+    ...(change ? { change } : {}),
+    ...(p.inference ? { inferred: true } : {}),
+  };
 }
 
-/** One accepted card, in the past tense. An outbound card touches nothing in
- *  the vault, so it carries its own sentence instead of a note to open. */
-export function receiptEntry(p: ProposalDTO): ReceiptEntry {
-  if (p.kind === 'outbound') {
-    return { id: p.id, verb: 'Sent', sent: outboundReceipt(p.payload as OutboundPayloadDTO) };
-  }
-  const path = targetOf(p);
-  const title = titleForRef(path) || payloadTitle(p) || 'a note';
-  const verb =
-    p.kind === 'update'
-      ? 'Updated'
-      : p.kind === 'decision'
-        ? 'Decided'
-        : p.kind === 'delete'
-          ? 'Deleted'
-          : 'Created';
-  // A deleted page has no page to open, so the receipt says its name and stops
-  // there. A link to a file that is gone is a dead end wearing a link's clothes.
-  if (p.kind === 'delete') return { id: p.id, verb, gone: title };
-  return { id: p.id, verb, note: path ? { title, path } : undefined };
+/** The thing a send touched, as the row names it: the page or event by its own
+ *  title, else the ticket by its key. The sentence under it says what happened
+ *  to it. */
+function outboundSubject(ob: OutboundPayloadDTO): string {
+  return ob.title?.trim() || ob.targetId?.trim() || 'the change';
 }
 
 /** What a set of judged cards adds up to. */
 export interface Receipt {
   accepted: number;
   rejected: number;
-  /** One line per accepted card, oldest first: the order they were proposed in. */
-  entries: ReceiptEntry[];
+  /** One row per accepted card, oldest first: the order they were proposed in. */
+  rows: AppliedRow[];
 }
 
 /**
- * The receipt for cards the PO has already judged. Accepted and rejected both
- * count in the tally; only accepted ones set anything in motion, so only they
- * get a consequence line. Anything withdrawn or gone stale was never a decision
- * of theirs and is left out of both.
+ * The receipt for cards the PM has already judged. Accepted and rejected both
+ * count in the tally; only accepted ones changed anything, so only they get a
+ * row. Anything withdrawn or gone stale was never a decision of theirs and is
+ * left out of both.
  */
-export function receiptOf(resolved: readonly ProposalDTO[]): Receipt {
+export function receiptOf(
+  resolved: readonly ProposalDTO[],
+  knownTitle?: (path: string) => string | null,
+): Receipt {
   const judged = [...resolved]
     .filter((p) => p.status === 'accepted' || p.status === 'rejected')
     .sort((a, b) => a.created - b.created);
   return {
     accepted: judged.filter((p) => p.status === 'accepted').length,
     rejected: judged.filter((p) => p.status === 'rejected').length,
-    entries: judged.filter((p) => p.status === 'accepted').map(receiptEntry),
+    rows: judged
+      .filter((p) => p.status === 'accepted')
+      .map((p) => appliedRowForCard(p, knownTitle?.(targetOf(p)))),
   };
+}
+
+/** Every file a receipt names, for the caller that looks their titles up. */
+export function receiptPaths(resolved: readonly ProposalDTO[]): string[] {
+  return [
+    ...new Set(
+      resolved
+        .filter((p) => p.status === 'accepted' && p.kind !== 'outbound')
+        .map(targetOf)
+        .filter(Boolean),
+    ),
+  ];
 }
 
 /**

@@ -26,7 +26,7 @@ import {
   type SessionStatus,
 } from '@qale/agent';
 import {
-  acceptProposal,
+  approveProposal,
   completeMeetingReview,
   captureNote,
   captureNudgeState,
@@ -398,6 +398,18 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   let maintenanceInFlight: Promise<void> | null = null;
   const runMaintenance = (): Promise<void> => {
     if (maintenanceInFlight) return maintenanceInFlight;
+    // An arrival session is reading a drop: up to 25 cheap-model calls, and
+    // maybe a whole librarian session, would land on the same key while the
+    // PM waits for their transcript (docs/agent-speed.md AS-4). Scoped to the
+    // arrival SKILL, not the `arrival` trigger: the first-look debrief and the
+    // supersede reaction below both fire under that trigger too, and neither
+    // is the run this guard is for. `runInFlight` reads `sessionRuns`, which
+    // `fireSession` sets before the run starts and `agent.onStatus` clears the
+    // moment it settles, however it ends, so the pause can never outlive the
+    // run. The next tick, once the run settles, catches up. That is the same
+    // thing the tick already does after the app opens, so this needs no
+    // retry of its own.
+    if (runInFlight(ARRIVAL_AGENT_NAME)) return Promise.resolve();
     // Collected, not logged one at a time: the pass reports every failure it
     // hit in a single scrubbed line at the end (OW3). A tick that fires every
     // five minutes is exactly where a row per failure becomes a wall of red,
@@ -982,7 +994,8 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
    *
    * `sessionRuns` holds an entry from the moment a run is fired until it
    * settles, so it also answers "is a run of this skill in flight" for anyone
-   * who asks. `runFirstLookDebriefs` is the one asker (CM-5).
+   * who asks. `runFirstLookDebriefs` asks it (CM-5), and so does `runMaintenance`
+   * above, to pause the tick while an arrival is live (docs/agent-speed.md AS-4).
    */
   const sessionStarted = new Map<string, number>();
   const sessionRuns = new Map<string, { skill: string; trigger: string }>();
@@ -1066,6 +1079,11 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       deferAnnounce?: boolean;
     },
   ): Promise<{ sessionId: string } | null> => {
+    // What started this, decided once and used for both the settle report and
+    // the Automatic filter. Only a clock's own run is automatic: a source the
+    // PM dropped is unattended (nobody is at the screen) but they asked for it,
+    // so it belongs on the Sessions list and the rail like any other session.
+    const trigger = opts?.trigger ?? (opts?.scheduled ? 'scheduled' : 'manual');
     const ctx = vaultService.context();
     if (!ctx) return null;
     // The off switch is a FLOOR, and this is its one door. Every path that
@@ -1082,7 +1100,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     // a reason only the PM can clear, the clock stops asking. A person's own
     // request always goes through, and getting an answer to one is what lifts
     // this (see `clockBlocked`).
-    if ((opts?.scheduled || opts?.trigger === 'scheduled') && clockBlocked) {
+    if (trigger === 'scheduled' && clockBlocked) {
       console.log(`[qale] not firing ${skill}: ${clockBlocked}`);
       return null;
     }
@@ -1098,6 +1116,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
           ...(opts?.outbound ? { outbound: true } : {}),
           ...(opts?.scheduled ? { scheduled: true } : {}),
           ...(opts?.unattended ? { unattended: true } : {}),
+          automatic: trigger === 'scheduled',
         },
         ctx,
         () => {},
@@ -1110,10 +1129,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       // Recorded against the id rather than threaded through the runtime: a
       // session that settles minutes later has to be able to say what started
       // it, and the runtime has no reason to carry that.
-      sessionRuns.set(handle.sessionId, {
-        skill,
-        trigger: opts?.trigger ?? (opts?.scheduled ? 'scheduled' : 'manual'),
-      });
+      sessionRuns.set(handle.sessionId, { skill, trigger });
       return { sessionId: handle.sessionId };
     } catch (err) {
       // Every caller is fire-and-forget (`void fireSession(...)`): a run that
@@ -2086,6 +2102,12 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('todos:setStatus', async (path, status) => {
     const note = await setTodoStatus(vaultService.requireContext(), path, status);
     refreshDockBadge();
+    // Null means the file is gone: dropping a todo Qale only heard deletes it
+    // (FA-7). The tree still has to hear about the path that left.
+    if (!note) {
+      pushEvent(getWindow(), { channel: 'vault:changed', paths: [path] });
+      return null;
+    }
     return noteToDTO(note);
   });
   handle('todos:setDue', async (path, due) => {
@@ -2408,9 +2430,14 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
   handle('proposals:resolved', (sessionId) => {
     const ctx = vaultService.requireContext();
     const effectFacts = outboundEffectFacts(ctx, settings.selfEmails());
-    return resolvedProposals(ctx, sessionId).map((rec) =>
-      proposalToDTO(rec, ctx.checks?.get(selfPrepKey(rec.sessionId)), effectFacts),
-    );
+    return resolvedProposals(ctx, sessionId).map((rec) => {
+      const dto = proposalToDTO(rec, ctx.checks?.get(selfPrepKey(rec.sessionId)), effectFacts);
+      // The Activity row the approval left (RC-4), read back by the card's own
+      // id so the receipt still offers Put back in a chat reopened next week.
+      // A row already put back is left off: the way back is gone with it.
+      const row = ctx.activity?.forProposal(rec.id);
+      return row && !row.reverted ? { ...dto, activityId: row.id } : dto;
+    });
   });
   handle('proposals:preview', (id) => previewProposal(vaultService.requireContext(), id));
   // Resolving the last card a session produced closes the review it was doing:
@@ -2452,7 +2479,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         instruction: `[[${replaced}]] was replaced by [[${landed}]]. Repoint what still cites the old one.`,
       }),
       // A reaction to a source the PO just kept, not a run they asked for.
-      { trigger: 'arrival' },
+      // `unattended: true`, because nobody is at the screen for it: without
+      // the flag the runtime reads this as a chat with a person waiting
+      // (docs/agent-speed.md AS-2). The skill fired here is `librarian`, not
+      // the arrival skill, so this run never trips the arrival-in-flight
+      // guard `runMaintenance` checks above, even though it shares the
+      // `arrival` trigger.
+      { trigger: 'arrival', unattended: true },
     )
       .then((started) => {
         // The scheduled sweep paces itself off this stamp, so a session started
@@ -2516,7 +2549,10 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const want = wantFacts(id);
     // Read before the accept: the record is resolved by the time it returns.
     const target = vaultService.context()?.proposals.get(id)?.targetPath ?? null;
-    const result = await acceptProposal(vaultService.requireContext(), id, edited);
+    // The approve path, not the bare accept: an approved write leaves an
+    // Activity row so the chat and Activity can put it back
+    // (docs/receipt-redesign.md RC-4).
+    const result = await approveProposal(vaultService.requireContext(), id, edited);
     if (result.ok) {
       // A card handed back with `edited` is one they changed before keeping.
       telemetry.send('card.decided', {
@@ -2611,6 +2647,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       path: row.path,
       hash: row.revert.commit,
       activityId: row.id,
+      // The card behind the row, when there was one: the accept marked the
+      // sources it cited as read, and the undo puts those back with the page.
+      ...(row.proposalId ? { proposalId: row.proposalId } : {}),
     });
     pushEvent(getWindow(), { channel: 'vault:changed', paths: [result.path] });
     return result;

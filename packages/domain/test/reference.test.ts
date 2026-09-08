@@ -47,6 +47,9 @@ test("the shapes are the schema's own, not a description of it", () => {
   // Days say so.
   assert.match(ref, /due \(YYYY-MM-DD\)/);
   assert.match(ref, /duration_minutes \(number\)/);
+  // A flag says which two words it takes (FA-7): the todo line names the mark
+  // Qale puts on a commitment it heard rather than was told.
+  assert.match(ref, /\*\*todo\*\* \(todos\/\): [^\n]*inference \(true \| false\)/);
 });
 
 test('one type can be asked for on its own, for a refusal that answers itself', () => {

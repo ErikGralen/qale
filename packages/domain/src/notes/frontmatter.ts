@@ -463,6 +463,14 @@ export const zTodo = z.object({
   /** Stamped "YYYY-MM-DD" when `commitment` flips to done/dropped; cleared on reopen. */
   resolved: z.string().optional(),
   customer: zRef.optional(),
+  /**
+   * Qale worked this commitment out from a source; nobody said it to Qale
+   * directly (docs/fewer-approvals.md FA-7). A todo lands without a card now, so
+   * the file has to carry the difference between a promise the PM made and one
+   * Qale heard. The row says "Qale heard this" while it is set, and the first
+   * thing the PM does to the todo takes it off.
+   */
+  inference: z.boolean().optional(),
 });
 
 /** Generic authored note — the fallback so any markdown file still indexes. */

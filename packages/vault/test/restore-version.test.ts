@@ -5,12 +5,21 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  approveProposal,
+  createProposal,
   restoreNoteVersion,
   revertNoteChange,
   runSummaryPass,
+  type CreateProposalInput,
+  type ProposalRecord,
   type UseCaseContext,
 } from '@qale/application';
-import type { ActivityRecord, CreateActivityInput } from '@qale/domain';
+import {
+  APPROVED_REASON,
+  titleFromSlug,
+  type ActivityRecord,
+  type CreateActivityInput,
+} from '@qale/domain';
 import { FsVault } from '../src/fs-vault.js';
 import { GitAdapter } from '../src/git.js';
 
@@ -175,7 +184,7 @@ test('undoing an edit puts the whole file back, properties included', async () =
 
   const applied = (await git.history(path))[0]!;
   const result = await revertNoteChange(ctx, { path, hash: applied.hash });
-  assert.deepEqual(result, { path, outcome: 'restored' });
+  assert.deepEqual(result, { path, outcome: 'restored', method: 'patch' });
 
   const raw = await readFile(file, 'utf8');
   assert.ok(raw.includes('What I wrote.'));
@@ -199,7 +208,7 @@ test('undoing a delete brings the note back', async () => {
 
   const deleted = (await git.history(path))[0]!;
   const result = await revertNoteChange(ctx, { path, hash: deleted.hash });
-  assert.deepEqual(result, { path, outcome: 'undeleted' });
+  assert.deepEqual(result, { path, outcome: 'undeleted', method: 'patch' });
   assert.ok((await readFile(file, 'utf8')).includes('Still wanted.'));
 });
 
@@ -214,7 +223,7 @@ test('undoing a change that created the note takes the note away', async () => {
 
   const created = (await git.history(path))[0]!;
   const result = await revertNoteChange(ctx, { path, hash: created.hash });
-  assert.deepEqual(result, { path, outcome: 'removed' });
+  assert.deepEqual(result, { path, outcome: 'removed', method: 'patch' });
   assert.equal(existsSync(file), false);
   assert.ok(existsSync(join(dir, 'notes/other.md')), 'nothing else was touched');
   // And it is still in the record, so the undo can be undone.
@@ -233,7 +242,7 @@ test('undoing a rename puts the note back under the name it had', async () => {
 
   const renamed = (await git.history(to))[0]!;
   const result = await revertNoteChange(ctx, { path: to, hash: renamed.hash });
-  assert.deepEqual(result, { path: from, outcome: 'undeleted' });
+  assert.deepEqual(result, { path: from, outcome: 'undeleted', method: 'patch' });
   assert.equal(existsSync(join(dir, to)), false, 'the new name goes');
   assert.ok((await readFile(join(dir, from), 'utf8')).includes('A body long enough'));
 });
@@ -323,6 +332,7 @@ test('a label the pass wrote can be put back from its Activity row', async () =>
       list: () => [...rows].reverse(),
       get: (id: string) => rows.find((r) => r.id === id) ?? null,
       latestLearned: () => [],
+      forProposal: (id: string) => rows.find((r) => r.proposalId === id) ?? null,
       markReverted: () => {},
     },
   } as unknown as UseCaseContext;
@@ -341,9 +351,291 @@ test('a label the pass wrote can be put back from its Activity row', async () =>
 
   const result = await revertNoteChange(ctx, { path: row.path!, hash: row.revert.commit! });
 
-  assert.deepEqual(result, { path: plan, outcome: 'restored' });
+  assert.deepEqual(result, { path: plan, outcome: 'restored', method: 'patch' });
   assert.equal(await readFile(join(dir, plan), 'utf8'), planRaw, 'byte for byte, labels gone');
   // One row, one note. The pass commit touched both, and the undo asked about
   // one, so the other keeps what the pass wrote.
   assert.ok((await readFile(join(dir, renewals), 'utf8')).includes('tags:'));
+});
+
+// ---------------------------------------------------------------------------
+// The undo as a reverse patch (docs/fewer-approvals.md FA-2). Every autosave is
+// its own commit, so the PM almost always has versions on top of the agent's.
+// These are about what happens to those.
+// ---------------------------------------------------------------------------
+
+test('undoing an edit keeps what the PM typed afterwards', async () => {
+  const { dir, ctx, git } = await workspace();
+  const path = 'notes/rollout.md';
+  const file = join(dir, path);
+  await writeFile(file, `${FM}\nOne.\n\nTwo.\n\nThree.\n`);
+  await git.commitPaths([path], 'create: rollout');
+
+  // The agent rewrites the middle line.
+  await writeFile(file, `${FM}\nOne.\n\nTwo, as the agent put it.\n\nThree.\n`);
+  await git.commitPaths([path], 'update: rollout');
+  const applied = (await git.history(path))[0]!;
+
+  // The PM keeps typing, at the other end of the file. Two autosaves, two
+  // commits, exactly as the editor writes them.
+  await writeFile(file, `${FM}\nOne.\n\nTwo, as the agent put it.\n\nThree.\n\nFour, mine.\n`);
+  await git.commitPaths([path], 'save: rollout');
+  await writeFile(
+    file,
+    `${FM}\nOne.\n\nTwo, as the agent put it.\n\nThree.\n\nFour, mine.\n\nFive, also mine.\n`,
+  );
+  await git.commitPaths([path], 'save: rollout');
+
+  const result = await revertNoteChange(ctx, { path, hash: applied.hash });
+  assert.deepEqual(result, { path, outcome: 'restored', method: 'patch' });
+
+  const raw = await readFile(file, 'utf8');
+  assert.ok(raw.includes('\nTwo.\n'), "the agent's line is back the way it was");
+  assert.ok(!raw.includes('as the agent put it'));
+  assert.ok(raw.includes('Four, mine.'), 'and what the PM wrote after it stands');
+  assert.ok(raw.includes('Five, also mine.'));
+});
+
+test('a frontmatter-only change is taken back out without touching the body written since', async () => {
+  const { dir, ctx, git } = await workspace();
+  const path = 'notes/tagged.md';
+  const file = join(dir, path);
+  await writeFile(file, `${FM}\nMy own paragraph.\n`);
+  await git.commitPaths([path], 'create: tagged');
+  await writeFile(
+    file,
+    `---\ntype: note\nsummary: s\ntags: [alpha, beta]\n---\n\nMy own paragraph.\n`,
+  );
+  await git.commitPaths([path], 'labels: tagged');
+  const applied = (await git.history(path))[0]!;
+
+  await writeFile(
+    file,
+    `---\ntype: note\nsummary: s\ntags: [alpha, beta]\n---\n\nMy own paragraph.\n\nAnd a second one.\n`,
+  );
+  await git.commitPaths([path], 'save: tagged');
+
+  const result = await revertNoteChange(ctx, { path, hash: applied.hash });
+  assert.equal(result.method, 'patch');
+  const raw = await readFile(file, 'utf8');
+  assert.ok(raw.includes('tags: [alpha]'), 'the tag the pass added goes');
+  assert.ok(!raw.includes('beta'));
+  assert.ok(raw.includes('And a second one.'), 'the paragraph written since stays');
+});
+
+test('when the reverse patch has nowhere to land the whole file goes back, and the undo says so', async () => {
+  const { dir, ctx, git } = await workspace();
+  const path = 'notes/rewritten.md';
+  const file = join(dir, path);
+  const before = `${FM}\nOne.\n\nTwo.\n\nThree.\n`;
+  await writeFile(file, before);
+  await git.commitPaths([path], 'create: rewritten');
+  await writeFile(file, `${FM}\nOne.\n\nTwo, as the agent put it.\n\nThree.\n`);
+  await git.commitPaths([path], 'update: rewritten');
+  const applied = (await git.history(path))[0]!;
+
+  // The PM rewrites the very lines the undo would search for, so there is
+  // nothing left to take out.
+  await writeFile(file, `${FM}\nA page about something else now.\n`);
+  await git.commitPaths([path], 'save: rewritten');
+
+  const result = await revertNoteChange(ctx, { path, hash: applied.hash });
+  assert.deepEqual(result, { path, outcome: 'restored', method: 'snapshot' });
+  assert.equal(await readFile(file, 'utf8'), before, 'the file as it read before the change');
+});
+
+test('undoing a page that cited a transcript marks the transcript unread again', async () => {
+  const { dir, ctx, git } = await workspace();
+  await mkdir(join(dir, 'sources'), { recursive: true });
+  const source = 'sources/nordkap-call.md';
+  const page = 'notes/nordkap-write-up.md';
+  const unread =
+    '---\ntype: source\nsummary: Nordkap call\nprocessing: new\ncaptured: 2026-08-02\n---\n\nWhat was said.\n';
+  await writeFile(join(dir, source), unread);
+  await git.commitPaths([source], 'source: nordkap-call');
+
+  // The accept: the page lands in one commit, and the source flips to read in
+  // a commit of its own, which is what leaves it flipped after an undo.
+  await writeFile(
+    join(dir, page),
+    '---\ntype: note\nsummary: Nordkap write-up\nsources: ["[[sources/nordkap-call]]"]\n---\n\nWhat it meant.\n',
+  );
+  await git.commitPaths([page], 'note: nordkap-write-up');
+  const applied = (await git.history(page))[0]!;
+  await writeFile(join(dir, source), unread.replace('processing: new', 'processing: processed'));
+  await git.commitPaths([source], 'processing: sources/nordkap-call → processed');
+
+  const result = await revertNoteChange(ctx, { path: page, hash: applied.hash });
+  assert.deepEqual(result, { path: page, outcome: 'removed', method: 'patch' });
+  assert.equal(existsSync(join(dir, page)), false);
+
+  const raw = await readFile(join(dir, source), 'utf8');
+  assert.ok(raw.includes('processing: new'), 'the transcript is waiting to be read again');
+  assert.ok(raw.includes('What was said.'), 'and nothing else in it moved');
+  // One commit, not two: the page and the mark went back together.
+  assert.equal((await git.history(source))[0]!.message, `undo: ${titleFromSlug(page)}`);
+});
+
+test('a source the PM marked read themselves is left alone by the undo', async () => {
+  const { dir, ctx, git } = await workspace();
+  await mkdir(join(dir, 'sources'), { recursive: true });
+  const source = 'sources/read-already.md';
+  const page = 'notes/second-write-up.md';
+  await writeFile(
+    join(dir, source),
+    '---\ntype: source\nsummary: A call\nprocessing: processed\ncaptured: 2026-08-02\n---\n\nWhat was said.\n',
+  );
+  await git.commitPaths([source], 'source: read-already');
+  await writeFile(
+    join(dir, page),
+    '---\ntype: note\nsummary: Second write-up\nsources: ["[[sources/read-already]]"]\n---\n\nWhat it meant.\n',
+  );
+  await git.commitPaths([page], 'note: second-write-up');
+  const applied = (await git.history(page))[0]!;
+
+  await revertNoteChange(ctx, { path: page, hash: applied.hash });
+  // It said `processed` before the change landed, so the change is not what
+  // marked it, and the undo has no claim on it.
+  assert.ok((await readFile(join(dir, source), 'utf8')).includes('processing: processed'));
+  assert.equal((await git.history(source)).length, 1, 'not even a commit');
+});
+
+// ---------------------------------------------------------------------------
+// A card the PM approved (docs/receipt-redesign.md RC-4). The row it leaves is
+// the same row a silent write leaves, so the same undo runs on it. Against a
+// real repo, because the whole promise is that the file goes back.
+// ---------------------------------------------------------------------------
+
+/** A workspace whose cards and Activity rows are kept in memory. */
+function approving(ctx: UseCaseContext) {
+  const rows = new Map<string, ProposalRecord>();
+  const activity: ActivityRecord[] = [];
+  let seq = 0;
+  return {
+    activity,
+    ctx: {
+      ...ctx,
+      proposals: {
+        create: (input: CreateProposalInput, now: number) => {
+          const rec = {
+            ...input,
+            id: `p_${++seq}`,
+            skill: input.skill ?? null,
+            status: 'pending',
+            created: now,
+            resolved: null,
+          } as unknown as ProposalRecord;
+          rows.set(rec.id, rec);
+          return rec;
+        },
+        get: (id: string) => rows.get(id) ?? null,
+        list: () => [...rows.values()],
+        setStatus: (id: string, status: string) => {
+          const rec = rows.get(id);
+          if (rec) rows.set(id, { ...rec, status } as ProposalRecord);
+        },
+        setEditedPayload: () => {},
+        pendingCount: () => 0,
+        markStaleFor: () => {},
+      },
+      activity: {
+        record: (input: CreateActivityInput, now: number) => {
+          const row = { ...input, id: `a_${activity.length + 1}`, at: now, reverted: null };
+          activity.push(row);
+          return row;
+        },
+        list: () => [...activity].reverse(),
+        get: (id: string) => activity.find((r) => r.id === id) ?? null,
+        latestLearned: () => [],
+        forProposal: (id: string) => activity.find((r) => r.proposalId === id) ?? null,
+        markReverted: () => {},
+      },
+    } as unknown as UseCaseContext,
+  };
+}
+
+test('a note card the PM approved can be put back from its Activity row', async () => {
+  const plain = await workspace();
+  const { dir, git } = plain;
+  const { ctx, activity } = approving(plain.ctx);
+  // A repo with a commit already in it, which is what any real workspace is.
+  await writeFile(join(dir, 'notes/other.md'), `${FM}\nUnrelated.\n`);
+  await git.commitPaths(['notes/other.md'], 'create: other');
+
+  const path = 'notes/rollout-runbook.md';
+  const rec = createProposal(ctx, {
+    kind: 'note',
+    sessionId: 's1',
+    skill: null,
+    targetPath: path,
+    baseHash: null,
+    payload: {
+      path,
+      frontmatter: { type: 'note', title: 'Rollout runbook', summary: 'Rollout runbook' },
+      body: 'Entra first.',
+      rationale: 'Because.',
+    },
+    rationale: 'Because.',
+    evidence: [],
+    inference: false,
+  });
+
+  const result = await approveProposal(ctx, rec.id);
+  assert.equal(result.ok, true);
+  assert.ok(existsSync(join(dir, path)), 'the page landed');
+
+  assert.equal(activity.length, 1);
+  const row = activity[0]!;
+  assert.equal(result.activityId, row.id);
+  assert.equal(row.reason, APPROVED_REASON);
+  assert.equal(row.revert.undo, 'delete');
+  assert.equal(row.revert.commit, (await git.history(path))[0]!.hash);
+
+  const undone = await revertNoteChange(ctx, {
+    path: row.path!,
+    hash: row.revert.commit!,
+    activityId: row.id,
+    proposalId: row.proposalId!,
+  });
+
+  assert.deepEqual(undone, { path, outcome: 'removed', method: 'patch' });
+  assert.equal(existsSync(join(dir, path)), false, 'the approved page is gone again');
+  assert.ok(existsSync(join(dir, 'notes/other.md')), 'nothing else was touched');
+});
+
+test('an update card the PM approved goes back to the text it changed', async () => {
+  const plain = await workspace();
+  const { dir, git } = plain;
+  const { ctx, activity } = approving(plain.ctx);
+  const path = 'notes/nordkap.md';
+  const before = `${FM}\nThe old line.\n`;
+  await writeFile(join(dir, path), before);
+  await git.commitPaths([path], 'create: nordkap');
+
+  const rec = createProposal(ctx, {
+    kind: 'update',
+    sessionId: 's1',
+    skill: null,
+    targetPath: path,
+    baseHash: null,
+    payload: {
+      path,
+      patch: [{ search: 'The old line.', replace: 'The new line.' }],
+      rationale: 'Because.',
+    },
+    rationale: 'Because.',
+    evidence: [],
+    inference: false,
+  });
+
+  const result = await approveProposal(ctx, rec.id);
+  assert.equal(result.ok, true);
+  assert.ok((await readFile(join(dir, path), 'utf8')).includes('The new line.'));
+
+  const row = activity[0]!;
+  assert.equal(row.revert.undo, 'restore');
+  const undone = await revertNoteChange(ctx, { path: row.path!, hash: row.revert.commit! });
+
+  assert.deepEqual(undone, { path, outcome: 'restored', method: 'patch' });
+  assert.equal(await readFile(join(dir, path), 'utf8'), before, 'byte for byte, as it read before');
 });

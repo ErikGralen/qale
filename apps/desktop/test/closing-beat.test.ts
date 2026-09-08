@@ -2,9 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ProposalDTO } from '@qale/ipc';
 import { waitingElsewhere, type AttentionItem } from '../src/renderer/src/lib/attention.js';
+import { INFERRED_TODO_MARK } from '@qale/domain';
 import {
-  receiptEntry,
+  appliedRowForCard,
   receiptOf,
+  receiptPaths,
   receiptSummary,
 } from '../src/renderer/src/components/review/cardMeta.js';
 
@@ -55,25 +57,76 @@ test('the tally names only what happened', () => {
 // Chat: the resolved-cards receipt
 // ---------------------------------------------------------------------------
 
-test('every kind of card has its own past tense', () => {
-  assert.deepEqual(receiptEntry(card('a', { kind: 'note', targetPath: 'insights/pricing.md' })), {
-    id: 'a',
-    verb: 'Created',
-    note: { title: 'Pricing', path: 'insights/pricing.md' },
-  });
-  assert.deepEqual(receiptEntry(card('b', { kind: 'update', targetPath: 'research/pricing.md' })), {
-    id: 'b',
-    verb: 'Updated',
-    note: { title: 'Pricing', path: 'research/pricing.md' },
-  });
+test('every kind of card lands as the row a silent write would have left', () => {
+  // A new page: the verb the landed rows use, the page's own title, and the
+  // sections it filled.
   assert.deepEqual(
-    receiptEntry(card('c', { kind: 'decision', targetPath: 'decisions/2026-07-28-scim.md' })),
-    { id: 'c', verb: 'Decided', note: { title: 'SCIM', path: 'decisions/2026-07-28-scim.md' } },
+    appliedRowForCard(
+      card('a', {
+        kind: 'note',
+        payload: {
+          path: 'research/pricing.md',
+          frontmatter: { title: 'Pricing tiers' },
+          body: '## Summary\nThey pay per seat.',
+        } as unknown as ProposalDTO['payload'],
+      }),
+    ),
+    {
+      verb: 'New',
+      proposalId: 'a',
+      path: 'research/pricing.md',
+      title: 'Pricing tiers',
+      change: 'Summary',
+    },
   );
-  // An outbound card touched no note, so it carries the sentence instead.
+  // An edit says what moved, and takes the page's real name from the workspace
+  // rather than from its filename.
   assert.deepEqual(
-    receiptEntry(
-      card('d', {
+    appliedRowForCard(
+      card('b', {
+        kind: 'update',
+        targetPath: 'notes/rollout-runbook.md',
+        payload: {
+          patch: [
+            {
+              search: '## Entra\nWe map groups.',
+              replace: '## Entra\nWe map groups.\nSCIM ships in Q2.',
+            },
+          ],
+        } as unknown as ProposalDTO['payload'],
+      }),
+      'The rollout runbook',
+    ),
+    {
+      verb: 'Changed',
+      proposalId: 'b',
+      path: 'notes/rollout-runbook.md',
+      title: 'The rollout runbook',
+      change: 'one line under Entra',
+    },
+  );
+  // A decision is a page that was not there, so it reads as one.
+  const decision = appliedRowForCard(
+    card('c', {
+      kind: 'decision',
+      targetPath: 'decisions/2026-07-28-scim.md',
+      payload: { body: 'We ship SCIM in Q2.' } as unknown as ProposalDTO['payload'],
+    }),
+  );
+  assert.equal(decision.verb, 'New');
+  assert.equal(decision.change, 'We ship SCIM in Q2.');
+  // A page that went has no change line: the row's own words are the whole
+  // story, and there is nothing left to open.
+  const removed = appliedRowForCard(
+    card('d', { kind: 'delete', targetPath: 'research/old-pricing.md' }),
+  );
+  assert.equal(removed.verb, 'Removed');
+  assert.equal(removed.change, undefined);
+  // A send writes no file, so it carries the thing it touched and the sentence
+  // for what happened to it, and no path and no way back.
+  assert.deepEqual(
+    appliedRowForCard(
+      card('e', {
         kind: 'outbound',
         payload: {
           action: 'comment_ticket',
@@ -81,44 +134,93 @@ test('every kind of card has its own past tense', () => {
         } as unknown as ProposalDTO['payload'],
       }),
     ),
-    { id: 'd', verb: 'Sent', sent: 'Commented on PAY-142' },
+    { verb: 'Sent', proposalId: 'e', title: 'PAY-142', change: 'Commented on PAY-142' },
   );
 });
 
-test('a create card with no target path still names what it wrote', () => {
-  const entry = receiptEntry(
+test('an approved to-do wears the mark the Todos view wears', () => {
+  const row = appliedRowForCard(
     card('a', {
       kind: 'note',
-      payload: { path: 'insights/scim.md' } as unknown as ProposalDTO['payload'],
+      inference: true,
+      payload: {
+        path: 'todos/send-nordkap-the-sso-dates.md',
+        frontmatter: { title: 'Send Nordkap the SSO dates', type: 'todo', due: '2026-09-11' },
+      } as unknown as ProposalDTO['payload'],
     }),
   );
-  assert.deepEqual(entry.note, { title: 'SCIM', path: 'insights/scim.md' });
+  assert.equal(row.verb, 'New todo');
+  assert.equal(row.inferred, true);
+  assert.equal(row.change, `you · due 11 Sep · ${INFERRED_TODO_MARK}`);
 });
 
-test('the receipt counts both answers and reports consequences for one', () => {
+test('the Activity row an approval left is the row’s way back', () => {
+  const row = appliedRowForCard(
+    card('a', { kind: 'update', targetPath: 'notes/runbook.md', activityId: 'a_7' }),
+  );
+  assert.equal(row.activityId, 'a_7');
+  // A send leaves no Activity row, so the receipt offers nothing to press.
+  const sent = appliedRowForCard(
+    card('b', {
+      kind: 'outbound',
+      payload: {
+        action: 'update_page',
+        title: 'Rollout plan',
+      } as unknown as ProposalDTO['payload'],
+    }),
+  );
+  assert.equal(sent.activityId, undefined);
+  assert.equal(sent.path, undefined);
+});
+
+test('the receipt counts both answers and draws a row for one', () => {
   const receipt = receiptOf([
-    card('c', { status: 'rejected', created: NOW + 2 }),
+    card('c', { status: 'rejected', created: NOW + 2, targetPath: 'research/dropped.md' }),
     card('a', {
       status: 'accepted',
       created: NOW,
       targetPath: 'research/pricing.md',
       kind: 'update',
     }),
-    card('b', { status: 'accepted', created: NOW + 1, targetPath: 'insights/scim.md' }),
-    // Neither of these was a decision of the PO's, so neither is in the tally.
+    card('b', {
+      status: 'accepted',
+      created: NOW + 1,
+      payload: { path: 'research/scim.md' } as unknown as ProposalDTO['payload'],
+    }),
+    // Neither of these was a decision of the PM's, so neither is in the tally.
     card('d', { status: 'pending' }),
     card('e', { status: 'withdrawn' as ProposalDTO['status'] }),
   ]);
   assert.equal(receipt.accepted, 2);
   assert.equal(receipt.rejected, 1);
+  // A discarded card draws nothing: it changed nothing, and the tally has it.
   assert.deepEqual(
-    receipt.entries.map((e) => `${e.verb} ${e.note?.title}`),
-    ['Updated Pricing', 'Created SCIM'],
+    receipt.rows.map((r) => `${r.verb} ${r.title}`),
+    ['Changed Pricing', 'New SCIM'],
+  );
+});
+
+test('the receipt names only the files it has to look up', () => {
+  assert.deepEqual(
+    receiptPaths([
+      card('a', { status: 'accepted', targetPath: 'research/pricing.md' }),
+      card('b', { status: 'accepted', targetPath: 'research/pricing.md' }),
+      card('c', { status: 'rejected', targetPath: 'research/dropped.md' }),
+      card('d', {
+        status: 'accepted',
+        kind: 'outbound',
+        payload: {
+          action: 'comment_ticket',
+          targetId: 'PAY-1',
+        } as unknown as ProposalDTO['payload'],
+      }),
+    ]),
+    ['research/pricing.md'],
   );
 });
 
 test('a session that proposed nothing gets no receipt', () => {
-  assert.deepEqual(receiptOf([]), { accepted: 0, rejected: 0, entries: [] });
+  assert.deepEqual(receiptOf([]), { accepted: 0, rejected: 0, rows: [] });
 });
 
 // ---------------------------------------------------------------------------

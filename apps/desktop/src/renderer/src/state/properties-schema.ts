@@ -292,6 +292,10 @@ export const REF_LABELS: Record<string, string> = {
  * - `purpose_of`: the same pass's folder marker, one short hash per document
  *   the folder purpose was written from. A row of hashes, and the same kind of
  *   bookkeeping;
+ * - `inference` (a todo): Qale heard the commitment rather than being told it.
+ *   The Todos row already says "Qale heard this" in words, and the field
+ *   answers itself the moment the PM touches the todo, so a row offering it as
+ *   a property would only invite them to argue with a marker;
  * - `relationship` (a customer): a vocabulary with no code behind it. Every
  *   other lifecycle changes what the app does: `processing` picks what the
  *   attention lists ask about, `standing` strikes a superseded decision,
@@ -310,6 +314,7 @@ export const HIDDEN_KEYS = new Set<string>([
   'summary_of',
   'purpose_of',
   'relationship',
+  'inference',
 ]);
 
 /**
@@ -352,5 +357,8 @@ export const OFF_ROW_OWNERS: Record<string, FieldOwner> = {
   // Who checked this note is still true, and when. Qale writes it, the PM reads
   // it in the Trust row.
   verified: 'agent',
+  // Qale writes it on a todo it heard rather than was told, and the PM never
+  // types it: any edit of theirs takes it off (docs/fewer-approvals.md FA-7).
+  inference: 'agent',
   title: 'user',
 };

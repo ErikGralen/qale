@@ -6,7 +6,6 @@ import {
   draftRepeatMessage,
   draftTextOf,
   draftTextShown,
-  draftUseMessage,
   draftVoiceMessage,
   draftWordCount,
   forgetCopy,
@@ -16,11 +15,11 @@ import {
 
 /**
  * The draft panel's decisions (docs/draft-text.md): whether a tool call has
- * anything to show, what the Use button sends, and what the voice picker sends.
+ * anything to show, what a question's answer sends, and what the voice picker
+ * sends.
  *
  * The panel keeps no state the model can read, so the sentences built here are
- * the only record of what the person picked. If Use stops naming the open tab,
- * "post that one on the ticket" lands on whichever one the agent guesses.
+ * the only record of what the person picked.
  */
 
 const VARIANTS = [
@@ -28,34 +27,11 @@ const VARIANTS = [
   { label: 'Friendly', body: 'Good news: exports land on 3 September.' },
 ];
 
-test('the message names the open tab', () => {
-  assert.equal(draftUseMessage('Short'), 'Use the "Short" version.');
-});
-
-test('an action message follows the sentence that named the tab', () => {
-  assert.equal(
-    draftUseMessage('Short', 'Post it as a comment on PAY-142.'),
-    'Use the "Short" version. Post it as a comment on PAY-142.',
-  );
-});
-
 test('a call with variants reads as a panel', () => {
   const draft = draftTextOf({ title: 'Exec update', voice: 'exec', variants: VARIANTS });
   assert.equal(draft?.title, 'Exec update');
   assert.equal(draft?.voice, 'exec');
   assert.deepEqual(draft?.variants, VARIANTS);
-});
-
-test('the action carries the button label and its sentence', () => {
-  const draft = draftTextOf({
-    variants: [VARIANTS[0]!],
-    action: { label: 'Post on PAY-142', message: 'Post it as a comment on PAY-142.' },
-  });
-  assert.equal(draft?.action?.label, 'Post on PAY-142');
-  assert.equal(
-    draftUseMessage(draft!.variants[0]!.label, draft!.action?.message),
-    'Use the "Short" version. Post it as a comment on PAY-142.',
-  );
 });
 
 test('a call with nothing to show folds into the activity trail', () => {

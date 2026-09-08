@@ -1,25 +1,29 @@
 /**
- * The write policy: which writes wait for the PM (docs/review-rework.md RR-1).
+ * The write policy: which writes wait for the PM (docs/fewer-approvals.md FA-1).
  *
- * The workspace has two spheres. One is the PM's: their documents (`notes/`),
- * their todos and their meetings. A write there waits for them. So does
- * anything sent out of the workspace, and so does a delete, wherever it points.
- * The other sphere is Qale's memory: decisions, insights, research, about,
- * customers, people, sources, and Qale's own skill and agent files. A write
- * there lands as it is written. Git commits it, Activity keeps the row, and one
- * press puts it back.
+ * The rule is what a write DOES, not where the file sits. Four things wait: a
+ * send out of the workspace, a delete, a rewrite of prose the PM typed, and
+ * anything Qale had to assume. Everything else lands as it is written: a
+ * meeting page from a transcript, a todo, text added at the end, a new
+ * document, and all of Qale's memory. Git commits every landed write, Activity
+ * keeps the row, and one press puts it back.
+ *
+ * The policy used to decide by folder, and asked for every write in the PM's
+ * three folders. That made the PM confirm their own words: a card asking
+ * whether they really said the thing the transcript has them saying.
  *
  * Two answers:
  * - `silent` applies on the spot. Nothing enters the queue. An Activity row is
  *            the receipt, and the chat says one quiet line.
  * - `ask`    one card, every time.
  *
- * The sidebar draws the same line: `surfaceForType` in the desktop app sends a
- * meeting, a note and a todo to rails of their own. One predicate says what is
- * the PM's, and the two screens read the same one.
+ * The sidebar still draws the folder line: `surfaceForType` in the desktop app
+ * sends a meeting, a note and a todo to rails of their own, and reads
+ * {@link isUsersSphere} for it.
  *
  * Nothing here is new data. A proposal already carries its kind, the note type
- * it writes, the file it aims at, and whether the PM asked for it.
+ * it writes, the file it aims at, whether the PM asked for it, and what its
+ * change does to the body.
  */
 
 import { isVoicePath } from '../notes/slug.js';
@@ -42,9 +46,9 @@ export interface WriteFacts {
    *  to confirm their own instruction. */
   asked?: boolean | undefined;
   /**
-   * The file this write lands in, e.g. `notes/q3-priorities.md`. Where a page
-   * goes is part of what the write does: `notes/`, `todos/` and `meetings/` are
-   * the PM's, and the rest of the workspace is the memory Qale keeps.
+   * The file this write lands in, e.g. `notes/q3-priorities.md`. The policy
+   * reads it for the todo rule and for the sidebar predicate; what the write
+   * does to the body is the question the folder used to stand in for.
    */
   targetPath?: string | undefined;
   /**
@@ -53,6 +57,21 @@ export interface WriteFacts {
    * duplicate, so the risky part is handled before the policy is consulted.
    */
   appendOnly?: boolean | undefined;
+  /**
+   * The update patches prose the PM typed: a patch into a document body
+   * (`notes/`), or into the `## Notes` section of a meeting page. Undo makes a
+   * wrong rewording recoverable, not noticeable, and a change to their own
+   * words is the one edit a quick read misses. `fileProposal` works this out
+   * from the change and the note it lands in.
+   */
+  rewritesUserText?: boolean | undefined;
+  /**
+   * The rationale says "Assumed:". An unattended run that has spent its two
+   * questions picks the most reasonable option and labels it that way
+   * (`UNATTENDED_RULES` in the agent prompts). The rationale dies with the
+   * card, so the PM only ever sees the assumption if the write waits.
+   */
+  assumed?: boolean | undefined;
 }
 
 /** The ruling, plus why, in the words a person could read. */
@@ -62,7 +81,7 @@ export interface WriteRuling {
   reason: string;
 }
 
-/** A commitment ledger entry. Creating one, or changing one, is the PM's word. */
+/** A commitment ledger entry: a promise the PM made, or one they are waiting on. */
 function isTodo(facts: WriteFacts): boolean {
   return facts.noteType === 'todo' || (facts.targetPath ?? '').startsWith('todos/');
 }
@@ -111,9 +130,14 @@ export const USERS_SPHERE_DIRS = [USER_DOCUMENTS_DIR, 'todos/', 'meetings/'] as 
 export const USERS_SPHERE_TYPES = ['note', 'todo', 'meeting'] as const;
 
 /**
- * Is this write the PM's side of the workspace? The one predicate the policy
- * and the sidebar both stand on. The folder answers it, and so does the type,
- * because a todo proposed before its file exists carries only the type.
+ * Is this write the PM's side of the workspace? The folder answers it, and so
+ * does the type, because a todo proposed before its file exists carries only
+ * the type.
+ *
+ * `writePolicy` stopped asking it in FA-1, because where a page sits says
+ * nothing about what a write to it does. It stays exported for the sidebar,
+ * which draws the same folder line (`surfaceForType` in the desktop app), and
+ * for anything else that needs the three folders named in one place.
  */
 export function isUsersSphere(facts: WriteFacts): boolean {
   const path = facts.targetPath ?? '';
@@ -166,33 +190,71 @@ export function isMachineryField(field: string): boolean {
 }
 
 /**
- * The rules that hold in both spheres. First rule that matches wins.
- *
- * 1. Outbound goes to Jira, Confluence or a calendar, and the code has no
- *    compensating action for a send. It always asks, one card per send (E-7).
- * 2. A delete takes something away, and there is no undelete either.
- * 3. A todo is a promise, and a promise is the PM's word to somebody. It asks
- *    whoever asked for it: making one, closing one and moving its date.
- * 4. A skill or an agent file is how Qale works, which is Qale's memory, so it
- *    lands as it is written. The file is the record: the PM reads it on the
- *    Skills page and changes it there. A rule the PM stated takes its own
- *    reason, because "you said so" is the truer sentence for it.
- * 5. What the PM asked for in the chat applies on the spot, in either sphere.
- *    The card was asking them to confirm their own instruction (E-4).
+ * Why a send waits. Written down once, because two pieces of code say it: the
+ * rule below, and the guard in `fileProposal` that refuses to apply a send even
+ * when the rule somehow answers otherwise.
  */
-function rulingEverywhere(facts: WriteFacts): WriteRuling | null {
+export const SEND_WAITS_REASON = 'Nothing sent to another system can be taken back.';
+
+/**
+ * Why a write that came off a card needed no card: it had one, and the PM said
+ * yes. The Activity row wants a reason like every other row, and this is the
+ * one that is true for an approved write (docs/receipt-redesign.md RC-4).
+ */
+export const APPROVED_REASON = 'You approved it.';
+
+/**
+ * The four writes that wait, wherever they point. First rule that matches wins.
+ *
+ * 1. A send goes to Jira, Confluence, a calendar or mail, and the code has no
+ *    compensating action for it. One card per send, every time (E-7). No flag
+ *    and no other rule can reach past this one: `fileProposal` refuses the
+ *    silent branch for a send as well, so two pieces of code have to be wrong
+ *    before something leaves on its own.
+ * 2. A delete takes a page away. Git can put the file back, but the links to it
+ *    break the moment it goes, and one quiet line in the chat is too little for
+ *    that.
+ * 3. Qale assumed something. An unattended run out of questions picks an option
+ *    and writes "Assumed:" in the rationale, and the rationale is only read on
+ *    a card.
+ * 4. The write rewrites prose the PM typed. What they asked for in the chat is
+ *    the one exception: they said to change it, so a card would ask them to
+ *    confirm their own instruction (E-4).
+ */
+function rulingThatWaits(facts: WriteFacts): WriteRuling | null {
   if (facts.kind === 'outbound') {
-    return {
-      disposition: 'ask',
-      reason: 'Nothing sent to another system can be taken back.',
-    };
+    return { disposition: 'ask', reason: SEND_WAITS_REASON };
   }
   if (facts.kind === 'delete') {
     return { disposition: 'ask', reason: 'A deleted page cannot be put back.' };
   }
-  if (isTodo(facts)) {
-    return { disposition: 'ask', reason: 'A promise is your word, so you decide it.' };
+  if (facts.assumed) {
+    return { disposition: 'ask', reason: 'Qale assumed something here, so it waits for you.' };
   }
+  if (facts.rewritesUserText && !facts.asked) {
+    return { disposition: 'ask', reason: 'This rewrites what you wrote, so you see it first.' };
+  }
+  return null;
+}
+
+/**
+ * Everything else lands. Git commits it, Activity keeps the row, and one press
+ * puts it back, so a write that adds costs the PM nothing to have.
+ *
+ * A skill or an agent file is how Qale works, and the file is the record: the
+ * PM reads it on the Skills page and changes it there. A rule they stated takes
+ * its own reason, because "you said so" is the truer sentence for it.
+ *
+ * A todo lands too. The ledger is a list Qale keeps for the PM, nothing leaves
+ * the machine, and nobody else sees it.
+ *
+ * A decision is append-only: a wrong one is never edited, it is superseded by
+ * the next, so a card buys nothing.
+ *
+ * A kind nobody has graded yet asks. Asking is the answer that cannot surprise
+ * anyone, so a new card kind starts there and is graded on purpose.
+ */
+function rulingThatLands(facts: WriteFacts): WriteRuling {
   if (isRuleFile(facts)) {
     return facts.asked
       ? { disposition: 'silent', reason: 'You said it should hold from now on.' }
@@ -204,21 +266,9 @@ function rulingEverywhere(facts: WriteFacts): WriteRuling | null {
   if (facts.asked) {
     return { disposition: 'silent', reason: 'You asked for this in the chat.' };
   }
-  return null;
-}
-
-/**
- * Qale's memory: everything outside the PM's own folders. A page Qale files for
- * itself costs the PM nothing to have, git commits it, and Activity puts it
- * back. So it lands, whatever the write does to it.
- *
- * A decision lands too. The spine is append-only: a wrong decision is never
- * edited, it is superseded by the next one, so a card buys nothing.
- *
- * A kind nobody has graded yet asks. Asking is the answer that cannot surprise
- * anyone, so a new card kind starts there and is graded on purpose.
- */
-function rulingInMemory(facts: WriteFacts): WriteRuling {
+  if (isTodo(facts)) {
+    return { disposition: 'silent', reason: 'Your list stays on your machine, for you to read.' };
+  }
   if (facts.kind === 'note') {
     return { disposition: 'silent', reason: 'A new page takes nothing away.' };
   }
@@ -228,7 +278,7 @@ function rulingInMemory(facts: WriteFacts): WriteRuling {
   if (facts.kind === 'update') {
     return {
       disposition: 'silent',
-      reason: 'Qale keeps its own memory, and one press puts any change back.',
+      reason: 'It rewrites nothing you wrote, and one press puts it back.',
     };
   }
   if (facts.kind === 'decision') {
@@ -240,20 +290,9 @@ function rulingInMemory(facts: WriteFacts): WriteRuling {
   return { disposition: 'ask', reason: 'This kind of write always asks.' };
 }
 
-/**
- * What happens to one write. The rules that hold everywhere run first, then the
- * sphere decides the rest.
- */
+/** What happens to one write. What waits is asked first, and the rest lands. */
 export function writePolicy(facts: WriteFacts): WriteRuling {
-  const everywhere = rulingEverywhere(facts);
-  if (everywhere) return everywhere;
-  if (isUsersSphere(facts)) {
-    return {
-      disposition: 'ask',
-      reason: 'This side of the workspace is yours, so you say what goes in it.',
-    };
-  }
-  return rulingInMemory(facts);
+  return rulingThatWaits(facts) ?? rulingThatLands(facts);
 }
 
 /** Shorthand: does this write land without a card? */
@@ -270,50 +309,49 @@ export interface WritePolicyRow {
   reason: string;
 }
 
-/** The policy for one sphere, ready to render. */
+/** One half of the policy, ready to render. */
 export interface WritePolicyPlace {
-  /** Which sphere. For keys and tests, never shown. */
-  place: 'yours' | 'memory';
+  /** Which answer this block holds. For keys and tests, never shown. */
+  place: 'lands' | 'waits';
   /** The heading a person reads. */
   title: string;
   rows: WritePolicyRow[];
 }
 
 /**
- * The writes the screen explains, one sphere at a time, in the order it lists
- * them. Each row is a real set of facts, so the answer beside it comes from the
- * policy and not from a copy of it.
+ * The writes the screen explains, in the order it lists them. Each row is a
+ * real set of facts, so the answer beside it comes from the policy and not from
+ * a copy of it.
  */
 interface ExplainedWrite {
   what: string;
   facts: WriteFacts;
 }
 
-/** The PM's sphere: their folders, plus the two things that ask anywhere. */
-const YOURS: readonly ExplainedWrite[] = [
+/** What applies on the spot. The part nobody would guess, so it comes first. */
+const LANDS: readonly ExplainedWrite[] = [
   {
-    what: 'A document, a to-do or a meeting page',
-    facts: { kind: 'note', targetPath: 'notes/pricing-brief.md' },
+    what: 'A meeting page written up from a transcript',
+    facts: { kind: 'note', noteType: 'meeting', targetPath: 'meetings/2026-09-04-nordkap.md' },
   },
   {
-    what: 'An edit to one of them, a to-do closed or moved included',
+    what: 'A to-do, yours or one you are waiting on',
+    facts: { kind: 'note', noteType: 'todo', targetPath: 'todos/2026-09-07-send-the-dates.md' },
+  },
+  {
+    what: 'A to-do closed, or moved to another day',
     facts: { kind: 'update', noteType: 'todo', targetPath: 'todos/2026-09-07-send-the-dates.md' },
   },
   {
-    what: 'Anything sent to Jira, Confluence or the calendar',
-    facts: { kind: 'outbound' },
+    what: 'A new document',
+    facts: { kind: 'note', targetPath: 'notes/pricing-brief.md' },
   },
-  { what: 'Deleting a page, wherever it sits', facts: { kind: 'delete' } },
   {
-    what: 'A page or an edit you asked for in the chat',
-    facts: { kind: 'note', asked: true, targetPath: 'notes/pricing-brief.md' },
+    what: 'Text added at the end of a document or a meeting page',
+    facts: { kind: 'update', appendOnly: true, targetPath: 'notes/rollout-runbook.md' },
   },
-];
-
-/** Qale's memory: what it keeps for the PM, and its own files. */
-const MEMORY: readonly ExplainedWrite[] = [
   {
-    what: 'A new page: an insight, a customer, a person, a research or about page',
+    what: 'A new page Qale keeps: an insight, a customer, a person, a research or about page',
     facts: { kind: 'note', targetPath: 'research/pricing.md' },
   },
   {
@@ -340,6 +378,23 @@ const MEMORY: readonly ExplainedWrite[] = [
   },
 ];
 
+/** What comes to you as a card first. */
+const WAITS: readonly ExplainedWrite[] = [
+  {
+    what: 'Anything sent to Jira, Confluence or the calendar',
+    facts: { kind: 'outbound' },
+  },
+  { what: 'Deleting a page, wherever it sits', facts: { kind: 'delete' } },
+  {
+    what: 'A rewrite of something you wrote, in a document or in your meeting notes',
+    facts: { kind: 'update', rewritesUserText: true, targetPath: 'notes/rollout-runbook.md' },
+  },
+  {
+    what: 'Anything Qale had to assume, because it could not ask you',
+    facts: { kind: 'update', assumed: true, targetPath: 'research/pricing.md' },
+  },
+];
+
 /**
  * Why a derived label needs no card. The Settings section says this, and so
  * does the Activity row the summary pass leaves, so it is written once here.
@@ -351,7 +406,7 @@ export const TAG_REASON = 'A tag files the page, so it says nothing new.';
 
 /**
  * The two rows the policy never sees. A maintenance pass writes these fields
- * straight to the file, in both spheres. See {@link DERIVED_LABEL_FIELDS}.
+ * straight to the file, wherever it sits. See {@link DERIVED_LABEL_FIELDS}.
  */
 const MACHINERY_ROWS: readonly WritePolicyRow[] = [
   {
@@ -367,24 +422,26 @@ const MACHINERY_ROWS: readonly WritePolicyRow[] = [
 ];
 
 /**
- * The policy as two readable lists, one per sphere, for the Settings section
+ * The policy as two readable lists, one per answer, for the Settings section
  * that says what Qale does on its own (docs/background-system.md ticket 6).
  *
  * Every row asks {@link writePolicy} the question it stands for, so the screen
  * cannot drift from the rule. The two label rows are the stated exception: no
  * pass consults the policy, so their sentences are written here in the same
- * voice.
+ * voice. They land, so they sit on the first list.
  */
 export function describeWritePolicy(): WritePolicyPlace[] {
-  const rowsFor = (writes: readonly ExplainedWrite[]): WritePolicyRow[] => [
-    ...writes.map(({ what, facts }) => {
+  const rowsFor = (writes: readonly ExplainedWrite[]): WritePolicyRow[] =>
+    writes.map(({ what, facts }) => {
       const { disposition, reason } = writePolicy(facts);
       return { what, disposition, reason };
-    }),
-    ...MACHINERY_ROWS.map((row) => ({ ...row })),
-  ];
+    });
   return [
-    { place: 'yours', title: 'Your documents, to-dos and meetings', rows: rowsFor(YOURS) },
-    { place: 'memory', title: "Qale's memory", rows: rowsFor(MEMORY) },
+    {
+      place: 'lands',
+      title: 'What lands',
+      rows: [...rowsFor(LANDS), ...MACHINERY_ROWS.map((row) => ({ ...row }))],
+    },
+    { place: 'waits', title: 'What waits for you', rows: rowsFor(WAITS) },
   ];
 }

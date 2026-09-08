@@ -157,6 +157,26 @@ test('a frontmatter-only update closes the todo (commitment + resolved)', async 
   assert.equal(after['resolved'], '2026-07-22');
 });
 
+test('an agent write leaves the "Qale heard this" mark alone (FA-7)', async () => {
+  // The mark asks the PM a question, so only the PM's own hand answers it. The
+  // agent updating its own todo (a date it found, a plan it drafted) is not an
+  // answer, and the row must still say where the commitment came from.
+  const { ctx, store } = fakeContext({
+    'todos/nordkap-sso.md': todo({ inference: true }),
+  });
+  const body = store.get('todos/nordkap-sso.md')!.body;
+  const rec = updateCard(ctx, body, {
+    path: 'todos/nordkap-sso.md',
+    frontmatter: { due: '2026-08-01' },
+    rationale: 'ENG-214 lands that week',
+  });
+
+  assert.equal((await acceptProposal(ctx, rec.id)).ok, true);
+  const after = store.get('todos/nordkap-sso.md')!.frontmatter as Record<string, unknown>;
+  assert.equal(after['due'], '2026-08-01');
+  assert.equal(after['inference'], true);
+});
+
 test('an update carries both a body patch and a frontmatter change', async () => {
   const { ctx, store } = fakeContext({ 'todos/nordkap-sso.md': todo() });
   const body = store.get('todos/nordkap-sso.md')!.body;

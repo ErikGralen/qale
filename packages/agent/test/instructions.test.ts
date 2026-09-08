@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { UseCaseContext } from '@qale/application';
+import { readAppliedReceipt } from '@qale/domain';
 import {
   CONFLUENCE_CONVENTIONS,
   HOUSE_RULES,
@@ -325,12 +326,24 @@ test('the receipt says the rule landed and where it went', async () => {
     why: 'Erik asked for it after the Nordkap call.',
   });
 
+  // The prose the model reads, word for word. The fields the chat's receipt
+  // block reads ride behind it on their own last line (FA-4), so the two are
+  // checked apart.
+  const [prose, ...rest] = said.split('\n<!-- qale:landed');
   assert.equal(
-    said,
+    prose,
     `Applied: Added to rules "${RULE}".\n` +
       'It is in arrival now, and every session that reads that file follows it. Nothing is ' +
       'waiting on the PM: say you have noted it, in one short line, and carry on.',
   );
+  assert.equal(rest.length, 1);
+  assert.deepEqual(readAppliedReceipt(said)?.row, {
+    verb: 'Changed',
+    proposalId: 'p1',
+    path: ARRIVAL,
+    title: 'Arrival',
+    change: 'Standing instructions',
+  });
   assert.match(ctx.filed[0]!.rationale, /^Erik asked for it after the Nordkap call\./);
 });
 

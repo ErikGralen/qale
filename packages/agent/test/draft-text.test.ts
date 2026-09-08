@@ -106,18 +106,6 @@ test('one variant is a version, not versions', async () => {
   assert.equal(ctx.rows.length, 0);
 });
 
-test('an `action` changes the button and still files nothing', async () => {
-  const ctx = world();
-  const { draft } = await tools(ctx);
-  const said = await run(draft, {
-    variants: [{ label: 'Short', body: 'Exports land on 3 September.' }],
-    action: { label: 'Post on PAY-142', message: 'Post it as a comment on PAY-142.' },
-  });
-
-  assert.match(said, /Showed 1 version/);
-  assert.equal(ctx.rows.length, 0);
-});
-
 test('an empty list of variants is refused', async () => {
   const ctx = world();
   const { draft } = await tools(ctx);

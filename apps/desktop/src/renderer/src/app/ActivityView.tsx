@@ -56,10 +56,18 @@ export function ActivityView() {
 
   const days = useMemo(() => groupByDay(activity), [activity]);
 
+  /**
+   * The undo normally takes out the agent's own lines and leaves anything typed
+   * since. When it cannot, the whole page goes back and those later edits go
+   * with it, which the person has to hear the moment it happens.
+   */
   const putBack = async (row: ActivityDTO) => {
     setUndoing(row.id);
     try {
-      await revertActivity(row.id);
+      const result = await revertActivity(row.id);
+      if (result.method === 'snapshot') {
+        toast('Put back as a whole page. Anything you wrote after this went with it.');
+      }
     } catch (err) {
       toast(err instanceof Error ? err.message : 'That could not be put back.');
     } finally {

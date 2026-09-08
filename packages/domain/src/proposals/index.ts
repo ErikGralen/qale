@@ -28,6 +28,11 @@ export {
   cardTargetTitle,
   dayLabel,
   newPageFacts,
+  appliedVerb,
+  changeLine,
+  APPLIED_VERBS,
+  type AppliedVerb,
+  type ChangeLineInput,
   type WantListChange,
   type TargetTitleInput,
   type NewPageFactsInput,
@@ -37,9 +42,12 @@ export {
   type OutboundCopyInput,
 } from './card-copy.js';
 
-/** Which writes wait for the PM: the PM's sphere asks, Qale's memory lands. */
+/** Which writes wait for the PM: a send, a delete, a rewrite of their own prose
+ *  and anything Qale assumed. Everything else lands. */
 export {
   writePolicy,
+  SEND_WAITS_REASON,
+  APPROVED_REASON,
   appliesSilently,
   describeWritePolicy,
   isMachineryField,
@@ -69,6 +77,9 @@ export {
   activityAction,
   activityLine,
   appliedReceipt,
+  appliedRowLine,
+  type AppliedReceipt,
+  type AppliedRow,
   labelLine,
   learnedRow,
   learnedSummary,

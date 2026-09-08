@@ -4,6 +4,8 @@ import {
   activityAction,
   activityLine,
   appliedReceipt,
+  appliedRowLine,
+  INFERRED_TODO_MARK,
   labelLine,
   learnedRow,
   learnedSummary,
@@ -156,6 +158,24 @@ test('the chat line survives the round trip through a tool result', () => {
       detail: '"Always tag the project"',
     },
   );
+});
+
+test('the fields of a landed to-do survive the round trip, mark and all', () => {
+  const row = {
+    verb: 'New todo' as const,
+    activityId: 'a_1',
+    proposalId: 'p_1',
+    path: 'todos/2026-09-08-send-nordkap-the-sso-dates.md',
+    title: 'Send Nordkap the SSO dates',
+    change: `you · due 11 Sep · ${INFERRED_TODO_MARK}`,
+    inferred: true,
+  };
+  const output = `${appliedReceipt('created', 'Send Nordkap the SSO dates')}.\n${appliedRowLine(row)}`;
+  assert.deepEqual(readAppliedReceipt(output)?.row, row);
+  // A write the PM said out loud carries no flag at all, so the line stays short.
+  const plain = { verb: 'New' as const, title: 'Acme wants SCIM' };
+  const said = `${appliedReceipt('created', 'Acme wants SCIM')}.\n${appliedRowLine(plain)}`;
+  assert.deepEqual(readAppliedReceipt(said)?.row, plain);
 });
 
 test('a write still waiting on the PM reads back as nothing', () => {

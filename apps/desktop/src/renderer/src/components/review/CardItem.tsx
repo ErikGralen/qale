@@ -715,7 +715,7 @@ export function CardItem({
  * span holding one button per run of words rather than one button holding
  * everything: a chip inside a button is neither valid nor clickable.
  */
-function TargetTitle({
+export function TargetTitle({
   leadIn,
   title,
   path,
@@ -1369,7 +1369,7 @@ function PropertyChanges({
  * green, with no `+`/`−` gutters, no `#`, and links shown by their title.
  * A metadata edit (frontmatter) is shown as a property-change list above the diff.
  */
-function ChangePreview({
+export function ChangePreview({
   kind,
   preview,
   onOpen,

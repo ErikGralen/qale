@@ -337,6 +337,25 @@ test("attention: commitments are the PO's own, due today or slipped", () => {
   assert.equal(countOf(items, 'todo'), 2);
 });
 
+test('a commitment Qale heard carries the mark; one the PO made carries none', () => {
+  const items = buildAttention(
+    input({
+      tree: tree(
+        note('todo', 'heard', { lifecycle: 'open', due: '2026-07-20', inference: true }),
+        note('todo', 'stated', { lifecycle: 'open', due: '2026-07-20' }),
+      ),
+    }),
+    NOW,
+  );
+  assert.deepEqual(
+    items.map((i) => [i.id, i.mark]),
+    [
+      ['todo:todos/heard.md', 'Qale heard this'],
+      ['todo:todos/stated.md', undefined],
+    ],
+  );
+});
+
 test('capture: a synced meeting with nothing in it asks, once the room has cleared', () => {
   const items = buildAttention(
     input({

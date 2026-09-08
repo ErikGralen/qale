@@ -3,9 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "comment:exports": "The slot parser is the one exception to \"the agent package is main-only\". The renderer has to draw a box exactly where the fence is (docs/brainstorm-skill.md), and two scanners would drift; this subpath is that one file, which imports nothing, so nothing else in here reaches the browser bundle.",
+  "comment:exports": "The agent package is main-only except for one subpath. session-stats.ts is for scripts/session-stats.ts, run under plain node outside Electron; it reads a pi session file and reports what a run cost. Its own subpath keeps it out of the Electron main bundle, which imports \"@qale/agent\" for the runtime and does not need a stats parser riding along.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./session-stats": "./src/session-stats.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit -p tsconfig.json",

@@ -3,7 +3,7 @@ import { writePolicyBlocks } from '../lib/write-policy-copy';
 
 /**
  * What Qale does on its own, said before it does it
- * (docs/background-system.md ticket 6, docs/review-rework.md RR-1).
+ * (docs/background-system.md ticket 6, docs/fewer-approvals.md FA-1).
  *
  * Activity is a receipt, and a receipt arrives too late to be a permission. So
  * the policy that says which writes wait says itself here, in the words it
@@ -18,7 +18,7 @@ export function WritePolicySetting() {
   return (
     <Setting
       title="What Qale does on its own"
-      description="Your documents, to-dos and meetings are yours, so a write there waits for you. What Qale keeps in its own memory lands as it is written, listed in Activity, where one press puts it back."
+      description="What a write does decides, not where the file sits. A send, a delete, a rewrite of something you wrote, and anything Qale had to assume all wait for you. The rest lands, listed in Activity, where one press puts it back."
     >
       <div className="grid gap-x-6 gap-y-5 rounded-xl bg-card p-4 ring-1 ring-border sm:grid-cols-2">
         {writePolicyBlocks().map((block) => (
@@ -29,7 +29,13 @@ export function WritePolicySetting() {
             <div className="mt-2 space-y-3">
               {block.groups.map((group) => (
                 <div key={group.disposition}>
-                  <h4 className="text-dense font-medium">{group.word}</h4>
+                  {/* The block title already says the answer, so the word for it
+                      is drawn only where a block holds both answers. Printing
+                      "Lands, listed in Activity" under "What lands" says one
+                      thing twice. */}
+                  {block.groups.length > 1 && (
+                    <h4 className="text-dense font-medium">{group.word}</h4>
+                  )}
                   <ul className="mt-1 space-y-1">
                     {group.rows.map((row, i) => {
                       // Writes in a row can share one reason ("This side of the

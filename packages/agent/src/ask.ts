@@ -426,16 +426,18 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
     name: ASK_TOOL_NAME,
     label: 'Ask the PM',
     description:
-      'Ask the PM a question and wait for their answer, without ending your turn. Use this when you are ' +
-      'blocked on a decision that is genuinely theirs: one you cannot settle from the workspace, from what they ' +
-      'asked for, or from a sensible default — and where different answers would lead to materially different ' +
-      'work. Typical cases: which of two readings of an ambiguous request to follow, which scope to propose ' +
-      'cards for, whose framing to use when two notes contradict each other. A skill that works in rounds ' +
+      'Ask the PM a question and wait for their answer, without ending your turn. Use this when what you read ' +
+      'does not settle what to write: two readings, two candidates, or a conflict between what they said and ' +
+      'what a note says. Ask it as the conflict: what was said, what the workspace holds as a link, one ' +
+      'question, and the two answers as options, each naming the write it leads to. For example: "You said the ' +
+      'launch is 14 Oct. [[decisions/launch-date]] says 30 Sep. Is 14 Oct the new date?", with "Yes, 14 Oct ' +
+      'replaces it" and "No, 30 Sep stands" as the options. Then write what they chose and set `asked`. ' +
+      'A skill that works in rounds ' +
       '(Iterate) uses it as the round itself: one question per idea, the case for the idea in body, and the PM ' +
       'reacts to each. Do NOT use it to check whether you ' +
       'may proceed, to confirm a plan, to pick something with an obvious default, or to ask something the ' +
-      'workspace already answers — read the note instead. Ask it the way you would say it out loud: "What date ' +
-      'was this meeting?", not a paragraph recapping what you read and why it matters — that reasoning goes in ' +
+      'workspace already answers: read the note instead. Ask it the way you would say it out loud: "What date ' +
+      'was this meeting?", not a paragraph recapping what you read and why it matters. That reasoning goes in ' +
       "the options' descriptions or in body, where the PM reads it only if they want to. Give 2-4 concrete " +
       'options whenever the answer is one of a few things you can name; leave options out when you want their ' +
       'words (a reaction to a draft, a name, a sentence). The PM can always write beside the options, so never ' +
@@ -444,7 +446,8 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
       'without the answer, do that work first and ask at the point it actually matters. Name any note you ' +
       'mention as a wikilink ([[notes/2026-07-17-friday-scratch]]), in the question and in the options alike: ' +
       'the card renders them, so the PM can open the note before they answer. A bare path is dead text on a ' +
-      'card, and this is often a question about a file they have not read.',
+      'card, and this is often a question about a file they have not read. Asking is cheaper than a wrong write ' +
+      'and cheaper than a card, so ask when a five-second answer settles it, and write the moment it is settled.',
     parameters: Type.Object({
       questions: Type.Array(
         Type.Object({

@@ -6,8 +6,11 @@ import { Markdown } from '@tiptap/markdown';
 import { Placeholder } from '@tiptap/extensions';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
+import { Fragment, type Node as PMNode } from '@tiptap/pm/model';
+import { TextSelection } from '@tiptap/pm/state';
 import type { SearchHitDTO } from '@qale/ipc';
 import { invoke } from '../lib/ipc';
+import { EXTERNAL_CHANGE_KEPT, resolveExternalChange, sameBody } from '../lib/merge-body';
 import { isExternalRef, openExternalRef, refMetaCached } from '../lib/connections';
 import { navFromEvent, type NavOpts } from '../lib/nav';
 import { webUrl } from '../lib/urls';
@@ -33,11 +36,6 @@ import { SelectionToolbar } from './editor/SelectionToolbar';
 
 const AUTOSAVE_MS = 1500;
 
-/** Trailing-newline-insensitive equality; the vault may normalize the tail. */
-function sameBody(a: string, b: string): boolean {
-  return a.replace(/\n+$/, '') === b.replace(/\n+$/, '');
-}
-
 /**
  * Join source-wrapped lines into flowing paragraphs. Agents hard-wrap prose,
  * and ProseMirror renders literal `\n` as a visual break (pre-wrap) where the
@@ -57,6 +55,89 @@ function collapseSoftBreaks(node: JSONContent): JSONContent {
 function parseBody(editor: Editor, md: string): JSONContent | string {
   const manager = editor.markdown;
   return manager ? collapseSoftBreaks(manager.parse(md)) : md;
+}
+
+/**
+ * The markdown the editor would write for this text. Agents and Obsidian write
+ * their own dialect (hard wraps, `*` bullets, different blank-line counts), and
+ * the merge compares lines, so the incoming body goes through the same parse
+ * and serialize the editor puts every other body through. Without this, pure
+ * formatting reads as an edit on every line and the merge always refuses.
+ */
+function serializeBody(editor: Editor, md: string): string {
+  const manager = editor.markdown;
+  if (!manager) return md;
+  try {
+    return manager.serialize(collapseSoftBreaks(manager.parse(md)));
+  } catch {
+    return md;
+  }
+}
+
+/**
+ * Put a new doc in the editor and keep the caret where the reader left it.
+ *
+ * `setContent` replaces the whole doc in one step, which collapses the caret to
+ * the end of the replaced range. Here only the blocks that actually differ are
+ * replaced: the matching blocks at the top and the bottom stay, so a caret
+ * outside the changed part maps to the same place, and the agent's edit in
+ * another paragraph never moves the cursor. A caret inside the changed part
+ * lands at the end of it, which is the best the position can be honoured.
+ */
+function replaceDoc(editor: Editor, content: JSONContent | string): void {
+  if (typeof content === 'string') {
+    editor.commands.setContent(content, { emitUpdate: false });
+    return;
+  }
+  let parsed: PMNode | null = null;
+  try {
+    parsed = editor.schema.nodeFromJSON(content);
+  } catch {
+    parsed = null;
+  }
+  if (!parsed) {
+    editor.commands.setContent(content, { emitUpdate: false });
+    return;
+  }
+  const next = parsed;
+  const { state, view } = editor;
+  const old = state.doc;
+  let head = 0;
+  while (head < old.childCount && head < next.childCount && old.child(head).eq(next.child(head))) {
+    head++;
+  }
+  let tail = 0;
+  while (
+    tail < old.childCount - head &&
+    tail < next.childCount - head &&
+    old.child(old.childCount - 1 - tail).eq(next.child(next.childCount - 1 - tail))
+  ) {
+    tail++;
+  }
+  if (head === old.childCount && head === next.childCount) return; // same doc
+  let from = 0;
+  for (let i = 0; i < head; i++) from += old.child(i).nodeSize;
+  let to = old.content.size;
+  for (let i = 0; i < tail; i++) to -= old.child(old.childCount - 1 - i).nodeSize;
+  const middle: PMNode[] = [];
+  for (let i = head; i < next.childCount - tail; i++) middle.push(next.child(i));
+
+  try {
+    const tr = state.tr.replaceWith(from, to, Fragment.fromArray(middle));
+    const anchor = Math.min(tr.mapping.map(state.selection.anchor), tr.doc.content.size);
+    const focus = Math.min(tr.mapping.map(state.selection.head), tr.doc.content.size);
+    tr.setSelection(TextSelection.between(tr.doc.resolve(anchor), tr.doc.resolve(focus)));
+    // The caller owns dirty state and the save timer, so the update event that
+    // would set them is suppressed here, as `setContent` suppresses it.
+    tr.setMeta('preventUpdate', true);
+    tr.setMeta('addToHistory', false);
+    view.dispatch(tr);
+  } catch (err) {
+    // The narrow replace can be refused (an empty result, say). The text
+    // matters more than the caret, so fall back to replacing the whole doc.
+    console.error('narrow content replace failed', err);
+    editor.commands.setContent(content, { emitUpdate: false });
+  }
 }
 
 export function NoteEditor({
@@ -100,6 +181,12 @@ export function NoteEditor({
   const pendingMd = useRef<string | null>(null); // captured in onUpdate; survives editor destroy
   const dirty = useRef(false);
   const timer = useRef<number | null>(null);
+  /**
+   * The body the editor loaded, in the editor's own markdown. It is the base
+   * the merge measures the PM's unsaved edit against, so it has to be the
+   * editor's dialect rather than the file's.
+   */
+  const baseMd = useRef(body);
   /** The save still in the air, if any — never rejects (the catch below owns it). */
   const inFlight = useRef<Promise<void>>(Promise.resolve());
 
@@ -115,10 +202,13 @@ export function NoteEditor({
     const md = pendingMd.current;
     if (md === null || sameBody(md, lastSaved.current)) return inFlight.current;
     const previous = lastSaved.current;
+    const previousBase = baseMd.current;
     lastSaved.current = md;
+    baseMd.current = md; // what we just wrote is what the next edit builds on
     inFlight.current = callbacks.current.onSave(md).catch((err: unknown) => {
       console.error('note autosave failed', err);
       lastSaved.current = previous;
+      baseMd.current = previousBase;
       dirty.current = true;
       callbacks.current.toast(
         `Autosave failed: ${err instanceof Error ? err.message : 'the write was rejected.'} Your edit is kept and will retry.`,
@@ -170,6 +260,7 @@ export function NoteEditor({
       // Content goes through parseBody (not the `content` option) so soft
       // wraps collapse before first paint.
       editor.commands.setContent(parseBody(editor, body), { emitUpdate: false });
+      baseMd.current = editor.getMarkdown();
     },
     editorProps: {
       // pl-14/-ml-14: the left gutter lives INSIDE the editor's box (text
@@ -218,14 +309,45 @@ export function NoteEditor({
   }, [registerFocus, editor]);
 
   // External change to the note body (agent edit, Obsidian, git checkout…).
-  // Our own save echoes back through the vault watcher — ignore that; only
-  // replace content for genuine external edits, and never mid-typing.
+  // Our own save echoes back through the vault watcher — ignore that.
+  //
+  // The editor used to drop the change whenever the PM was mid-typing, and the
+  // next autosave then wrote the stale body back over it with nothing said. Now
+  // the PM's unsaved edit is put back on top of the new body. Only when the two
+  // touch the same lines does the PM's text stand alone, and then they are told.
   useEffect(() => {
     if (!editor || sameBody(body, lastSaved.current)) return;
-    if (dirty.current) return; // user's in-flight edit wins (single-user vault)
+    const mine = dirty.current ? editor.getMarkdown() : null;
+    const theirs = mine === null ? body : serializeBody(editor, body);
+    const outcome = resolveExternalChange({ base: baseMd.current, mine, theirs });
     lastSaved.current = body;
-    if (sameBody(body, editor.getMarkdown())) return;
-    editor.commands.setContent(parseBody(editor, body), { emitUpdate: false });
+    if (outcome.kind === 'kept') {
+      // Base stays what it was: the PM's edit still hangs off it, and the
+      // pending autosave still carries their text to disk.
+      callbacks.current.toast(EXTERNAL_CHANGE_KEPT);
+      return;
+    }
+    if (sameBody(outcome.body, editor.getMarkdown())) {
+      baseMd.current = editor.getMarkdown();
+      if (outcome.kind === 'replace') dirty.current = false;
+      return;
+    }
+    replaceDoc(editor, parseBody(editor, outcome.body));
+    if (outcome.kind === 'merged') {
+      // The merged text is in the editor and not on disk, so the save stands.
+      pendingMd.current = editor.getMarkdown();
+      baseMd.current = theirs;
+      if (timer.current !== null) window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => flushRef.current(), AUTOSAVE_MS);
+      return;
+    }
+    dirty.current = false;
+    pendingMd.current = null;
+    baseMd.current = editor.getMarkdown();
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
   }, [body, editor]);
 
   // Flush pending edits whenever focus leaves: window blur, app hidden,

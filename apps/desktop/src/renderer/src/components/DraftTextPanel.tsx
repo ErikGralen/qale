@@ -13,7 +13,6 @@ import {
   copyMemoryKey,
   draftAnswerMessage,
   draftRepeatMessage,
-  draftUseMessage,
   draftVoiceMessage,
   draftWordCount,
   forgetCopy,
@@ -39,15 +38,14 @@ export interface DraftVoice {
  *
  * Nothing here is pending, so nothing here asks for a decision: no approve, no
  * discard, no edit. The panel knows about text and tabs and stops there. Copy
- * hands the open version to whatever the person is pasting into, and Use this
- * sends an ordinary turn naming that version, which is how every destination
- * stays the agent's problem and gets the real card it already has.
+ * hands the open version to whatever the person is pasting into, and that is
+ * the last this panel sees of it.
  *
- * The voice picker is the same trick a third time. It changes nothing here: it
- * sends "Rewrite every version of X. Use the Exec voice." as the person, and
- * the next draft arrives as its own panel. So the panel still holds no state
- * the model has to be told about, and a draft the PM liked is never overwritten
- * by asking to hear another take on it.
+ * The voice picker sends a turn as the person, the same way answering the
+ * panel's question does: it sends "Rewrite every version of X. Use the Exec
+ * voice." and the next draft arrives as its own panel. So the panel still
+ * holds no state the model has to be told about, and a draft the PM liked is
+ * never overwritten by asking to hear another take on it.
  *
  * It is the one control here that is about the whole panel rather than the open
  * tab. A voice is how the draft sounds, and the tabs are takes on one draft: a
@@ -64,14 +62,14 @@ export interface DraftVoice {
  * make a panel that decides nothing look like the one that parks the session.
  *
  * Which tab is open is local state. It is never written down and never told to
- * the model, because the message the Use button sends says it out loud.
+ * the model.
  *
- * A panel may carry one question (`ask`). It stays hidden until a tab is copied
- * or used, then appears under the footer with its answers as small buttons. An
- * answer is sent the way Use this is sent: a turn from the person, naming the
- * copied tab and the option. Copy alone still sends nothing. The one thing kept
- * outside the panel is the last unanswered copy per voice, so that copying the
- * same style from a later panel can count as the answer.
+ * A panel may carry one question (`ask`). It stays hidden until a tab is
+ * copied, then appears under the footer with its answers as small buttons. The
+ * answer is sent as a turn from the person, naming the copied tab and the
+ * option; copying alone still sends nothing. The one thing kept outside the
+ * panel is the last unanswered copy per voice, so that copying the same style
+ * from a later panel can count as the answer.
  */
 export function DraftTextPanel({
   draft,
@@ -108,13 +106,13 @@ export function DraftTextPanel({
   const memoryKey = draft.voice ? copyMemoryKey(workspace, draft.voice) : null;
 
   /**
-   * A tab left the panel by Copy or by Use this. With a question on the panel
-   * it now shows. With a voice, the copy is remembered against that voice, and
-   * a second copy of the same style from another panel is sent as the pick
-   * instead of asking again. A panel with a voice and no question means the
-   * voice holds one style now, so nothing is left to remember.
+   * A tab left the panel by Copy. With a question on the panel it now shows.
+   * With a voice, the copy is remembered against that voice, and a second
+   * copy of the same style from another panel is sent as the pick instead of
+   * asking again. A panel with a voice and no question means the voice holds
+   * one style now, so nothing is left to remember.
    */
-  const noteCopied = (label: string, how: 'copy' | 'use') => {
+  const noteCopied = (label: string) => {
     setCopied(label);
     if (!memoryKey) {
       if (draft.ask) setAsking(true);
@@ -124,9 +122,9 @@ export function DraftTextPanel({
       forgetCopy(memory.current, memoryKey);
       return;
     }
-    // While a turn runs the Use button is off, so a repeat is not sent either:
-    // the copy shows the question and is remembered on the next quiet copy.
-    if (how === 'copy' && panelId && !disabled) {
+    // While a turn runs, a repeat is not sent: the copy shows the question
+    // and is remembered on the next quiet copy.
+    if (panelId && !disabled) {
       const { repeat } = rememberCopy(memory.current, memoryKey, label, panelId);
       if (repeat) {
         setAsking(false);
@@ -185,7 +183,7 @@ export function DraftTextPanel({
     void navigator.clipboard.writeText(open.body).then(
       () => {
         setFlash('copied');
-        noteCopied(label, 'copy');
+        noteCopied(label);
       },
       () => setFlash('failed'),
     );
@@ -284,16 +282,13 @@ export function DraftTextPanel({
         <Markdown content={open.body} onOpenNote={onOpenNote} />
       </div>
 
-      {/* How it sounds and how long it is, then the two ways out, together on
-          the right. The buttons used to sit at opposite ends of the card, which
-          read as two unrelated controls on one object rather than a choice
-          between them. */}
+      {/* How it sounds and how long it is, then Copy, together on the right. */}
       <div className="flex items-center gap-2 border-t border-border/60 px-3.5 py-2.5">
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           {/* The voice is the one thing on the panel that can be changed, and
-              changing it is the same move as Use this: no state here moves, a
-              message goes out as the person, and the agent drafts again into a
-              new panel. This one is never rewritten under them. */}
+              changing it sends a message as the person: no state here moves,
+              and the agent drafts again into a new panel. This one is never
+              rewritten under them. */}
           {roster.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -365,7 +360,7 @@ export function DraftTextPanel({
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {/* Fixed width so the label can change under the pointer without the
-              button growing and shifting the one beside it. */}
+              button resizing. */}
           <Button
             size="sm"
             variant="ghost"
@@ -382,25 +377,13 @@ export function DraftTextPanel({
             {flash === 'copied' ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             {flash === 'copied' ? 'Copied' : flash === 'failed' ? 'Failed' : 'Copy'}
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={disabled}
-            title={draft.action?.label ? undefined : 'Tell the agent to use this version'}
-            onClick={() => {
-              onUse(draftUseMessage(open.label, draft.action?.message));
-              noteCopied(open.label, 'use');
-            }}
-          >
-            {draft.action?.label ?? 'Use this'}
-          </Button>
         </span>
       </div>
 
       {/* The question, once a tab has left the panel. It sits under the
           footer, not above the text, so the panel reads as text first and a
-          question second. The answers are the same size as Copy and Use this:
-          three small buttons, not a form. */}
+          question second. The answers are the same size as Copy: three small
+          buttons, not a form. */}
       {draft.ask && asking && copied && (
         <div className="flex flex-wrap items-center gap-2 border-t border-border/60 px-3.5 py-2.5">
           <span className="min-w-0 text-xs text-muted-foreground">{draft.ask.text}</span>

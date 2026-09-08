@@ -5,17 +5,17 @@ import { DISPOSITION_WORDS, writePolicyBlocks } from '../src/renderer/src/lib/wr
 
 /**
  * The Settings section that says what Qale does on its own
- * (docs/background-system.md ticket 6, docs/review-rework.md RR-1). The screen
- * groups the policy's rows and gives each answer a word. These tests hold it to
- * both: the grouping loses no row and reorders none, and one answer never gets
- * two words.
+ * (docs/background-system.md ticket 6, docs/fewer-approvals.md FA-1). The
+ * screen groups the policy's rows and gives each answer a word. These tests
+ * hold it to both: the grouping loses no row and reorders none, and one answer
+ * never gets two words.
  */
 
-test('both spheres are shown, with the policy titles', () => {
+test('both lists are shown, with the policy titles', () => {
   const blocks = writePolicyBlocks();
   assert.deepEqual(
     blocks.map((b) => b.place),
-    ['yours', 'memory'],
+    ['lands', 'waits'],
   );
   assert.deepEqual(
     blocks.map((b) => b.title),
@@ -54,11 +54,10 @@ test('the groups run silent, then ask, and an empty one is left out', () => {
     );
     for (const group of block.groups) assert.ok(group.rows.length > 0, group.disposition);
   }
-  // The PM's sphere asks for everything but what they asked for and the labels.
-  // Nothing in Qale's memory asks, so that block has one group.
+  // One answer per block now, so each one has a single group.
   assert.deepEqual(
     writePolicyBlocks().map((b) => b.groups.map((g) => g.disposition)),
-    [['silent', 'ask'], ['silent']],
+    [['silent'], ['ask']],
   );
 });
 

@@ -5,6 +5,7 @@ import {
   zDeletePayload,
   zOutboundPayload,
   findDuplicate,
+  contentTokens,
   parseFrontmatter,
   checkSupersede,
   checkFrontmatterMutation,
@@ -14,8 +15,16 @@ import {
   titleFromSlug,
   typeToWrite,
   writePolicy,
+  SEND_WAITS_REASON,
+  APPROVED_REASON,
+  USER_DOCUMENTS_DIR,
   activityAction,
   activityLine,
+  appliedVerb,
+  cardTargetTitle,
+  changeLine,
+  type AppliedRow,
+  type ChangeLineInput,
   type LearnedSource,
   type ActivityUndo,
   type CreateActivityInput,
@@ -27,7 +36,7 @@ import {
   type OutboundPayload,
   type ProposalIdentity,
 } from '@qale/domain';
-import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../ports.js';
+import type { CreateProposalInput, IndexedNote, ProposalRecord, UseCaseContext } from '../ports.js';
 import { clearReasons } from './deferrals.js';
 import { deleteNote, renameNote } from './notes.js';
 
@@ -67,13 +76,73 @@ export interface FiledWrite {
   path?: string;
   /** The Activity row it left, once it applied. */
   activityId?: string;
+  /** The row the chat draws for it: the page, the change, the way back (FA-4). */
+  landed?: AppliedRow;
   /** Why a silent write could not apply after all. The card stays in the queue. */
   error?: string;
 }
 
 /**
+ * The receipt row for a write that just landed (docs/fewer-approvals.md FA-4).
+ *
+ * Composed here, at accept time, because this is the one moment both halves are
+ * in hand: the payload that says what the write does, and the note as it read
+ * before it. The chat reads it back off the tool result and draws one row.
+ */
+function appliedRowFor(
+  rec: ProposalRecord,
+  path: string | undefined,
+  before: { frontmatter: Record<string, unknown>; title: string } | null,
+  activityId: string | undefined,
+): AppliedRow {
+  const payload = (rec.payload ?? {}) as {
+    frontmatter?: Record<string, unknown>;
+    append?: string;
+    body?: string;
+    patch?: { search: string; replace: string }[];
+    title?: string;
+  };
+  const target = path ?? rec.targetPath ?? '';
+  // The store types a row's kind as a plain string; every one it can hold is a
+  // proposal kind, which is what the card vocabulary asks for.
+  const kind = rec.kind as ChangeLineInput['kind'];
+  // The card's own basis, carried onto the row: a to-do Qale worked out of a
+  // transcript wears the same mark in the chat that it wears in the Todos view
+  // (docs/receipt-redesign.md RC-2).
+  const inferred = rec.inference === true;
+  const input = {
+    kind,
+    targetPath: target,
+    frontmatter: payload.frontmatter,
+    before: before?.frontmatter,
+    append: payload.append,
+    body: payload.body,
+    patch: payload.patch,
+    inferred,
+  };
+  const title =
+    payload.title?.trim() ||
+    cardTargetTitle({
+      kind,
+      targetPath: target,
+      frontmatter: payload.frontmatter,
+      knownTitle: before?.title,
+    });
+  const change = changeLine(input);
+  return {
+    verb: appliedVerb(input),
+    proposalId: rec.id,
+    ...(activityId ? { activityId } : {}),
+    ...(target ? { path: target } : {}),
+    ...(title ? { title } : {}),
+    ...(change ? { change } : {}),
+    ...(inferred ? { inferred } : {}),
+  };
+}
+
+/**
  * File one write, and apply it on the spot when the policy says it needs no card
- * (docs/easier-tickets.md E-3, docs/review-rework.md RR-1). The ONE place the
+ * (docs/easier-tickets.md E-3, docs/fewer-approvals.md FA-1). The ONE place the
  * policy is asked.
  *
  * The row is created either way. A silent write is still a proposal: the payload
@@ -92,8 +161,9 @@ export async function fileProposal(
   input: CreateProposalInput,
   /** What the policy needs that the row does not carry: the note's own type, and
    *  whether an update only adds at the end. Kind, asked and the target path all
-   *  come off the row itself. */
-  facts: Omit<WriteFacts, 'kind' | 'asked' | 'targetPath'> = {},
+   *  come off the row itself, and what the change does to the PM's own text is
+   *  worked out here (see {@link rewritesUserText} and {@link isAssumed}). */
+  facts: Omit<WriteFacts, 'kind' | 'asked' | 'targetPath' | 'rewritesUserText' | 'assumed'> = {},
 ): Promise<FiledWrite> {
   const rec = ctx.proposals.create(input, Date.now());
   const ruling = writePolicy({
@@ -101,10 +171,23 @@ export async function fileProposal(
     kind: input.kind,
     asked: input.asked,
     targetPath: input.targetPath ?? undefined,
+    rewritesUserText: await rewritesUserText(ctx, input),
+    assumed: isAssumed(input.rationale),
   });
-  if (ruling.disposition !== 'silent') {
-    return { rec, disposition: ruling.disposition, reason: ruling.reason };
+  // A send never lands, whatever the ruling says (docs/fewer-approvals.md, the
+  // constraint above the tickets). The policy grades a send as waiting before
+  // it reads anything else, so this second guard is here to make a future rule
+  // that gets it wrong harmless: two pieces of code have to fail before
+  // something leaves the machine unseen.
+  if (ruling.disposition !== 'silent' || input.kind === 'outbound') {
+    // A guarded send says why a send waits, never the "this landed" line the
+    // wrong ruling came with.
+    const reason = ruling.disposition === 'silent' ? SEND_WAITS_REASON : ruling.reason;
+    return { rec, disposition: 'ask', reason };
   }
+  // The note as it read before, for the row the chat draws: a field that moved
+  // can only be said as a move by something that saw both ends of it (FA-4).
+  const before = await noteBefore(ctx, input);
   const result = await acceptProposal(ctx, rec.id);
   if (!result.ok) {
     return {
@@ -119,9 +202,110 @@ export async function fileProposal(
     rec,
     disposition: 'silent',
     reason: ruling.reason,
+    landed: appliedRowFor(rec, result.path, before, activityId),
     ...(result.path ? { path: result.path } : {}),
     ...(activityId ? { activityId } : {}),
   };
+}
+
+/** The note an update is about to change, as it reads now: its own title and
+ *  the fields the write is about to move. Null for a write that makes a page. */
+async function noteBefore(
+  ctx: UseCaseContext,
+  input: CreateProposalInput,
+): Promise<{ frontmatter: Record<string, unknown>; title: string } | null> {
+  if (input.kind !== 'update' || !input.targetPath) return null;
+  try {
+    const note = await ctx.vault.readNote(input.targetPath);
+    if (!note) return null;
+    const fm = note.frontmatter as Record<string, unknown>;
+    return {
+      frontmatter: fm,
+      title: typeof fm['title'] === 'string' ? fm['title'] : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** The heading that holds what the PM typed on a meeting page (`defaults.ts`). */
+const MEETING_NOTES_HEADING = 'notes';
+
+/**
+ * The PM's own prose in a meeting page: the lines under `## Notes`, up to the
+ * next heading of the same level or higher. Empty when the page has no such
+ * heading, which is what a page nobody has written on looks like.
+ */
+export function usersSectionOfMeeting(body: string): string {
+  const lines = body.split('\n');
+  const level = (line: string): number => /^(#{1,6})\s/.exec(line)?.[1]?.length ?? 0;
+  const start = lines.findIndex(
+    (line) =>
+      level(line) > 0 &&
+      line
+        .replace(/^#{1,6}\s+/, '')
+        .trim()
+        .toLowerCase() === MEETING_NOTES_HEADING,
+  );
+  if (start === -1) return '';
+  const open = level(lines[start]!);
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    const depth = level(lines[i]!);
+    if (depth > 0 && depth <= open) {
+      end = i;
+      break;
+    }
+  }
+  return lines.slice(start + 1, end).join('\n');
+}
+
+/** The same text with every run of whitespace flattened, for a tolerant compare. */
+const flatten = (text: string): string => text.replace(/\s+/g, ' ').trim();
+
+/**
+ * Does this write patch prose the PM typed (docs/fewer-approvals.md FA-1)?
+ *
+ * Two places hold their words: a document body, which is theirs whatever
+ * section a patch hits, and the `## Notes` section of a meeting page, which
+ * stays theirs while the rest of the page is written up from a transcript.
+ *
+ * Only a patch counts. A frontmatter change, an append and a new page under
+ * another heading all leave what they wrote as it reads.
+ *
+ * The anchor is compared with whitespace flattened, the same drift `applyPatch`
+ * tolerates: an anchor that will land inside their notes has to be read as
+ * landing there. A page that cannot be read answers no, because the write
+ * itself has nothing to apply against either.
+ */
+export async function rewritesUserText(
+  ctx: UseCaseContext,
+  input: CreateProposalInput,
+): Promise<boolean> {
+  if (input.kind !== 'update') return false;
+  const path = input.targetPath ?? '';
+  const patch = (input.payload as { patch?: { search: string }[] } | null)?.patch ?? [];
+  if (patch.length === 0) return false;
+  if (path.startsWith(USER_DOCUMENTS_DIR)) return true;
+  if (!path.startsWith('meetings/')) return false;
+  const note = await ctx.vault.readNote(path);
+  if (!note) return false;
+  const theirs = flatten(usersSectionOfMeeting(note.body));
+  if (!theirs) return false;
+  return patch.some((block) => {
+    const anchor = flatten(block.search ?? '');
+    return anchor.length > 0 && theirs.includes(anchor);
+  });
+}
+
+/**
+ * Did the run assume this? An unattended run with no questions left writes one
+ * line into the rationale starting "Assumed:" (`UNATTENDED_RULES` in the agent
+ * prompts). Any line counts, not only the first, because the rules ask for a
+ * line and not for an opening.
+ */
+export function isAssumed(rationale: string | undefined): boolean {
+  return (rationale ?? '').split('\n').some((line) => /^assumed:/i.test(line.trim()));
 }
 
 /** What applying a write outside the policy came to. */
@@ -220,10 +404,10 @@ async function recordActivity(
     append: payload.append,
     body: payload.body,
   };
-  // An update edits a file that was already there, so putting it back means
-  // its previous contents. Everything else made the file, so putting it back
-  // means removing it.
-  const undo = rec.kind === 'update' ? 'restore' : 'delete';
+  // An update edits a file that was already there and a delete takes one away,
+  // so putting either back means its previous contents. Everything else made
+  // the file, so putting it back means removing it.
+  const undo = rec.kind === 'update' || rec.kind === 'delete' ? 'restore' : 'delete';
   return recordActivityRow(
     ctx,
     {
@@ -287,6 +471,262 @@ export function duplicatePending(
     title: cardTitle(rec),
   }));
   return findDuplicate(pending, candidate)?.rec ?? null;
+}
+
+/**
+ * The open todo on disk this one would repeat (docs/fewer-approvals.md FA-8).
+ *
+ * `duplicatePending` reads cards, and a todo no longer makes a card: it lands.
+ * So the queue is empty when the second writer looks, and two spawn lanes over
+ * two transcripts of one meeting used to write "Send Nordkap the pricing" and
+ * "Pricing to Nordkap" as two commitments with two dates and two owners. This
+ * is the same question asked of the ledger instead of the queue.
+ *
+ * It lives here, next to `duplicatePending`, so every writer gets it: the tool,
+ * the MCP server, and whatever writes a todo next.
+ */
+
+/**
+ * Endings a light stem takes off, longest first. Swedish above, English below.
+ *
+ * Light on purpose. A real stemmer is a dependency and a table per language;
+ * what this has to survive is one PM writing "skicka prislistan" in one lane and
+ * "skickar prislista" in the other. A stem shorter than four letters is not a
+ * word any more, so the strip is refused below that and the token stands.
+ */
+const TODO_SUFFIXES = [
+  'ningar',
+  'ningen',
+  'arna',
+  'erna',
+  'orna',
+  'ande',
+  'ings',
+  'ade',
+  'are',
+  'ing',
+  'ed',
+  'es',
+  'er',
+  'ar',
+  'or',
+  'en',
+  'et',
+  'an',
+  's',
+  'a',
+];
+
+/** Below this many letters a stripped token stops being a word. */
+const MIN_STEM = 4;
+
+function stemToken(word: string): string {
+  for (const suffix of TODO_SUFFIXES) {
+    if (word.length - suffix.length >= MIN_STEM && word.endsWith(suffix)) {
+      return word.slice(0, -suffix.length);
+    }
+  }
+  return word;
+}
+
+/**
+ * Swedish stopwords the shared list misses because it spells them with their
+ * diacritics ("på", "från") while `contentTokens` folds them away first.
+ */
+const FOLDED_STOPWORDS = new Set(['pa', 'sa', 'nar', 'ar', 'har', 'fran', 'over', 'ocksa', 'hur']);
+
+/** The content words of a todo title, stemmed, order and stopwords thrown away. */
+export function todoTitleTokens(title: string): Set<string> {
+  const out = new Set<string>();
+  for (const word of contentTokens(title)) {
+    if (FOLDED_STOPWORDS.has(word)) continue;
+    out.add(stemToken(word));
+  }
+  return out;
+}
+
+/**
+ * How alike two todo titles read, 0 to 1. Dice on the stemmed token sets.
+ *
+ * Dice rather than Jaccard because the pair that started this is lopsided:
+ * "Send Nordkap the pricing" against "Pricing to Nordkap" is one commitment
+ * written twice, and Jaccard grades it 0.67, below any threshold that also
+ * keeps "Send Nordkap the Q3 roadmap" apart from the Q4 one. Dice says 0.8 and
+ * 0.75, which is the split those two pairs need.
+ */
+export function todoTitleSimilarity(a: string, b: string): number {
+  const left = todoTitleTokens(a);
+  const right = todoTitleTokens(b);
+  if (left.size === 0 || right.size === 0) return 0;
+  let shared = 0;
+  for (const word of left) if (right.has(word)) shared++;
+  return (2 * shared) / (left.size + right.size);
+}
+
+/** Identical, near the line, or neither. */
+export type TodoMatchBand = 'same' | 'near';
+
+/** At or above this, the two titles say one thing and the write is refused. */
+export const TODO_SAME_THRESHOLD = 0.8;
+
+/** At or above this, the agent has to ask the PM before it writes. */
+export const TODO_NEAR_THRESHOLD = 0.5;
+
+/**
+ * The near floor when both todos cite a source in common and agree on the owner.
+ *
+ * The signal lowers the floor; it never lifts a near match to `same`. Two
+ * commitments made in one meeting by one person are the ordinary case ("send
+ * the Q3 roadmap", "send the Q4 pricing"), so treating the shared source as
+ * proof would delete the second one. Asking more is the safe direction.
+ */
+const TODO_NEAR_THRESHOLD_SHARED_SOURCE = 0.34;
+
+/** Below this many words in common, any two terse titles look alike. */
+const MIN_SHARED_WORDS = 2;
+
+/** A todo about to be written, as much of it as the comparison reads. */
+export interface TodoCandidate {
+  title: string;
+  /** Who owes it. Empty means the PM owes it themselves. */
+  owner?: string | undefined;
+  /** The notes it cites, as written ("[[meetings/…]]" or a path). */
+  sources?: readonly string[] | undefined;
+}
+
+/** One todo already on the ledger. */
+export interface OpenTodo extends TodoCandidate {
+  path: string;
+}
+
+/** A todo already on the ledger that the new one may repeat. */
+export interface OpenTodoMatch {
+  path: string;
+  title: string;
+  band: TodoMatchBand;
+  /** The title score, for the caller that wants to say how close it was. */
+  score: number;
+}
+
+export interface OpenTodoOptions {
+  /**
+   * Paths the PM has already said are a different commitment. A todo named here
+   * can no longer be a `near` match. It can still be a `same` one: that band is
+   * a fact about the two titles, and the way past it is `propose_update`.
+   */
+  notTheSameAs?: readonly string[] | undefined;
+  /** Todos no index has seen yet — see the in-process guard in the tools. */
+  also?: readonly OpenTodo[] | undefined;
+}
+
+/** A ref or a path read as one comparable key. */
+function sourceKey(ref: string): string {
+  return refToSlug(ref) ?? ref.trim().toLowerCase();
+}
+
+/** A person read as one comparable key. Empty when nobody else owes it. */
+function ownerKey(owner: string | undefined): string {
+  const bare = (owner ?? '').trim();
+  if (!bare) return '';
+  const slug = refToSlug(bare);
+  const text = slug ? slug.split('/').pop()! : bare;
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/** Do the two cite a note in common? */
+function sharesSource(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
+  if (!a?.length || !b?.length) return false;
+  const mine = new Set(a.map(sourceKey));
+  return b.some((ref) => mine.has(sourceKey(ref)));
+}
+
+/**
+ * The open todo the candidate repeats, or null. Pure: the caller hands over the
+ * ledger it read.
+ *
+ * The strongest match wins, `same` ahead of `near`, then the higher score.
+ */
+export function matchOpenTodo(
+  todos: readonly OpenTodo[],
+  candidate: TodoCandidate,
+  options: OpenTodoOptions = {},
+): OpenTodoMatch | null {
+  const cleared = new Set((options.notTheSameAs ?? []).map((p) => p.replace(/\.md$/, '')));
+  const mine = todoTitleTokens(candidate.title);
+  if (mine.size === 0) return null;
+  let best: OpenTodoMatch | null = null;
+  for (const todo of todos) {
+    const theirs = todoTitleTokens(todo.title);
+    if (theirs.size === 0) continue;
+    let shared = 0;
+    for (const word of mine) if (theirs.has(word)) shared++;
+    const score = (2 * shared) / (mine.size + theirs.size);
+    const identical = shared === mine.size && shared === theirs.size;
+    if (!identical && shared < MIN_SHARED_WORDS) continue;
+
+    const strong =
+      ownerKey(todo.owner) === ownerKey(candidate.owner) &&
+      sharesSource(todo.sources, candidate.sources);
+    const nearFloor = strong ? TODO_NEAR_THRESHOLD_SHARED_SOURCE : TODO_NEAR_THRESHOLD;
+
+    let band: TodoMatchBand | null = null;
+    if (identical || score >= TODO_SAME_THRESHOLD) band = 'same';
+    else if (score >= nearFloor) band = 'near';
+    if (!band) continue;
+    if (band === 'near' && cleared.has(todo.path.replace(/\.md$/, ''))) continue;
+
+    const better =
+      !best ||
+      (band === 'same' && best.band === 'near') ||
+      (band === best.band && score > best.score);
+    if (better) best = { path: todo.path, title: todo.title, band, score };
+  }
+  return best;
+}
+
+/** What an indexed todo is called, in the words the PM sees on the row. */
+function indexedTodoTitle(note: IndexedNote): string {
+  const fm = note.frontmatter;
+  const fromFm = typeof fm['title'] === 'string' ? fm['title'] : '';
+  return fromFm || note.title || note.summary || '';
+}
+
+/** The string values of a frontmatter list, for `sources`. */
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+/** Every todo still open, read from the index at call time. */
+export function openTodos(ctx: UseCaseContext): OpenTodo[] {
+  return ctx.index
+    .listByType('todo')
+    .filter((note) => (note.lifecycle ?? 'open') === 'open')
+    .map((note) => ({
+      path: note.path,
+      title: indexedTodoTitle(note),
+      owner: typeof note.frontmatter['owner'] === 'string' ? note.frontmatter['owner'] : undefined,
+      sources: stringList(note.frontmatter['sources']),
+    }));
+}
+
+/**
+ * The open todo on disk this one would repeat, or null.
+ *
+ * A done or dropped todo never matches: closing one is not a standing
+ * instruction never to make that promise again.
+ */
+export function duplicateOpenTodo(
+  ctx: UseCaseContext,
+  candidate: TodoCandidate,
+  options: OpenTodoOptions = {},
+): OpenTodoMatch | null {
+  const ledger = [...openTodos(ctx), ...(options.also ?? [])];
+  return matchOpenTodo(ledger, candidate, options);
 }
 
 export function listProposals(ctx: UseCaseContext, status?: string): ProposalRecord[] {
@@ -549,6 +989,10 @@ export interface AcceptResult {
   /** The vault note this accept wrote, after any rename it also made. The PM
    *  approved it, so the rail pins it — see docs/autopinning.md. */
   path?: string;
+  /** The Activity row the write left, when it left one. Only {@link
+   *  approveProposal} fills it: a send leaves no row, and neither does a
+   *  workspace that kept no history. */
+  activityId?: string;
 }
 
 /**
@@ -601,6 +1045,39 @@ export async function acceptProposal(
   } finally {
     acceptsInFlight.delete(id);
   }
+}
+
+/**
+ * Apply a card the PM approved in the app, and leave the Activity row for it
+ * (docs/receipt-redesign.md RC-4).
+ *
+ * A silent write already leaves a row, so the chat and Activity can put it
+ * back. An approved write left none, which made the one write the PM looked at
+ * hardest the only one with no way back. Same row, same revert, different
+ * reason: "You approved it."
+ *
+ * A send records nothing. The row exists to put a write back, and nothing that
+ * has left the machine can be put back.
+ *
+ * The row is bookkeeping: it is written after the file, and a store that
+ * cannot hold it never turns a landed write into a failed approval.
+ */
+export async function approveProposal(
+  ctx: UseCaseContext,
+  id: string,
+  edited?: unknown,
+): Promise<AcceptResult> {
+  // Read before the accept, because accepting resolves the row's status and
+  // may set the edited payload beside the drafted one.
+  const rec = ctx.proposals.get(id);
+  const result = await acceptProposal(ctx, id, edited);
+  if (!result.ok || !rec || rec.kind === 'outbound') return result;
+  // What they approved is what the row reports, so an edited card is read from
+  // the payload that actually landed.
+  const applied =
+    edited && typeof edited === 'object' ? { ...rec, payload: edited as typeof rec.payload } : rec;
+  const activityId = await recordActivity(ctx, applied, APPROVED_REASON, result.path);
+  return activityId ? { ...result, activityId } : result;
 }
 
 async function acceptNote(

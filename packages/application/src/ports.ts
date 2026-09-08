@@ -308,6 +308,15 @@ export interface ActivityPort {
    * they say is no longer in the file.
    */
   latestLearned(): { path: string; line: string; at: number }[];
+  /**
+   * The row one card left, or null when it left none: a send writes nothing, and
+   * a card approved before RC-4 recorded nothing either.
+   *
+   * Its own query rather than a filter over {@link list}: the receipt in a chat
+   * reopened next week asks about cards older than any limit a list read carries
+   * (docs/receipt-redesign.md RC-3).
+   */
+  forProposal(proposalId: string): ActivityRecord | null;
   /** Stamp a row as put back. Workstream A1's revert path calls this last. */
   markReverted(id: string, at: number): void;
 }

@@ -23,6 +23,7 @@
     "build-demo-fixture": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/build-demo-fixture.ts",
     "build-demo-google-fixture": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/build-demo-google-fixture.ts",
     "seed-google-calendar": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/seed-google-calendar.ts",
+    "session-stats": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/session-stats.ts",
     "reset": "pnpm refresh-demo && pnpm reset-atlassian && pnpm seed-google-calendar",
     "reset:done": "pnpm refresh-demo:done && pnpm reset-atlassian:done && pnpm seed-google-calendar"
   },
@@ -30,5 +31,8 @@
     "prettier": "^3.4.2",
     "turbo": "^2.10.4",
     "typescript": "~5.9.2"
+  },
+  "dependencies": {
+    "@qale/agent": "workspace:*"
   }
 }

@@ -91,6 +91,7 @@ import {
   type SpawnPlan,
 } from './spawn.js';
 import { createCheckClaimsTool, matchModel, CHECK_CLAIMS_TOOL_NAME } from './claims.js';
+import type { AskedFacts } from './asked.js';
 import {
   createAskTool,
   askRequestId,
@@ -138,6 +139,7 @@ import {
   isBaseSkillName,
   HOUSE_RULES,
   HOUSE_RULES_NAME,
+  ARRIVAL_AGENT_NAME,
   type Runnable,
 } from '@qale/sessions';
 
@@ -545,6 +547,14 @@ export interface RunInput {
    */
   unattended?: boolean;
   /**
+   * Nobody asked for this run at all: a clock started it. It is not the same
+   * as `unattended`. A dropped source is unattended, but the PM asked for it by
+   * dropping it, and a session they asked for belongs on the Sessions list and
+   * on the rail like any other. Only this flag hides a session behind the
+   * Automatic filter. Defaults to `scheduled` for callers that set neither.
+   */
+  automatic?: boolean;
+  /**
    * The page this session was started from (IM-13). Read once, when the session
    * is built: it seeds the scope block in the system prompt. A turn on a
    * session that already exists carries none.
@@ -604,9 +614,10 @@ export interface ChatRef {
    * it follows the workspace default, including when that default later changes.
    */
   modelId: string | null;
-  /** True while no person has ever driven a turn in this session — only a
-   *  clock's slot or a source arriving unattended. The Sessions page's
-   *  default filter hides these; the PM's first reply clears it for good. */
+  /** True while nobody has asked for anything in this session: a clock's own
+   *  slot started it. A source the PM dropped is NOT this. They asked for it.
+   *  The Sessions page's default filter hides these; the PM's first reply
+   *  clears it for good. */
   automatic: boolean;
 }
 
@@ -779,10 +790,36 @@ interface SessionState {
    * this object when the session was built.
    */
   readonly turn: TurnFlags;
+  /**
+   * Whether anybody actually asked for what this session writes (FA-5), which
+   * is what the `asked` flag on a card is confirmed against. Session-wide, not
+   * per turn: a PM message on turn one still counts on turn five. Mutated in
+   * place like {@link TurnFlags}, because the propose tools closed over this
+   * exact object when the session was built.
+   */
+  readonly askedFacts: AskedFacts;
   /** Bring a skill into this live session (the PM picked it). */
   invoke: (skill: Runnable) => Promise<void>;
   /** Re-narrow the active tool set to what the harness now grants. */
   reactivate: () => void;
+}
+
+/**
+ * Does this turn belong behind the Sessions page's Automatic filter?
+ *
+ * The test is who ASKED, which is not the same as who was watching. A source
+ * the PM dropped runs `unattended` (nobody is at the screen), but they asked for
+ * it by dropping it and they are coming back for the answer. So it belongs on
+ * the list they read and on the rail. Only a run nobody asked for is automatic,
+ * which is a clock's own slot. A caller that says nothing is judged by
+ * `scheduled`, and a person's own message says nothing, which clears the mark.
+ */
+export function startedByNobody(input: {
+  automatic?: boolean;
+  scheduled?: boolean;
+  unattended?: boolean;
+}): boolean {
+  return input.automatic ?? !!input.scheduled;
 }
 
 /**
@@ -793,6 +830,43 @@ interface SessionState {
  */
 function nobodyStarted(state: SessionState | undefined): boolean {
   return !!state && (state.turn.scheduled || state.turn.unattended);
+}
+
+/**
+ * How hard the model thinks on a run. Two values only, and not pi's type:
+ * `pi-coding-agent` exports no `ThinkingLevel`, pi-ai's copy has no `off`, and
+ * the full union lives in `pi-agent-core`, which this package does not depend
+ * on. `off` is ruled out on purpose: it sends `thinking: {type: "disabled"}`
+ * while the history still carries signed thinking blocks. `low` and `medium`
+ * are the same adaptive request with a different effort, so a session can
+ * move between them mid-file.
+ */
+type ThinkingLevel = 'low' | 'medium';
+
+/**
+ * Which thinking level a run gets (docs/agent-speed.md AS-2).
+ *
+ * `low` lands on one run: the arrival, reading a source the PM dropped and
+ * walked away from. There, thinking was two thirds of the output on the run we
+ * measured, and the quality check covers only the three arrival outcomes.
+ * Every other run keeps `medium`, including the other unattended ones (the
+ * first look, the librarian, the meeting sweep). A librarian that files a
+ * little worse degrades silently and looks exactly like nothing happening.
+ * Widening `low` is a separate decision the doc leaves open.
+ *
+ * The flags alone cannot tell a drop from the first look: both arrive
+ * `unattended` and neither is `scheduled`. So the test is the skill the run
+ * invokes, which is `arrival` for a drop and nothing else. The moment the PM
+ * writes into that session, the turn carries no flag and the level goes back
+ * to `medium`.
+ */
+export function thinkingLevelFor(input: {
+  skill?: string;
+  scheduled?: boolean;
+  unattended?: boolean;
+}): ThinkingLevel {
+  const nobodyAtTheScreen = !!input.scheduled || !!input.unattended;
+  return nobodyAtTheScreen && input.skill === ARRIVAL_AGENT_NAME ? 'low' : 'medium';
 }
 
 /** Every connection's read tools, in registration order. Two providers with the
@@ -1151,6 +1225,8 @@ export class AgentRuntime {
       // Through the runtime rather than the bare pi-ai helper: the helper falls
       // back to env vars, and a packaged build has no ANTHROPIC_API_KEY. The
       // runtime holds the key the PM pasted into Settings.
+      // Not a session, so `thinkingLevelFor` does not apply: this passes no
+      // `reasoning`, and thinking is already off. Nothing to lower here.
       const msg = await runtime.completeSimple(model, {
         systemPrompt,
         messages: [{ role: 'user' as const, content: prompt, timestamp: 0 }],
@@ -1444,9 +1520,10 @@ export class AgentRuntime {
   }
 
   /**
-   * Which sessions no person has ever driven — the Sessions page's default
-   * filter (a librarian tick reads as noise beside a real conversation). Kept
-   * beside the shelf state, off pi's own files, for the same reason.
+   * Which sessions nobody asked for — the Sessions page's default filter (a
+   * librarian tick reads as noise beside a real conversation). A source the PM
+   * dropped is not in here: they asked for that one, so it stays on the list.
+   * Kept beside the shelf state, off pi's own files, for the same reason.
    */
   private automaticSessionFile(): string {
     if (!this.config) throw new Error('agent runtime not configured');
@@ -1471,7 +1548,7 @@ export class AgentRuntime {
     return !!this.automaticSessions[sessionId];
   }
 
-  /** A person's own turn clears the mark for good; a clock's or a source's sets it. */
+  /** A person's own turn clears the mark for good; a clock's own run sets it. */
   private markAutomatic(sessionId: string, automatic: boolean): void {
     if (this.automaticSessions[sessionId] === (automatic || undefined)) return;
     if (automatic) this.automaticSessions[sessionId] = true;
@@ -1504,6 +1581,8 @@ export class AgentRuntime {
     scheduled: boolean,
     /** Whether the person who opened it walked away — the quieter preamble. */
     unattended: boolean,
+    /** How hard the first run thinks; `run` re-applies it every turn. */
+    thinking: ThinkingLevel,
     /** The page a scoped Ask was started from, seeded as a note list (IM-13). */
     scope?: SessionScope,
   ): Promise<SessionState> {
@@ -1593,6 +1672,16 @@ export class AgentRuntime {
       failed: false,
     };
 
+    /**
+     * Who asked for what this session writes (FA-5). The first run's own answer
+     * is stamped here; `run` sets it again on every turn, and answering an
+     * `ask_user` card sets the other half. Both stay true once true.
+     */
+    const askedFacts: AskedFacts = {
+      pmTurn: !scheduled && !unattended,
+      askAnswered: false,
+    };
+
     const registry = [
       ...VAULT_TOOL_NAMES,
       ASK_TOOL_NAME,
@@ -1636,10 +1725,18 @@ export class AgentRuntime {
       // The rail only ever adds a row to what the PM sees, never removes one
       // on its own (docs/remove-inbox.md RI-5): a card that lands in a session
       // the PM had unpinned puts it back on the active list.
-      ...createProposeTools(ctx, id, harness, (filed) => {
-        if (this.getLifecycle(id) === 'unpinned') this.setLifecycle(id, 'active');
-        if (filed.disposition === 'silent') this.onProposalApplied?.(id, filed);
-      }),
+      ...createProposeTools(
+        ctx,
+        id,
+        harness,
+        (filed) => {
+          if (this.getLifecycle(id) === 'unpinned') this.setLifecycle(id, 'active');
+          if (filed.disposition === 'silent') this.onProposalApplied?.(id, filed);
+        },
+        // Read per call, not per session: the answer changes the moment the PM
+        // writes into a run they had walked away from.
+        () => askedFacts,
+      ),
       createWithdrawTool(ctx, id, harness),
       // One voice gate per session, shared: `get_voice` is one tool, and the
       // set of voices it has handed over is what every drafting tool checks.
@@ -1724,6 +1821,12 @@ export class AgentRuntime {
       resourceLoader: loader,
       sessionManager: manager,
       settingsManager: SettingsManager.inMemory(),
+      // Only a NEW file takes the level here, so its first row says what this
+      // run thinks at. A reopened file keeps the level its last row recorded
+      // (pi restores it), and `run` moves it with a change row when the level
+      // differs. Passing it here on resume would leave that last row stale: pi
+      // appends nothing at creation when the file already has one.
+      ...(existingFile ? {} : { thinkingLevel: thinking }),
     });
 
     /**
@@ -1757,6 +1860,7 @@ export class AgentRuntime {
       titleStored: !!storedName,
       runStartedAt: 0,
       turn,
+      askedFacts,
       unsubscribe: () => undefined,
       /**
        * Explicit invocation (Sessions v2 Part 3.2): the PM picked a skill, so no
@@ -1923,6 +2027,9 @@ export class AgentRuntime {
     // model opens on it rather than switching a beat later. A run that names
     // none (every background and scheduled one) leaves the pin as it was.
     if (input.modelId) this.setSessionModel(sessionId, input.modelId);
+    // Per run, like the model: an arrival thinks at `low`, the PM writing into
+    // that same session a minute later gets `medium` back.
+    const thinking = thinkingLevelFor(input);
     let state = this.sessions.get(sessionId);
     if (!state) {
       let pending = this.creating.get(sessionId);
@@ -1932,6 +2039,7 @@ export class AgentRuntime {
           ctx,
           !!input.scheduled,
           !!input.unattended,
+          thinking,
           input.scope,
         ).finally(() => {
           this.creating.delete(sessionId);
@@ -1954,7 +2062,11 @@ export class AgentRuntime {
     // Per turn, like `scheduled`: the moment the PM writes into an arrival
     // session, somebody is waiting and silence stops being an outcome.
     state.turn.unattended = !!input.unattended;
-    this.markAutomatic(sessionId, state.turn.scheduled || state.turn.unattended);
+    // A person writing into this session is what makes `asked` on a card true
+    // (FA-5). It never goes back to false: their message stays said, and a
+    // later turn of the same conversation still follows from it.
+    if (!input.scheduled && !input.unattended) state.askedFacts.pmTurn = true;
+    this.markAutomatic(sessionId, startedByNobody(input));
     state.turn.ended = false;
     state.turn.asked = false;
     state.turn.blocked = false;
@@ -1964,6 +2076,11 @@ export class AgentRuntime {
     // does. What already happened stays as it was: pi writes the switch into the
     // transcript, and the turns before it keep the model they ran on.
     await this.applyModel(state);
+    // AFTER `applyModel`, never before: pi's `setModel` re-applies and re-clamps
+    // the thinking level itself (agent-session.js, `setModel`), so a level set
+    // before a model switch is overwritten by it. pi appends a
+    // `thinking_level_change` row only when the level differs from the last one.
+    state.session.setThinkingLevel(thinking);
     // Tidy the pages this run is ABOUT before the model opens one (OW4).
     await this.normalizeTargets(input, ctx);
     // Invoking the same skill twice is a no-op, so a caller that keeps passing
@@ -2254,7 +2371,16 @@ export class AgentRuntime {
       ctx,
       { id: askRequestId(sessionId, plan), sessionId, questions: plan.questions },
       signal,
-    );
+    ).then((decision) => {
+      // An answer is the PM asking for whatever follows from it (FA-5), so the
+      // writes after it may carry `asked`. A card nobody answered says nothing:
+      // a dismissal is "decide it yourself", and a refused card was never shown.
+      if (decision.answers) {
+        const state = this.sessions.get(sessionId);
+        if (state) state.askedFacts.askAnswered = true;
+      }
+      return decision;
+    });
   }
 
   /** The park itself: the run's own facts, stamped once. */
@@ -2434,6 +2560,9 @@ export class AgentRuntime {
       // would bury the conversations the PM actually had.
       sessionManager: SessionManager.inMemory(),
       settingsManager: SettingsManager.inMemory(),
+      // Every child, whatever started the parent: one bounded piece of work
+      // with a brief, and its reasoning is scratch (docs/agent-speed.md AS-2).
+      thinkingLevel: 'low',
     });
 
     try {

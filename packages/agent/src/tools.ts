@@ -6,6 +6,8 @@ import {
   createProposal,
   fileProposal,
   duplicatePending,
+  duplicateOpenTodo,
+  type OpenTodo,
   oneLine,
   searchNotes,
   contentHash,
@@ -31,8 +33,10 @@ import {
   runnableCandidates,
   runnableEntryPath,
   appliedReceipt,
+  appliedRowLine,
   titleForRef,
   type ActivityAction,
+  type AppliedRow,
   slugify,
   sameLanguage,
   typeForDir,
@@ -58,6 +62,7 @@ import {
 } from '@qale/sessions';
 import type { ProviderReadTool } from '@qale/connectors';
 import { wrapExternal } from './external.js';
+import { askedHolds, ASKED_CLEARED_CITE, ASKED_CLEARED_WAITS, type AskedReader } from './asked.js';
 import { placementError } from './placement.js';
 import { voiceBrief, voiceRoster, resolveVoice, type Voice } from './voices.js';
 
@@ -977,6 +982,45 @@ const INFERENCE_PARAM = Type.Optional(
 );
 
 /**
+ * Todos this process proposed a moment ago, whatever session proposed them
+ * (docs/fewer-approvals.md FA-8).
+ *
+ * `duplicateOpenTodo` reads the index, and the index only holds a todo once the
+ * write has landed. Between the duplicate check and the write there are several
+ * awaits, and `spawn` runs four lanes at once: two lanes over two transcripts of
+ * one meeting can both pass the check before either has written. So a lane
+ * announces its todo here first, and the next lane's check reads it.
+ *
+ * A minute is long enough for the write to land and be indexed, and short enough
+ * that a todo the write never made stops blocking on its own. The list is
+ * pruned on every read, so nothing here grows.
+ */
+const RECENT_TODO_MS = 60_000;
+
+/** Kept per workspace, because one ledger is what the list is about. Every lane
+ *  of one run shares the open workspace's context object. */
+const recentTodos = new WeakMap<UseCaseContext, (OpenTodo & { at: number })[]>();
+
+function recentTodoList(ctx: UseCaseContext): (OpenTodo & { at: number })[] {
+  const list = recentTodos.get(ctx) ?? [];
+  if (!recentTodos.has(ctx)) recentTodos.set(ctx, list);
+  return list;
+}
+
+/** Announce a todo before writing it, so a parallel lane sees it. */
+function noteRecentTodo(ctx: UseCaseContext, todo: OpenTodo): void {
+  recentTodoList(ctx).push({ ...todo, at: Date.now() });
+}
+
+/** The todos announced in the last minute. Older ones are dropped here. */
+function todosProposedJustNow(ctx: UseCaseContext): OpenTodo[] {
+  const list = recentTodoList(ctx);
+  const cutoff = Date.now() - RECENT_TODO_MS;
+  while (list.length > 0 && list[0]!.at < cutoff) list.shift();
+  return list.map(({ path, title, owner, sources }) => ({ path, title, owner, sources }));
+}
+
+/**
  * Which note types a delete card may never touch, and the reason in the words
  * the model gets back. Four different reasons, so they are four messages:
  *
@@ -1015,6 +1059,13 @@ export function createProposeTools(
    * ticket 15 counts a list line added from the chat off this).
    */
   onProposed?: (filed: FiledWrite) => void,
+  /**
+   * What the runtime knows about who was in this session (FA-5). Read on every
+   * call, because the answer changes the moment the PM writes into a run they
+   * had walked away from. Left out, the model's own `asked` stands: only the
+   * runtime has these facts, and only the runtime runs a model.
+   */
+  askedFacts?: AskedReader,
 ): ToolDefinition[] {
   /**
    * Stop a card that repeats one already in the queue, and say so in words the
@@ -1081,12 +1132,32 @@ export function createProposeTools(
     });
 
   /**
+   * The model's `asked` flag, confirmed against the run (FA-5). Every card that
+   * carries the flag reads it through here, so a run nobody asked for cannot
+   * land a write by declaring one.
+   */
+  const asked = (declared?: boolean): boolean => askedHolds(askedFacts?.(), declared);
+
+  /** Whether the runtime cleared a flag the call declared. */
+  const askedCleared = (declared?: boolean): boolean => !!declared && !asked(declared);
+
+  /** The clause a waiting card carries when it did. Empty every other time. */
+  const waitsNote = (declared?: boolean): string =>
+    askedCleared(declared) ? ASKED_CLEARED_WAITS : '';
+
+  /** The same for a refusal over missing sources[]. */
+  const citeNote = (declared?: boolean): string =>
+    askedCleared(declared) ? ASKED_CLEARED_CITE : '';
+
+  /**
    * The basis a card carries when the PM asked for it in the chat. Their
    * message IS the source, and a message is not a note you can cite, so this is
    * the `asked` basis exactly and never the inference one. Nothing on such a
-   * card was worked out by the model.
+   * card was worked out by the model. A function, not a constant: the flag is
+   * the runtime's answer at call time, and on a run nobody asked for there is
+   * no chat to be the source.
    */
-  const chatIsTheSource = { evidence: [], inference: false, asked: true };
+  const chatIsTheSource = () => ({ evidence: [], inference: false, asked: asked(true) });
 
   /**
    * What a write that needed no card reports back (docs/easier-tickets.md E-3).
@@ -1098,12 +1169,28 @@ export function createProposeTools(
    * this is done, nobody has to click, so do not talk about it as if it were
    * pending.
    */
-  const applied = (action: ActivityAction, subject: string, tail = ''): ReturnType<typeof text> =>
+  const applied = (
+    action: ActivityAction,
+    subject: string,
+    tail = '',
+    /** What landed, in fields, for the chat's receipt block (FA-4). */
+    filed?: { landed?: AppliedRow },
+  ): ReturnType<typeof text> =>
     text(
       `${appliedReceipt(action, subject)}.\n` +
         'It is in the workspace now and nothing is waiting on the PM. Say what you did in one ' +
-        `short line and carry on.${tail}`,
+        `short line and carry on.${tail}${landedLine(filed)}`,
     );
+
+  /**
+   * The last line of a landed result: the same write in fields, so the chat can
+   * draw a row with the page, the change and the way back. Empty for a write
+   * that landed nothing to point at, and for anything still waiting.
+   */
+  const landedLine = (filed?: { landed?: AppliedRow }): string => {
+    const line = appliedRowLine(filed?.landed);
+    return line ? `\n${line}` : '';
+  };
 
   /**
    * The tail on the waiting line when a write the policy would have applied
@@ -1176,9 +1263,9 @@ export function createProposeTools(
       const sources = p.sources ?? [];
       const check = validateEvidence(sources, resolves, {
         inference: !!p.inference,
-        asked: !!p.asked,
+        asked: asked(p.asked),
       });
-      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      if (!check.ok) return text(`Rejected: ${check.reason}${citeNote(p.asked)}`);
       const exists = await alreadyOnDisk(parsed.data.path);
       if (exists) return exists;
       const fm = parsed.data.frontmatter;
@@ -1207,7 +1294,7 @@ export function createProposeTools(
           rationale: parsed.data.rationale,
           evidence: evidenceRows(sources),
           inference: !!p.inference,
-          asked: !!p.asked,
+          asked: asked(p.asked),
         },
         { noteType: typeof fm['type'] === 'string' ? fm['type'] : undefined },
       );
@@ -1217,10 +1304,10 @@ export function createProposeTools(
           typeof fm['title'] === 'string' && fm['title']
             ? fm['title']
             : titleForRef(parsed.data.path);
-        return applied('created', subject, ` It is at ${parsed.data.path}.`);
+        return applied('created', subject, ` It is at ${parsed.data.path}.`, filed);
       }
       return text(
-        `Proposed new note (${filed.rec.id}): ${parsed.data.path}. Awaiting review.${notApplied(filed.error)}`,
+        `Proposed new note (${filed.rec.id}): ${parsed.data.path}. Awaiting review.${notApplied(filed.error)}${waitsNote(p.asked)}`,
       );
     },
   });
@@ -1245,7 +1332,7 @@ export function createProposeTools(
     name: 'propose_meeting',
     label: 'Propose meeting',
     description:
-      "Propose a NEW meeting page for a recording you just filed — the summary and the page are ONE proposal, so nothing lands in meetings/ until the PM approves it. Use it after file_source has put the transcript in sources/ and no meeting page exists yet. Name every transcript in `transcript` (the source paths file_source reported): they become the page's evidence and flip to processed on approval. `summary` is the meeting written up in your own voice — what was decided, what is open, what happens next — not a paste of the transcript. `participants` is who was in it, and a meeting needs it: set it from whoever speaks in the transcript, or set `participants_unknown` when the source names nobody. If the calendar ALREADY holds this meeting, do not use this: attach the transcript with file_source `attach_to` and propose_update the summary onto the page that exists.",
+      "Write a NEW meeting page for a recording you just filed. The summary and the page are ONE write, and the page lands in meetings/ as you write it, so write it whole: nobody fills in a gap for you afterwards. Use it after file_source has put the transcript in sources/ and no meeting page exists yet. Name every transcript in `transcript` (the source paths file_source reported): they become the page's evidence and flip to processed once the page lands. `summary` is the meeting written up in your own voice (what was decided, what is open, what happens next), not a paste of the transcript. `participants` is who was in it, and a meeting needs it: set it from whoever speaks in the transcript, or set `participants_unknown` when the source names nobody. If the calendar ALREADY holds this meeting, do not use this: attach the transcript with file_source `attach_to` and propose_update the summary onto the page that exists.",
     parameters: Type.Object({
       title: Type.String({
         description: 'What the meeting is called, in the words a person would use.',
@@ -1409,7 +1496,7 @@ export function createProposeTools(
         (params.participants_unknown && !params.participants?.length
           ? ' Nobody is on it: say so in your closing line, so the PM knows to add them.'
           : '');
-      if (filed.disposition === 'silent') return applied('created', title, cite);
+      if (filed.disposition === 'silent') return applied('created', title, cite, filed);
       return text(
         `Proposed meeting (${filed.rec.id}): ${path}, with the summary in it.${cite}${notApplied(filed.error)}`,
       );
@@ -1446,9 +1533,9 @@ export function createProposeTools(
       const sources = p.sources ?? [];
       const check = validateEvidence(sources, resolves, {
         inference: !!p.inference,
-        asked: !!p.asked,
+        asked: asked(p.asked),
       });
-      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      if (!check.ok) return text(`Rejected: ${check.reason}${citeNote(p.asked)}`);
       if (p.supersedes && !ctx.index.resolve(stripLink(p.supersedes))) {
         return text(`Rejected: supersedes target not found: ${p.supersedes}`);
       }
@@ -1481,7 +1568,7 @@ export function createProposeTools(
           rationale: parsed.data.rationale,
           evidence: evidenceRows(sources),
           inference: !!p.inference,
-          asked: !!p.asked,
+          asked: asked(p.asked),
         },
         { noteType: 'decision' },
       );
@@ -1491,10 +1578,10 @@ export function createProposeTools(
           typeof fm['title'] === 'string' && fm['title']
             ? fm['title']
             : titleForRef(parsed.data.path);
-        return applied('created', subject, ` It is at ${parsed.data.path}.`);
+        return applied('created', subject, ` It is at ${parsed.data.path}.`, filed);
       }
       return text(
-        `Proposed decision (${filed.rec.id}): ${parsed.data.path}. Awaiting review.${notApplied(filed.error)}`,
+        `Proposed decision (${filed.rec.id}): ${parsed.data.path}. Awaiting review.${notApplied(filed.error)}${waitsNote(p.asked)}`,
       );
     },
   });
@@ -1503,7 +1590,7 @@ export function createProposeTools(
     name: 'propose_update',
     label: 'Propose update',
     description:
-      "Propose an edit to an EXISTING authored/derived note. Three levers, use any of them together: `patch` = body search/replace blocks for changing text the note ALREADY has (correct a line, extend a list, answer an open question); `append` = text added at the end of the body, for saying something the note does not say yet (a meeting write-up, a `## Prep` section, a new section on a hub); `frontmatter` = a map of metadata keys to set when the update lands, the ONLY way to change a note's properties (a todo's `due` to reschedule or `commitment`+`resolved` to close it, a meeting's `processing`, a person's `last_told`). Provide at least one. Read the note (vault_read) before you patch it: the search text has to be copied from it word for word and appear only once, and a patch that cannot be found is refused here. A meeting page the calendar made is frontmatter and NO body, so the write-up goes in `append` — there is nothing there to anchor a patch to.",
+      "Propose an edit to an EXISTING authored/derived note. Three levers, use any of them together: `patch` = body search/replace blocks for changing text the note ALREADY has (correct a line, extend a list, answer an open question); `append` = text added at the end of the body, for saying something the note does not say yet (a meeting write-up, a `## Prep` section, a new section on a hub); `frontmatter` = a map of metadata keys to set when the update lands, the ONLY way to change a note's properties (a todo's `due` to reschedule or `commitment`+`resolved` to close it, a meeting's `processing`, a person's `last_told`). Provide at least one. An `append` lands as you write it, wherever it goes. A `patch` over prose the PM typed (a `notes/` body, a meeting's `## Notes`) waits for them, because a reworded sentence of theirs is the one edit a quick read misses. Read the note (vault_read) before you patch it: the search text has to be copied from it word for word and appear only once, and a patch that cannot be found is refused here. A meeting page the calendar made is frontmatter and NO body, so the write-up goes in `append`, because there is nothing there to anchor a patch to.",
     parameters: Type.Object({
       path: Type.String(),
       patch: Type.Optional(
@@ -1615,9 +1702,9 @@ export function createProposeTools(
       const sources = p.sources ?? [];
       const check = validateEvidence(sources, resolves, {
         inference: !!p.inference,
-        asked: !!p.asked,
+        asked: asked(p.asked),
       });
-      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      if (!check.ok) return text(`Rejected: ${check.reason}${citeNote(p.asked)}`);
       // What this write taught Qale, for the Activity row. Only a file Qale
       // learns into can carry it: on any other note a 'learned' row would call a
       // plain edit a lesson. The zod parse above strips it, so it is read here.
@@ -1653,7 +1740,7 @@ export function createProposeTools(
           rationale: parsed.data.rationale,
           evidence: evidenceRows(sources),
           inference: !!p.inference,
-          asked: !!p.asked,
+          asked: asked(p.asked),
         },
         { noteType: note.type, appendOnly },
       );
@@ -1663,10 +1750,11 @@ export function createProposeTools(
           learned ? 'learned' : 'updated',
           learned ? `"${learned.what}"` : titleForRef(target),
           ` The note is ${target}.`,
+          filed,
         );
       }
       return text(
-        `Proposed update (${filed.rec.id}) to ${target}. Awaiting review.${notApplied(filed.error)}`,
+        `Proposed update (${filed.rec.id}) to ${target}. Awaiting review.${notApplied(filed.error)}${waitsNote(p.asked)}`,
       );
     },
   });
@@ -1733,9 +1821,9 @@ export function createProposeTools(
       const p = params as { sources?: string[]; inference?: boolean; asked?: boolean };
       const check = validateEvidence(p.sources ?? [], resolves, {
         inference: !!p.inference,
-        asked: !!p.asked,
+        asked: asked(p.asked),
       });
-      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      if (!check.ok) return text(`Rejected: ${check.reason}${citeNote(p.asked)}`);
       const dup = alreadyProposed({
         kind: 'delete',
         targetPath: target,
@@ -1756,12 +1844,14 @@ export function createProposeTools(
           rationale: parsed.data.rationale,
           evidence: evidenceRows(p.sources ?? []),
           inference: !!p.inference,
-          asked: !!p.asked,
+          asked: asked(p.asked),
         },
         { noteType: note.type },
       );
       harness?.recordWrite(target, filed.rec.id, 'delete');
-      return text(`Proposed deleting ${target} (${filed.rec.id}). Awaiting review.`);
+      return text(
+        `Proposed deleting ${target} (${filed.rec.id}). Awaiting review.${waitsNote(p.asked)}`,
+      );
     },
   });
 
@@ -1769,7 +1859,7 @@ export function createProposeTools(
     name: 'propose_todo',
     label: 'Propose todo',
     description:
-      'Propose a tracked commitment (todo) heard in a meeting or found in a note. Use it when the PO committed to something ("I\'ll get back to you on that") OR when someone else did ("I\'ll update the docs" — then set owner to that person). Give a concrete imperative title, a due date only if one was named or clearly implied, and cite sources[] (the meeting/note where it was said). Include the verbatim quote when you have it. Check existing todos first (vault_list type "todo") and skip anything already tracked; proposals still awaiting review are caught here for you, so a commitment another run already proposed comes back as "not proposed" rather than landing twice.',
+      'Write a tracked commitment (todo) heard in a meeting or found in a note. Use it when the PO committed to something ("I\'ll get back to you on that") OR when someone else did ("I\'ll update the docs": then set owner to that person). The todo lands in the ledger as you write it, so give a concrete imperative title, a due date only if one was named or clearly implied, and cite sources[] (the meeting/note where it was said). Include the verbatim quote when you have it. Set `inference` when you worked the commitment out from a transcript rather than reading it in plain words: the todo then wears a mark until the PM touches it. When the source does not say who owes it, ask who owns it before you write, in one question for the whole batch. Check existing todos first (vault_list type "todo") and skip anything already tracked; proposals still awaiting review are caught here for you, so a commitment another run already proposed comes back as "not proposed" rather than landing twice. Open todos are checked too: one that says the same thing comes back as "not proposed", and one that only reads alike comes back as a question to put to the PM.',
     parameters: Type.Object({
       title: Type.String({
         description:
@@ -1794,6 +1884,12 @@ export function createProposeTools(
         }),
       ),
       rationale: Type.String(),
+      not_the_same_as: Type.Optional(
+        Type.String({
+          description:
+            'The path of an open todo this tool named as a possible duplicate, once you asked the PM and they said the two are different commitments, e.g. "todos/2026-09-01-send-nordkap-the-pricing.md". Needs `asked` as well. It clears that one todo only, and only where the two titles merely read alike: where they say the same thing, update that todo instead.',
+        }),
+      ),
       asked: ASKED_PARAM,
       inference: INFERENCE_PARAM,
     }),
@@ -1806,6 +1902,7 @@ export function createProposeTools(
         quote?: string;
         sources: string[];
         rationale: string;
+        not_the_same_as?: string;
         inference?: boolean;
         asked?: boolean;
       },
@@ -1818,9 +1915,9 @@ export function createProposeTools(
       const sources = params.sources ?? [];
       const check = validateEvidence(sources, resolves, {
         inference: !!params.inference,
-        asked: !!params.asked,
+        asked: asked(params.asked),
       });
-      if (!check.ok) return text(`Rejected: ${check.reason}`);
+      if (!check.ok) return text(`Rejected: ${check.reason}${citeNote(params.asked)}`);
       const today = ctx.clock.now().slice(0, 10);
       const path = `todos/${fileSlug(title.slice(0, 200), today)}.md`;
       const exists = await alreadyOnDisk(path);
@@ -1830,6 +1927,37 @@ export function createProposeTools(
       // never see the commitment a concurrent run proposed a minute ago.
       const dup = alreadyProposed({ kind: 'note', targetPath: path, noteType: 'todo', title });
       if (dup) return dup;
+      // And the same question of the ledger, because a todo lands now and the
+      // queue is empty by the time the second lane looks (FA-8).
+      const twin = duplicateOpenTodo(
+        ctx,
+        { title, owner: params.owner, sources },
+        {
+          also: todosProposedJustNow(ctx),
+          notTheSameAs:
+            params.not_the_same_as && asked(params.asked) ? [params.not_the_same_as] : [],
+        },
+      );
+      if (twin) {
+        const link = `[[${twin.path.replace(/\.md$/, '')}|${twin.title}]]`;
+        // Two titles that say one thing is a fact about the two titles, so the
+        // tool decides it. Two titles that read alike is not, so the tool hands
+        // the question to the PM through the model. Erik's rule: a gate only
+        // where the fact needs no context.
+        if (twin.band === 'same') {
+          return text(
+            `Not proposed. This to-do already exists: ${link}. Update it instead of adding one.`,
+          );
+        }
+        return text(
+          `Not proposed. A to-do that may be the same exists: ${link}. ` +
+            'Ask the PM with ask_user whether this is the same one before you add it, then call ' +
+            `propose_todo again with \`asked\`. If they say the two are different, pass not_the_same_as "${twin.path}" on that call.`,
+        );
+      }
+      // Announced before the write, so a lane that checks while this one is
+      // still writing sees it.
+      noteRecentTodo(ctx, { path, title, owner: params.owner, sources });
       const body = params.quote ? `> ${params.quote.trim()}\n> — ${sources[0] ?? 'source'}\n` : '';
       // A todo always asks, whoever asked for it. A promise is the PM's word to
       // somebody, and nothing else the agent writes is.
@@ -1850,6 +1978,10 @@ export function createProposeTools(
               sources,
               ...(params.due ? { due: params.due } : {}),
               ...(params.owner?.trim() ? { owner: params.owner.trim() } : {}),
+              // The mark travels into the file, not just onto the card (FA-7): a
+              // todo lands without a card now, so the row is where the PM finds
+              // out that Qale heard this one rather than being told it.
+              ...(params.inference ? { inference: true } : {}),
             },
             body,
             rationale: params.rationale,
@@ -1857,17 +1989,17 @@ export function createProposeTools(
           rationale: params.rationale,
           evidence: evidenceRows(sources),
           inference: !!params.inference,
-          asked: !!params.asked,
+          asked: asked(params.asked),
         },
         { noteType: 'todo' },
       );
       harness?.recordWrite(path, filed.rec.id, 'note');
       const who = params.owner?.trim() ? ` (waiting on ${params.owner.trim()})` : '';
       if (filed.disposition === 'silent') {
-        return applied('created', `${title}${who}`, ` The to-do is at ${path}.`);
+        return applied('created', `${title}${who}`, ` The to-do is at ${path}.`, filed);
       }
       return text(
-        `Proposed todo (${filed.rec.id}): ${title}${who}. Awaiting review.${notApplied(filed.error)}`,
+        `Proposed todo (${filed.rec.id}): ${title}${who}. Awaiting review.${notApplied(filed.error)}${waitsNote(params.asked)}`,
       );
     },
   });
@@ -1937,7 +2069,7 @@ export function createProposeTools(
       asked: Type.Optional(
         Type.Boolean({
           description:
-            'With `list: "add"` only. True when the PM said in this chat that they want it: the line then lands on the spot. Leave it out when you worked it out from their questions, and the line comes as a card.',
+            'With `list: "add"` only. True when the PM said in this chat that they want it. Leave it out when you worked it out from their questions: the line lands either way, and your reply says in one clause why it is there.',
         }),
       ),
       why: Type.Optional(
@@ -2071,7 +2203,8 @@ export function createProposeTools(
             return text(
               `${appliedReceipt('learned', `that "${line}" comes off the list`)}.\n` +
                 'It is off the list of what you want from Qale, and Activity keeps the row. ' +
-                'Nothing is waiting on the PM: say you have taken it off, in one short line, and carry on.',
+                'Nothing is waiting on the PM: say you have taken it off, in one short line, and carry on.' +
+                landedLine(filed),
             );
           }
           return text(
@@ -2112,11 +2245,16 @@ export function createProposeTools(
         }
         const rationale = `${params.why?.trim() || 'You asked for this in chat.'} Goes on the list of what you want from Qale, in the house rules every session reads.`;
         const headline = `Remember this: ${rule}`;
-        const learned = { what: rule, from: params.asked ? from : 'what you keep asking for' };
+        // The same flag decides the provenance line: a run with nobody in it
+        // cannot say the PM said it in the chat.
+        const learned = {
+          what: rule,
+          from: asked(params.asked) ? from : 'what you keep asking for',
+        };
         // The PM's own words land on the spot; a line Qale worked out from
         // their questions is a card. Either way the card cites no note.
         const basis = params.asked
-          ? chatIsTheSource
+          ? chatIsTheSource()
           : { evidence: [], inference: false, asked: false };
         const filed = home
           ? await propose(
@@ -2161,12 +2299,14 @@ export function createProposeTools(
           return text(
             `${appliedReceipt('learned', `"${rule}"`)}.\n` +
               `It is on the list in house rules under '${listName}' now, and every session reads it. ` +
-              'Nothing is waiting on the PM: say you have noted it, in one short line, and carry on.',
+              'Nothing is waiting on the PM: say you have noted it, in one short line, and carry on.' +
+              landedLine(filed),
           );
         }
         return text(
           `Proposed a line for what you want from Qale (${filed.rec.id}): "${rule}". Awaiting review.` +
-            notApplied(filed.error),
+            notApplied(filed.error) +
+            waitsNote(params.asked),
         );
       }
 
@@ -2206,16 +2346,22 @@ export function createProposeTools(
       // A rule the PM stated lands without a card (docs/easier-tickets.md E-8).
       // The chat says "Added to rules" and the Activity row keeps the receipt,
       // so it is reviewable without being a decision to make.
-      const receipt = (filed: { disposition: string; rec: { id: string }; error?: string }) =>
+      const receipt = (filed: {
+        disposition: string;
+        rec: { id: string };
+        error?: string;
+        landed?: AppliedRow;
+      }) =>
         filed.disposition === 'silent'
           ? text(
               `${appliedReceipt('remembered', `"${rule}"`)}.\n` +
                 `It is in ${name} now, and every session that reads that file follows it. Nothing is ` +
-                `waiting on the PM: say you have noted it, in one short line, and carry on.${misfiled}`,
+                `waiting on the PM: say you have noted it, in one short line, and carry on.${misfiled}` +
+                landedLine(filed),
             )
           : text(
               `Proposed instruction (${filed.rec.id}): "${rule}" -> ${name}. Awaiting review.` +
-                `${misfiled}${notApplied(filed.error)}`,
+                `${misfiled}${notApplied(filed.error)}${waitsNote(true)}`,
             );
 
       if (home) {
@@ -2261,7 +2407,7 @@ export function createProposeTools(
             baseHash: contentHash(home.note.body),
             payload: { path: home.path, append, rationale, headline },
             rationale,
-            ...chatIsTheSource,
+            ...chatIsTheSource(),
           },
           { noteType: home.note.type, appendOnly: true },
         );
@@ -2304,7 +2450,7 @@ export function createProposeTools(
             headline,
           },
           rationale,
-          ...chatIsTheSource,
+          ...chatIsTheSource(),
         },
         { noteType: 'skill' },
       );
@@ -2474,7 +2620,7 @@ export function createProposeTools(
             rationale,
           },
           rationale,
-          ...chatIsTheSource,
+          ...chatIsTheSource(),
         },
         { noteType: 'skill' },
       );
@@ -2484,10 +2630,11 @@ export function createProposeTools(
           'created',
           `the skill "${title}"`,
           ` It is at ${path}, and the PM can read and change it there.`,
+          filed,
         );
       }
       return text(
-        `Proposed skill (${filed.rec.id}): "${title}" -> ${path}. Awaiting review, and nothing can run it until the PM approves it.${notApplied(filed.error)}`,
+        `Proposed skill (${filed.rec.id}): "${title}" -> ${path}. Awaiting review, and nothing can run it until the PM approves it.${notApplied(filed.error)}${waitsNote(true)}`,
       );
     },
   });
@@ -2800,10 +2947,7 @@ export function createTextTools(gate: VoiceGate): ToolDefinition[] {
       'One variant only when a second would be a copy of the first: a one-line answer, or a rewrite where they already said what to change. ' +
       'Optional `title`: a heading for the panel, e.g. "Exec update". ' +
       'Every call draws a new panel, so a revision is another call with the new text, not an edit of the last one. ' +
-      'Optional `action`: it renames the Use button and adds your own sentence to the message it sends, so ' +
-      '{ label: "Post on PAY-142", message: "Post it as a comment on PAY-142." } comes back to you as an ordinary turn asking for exactly that. ' +
-      'Leave it out and the button says "Use this" and sends only which version they picked. ' +
-      'Optional `ask`: one question, one sentence, with two or three short options. It appears under the panel only after they copy or use a tab, ' +
+      'Optional `ask`: one question, one sentence, with two or three short options. It appears under the panel only after they copy a tab, ' +
       'and their answer comes back as a turn naming the tab and the option: `I copied "One paragraph" and answered "For exec".` ' +
       'Copy alone sends nothing. Use it when the pick itself is what you need to learn, as the weekly update does the first time. ' +
       gate.voiceNote,
@@ -2824,18 +2968,6 @@ export function createTextTools(gate: VoiceGate): ToolDefinition[] {
           description:
             'Two as a rule, one when a second would say the same thing. Each is a complete piece of text, not a fragment.',
         },
-      ),
-      action: Type.Optional(
-        Type.Object(
-          {
-            label: Type.String({ description: 'What the button says, e.g. "Post on PAY-142".' }),
-            message: Type.String({
-              description:
-                'The sentence sent with the pick, e.g. "Post it as a comment on PAY-142."',
-            }),
-          },
-          { description: 'Rename the Use button and say what clicking it asks you for.' },
-        ),
       ),
       ask: Type.Optional(
         Type.Object(
@@ -2859,7 +2991,6 @@ export function createTextTools(gate: VoiceGate): ToolDefinition[] {
         title?: string;
         voice?: string;
         variants: { label: string; body: string }[];
-        action?: { label: string; message: string };
         ask?: { text: string; options: string[] };
       },
     ) {
@@ -2976,6 +3107,13 @@ export function createDraftTools(
    */
   const safeDraftNote =
     'When two ways of writing this are both plausible, draft the one that is easiest to undo: leave the label off, leave the assignee out, add under a heading instead of rewriting the passage. Then set `question` and ask about the one thing you left out. One question, one sentence, two options at most, and never a question the Jira or Confluence file or the tickets you read already answer. Most drafts need no question at all.';
+
+  /**
+   * The one rule no flag, no skill and no answer moves (docs/fewer-approvals.md,
+   * the constraint above the tickets). Most writes land now, so every tool that
+   * can reach outside the workspace says the opposite in the same words.
+   */
+  const sendWaitsNote = 'This waits for the PM. Nothing is sent until they approve it.';
 
   /** One answer button on a ticket a draft creates: the fields a yes adds. */
   const ticketOption = Type.Object({
@@ -3163,7 +3301,8 @@ export function createDraftTools(
     name: 'draft_ticket',
     label: 'Draft a tracker ticket',
     description:
-      'Draft a NEW ticket as a proposal (never created until approved). `container` is the project or team it goes in, named by its key; the proposal shows which tracker that is. Give a title and a markdown body ending with a provenance line ("Source: <meeting>, <date>"). Cite sources[] (the meeting or decision it came from). Optionally linkBack: a workspace note path to append the created ticket\'s link to on approval. Labels, priority and components go on the ticket only when the Jira file (skills/jira/SKILL.md) or the tickets you read show this team uses them. Never invent a label. ' +
+      sendWaitsNote +
+      ' Draft a NEW ticket as a proposal. `container` is the project or team it goes in, named by its key; the proposal shows which tracker that is. Give a title and a markdown body ending with a provenance line ("Source: <meeting>, <date>"). Cite sources[] (the meeting or decision it came from). Optionally linkBack: a workspace note path to append the created ticket\'s link to on approval. Labels, priority and components go on the ticket only when the Jira file (skills/jira/SKILL.md) or the tickets you read show this team uses them. Never invent a label. ' +
       conventionsNote('skills/jira/SKILL.md') +
       ' ' +
       safeDraftNote +
@@ -3258,7 +3397,8 @@ export function createDraftTools(
     name: 'draft_ticket_comment',
     label: 'Draft a ticket comment',
     description:
-      'Draft a comment on an existing ticket as a proposal. `ticket` is the item itself: its key (PAY-142) or its mirror note (tickets/PAY-142). Take the key from the mirror note (tickets/, frontmatter external_id) when one exists, and cite that mirror in sources[] alongside the meeting or decision. The proposal shows which tracker it goes to. End the body with a provenance line ("Source: <meeting>, <date>"). ' +
+      sendWaitsNote +
+      ' Draft a comment on an existing ticket as a proposal. `ticket` is the item itself: its key (PAY-142) or its mirror note (tickets/PAY-142). Take the key from the mirror note (tickets/, frontmatter external_id) when one exists, and cite that mirror in sources[] alongside the meeting or decision. The proposal shows which tracker it goes to. End the body with a provenance line ("Source: <meeting>, <date>"). ' +
       conventionsNote('skills/jira/SKILL.md') +
       ' ' +
       safeDraftNote +
@@ -3326,7 +3466,8 @@ export function createDraftTools(
     name: 'draft_page_update',
     label: 'Draft a page update',
     description:
-      'Draft a change to a wikipage as a proposal. There are two ways to change a page; pick the one that fits. With `patch` (search + replace) that ONE passage is rewritten in place on the live page and the rest of it is left untouched, which is what you want when the page now says something wrong. The search text must be copied word for word from the page as it stands, with enough of it around the change that it appears only once. Anchor it on a plain run of prose, never on a line carrying markup (a **bold** span, a `- ` bullet, a `## ` heading, a [text](url) link): here it is checked against the page\'s mirror note, which is markdown, but on approval it is matched against the live page, where that markup is not written the same way, and the edit fails then with "the page\'s text changed". Give `provenance` with a patch: the redline is only the corrected sentence, so that one line ("Source: <origin>, <date>") is how the page says where the change came from. Without a patch, `body` is appended to the page as a new section, which is what you want when you are adding something the page does not say yet; end it with a provenance line of its own and leave the `provenance` field out, because the page gets that line as written and a second one would be added underneath. `page` is the page itself: its id, or its mirror note (wikipages/…). Cite that mirror in sources[] when one exists. The proposal shows which wiki it goes to. ' +
+      sendWaitsNote +
+      ' Draft a change to a wikipage as a proposal. There are two ways to change a page; pick the one that fits. With `patch` (search + replace) that ONE passage is rewritten in place on the live page and the rest of it is left untouched, which is what you want when the page now says something wrong. The search text must be copied word for word from the page as it stands, with enough of it around the change that it appears only once. Anchor it on a plain run of prose, never on a line carrying markup (a **bold** span, a `- ` bullet, a `## ` heading, a [text](url) link): here it is checked against the page\'s mirror note, which is markdown, but on approval it is matched against the live page, where that markup is not written the same way, and the edit fails then with "the page\'s text changed". Give `provenance` with a patch: the redline is only the corrected sentence, so that one line ("Source: <origin>, <date>") is how the page says where the change came from. Without a patch, `body` is appended to the page as a new section, which is what you want when you are adding something the page does not say yet; end it with a provenance line of its own and leave the `provenance` field out, because the page gets that line as written and a second one would be added underneath. `page` is the page itself: its id, or its mirror note (wikipages/…). Cite that mirror in sources[] when one exists. The proposal shows which wiki it goes to. ' +
       conventionsNote('skills/confluence/SKILL.md') +
       ' ' +
       safeDraftNote +
@@ -3445,7 +3586,8 @@ export function createDraftTools(
     name: 'draft_calendar_event',
     label: 'Draft calendar event',
     description:
-      'Draft a NEW Google Calendar event as a proposal (never created until approved) — a follow-up meeting, a booked slot. Give a title (the invite summary), a start as RFC3339 with offset (e.g. 2026-08-04T15:00:00+02:00), optionally an end (defaults to +30 min) and attendee emails, and a body used as the invite description ending with a provenance line ("Source: <meeting>, <date>"). calendarId defaults to the primary calendar. Cite sources[]. linkBack: the meeting/todo note to append the created event\'s link to on approval. ' +
+      sendWaitsNote +
+      ' Draft a NEW Google Calendar event as a proposal: a follow-up meeting, a booked slot. Give a title (the invite summary), a start as RFC3339 with offset (e.g. 2026-08-04T15:00:00+02:00), optionally an end (defaults to +30 min) and attendee emails, and a body used as the invite description ending with a provenance line ("Source: <meeting>, <date>"). calendarId defaults to the primary calendar. Cite sources[]. linkBack: the meeting/todo note to append the created event\'s link to on approval. ' +
       voiceNote,
     parameters: Type.Object({
       title: Type.String(),
@@ -3507,7 +3649,8 @@ export function createDraftTools(
     name: 'draft_calendar_reschedule',
     label: 'Draft calendar reschedule',
     description:
-      "Draft a change to an EXISTING calendar event as a proposal — a new time, a new title. eventId is the event's id — take it from the synced meeting note (meetings/, frontmatter external_id) and cite that note in sources[]. Give the new start/end (RFC3339 with offset) and/or title, and a body describing the change. linkBack: the meeting note to append the confirmation to.",
+      sendWaitsNote +
+      " Draft a change to an EXISTING calendar event as a proposal: a new time, a new title. eventId is the event's id. Take it from the synced meeting note (meetings/, frontmatter external_id) and cite that note in sources[]. Give the new start/end (RFC3339 with offset) and/or title, and a body describing the change. linkBack: the meeting note to append the confirmation to.",
     parameters: Type.Object({
       eventId: Type.String(),
       calendarId: Type.Optional(Type.String()),
@@ -3562,7 +3705,8 @@ export function createDraftTools(
     name: 'draft_calendar_rsvp',
     label: 'Draft calendar RSVP',
     description:
-      "Draft an RSVP to a calendar event on your behalf as a proposal. eventId is the event's id (from the synced meeting note's external_id — cite that note). attendeeEmail is your own calendar email; responseStatus is accepted/declined/tentative. Give a short body explaining the response. linkBack: the meeting note to note the RSVP on.",
+      sendWaitsNote +
+      " Draft an RSVP to a calendar event on your behalf as a proposal. eventId is the event's id (from the synced meeting note's external_id; cite that note). attendeeEmail is your own calendar email; responseStatus is accepted/declined/tentative. Give a short body explaining the response. linkBack: the meeting note to note the RSVP on.",
     parameters: Type.Object({
       eventId: Type.String(),
       attendeeEmail: Type.String(),

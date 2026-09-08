@@ -15,4 +15,4 @@ the QBR and he is not going to stop asking until someone gives him a sentence he
 What I can give him today: swaps are committed, they sit behind payroll export in the H2 order
 ([[decisions/2026-05-18-h2-order-payroll-first]]), and Rebecca will not date
 [[tickets/jira/SCH-240]] before she re-estimates it. What I should not give him is another month
-that turns into a promise. Answer today, before the prep session on the 21st.
+that turns into a promise. Answer today, before the Café Nord prep session on 2026-07-21.

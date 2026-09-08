@@ -20,7 +20,7 @@ three: what moved, what it cost, what we are not doing because of it.
 She has declined offline mode twice and does not enjoy being asked a third time
 ([[themes/offline-mode]], [[decisions/2026-02-12-decline-offline-mode]]). At steering on
 2026-07-09 she asked for the Scheduling team's H2 capacity in numbers rather than adjectives
-([[meetings/2026-07-09-steering]]); I sent it on the 15th
+([[meetings/2026-07-09-steering]]); I sent it on 2026-07-15
 ([[notes/h2-capacity]], [[todos/send-asa-h2-numbers]]).
 
 Last told 2026-07-10: payroll export tracking to Q3 with Fortnox first, swaps behind it in Q4.

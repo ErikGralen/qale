@@ -9,7 +9,7 @@ tags: ['shift-swaps']
 customer: '[[customers/cafe-nord]]'
 ---
 
-Prep session is on the 21st with Marcus and Lena. The deck has to answer the one question Lena
+Prep session is on 2026-07-21 with Marcus and Lena. The deck has to answer the one question Lena
 will ask, which is when her staff can swap shifts, and it has to answer it the same way Marcus
 answers it ([[insights/cafe-nord-september-turnover]]).
 

@@ -18,9 +18,9 @@ Anything not on this page is not committed, whatever anyone has been told.
 
 ## Committed
 
-1. Payroll export (Fortnox first) — Q3
+First: payroll export (Fortnox first), in Q3.
 
-2. Shift swaps — Q4
+Then: shift swaps, in Q4.
 
 Both epics sit with the Scheduling team, which is why this is an order and not two dates: if
 one moves up, the other one moves a quarter.

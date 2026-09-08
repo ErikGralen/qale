@@ -109,7 +109,7 @@ test('a full page pull returns both wikipages with their versions', async () => 
   const page = await connector.fetchFull('wikipage', '4521985');
   assert.equal(page.title, 'Roadmap H2');
   assert.equal(page.url, `${SITE}/wiki/spaces/PROD/pages/4521985`);
-  assert.match(page.bodyMarkdown, /Payroll export \(Fortnox first\) — Q3/);
+  assert.match(page.bodyMarkdown, /First: payroll export \(Fortnox first\), in Q3\./);
 });
 
 test('an incremental pull with a fresh mark returns nothing', async () => {
@@ -265,7 +265,7 @@ test('a scripted step moves the tracker and the next pull sees it', async () => 
   // The step lands last, so it is the new high-water mark.
   assert.equal(pull.changes.at(-1)?.external_id, 'SCH-240');
   const item = await connector.fetchFull('ticket', 'SCH-240');
-  assert.match(item.bodyMarkdown, /Overtime check runs against both people's contracted hours/);
+  assert.match(item.bodyMarkdown, /the overtime check is already covered by the contract-hours guard/);
 });
 
 test('the epic step brings the story step with it', async () => {
@@ -286,7 +286,7 @@ test('the epic step brings the story step with it', async () => {
   // One closing comment each, not two.
   assert.equal(epic.bodyMarkdown.match(/release train Tuesday/g)?.length, 1);
   const story = await connector.fetchFull('ticket', 'SCH-240');
-  assert.equal(story.bodyMarkdown.match(/other approved swaps included/g)?.length, 1);
+  assert.equal(story.bodyMarkdown.match(/contract-hours guard/g)?.length, 1);
 });
 
 test('the steps are idempotent in either order', async () => {
@@ -298,7 +298,7 @@ test('the steps are idempotent in either order', async () => {
   assert.equal(f.applyStep('sch-231-done'), false);
   assert.equal(await stateOf(f, 'SCH-231'), 'Done/done');
   const story = await connectorFor(f).fetchFull('ticket', 'SCH-240');
-  assert.equal(story.bodyMarkdown.match(/other approved swaps included/g)?.length, 1);
+  assert.equal(story.bodyMarkdown.match(/contract-hours guard/g)?.length, 1);
 
   // Reset forgets them, so the next demo can run the script again.
   f.reset();
@@ -372,4 +372,59 @@ test('the generated fixture is valid JSON with the cast in it', () => {
     ['4521985', '4784129'],
   );
   assert.match(fixture.pages[0]?.body ?? '', /^<h1>Roadmap H2<\/h1>/);
+});
+
+test('the first approved write closes the epic on its own', async () => {
+  const f = fake();
+  const connector = connectorFor(f);
+  // Reads change nothing: the epic is still open after a pull.
+  const before = await connector.fetchFull('ticket', 'SCH-231');
+  assert.equal(before.state, 'In Progress');
+  assert.deepEqual(f.steps().filter((s) => s.applied).map((s) => s.id), []);
+
+  await connector.execute({
+    provider: 'jira',
+    system: 'jira',
+    action: 'comment_ticket',
+    targetId: 'SCH-118',
+    body: 'Payroll export moves to Q1 after the steering call.',
+    rationale: 'Decided in the steering meeting.',
+  });
+
+  // The write applied the self-applying step and the one it requires.
+  assert.deepEqual(
+    f.steps().filter((s) => s.applied).map((s) => s.id).sort(),
+    ['sch-231-done', 'sch-240-done'],
+  );
+  const epic = await connector.fetchFull('ticket', 'SCH-231');
+  assert.equal(epic.state, 'Done');
+  assert.match(epic.bodyMarkdown, /release train/);
+  const story = await connector.fetchFull('ticket', 'SCH-240');
+  assert.equal(story.state, 'Done');
+});
+
+test('a patch that spans two paragraphs lands, and stays two paragraphs', async () => {
+  const f = fake();
+  const connector = connectorFor(f);
+  // The exact edit Flow 1 drafts: the two order lines are two paragraphs in
+  // storage, with no whitespace between them, only `</p><p>`.
+  await connector.execute({
+    provider: 'confluence',
+    system: 'confluence',
+    action: 'update_page',
+    targetId: '4521985',
+    body: 'The H2 order after the steering call.',
+    patch: {
+      search: 'First: payroll export (Fortnox first), in Q3.\n\nThen: shift swaps, in Q4.',
+      replace: 'First: shift swaps, in Q3 and Q4.\n\nThen: payroll export (Fortnox first), in Q1.',
+    },
+    provenance: 'Source: decisions/2026-07-16-h2-order-swaps-first',
+    rationale: 'The steering call flipped the order.',
+  });
+  const page = await connector.fetchFull('wikipage', '4521985');
+  assert.match(page.bodyMarkdown, /First: shift swaps, in Q3 and Q4\./);
+  assert.match(page.bodyMarkdown, /Then: payroll export \(Fortnox first\), in Q1\./);
+  assert.doesNotMatch(page.bodyMarkdown, /payroll export \(Fortnox first\), in Q3/);
+  // Two paragraphs in, two paragraphs out: the lines are not on one line.
+  assert.doesNotMatch(page.bodyMarkdown, /Q4\. Then: payroll/);
 });

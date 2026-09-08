@@ -140,6 +140,13 @@ export interface FakeStep {
    * to do with each other name nothing here and stay independent.
    */
   requires?: string[];
+  /**
+   * What applies the step without anyone clicking it. `first-write`: the first
+   * write the fake receives (an approved comment, ticket or page update), so
+   * the tracker moves on its own the way a real one does while the PM works,
+   * and nothing in the demo has to be pressed to make it move.
+   */
+  after?: 'first-write';
 }
 
 export interface AtlassianFixture {
@@ -522,7 +529,31 @@ export function createFakeAtlassian(opts: FakeAtlassianOptions): FakeAtlassian {
 
   // -- the router -----------------------------------------------------------
 
+  /** The write methods; a successful one is what an `after: 'first-write'`
+   *  step waits for. */
+  const WRITES = new Set(['POST', 'PUT', 'DELETE']);
+
   async function route(url: string, init?: RequestInit): Promise<Response> {
+    const res = await handle(url, init);
+    const method = (init?.method ?? 'GET').toUpperCase();
+    const path = pathOf(url) ?? '';
+    // Searches are POSTs too, and they change nothing.
+    if (res.ok && WRITES.has(method) && !path.includes('/search/')) applyAutoSteps();
+    return res;
+  }
+
+  /** Steps that wait for a write, applied once the first one has landed. */
+  function applyAutoSteps(): void {
+    let applied = false;
+    for (const step of store.steps) {
+      if (step.after === 'first-write' && !store.appliedStepIds.includes(step.id)) {
+        applied = applyStepWithRequires(step.id, new Set()) || applied;
+      }
+    }
+    if (applied) persist();
+  }
+
+  async function handle(url: string, init?: RequestInit): Promise<Response> {
     const path = pathOf(url);
     if (path === null) return notFound('host');
     const [pathname, search] = path.split('?');

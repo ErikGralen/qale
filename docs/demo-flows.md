@@ -5,8 +5,8 @@ scores, churn signals, on-prem asks. The 42-interview research in `transcripts2/
 a PO at a mid-size Nordic product company who spends most of the week in meetings with people who want something,
 and then hand-copies the results into Jira, Confluence and four chat threads. The demo data should be that job.
 
-Settled: everything in English (Swedish names only). Nothing is typed during the demo and nothing in it is a demo-only
-control; every step is a drop, a paste, a click or a menu pick the product has anyway. Slack is copy-out only.
+Settled: everything in English (Swedish names only). Nothing in the demo is a demo-only control; every step is a
+drop, a paste, a click, a menu pick, or the one sentence in Flow 4. Slack is copy-out only.
 
 ## 1. The pains the demo must hit, in priority order
 
@@ -146,15 +146,20 @@ the link that did not exist at Albacross.
 
 ### Flow 4 — "Who needs to know?" (P7, the payoff)
 
-**Todos → Help me handle this on each → approve the messages.**
+**The epic closed → one question → approve the messages.**
 
-The steering decision changed what customers were told, and the app already turned that into todos: Fjord Sports
-(told Q4 for payroll export, now Q1) from Flow 1, and Bruno's (asked for swaps in March, never answered) from
-Flow 3. Open Todos and click **Help me handle this** on each. Each one comes back as a CS-voice message citing the
-steering decision and the customer's own ask, plus a card that logs what they were told and when.
+The shift-swaps epic closes on its own during Flow 1: the first approved outbound card makes the fake Jira close
+`SCH-231` with a comment from Rebecca, as a real tracker would move while the PM works. Nothing is pressed to make
+it happen, and Settings → Demo is never opened during a demo. By Flow 4 the ticket page has read Done for a while.
+
+In Home, one sentence, always the same: *"SCH-231 is done. Who needs to know, and what do I tell them?"* The
+answer lists each person with what they were told and when: Café Nord, promised at the QBR by Marcus; Bruno's,
+asked via support in March and never answered (Flow 3); Fjord Sports, told Q4 for payroll export and now Q1
+(Flow 1); Jonas, who needs a support macro. Messages in the CS voice for the customers, cards that log what each
+was told.
 
 Presenter beat: this is the churn that does not happen. Nobody recalled these people from memory; each one is on
-the list because of an approved note with a date. Open the Bruno's page afterwards to show the last-told line.
+the list because of an approved note with a date.
 
 ### Flow 5 — "Friday update" (P9)
 
@@ -183,7 +188,7 @@ the open re-estimate.
 | 1-5 | Flow 1 | Drop the steering transcript. Cards. Supersede. Approve all, outbound one by one, show Jira. |
 | 5-6 | Flow 2 | Marcus's todo, Help me handle this, sales-voice reply. |
 | 6-8 | Flow 3 | Paste the March support thread. Insight, Jira comment, todo for Ulrika. |
-| 8-10 | Flow 4 | Todos: Fjord Sports and Bruno's. Help me handle this. Messages. |
+| 8-10 | Flow 4 | One sentence: SCH-231 is done, who needs to know. Messages. |
 | 10-12 | Flow 5 | Friday update in three voices. |
 
 Paste the support thread (Flow 3) before starting Flow 1 if you want its cards ready when you get there; a drop is a

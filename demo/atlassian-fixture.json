@@ -313,7 +313,7 @@
       "title": "Roadmap H2",
       "spaceKey": "PROD",
       "version": 17,
-      "body": "<h1>Roadmap H2</h1><p>The order below is the plan of record. Q3 is July to September, Q4 is October to December. Anything not on this page is not committed, whatever anyone has been told.</p><h2>Committed</h2><p>1. Payroll export (Fortnox first) — Q3</p><p>2. Shift swaps — Q4</p><p>Both epics sit with the Scheduling team, which is why this is an order and not two dates: if one moves up, the other one moves a quarter.</p><h2>Exploring</h2><p>Auto-schedule suggestions. Suggest next week's schedule from last week plus stated availability, for the manager to edit rather than accept. No team, no date, and it stays that way until the swaps work is out.</p><h2>Not doing</h2><p>Offline mode in the staff app. Declined in February and again in May: back offices have wifi, and the app already caches the shifts a person needs to read.</p>",
+      "body": "<h1>Roadmap H2</h1><p>The order below is the plan of record. Q3 is July to September, Q4 is October to December. Anything not on this page is not committed, whatever anyone has been told.</p><h2>Committed</h2><p>First: payroll export (Fortnox first), in Q3.</p><p>Then: shift swaps, in Q4.</p><p>Both epics sit with the Scheduling team, which is why this is an order and not two dates: if one moves up, the other one moves a quarter.</p><h2>Exploring</h2><p>Auto-schedule suggestions. Suggest next week's schedule from last week plus stated availability, for the manager to edit rather than accept. No team, no date, and it stays that way until the swaps work is out.</p><h2>Not doing</h2><p>Offline mode in the staff app. Declined in February and again in May: back offices have wifi, and the app already caches the shifts a person needs to read.</p>",
       "created": "2026-01-19T09:15:00.000Z",
       "updated": "2026-05-19T09:15:00Z",
       "webui": "/spaces/PROD/pages/4521985"
@@ -323,7 +323,7 @@
       "title": "Product weekly update",
       "spaceKey": "PROD",
       "version": 38,
-      "body": "<h1>Product weekly update</h1><p>Published Friday, newest first. Three sentences per area; if something needs more than that it needs a meeting, not a paragraph.</p><h2>2026-07-10</h2><p><strong>Shift swaps.</strong> Two of the three stories are done and the manager approval flow is the one left. The overtime check inside it is larger than estimated, so it is being re-estimated before anyone gives a date. Nothing on the page moves until that number exists.</p><p><strong>Payroll export.</strong> The approved-hours CSV shipped on 2026-06-24 with a column set both Fortnox and Visma accept. The Fortnox connector works against the sandbox and is waiting on the platform token store. H2 order is unchanged: payroll export first, shift swaps in Q4.</p><h2>2026-07-03</h2><p><strong>Payroll export.</strong> The approved-hours CSV is in review, one column set for both payroll systems rather than one per customer. The Fortnox connector starts next week.</p><p><strong>Shift swaps.</strong> The request model and API are done and the staff-app screen is about a week out. Both epics are on the same team, so if the H2 order changes, one of them slips a quarter — the capacity numbers are with the CPO.</p>",
+      "body": "<h1>Product weekly update</h1><p>Published Friday, newest first. Three sentences per area; if something needs more than that it needs a meeting, not a paragraph.</p><h2>2026-07-10</h2><p><strong>Shift swaps.</strong> Two of the three stories are done and the manager approval flow is the one left. The overtime check inside it is larger than estimated, so it is being re-estimated before anyone gives a date. Nothing on the page moves until that number exists.</p><p><strong>Payroll export.</strong> The approved-hours CSV shipped on 2026-06-24 with a column set both Fortnox and Visma accept. The Fortnox connector works against the sandbox and is waiting on the platform token store.</p><h2>2026-07-03</h2><p><strong>Payroll export.</strong> The approved-hours CSV is in review, one column set for both payroll systems rather than one per customer. The Fortnox connector starts next week.</p><p><strong>Shift swaps.</strong> The request model and API are done and the staff-app screen is about a week out. Both epics are on the same team, so a change of order moves one of them a quarter; the capacity numbers are with the CPO.</p>",
       "created": "2026-03-12T16:20:00.000Z",
       "updated": "2026-07-10T16:20:00Z",
       "webui": "/spaces/PROD/pages/4784129"
@@ -338,7 +338,7 @@
           "kind": "comment",
           "key": "SCH-240",
           "author": "Rebecca Holm",
-          "body": "Overtime check runs against both people's contracted hours for the whole week, other approved swaps included. Closing."
+          "body": "Re-scoped this morning: the overtime check is already covered by the contract-hours guard, so the story was smaller than the estimate. Merged. Closing."
         },
         {
           "kind": "transition",
@@ -353,6 +353,7 @@
       "requires": [
         "sch-240-done"
       ],
+      "after": "first-write",
       "changes": [
         {
           "kind": "comment",

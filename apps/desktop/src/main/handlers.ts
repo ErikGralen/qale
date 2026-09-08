@@ -745,7 +745,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       // instead of the provider. Spread, so an ordinary build's config has no
       // such field and nothing about it changes.
       ...(demo?.baseUrl ? { baseUrl: demo.baseUrl } : {}),
-      connections: agentConnections(settings),
+      connections: agentConnections(settings, undefined, demo?.fetchImplFor),
       // Which repos the sessions were built against. A change here rebuilds the
       // live ones, because a session's tool set is fixed when it is built and a
       // folder added mid-conversation would otherwise reach nothing until the

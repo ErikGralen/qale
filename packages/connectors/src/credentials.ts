@@ -62,8 +62,9 @@ export function connectorFrom(
 export function readToolsFrom(
   provider: ConnectorProvider<unknown>,
   fields: Record<string, string>,
+  opts?: { fetchImpl?: FetchLike },
 ): ProviderReadTool[] {
   if (!provider.readTools) return [];
   const parsed = provider.authSchema.safeParse(collectFields(provider, fields));
-  return parsed.success ? provider.readTools(parsed.data) : [];
+  return parsed.success ? provider.readTools(parsed.data, opts) : [];
 }

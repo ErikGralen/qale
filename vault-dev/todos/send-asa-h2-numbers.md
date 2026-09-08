@@ -12,7 +12,7 @@ tags: ['payroll-export', 'shift-swaps']
 > "Give me the numbers before next steering. I want to see the trade, not hear it."
 > from [[meetings/2026-07-09-steering]]
 
-Sent on the 15th: weeks remaining on [[tickets/jira/SCH-118]] and [[tickets/jira/SCH-231]], the
+Sent on 2026-07-15: weeks remaining on [[tickets/jira/SCH-118]] and [[tickets/jira/SCH-231]], the
 PLT-77 dependency, and what reordering them costs in each direction. Three sentences and the
 table from [[notes/h2-capacity]]. She has not replied, which with Åsa usually means she has read
 it and will use it.

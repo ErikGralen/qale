@@ -62,11 +62,18 @@ the repo: only the Desktop copy is dated to today. Wait for the arrival session 
 - three outbound cards: a comment on SCH-118, a new SCH story for swap notifications, a patch to Roadmap H2
 
 If the model asks a question (a card with options) before it files anything, answer it and write down the exact
-option you picked; the presenter must pick the same one. A question about the meeting date means the sample dating
-is broken again. Stop and tell me.
+option you picked; the presenter must pick the same one. Seen so far:
+
+- "Henrik todo", whether "I'll ping Henrik today" is the same commitment as the seeded GDPR review: **Same
+  commitment**. One Henrik item is cleaner than two.
+
+A question about the meeting date means the sample dating is broken again. Stop and tell me.
 
 Press **Approve all**. Then approve the three outbound cards one at a time. Open the SCH-118 ticket page and check
 the comment is there; if it is not, the connection is not on the fake. Stop and tell me.
+
+The first approved outbound card also closes the shift-swaps epic in the fake Jira, as if Rebecca did it while you
+were approving. After the sync that follows, the SCH-231 page reads Done. Check it does before Flow 2.
 
 If the cards are wrong in a way you would not show an audience, stop here and tell me. We fix the transcript or the
 skill, Reset, and start again. A recording of a bad session is worthless.
@@ -74,9 +81,9 @@ skill, Reset, and start again. A recording of a bad session is worthless.
 **Flow 2. Marcus's fourth ping.**
 
 Open Todos. "Reply to Marcus about the swap ETA" is due today; its body holds his three pings. Click **Help me
-handle this**. Expect a reply he can send, in the sales voice, that names SCH-231's state, the decision you just
-approved, and what he promised at the QBR, and says there is no date yet. Approve what it proposes (the reply is
-copy-only; the logging of what Marcus was told is a card).
+handle this**. Expect a reply he can send, in the sales voice: the epic closed this morning and ships on the
+Tuesday release train, the decision you just approved, and what he promised at the QBR. Approve what it proposes
+(the reply is copy-only; the logging of what Marcus was told is a card).
 
 **Flow 3. Paste the support thread.**
 
@@ -87,16 +94,15 @@ outbound comment.
 
 **Flow 4. Who needs to know.**
 
-Open Todos again. The app has collected the people the decision affects: Fjord Sports (told Q4, now Q1), from
-Flow 1, and Bruno's (asked in March, never answered), from Flow 3. Click **Help me handle this** on each, one at a
-time, and wait between them. Expect a message in the CS voice for each, citing the steering decision, and a card
-that logs what they were told. Approve. Open the Fjord Sports or Bruno's customer page to show the last-told line.
+In Home, Ask exactly this, one sentence:
 
-The Fjord Sports one asks two questions before it drafts. Pick the first option on both, and the presenter does
-the same:
+    SCH-231 is done. Who needs to know, and what do I tell them?
 
-- "Which date": **Q4 is gone: Fortnox Q1, Visma after Q1, no firm month yet**
-- "Ulrika first": **Yes, a short note to Ulrika, then the mail to Oskar**
+Expect each person with what they were told and when, from the record: Café Nord (promised at the QBR by Marcus),
+Bruno's (asked in March, never answered, from Flow 3), Fjord Sports (told Q4 for payroll export, now Q1), and
+Jonas for a support macro. Messages in the CS voice for the customers. Approve the cards that log what each was
+told. If it asks a question first, pick the first option and write down the exact label; the presenter picks the
+same one.
 
 **Flow 5. Weekly update.**
 

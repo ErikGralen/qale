@@ -1,73 +1,73 @@
-# Demo samples
+# Qale demo files
 
-Material to feed into a running demo. These files live outside the vault on purpose: they are
-things you drop or paste in during a demo, not notes that get seeded and indexed ahead of time.
-They are dated on the same anchor timeline as `vault-dev/` (2026-07-17), so `pnpm refresh-demo`
-keeps them in step with the vault instead of going stale.
+Two files to bring in, and a walkthrough in five steps. Everything here is a drop, a paste, a
+click or one sentence; nothing else needs typing.
 
-The cast they mention (Rota, Café Nord, Bruno's Burgers, Fjord Sports, Åsa, Rebecca, Marcus, Jonas,
-Petra) already lives in the demo vault, so the agent's proposals land on real hubs: the actual
-Café Nord customer page, the real `SCH-231` and `SCH-118` epics, existing todos, rather than
-creating things that float free.
+| File                          | What you do with it            | Step |
+| ----------------------------- | ------------------------------ | ---- |
+| `steering-h2-priorities.vtt`  | Drag it onto the Qale window   | 1    |
+| `support-thread-brunos.md`    | Copy the text, paste into Home | 3    |
 
-## Setup
+Use the copies in this folder. They are dated so that the steering meeting was yesterday.
 
-```sh
-pnpm refresh-demo        # rebuild .vault-dev dated to today (see /update-demo)
-pnpm desktop             # then open the .vault-dev workspace
-```
+## The story
 
-## The pack
+Rota makes staff-scheduling software for restaurant and retail chains. You are the PO for the
+Scheduling and Staff App teams. Two things are in flight: shift swaps (staff trade shifts in the
+app, a manager approves) and payroll export. Sales promised Café Nord swaps before the September
+staff turnover. Fjord Sports was told payroll export lands in Q4. A Bruno's Burgers manager asked
+support for swaps back in March, and nobody ever answered her.
 
-| File                          | The door                                   | Runs as               |
-| ------------------------------ | ------------------------------------------- | ---------------------- |
-| `steering-h2-priorities.vtt`   | Drop it on the window                       | Flow 1 (a meeting you were in) |
-| `support-thread-brunos.md`     | Paste it into Home's bar                    | Flow 3 (a pasted source) |
+## 1. The meeting produced actions
 
-Dropping or pasting starts (or adds to) the `arrival` session: the one place new material lands,
-reads itself, and works out where it belongs. Nothing is pre-filed; that reading is the point.
+Drag `steering-h2-priorities.vtt` onto the window. Yesterday's steering call: Åsa moved shift
+swaps ahead of payroll export, payroll export slides to Q1, offline mode was declined again.
+Nobody wrote anything down.
 
-### Flow 1: the meeting produced actions
+Wait for the cards. Expect a meeting page, a decision that supersedes the old H2 order, todos
+with owners (Rebecca re-estimates SCH-240, Henrik reviews swap notifications, you tell Fjord
+Sports), and three outbound cards: a comment on SCH-118, a new story, a patch to the Roadmap H2
+page. Press **Approve all**, then approve the outbound cards one at a time. Open the SCH-118
+ticket to show the comment landed.
 
-Drop `steering-h2-priorities.vtt` on the window. It is a Teams-style transcript of last Thursday's
-steering meeting, roughly 25 minutes, Åsa, Rebecca, Marcus and me. `arrival` recognizes it as a
-meeting I was in and reads it start to finish. What comes back as proposals:
+While you approve, Rebecca closes the shift-swaps epic in Jira. SCH-231 reads Done on the next
+sync. Say so.
 
-- **A meeting page**, with participants and a summary.
-- **A decision.** Åsa flips the H2 order: shift swaps ship before payroll export, which moves to
-  Q1, because Café Nord and two more chains need swaps before the September staff turnover.
-  It supersedes the standing "payroll export first" decision, with the reasoning and the explicit
-  not-doing (offline mode, declined again, out loud, on the record).
-- **Three todos with dates**: Rebecca re-estimates the last swap-approval story by next Friday
-  (2026-07-24); I ping Henrik for a GDPR review of swap notifications (they show colleagues' names
-  and phone numbers); I owe Fjord Sports an updated timeline now that payroll export has moved.
-- **Three outbound cards, one at a time**: a Jira comment on `SCH-118` saying the epic slipped to
-  Q1 and why, a new `SCH` story for "notify the affected colleague when a swap is approved" (raised
-  in the meeting, not yet in the epic), and a Confluence patch to the Roadmap H2 page swapping the
-  two priority lines.
+## 2. Marcus's fourth ping
 
-Nobody in the meeting wrote any of this down. That is the point of dropping it in.
+Open Todos. "Reply to Marcus about the swap ETA" is due today; his three pings are in it. Click
+**Help me handle this**. The reply comes in the sales voice from the record: the epic closed
+this morning, the decision from step 1, what Marcus promised at the QBR. Copy it. Approve the
+card that logs what he was told.
 
-### Flow 3: the support thread
+## 3. The support thread
 
-Paste `support-thread-brunos.md` into Home's bar. It is a `#support` Slack export from March: a
-Bruno's Burgers manager tells Jonas that two or three staff a week want to trade shifts, she
-redoes the schedule by hand every time, and asks whether Rota will ever let staff swap shifts
-themselves. Jonas says he'll ask product. The thread ends there, unresolved, for four months.
-The paste clears the long-paste threshold and files as a source.
+Open `support-thread-brunos.md`, copy the whole text, paste it into Home's bar. A `#support`
+thread from March: Petra at Bruno's asks whether staff will ever be able to swap shifts
+themselves; Jonas says he will ask product; it ends there.
 
-What comes back: an insight on the shift-swaps theme, with the thread as evidence and Bruno's as
-the customer; an update to the Bruno's customer page; a Jira comment on `SCH-231` noting Bruno's
-asked for this via support in March, with the thread linked; and a todo for Ulrika to tell Bruno's
-once `SCH-231` ships.
+Expect an insight on shift swaps with Bruno's as the customer, an update to the Bruno's page, and
+a todo to tell Bruno's. Check the insight card has the tag `shift-swaps`. Approve all. Do not
+click "Help me handle this" on the new todo.
 
-### Flow 2 and Flow 4: no files, no typing
+## 4. Who needs to know
 
-Nothing is typed in these two flows. Both run from Todos with **Help me handle this**:
+In Home, ask exactly:
 
-- **Flow 2**: the seeded todo "Reply to Marcus about the swap ETA", due today. The reply comes in
-  the sales voice, citing the ticket mirror, the fresh steering decision and Marcus's promise from
-  the QBR, and a card logs what he was told.
-- **Flow 4**: the "tell" todos that Flow 1 and Flow 3 created, Fjord Sports and Bruno's. Each one
-  comes back as a CS-voice message and a card that logs what the customer was told.
+    SCH-231 is done. Who needs to know, and what do I tell them?
 
+Expect each person with what they were told and when: Café Nord (promised at the QBR), Bruno's
+(asked in March, never answered), Fjord Sports (told Q4, now Q1), and Jonas for a support macro.
+Messages come in the CS voice for customers. Approve the cards that log what they were told. If
+it asks a question first, pick the first option.
+
+## 5. Friday update
+
+Type `/` in Home and pick **Write the weekly update**. Drafts arrive for Åsa (exec voice),
+customers (CS voice) and sales, built from what was approved in steps 1 to 4. Approve them.
+
+## If something looks off
+
+- A card asks what date the meeting was: you dragged a file from somewhere else. Use this folder.
+- Approving a Jira or Confluence card fails: Settings → Demo → Reset demo, then start over.
+- Ask answers "I'm the demo build": the sentence was not typed exactly as above.

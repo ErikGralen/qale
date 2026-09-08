@@ -232,6 +232,11 @@ const fixture = {
   // the presenter has to be able to jump straight to Flow 4. `requires` is
   // what the fake reads (apps/desktop/src/main/demo/fake-atlassian.ts).
   //
+  // Step 2 also applies ITSELF: `after: 'first-write'` means the first approved
+  // outbound card (Flow 1's comment on SCH-118) closes the epic, as if Rebecca
+  // did it while the PM was approving. Nothing in Settings has to be pressed
+  // during a demo; the tracker moves on its own, the way a real one does.
+  //
   // The comment and the transition are stamped with the clock at apply time,
   // so the close reads as today without a date in the fixture.
   steps: [
@@ -244,8 +249,8 @@ const fixture = {
           key: 'SCH-240',
           author: 'Rebecca Holm',
           body:
-            "Overtime check runs against both people's contracted hours for the whole week, " +
-            'other approved swaps included. Closing.',
+            'Re-scoped this morning: the overtime check is already covered by the contract-hours ' +
+            'guard, so the story was smaller than the estimate. Merged. Closing.',
         },
         { kind: 'transition', key: 'SCH-240', to: 'Done' },
       ],
@@ -254,6 +259,7 @@ const fixture = {
       id: 'sch-231-done',
       label: 'Flow 4: SCH-231 (shift swaps epic) → Done',
       requires: ['sch-240-done'],
+      after: 'first-write',
       changes: [
         {
           kind: 'comment',

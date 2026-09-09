@@ -111,8 +111,9 @@ const COLUMNS: SortColumn<DocumentSortKey>[] = [
  * never count.
  *
  * The agent is a guest here. It answers from the composer at the bottom; it
- * does not file into this folder on its own (the write policy makes any unasked
- * write under `notes/` draw a card, see `writePolicy`).
+ * does not file into this folder on its own (the write policy makes a new page
+ * under `notes/` draw a card, whether the PM asked for it or not, and a rewrite
+ * of what they typed too, see `writePolicy`).
  */
 export function DocumentsView({
   viewKey,

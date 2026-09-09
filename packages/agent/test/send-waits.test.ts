@@ -56,6 +56,14 @@ test('the shared preamble says a send waits, whatever else lands', () => {
   assert.doesNotMatch(SHARED_PREAMBLE, /Two spheres/);
 });
 
+test('the preamble says a new document waits, asked or not', () => {
+  assert.match(SHARED_PREAMBLE, /it makes a new page in notes\//);
+  assert.match(SHARED_PREAMBLE, /A new document waits\s+even when they asked for it/);
+  // The agent takes its own notes in the memory, so Documents never fills with
+  // pages the PM did not ask for.
+  assert.match(SHARED_PREAMBLE, /you take your own notes in the memory\s+folder/);
+});
+
 test('the preamble carries the conflict question, its shape and its cost', () => {
   assert.match(SHARED_PREAMBLE, /ask\s+one question before you write/);
   assert.match(SHARED_PREAMBLE, /the two answers as options/);

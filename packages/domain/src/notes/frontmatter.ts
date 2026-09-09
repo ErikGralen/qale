@@ -569,6 +569,23 @@ export const zWikipage = z.object({
   url: z.string().url(),
 });
 
+/**
+ * Do two `remote_updated` strings name the same moment?
+ *
+ * One instant has several ISO spellings: `2026-07-12T09:15:00Z`,
+ * `…:00.000Z` and `…+00:00` are one time. A mirror re-written in another
+ * spelling is not a change upstream, so anything that asks "did this move?"
+ * compares the instant. A side that will not parse falls back to the text,
+ * because two strings nobody can read as a time are only equal when they match.
+ */
+export function sameInstant(a: unknown, b: unknown): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return a === b;
+  const left = Date.parse(a);
+  const right = Date.parse(b);
+  if (Number.isNaN(left) || Number.isNaN(right)) return a === b;
+  return left === right;
+}
+
 export const zFrontmatter = z.discriminatedUnion('type', [
   zSourceNote,
   zMeeting,

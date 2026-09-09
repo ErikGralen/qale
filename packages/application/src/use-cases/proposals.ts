@@ -12,6 +12,7 @@ import {
   isBodyEditable,
   isFilingKey,
   refToSlug,
+  sameInstant,
   titleFromSlug,
   typeToWrite,
   writePolicy,
@@ -1373,16 +1374,21 @@ async function acceptOutbound(
   const mirror = findOutboundMirror(ctx, p);
   if (mirror) {
     const fm = mirror.frontmatter as Record<string, unknown>;
+    // The time is compared as an instant, never as text: one moment has several
+    // ISO spellings, and a mirror re-written in another spelling moved nothing.
     const changedSince =
       (p.remote_updated &&
         typeof fm['remote_updated'] === 'string' &&
-        fm['remote_updated'] !== p.remote_updated) ||
+        !sameInstant(fm['remote_updated'], p.remote_updated)) ||
       (p.version !== undefined && typeof fm['version'] === 'number' && fm['version'] !== p.version);
     if (changedSince) {
+      // The mirror's title names the item the way the PM reads it; a page id
+      // on its own says nothing. The id is the fallback for an unmirrored target.
+      const named = mirror.title || p.targetId;
       return {
         ok: false,
         stale: true,
-        error: `${p.targetId ?? mirror.title} changed since this was drafted. Review the change, then approve again to send anyway`,
+        error: `${named} changed since this was drafted. Review the change, then approve again to send anyway`,
       };
     }
   }

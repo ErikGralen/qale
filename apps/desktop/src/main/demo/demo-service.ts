@@ -14,6 +14,7 @@ import { app, session, shell } from 'electron';
 import { is } from '@electron-toolkit/utils';
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   ANCHOR,
   appDbBasename,
@@ -553,7 +554,11 @@ function assetsRoot(): string {
   if (app.isPackaged) return join(process.resourcesPath, 'demo-assets');
   const fromApp = repoRoot(app.getAppPath());
   if (fromApp) return fromApp;
-  const fromHere = repoRoot(dirname(new URL(import.meta.url).pathname));
+  // `fileURLToPath`, not `new URL(...).pathname`. On Windows the pathname of a
+  // file URL is `/C:/Users/...`, and `resolve` reads that leading slash as a
+  // root-relative path, so the walk starts on the wrong drive and finds
+  // nothing. Same rule as `__dirname` in src/main/index.ts.
+  const fromHere = repoRoot(dirname(fileURLToPath(import.meta.url)));
   if (fromHere) return fromHere;
   console.error(
     '[qale] demo: no vault-dev/ above this build, so the demo has no material to copy.',

@@ -85,6 +85,9 @@ async function main(): Promise<void> {
 }
 
 // Run only as a command; a test imports `draftScenario` directly.
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+// `import.meta.filename` rather than `new URL(import.meta.url).pathname`: on
+// Windows the pathname of a file URL is `/C:/Users/...`, so the comparison
+// never matched and the script did nothing at all.
+if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
   await main();
 }

@@ -14,7 +14,7 @@
     "icon": "node ../../scripts/make-icon.mjs build/icon-source.png build/icon.png",
     "icon:win": "node ../../scripts/make-ico.mjs build/icon-source.png build/icon.ico",
     "dmg": "electron-vite build && electron-builder --mac",
-    "comment:demo": "The demo build (docs/demo-mode.md DM-1). QALE_DEMO=1 is read twice: electron.vite.config.ts bakes it into the binary so the packaged app knows what it is, and electron-builder.demo.yml renames it so it installs beside the real Qale. Plain shell assignment, which is what zsh, bash and the CI runner all use; there is no cross-env in this repo.",
+    "comment:demo": "The demo build (docs/demo-mode.md DM-1). QALE_DEMO=1 is read twice: electron.vite.config.ts bakes it into the binary so the packaged app knows what it is, and electron-builder.demo.yml renames it so it installs beside the real Qale. The mac and dev scripts use a plain shell assignment, which zsh and bash both take. Only win:demo needs cross-env, because pnpm runs a script through cmd.exe on Windows and cmd has no such syntax. The variable goes to electron-vite alone in every one of them: electron-builder reads the config file, not the environment.",
     "dmg:demo": "QALE_DEMO=1 electron-vite build && electron-builder --mac --config electron-builder.demo.yml",
     "package:demo": "QALE_DEMO=1 electron-vite build && electron-builder --dir --config electron-builder.demo.yml",
     "dev:demo": "QALE_DEMO=1 electron-vite dev",

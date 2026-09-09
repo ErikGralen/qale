@@ -48,6 +48,7 @@ function Center() {
           sessionId={activeTab.sessionId}
           draftKey={activeTab.key}
           initialPrompt={activeTab.initialPrompt}
+          initialModel={activeTab.modelId}
           scope={activeTab.scope}
           onSessionId={(sessionId) => bindTabSession(activeTab.key, sessionId)}
           onNewSession={() => openSession(activeTab.skill, { fresh: true })}

@@ -24,6 +24,7 @@ import {
 import {
   DEFAULT_LANGUAGE,
   DEFAULT_PROVIDER,
+  defaultModelId,
   isReservedFile,
   providerModels,
   providerName,
@@ -1181,7 +1182,7 @@ export class AgentRuntime {
     // that answers": one configured provider still offers dozens of models, and
     // the first of those is as likely to be a robotics preview as a chat model.
     const tried = new Set<string>();
-    for (const wanted of [pinned, this.config.modelId, providerModels(provider)[0]?.id]) {
+    for (const wanted of [pinned, this.config.modelId, defaultModelId(provider)]) {
       if (!wanted || tried.has(wanted)) continue;
       tried.add(wanted);
       const found = available.find((m) => m.id === wanted);

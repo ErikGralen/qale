@@ -18,8 +18,15 @@ import {
   RotateCcw,
   Wand2,
 } from 'lucide-react';
-import type { AskRequestDTO, NoteRefDTO, SessionFileDTO, SessionScopeDTO } from '@qale/ipc';
-import { readAppliedReceipt, titleFromSlug, type AppliedRow } from '@qale/domain';
+import type {
+  AskRequestDTO,
+  CodebaseRequestDTO,
+  NoteRefDTO,
+  SessionFileDTO,
+  SessionScopeDTO,
+  SpawnRequestDTO,
+} from '@qale/ipc';
+import { readAppliedReceipt, titleFromSlug } from '@qale/domain';
 import { parseKickoff, type Kickoff } from '@qale/sessions';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { navFromEvent, type NavOpts } from '../lib/nav';
@@ -27,7 +34,7 @@ import { draftTextShown } from '../lib/draft-text';
 import { noteTypeIcon } from '../lib/note-icons';
 import { fileIconFor } from '../lib/session-files';
 import { isPile, progressLine, receiptLine } from '../lib/source-batch';
-import { blockRows, landedWrites } from '../lib/receipt-block';
+import { landedWrites } from '../lib/receipt-block';
 import { HeaderAction, HeaderActions, PageHeader } from '../components/PageHeader';
 import { InkWriting } from '../components/InkWriting';
 import { Markdown } from '../components/Markdown';
@@ -620,45 +627,66 @@ function RunRow({
 }
 
 /**
- * The receipt for a turn (docs/fewer-approvals.md FA-4).
+ * Where the session stands, at the foot of the transcript.
  *
- * One block above the agent's closing sentences, in the order the PM reads it:
- * the question that holds the turn up, then what landed with a way back on each
- * row, then what still waits for a yes. A landed row and a waiting row are the
- * same shape with different controls, so the eye reads the set once instead of
- * learning two vocabularies.
+ * Everything here belongs to the session rather than to one turn: the question
+ * that holds the run up, a fan-out or a codebase read waiting on a yes, what a
+ * dropped pile came to, and the cards still waiting to be judged. They used to
+ * draw in three different places — the question spliced above the last turn's
+ * closing sentences, the fan-out and the codebase card under the whole
+ * transcript, the cards moving to whichever turn was newest. So a card could
+ * appear above a paragraph the PM had already read, and the same session drew
+ * its two approval cards in two different spots.
  *
- * The question and the waiting cards belong to the session rather than to one
- * turn, so only the last turn draws them (`hostsSession`).
+ * One block, always in the same place, always in the same order: what stops the
+ * run, then what it came to. Nothing above it ever moves once it is on screen.
  */
-function ReceiptBlock({
-  landed,
+function SessionFoot({
   sessionId,
   ask,
-  hostsSession,
-  onOpen,
+  spawn,
+  codebase,
+  pileReceipt,
 }: {
-  landed: readonly AppliedRow[];
   sessionId: string | null;
-  /** The parked question, when this block hosts it. */
+  /** The parked question, while the run waits on it. */
   ask: AskRequestDTO | null;
-  hostsSession: boolean;
-  onOpen: (path: string, opts?: NavOpts) => void;
+  spawn: SpawnRequestDTO | null;
+  codebase: CodebaseRequestDTO | null;
+  /** What a dropped pile came to, in one sentence (CM-2). */
+  pileReceipt: string | null;
 }) {
-  const { proposals } = useApp();
-  const waiting = hostsSession
-    ? proposals.filter((p) => p.status === 'pending' && p.sessionId === sessionId).length
-    : 0;
-  const rows = blockRows({ question: !!ask, landed, waiting });
-  if (rows.length === 0 && !hostsSession) return null;
+  if (!sessionId) return null;
   return (
-    <div className="my-2 flex flex-col gap-1">
-      {rows[0]?.kind === 'question' && ask && <QuestionCard request={ask} />}
-      <LandedRows rows={landed} sessionId={sessionId} onOpen={onOpen} />
-      {/* SessionReview draws the waiting rows, and stays the one place a card
+    // `empty:hidden` so a session with nothing waiting takes no room: an empty
+    // box would still draw the transcript's 16px gap under the last turn.
+    <div className="flex flex-col gap-1 empty:hidden">
+      {/* The three cards that hold the run. Only one is ever up at a time, and
+          while one is the session cannot move, so it leads the block. */}
+      {ask && <QuestionCard request={ask} />}
+      {spawn && <SpawnCard request={spawn} />}
+      {codebase && <CodebaseCard request={codebase} />}
+
+      {/* What the pile came to, in one sentence (CM-2). It sums a batch the
+          reply above describes piece by piece, and every number in it was
+          counted from a filing that happened.
+
+          It wears the same 20px mark column as the approval receipt under it,
+          because the two are one closing moment: what was read, then what was
+          approved. */}
+      {pileReceipt && (
+        <p className="flex items-center gap-2 px-0.5 text-sm text-muted-foreground">
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            <FileText className="size-3.5" />
+          </span>
+          {pileReceipt}
+        </p>
+      )}
+
+      {/* SessionReview draws the waiting cards, and stays the one place a card
           is judged. It also carries the closing beat once every card is judged,
           which is why it renders even when nothing is waiting. */}
-      {hostsSession && sessionId && <SessionReview sessionId={sessionId} />}
+      <SessionReview sessionId={sessionId} />
     </div>
   );
 }
@@ -686,6 +714,13 @@ interface SessionViewProps {
   /** Shows a "New session" button in the header wired to this. */
   onNewSession?: () => void;
   initialPrompt?: string;
+  /**
+   * The model the composer that opened this session was set to. A session
+   * started from Home or a browse page sends its first message before this view
+   * has a composer to pick in, so the pick travels with the start and is in
+   * force from that first turn.
+   */
+  initialModel?: string;
   /**
    * The page a scoped Ask was started from, as a filter (IM-13). It travels as
    * data, not as words: the session is built with the matching notes listed in
@@ -790,6 +825,7 @@ function SessionThread({
   onSessionId,
   onNewSession,
   initialPrompt,
+  initialModel,
   scope,
   scopeHint,
   embedded,
@@ -843,9 +879,11 @@ function SessionThread({
   };
   // The model this session runs on, once the PM has moved it off the workspace
   // default. Unlike the skill it is not spent on one turn: it belongs to the
-  // session, so it rides along with every message from here on.
-  const [pickedModel, setPickedModel] = useState<string | null>(null);
-  const pickedModelRef = useRef<string | null>(null);
+  // session, so it rides along with every message from here on. A pick made in
+  // the composer that opened the session starts it off, so the very first turn
+  // runs on it too.
+  const [pickedModel, setPickedModel] = useState<string | null>(initialModel ?? null);
+  const pickedModelRef = useRef<string | null>(initialModel ?? null);
   const pickModel = (modelId: string) => {
     pickedModelRef.current = modelId;
     setPickedModel(modelId);
@@ -947,18 +985,6 @@ function SessionThread({
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i]!.role === 'user') {
       lastUserIdx = i;
-      break;
-    }
-  }
-
-  // The turn that hosts the session's own block: the question waiting on the PM
-  // and the cards still waiting for a yes (FA-4). They belong to the session
-  // rather than to one turn, so they hang off the last turn there is. A session
-  // that has not answered yet has none, and they draw under the transcript.
-  let blockIdx = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]!.role !== 'user') {
-      blockIdx = i;
       break;
     }
   }
@@ -1127,28 +1153,22 @@ function SessionThread({
                 );
               }
               // The working phase (reasoning, tool calls, mid-work narration)
-              // folds into an ActivityBlock; only the final text renders as the
-              // answer. While streaming, a trailing text is treated as the answer
-              // until a later tool call proves it was narration.
-              let lastTextIdx = -1;
+              // folds into an ActivityBlock; the last text renders as the
+              // answer.
+              //
+              // A text with a parking call after it ("let me check with you
+              // first", then ask_user) is the answer too. It used to fold into
+              // the trail so the card could take its place, which meant a
+              // paragraph the PM was reading vanished the moment the card
+              // arrived. The card draws at the foot of the transcript now, so
+              // the sentence leading into it keeps its spot above it.
+              let answerIdx = -1;
               for (let i = parts.length - 1; i >= 0; i--) {
                 if (parts[i]!.type === 'text') {
-                  lastTextIdx = i;
+                  answerIdx = i;
                   break;
                 }
               }
-              // A text with a parking call after it ("let me check with the
-              // PM", then ask_user) is narration on the way to the card below,
-              // not the answer. It folds into the trail; the card is what the
-              // PM reads. Once the turn carries on past the card, a later text
-              // becomes the answer again.
-              const parked = parts.some(
-                (p, i) =>
-                  i > lastTextIdx &&
-                  isToolPart(p) &&
-                  ['ask_user', 'spawn', 'ask_codebase'].includes(toolNameOf(p)),
-              );
-              const answerIdx = parked ? -1 : lastTextIdx;
               // With one exception: a fenced block mid-work is not narration, it
               // is something the PM is meant to copy and run somewhere else. The
               // interview hands over a prompt for Claude Code that way, and folded
@@ -1166,39 +1186,32 @@ function SessionThread({
               // the answer — and that flushes the pile into one folded block. One
               // block for the whole turn lost the order, so "a panel, then a
               // paragraph, then another panel" came out as neither.
+              //
+              // A write that landed on its own flushes with the work that made
+              // it (docs/fewer-approvals.md FA-4): the folded trail, then the
+              // rows for what it wrote, then whatever interrupted it. Gathering
+              // the whole turn's writes into one block at the answer put a row
+              // for a write that happened later above a paragraph the PM had
+              // already read.
               const nodes: ReactNode[] = [];
               let pending: AnyPart[] = [];
               let pendingFrom = 0;
               const flush = (live: boolean) => {
                 if (pending.length === 0) return;
+                const landed = landedWrites(pending);
                 nodes.push(
                   <ActivityBlock key={`activity-${pendingFrom}`} parts={pending} live={live} />,
                 );
+                if (landed.length > 0)
+                  nodes.push(
+                    <LandedRows
+                      key={`landed-${pendingFrom}`}
+                      rows={landed}
+                      sessionId={boundSessionId ?? null}
+                      onOpen={openDoc}
+                    />,
+                  );
                 pending = [];
-              };
-              // The receipt for this turn, above its closing sentences: what
-              // landed, what waits, and the question that holds the turn up
-              // (docs/fewer-approvals.md FA-4). One key wherever it goes, so it
-              // moves when the answer arrives instead of being built again.
-              const landed = landedWrites(parts);
-              const hostsSession = mi === blockIdx;
-              let receipted = false;
-              const receipt = () => {
-                if (receipted) return;
-                receipted = true;
-                if (landed.length === 0 && !hostsSession) return;
-                nodes.push(
-                  <ReceiptBlock
-                    key="receipt"
-                    landed={landed}
-                    sessionId={boundSessionId ?? null}
-                    ask={
-                      hostsSession && boundSessionId ? (askRequests[boundSessionId] ?? null) : null
-                    }
-                    hostsSession={hostsSession}
-                    onOpen={openDoc}
-                  />,
-                );
               };
               parts.forEach((part, i) => {
                 // A call still running, refused, or with no usable variants reads
@@ -1225,7 +1238,6 @@ function SessionThread({
                 }
                 if (part.type === 'text' && (i === answerIdx || handover(part, i))) {
                   flush(false);
-                  if (i === answerIdx) receipt();
                   nodes.push(
                     <Markdown
                       key={`text-${i}`}
@@ -1241,9 +1253,6 @@ function SessionThread({
                 }
               });
               flush(liveTail);
-              // A turn with no closing sentences yet (still running, or one that
-              // only wrote) ends on its receipt instead.
-              receipt();
               return (
                 <div key={message.id} className="w-full">
                   {nodes}
@@ -1304,47 +1313,16 @@ function SessionThread({
               </div>
             )}
 
-            {/* What the pile came to, in one sentence (CM-2). It sums a batch
-              the reply above describes piece by piece, and every number in it
-              was counted from a filing that happened.
-
-              It wears the same 20px mark column as the approval receipt below
-              it, because the two are one closing moment: what was read, then
-              what was approved. Naked, the sentence floated between them as a
-              third unrelated line. */}
-            {pile?.done && (
-              <p className="flex items-center gap-2 px-0.5 text-sm text-muted-foreground">
-                <span className="flex size-5 shrink-0 items-center justify-center">
-                  <FileText className="size-3.5" />
-                </span>
-                {receiptLine(pile)}
-              </p>
-            )}
-
-            {/* A fan-out waiting on approval. Above the proposal cards: nothing
-              else in this session can move until it settles. */}
-            {boundSessionId && spawnRequests[boundSessionId] && (
-              <SpawnCard request={spawnRequests[boundSessionId]!} />
-            )}
-
-            {/* A codebase question waiting on approval, in the same place and for
-              the same reason: the turn is parked until it settles. */}
-            {boundSessionId && codebaseRequests[boundSessionId] && (
-              <CodebaseCard request={codebaseRequests[boundSessionId]!} />
-            )}
-
-            {/* The block hangs off the last turn, above its closing sentences.
-              A session with no turn yet has nowhere to hang it, so the question
-              and the cards draw here instead. */}
-            {blockIdx === -1 && boundSessionId && (
-              <ReceiptBlock
-                landed={[]}
-                sessionId={boundSessionId}
-                ask={askRequests[boundSessionId] ?? null}
-                hostsSession
-                onOpen={openDoc}
-              />
-            )}
+            {/* Where the session stands, always at the foot: the card that
+              holds the run, what a pile came to, and the cards waiting for a
+              yes. One place, one order, whatever the turns above did. */}
+            <SessionFoot
+              sessionId={boundSessionId ?? null}
+              ask={(boundSessionId && askRequests[boundSessionId]) || null}
+              spawn={(boundSessionId && spawnRequests[boundSessionId]) || null}
+              codebase={(boundSessionId && codebaseRequests[boundSessionId]) || null}
+              pileReceipt={pile?.done ? receiptLine(pile) : null}
+            />
           </div>
         </div>
 

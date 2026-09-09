@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { appliedReceipt, appliedRowLine, readAppliedReceipt, type AppliedRow } from '@qale/domain';
 import type { RevertResultDTO } from '@qale/ipc';
 import {
-  blockRows,
   groupForRow,
   landedWrites,
   orderLanded,
@@ -67,24 +66,6 @@ test('a turn hands back its writes in the order it made them', () => {
     rows.map((r) => r.activityId),
     ['a_1', 'a_2'],
   );
-});
-
-test('the block reads question first, then what landed, then what waits', () => {
-  const landed = [
-    { verb: 'New' as const, title: 'Send the dates' },
-    { verb: 'Changed' as const, title: 'Rollout runbook' },
-  ];
-  assert.deepEqual(
-    blockRows({ question: true, landed, waiting: 1 }).map((r) => r.kind),
-    ['question', 'landed', 'landed', 'waiting'],
-  );
-  // No question and nothing waiting: the landed rows are the whole block.
-  assert.deepEqual(
-    blockRows({ landed }).map((r) => r.kind),
-    ['landed', 'landed'],
-  );
-  assert.deepEqual(blockRows({}), []);
-  assert.equal(blockRows({ landed })[0]?.landed?.title, 'Send the dates');
 });
 
 const restored = (method: 'patch' | 'snapshot' = 'patch'): RevertResultDTO => ({

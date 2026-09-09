@@ -4,6 +4,7 @@ import type { SessionScopeDTO } from '@qale/ipc';
 import { buildKickoff } from '@qale/sessions';
 import { useApp } from '../state/app-state';
 import { useChatMentions } from '../app/ChatMentions';
+import { ModelPicker } from '../app/ModelPicker';
 import { SkillPicker } from '../app/SkillPicker';
 import {
   COMPOSER_INPUT,
@@ -69,6 +70,10 @@ export function ScopedAskComposer({
   const hintId = useId();
   const [pickedSkill, setPickedSkill] = useState<string | null>(null);
   const [skillMenuOpen, setSkillMenuOpen] = useState(false);
+  // The model this question opens on. Here for the same reason the skill pick
+  // is: the session starts by sending, so a pick made afterwards would arrive
+  // one turn too late.
+  const [pickedModel, setPickedModel] = useState<string | null>(null);
 
   const scopeKey = `${scope.kind}:${scope.label}`;
   const [ask, setAsk] = useState(() => drafts.get(scopeKey) ?? '');
@@ -104,8 +109,9 @@ export function ScopedAskComposer({
     // required for the plain, skill-less ask.
     if (!q && !pickedSkill) return;
     update('');
-    // One start, not a mode — the pick is spent on the session it opens.
+    // One start, not a mode — the picks are spent on the session they open.
     setPickedSkill(null);
+    setPickedModel(null);
     // A picked skill takes the session's name too, so the tab says what it is
     // rather than calling everything "Ask".
     const title = skill
@@ -121,6 +127,7 @@ export function ScopedAskComposer({
       title,
       initialPrompt,
       ...(scope.filter ? { scope: scope.filter } : {}),
+      ...(pickedModel ? { modelId: pickedModel } : {}),
     });
   };
 
@@ -181,6 +188,16 @@ export function ScopedAskComposer({
               <ScopeIcon className="size-3.5" aria-hidden />
               <span className="max-w-40 truncate">{scope.label}</span>
             </span>
+            {/* After the scope chip, so the skill and the scope stay next to
+                each other as the sentence the send will run. */}
+            <ModelPicker
+              pinned={pickedModel}
+              onPick={setPickedModel}
+              onClosed={() => inputRef.current?.focus()}
+              describe={(label) => `${label} answers this. Pick another for the session it opens.`}
+              scope="the session this opens"
+              note="Applies to the session this opens. Your other sessions keep their own model."
+            />
             <MentionHint show={!ask.trim()} />
             <SendButton ready={!!ask.trim() || !!pickedSkill} onClick={() => runAsk()} />
           </div>

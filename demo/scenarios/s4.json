@@ -12,9 +12,7 @@
       "turns": [
         {
           "text": [
-            "Deciding: the stories that make up the Visma connector under SCH-118, for Rebecca's team once the Fortnox connector is done ([[decisions/2026-05-20-fortnox-first-payroll-target]]).",
-            "Out of scope: a date, and anything that needs the token store before PLT-77 lands ([[tickets/jira/PLT-77]]).",
-            "Done looks like: three or four stories you would file as they stand, three acceptance checkboxes each, Fjord Sports named where they are the reason ([[customers/fjord-sports]]).",
+            "Deciding: the stories for the Visma connector under SCH-118, for Rebecca's team once Fortnox is done ([[decisions/2026-05-20-fortnox-first-payroll-target]]). Out of scope: a date, and anything that needs the token store before PLT-77 lands. Done looks like: three or four stories the team can start on Monday, three checks each, Fjord Sports named where they are the reason.",
             "",
             "Four ideas. Keep or cut each one."
           ],
@@ -26,39 +24,39 @@
               "input": {
                 "questions": [
                   {
-                    "header": "OAuth",
-                    "question": "Connect a customer's Visma account through the PLT-77 token store.",
-                    "body": "The case: Fortnox already goes through the token store, and Nils refused to keep refresh tokens anywhere else ([[tickets/jira/SCH-125]]). Visma is the second integration the store was built for ([[tickets/jira/PLT-77]]), so this story is the connect screen, the consent flow and the per-tenant token, nothing new underneath.\n\nThe cost: it cannot start until refresh-on-expiry lands in PLT-77, and it is the story every other Visma story waits on. If PLT-77 slips, this slips with it.",
+                    "header": "Connect",
+                    "question": "Connect a customer's Visma account.",
+                    "body": "The case: a chain signs in to Visma once, and Rota keeps that login in the same safe place it keeps the Fortnox one ([[tickets/jira/PLT-77]]).\n\nThe cost: it cannot start until that place is finished, and every other Visma story waits on this one.",
                     "options": [
-                      { "label": "Keep it", "description": "One story: connect a Visma account, tokens in the platform store." },
-                      { "label": "Cut it", "description": "Then the connector has nowhere to keep credentials, and the push story has to invent one." }
+                      { "label": "Keep it", "description": "One story: connect a Visma account, login kept in the platform store." },
+                      { "label": "Cut it", "description": "Then the connector has nowhere to keep the login, and the send story has to invent one." }
                     ]
                   },
                   {
-                    "header": "Mapping",
-                    "question": "Reuse the SCH-125 cost-centre mapping for Visma.",
-                    "body": "The case: Fortnox maps each location to a cost centre, and the CSV already uses one column set both systems accept ([[tickets/jira/SCH-121]]). Visma needs the same mapping with Visma's own identifiers. Reusing the screen and the model keeps this to a week of adapter work rather than a second mapping feature.\n\nThe cost: the Fortnox mapping is built for Fortnox's identifiers. If Visma's cost-centre model differs (Fjord Sports run 60 stores under regional cost centres), the reuse turns into a refactor of SCH-125 that lands on the Fortnox team's plate first.",
+                    "header": "Map",
+                    "question": "Match each store to its Visma cost centre, on the screen built for Fortnox.",
+                    "body": "The case: head office fills in one list once, and every store's hours know where to go. The Fortnox screen already does this ([[tickets/jira/SCH-125]]).\n\nThe cost: if Visma's cost centres are shaped differently (Fjord Sports run 60 stores under regional ones), the reuse turns into rework on the Fortnox screen first.",
                     "options": [
-                      { "label": "Keep it", "description": "One story: map locations to Visma cost centres on the existing screen." },
-                      { "label": "Cut it", "description": "Then Visma gets its own mapping story, written from scratch." }
+                      { "label": "Keep it", "description": "One story: map stores to Visma cost centres on the existing screen." },
+                      { "label": "Cut it", "description": "Then Visma gets its own mapping screen, written from scratch." }
                     ]
                   },
                   {
-                    "header": "Push",
-                    "question": "One push per pay period, with a report of what Visma rejected.",
-                    "body": "The case: this is the story Oskar is waiting for. Approved hours go from the period view straight into Visma, one push per pay period per store, and the manager reads a plain report of anything Visma refused ([[meetings/2026-05-26-fjord-sports-payroll-call]]). Same shape as the Fortnox push in SCH-125.\n\nThe cost: the rejection report is the half of the work nobody scopes. Visma's error responses are not Fortnox's, and a report a manager can act on takes longer than the push itself.",
+                    "header": "Send",
+                    "question": "Send approved hours to Visma once per pay period, with a report of what Visma refused.",
+                    "body": "The case: this is what Oskar at Fjord Sports is waiting for. Hours leave Rota on their own, and his regional admin stops retyping them every second Monday ([[meetings/2026-05-26-fjord-sports-payroll-call]]).\n\nThe cost: the report of refused lines is the half nobody scopes, and it takes longer than the sending.",
                     "options": [
-                      { "label": "Keep it", "description": "One story: push per pay period plus the rejection report, together." },
+                      { "label": "Keep it", "description": "One story: the send and the report of refused lines, together." },
                       { "label": "Cut it", "description": "Then the connector connects and maps but never sends, and the file stays the product." }
                     ]
                   },
                   {
                     "header": "Pilot",
-                    "question": "Run the first push with Fjord Sports' 60 stores before it goes to every chain.",
-                    "body": "The case: Fjord Sports asked first, planned their migration around it, and have a regional admin who does the retyping today ([[insights/fjord-sports-expects-payroll-q4]]). A pilot with them finds the cost-centre and rejection cases before any other chain sees them.\n\nThe cost: a pilot is a project, not a story. It needs a feature flag per chain, someone from CS in the loop for the first two pay periods, and a date we do not have. Under an epic it becomes the story that never closes.",
+                    "question": "Run the first sends with Fjord Sports' 60 stores before every chain gets it.",
+                    "body": "The case: they asked first and planned their Visma move around us, so they find the odd cases before anyone else does ([[insights/fjord-sports-expects-payroll-q4]]).\n\nThe cost: a pilot is a project, not a story. It needs a switch per chain, CS in the loop for two pay periods, and a date we do not have.",
                     "options": [
-                      { "label": "Keep it", "description": "One story: a per-chain flag and a pilot checklist for Fjord Sports." },
-                      { "label": "Cut it", "description": "Fjord Sports stays in the first line of the other stories; the pilot is a rollout decision, not a ticket." }
+                      { "label": "Keep it", "description": "One story: a switch per chain and a pilot checklist for Fjord Sports." },
+                      { "label": "Cut it", "description": "Fjord Sports goes in the first line of the other stories instead. The pilot is a rollout call, not a ticket." }
                     ]
                   },
                   {
@@ -72,9 +70,9 @@
         },
         {
           "text": [
-            "Three kept, the pilot cut. Fjord Sports stays in the first line of each story instead.",
+            "Three kept, the pilot cut. Fjord Sports goes in the first line of each story instead.",
             "",
-            "Next level down: the same three as stories, each with its three checks. Keep or cut."
+            "The same three as stories, each with its three checks. Keep or cut."
           ],
           "tools": [
             {
@@ -83,29 +81,29 @@
                 "questions": [
                   {
                     "header": "Story 1",
-                    "question": "Connect a customer's Visma account through the token store.",
-                    "body": "Fjord Sports first: their regional admin connects one Visma account for the chain.\n\nAcceptance:\n- A chain admin connects a Visma account from the payroll settings screen and sees it as connected.\n- Refresh tokens live in the platform token store (PLT-77), per tenant, never in the scheduling service.\n- Disconnecting removes the token and stops every push for that chain.",
+                    "question": "Connect a customer's Visma account.",
+                    "body": "- A chain admin connects a Visma account from payroll settings and sees it as connected.\n- The login lives in the platform token store (PLT-77), never in the scheduling service.\n- Disconnecting removes it and stops every send for that chain.",
                     "options": [
                       { "label": "Keep it", "description": "Filed as written." },
-                      { "label": "Cut it", "description": "Dropped from the set." }
+                      { "label": "Cut it", "description": "Dropped." }
                     ]
                   },
                   {
                     "header": "Story 2",
-                    "question": "Map locations to Visma cost centres, reusing the Fortnox mapping.",
-                    "body": "Fjord Sports first: 60 stores, mapped once by head office.\n\nAcceptance:\n- The mapping screen from SCH-125 lists every location with a Visma cost centre to fill in.\n- A location with no cost centre is flagged before the first push, not rejected after it.\n- Changing a mapping applies to the next pay period only, never to hours already pushed.",
+                    "question": "Map stores to Visma cost centres on the Fortnox mapping screen.",
+                    "body": "- The mapping screen from SCH-125 lists every store with a Visma cost centre to fill in.\n- A store with no cost centre is flagged before the first send, not refused after it.\n- A changed mapping applies to the next pay period only, never to hours already sent.",
                     "options": [
                       { "label": "Keep it", "description": "Filed as written." },
-                      { "label": "Cut it", "description": "Dropped from the set." }
+                      { "label": "Cut it", "description": "Dropped." }
                     ]
                   },
                   {
                     "header": "Story 3",
-                    "question": "Push approved hours to Visma once per pay period, with a rejection report.",
-                    "body": "Fjord Sports first: approved hours per store leave the period view and land in Visma, so the regional admin stops retyping.\n\nAcceptance:\n- A manager pushes one pay period for one store from the period view, and the push cannot be repeated for the same period without confirming.\n- Every line Visma rejects comes back as a report naming the person, the date and the reason, in plain words.\n- A pushed period is marked in the period view with the time it was sent.",
+                    "question": "Send approved hours to Visma once per pay period, with a report of what Visma refused.",
+                    "body": "- A manager sends one pay period for one store from the period view, and cannot send it twice without confirming.\n- Every line Visma refuses comes back in a report naming the person, the date and the reason, in plain words.\n- A sent period shows the time it was sent in the period view.",
                     "options": [
                       { "label": "Keep it", "description": "Filed as written." },
-                      { "label": "Cut it", "description": "Dropped from the set." }
+                      { "label": "Cut it", "description": "Dropped." }
                     ]
                   },
                   {
@@ -118,18 +116,18 @@
           ]
         },
         {
-          "text": "Three cards, one per story, under SCH-118 in the team's shape: one label, Fjord Sports in the first line, three checks each. The reasoning stays in this session.",
+          "text": "Three ticket cards under SCH-118, one per story, in the team's shape: one label, Fjord Sports in the first line, three checks. The reasoning is in this session.",
           "tools": [
             {
               "name": "draft_ticket",
               "input": {
                 "container": "SCH",
                 "kind": "Story",
-                "title": "Connect a customer's Visma account through the token store",
-                "body": "Fjord Sports first: their regional admin connects one Visma account for the chain, so approved hours can leave Rota without retyping.\n\nParent: SCH-118. Second connector after Fortnox (SCH-125), same token store (PLT-77).\n\nAcceptance:\n- [ ] A chain admin connects a Visma account from the payroll settings screen and sees it as connected.\n- [ ] Refresh tokens live in the platform token store (PLT-77), per tenant, never in the scheduling service.\n- [ ] Disconnecting removes the token and stops every push for that chain.\n\nSource: Fortnox-first decision, 2026-05-20, and the story round in Qale on 2026-07-17",
+                "title": "Connect a customer's Visma account",
+                "body": "Fjord Sports first: their regional admin connects one Visma account for the chain.\n\nPart of SCH-118. Second connector after Fortnox (SCH-125), same token store (PLT-77).\n\nAcceptance:\n- [ ] A chain admin connects a Visma account from payroll settings and sees it as connected.\n- [ ] The login lives in the platform token store (PLT-77), per tenant, never in the scheduling service.\n- [ ] Disconnecting removes it and stops every send for that chain.\n\nSource: story round in Qale, 2026-07-17",
                 "labels": ["payroll-export"],
                 "sources": ["[[decisions/2026-05-20-fortnox-first-payroll-target]]", "[[tickets/jira/SCH-118]]", "[[tickets/jira/PLT-77]]", "[[customers/fjord-sports]]"],
-                "rationale": "First of the three Visma stories you kept. Everything else waits on this one."
+                "rationale": "First of the three stories you kept. The other two wait on this one."
               }
             },
             {
@@ -137,11 +135,11 @@
               "input": {
                 "container": "SCH",
                 "kind": "Story",
-                "title": "Map locations to Visma cost centres, reusing the Fortnox mapping",
-                "body": "Fjord Sports first: 60 stores under regional cost centres, mapped once by head office.\n\nParent: SCH-118. Reuses the location-to-cost-centre mapping built for Fortnox (SCH-125) with Visma's identifiers.\n\nAcceptance:\n- [ ] The mapping screen from SCH-125 lists every location with a Visma cost centre to fill in.\n- [ ] A location with no cost centre is flagged before the first push, not rejected after it.\n- [ ] Changing a mapping applies to the next pay period only, never to hours already pushed.\n\nSource: Fortnox-first decision, 2026-05-20, and the story round in Qale on 2026-07-17",
+                "title": "Map stores to Visma cost centres on the Fortnox mapping screen",
+                "body": "Fjord Sports first: 60 stores under regional cost centres, mapped once by head office.\n\nPart of SCH-118. Reuses the store-to-cost-centre screen built for Fortnox (SCH-125), with Visma's identifiers.\n\nAcceptance:\n- [ ] The mapping screen from SCH-125 lists every store with a Visma cost centre to fill in.\n- [ ] A store with no cost centre is flagged before the first send, not refused after it.\n- [ ] A changed mapping applies to the next pay period only, never to hours already sent.\n\nSource: story round in Qale, 2026-07-17",
                 "labels": ["payroll-export"],
                 "sources": ["[[decisions/2026-05-20-fortnox-first-payroll-target]]", "[[tickets/jira/SCH-118]]", "[[tickets/jira/SCH-125]]", "[[customers/fjord-sports]]"],
-                "rationale": "Second of the three Visma stories you kept. Reuse over a second mapping feature."
+                "rationale": "Second of the three stories you kept. Reuse over a second mapping screen."
               }
             },
             {
@@ -149,11 +147,11 @@
               "input": {
                 "container": "SCH",
                 "kind": "Story",
-                "title": "Push approved hours to Visma once per pay period, with a rejection report",
-                "body": "Fjord Sports first: approved hours per store leave the period view and land in Visma, so their regional admin stops retyping every second Monday.\n\nParent: SCH-118. Same shape as the Fortnox push (SCH-125): one push per pay period per store, and a report of what Visma refused.\n\nAcceptance:\n- [ ] A manager pushes one pay period for one store from the period view, and the push cannot be repeated for the same period without confirming.\n- [ ] Every line Visma rejects comes back as a report naming the person, the date and the reason, in plain words.\n- [ ] A pushed period is marked in the period view with the time it was sent.\n\nSource: Fortnox-first decision, 2026-05-20, and the story round in Qale on 2026-07-17",
+                "title": "Send approved hours to Visma once per pay period, with a report of what Visma refused",
+                "body": "Fjord Sports first: approved hours per store leave the period view and land in Visma, so their regional admin stops retyping them every second Monday.\n\nPart of SCH-118. Same shape as the Fortnox send (SCH-125): one send per pay period per store, and a report of what Visma refused.\n\nAcceptance:\n- [ ] A manager sends one pay period for one store from the period view, and cannot send it twice without confirming.\n- [ ] Every line Visma refuses comes back in a report naming the person, the date and the reason, in plain words.\n- [ ] A sent period shows the time it was sent in the period view.\n\nSource: story round in Qale, 2026-07-17",
                 "labels": ["payroll-export"],
                 "sources": ["[[decisions/2026-05-20-fortnox-first-payroll-target]]", "[[tickets/jira/SCH-118]]", "[[meetings/2026-05-26-fjord-sports-payroll-call]]", "[[customers/fjord-sports]]"],
-                "rationale": "Third of the three Visma stories you kept, and the one Oskar is waiting for."
+                "rationale": "Third of the three stories you kept, and the one Oskar is waiting for."
               }
             }
           ]
@@ -161,9 +159,9 @@
         {
           "pause": 1500,
           "text": [
-            "Three story cards wait under SCH-118: connect, map, push. Approve the ones you want and they land in Jira with the label and the three checks. The pilot is a rollout decision, so it is not a ticket; Fjord Sports is in the first line of each story instead.",
+            "Three cards wait under SCH-118: connect, map, send. Approve one and it lands in Jira with the label and the three checks.",
             "",
-            "No date on any of them. Visma cannot start before PLT-77 lands, and the Fortnox connector goes first."
+            "No date on any of them. Visma starts after Fortnox, and Fortnox waits on PLT-77."
           ]
         }
       ]

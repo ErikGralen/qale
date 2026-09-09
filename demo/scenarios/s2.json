@@ -92,16 +92,16 @@
         },
         {
           "text": [
-            "Four people, and the account that asked first.",
+            "Four people, in this order.",
             "",
-            "- Oskar Lind, Fjord Sports. On 2026-05-26 he asked for exactly this: approved hours per store, per pay period, as a file, until the connector exists ([[meetings/2026-05-26-fjord-sports-payroll-call]]). He was told Visma in Q4 and nothing since ([[customers/fjord-sports]]).",
-            "- Ulrika Nyström. She was on that call and asked to hear before the customer does ([[people/ulrika-nystrom]]).",
-            "- Malin Sjöberg. She wants the list of accounts that asked before any release note goes out ([[people/malin-sjoberg]]).",
-            "- Jonas Berg. Two support tickets in June asked whether approved hours can go to payroll without retyping. He has no macro, and nobody told him the export exists ([[people/jonas-berg]]).",
+            "- Ulrika Nyström, CS for Fjord Sports. She asked to hear before the customer does ([[meetings/2026-05-26-fjord-sports-payroll-call]]).",
+            "- Oskar Lind, Fjord Sports. On 2026-05-26 he asked for exactly this file, and has heard nothing since ([[customers/fjord-sports]]).",
+            "- Malin Sjöberg, CS lead. She wants the list of accounts that asked before any release note goes out ([[people/malin-sjoberg]]).",
+            "- Jonas Berg, support. Two June tickets asked for this, and he has no answer to send ([[people/jonas-berg]]).",
             "",
-            "What is true today: the approved-hours file has been on for every chain since 2026-06-24 ([[tickets/jira/SCH-121]], Done in Jira). The Visma date is still Q4, as told ([[decisions/2026-05-20-fortnox-first-payroll-target]]). The Fortnox connector is blocked on the token store ([[tickets/jira/SCH-125]], [[tickets/jira/PLT-77]]), and Jira holds no date for Visma. So the file is the news, and Q4 stays the only date.",
+            "What they hear: the approved-hours file has been live for every chain since 2026-06-24 ([[tickets/jira/SCH-121]]). Visma stays Q4 with no month, as Oskar was told, because the Fortnox connector is still blocked on the token store ([[tickets/jira/PLT-77]]).",
             "",
-            "This is the Kaffekopp shape: they asked, we shipped, nobody called ([[customers/kaffekopp]]). Ulrika first, then Oskar, then Malin and Jonas the same day. The two notes are below; the ledger lines are written."
+            "Two notes below, ready to copy: one to Oskar, one for the three inside. Kaffekopp churned over a feature we had shipped and never mentioned ([[customers/kaffekopp]]); this is the same shape, three weeks in."
           ],
           "tools": [
             {
@@ -116,7 +116,7 @@
                   },
                   {
                     "label": "With the how",
-                    "body": "Hi Oskar,\n\nThe file you asked for on 2026-05-26 has been live since 2026-06-24. In the period view, a manager picks the pay period and exports approved hours for their store: person, location, date, hours and cost centre, in the column set Visma accepts. Head office can do the same across every store at once. That takes the retyping out today.\n\nThe direct Visma connection is still on for the fourth quarter. I do not have a month for you yet, and I will not guess one. I will tell you which month as soon as I have one, and Ulrika will walk your regional admin through the export at your next sync."
+                    "body": "Hi Oskar,\n\nThe file you asked for on 2026-05-26 has been live since 2026-06-24. In the period view, a manager picks the pay period and exports approved hours for their store: person, location, date, hours and cost centre, in the columns Visma accepts. That takes the retyping out today.\n\nThe direct Visma connection is still on for the fourth quarter. I do not have a month for you yet, and I will not guess one. Ulrika will walk your regional admin through the export at your next sync."
                   }
                 ]
               }
@@ -128,7 +128,7 @@
                 "variants": [
                   {
                     "label": "Ulrika and Malin",
-                    "body": "The approved-hours export (SCH-121) has been live for every chain since 2026-06-24: per store, per pay period, from the period view, in a column set Fortnox and Visma both accept. Nobody outside the team was told.\n\nWho asked: Fjord Sports, on 2026-05-26. Oskar asked for exactly this file until the Visma connector exists. A note to him is drafted and goes out today, after this one.\n\nWhat has not changed: Visma is still Q4, as Oskar was told. The Fortnox connector (SCH-125) is blocked on the platform token store (PLT-77), and there is no Visma date in Jira. Please do not put a month on it.\n\nMalin: that is the whole account list. One account asked in writing; the two June support tickets are Jonas's."
+                    "body": "The approved-hours export (SCH-121) has been live for every chain since 2026-06-24: per store, per pay period, from the period view, in columns Fortnox and Visma both accept. Nobody outside the team was told. Sorry.\n\nWho asked: Fjord Sports, on 2026-05-26. A note to Oskar goes out today, after this one.\n\nWhat has not changed: Visma is still Q4, as Oskar was told. The Fortnox connector (SCH-125) is blocked on the token store (PLT-77), and there is no Visma date in Jira. Please do not put a month on it.\n\nMalin: that is the whole account list. One account asked in writing, plus two June support tickets with Jonas."
                   },
                   {
                     "label": "Jonas, with the macro line",
@@ -219,7 +219,7 @@
         {
           "pause": 1500,
           "text": [
-            "The ledger lines are on Fjord Sports and the four people pages, dated today. Copy the note you want and send it yourself; nothing here sends. Ulrika before Oskar."
+            "Each page now says what its person was told today: Fjord Sports and the four people. Copy the note you want and send it yourself; nothing here sends. Ulrika before Oskar."
           ]
         },
         {
@@ -236,7 +236,7 @@
         {
           "pause": 1200,
           "text": [
-            "Added to rules: when something a customer asked for ships, tell Ulrika before the customer. Every session reads it from now on. [[skills/house-rules/SKILL|House rules]]"
+            "Added to your rules: when something a customer asked for ships, tell Ulrika before the customer. Every session reads it from now on. [[skills/house-rules/SKILL|House rules]]"
           ]
         }
       ]

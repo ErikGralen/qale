@@ -22,7 +22,7 @@
           ]
         },
         {
-          "text": "The week of 2026-07-13 to 2026-07-17. One thing shipped, nothing was decided, two things to watch. Each voice still lists three styles, so every panel gives the same news three ways.",
+          "text": "One thing shipped this week, nothing was decided, two things to watch. Three panels below, one per audience. Each voice still lists three styles, so every panel gives the same news three ways; copy the tab you like and I learn the style.",
           "tools": [
             {
               "name": "draft_text",
@@ -44,7 +44,7 @@
                   }
                 ],
                 "ask": {
-                  "text": "Write updates this way from now on?",
+                  "text": "Use this style next time?",
                   "options": ["For exec", "For every audience", "Not now"]
                 }
               }
@@ -57,19 +57,19 @@
                 "variants": [
                   {
                     "label": "Three dated lines",
-                    "body": "Live now: shift reminders in the staff app, since 2026-07-15. Staff get a reminder before each shift once their first shift is visible, and they can switch it off in settings ([[tickets/jira/APP-54]]).\nCommitted: nothing new this week. Payroll export to Fortnox and Visma stays as already told ([[decisions/2026-05-20-fortnox-first-payroll-target]]).\nNo date yet: shift swaps. The last piece is being sized, and we do not have a date."
+                    "body": "Live now, since 2026-07-15: a reminder in the staff app before each shift. It is on by default once the first shift is visible, and staff can switch it off in settings.\nCommitted: nothing new this week. Payroll export to Fortnox and Visma stays as already told.\nNo date yet: shift swaps. The last piece is being sized, and we do not have a date."
                   },
                   {
                     "label": "A short note",
-                    "body": "Hi all, one change to pass on this week.\n\nSince 2026-07-15 staff get a reminder in the app before each shift, on by default once their first shift is visible, and they can switch it off in settings ([[tickets/jira/APP-54]]). Nothing new was promised this week. Shift swaps still have no date: the last piece is being sized, and I will say when there is one."
+                    "body": "Hi all, one change to pass on this week.\n\nSince 2026-07-15 staff get a reminder in the app before each shift. It is on by default once their first shift is visible, and they can switch it off in settings. Nothing new was promised this week. Shift swaps still have no date: the last piece is being sized, and I will say when there is one."
                   },
                   {
                     "label": "Use now, coming next",
-                    "body": "**What you can use**\n- Shift reminders in the staff app, since 2026-07-15. On by default once the first shift is visible; staff can switch it off in settings ([[tickets/jira/APP-54]]).\n- Approved hours as a file per store and pay period, since 2026-06-24 ([[tickets/jira/SCH-121]]).\n\n**What's coming**\n- Shift swaps: no date yet. The last piece is being sized.\n- A direct payroll connection: no new date this week ([[decisions/2026-05-20-fortnox-first-payroll-target]])."
+                    "body": "**What you can use**\n- Shift reminders in the staff app, since 2026-07-15. On by default; staff can switch it off in settings.\n- Approved hours as a file per store and pay period, since 2026-06-24.\n\n**What's coming**\n- Shift swaps: no date yet. The last piece is being sized.\n- A direct payroll connection: no new date this week."
                   }
                 ],
                 "ask": {
-                  "text": "Write updates this way from now on?",
+                  "text": "Use this style next time?",
                   "options": ["For cs", "For every audience", "Not now"]
                 }
               }
@@ -82,19 +82,19 @@
                 "variants": [
                   {
                     "label": "Three dated lines",
-                    "body": "Shipping: shift reminders in the staff app, live since 2026-07-15 ([[tickets/jira/APP-54]]).\nPromised: nothing changed this week. Payroll export stays as told ([[decisions/2026-05-20-fortnox-first-payroll-target]]).\nNo date yet: shift swaps. Do not put a month on it."
+                    "body": "Shipping: shift reminders in the staff app, live since 2026-07-15.\nPromised: nothing changed this week. Payroll export stays as told.\nNo date yet: shift swaps. Do not put a month on it."
                   },
                   {
                     "label": "One line to forward",
-                    "body": "Since 2026-07-15, staff get a reminder in the app before each shift, on by default ([[tickets/jira/APP-54]])."
+                    "body": "Since 2026-07-15, staff get a reminder in the app before each shift, on by default."
                   },
                   {
                     "label": "What you can tell them",
-                    "body": "- Since 2026-07-15: shift reminders in the staff app, on by default ([[tickets/jira/APP-54]]).\n- Since 2026-06-24: approved hours come out as a file per store and pay period ([[tickets/jira/SCH-121]]).\n- No date yet: shift swaps. Nothing to promise this week.\n- No change: the payroll connection dates already given stand ([[decisions/2026-05-20-fortnox-first-payroll-target]])."
+                    "body": "- Since 2026-07-15: shift reminders in the staff app, on by default.\n- Since 2026-06-24: approved hours come out as a file per store and pay period.\n- No date yet: shift swaps. Nothing to promise this week.\n- No change: the payroll export dates already given stand."
                   }
                 ],
                 "ask": {
-                  "text": "Write updates this way from now on?",
+                  "text": "Use this style next time?",
                   "options": ["For sales", "For every audience", "Not now"]
                 }
               }
@@ -121,9 +121,9 @@
         {
           "pause": 1500,
           "text": [
-            "Copy the tab you want from each panel and send it yourself. The question under a panel appears once you copy, and the answer sets that voice for next time.",
+            "Copy the tab you want from each panel and send it yourself; nothing here sends. When you copy, a question appears under the panel, and your answer sets that voice for next time.",
             "",
-            "One card waits: this week's section for the Product weekly update page."
+            "One card waits: this week's section on the Product weekly update page."
           ]
         },
         {

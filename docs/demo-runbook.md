@@ -54,7 +54,10 @@ rules page and show the line it added.
 **S3, a request came in.** In Home, paste the Slack message from the README's scenario 3 and
 send. Pick no skill: Handle a commitment is not in the `/` picker, and the first turn shows Qale pulling it
 in itself. A question card asks whether Åsa reopened offline mode: pick **No, the decision
-stands**. Copy the one-line reply or the longer note from the sales-voice panel.
+stands**. Copy the reply from the sales-voice panel: **One line to forward** is the answer for
+Marcus (the no, the reason, and the line for the prospect), and **What you can tell them** is the
+prospect's part as three lines. The request is kept as an insight in Memory, with no card; open
+Memory → Insights to show it. Nothing lands in Documents.
 
 **S4, break it into stories.** In Home, type `/`, pick **Iterate on something**, type: "Break
 the Visma connector into stories under SCH-118. Rebecca's team, after Fortnox, Fjord Sports

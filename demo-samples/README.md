@@ -13,12 +13,12 @@ told payroll export lands in Q4.
 2. Type: `yesterday's steering, nobody wrote anything down`. Send.
 3. Question card: **Same commitment**.
 4. Approve the three cards: the SCH-118 comment, the new story, the Roadmap H2 patch.
-5. Show: the SCH-118 mirror, Roadmap H2 at version 18.
+5. Show: SCH-118 under Jira with the comment, Roadmap H2 at version 18.
 
 ## 2. Who needs to know
 
 1. Type in Home: `SCH-121 shipped three weeks ago and nobody outside the team was told. Who needs to know, and what do I tell them?`
-2. Copy the Oskar tab.
+2. Copy the **Short** tab of the note to Oskar.
 3. Same session, type: `From now on, when something a customer asked for ships, tell Ulrika before the customer.`
 4. Show: house rules, the new line under "Your rules".
 
@@ -31,8 +31,8 @@ told payroll export lands in Q4.
    ```
 
 2. Question card: **No, the decision stands**.
-3. Copy a tab from the sales-voice panel.
-4. Show: the new note in Documents.
+3. Copy **One line to forward** from the reply panel.
+4. Show: Memory → Insights, the new note on the offline-mode request. No card; it landed.
 
 ## 4. Break it into stories
 
@@ -40,7 +40,7 @@ told payroll export lands in Q4.
 2. Round one: **Keep it** on the first three, **Cut it** on the pilot.
 3. Round two: keep all three.
 4. Approve one ticket card.
-5. Show: the new ticket's mirror, with the label and three checkboxes.
+5. Show: the new ticket under Jira, with the label and three checks.
 
 ## 5. The Friday update
 

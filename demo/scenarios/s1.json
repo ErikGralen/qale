@@ -23,7 +23,7 @@
       "title": "Steering: H2 priorities",
       "turns": [
         {
-          "text": "Yesterday's steering. The calendar holds it at 10:00 with Åsa, Rebecca and Marcus, and the transcript names the same four, so the recording goes on that page.",
+          "text": "This is yesterday's steering, so the transcript goes on that meeting page. The calendar holds it at 10:00 with Åsa, Rebecca and Marcus, and the transcript names the same four.",
           "tools": [
             {
               "name": "file_source",
@@ -90,15 +90,15 @@
                 "questions": [
                   {
                     "header": "Henrik",
-                    "question": "You said you'd ping Henrik today. [[todos/henrik-review-swap-notifications]] is open, due 2026-07-24. Same commitment?",
+                    "question": "You said in steering you'd ping Henrik today. The review with Henrik is already open, due 2026-07-24 ([[todos/henrik-review-swap-notifications]]). Same commitment?",
                     "options": [
                       {
                         "label": "Same commitment",
-                        "description": "I put yesterday's line on that todo and file nothing new."
+                        "description": "Yesterday's line goes on the open review. Nothing new is filed."
                       },
                       {
                         "label": "A new commitment",
-                        "description": "Today's ping is its own item, beside the review that is already open."
+                        "description": "Today's ping becomes its own todo, beside the open review."
                       }
                     ]
                   }
@@ -266,11 +266,11 @@
         {
           "pause": 1600,
           "text": [
-            "Steering flipped the H2 order: shift swaps ships first, payroll export moves to Q1 2027. Åsa decided it, and the May decision is superseded.",
+            "Steering flipped the H2 order: shift swaps ships first, payroll export moves to Q1 2027. Åsa decided it, so it is filed as a decision that replaces the May one.",
             "",
-            "Filed: the write-up on the meeting page, the new decision, and two todos for Rebecca (the SCH-240 estimate by 2026-07-24, and the fourth swap story this week). Henrik's review stays as the one open todo, with yesterday's line on it. Café Nord's hub now says the order changed.",
+            "Also filed: the write-up on the meeting page, two todos for Rebecca (the SCH-240 estimate by 2026-07-24, the fourth swap story this week), yesterday's line on Henrik's review, and a line on Café Nord's page saying the order changed.",
             "",
-            "Waiting for you: a comment on SCH-118, a new story under SCH-231, and the Roadmap H2 page flipped."
+            "Three cards wait for you, because they leave the workspace: a comment on SCH-118, a new story under SCH-231, and the Roadmap H2 page flipped."
           ]
         }
       ]
@@ -332,7 +332,7 @@
         {
           "pause": 1400,
           "text": [
-            "The brief is on the meeting page. One thing to settle before you walk in: Lena left the last QBR with Marcus's \"before September\", and there is no month to give her until Rebecca re-estimates SCH-240."
+            "The brief is on the meeting page. One thing to settle before you walk in: Lena left the last QBR with Marcus's \"before September\", and there is no month to give her until Rebecca re-estimates SCH-240. Agree one sentence with Marcus first."
           ]
         }
       ]

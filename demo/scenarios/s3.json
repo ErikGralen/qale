@@ -21,7 +21,7 @@
       "title": "Marcus: offline mode for a retail prospect",
       "turns": [
         {
-          "text": "This is a request from sales, so I am pulling in Handle a commitment and reading Marcus's ask against what the record says about offline mode.",
+          "text": "Marcus wants a yes by Thursday. Before I answer him, I am checking his claim that Åsa reopened offline mode against the February decision and the 2026-07-09 steering page.",
           "tools": [
             {
               "name": "use_skill",
@@ -75,11 +75,11 @@
                     "options": [
                       {
                         "label": "No, the decision stands",
-                        "description": "The reply says no, with the February reasoning, and the decode records where his claim collides with the record."
+                        "description": "I write Marcus a no, with the February reason, and keep a note of the request in Memory."
                       },
                       {
                         "label": "Yes, Åsa reopened it",
-                        "description": "The record is behind. I write the decode with your word for it, and a new decision with Åsa as decider is the next thing to file."
+                        "description": "The record is behind. I keep the note with your word for it, and a new decision with Åsa as decider is the next thing to file."
                       }
                     ]
                   }
@@ -100,45 +100,42 @@
             {
               "name": "propose_note",
               "input": {
-                "path": "notes/{{today}}-marcus-offline-mode.md",
+                "path": "insights/offline-mode-asked-a-third-time-through-sales.md",
                 "frontmatter": {
-                  "type": "note",
-                  "title": "Marcus: offline mode for a retail prospect",
-                  "summary": "Marcus asked to put offline mode on the H2 list for a seventy-location retail prospect; the February decision stands, posture no",
+                  "type": "insight",
+                  "summary": "Offline mode is asked for a third time, through sales as a line for a proposal, and still no chain has described losing a schedule",
                   "tags": ["offline-mode"],
-                  "sources": [
+                  "evidence": [
+                    "[[people/marcus-ek]]",
                     "[[decisions/2026-02-12-decline-offline-mode]]",
                     "[[research/offline-mode]]",
-                    "[[meetings/2026-07-09-steering]]",
-                    "[[people/marcus-ek]]",
-                    "[[wikipages/confluence/roadmap-h2]]"
-                  ]
+                    "[[meetings/2026-07-09-steering]]"
+                  ],
+                  "confidence": "high"
                 },
-                "body": "# Offline mode for a seventy-location retail prospect\n\n## The ask\n> As I understood it, Åsa reopened offline mode for H2 at steering on 2026-07-09, so I'd like to tell him it's on the H2 list. Can you confirm by Thursday?\n\nMarcus Ek, #sales, 08:41 on 2026-07-17. He wants an answer by Thursday 2026-07-23, for the proposal.\n\n## The job behind it\n**Inference** The ops director wants a line in the proposal he can sign against: what happens to the schedule when a store loses its connection. Confirmed if Marcus can say what the director described. A stockroom with no wifi is one job; a manager editing on the road is another.\n\n## Who is asking\nHead of Sales. He owns the prospect and the number, and he cannot put a feature on the H2 list himself. He has brought offline mode to me for prospects twice, and both times the answer was the February decision ([[people/marcus-ek]]). Last told 2026-06-05, about swaps.\n\n## What we know that bears on it\n- **Fact** Offline mode was declined on 2026-02-12: back offices have wifi, the staff app already caches the current and next week, and offline editing means a sync engine with conflict resolution, most of a quarter of Scheduling's time ([[decisions/2026-02-12-decline-offline-mode]]).\n- **Fact** The theme is marked won't do, declined twice, and the reasoning has not moved ([[research/offline-mode]]).\n- **Fact** Steering on 2026-07-09 was a status round. The page records no decisions ([[meetings/2026-07-09-steering]]).\n- **Fact** Roadmap H2 lists offline mode under Not doing ([[wikipages/confluence/roadmap-h2]]).\n\n## Where it collides\nThe claim that Åsa reopened it on 2026-07-09 runs into the February decision and the steering page. You confirmed in this chat that the decision stands.\n\n## Posture\nNo: the February decision is live, and Scheduling's H2 is spoken for by shift swaps and payroll export. Next move: the reply for Marcus is in the chat, in the sales voice. Nothing goes on the H2 list.\n\n## What I could not check\nWho the prospect is, and what the ops director actually described. If it is \"the wifi drops mid-edit\", that is a save-and-retry answer, not offline mode ([[research/offline-mode]]).",
-                "rationale": "The decode of Marcus's ask: what he asked, the job behind it, where it collides with the February decision, and the posture. You asked for it in this chat.",
+                "body": "A retail prospect with about seventy locations wants offline mode in the staff app, and the ask reached me through sales as a line for the proposal, not as a problem a store has had. That is the third time, and the shape is the same as the two before ([[people/marcus-ek]], [[research/offline-mode]]): nobody has described a chain losing a schedule to a dead connection. The February decision holds, and the claim that Åsa reopened it on 2026-07-09 has no support on the steering page ([[decisions/2026-02-12-decline-offline-mode]], [[meetings/2026-07-09-steering]]).\n\nMarcus Ek, in #sales at 08:41 on 2026-07-17, wants an answer by Thursday 2026-07-23: \"As I understood it, Åsa reopened offline mode for H2 at steering on 2026-07-09, so I'd like to tell him it's on the H2 list. Can you confirm by Thursday?\"",
+                "rationale": "The record of what was asked, so the next offline-mode question lands on it instead of starting over.",
                 "sources": [
+                  "[[people/marcus-ek]]",
                   "[[decisions/2026-02-12-decline-offline-mode]]",
                   "[[research/offline-mode]]",
-                  "[[meetings/2026-07-09-steering]]",
-                  "[[people/marcus-ek]]",
-                  "[[wikipages/confluence/roadmap-h2]]"
-                ],
-                "asked": true
+                  "[[meetings/2026-07-09-steering]]"
+                ]
               }
             },
             {
               "name": "draft_text",
               "input": {
-                "title": "Reply to Marcus, for the prospect",
+                "title": "Reply to Marcus",
                 "voice": "sales",
                 "variants": [
                   {
                     "label": "One line to forward",
-                    "body": "No date: offline mode is not on the H2 list. The staff app already keeps the current and next week on the phone, so staff see their shifts with no connection."
+                    "body": "No: offline mode is not on the H2 list, and it will not be. Åsa declined it on 2026-02-12 and the reason stands: staff already see their shifts offline, and editing a schedule offline means merging two managers' changes afterwards, most of a quarter of the team's time.\n\nFor the prospect: today the staff app keeps the current and next week on the phone, so staff see their shifts with no connection, and if the wifi drops mid-edit the change is saved and sent when it is back. Editing a whole schedule offline has no date."
                   },
                   {
                     "label": "What you can tell them",
-                    "body": "- Today: the staff app keeps the current and next week on the phone. Staff see their shifts with no connection.\n- No date: editing a schedule offline. It is not on the H2 list, and I will not put a quarter on it.\n- Why, in one sentence: offline editing means merging two managers' changes after the fact, and that is not work we are taking on this year.\n- If the director describes a wifi drop mid-edit, the app saves and retries. That is the answer to give him."
+                    "body": "- Today: staff see their shifts in the app with no connection. The current and next week are on the phone.\n- Today: if the wifi drops while a manager is editing, the change is saved and sent when the connection is back.\n- No date: editing a whole schedule offline. It is not on the H2 list, and we will not put a quarter on it."
                   }
                 ]
               }
@@ -149,9 +146,9 @@
         {
           "pause": 4000,
           "text": [
-            "The answer is no, and it was already written down in February. The decode is in your documents, with the ask verbatim, the job behind it, and where his claim collides with the record. The reply for Marcus is above in the sales voice; copy the one you want.",
+            "The answer for Marcus is no, and it was decided on 2026-02-12: Åsa declined offline mode, the 2026-07-09 steering took no decisions, and Roadmap H2 lists it under Not doing. This is the third time it has come through sales as a line for a proposal rather than a problem a store has had. My guess, not his words: the ops director wants one sentence about what happens when a store loses its connection, and the app has one.",
             "",
-            "Nothing was sent and nothing waits."
+            "The reply is above in the sales voice: copy the tab you want and send it yourself. I kept a note of the request in Memory, under Insights, so the next time it comes up it lands on something. Nothing was sent and nothing waits."
           ]
         }
       ]

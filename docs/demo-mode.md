@@ -355,7 +355,8 @@ It does, in order:
    import.
 4. Clear the app state the script clears today: the per-vault app DB, the search index, the pi
    session files. Also the renderer's Local Storage (tabs, pins), which the script cannot
-   reach. Also the vault's `.git`, which step 3 already removed.
+   reach. Also the vault's `.git`, which step 3 already removed. The default pins go back on
+   when the reloaded window finishes loading (`DemoService.seedPins`).
 5. Reset the fake Atlassian store to the fixture.
 6. Reset the replay server's state (it holds none beyond the loaded recordings).
 7. Reopen the workspace.
@@ -368,6 +369,16 @@ whatever he did in the last demo.
 **Notes:** Built: `DemoService.reset()`; Settings → Demo tab (`DemoSettings.tsx`) with Reset (inline confirm), a read-only list of the five scenarios (title and `do` line) as a reminder, and Open demo files (`~/Desktop/Qale demo files/`). The step buttons were deleted on 2026-09-08; the per-scenario Start button was added and deleted on 2026-09-09, because the engine picks the scenario from what the presenter does (DM-4) and Reset is pressed once before a demo. Shift logic now lives in `@qale/domain/demo` (`packages/domain/src/demo/shift.ts`), shared with `refresh-demo.ts` (dry output byte-identical). Unit-tested against temp dirs; the button was NOT clicked in a live window. Open point: the reset workspace has no `.git`, so "put it back" is unavailable during a demo. The demo files he drags in have to be somewhere he can find them. Reset also copies
 `demo-samples/` to `~/Desktop/Qale demo files/`, and the Demo section has an "Open demo
 files" button.
+
+**The rail's pins.** The pin set is the renderer's, one Local Storage key per workspace
+(`qale.favorites.v1:<path>`, `app-state.tsx`). A demo that opens on an empty rail says nothing
+about what the PO is working in, so `DemoService` writes that key from the main process on every
+`did-finish-load`, and only when the workspace has no pin set at all: six paths, in
+`DEFAULT_PINS`. That keeps one way to pin in the product. The list is two documents
+(`notes/h2-capacity`, `notes/swap-rules`), the two Jira epics (`SCH-118`, `SCH-231`) and the two
+Confluence pages (`roadmap-h2`, `product-weekly-update`). No meeting is on it: Calendar is a
+meeting's home and the rail refuses the type (`isPinnable`, docs/sidebar-ia.md SB-1), so the
+upcoming Café Nord QBR prep is opened from Calendar (docs/demo-runbook.md).
 
 ---
 

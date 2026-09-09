@@ -46,6 +46,41 @@ const DEMO_ACCOUNT_EMAIL = 'demo@rota.example';
 /** Where the drag-in material lands so the presenter can find it. */
 const SAMPLES_FOLDER = 'Qale demo files';
 
+/**
+ * The rail's pin set lives in the renderer's local storage, one key per
+ * workspace: `qale.favorites.v1:<workspace path>` → a list of paths
+ * (`renderer/state/app-state.tsx`). The demo writes that key and nothing else,
+ * so the app keeps one way to pin.
+ */
+const FAVORITES_KEY = 'qale.favorites.v1';
+
+/**
+ * What the rail holds when a demo starts: two documents the scenarios argue
+ * from, the two Jira epics they move, and the two Confluence pages they patch.
+ * The path decides the place, so each one lands under the row it names:
+ * Documents reads `notes/`, and a mirror reads its own system's folder
+ * (`renderer/lib/pins.ts`).
+ *
+ * The order is the order the rows read in, because a pin set is a list.
+ *
+ * No meeting is here, and none can be. Calendar is a meeting's home and the
+ * rail refuses the type (`isPinnable`, docs/sidebar-ia.md SB-1), so the
+ * upcoming Café Nord QBR prep is opened from Calendar (docs/demo-runbook.md).
+ */
+export const DEFAULT_PINS: readonly string[] = [
+  'notes/h2-capacity.md',
+  'notes/swap-rules.md',
+  'tickets/jira/SCH-118.md',
+  'tickets/jira/SCH-231.md',
+  'wikipages/confluence/roadmap-h2.md',
+  'wikipages/confluence/product-weekly-update.md',
+];
+
+/** The one thing the pin seed needs from a window: run a line in the page. */
+export interface RendererScript {
+  executeJavaScript(code: string): Promise<unknown>;
+}
+
 export interface DemoInfo {
   enabled: boolean;
   /** The day the workspace is dated to, YYYY-MM-DD. */
@@ -167,6 +202,12 @@ export class DemoService {
    */
   async start(): Promise<void> {
     if (!this.enabled) return;
+    // The rail's pins, on every window this build opens. First launch and Reset
+    // both leave the renderer with no pin set, and this is the first moment a
+    // page exists to write one into.
+    app.on('browser-window-created', (_event, window) => {
+      window.webContents.on('did-finish-load', () => void this.seedPins(window.webContents));
+    });
     const record = is.dev && process.env['QALE_DEMO_RECORD'] === '1';
     try {
       this.replay = await startReplayServer({
@@ -268,6 +309,31 @@ export class DemoService {
   }
 
   /**
+   * The line that puts {@link DEFAULT_PINS} on the rail.
+   *
+   * It writes only when this workspace has no pin set at all. That is true on
+   * first launch and after every Reset, which clears local storage, and false
+   * for the rest of a demo. So a row the presenter unpins stays unpinned, and a
+   * rail they cleared stays clear until the next Reset.
+   */
+  pinSeedScript(): string {
+    const key = JSON.stringify(`${FAVORITES_KEY}:${this.workspacePath}`);
+    const pins = JSON.stringify(JSON.stringify(DEFAULT_PINS));
+    return `try { const k = ${key}; if (localStorage.getItem(k) === null) localStorage.setItem(k, ${pins}); } catch (err) { /* private mode: no rail, still a demo */ }`;
+  }
+
+  /** Run {@link pinSeedScript} in one window. A failure costs the pins and
+   *  nothing else, so it is logged and the launch carries on. */
+  async seedPins(contents: RendererScript): Promise<void> {
+    if (!this.enabled) return;
+    try {
+      await contents.executeJavaScript(this.pinSeedScript());
+    } catch (err) {
+      console.error('[qale] demo: could not put the default pins on the rail:', err);
+    }
+  }
+
+  /**
    * What the Demo section in Settings draws. The scenarios are a reminder of
    * what to do, not a choice: after one Reset the engine picks the scenario
    * from what the presenter does (docs/demo-mode.md DM-4).
@@ -352,6 +418,8 @@ export class DemoService {
     //    proposals, questions), the search index, and the run receipts.
     this.clearAppState(workspace);
     // 6. The renderer's own memory of the last demo: open tabs, pins, drafts.
+    //    The default pins go back on when the reloaded window finishes loading
+    //    (`seedPins`); there is no page to write them into until then.
     await session.defaultSession
       .clearStorageData({ storages: ['localstorage'] })
       .catch((err) => console.error('[qale] demo: could not clear local storage:', err));

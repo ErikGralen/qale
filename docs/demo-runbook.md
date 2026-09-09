@@ -15,6 +15,11 @@ the script engine picks the scenario from what you do.
 3. Close Settings. The five cards under Reset say what to do for each scenario; they are a
    reminder, not buttons.
 
+The rail comes back with six pins after a Reset: H2 capacity and Swap rules under Documents,
+SCH-118 and SCH-231 under Jira, Roadmap H2 and Product weekly update under Confluence. Unpin one
+during a demo and it stays off until the next Reset. Meetings never pin, because Calendar is
+their home, so the week is on the **Calendar** row.
+
 How a session finds its script: a drop is the arrival kickoff (S1), "Brief me" on a meeting is
 the meeting-prep kickoff (S1), a bare "Write the weekly update" pick is that kickoff (S5). A
 typed message is classified by the skill in force when it was sent: Iterate on something for

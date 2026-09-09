@@ -3,6 +3,7 @@ import test, { mock } from 'node:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * The demo build's own service (docs/demo-mode.md DM-2, DM-9).
@@ -32,6 +33,9 @@ mock.module('electron', {
       getAppPath: () => userData,
       getPath: (name: string) => (name === 'desktop' ? desktop : userData),
       getLocale: () => 'en-US',
+      // `start()` listens for the window the pin seed writes into. No test
+      // opens a window, so the listener is registered and never called.
+      on: () => {},
     },
     safeStorage: {
       isEncryptionAvailable: () => true,
@@ -59,7 +63,7 @@ mock.module('electron', {
   },
 });
 
-const { DemoService } = await import('../src/main/demo/demo-service.js');
+const { DemoService, DEFAULT_PINS } = await import('../src/main/demo/demo-service.js');
 const { SettingsService } = await import('../src/main/services/settings-service.js');
 const { ANCHOR, appDbBasename } = await import('@qale/domain/demo');
 
@@ -306,6 +310,83 @@ test('info lists the scenarios the build carries, once the replay server is up',
     rmSync(root, { recursive: true, force: true });
     demoOff();
   }
+});
+
+/** A page's local storage, enough of it for the pin seed to run against. */
+function fakeStorage(): { store: Map<string, string>; localStorage: unknown } {
+  const store = new Map<string, string>();
+  return {
+    store,
+    localStorage: {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    },
+  };
+}
+
+/** A window that runs what it is given, the way `executeJavaScript` does. */
+function fakePage(localStorage: unknown): {
+  ran: number;
+  contents: { executeJavaScript(code: string): Promise<unknown> };
+} {
+  const page = {
+    ran: 0,
+    contents: {
+      executeJavaScript: (code: string) => {
+        page.ran += 1;
+        new Function('localStorage', code)(localStorage);
+        return Promise.resolve(undefined);
+      },
+    },
+  };
+  return page;
+}
+
+test('reset leaves the rail empty, and the reloaded page gets the default pins', async () => {
+  demoOn();
+  pinToday('2026-07-25');
+  const { root, assets } = install();
+  const { demo } = service(assets);
+  const key = `qale.favorites.v1:${demo.workspacePath}`;
+
+  await demo.reset();
+  // Reset cleared local storage, so the page comes back with no pin set at all.
+  const { store, localStorage } = fakeStorage();
+  const page = fakePage(localStorage);
+  await demo.seedPins(page.contents);
+  assert.deepEqual(JSON.parse(store.get(key) ?? 'null'), [...DEFAULT_PINS]);
+
+  // Every launch runs it, and only the first one writes: a row the presenter
+  // unpins during a demo stays unpinned until the next Reset.
+  store.set(key, JSON.stringify(['notes/h2-capacity.md']));
+  await demo.seedPins(page.contents);
+  assert.deepEqual(JSON.parse(store.get(key) ?? 'null'), ['notes/h2-capacity.md']);
+  assert.equal(page.ran, 2);
+
+  rmSync(root, { recursive: true, force: true });
+  demoOff();
+});
+
+test('every default pin is a page the demo workspace ships, under a place that holds pins', () => {
+  const vault = fileURLToPath(new URL('../../../vault-dev/', import.meta.url));
+  for (const path of DEFAULT_PINS) {
+    assert.ok(existsSync(join(vault, path)), `vault-dev/${path} exists`);
+    // Documents read `notes/` and a mirror reads its system's folder. Nothing
+    // else holds a row (renderer/lib/pins.ts).
+    assert.match(path, /^(notes|tickets\/jira|wikipages\/confluence)\//);
+  }
+});
+
+test('an ordinary build seeds no pins, because it has no rail of ours to seed', async () => {
+  demoOff();
+  const { root, assets } = install();
+  const { demo } = service(assets);
+  const { store, localStorage } = fakeStorage();
+  const page = fakePage(localStorage);
+  await demo.seedPins(page.contents);
+  assert.equal(page.ran, 0);
+  assert.equal(store.size, 0);
+  rmSync(root, { recursive: true, force: true });
 });
 
 test('opening the demo files fills the folder and then opens it', async () => {

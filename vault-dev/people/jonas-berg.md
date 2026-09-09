@@ -15,7 +15,11 @@ At the support sync on 2026-07-02 ([[meetings/2026-07-02-support-sync]]) he aske
 on "can staff swap shifts themselves" — four tickets in a month and he is tired of writing the
 same paragraph by hand. He didn't ask for the feature, he asked for a sentence he's allowed to
 send. I still owe him a version that doesn't promise a date
-([[themes/shift-swaps]], [[tickets/jira/SCH-231]]).
+([[research/shift-swaps]], [[tickets/jira/SCH-231]]).
+
+Two tickets in June asked whether approved hours can go to payroll without retyping. He has no
+macro for it and has not been told the export exists ([[tickets/jira/SCH-121]],
+[[research/payroll-export]]).
 
 The complaint underneath is fair: support learns what shipped from customers. He found out
 about week templates that way, which is one of the threads that ends with

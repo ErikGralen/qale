@@ -26,5 +26,5 @@ have the most to say about how the schedule is built, and they say almost nothin
 - We have not had a real product conversation with them in months. Everything I know about how
   their managers work comes through Ulrika. Next CS sync is 2026-07-22 and it's the obvious
   place to fix that.
-- Nothing on the H2 plan was scoped with them in mind ([[themes/shift-swaps]],
-  [[themes/payroll-export]]). If they turn out to want either, we would find out late.
+- Nothing on the H2 plan was scoped with them in mind ([[research/shift-swaps]],
+  [[research/payroll-export]]). If they turn out to want either, we would find out late.

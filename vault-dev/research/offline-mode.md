@@ -1,12 +1,15 @@
 ---
-type: 'theme'
-summary: 'Offline mode: asked for twice, declined twice, and the answer has not changed'
-tags: ['offline-mode']
-stance: 'wont-do'
-evidence: ['[[decisions/2026-02-12-decline-offline-mode]]']
+type: research
+summary: "Offline mode: asked for twice, declined twice, and the answer has not changed"
+tags:
+  - offline-mode
+sources:
+  - "[[decisions/2026-02-12-decline-offline-mode]]"
 ---
 
 # Offline mode
+
+Stance: won't do. Decided in [[decisions/2026-02-12-decline-offline-mode]].
 
 The ask is a Rota that keeps working with no connection — a manager editing next week's
 schedule in a stockroom, a staff member checking their shift on the underground.

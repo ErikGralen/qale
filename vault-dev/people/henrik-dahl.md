@@ -22,4 +22,4 @@ came out of my 1:1 with Rebecca on 2026-07-13
 [[todos/henrik-review-swap-notifications]], due 2026-07-24).
 
 Last told 2026-06-12: shift swaps in build, payroll export ahead of it
-([[themes/shift-swaps]], [[themes/payroll-export]]).
+([[research/shift-swaps]], [[research/payroll-export]]).

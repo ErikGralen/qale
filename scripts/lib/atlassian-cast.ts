@@ -170,6 +170,7 @@ export const CAST: CastIssue[] = [
       'same shape.',
     comments: [
       'Column set verified against a real Fortnox import template and a Visma one. Closing.',
+      'Enabled for every chain in the 24 June release. Managers export from the period view.',
     ],
   },
   {
@@ -222,49 +223,17 @@ export const CAST: CastIssue[] = [
     summary: 'Push notification opt-in screen',
     label: 'staff-app',
     issueType: 'Story',
-    status: 'To Do',
+    status: 'Done',
     description:
       'Ask for push permission at the moment it means something — after the first shift is ' +
       'visible, not on first launch — and let staff turn shift reminders on and off from ' +
       'settings.',
+    comments: [
+      'Shipped in the 15 July staff-app release. Shift reminders are on by default once the ' +
+        'first shift is visible.',
+    ],
   },
 ];
-
-/**
- * Flow 4's "the work landed" snapshot: the epic and its last story read Done.
- * `reset-atlassian --done` converges the live site to it and
- * `refresh-demo --done` lays the matching mirrors over the runtime vault (from
- * scripts/demo-overlays/done/). Keys, not summaries, because the overlay files
- * on disk are named by key: one list, two consumers, no way to drift.
- *
- * This is the LIVE-site path, for a demo run against a real Atlassian site.
- * The demo build reaches the same state from inside the app: Settings → Demo
- * applies the `sch-240-done` and `sch-231-done` steps that
- * scripts/build-demo-fixture.ts bakes into the fixture.
- */
-export const DONE_SNAPSHOT_KEYS = ['SCH-231', 'SCH-240'] as const;
-
-/** The cast as Flow 4 wants it: {@link DONE_SNAPSHOT_KEYS} flipped to Done,
- *  each with the closing comment its overlay mirror carries. */
-export function doneSnapshotCast(cast: CastIssue[] = CAST): CastIssue[] {
-  const closing: Record<string, string> = {
-    'SCH-231':
-      'The approval flow is in, so all three stories are done. The whole epic is behind the ' +
-      'swaps flag; turning it on per chain is a product call, not an engineering one. Closing.',
-    'SCH-240':
-      "Overtime check runs against both people's contracted hours for the whole week, other " +
-      'approved swaps included. Verified against a Café Nord week. Closing.',
-  };
-  return cast.map((m) => {
-    if (!(DONE_SNAPSHOT_KEYS as readonly string[]).includes(m.key)) return m;
-    const last = closing[m.key];
-    return {
-      ...m,
-      status: 'Done',
-      comments: [...(m.comments ?? []), ...(last ? [last] : [])],
-    };
-  });
-}
 
 // Issue links between cast members, by summary. Direction per Jira's model:
 // the INWARD issue applies the type's outward description to the OUTWARD issue

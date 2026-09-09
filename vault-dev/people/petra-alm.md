@@ -18,4 +18,4 @@ most useful voice in the account and brings her along to the CS syncs.
 
 I have never spoken to her directly. Everything I know about how she schedules comes second
 hand through Ulrika, which is a gap worth closing before we design anything else that changes
-the manager's week ([[themes/auto-schedule]], [[notes/auto-schedule-interviews]]).
+the manager's week ([[research/auto-schedule]], [[notes/auto-schedule-interviews]]).

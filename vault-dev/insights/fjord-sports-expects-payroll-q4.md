@@ -1,11 +1,12 @@
 ---
-type: 'insight'
-summary: 'Fjord Sports are planning their Visma migration around a Q4 payroll export from us'
-tags: ['payroll-export']
-evidence: ['[[meetings/2026-05-26-fjord-sports-payroll-call]]']
-confidence: 'high'
-customer: '[[customers/fjord-sports]]'
-theme: '[[themes/payroll-export]]'
+type: insight
+summary: Fjord Sports are planning their Visma migration around a Q4 payroll export from us
+tags:
+  - payroll-export
+evidence:
+  - "[[meetings/2026-05-26-fjord-sports-payroll-call]]"
+confidence: high
+customer: "[[customers/fjord-sports]]"
 ---
 
 Oskar is not waiting to hear whether we will do payroll export. He is scheduling around the date

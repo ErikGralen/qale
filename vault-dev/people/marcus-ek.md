@@ -21,5 +21,8 @@ He has asked in #sales three times this week what the swap ETA actually is
 ([[todos/reply-marcus-swap-eta]]). He deserves a straight answer he can use, which is why the
 sales voice exists: date first, what can be promised, what can't.
 
+He has brought offline mode to me for prospects twice, and both times the answer was the
+February decision ([[decisions/2026-02-12-decline-offline-mode]]).
+
 Last told 2026-06-05: swaps in Q4, dependent on payroll export
 ([[decisions/2026-05-18-h2-order-payroll-first]]).

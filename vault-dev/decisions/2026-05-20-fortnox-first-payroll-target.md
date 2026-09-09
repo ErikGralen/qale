@@ -1,12 +1,15 @@
 ---
-type: 'decision'
-summary: 'Fortnox is the first payroll connector; Visma follows in Q4'
-tags: ['payroll-export']
-standing: 'active'
-date: '2026-05-20'
-deciders: ['Rebecca Holm', 'me']
-sources: []
-theme: '[[themes/payroll-export]]'
+type: decision
+summary: Fortnox is the first payroll connector; Visma follows in Q4
+tags:
+  - payroll-export
+standing: active
+date: 2026-05-20
+deciders:
+  - Rebecca Holm
+  - me
+sources:
+  - "[[research/payroll-export]]"
 ---
 
 Payroll export ships as a CSV of approved hours plus one real connector, and the first connector

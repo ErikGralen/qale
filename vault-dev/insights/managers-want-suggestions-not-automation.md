@@ -1,10 +1,11 @@
 ---
-type: 'insight'
-summary: 'Managers want a suggested schedule they can edit, not one the system publishes for them'
-tags: ['auto-schedule']
-evidence: ['[[notes/auto-schedule-interviews]]']
-confidence: 'med'
-theme: '[[themes/auto-schedule]]'
+type: insight
+summary: Managers want a suggested schedule they can edit, not one the system publishes for them
+tags:
+  - auto-schedule
+evidence:
+  - "[[notes/auto-schedule-interviews]]"
+confidence: med
 ---
 
 Four manager interviews, and the same instinct in all four: a suggestion is welcome, an automatic

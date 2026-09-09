@@ -43,7 +43,6 @@
  *   pnpm reset-atlassian                  # creds from .atlassian-demo.json / env
  *   pnpm reset-atlassian --dry            # print the plan, write nothing
  *   pnpm reset-atlassian --keep-extras    # don't delete non-cast issues
- *   pnpm reset-atlassian --done           # Flow 4 snapshot: SCH-231 + SCH-240 Done
  *   pnpm reset-atlassian --today=2026-09-01 --anchor=2026-07-17
  *
  * Credentials resolve flags → env (ATLASSIAN_SITE / ATLASSIAN_EMAIL /
@@ -67,7 +66,6 @@ import {
   STATIC_HOST,
   STATIC_PAGE_IDS,
   STATIC_TICKETS,
-  doneSnapshotCast,
   markdownToStorage,
 } from './lib/atlassian-cast.ts';
 import type { CastIssue } from './lib/atlassian-cast.ts';
@@ -89,7 +87,6 @@ interface Args {
   save: boolean;
   vault: string;
   reconcile: boolean;
-  done: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -101,11 +98,9 @@ function parseArgs(argv: string[]): Args {
     save: false,
     vault: '.vault-dev',
     reconcile: true,
-    done: false,
   };
   for (const a of argv) {
     if (a === '--dry' || a === '--dry-run') args.dry = true;
-    else if (a === '--done') args.done = true;
     else if (a === '--keep-extras') args.keepExtras = true;
     else if (a === '--save') args.save = true;
     else if (a === '--no-reconcile') args.reconcile = false;
@@ -880,21 +875,15 @@ async function main(): Promise<void> {
   const offset = daysBetween(args.anchor, args.today);
   console.log(
     `Anchor ${args.anchor} → today ${args.today} (offset ${offset >= 0 ? '+' : ''}${offset} days)` +
-      `${args.dry ? '  (dry run — no writes)' : ''}` +
-      `${args.done ? '  (--done: the Flow 4 snapshot)' : ''}`,
+      `${args.dry ? '  (dry run — no writes)' : ''}`,
   );
 
   const api = new Api(creds);
   const me = await api.connect();
   console.log(`Connected to ${creds.siteUrl} as ${me.displayName}\n`);
 
-  // --done is the same cast with the shift-swaps epic and its last story
-  // already closed, so Flow 4 can be demoed after the work "landed". Pair it
-  // with `pnpm refresh-demo --done`, which lays the matching mirrors down.
-  const cast = args.done ? doneSnapshotCast(CAST) : CAST;
-
   console.log(`Jira · projects ${PROJECT_KEYS.join(', ')}`);
-  const keys = await convergeJira(api, me.accountId, cast, offset, {
+  const keys = await convergeJira(api, me.accountId, CAST, offset, {
     dry: args.dry,
     keepExtras: args.keepExtras,
   });

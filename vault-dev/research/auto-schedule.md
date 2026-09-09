@@ -1,16 +1,17 @@
 ---
-type: theme
+type: research
 summary: "Auto-schedule suggestions: propose next week from last week, the manager edits it"
 tags:
   - auto-schedule
-stance: exploring
-evidence:
+sources:
   - "[[insights/managers-want-suggestions-not-automation]]"
   - "[[notes/auto-schedule-interviews]]"
 title: Auto-schedule suggestions
 ---
 
 # Auto-schedule suggestions
+
+Stance: exploring.
 
 Rota already knows last week's schedule, who is available, contracted hours and roles. The idea
 is to open next week half-built: a draft the manager corrects rather than an empty grid they

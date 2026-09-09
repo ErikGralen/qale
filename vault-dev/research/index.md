@@ -1,13 +1,12 @@
 ---
-description: Research — what Qale worked out: the case for a problem, a competitor scan
+description: 'Research — what Qale worked out: the case for a problem, a competitor scan'
 ---
 
 # Research
 
 what Qale worked out: the case for a problem, a competitor scan
 
-* [Competitors](research/competitors.md) — Competitor notes. Insikt (cheap, report-first, weak governance) and Corvid Analytics (enterprise, slow, expensive)
-* [Enterprise Onboarding](research/enterprise-onboarding.md) — Enterprise onboarding: SSO, SCIM, audit and residency gate every deal over ~200 seats
-* [Mobile Access](research/mobile-access.md) — Mobile access: occasional asks from field staff, nothing gating a deal yet
-* [On Prem Deployment](research/on-prem-deployment.md) — On-prem and self-hosted deployment: asked for twice, declined both times
-* [Scheduled Reporting](research/scheduled-reporting.md) — Scheduled reporting: manual weekly reports are costing us mid-market accounts
+* [Auto-schedule suggestions](research/auto-schedule.md) — Auto-schedule suggestions: propose next week from last week, the manager edits it
+* [Offline Mode](research/offline-mode.md) — Offline mode: asked for twice, declined twice, and the answer has not changed
+* [Payroll Export](research/payroll-export.md) — Payroll export: approved hours out of Rota and into Fortnox and Visma without retyping
+* [Shift Swaps](research/shift-swaps.md) — Shift swaps: staff trade shifts themselves, the manager approves, the schedule updates

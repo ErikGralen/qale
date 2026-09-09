@@ -34,4 +34,4 @@ account for that second version.
 
 Because it is the cheapest lesson we own, and it keeps applying: a request that arrives through
 support and never becomes a note is a request that cannot be answered when the answer finally
-exists ([[themes/shift-swaps]], [[people/jonas-berg]], [[people/ulrika-nystrom]]).
+exists ([[research/shift-swaps]], [[people/jonas-berg]], [[people/ulrika-nystrom]]).

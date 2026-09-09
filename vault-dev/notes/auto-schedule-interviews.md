@@ -18,7 +18,7 @@ here". did NOT want it published for her. "I'd want to look at it first." twice.
 **M2, restaurant, 40ish staff, two sites.** the only one who liked the word automatic, then
 walked it back when I asked what happens if it gets someone's availability wrong. "then I look
 bad, not the app". his real pain is late cancellations not the initial build?? maybe that's
-[[themes/shift-swaps]] not this
+[[research/shift-swaps]] not this
 
 **M3, retail, seasonal.** september/january are the only hard weeks, rest of the year is
 copy-paste. "the software doesn't know Emma is leaving in two weeks". kept coming back to
@@ -38,5 +38,5 @@ so: nobody wants it to publish. everybody wants the grid pre-filled. "suggestion
 M3's september thing is the same shape as café nord's
 ([[insights/cafe-nord-september-turnover]]) — worth pulling on
 
-todo: write this up properly for [[themes/auto-schedule]], and go back to M2 about the
+todo: write this up properly for [[research/auto-schedule]], and go back to M2 about the
 cancellation thing, that felt like a different problem

@@ -1,18 +1,18 @@
 ---
-type: 'theme'
-summary: 'Shift swaps: staff trade shifts themselves, the manager approves, the schedule updates'
-tags: ['shift-swaps']
-stance: 'committed'
-evidence:
-  [
-    '[[insights/cafe-nord-september-turnover]]',
-    '[[insights/swap-notifications-show-personal-data]]',
-    '[[meetings/2026-06-05-cafe-nord-qbr]]',
-    '[[meetings/2026-07-02-support-sync]]',
-  ]
+type: research
+summary: "Shift swaps: staff trade shifts themselves, the manager approves, the schedule updates"
+tags:
+  - shift-swaps
+sources:
+  - "[[insights/cafe-nord-september-turnover]]"
+  - "[[insights/swap-notifications-show-personal-data]]"
+  - "[[meetings/2026-06-05-cafe-nord-qbr]]"
+  - "[[meetings/2026-07-02-support-sync]]"
 ---
 
 # Shift swaps
+
+Stance: committed.
 
 A staff member who can't work a shift proposes a swap in the app, a colleague accepts, the
 manager approves, and the schedule updates for everyone. Today that whole exchange happens over

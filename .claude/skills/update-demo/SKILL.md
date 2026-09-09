@@ -91,12 +91,12 @@ re-centred away from 2026-07-17.)
 
 ### 3. Confirm the ingest samples are ready
 
-Check `demo-samples/` still has `steering-h2-priorities.vtt` and `support-thread-brunos.md`, and that
-their dates line up with the vault's anchor timeline (2026-07-16 for the
-steering meeting, 2026-03-12 and 2026-03-26 for the support thread). If the scenario in `vault-dev/`
-has drifted (new customers, renamed people, changed storylines), update the samples so they still
-reference real cast and land on real hubs. The samples are the drag-in payload for the demo;
-`demo-samples/README.md` maps each to its flow.
+Check `demo-samples/` still has `steering-h2-priorities.vtt` and `marcus-offline-mode.md`, and that
+their dates line up with the vault's anchor timeline (2026-07-16 for the steering meeting,
+2026-07-09 for the steering meeting Marcus names). If the scenario in `vault-dev/` has drifted
+(new customers, renamed people, changed storylines), update the samples so they still reference
+real cast and land on real hubs. The samples are the drag-in payload for the demo;
+`demo-samples/README.md` maps each to its scenario.
 
 ### 4. Report
 

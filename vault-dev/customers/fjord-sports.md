@@ -14,12 +14,14 @@ Operations Manager is [[people/oskar-lind]]; [[people/ulrika-nystrom]] is the CS
 Their reason for buying was headcount that doubles twice a year. Their reason for staying is
 turning into payroll: they are moving payroll to Visma and want approved hours to flow out of
 Rota instead of being retyped by a regional admin every second Monday
-([[themes/payroll-export]]).
+([[research/payroll-export]]).
 
 ## Commitments
 
 - Payroll export to Visma in Q4. I said it on the call of 2026-05-26 with Ulrika in the room
   ([[meetings/2026-05-26-fjord-sports-payroll-call]], [[insights/fjord-sports-expects-payroll-q4]]).
+- A file of approved hours per store would already remove the retyping; Oskar asked for that
+  first on 2026-05-26 ([[meetings/2026-05-26-fjord-sports-payroll-call]]).
 
 ## What they've been told
 

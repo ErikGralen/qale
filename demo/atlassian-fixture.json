@@ -38,16 +38,23 @@
       "summary": "Push notification opt-in screen",
       "description": "Ask for push permission at the moment it means something — after the first shift is visible, not on first launch — and let staff turn shift reminders on and off from settings.",
       "issueType": "Story",
-      "status": "To Do",
-      "statusCategory": "new",
+      "status": "Done",
+      "statusCategory": "done",
       "labels": [
         "staff-app"
       ],
       "assignee": "Amir Haddad",
       "reporter": "Demo user",
-      "created": "2026-06-02T12:00:00.000Z",
-      "updated": "2026-07-02T12:00:00Z",
-      "comments": [],
+      "created": "2026-06-15T16:20:00.000Z",
+      "updated": "2026-07-15T16:20:00Z",
+      "comments": [
+        {
+          "id": "541",
+          "author": "Amir Haddad",
+          "created": "2026-07-15T09:30:00.000Z",
+          "body": "Shipped in the 15 July staff-app release. Shift reminders are on by default once the first shift is visible."
+        }
+      ],
       "links": []
     },
     {
@@ -150,6 +157,12 @@
           "author": "Rebecca Holm",
           "created": "2026-06-24T09:30:00.000Z",
           "body": "Column set verified against a real Fortnox import template and a Visma one. Closing."
+        },
+        {
+          "id": "1212",
+          "author": "Rebecca Holm",
+          "created": "2026-06-24T09:30:00.000Z",
+          "body": "Enabled for every chain in the 24 June release. Managers export from the period view."
         }
       ],
       "links": []

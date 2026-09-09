@@ -1,12 +1,16 @@
 ---
-type: 'decision'
-summary: 'Every shift swap goes through manager approval; no auto-approve path in v1'
-tags: ['shift-swaps']
-standing: 'active'
-date: '2026-04-08'
-deciders: ['Rebecca Holm', 'me']
-sources: ['[[notes/swap-rules]]']
-theme: '[[themes/shift-swaps]]'
+type: decision
+summary: Every shift swap goes through manager approval; no auto-approve path in v1
+tags:
+  - shift-swaps
+standing: active
+date: 2026-04-08
+deciders:
+  - Rebecca Holm
+  - me
+sources:
+  - "[[notes/swap-rules]]"
+  - "[[research/shift-swaps]]"
 ---
 
 Staff propose a swap in the app, the manager approves it, and only then does the schedule change.

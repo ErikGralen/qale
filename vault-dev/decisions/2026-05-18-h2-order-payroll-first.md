@@ -1,12 +1,16 @@
 ---
-type: 'decision'
-summary: 'H2 order: payroll export ships first in Q3, shift swaps follow in Q4'
-tags: ['payroll-export', 'shift-swaps']
-standing: 'active'
-date: '2026-05-18'
-deciders: ['Åsa Lindgren']
-sources: ['[[notes/h2-capacity]]']
-theme: '[[themes/payroll-export]]'
+type: decision
+summary: "H2 order: payroll export ships first in Q3, shift swaps follow in Q4"
+tags:
+  - payroll-export
+  - shift-swaps
+standing: active
+date: 2026-05-18
+deciders:
+  - Åsa Lindgren
+sources:
+  - "[[notes/h2-capacity]]"
+  - "[[research/payroll-export]]"
 ---
 
 Both H2 epics sit on the Scheduling team, so this is a real order and not a preference. Åsa

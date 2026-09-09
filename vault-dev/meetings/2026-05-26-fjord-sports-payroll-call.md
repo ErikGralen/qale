@@ -21,7 +21,8 @@ said he would plan the cutover for late Q4 on the back of it.
 
 - Today: store managers export a spreadsheet per store and someone at head office consolidates.
   Oskar estimates two days a month across the chain, more in the seasonal peak.
-- Wanted: approved hours only, per store, per pay period. No cost data, they do that in Visma.
+- Wanted: approved hours only, per store, per pay period, as a file they can load into Visma
+  until the connector exists.
 - I said Q4 for Visma explicitly, and said Fortnox comes first because most of our chains use it
   ([[decisions/2026-05-20-fortnox-first-payroll-target]]).
 - Oskar asked whether "Q4" means October or December. I said I would come back with something

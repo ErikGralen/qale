@@ -1,16 +1,16 @@
 ---
-type: 'theme'
-summary: 'Payroll export: approved hours out of Rota and into Fortnox and Visma without retyping'
-tags: ['payroll-export']
-stance: 'committed'
-evidence:
-  [
-    '[[insights/fjord-sports-expects-payroll-q4]]',
-    '[[meetings/2026-05-26-fjord-sports-payroll-call]]',
-  ]
+type: research
+summary: "Payroll export: approved hours out of Rota and into Fortnox and Visma without retyping"
+tags:
+  - payroll-export
+sources:
+  - "[[insights/fjord-sports-expects-payroll-q4]]"
+  - "[[meetings/2026-05-26-fjord-sports-payroll-call]]"
 ---
 
 # Payroll export
+
+Stance: committed.
 
 At the end of a pay period a manager approves the hours actually worked. Those hours then get
 into a payroll system, and today that means somebody exports a spreadsheet and retypes it, per

@@ -1,12 +1,14 @@
 ---
-type: 'decision'
-summary: 'Decline offline mode; the staff app already caches the current week'
-tags: ['offline-mode']
-standing: 'active'
-date: '2026-02-12'
-deciders: ['Åsa Lindgren']
-sources: []
-theme: '[[themes/offline-mode]]'
+type: decision
+summary: Decline offline mode; the staff app already caches the current week
+tags:
+  - offline-mode
+standing: active
+date: 2026-02-12
+deciders:
+  - Åsa Lindgren
+sources:
+  - "[[research/offline-mode]]"
 ---
 
 Two prospects asked whether Rota works without a connection, so I put it to Åsa. The answer was
@@ -19,4 +21,4 @@ resolution on an object two managers edit at once. Rebecca's rough read was most
 Scheduling's time, against zero customers who have asked in writing.
 
 Åsa's words: "we are not doing offline mode." I'd rather spend the quarter on
-[[themes/shift-swaps]] and [[themes/payroll-export]], which chains ask for by name.
+[[research/shift-swaps]] and [[research/payroll-export]], which chains ask for by name.

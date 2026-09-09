@@ -20,7 +20,7 @@ a time, and everything else stops ([[insights/cafe-nord-september-turnover]]).
 
 ## Commitments
 
-- Shift swaps ([[themes/shift-swaps]], [[tickets/jira/SCH-231]]). At the Q2 QBR Marcus said
+- Shift swaps ([[research/shift-swaps]], [[tickets/jira/SCH-231]]). At the Q2 QBR Marcus said
   "before September". I said Q4, behind payroll export
   ([[decisions/2026-05-18-h2-order-payroll-first]]). Both are in the notes; the account is
   holding the first one ([[meetings/2026-06-05-cafe-nord-qbr]]).

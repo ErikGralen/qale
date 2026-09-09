@@ -1,10 +1,11 @@
 ---
-type: 'insight'
-summary: "Swap requests show colleagues' names and phone numbers, and nobody has reviewed whether we may"
-tags: ['shift-swaps']
-evidence: ['[[meetings/2026-07-13-1-1-rebecca]]']
-confidence: 'med'
-theme: '[[themes/shift-swaps]]'
+type: insight
+summary: Swap requests show colleagues' names and phone numbers, and nobody has reviewed whether we may
+tags:
+  - shift-swaps
+evidence:
+  - "[[meetings/2026-07-13-1-1-rebecca]]"
+confidence: med
 ---
 
 When a staff member proposes a swap, the colleague on the other side gets a notification carrying

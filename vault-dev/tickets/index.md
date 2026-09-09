@@ -8,7 +8,7 @@ mirrored tracker items, never edited locally
 
 ## Not yet
 
-* [APP-54 · Push notification opt-in screen](tickets/jira/APP-54.md) — APP-54, push notification opt-in screen: to do, not scheduled
+* [APP-54 · Push notification opt-in screen](tickets/jira/APP-54.md) — APP-54, push notification opt-in screen: done 2026-07-15, shift reminders on by default
 * [PLT-77 · OAuth token store for integrations](tickets/jira/PLT-77.md) — PLT-77, OAuth token store for integrations: in progress, blocks the Fortnox connector
 * [PLT-80 · Nightly schedule backup job](tickets/jira/PLT-80.md) — PLT-80, nightly schedule backup job: done 2026-06-12
 * [SCH-118 · Payroll export (epic)](tickets/jira/SCH-118.md) — SCH-118, payroll export (epic): in progress, CSV shipped and the Fortnox connector is next

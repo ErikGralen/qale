@@ -9,6 +9,7 @@ import {
   parseMirrorRef,
   planMeetingMirror,
   retargetWikilinks,
+  sameInstant,
   slugFromPath,
   slugify,
   STATE_CATEGORIES,
@@ -431,9 +432,20 @@ function siteLabelFor(fields: Record<string, string>, fallback: string): string 
   return url ? url.replace(/^https?:\/\//, '') : fallback;
 }
 
-/** Provider timestamps arrive in several ISO dialects; the domain schema wants
- *  one. Unparseable input falls back to `now` — a mirror must never be invalid. */
+/** The ISO datetimes the frontmatter schema takes: a date, a time, and either
+ *  `Z` or a `+hh:mm` offset. What the provider already writes this way is kept
+ *  as it wrote it. */
+const SCHEMA_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Provider timestamps arrive in several ISO dialects; the domain schema wants
+ * one of them. A string the schema already takes is written through untouched,
+ * so the same moment always reaches the mirror as the same text and the file
+ * changes only when the item upstream did. Anything else is converted, and
+ * unparseable input falls back to `now` — a mirror must never be invalid.
+ */
 function normalizeIso(value: string | undefined, nowMs: number): string {
+  if (value && SCHEMA_ISO_RE.test(value)) return value;
   const parsed = value ? Date.parse(value) : NaN;
   return new Date(Number.isNaN(parsed) ? nowMs : parsed).toISOString();
 }
@@ -1732,10 +1744,14 @@ export class SyncService {
       const existing = await ctx.vault.readNote(path);
       if (existing) {
         const fm = existing.frontmatter as Record<string, unknown>;
+        // Compared as an instant, not as text: a mirror written before this
+        // wrote timestamps through untouched holds the same moment in another
+        // ISO spelling, and re-writing the file over that would churn the note
+        // and make every card drafted against it read as stale.
         const unchanged =
           change.kind === 'wikipage'
-            ? fm['version'] === change.version && fm['remote_updated'] === remoteUpdated
-            : fm['remote_updated'] === remoteUpdated;
+            ? fm['version'] === change.version && sameInstant(fm['remote_updated'], remoteUpdated)
+            : sameInstant(fm['remote_updated'], remoteUpdated);
         if (unchanged) {
           if (!existingRow?.notePath) store.setNotePath(connectionId, change.external_id, path);
           return null;

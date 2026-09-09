@@ -19,6 +19,7 @@ import {
   describeEventWhen,
   normalizeLinkTarget,
   rsvpAnswer,
+  sameInstant,
   ticketFieldRows,
   type NewPageFacts,
 } from '@qale/domain';
@@ -1150,10 +1151,12 @@ function OutboundDetail({
 
   // Honest staleness: the banner shows only when the draft carries a snapshot
   // of the mirror it was written against AND the mirror has moved past it —
-  // never a clock comparison between two machines.
+  // never a clock comparison between two machines. The time is read as an
+  // instant, so the same moment in another ISO spelling is not a change.
   const changedSince =
     meta !== null &&
-    ((payload.remote_updated !== undefined && meta.remoteUpdated !== payload.remote_updated) ||
+    ((payload.remote_updated !== undefined &&
+      !sameInstant(meta.remoteUpdated, payload.remote_updated)) ||
       (payload.version !== undefined &&
         mirrorVersion !== null &&
         mirrorVersion !== payload.version));

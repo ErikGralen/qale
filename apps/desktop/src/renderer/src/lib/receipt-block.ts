@@ -65,33 +65,6 @@ export function landedWrites(parts: readonly ResultPart[]): AppliedRow[] {
   return out;
 }
 
-/** One row of the block. A landed row and a waiting row are the same shape with
- *  different controls; the question is the one thing that needs their hands. */
-export interface BlockRow {
-  kind: 'question' | 'landed' | 'waiting';
-  /** The write this row draws, on a landed row. */
-  landed?: AppliedRow;
-}
-
-/**
- * The block, in reading order: the question first, then what landed, then what
- * waits. The question comes first because it is the only row that holds the
- * turn up; everything under it is already done or already safe to leave.
- */
-export function blockRows(input: {
-  /** The turn is parked on an `ask_user` question. */
-  question?: boolean;
-  landed?: readonly AppliedRow[];
-  /** How many cards this session has waiting. */
-  waiting?: number;
-}): BlockRow[] {
-  const rows: BlockRow[] = [];
-  if (input.question) rows.push({ kind: 'question' });
-  for (const landed of input.landed ?? []) rows.push({ kind: 'landed', landed });
-  for (let i = 0; i < (input.waiting ?? 0); i++) rows.push({ kind: 'waiting' });
-  return rows;
-}
-
 /**
  * The spheres a turn's writes fall into (docs/receipt-redesign.md RC-1).
  *

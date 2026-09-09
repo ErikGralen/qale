@@ -26,7 +26,7 @@ import type {
   SessionScopeDTO,
   SpawnRequestDTO,
 } from '@qale/ipc';
-import { readAppliedReceipt, titleFromSlug, type AppliedRow } from '@qale/domain';
+import { readAppliedReceipt, titleFromSlug } from '@qale/domain';
 import { parseKickoff, type Kickoff } from '@qale/sessions';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { navFromEvent, type NavOpts } from '../lib/nav';
@@ -34,7 +34,7 @@ import { draftTextShown } from '../lib/draft-text';
 import { noteTypeIcon } from '../lib/note-icons';
 import { fileIconFor } from '../lib/session-files';
 import { isPile, progressLine, receiptLine } from '../lib/source-batch';
-import { landedWrite } from '../lib/receipt-block';
+import { landedWrites } from '../lib/receipt-block';
 import { HeaderAction, HeaderActions, PageHeader } from '../components/PageHeader';
 import { InkWriting } from '../components/InkWriting';
 import { Markdown } from '../components/Markdown';
@@ -647,7 +647,6 @@ function SessionFoot({
   spawn,
   codebase,
   pileReceipt,
-  onOpen,
 }: {
   sessionId: string | null;
   /** The parked question, while the run waits on it. */
@@ -656,11 +655,12 @@ function SessionFoot({
   codebase: CodebaseRequestDTO | null;
   /** What a dropped pile came to, in one sentence (CM-2). */
   pileReceipt: string | null;
-  onOpen: (path: string, opts?: NavOpts) => void;
 }) {
   if (!sessionId) return null;
   return (
-    <div className="flex flex-col gap-1">
+    // `empty:hidden` so a session with nothing waiting takes no room: an empty
+    // box would still draw the transcript's 16px gap under the last turn.
+    <div className="flex flex-col gap-1 empty:hidden">
       {/* The three cards that hold the run. Only one is ever up at a time, and
           while one is the session cannot move, so it leads the block. */}
       {ask && <QuestionCard request={ask} />}
@@ -1153,23 +1153,22 @@ function SessionThread({
                 );
               }
               // The working phase (reasoning, tool calls, mid-work narration)
-              // folds into an ActivityBlock; only the final text renders as the
-              // answer. While streaming, a trailing text is treated as the answer
-              // until a later tool call proves it was narration.
-              let lastTextIdx = -1;
+              // folds into an ActivityBlock; the last text renders as the
+              // answer.
+              //
+              // A text with a parking call after it ("let me check with you
+              // first", then ask_user) is the answer too. It used to fold into
+              // the trail so the card could take its place, which meant a
+              // paragraph the PM was reading vanished the moment the card
+              // arrived. The card draws at the foot of the transcript now, so
+              // the sentence leading into it keeps its spot above it.
+              let answerIdx = -1;
               for (let i = parts.length - 1; i >= 0; i--) {
                 if (parts[i]!.type === 'text') {
-                  lastTextIdx = i;
+                  answerIdx = i;
                   break;
                 }
               }
-              // A text with a parking call after it ("let me check with you
-              // first", then ask_user) stays the answer. It used to fold into
-              // the trail so the card could take its place, which meant a
-              // paragraph the PM was reading vanished the moment the card
-              // arrived. The card now draws at the foot of the transcript, so
-              // the sentence that leads into it keeps its spot above it.
-              const answerIdx = lastTextIdx;
               // With one exception: a fenced block mid-work is not narration, it
               // is something the PM is meant to copy and run somewhere else. The
               // interview hands over a prompt for Claude Code that way, and folded
@@ -1187,14 +1186,31 @@ function SessionThread({
               // the answer — and that flushes the pile into one folded block. One
               // block for the whole turn lost the order, so "a panel, then a
               // paragraph, then another panel" came out as neither.
+              //
+              // A write that landed on its own flushes with the work that made
+              // it (docs/fewer-approvals.md FA-4): the folded trail, then the
+              // rows for what it wrote, then whatever interrupted it. Gathering
+              // the whole turn's writes into one block at the answer put a row
+              // for a write that happened later above a paragraph the PM had
+              // already read.
               const nodes: ReactNode[] = [];
               let pending: AnyPart[] = [];
               let pendingFrom = 0;
               const flush = (live: boolean) => {
                 if (pending.length === 0) return;
+                const landed = landedWrites(pending);
                 nodes.push(
                   <ActivityBlock key={`activity-${pendingFrom}`} parts={pending} live={live} />,
                 );
+                if (landed.length > 0)
+                  nodes.push(
+                    <LandedRows
+                      key={`landed-${pendingFrom}`}
+                      rows={landed}
+                      sessionId={boundSessionId ?? null}
+                      onOpen={openDoc}
+                    />,
+                  );
                 pending = [];
               };
               parts.forEach((part, i) => {
@@ -1222,7 +1238,6 @@ function SessionThread({
                 }
                 if (part.type === 'text' && (i === answerIdx || handover(part, i))) {
                   flush(false);
-                  if (i === answerIdx) receipt();
                   nodes.push(
                     <Markdown
                       key={`text-${i}`}
@@ -1238,9 +1253,6 @@ function SessionThread({
                 }
               });
               flush(liveTail);
-              // A turn with no closing sentences yet (still running, or one that
-              // only wrote) ends on its receipt instead.
-              receipt();
               return (
                 <div key={message.id} className="w-full">
                   {nodes}
@@ -1301,47 +1313,16 @@ function SessionThread({
               </div>
             )}
 
-            {/* What the pile came to, in one sentence (CM-2). It sums a batch
-              the reply above describes piece by piece, and every number in it
-              was counted from a filing that happened.
-
-              It wears the same 20px mark column as the approval receipt below
-              it, because the two are one closing moment: what was read, then
-              what was approved. Naked, the sentence floated between them as a
-              third unrelated line. */}
-            {pile?.done && (
-              <p className="flex items-center gap-2 px-0.5 text-sm text-muted-foreground">
-                <span className="flex size-5 shrink-0 items-center justify-center">
-                  <FileText className="size-3.5" />
-                </span>
-                {receiptLine(pile)}
-              </p>
-            )}
-
-            {/* A fan-out waiting on approval. Above the proposal cards: nothing
-              else in this session can move until it settles. */}
-            {boundSessionId && spawnRequests[boundSessionId] && (
-              <SpawnCard request={spawnRequests[boundSessionId]!} />
-            )}
-
-            {/* A codebase question waiting on approval, in the same place and for
-              the same reason: the turn is parked until it settles. */}
-            {boundSessionId && codebaseRequests[boundSessionId] && (
-              <CodebaseCard request={codebaseRequests[boundSessionId]!} />
-            )}
-
-            {/* The block hangs off the last turn, above its closing sentences.
-              A session with no turn yet has nowhere to hang it, so the question
-              and the cards draw here instead. */}
-            {blockIdx === -1 && boundSessionId && (
-              <ReceiptBlock
-                landed={[]}
-                sessionId={boundSessionId}
-                ask={askRequests[boundSessionId] ?? null}
-                hostsSession
-                onOpen={openDoc}
-              />
-            )}
+            {/* Where the session stands, always at the foot: the card that
+              holds the run, what a pile came to, and the cards waiting for a
+              yes. One place, one order, whatever the turns above did. */}
+            <SessionFoot
+              sessionId={boundSessionId ?? null}
+              ask={(boundSessionId && askRequests[boundSessionId]) || null}
+              spawn={(boundSessionId && spawnRequests[boundSessionId]) || null}
+              codebase={(boundSessionId && codebaseRequests[boundSessionId]) || null}
+              pileReceipt={pile?.done ? receiptLine(pile) : null}
+            />
           </div>
         </div>
 

@@ -8,7 +8,7 @@ what you do.
 | File                         | What you do with it                    | Scenario |
 | ---------------------------- | -------------------------------------- | -------- |
 | `steering-h2-priorities.vtt` | Drag it into Home, type a line, send   | Meeting  |
-| `marcus-offline-mode.md`     | Copy the text, paste it into the skill | Request  |
+| `marcus-offline-mode.md`     | Copy the text, paste it into Home      | Request  |
 
 Use the copies in this folder. They are dated so that the steering meeting was yesterday.
 
@@ -62,9 +62,7 @@ meeting never sits on the rail: Calendar is its home.
 
     SCH-121 shipped three weeks ago and nobody outside the team was told. Who needs to know, and what do I tell them?
 
-**If it asks a question:** pick **Yes, live since 24 June**.
-
-**Expect:** each person with the evidence. Fjord Sports asked for approved hours per store on
+**Expect:** no question. Then each person with the evidence. Fjord Sports asked for approved hours per store on
 26 May and were last told Q4 for Visma. Ulrika asked to hear before the customer. Malin wants the
 account list before the release note. Jonas has support tickets and no macro. It says from
 SCH-125 and PLT-77 that the Visma date is still Q4, that Fortnox is blocked on the token store,

@@ -239,9 +239,10 @@ then emit whole. The recording carries no timing.
 **Notes:** Built with the three constants as written (`DEFAULT_PACING`).
 
 **Superseded 2026-09-09.** The fixed constants above are the pre-script-engine numbers. The
-script engine paces per turn instead (DM-4): 700 ms before a tools-only turn, 1200 ms before a
-turn with text, 1500 ms for a conversation's first turn, unless the script's own `turn.pause`
-says otherwise. Text still streams at 400 characters a second, now with ±25% jitter on each
+script engine paces per turn instead (DM-4): 1500 ms before a tools-only turn, 2500 ms before a
+turn with text, 3000 ms for a conversation's first turn, unless the script's own `turn.pause`
+says otherwise. A scenario that should feel like a long think sets `pause` on its turns; S3 waits
+about five seconds before each of its turns. Text still streams at 400 characters a second, now with ±25% jitter on each
 delta so it does not read as a metronome (`DEFAULT_PACING` in `replay-server.ts`, the jitter in
 `replay-sse.ts`).
 

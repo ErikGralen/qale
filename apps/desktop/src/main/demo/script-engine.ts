@@ -59,7 +59,7 @@ export interface ScriptEngineOptions {
  * the way a real first answer does; a turn that only calls tools is quick; a
  * turn with text reads as thinking first.
  */
-export const DEFAULT_PAUSE = { firstTurn: 1500, toolsOnly: 700, withText: 1200 } as const;
+export const DEFAULT_PAUSE = { firstTurn: 3000, toolsOnly: 1500, withText: 2500 } as const;
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const TIMESTAMP = /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?/g;

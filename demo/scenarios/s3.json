@@ -143,10 +143,11 @@
                 ]
               }
             }
-          ]
+          ],
+          "pause": 5000
         },
         {
-          "pause": 1500,
+          "pause": 4000,
           "text": [
             "The answer is no, and it was already written down in February. The decode is in your documents, with the ask verbatim, the job behind it, and where his claim collides with the record. The reply for Marcus is above in the sales voice; copy the one you want.",
             "",

@@ -1,4 +1,4 @@
-import { dirForType, NOTE_TYPES, type NoteType } from '@qale/domain';
+import { dirForType, isVoicePath, NOTE_TYPES, VOICES_DIR, type NoteType } from '@qale/domain';
 
 /**
  * Where a note the agent writes may go (docs/memory-types.md, MT-6).
@@ -25,6 +25,18 @@ export function placementError(
   const wellFormed = parts.every((p) => p.length > 0) && name.toLowerCase().endsWith('.md');
   const known = isNoteType(type) ? type : null;
   const dir = known ? dirForType(known) : null;
+
+  // A voice carries `type: skill` and lives in `voices/`, not in `skills/`
+  // (SK-6). The folder is what says it is a voice, so the path is asked, not
+  // the type, the same way every other reader asks. Without this a write into
+  // `voices/exec.md` is refused as a misplaced skill page.
+  if (isVoicePath(path)) {
+    if (wellFormed && parts.length === 2) return null;
+    return (
+      `Rejected: a voice lives in ${VOICES_DIR}/, one level deep, so the path has to be ` +
+      `${VOICES_DIR}/<name>.md, not "${path}". Qale makes no folders.`
+    );
+  }
 
   if (known === 'note' && dir) {
     // The PM's folder. Their subfolders are open; a subfolder nobody made is not.

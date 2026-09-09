@@ -2,7 +2,7 @@
   "version": 1,
   "id": "s3",
   "title": "A request came in",
-  "do": "In Home, paste the whole of marcus-offline-mode.md and send. On the question card, pick No, the decision stands.",
+  "do": "In Home, paste the Slack message from the README (scenario 3, the one about offline mode) and send. Pick no skill. On the question card, pick No, the decision stands.",
   "offScript": "That is outside what this demo can show. The five things it can do are listed in Settings, under Demo.",
   "lookups": {
     "claims": {

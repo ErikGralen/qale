@@ -1,1 +1,0 @@
-Marcus Ek, #sales, 08:41. Quick one before my 9:00. A retail prospect, seventy-odd locations, is close to signing and their ops director keeps asking about offline mode in the staff app. As I understood it, Åsa reopened offline mode for H2 at steering on 2026-07-09, so I'd like to tell him it's on the H2 list. Can you confirm by Thursday? He wants it in the proposal.

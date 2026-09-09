@@ -1,135 +1,63 @@
-# Qale demo files
+# Qale demo
 
-Five scenarios, plus a meeting brief that stands on its own. Each one is independent, so run
-them in any order and show as many as you have time for, each once. Press **Reset demo** in
-Settings → Demo once before the demo, then leave Settings closed: Qale picks the scenario from
-what you do.
+Before the demo: Settings → Demo → **Reset demo**, once. Close Settings. Then run any of these,
+in any order, each once.
 
-| File                         | What you do with it                  | Scenario |
-| ---------------------------- | ------------------------------------ | -------- |
-| `steering-h2-priorities.vtt` | Drag it into Home, type a line, send | Meeting  |
-| `marcus-offline-mode.md`     | Copy the text, paste it into Home    | Request  |
+Rota makes staff-scheduling software for restaurant chains. You are the PO. Shift swaps and
+payroll export are in flight. Sales promised Café Nord swaps before September. Fjord Sports was
+told payroll export lands in Q4.
 
-Use the copies in this folder. They are dated so that the steering meeting was yesterday.
+## 1. The meeting produced actions
 
-## The story
+1. Drag `steering-h2-priorities.vtt` into Home.
+2. Type: `yesterday's steering, nobody wrote anything down`. Send.
+3. Question card: **Same commitment**.
+4. Approve the three cards: the SCH-118 comment, the new story, the Roadmap H2 patch.
+5. Show: the SCH-118 mirror, Roadmap H2 at version 18.
 
-Rota makes staff-scheduling software for restaurant and retail chains. You are the PO for the
-Scheduling and Staff App teams. Two things are in flight: shift swaps (staff trade shifts in the
-app, a manager approves) and payroll export. Sales promised Café Nord swaps before the September
-staff turnover. Fjord Sports was told payroll export lands in Q4.
+## 2. Who needs to know
 
-## The meeting produced actions
+1. Type in Home: `SCH-121 shipped three weeks ago and nobody outside the team was told. Who needs to know, and what do I tell them?`
+2. Copy the Oskar tab.
+3. Same session, type: `From now on, when something a customer asked for ships, tell Ulrika before the customer.`
+4. Show: house rules, the new line under "Your rules".
 
-**Do:** drag `steering-h2-priorities.vtt` into Home. It lands in the composer as a chip. Type
-the line below and send.
+## 3. A request came in
 
-**Type:**
+1. Paste this into Home and send. Pick no skill; Qale pulls in Handle a commitment itself.
 
-    yesterday's steering, nobody wrote anything down
+   ```
+   Marcus Ek, #sales, 08:41. Quick one before my 9:00. A retail prospect, seventy-odd locations, is close to signing and their ops director keeps asking about offline mode in the staff app. As I understood it, Åsa reopened offline mode for H2 at steering on 2026-07-09, so I'd like to tell him it's on the H2 list. Can you confirm by Thursday? He wants it in the proposal.
+   ```
 
-**If it asks a question:** pick **Same commitment**.
+2. Question card: **No, the decision stands**.
+3. Copy a tab from the sales-voice panel.
+4. Show: the new note in Documents.
 
-**Expect:** the file is saved, filed against the 16 July steering slot, and read. One question
-card about the open Henrik todo. Then the reply lists what landed: the meeting write-up, a
-decision "Shift swaps before payroll export" that supersedes the May order, todos for Rebecca,
-and the Café Nord ledger line. Two or three cards wait: a comment on SCH-118, a new story under
-SCH-231, a patch to the Roadmap H2 page. Approve them one at a time.
+## 4. Break it into stories
 
-**Open at the end:** the SCH-118 mirror, to show the comment with its source line, and Roadmap H2
-at version 18.
+1. Type `/`, pick **Iterate on something**, type: `Break the Visma connector into stories under SCH-118. Rebecca's team, after Fortnox, Fjord Sports first.` Send.
+2. Round one: **Keep it** on the first three, **Cut it** on the pilot.
+3. Round two: keep all three.
+4. Approve one ticket card.
+5. Show: the new ticket's mirror, with the label and three checkboxes.
+
+## 5. The Friday update
+
+1. Type `/`, pick **Write the weekly update**, send with no text.
+2. Copy the exec **One paragraph** tab.
+3. Style question: **For exec**.
+4. Approve the Confluence card.
+5. Show: the exec voice file, the Product weekly update at version 39.
 
 ## The brief for the next meeting
 
-**Do:** open **Calendar** from the rail, click **Café Nord QBR prep** four days out, and press
-**Get the brief**.
+1. Open **Calendar**, click **Café Nord QBR prep**, four days out.
+2. Press **Get the brief**. Approve the Prep section.
 
-**Type:** nothing.
-
-**Expect:** one proposal that writes a `## Prep` section on the meeting page: what Café Nord was
-last told and when, that Lena left the Q2 QBR with Marcus's "before September", that Marcus is in
-the room and still waiting on an ETA, and why no month goes out before Rebecca re-estimates
-SCH-240. Approve it.
-
-This one reads only the seed, so show it before the steering drop, after it, or on its own. A
-meeting never sits on the rail: Calendar is its home.
-
-## Who needs to know
-
-**Do:** type this in Home.
-
-**Type:**
-
-    SCH-121 shipped three weeks ago and nobody outside the team was told. Who needs to know, and what do I tell them?
-
-**Expect:** no question. Then each person with the evidence. Fjord Sports asked for approved hours per store on
-26 May and were last told Q4 for Visma. Ulrika asked to hear before the customer. Malin wants the
-account list before the release note. Jonas has support tickets and no macro. It says from
-SCH-125 and PLT-77 that the Visma date is still Q4, that Fortnox is blocked on the token store,
-and that Jira holds no date. Two panels: a CS-voice note to Oskar, a plain internal note for the
-three colleagues. Copy the Oskar tab. Then type the second sentence:
-
-    From now on, when something a customer asked for ships, tell Ulrika before the customer.
-
-**Open at the end:** the house rules, to show the new line under "Your rules".
-
-## A request came in
-
-**Do:** in Home, paste the whole of `marcus-offline-mode.md` and send. Pick nothing first: Handle
-a commitment is not in the `/` picker, and Qale pulls it in itself when it reads the message.
-
-**Paste:** the whole of `marcus-offline-mode.md`.
-
-**If it asks a question:** pick **No, the decision stands**.
-
-**Expect:** one question about Marcus's claim that Åsa reopened offline mode on 9 July, because
-the February decision and the 9 July steering page both say otherwise. Then a note lands in
-Documents with the ask verbatim, the job behind it, the collision with the February decision and
-the posture "no". A panel in the sales voice gives "One line to forward" and "What you can tell
-them". Copy one. No cards, nothing sent.
-
-**Open at the end:** the new note, `notes/2026-07-17-marcus-offline-mode`.
-
-## Break it into stories
-
-**Do:** type `/` in Home, pick **Iterate on something**, then type the sentence.
-
-**Type:**
-
-    Break the Visma connector into stories under SCH-118. Rebecca's team, after Fortnox, Fjord Sports first.
-
-**Options to pick:** round one has four ideas. Press **Keep it** on the first three and **Cut it**
-on the Fjord Sports pilot. Skip "Anything else". Round two has three stories: keep all three.
-
-**Expect:** the framing in three lines, then a card of ideas with the case and the cost for each.
-The second round turns the ones you kept into three stories with three acceptance checkboxes
-each. The round ends with a ticket card per story under SCH-118, label `payroll-export`, Fjord
-Sports named in the first line. Approve one.
-
-**Open at the end:** the new ticket's mirror page, to show the label, the parent and the three
-checkboxes.
-
-## The Friday update
-
-**Do:** type `/` in Home, pick **Write the weekly update**, send with no text.
-
-**Type:** nothing.
-
-**If it asks a question:** pick **For exec**.
-
-**Expect:** three panels, each with three style tabs: exec, CS and sales. All three carry the
-same news. Shift reminders shipped on 15 July, the May order still stands, SCH-240 is being
-re-estimated and Fortnox is blocked. A card waits with a new 2026-07-17 section for the Product
-weekly update page. Copy the exec **One paragraph** tab, then answer the style question.
-Approve the card.
-
-**Open at the end:** the exec voice, to show the first line changed and two styles gone, and the
-Product weekly update mirror at version 39.
+Stands on its own. Show it before, after, or without scenario 1.
 
 ## If something looks off
 
-- A card asks what date the meeting was: you dragged a file from somewhere else. Use this folder.
-- Approving a Jira or Confluence card fails: Settings → Demo → Reset demo, then start over.
-- The reply reads as if it never read the workspace, or says it is outside what the demo can
-  show: Settings → Demo → Reset demo, then run the scenario again. A scenario runs once per
-  Reset.
+- A card fails or the reply says it is outside the demo: Settings → Demo → Reset demo, run again.
+- Each scenario runs once per Reset.

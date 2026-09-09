@@ -74,8 +74,8 @@ were only ever a way to draft the scripts.
   `pnpm demo:lint` runs every script headlessly, at three date offsets, against a real
   workspace and the real tools.
 - **The seed is recut per scenario.** `APP-54` Done, a second `SCH-121` comment, the Fjord
-  Sports/Jonas/Marcus lines, the trimmed steering transcript, `marcus-offline-mode.md`, the
-  Bruno's support thread removed, the `--done` fixture overlay removed.
+  Sports/Jonas/Marcus lines, the trimmed steering transcript, the Marcus Slack message in the
+  samples README, the Bruno's support thread removed, the `--done` fixture overlay removed.
 - **Settings has one Reset button and the five scenarios as a reminder** (`DemoSettings.tsx`).
   There is no Start button and no pin: after one Reset the engine picks the scenario from what
   the presenter does (a drop, a bare skill pick, or the skill in force when he typed), and

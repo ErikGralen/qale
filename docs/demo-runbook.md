@@ -51,8 +51,8 @@ proposes for Fjord Sports and the three colleagues. In the same session, type: "
 when something a customer asked for ships, tell Ulrika before the customer." Open the house
 rules page and show the line it added.
 
-**S3, a request came in.** In Home, paste the whole of `marcus-offline-mode.md` and send. Pick
-no skill: Handle a commitment is not in the `/` picker, and the first turn shows Qale pulling it
+**S3, a request came in.** In Home, paste the Slack message from the README's scenario 3 and
+send. Pick no skill: Handle a commitment is not in the `/` picker, and the first turn shows Qale pulling it
 in itself. A question card asks whether Åsa reopened offline mode: pick **No, the decision
 stands**. Copy the one-line reply or the longer note from the sales-voice panel.
 

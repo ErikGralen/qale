@@ -866,8 +866,9 @@ Where each kind of note lives. The librarian follows these when proposing paths 
 - **notes/**: the PM's own folder, behind the Documents screen: scratch notes, briefs, PRDs,
   specs, and every ⌘N capture. The folders in it are theirs, and they are the only structure in
   the workspace that a person made. Write here only when they asked for the page in this
-  conversation, and send \`asked\` when you do. Everything else you write goes in the memory
-  folder that owns the subject. Anything dropped in from outside goes to sources/ instead.
+  conversation, and a new page here always waits as a card, because the folder is theirs. You
+  take your own notes in the memory folder that owns the subject, never here. Anything dropped
+  in from outside goes to sources/ instead.
 - **attachments/**: dropped images and screenshots, each referenced by a capture note in
   sources/.
 - **sessions/**: replayable session receipts, written by the harness. Never hand-edited.
@@ -1624,8 +1625,11 @@ send anything yourself.
  * decode a Slack ping; only this one can say the ask contradicts a decision made
  * in March.
  *
- * The decode lands as note type `note` for the same reason the spec does: the
- * type list is closed, and adding to it is a product call.
+ * The inbound half used to write its reading of the ask as a page in `notes/`.
+ * That folder is the PM's, and an agent takes its notes in Memory, so the page
+ * is an insight now: one claim, with the sender's words quoted under it. What
+ * the run worked out around the claim goes in the chat, which is where the PM
+ * reads it anyway.
  */
 export const COMMITMENT_CHECK_SKILL = `---
 type: skill
@@ -1710,13 +1714,22 @@ do not produce all of them.
   send yourself, citing where the commitment was made. It is not a proposal, and nothing sends it.
 
 ## Produce: a request that came in
-One proposal, the decode (propose_note, type \`note\`, path \`notes/YYYY-MM-DD-<sender>-<ask>.md\`), with
-\`sources\` citing every note it rests on. Always send \`asked\`: the decode is the document the PM
-asked you for in this conversation, and \`notes/\` is their own folder, which nothing writes into
-unasked.
+One proposal, a short insight (propose_note, type \`insight\`, path \`insights/<slug>.md\`): what the
+ask tells us, in one claim, with the sender's own words quoted under it. The slug is the
+claim, not the sender. \`evidence\` lists the pages it rests on: the sender's page, the customer,
+and the decision or research page the ask runs into. Set \`confidence\` from how much backs the
+claim, and take \`tags\` from the contexts already in use. An insight is Qale's own record, so it
+lands without a card.
+
+Check insights/ first. A second person asking the same thing extends the insight already there
+rather than filing a near-copy: restate the whole \`evidence\` list with the new page added, and put
+the new quote in the body.
 
 One addition to the writing rules: quote the ask itself. The message lives nowhere else, and what
 somebody asked for, in their own words, is what they will hold you to later.
+
+Everything else you worked out is for the chat, not for a page: the job behind the ask, who is
+asking, what the memory holds, where it collides, and the posture you recommend.
 
 The job behind the ask is an inference, never what the sender stated. Label it **Inference** and
 say what would confirm it. The solution somebody names is not the job: "can we add a CSV export
@@ -1724,7 +1737,7 @@ button" is a request, "finance rebuilds that report by hand every month" is the 
 of the two has more than one answer.
 
 Then what the ask actually forces, and only that:
-- **A commitment you take on**: a todo (propose_todo) quoting the ask and citing this decode.
+- **A commitment you take on**: a todo (propose_todo) quoting the ask and citing this insight.
 - **A reply** (draft_text), where the posture is to answer now: cite the decisions and tickets it
   rests on, and follow the voice for that audience. It is text to copy, and nothing sends it.
 - **A signal worth keeping**: where the ask is evidence for a customer, extend that page
@@ -1741,40 +1754,22 @@ decision it rests on, and draft the reply only where it has to be said out loud.
 Your writes update this one commitment: the plan lands on the todo, a close flips \`commitment\`, a
 reschedule moves \`due\`. Nothing else in the memory is touched.
 
-The decode sits with the PM's own documents as the record of what was asked and what we said
-back, so the same ask arriving next month from somebody else lands on something. Todos join the
-commitment ledger as you write them. Anything sent to Jira, Confluence or the calendar waits for
-the PM.
+The insight joins Qale's memory as the record of what was asked, so the same ask arriving next
+month from somebody else lands on something. Todos join the commitment ledger as you write them.
+Anything sent to Jira, Confluence or the calendar waits for the PM. Documents stay the PM's: you
+write no page there.
 
 A nudge and a reply are not proposals. Both wait in the chat for you to copy and send yourself.
 
-## The shape of the decode
+## The shape of the insight
 \`\`\`
-[propose_note, type note, notes/YYYY-MM-DD-<sender>-<ask>.md]
-# <what was asked, in one line>
+[propose_note, type insight, insights/<slug>.md]
+[frontmatter: summary <the claim, in one line>, tags, evidence <the pages it rests on>,
+confidence <high, med or low>, customer where the ask is one account's]
 
-## The ask
-> <the sentence that asks it, verbatim>
-<who sent it, when, and by when they want it>
+<the claim, in your own voice: what was asked for, and what it tells us. Two or three sentences.>
 
-## The job behind it
-**Inference** <what they are trying to get done>. <What would confirm it.>
-
-## Who is asking
-<what they own, what they can decide on their own, what they were last told> ([[people/...]])
-
-## What we know that bears on it
-- **Fact** <the insight, decision or ticket, and what it says> ([[...]])
-
-## Where it collides
-<the live decision, the promise, or the ticket state it runs into, or "nothing found">
-
-## Posture
-<do it / do a smaller thing / not now / no / one answer needed first>: <why, in one sentence>
-Next move: <what this run proposed, or nothing>
-
-## What I could not check
-<what nothing in the workspace answers>
+<who sent it, when, and by when they want an answer>: "<the sentence that asks it, verbatim>"
 \`\`\`
 `;
 
@@ -1844,8 +1839,9 @@ confirm the claim. A run that ends there has done its job.
 ## Produce
 One proposal, the spec (propose_note, type \`note\`, path \`notes/spec-<slug>.md\`), with \`sources\`
 citing the research page, the insights and the decisions it rests on. Take \`tags\` from the page,
-or the tag itself. Send \`asked\` with it: the spec is the document the PM pointed at a page and
-asked for, and \`notes/\` is their own folder, which nothing writes into unasked.
+or the tag itself. A spec is the PM's document, so it goes in their folder and it waits as a card:
+a new page in Documents always does. Say in the rationale what the spec covers, because that card
+is where they decide.
 
 One addition to the writing rules: no requirement without a trace. Every requirement names the
 insight, decision or ticket mirror behind it. One that cites nothing is not a requirement, it is
@@ -1858,9 +1854,9 @@ Tickets are not this skill's work. Breaking a spec into tracked work comes after
 and accepted.
 
 ## Then
-The spec sits with the PM's own documents and cites its way back down: a reader follows a
-requirement to the insight, and the insight to the account that said it. A later run over the
-same page or tag extends this one instead of filing a rival.
+The spec waits as a card. Once the PM approves it, it sits with their own documents and cites its
+way back down: a reader follows a requirement to the insight, and the insight to the account that
+said it. A later run over the same page or tag extends this one instead of filing a rival.
 
 ## The shape of the spec
 \`\`\`

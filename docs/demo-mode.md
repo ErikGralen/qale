@@ -181,9 +181,11 @@ recorded turn at `assistantCount` served.
   assistant messages the request already carries, same rule as before.
 
   So the presenter picks the scenario by what he does. A drop is S1 (arrival), "Brief me" is
-  S1 (meeting-prep), a bare weekly-update pick is S5, a paste under Handle a commitment is S3,
-  a line under Iterate on something is S4, and a plain question with `SCH-121` or "who needs to
-  know" in it is S2. One Reset before the demo (DM-9), then any subset in any order, each once,
+  S1 (meeting-prep), a bare weekly-update pick is S5, a plain paste with "offline" in it is S3
+  (the script's first turn calls `use_skill` for `commitment-check`, a moment the `/` picker
+  does not offer), a line under Iterate on something is S4, and a plain question with
+  `SCH-121` or "who needs to know" in it is S2. One Reset before the demo (DM-9), then any
+  subset in any order, each once,
   with no reset between. There is no Start button and nothing pinned. `ScriptEngine.pin()`
   exists for the lint, which runs one scenario alone with it; nothing in the app calls it.
 

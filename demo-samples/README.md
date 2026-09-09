@@ -60,8 +60,8 @@ three colleagues. Copy the Oskar tab. Then type the second sentence:
 
 ## A request came in
 
-**Do:** type `/` in Home, pick **Handle a commitment**, paste the body of
-`marcus-offline-mode.md`, send.
+**Do:** in Home, paste the whole of `marcus-offline-mode.md` and send. Pick nothing first: Handle
+a commitment is not in the `/` picker, and Qale pulls it in itself when it reads the message.
 
 **Paste:** the whole of `marcus-offline-mode.md`.
 

@@ -10,7 +10,7 @@
  * index = the number of assistant messages the request already carries.
  *
  * The presenter picks a scenario by what he does, never by a button: a drop
- * is S1, a bare weekly-update pick is S5, a paste under Handle a commitment
+ * is S1, a bare weekly-update pick is S5, a plain paste with "offline" in it
  * is S3. So a typed opening is matched on the skill in force and, where two
  * scenarios share one, on a few words the `do` line makes him type. Beyond
  * that a typo or a paraphrase changes nothing, because the text is only

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "id": "lint-use-skill",
+  "title": "A script that pulls a skill in mid-conversation",
+  "do": "Nothing. This one is only ever read by the lint's own test.",
+  "conversations": [
+    {
+      "id": "skill-then-track",
+      "trigger": { "kind": "typed" },
+      "title": "Watch SCH-118 from a plain question",
+      "turns": [
+        {
+          "text": "You are telling me what to watch, so I am pulling in Tell Qale.",
+          "tools": [{ "name": "use_skill", "input": { "name": "tell-qale" } }]
+        },
+        {
+          "tools": [
+            { "name": "track_external", "input": { "kind": "ticket", "external_id": "SCH-118" } }
+          ]
+        },
+        {
+          "text": "SCH-118 is watched now. Nothing else changed."
+        }
+      ]
+    }
+  ]
+}

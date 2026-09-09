@@ -70,7 +70,11 @@ test(
       engineCheck: false,
     });
 
-    assert.equal(report.errors.length, 2, `two errors, got: ${report.errors.map((e) => e.where)}`);
+    assert.equal(
+      report.errors.length,
+      3,
+      `three errors, got: ${report.errors.map((e) => e.where)}`,
+    );
 
     // The patch: the tool's own refusal, carried through word for word.
     const patch = at(report.errors, 'stale-patch turn 0 propose_update');
@@ -85,5 +89,28 @@ test(
     // And the script ends on a tool call, which is one turn past the script.
     const ending = at(report.warnings, 'stale-patch');
     assert.match(ending.message, /does not end on a text-only turn/);
+
+    // A watch under a plain typed session, with no use_skill before it: the
+    // tool exists, but nothing in force grants `track-external`.
+    const ungranted = at(report.errors, 'no-skill-in-force turn 0 track_external');
+    assert.match(ungranted.message, /does not have "track_external"/);
+    assert.match(ungranted.message, /no use_skill call before this turn/);
+  },
+);
+
+test(
+  'a use_skill call runs for real and turns on the tools that skill grants for the turns after it',
+  { skip },
+  async () => {
+    const report = await lintScenarios({
+      repoRoot,
+      dir: FIXTURES,
+      scenario: 'lint-use-skill',
+      offsets: [0],
+      engineCheck: false,
+    });
+    assert.deepEqual(report.errors, [], 'no errors');
+    assert.deepEqual(report.warnings, [], 'no warnings');
+    assert.equal(report.scenarios, 1);
   },
 );

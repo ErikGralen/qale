@@ -17,11 +17,12 @@ the script engine picks the scenario from what you do.
 
 How a session finds its script: a drop is the arrival kickoff (S1), "Brief me" on a meeting is
 the meeting-prep kickoff (S1), a bare "Write the weekly update" pick is that kickoff (S5). A
-typed message is classified by the skill in force when it was sent: Handle a commitment for
-S3, Iterate on something for S4, nothing picked for S2, plus a word or two from the line the
-card tells you to type (`SCH-121` or "who needs to know" for S2, `offline` for S3, `Visma` or
-`stories` for S4). Beyond that nothing typed has to match anything: turns are served by
-position, not by comparing words, so a typo or a paraphrase changes nothing.
+typed message is classified by the skill in force when it was sent: Iterate on something for
+S4, nothing picked for S2 and S3, plus a word or two from the line the card tells you to type
+(`SCH-121` or "who needs to know" for S2, `offline` for S3, `Visma` or `stories` for S4). S2
+and S3 are both plain questions, so the word is what tells them apart. Beyond that nothing typed
+has to match anything: turns are served by position, not by comparing words, so a typo or a
+paraphrase changes nothing.
 
 ## The five scenarios
 
@@ -38,10 +39,10 @@ proposes for Fjord Sports and the three colleagues. In the same session, type: "
 when something a customer asked for ships, tell Ulrika before the customer." Open the house
 rules page and show the line it added.
 
-**S3, a request came in.** In Home, type `/`, pick **Handle a commitment**, paste the whole of
-`marcus-offline-mode.md`, send. A question card asks whether Åsa reopened offline mode: pick
-**No, the decision stands**. Copy the one-line reply or the longer note from the sales-voice
-panel.
+**S3, a request came in.** In Home, paste the whole of `marcus-offline-mode.md` and send. Pick
+no skill: Handle a commitment is not in the `/` picker, and the first turn shows Qale pulling it
+in itself. A question card asks whether Åsa reopened offline mode: pick **No, the decision
+stands**. Copy the one-line reply or the longer note from the sales-voice panel.
 
 **S4, break it into stories.** In Home, type `/`, pick **Iterate on something**, type: "Break
 the Visma connector into stories under SCH-118. Rebecca's team, after Fortnox, Fjord Sports

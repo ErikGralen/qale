@@ -100,7 +100,7 @@ The dates below are anchor dates (`2026-07-17` is today in the seed). The reset 
 
 **Script:**
 
-1. In Home, type `/`, pick **Handle a commitment**, paste the body of `marcus-offline-mode.md`, send. The message: Marcus, a seventy-location retail prospect, "as I understood it Åsa reopened offline mode for H2 at steering on 2026-07-09, so I'd like to tell him it's on the H2 list, can you confirm by Thursday."
+1. In Home, paste the body of `marcus-offline-mode.md` and send, with no skill picked. Handle a commitment is a moment (it fires from "Help me handle this" on a todo and is not in the `/` picker), so Qale invokes it itself with `use_skill` on the first turn. The message: Marcus, a seventy-location retail prospect, "as I understood it Åsa reopened offline mode for H2 at steering on 2026-07-09, so I'd like to tell him it's on the H2 list, can you confirm by Thursday."
 2. A question card: "Marcus says Åsa reopened offline mode at steering on 9 July. [[decisions/2026-02-12-decline-offline-mode]] says we are not doing it, and [[meetings/2026-07-09-steering]] records no decisions. Did Åsa reopen it?" Options: **No, the decision stands** / **Yes, Åsa reopened it**. Pick the first.
 3. The decode note lands in Documents (`notes/2026-07-17-marcus-offline-mode.md`): the ask verbatim, the job behind it (a proposal line the prospect can sign), the collision with the February decision, posture "no". A panel in the sales voice: "One line to forward" and "What you can tell them", with Rebecca's sync-layer reason and no engineering caveats. Copy one. Say: "the third time this ask comes, the answer costs nothing."
 

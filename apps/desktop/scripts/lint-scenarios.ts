@@ -19,7 +19,10 @@
  *    The same state `DemoService.reset` leaves behind.
  * 3. Run. Every turn of every conversation, in order, through the real tools.
  *    A refusal or a throw is an error naming the scenario, the conversation,
- *    the turn, the tool and what came back. Then every send the conversation
+ *    the turn, the tool and what came back. A `use_skill` call runs for real
+ *    too, through the same tool the runtime gives the model, so the harness
+ *    records the skill and every turn after it gets that skill's tools (S3
+ *    pulls in `commitment-check` this way). Then every send the conversation
  *    drafted is approved through the real accept path, with one sync run after
  *    each the way the demo build runs one, because a card the PM cannot approve
  *    is the demo failing in front of the audience.
@@ -461,6 +464,8 @@ export async function sessionTools(
     ...createTextTools(gate),
     ...createDraftTools(ctx, sessionId, harness, gate, ws.containers),
     ...createFilingTools(ctx, harness, filesRoot),
+    // The runtime's `onInvoke` re-activates pi's tool set; here `active()` is
+    // read per call, so the harness the tool writes into is enough.
     ...(canInvokeSkills ? [createUseSkillTool(ctx, harness)] : []),
     ...createSessionFileTools(filesRoot),
     ...createReadTools(ws.connections.flatMap((c) => c.readTools)),
@@ -911,12 +916,15 @@ async function runCall(
     err(scenario.id, offset, where, `no tool called "${call.name}"`);
     return;
   }
+  // Asked per call: a `use_skill` earlier in the conversation has already run
+  // through the harness by now, so a tool that skill grants is active here.
   if (!tools.active().has(call.name)) {
     err(
       scenario.id,
       offset,
       where,
-      `this session does not have "${call.name}": its skill grants no permission for it`,
+      `this session does not have "${call.name}": no skill in force grants it, ` +
+        'and no use_skill call before this turn brought one in',
     );
     return;
   }

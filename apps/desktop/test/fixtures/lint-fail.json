@@ -32,6 +32,21 @@
           "tools": [{ "name": "propose_ticket_comment", "input": { "ticket": "SCH-118" } }]
         }
       ]
+    },
+    {
+      "id": "no-skill-in-force",
+      "trigger": { "kind": "typed" },
+      "title": "A watch no skill in force allows",
+      "turns": [
+        {
+          "tools": [
+            { "name": "track_external", "input": { "kind": "ticket", "external_id": "SCH-118" } }
+          ]
+        },
+        {
+          "text": "The watch above was never allowed: a plain question was typed, and no use_skill call came before it."
+        }
+      ]
     }
   ]
 }

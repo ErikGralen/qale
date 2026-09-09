@@ -6,7 +6,7 @@ Settings closed: Qale picks the scenario from what you do.
 
 | File                         | What you do with it                    | Scenario |
 | ---------------------------- | -------------------------------------- | -------- |
-| `steering-h2-priorities.vtt` | Drag it onto the Qale window           | Meeting  |
+| `steering-h2-priorities.vtt` | Drag it into Home, type a line, send   | Meeting  |
 | `marcus-offline-mode.md`     | Copy the text, paste it into the skill | Request  |
 
 Use the copies in this folder. They are dated so that the steering meeting was yesterday.
@@ -20,9 +20,10 @@ staff turnover. Fjord Sports was told payroll export lands in Q4.
 
 ## The meeting produced actions
 
-**Do:** drag `steering-h2-priorities.vtt` onto the window.
+**Do:** drag `steering-h2-priorities.vtt` into Home. It lands in the composer as a chip. Type
+the line below and send.
 
-**Say:**
+**Type:**
 
     yesterday's steering, nobody wrote anything down
 

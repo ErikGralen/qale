@@ -27,7 +27,8 @@ paraphrase changes nothing.
 ## The five scenarios
 
 **S1, the meeting produced actions.** Drag `steering-h2-priorities.vtt` from the Qale demo
-files folder onto the window. A question card asks whether "I'll ping Henrik today" is the same
+files folder into Home. It lands in the composer; type "yesterday's steering, nobody wrote
+anything down" and send. A question card asks whether "I'll ping Henrik today" is the same
 commitment as the seeded GDPR review: pick **Same commitment**. Approve the meeting write-up,
 the decision that supersedes the May order, and the todos, then the three outbound cards one at
 a time (a comment on SCH-118, a new SCH story, a Roadmap H2 patch). Open SCH-118 in the Jira tab
@@ -61,7 +62,7 @@ A script is a file, `demo/scenarios/s1.json` to `s5.json`, not a recording. Chan
 editing it directly, or start over from a fresh recording:
 
 1. Reset, then run the scenario once in record mode: `QALE_DEMO=1 QALE_DEMO_RECORD=1 pnpm
-   desktop`, with a real Anthropic key in Settings.
+desktop`, with a real Anthropic key in Settings.
 2. `pnpm demo:draft --scenario s1 --from demo/recordings/<file>.json` turns the recording into
    a script, dropping reads and thinking, and flags anything it could not make stable on its
    own (a proposal id, a Jira page id).
@@ -71,7 +72,7 @@ editing it directly, or start over from a fresh recording:
 4. `pnpm demo:lint`. Fix until it prints `OK` at all three offsets and the four sequence orders
    are green: those run every scenario after every other with no reset between.
 5. Run it cold on a day nobody drafted against: `QALE_DEMO=1 QALE_DEMO_TODAY=2026-10-01 pnpm
-   desktop`, Reset, watch the cards. Commit.
+desktop`, Reset, watch the cards. Commit.
 
 Full detail on each step is in `docs/demo-mode.md`, DM-10.
 

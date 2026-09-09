@@ -2,7 +2,7 @@
   "version": 1,
   "id": "s1",
   "title": "The meeting produced actions",
-  "do": "Drag steering-h2-priorities.vtt from the Qale demo files folder onto the window. On the question card, pick Same commitment.",
+  "do": "Drag steering-h2-priorities.vtt from the Qale demo files folder into Home. It lands in the composer. Type: yesterday's steering, nobody wrote anything down. Send. On the question card, pick Same commitment.",
   "offScript": "That is outside what this demo can show. The five things it can do are listed in Settings, under Demo.",
   "lookups": {
     "claims": {
@@ -28,9 +28,7 @@
             {
               "name": "file_source",
               "input": {
-                "files": [
-                  "source/steering-h2-priorities.vtt"
-                ],
+                "files": ["source/steering-h2-priorities.vtt"],
                 "as": "meeting",
                 "title": "Steering: H2 priorities",
                 "date": "2026-07-16",
@@ -73,17 +71,11 @@
                   },
                   {
                     "claim": "Rebecca re-scopes SCH-240 with the overtime check and gives a real estimate by 2026-07-24.",
-                    "about": [
-                      "[[tickets/jira/SCH-240]]",
-                      "[[people/rebecca-holm]]"
-                    ]
+                    "about": ["[[tickets/jira/SCH-240]]", "[[people/rebecca-holm]]"]
                   },
                   {
                     "claim": "Marcus told Lena \"before September\" at the Café Nord QBR on 2026-06-05 and stands by it.",
-                    "about": [
-                      "[[customers/cafe-nord]]",
-                      "[[meetings/2026-06-05-cafe-nord-qbr]]"
-                    ]
+                    "about": ["[[customers/cafe-nord]]", "[[meetings/2026-06-05-cafe-nord-qbr]]"]
                   }
                 ]
               }
@@ -124,25 +116,16 @@
                 "frontmatter": {
                   "type": "decision",
                   "summary": "H2 order flipped: shift swaps ships first, payroll export moves to Q1 2027",
-                  "tags": [
-                    "shift-swaps",
-                    "payroll-export"
-                  ],
+                  "tags": ["shift-swaps", "payroll-export"],
                   "standing": "active",
                   "date": "2026-07-16",
-                  "deciders": [
-                    "Åsa Lindgren"
-                  ],
-                  "sources": [
-                    "[[meetings/{{date:2026-07-16}}-steering]]"
-                  ]
+                  "deciders": ["Åsa Lindgren"],
+                  "sources": ["[[meetings/{{date:2026-07-16}}-steering]]"]
                 },
                 "body": "Åsa reversed the May order at steering on 2026-07-16: shift swaps ([[tickets/jira/SCH-231]]) ships first, payroll export ([[tickets/jira/SCH-118]]) moves to Q1 2027 ([[meetings/{{date:2026-07-16}}-steering]]).\n\nThe May reasoning was that two accounts had asked for the export with a date attached and nobody had a hard date on swaps ([[decisions/2026-05-18-h2-order-payroll-first]]). That no longer holds. Café Nord's QBR put a date on swaps that we did not choose: their staff turn over every September and managers rebuild the week by hand because staff cannot swap shifts themselves ([[insights/cafe-nord-september-turnover]]). Two more chain accounts in the pipeline asked the same question in the same week, one of them with over a hundred locations. Payroll export helps none of the three.\n\nBoth epics sit on one team, so the second one moves a full quarter, not a few weeks ([[notes/h2-capacity]]). Åsa took that cost on purpose: \"that's the whole point of doing this today instead of next month.\"\n\nNot decided here: a ship date for swaps. Rebecca re-estimates [[tickets/jira/SCH-240]] by 2026-07-24, and that number is an estimate, not a promise.",
                 "rationale": "Åsa decided it in the room with a named reason, and it reverses the May order, so it is a new decision that supersedes the old one.",
                 "supersedes": "decisions/2026-05-18-h2-order-payroll-first",
-                "sources": [
-                  "[[meetings/{{date:2026-07-16}}-steering]]"
-                ]
+                "sources": ["[[meetings/{{date:2026-07-16}}-steering]]"]
               }
             },
             {
@@ -154,9 +137,7 @@
                   "processing": "processed"
                 },
                 "rationale": "The write-up of yesterday's steering: the order flip, Rebecca's estimate date, the GDPR gap, the fourth story, and what Café Nord gets told.",
-                "sources": [
-                  "[[sources/{{today}}-steering-transcript]]"
-                ]
+                "sources": ["[[sources/{{today}}-steering-transcript]]"]
               }
             },
             {
@@ -166,9 +147,7 @@
                 "due": "2026-07-24",
                 "owner": "[[people/rebecca-holm]]",
                 "quote": "I'll re-scope SCH-240 properly, overtime check included, and I'll have a real estimate by next Friday.",
-                "sources": [
-                  "[[meetings/{{date:2026-07-16}}-steering]]"
-                ],
+                "sources": ["[[meetings/{{date:2026-07-16}}-steering]]"],
                 "rationale": "Rebecca committed to the estimate in steering. Next Friday from 2026-07-16 is 2026-07-24, and Åsa confirmed it as a week from tomorrow."
               }
             },
@@ -179,9 +158,7 @@
                 "due": "2026-07-17",
                 "owner": "[[people/rebecca-holm]]",
                 "quote": "I'll make sure it exists, whether I write it or someone on the team does.",
-                "sources": [
-                  "[[meetings/{{date:2026-07-16}}-steering]]"
-                ],
+                "sources": ["[[meetings/{{date:2026-07-16}}-steering]]"],
                 "rationale": "Åsa asked for the notify-the-affected-colleague story filed this week, and Rebecca took it."
               }
             },
@@ -197,9 +174,7 @@
                   ]
                 },
                 "rationale": "You said yesterday's ping is this commitment, so the steering line goes on the open todo and nothing new is filed.",
-                "sources": [
-                  "[[meetings/{{date:2026-07-16}}-steering]]"
-                ],
+                "sources": ["[[meetings/{{date:2026-07-16}}-steering]]"],
                 "asked": true
               }
             },
@@ -258,9 +233,7 @@
                 "kind": "Story",
                 "title": "Notify the affected colleague when a swap is approved",
                 "body": "Part of SCH-231. When a manager approves a swap, the colleague who gave up the shift hears about it from the app. Today that is a message the manager sends by hand, if they remember, and support will hear about it once swaps are live for real customers.\n\nNot one of the three stories in the epic. Raised by Rebecca at steering on 2026-07-16; Åsa asked for it filed this week.\n\nAcceptance:\n- [ ] When the manager approves, the colleague who gave up the shift gets a notification naming the shift and who took it.\n- [ ] The colleague who took the shift sees it on their published schedule at the same moment.\n- [ ] Nothing is sent while the request is still pending or after a rejection.\n\nSource: Steering, 2026-07-16",
-                "labels": [
-                  "shift-swaps"
-                ],
+                "labels": ["shift-swaps"],
                 "sources": [
                   "[[meetings/{{date:2026-07-16}}-steering]]",
                   "[[tickets/jira/SCH-231]]",

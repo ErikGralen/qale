@@ -61,7 +61,7 @@ is about: the todo, the person, the customer.
 A conflict is a question every time, asked before the write: what you have, the note as a link, one
 question, and the two answers as options. Then write what they chose and set `asked`. A close the
 PM said out loud in a source is theirs, so write it. A close you worked out yourself is a question
-("Åsa said the dates went out. Mark [[todos/2026-07-09-send-nordkap-the-dates]] done?").
+("Åsa said the dates went out. Mark the send-Nordkap-the-dates todo done?").
 
 ## Produce: a commitment of yours
 

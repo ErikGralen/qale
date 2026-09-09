@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, TooltipProvider } from '@qale/ui';
-import type { ArrivalItemInputDTO } from '@qale/ipc';
-import { readableAs } from '@qale/domain';
 import { AlertTriangle, FileUp, X } from 'lucide-react';
 import { pathForFile } from './lib/ipc';
+import { itemsFromFiles } from './lib/attachments';
 import { AppStateProvider, useApp } from './state/app-state';
 import { CAPTURE_EVENT, type CaptureRequest } from './lib/capture-event';
 import { useNewNote } from './lib/new-note';
@@ -366,10 +365,14 @@ function Shell() {
   ]);
 
   /**
-   * Shell-wide drop: everything dragged anywhere lands in the Add source
-   * tray, however many files it is. The drop is an accelerator for the button,
-   * not a second door with its own behaviour — discovering one has to teach the
-   * other (docs/vision/arrival.md §7).
+   * Shell-wide drop: a drop nobody else claimed lands in the Add source tray,
+   * however many files it is.
+   *
+   * Pages with a composer claim their own drops before this runs (Home and a
+   * session put the files in the bar), and pages that carry an aim claim theirs
+   * too (a meeting page, a folder). What is left is a drop on a page with
+   * nowhere to put a file, and the tray is where that goes
+   * (docs/vision/arrival.md §7).
    */
   const onDrop = useCallback(
     async (e: React.DragEvent) => {
@@ -378,36 +381,7 @@ function Shell() {
       setDragging(false);
       const dropped = Array.from(e.dataTransfer.files);
       if (dropped.length === 0 || !vault) return;
-      const files: ArrivalItemInputDTO[] = [];
-      for (const file of dropped) {
-        // The path route wherever there is one: it is the only way a dropped
-        // FOLDER can be read at all (AR-14), and it keeps the bytes off the wire.
-        const path = pathForFile(file);
-        if (path) {
-          files.push({ path, name: file.name, lastModified: file.lastModified });
-          continue;
-        }
-        if (readableAs(file.name) === null) {
-          files.push({ name: file.name, lastModified: file.lastModified });
-          continue;
-        }
-        if (file.type.startsWith('image/')) {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const r = new FileReader();
-            r.onload = () => resolve(r.result as string);
-            r.onerror = () => reject(r.error);
-            r.readAsDataURL(file);
-          });
-          files.push({
-            name: file.name,
-            dataBase64: dataUrl.split(',')[1] ?? '',
-            lastModified: file.lastModified,
-          });
-        } else {
-          files.push({ name: file.name, text: await file.text(), lastModified: file.lastModified });
-        }
-      }
-      openCapture({ files });
+      openCapture({ files: await itemsFromFiles(dropped, pathForFile) });
     },
     [openCapture, vault],
   );

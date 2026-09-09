@@ -18,6 +18,7 @@ import type {
   CaptureTodoInputDTO,
   ChatRefDTO,
   ArrivalCheckDTO,
+  ArrivalAttachDTO,
   ArrivalHandoffDTO,
   ArrivalItemInputDTO,
   ArrivalProgressDTO,
@@ -480,6 +481,9 @@ interface AppState {
     /** Which model reads the batch. The tray sends the one it is showing. */
     modelId?: string,
   ) => Promise<ArrivalHandoffDTO>;
+  /** Put files into a session that already exists. Nothing runs; the composer
+   *  that dropped them sends the message naming them. */
+  attachToSession: (sessionId: string, items: ArrivalItemInputDTO[]) => Promise<ArrivalAttachDTO>;
   previewProposal: (id: string) => Promise<{
     before: string;
     after: string;
@@ -1487,6 +1491,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [refreshTree],
   );
 
+  /**
+   * Put files into a session that is already open. They land in its `source/`
+   * folder and nothing runs: the composer that dropped them sends the message
+   * that names them, so the session reads them as part of what was said.
+   */
+  const attachToSession = useCallback(
+    (sessionId: string, items: ArrivalItemInputDTO[]) =>
+      invoke['arrival:attach'](sessionId, items),
+    [],
+  );
+
   const previewProposal = useCallback((id: string) => invoke['proposals:preview'](id), []);
 
   const refreshProposals = useCallback(async () => {
@@ -2379,6 +2394,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       pickSource,
       checkArrival,
       ingestArrival,
+      attachToSession,
       previewProposal,
       refreshProposals,
       acceptProposal,
@@ -2490,6 +2506,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       pickSource,
       checkArrival,
       ingestArrival,
+      attachToSession,
       previewProposal,
       refreshProposals,
       acceptProposal,

@@ -16,7 +16,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@qale/ui';
 import { isFolderIndex } from '@qale/domain';
-import type { NoteRefDTO } from '@qale/ipc';
+import type { ArrivalItemInputDTO, NoteRefDTO } from '@qale/ipc';
 import { buildKickoff } from '@qale/sessions';
 import { useApp } from '../state/app-state';
 import { useChatMentions } from './ChatMentions';
@@ -32,9 +32,13 @@ import {
   SendButton,
   useAutoGrow,
 } from '../components/Composer';
+import { Attachments } from '../components/Attachments';
+import { useToast } from '../components/toast';
 import { FirstSteps } from '../onboarding/FirstSteps';
 import { contentNotes } from '../lib/contexts';
-import { isBulkPaste, requestCapture } from '../lib/capture-event';
+import { isBulkPaste } from '../lib/capture-event';
+import { itemsFromFiles, pastedName } from '../lib/attachments';
+import { DROP_OVER, useFileDrop } from '../lib/file-drop';
 import { localDateStr } from '../lib/dates';
 
 /**
@@ -51,14 +55,34 @@ import { localDateStr } from '../lib/dates';
  * with a destination.
  */
 export function Home() {
-  const { vault, openVaultDialog, skills } = useApp();
+  const { vault, openVaultDialog, skills, pickSource } = useApp();
   // The composer's text lives out here because two things write it: the PO
   // typing, and a starter below the bar handing it a first sentence. The
   // picked skill lives out here too, for the same reason: a starter with an
   // obvious skill sets it, the same field the picker itself writes to.
   const [ask, setAsk] = useState('');
   const [pickedSkill, setPickedSkill] = useState<string | null>(null);
+  // Files waiting in the bar. They live out here because the whole page takes
+  // the drop, not just the composer: a file dropped on the greeting is a file
+  // meant for the question, and making the PO hit a small target for that would
+  // be a rule the page never states.
+  const [files, setFiles] = useState<ArrivalItemInputDTO[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const addFiles = (items: ArrivalItemInputDTO[]) => {
+    if (items.length === 0) return;
+    setFiles((prev) => [...prev, ...items]);
+    // A source is read by "Handle new sources", so a skill picked before the
+    // files arrived is dropped rather than left on a chip that no longer runs.
+    setPickedSkill(null);
+    inputRef.current?.focus();
+  };
+  const drop = useFileDrop(addFiles);
+
+  const choose = async () => {
+    const picked = await pickSource().catch(() => []);
+    addFiles(picked);
+  };
 
   if (!vault) return <NoWorkspace onOpen={openVaultDialog} />;
 
@@ -79,16 +103,16 @@ export function Home() {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className={`flex h-full flex-col ${drop.over ? DROP_OVER : ''}`} {...drop.handlers}>
       <PageHeader icon={House} label="Home" meta={vault.name} />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-8 pt-[clamp(48px,13vh,144px)] pb-16">
           <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
             <Greeting />
-            <QuickActions />
+            <QuickActions onAddSource={() => void choose()} />
           </div>
           <Notices />
-          <FirstSteps />
+          <FirstSteps onAddSource={() => void choose()} />
           {/* Extra air on top of the column gap: the pause before the page's
               centerpiece is part of what makes it the centerpiece. */}
           <div className="mt-4 flex flex-col gap-3">
@@ -97,6 +121,8 @@ export function Home() {
               setAsk={setAsk}
               pickedSkill={pickedSkill}
               setPickedSkill={setPickedSkill}
+              files={files}
+              setFiles={setFiles}
               inputRef={inputRef}
             />
             <Starters onPick={seed} />
@@ -172,12 +198,16 @@ function Greeting() {
 
 /**
  * New document and Add source, opposite the greeting. These are the app's two
- * ways of putting something *in* (the bar below only asks), and they sit up
- * here rather than inside the composer strip so a new user sees both verbs
- * before they ever focus the bar. Same instruments as ⌘N and ⇧⌘N — the
- * buttons are the visible half of those shortcuts.
+ * ways of putting something *in*, and they sit up here rather than inside the
+ * composer strip so a new user sees both verbs before they ever focus the bar.
+ *
+ * Add source opens the file picker and puts what it gets in the bar below, the
+ * same place a drop lands. On a page with a composer a source goes into the
+ * composer: the chips say what is about to happen, and the PO can say something
+ * about the files before anything runs. The sidebar's Add source and ⇧⌘N still
+ * open the tray, because they fire from pages that have no composer to fill.
  */
-function QuickActions() {
+function QuickActions({ onAddSource }: { onAddSource: () => void }) {
   const { captureNote, openDoc } = useApp();
 
   const newNote = async () => {
@@ -194,8 +224,8 @@ function QuickActions() {
       <Button
         variant="outline"
         size="sm"
-        title="Add a transcript, link or screenshot (⇧⌘N)"
-        onClick={() => requestCapture()}
+        title="Add a transcript, link or screenshot to the bar below"
+        onClick={onAddSource}
       >
         <FileUp className="size-3.5 text-muted-foreground" aria-hidden /> Add source
       </Button>
@@ -208,34 +238,46 @@ function QuickActions() {
 // ---------------------------------------------------------------------------
 
 /**
- * The app's front door for questions: the same composer shell as the session and the
- * browse pages. Typing asks the memory; a pasted transcript or screenshot
- * still routes to capture (a source is a source wherever it lands), but the
- * standing "put something in" affordances live in QuickActions above, so the
- * strip here stays about the question. Nothing is written anywhere either way
- * — the question opens a session, the paste opens the capture card.
+ * The app's front door for questions and for sources: the same composer shell as
+ * the session and the browse pages. Typing asks the memory. A file dropped on
+ * the page, picked with Add source, or pasted as a wall of text lands here as a
+ * chip, and the PO can say something about it in the same breath. Nothing is
+ * written anywhere until send.
+ *
+ * With files in the bar, send hands them over: they land in a new session's
+ * folder and the arrival skill files and reads them, with whatever was typed as
+ * the instruction. That is the same path the Add source tray has always used, so
+ * a drop and a press of the button end in the same place.
  *
  * The skill picker is the same instrument as the session composer's: without a
- * pick the question opens an Ask, with one it opens that skill instead. The
- * verb chips at the foot of the page are the shortcut with a first sentence
- * already in hand; where one has an obvious skill, it picks that too, through
- * this same field.
+ * pick the question opens an Ask, with one it opens that skill instead. It steps
+ * aside while there are files in the bar, because a handed-over source is read
+ * by "Handle new sources" and two skills cannot both run the turn. The verb
+ * chips at the foot of the page are the shortcut with a first sentence already
+ * in hand; where one has an obvious skill, it picks that too, through this same
+ * field.
  */
 function HomeComposer({
   ask,
   setAsk,
   pickedSkill,
   setPickedSkill,
+  files,
+  setFiles,
   inputRef,
 }: {
   ask: string;
   setAsk: (text: string) => void;
   pickedSkill: string | null;
   setPickedSkill: (name: string | null) => void;
+  files: ArrivalItemInputDTO[];
+  setFiles: React.Dispatch<React.SetStateAction<ArrivalItemInputDTO[]>>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
-  const { tree, skills, openSession } = useApp();
+  const { tree, skills, openSession, ingestArrival, openChat } = useApp();
+  const toast = useToast();
   const [skillMenuOpen, setSkillMenuOpen] = useState(false);
+  const [handing, setHanding] = useState(false);
   // The model this question opens on, when the PO wants it off the workspace
   // default. It has to be here rather than only in the session: the first
   // message goes as the session opens, so by the time that view has a composer
@@ -244,8 +286,50 @@ function HomeComposer({
   const mentions = useChatMentions(tree, inputRef, ask, setAsk);
   useAutoGrow(inputRef, ask);
 
+  /**
+   * Hand the files in the bar over. The batch lands in a session folder before
+   * any model runs, so a missing API key costs nothing but a delay, and the
+   * session opens because that is where the work is now.
+   *
+   * A failure puts the files back in the bar. The front door must never lose
+   * what somebody handed it.
+   */
+  const hand = async (said: string) => {
+    if (handing) return;
+    const batch = files;
+    setHanding(true);
+    setAsk('');
+    setFiles([]);
+    try {
+      const result = await ingestArrival(batch, said || undefined, pickedModel ?? undefined);
+      setPickedModel(null);
+      if (!result.started) {
+        toast(
+          result.reason
+            ? `Your source is safe, but nothing is reading it: ${result.reason}`
+            : 'Your source is safe, but nothing is reading it.',
+        );
+      }
+      openChat({ id: result.sessionId, title: 'Handling new source' });
+    } catch (err) {
+      setFiles(batch);
+      setAsk(said);
+      toast(
+        `Could not add source: ${err instanceof Error ? err.message : 'the workspace rejected the write.'}`,
+      );
+    } finally {
+      setHanding(false);
+    }
+  };
+
   const run = () => {
     const q = ask.trim();
+    // Files in the bar are the subject of the send, whether or not anything was
+    // typed beside them: silence means "you decide".
+    if (files.length > 0) {
+      void hand(q);
+      return;
+    }
     // A picked skill is instruction enough on its own — typing is only
     // required for the plain, skill-less ask.
     if (!q && !pickedSkill) return;
@@ -264,9 +348,20 @@ function HomeComposer({
     });
   };
 
+  const hasFiles = files.length > 0;
+
   return (
     <div className={COMPOSER_SHELL}>
       {mentions.menu}
+      {/* Above the text, because that is the order they happened in: the file
+          arrived, then the sentence about it. */}
+      <Attachments
+        items={files}
+        onRemove={(i) => {
+          setFiles((prev) => prev.filter((_, n) => n !== i));
+          inputRef.current?.focus();
+        }}
+      />
       <textarea
         ref={inputRef}
         value={ask}
@@ -293,35 +388,35 @@ function HomeComposer({
           }
         }}
         onPaste={(e) => {
+          // A screenshot and a wall of text both become a chip, the same as a
+          // dropped file: one path in, one place they wait, one X to take them
+          // back out.
           const image = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'));
           if (image) {
             e.preventDefault();
-            const reader = new FileReader();
-            reader.onload = () =>
-              requestCapture({
-                files: [
-                  {
-                    name: image.name || 'pasted-image.png',
-                    dataBase64: String(reader.result).split(',')[1] ?? '',
-                  },
-                ],
-              });
-            reader.readAsDataURL(image);
+            void itemsFromFiles([image], () => '').then((items) =>
+              setFiles((prev) => [
+                ...prev,
+                ...items.map((i) => ({ ...i, name: i.name || 'pasted-image.png' })),
+              ]),
+            );
             return;
           }
           // A wall of text pasted into an empty bar is a source, not a question.
           const text = e.clipboardData.getData('text/plain');
           if (!ask.trim() && isBulkPaste(text)) {
             e.preventDefault();
-            requestCapture({ text });
+            setFiles((prev) => [...prev, { name: pastedName(prev), text }]);
           }
         }}
         onClick={mentions.refresh}
         onBlur={mentions.close}
         placeholder={
-          pickedSkill
-            ? `What should “${skills.find((s) => s.name === pickedSkill)?.title ?? pickedSkill}” work on?`
-            : 'Ask the memory, or paste a transcript to file it'
+          hasFiles
+            ? 'Anything I should know, or want done with these? (optional)'
+            : pickedSkill
+              ? `What should “${skills.find((s) => s.name === pickedSkill)?.title ?? pickedSkill}” work on?`
+              : 'Ask the memory, or drop a transcript to file it'
         }
         aria-label="Ask the memory"
         // Two lines deep at rest — unlike the docked bars, this field is the
@@ -337,6 +432,7 @@ function HomeComposer({
           onClosed={() => inputRef.current?.focus()}
           open={skillMenuOpen}
           onOpenChange={setSkillMenuOpen}
+          disabled={hasFiles}
         />
         {/* Same pair, in the same order, as the session composer's: which skill
             runs, then which model runs it. */}
@@ -350,8 +446,13 @@ function HomeComposer({
         />
         {/* The lead carries its own word already; the hint steps aside as soon
             as a skill is picked so the strip never runs two deep. */}
-        <MentionHint show={!ask.trim() && !pickedSkill} />
-        <SendButton ready={!!ask.trim() || !!pickedSkill} onClick={run} />
+        <MentionHint show={!ask.trim() && !pickedSkill && !hasFiles} />
+        {/* Files alone are enough to send: an empty field means "you decide". */}
+        <SendButton
+          ready={(!!ask.trim() || !!pickedSkill || hasFiles) && !handing}
+          onClick={run}
+          label={hasFiles ? 'Add source' : 'Ask'}
+        />
       </div>
     </div>
   );

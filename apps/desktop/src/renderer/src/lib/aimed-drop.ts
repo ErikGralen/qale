@@ -1,79 +1,29 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import type { ArrivalItemInputDTO } from '@qale/ipc';
-import { readableAs } from '@qale/domain';
 import type { SourceAim } from './source-aim';
 import { requestCapture } from './capture-event';
-import { pathForFile } from './ipc';
+import { useFileDrop } from './file-drop';
 
 /**
  * A page that claims its own drops, with an aim attached (./source-aim).
  *
- * The Shell catches every drop nobody else claims; this stops propagation, so a
- * page that aims a drop is the only one that handles it.
+ * These pages have no composer to put a file in, and where you dropped says
+ * something the composer could not hold anyway ("this belongs to that meeting"),
+ * so an aimed drop goes to the Add source tray with the aim already said. Home
+ * and a session have a composer, and their drops land in it (./file-drop).
  */
 export function useAimedDrop(aim: SourceAim | null): {
   over: boolean;
   handlers: {
+    onDragEnter: (e: React.DragEvent) => void;
     onDragOver: (e: React.DragEvent) => void;
     onDragLeave: (e: React.DragEvent) => void;
     onDrop: (e: React.DragEvent) => void;
   };
 } {
-  const [over, setOver] = useState(false);
-
-  const onDrop = useCallback(
-    async (e: React.DragEvent) => {
-      if (!aim || e.dataTransfer.files.length === 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      setOver(false);
-      const files: ArrivalItemInputDTO[] = [];
-      for (const file of Array.from(e.dataTransfer.files)) {
-        // The path route wherever there is one — it is what makes a dropped
-        // folder readable at all, and it keeps the bytes off the wire.
-        const path = pathForFile(file);
-        if (path) {
-          files.push({ path, name: file.name, lastModified: file.lastModified });
-          continue;
-        }
-        if (readableAs(file.name) === null) {
-          files.push({ name: file.name, lastModified: file.lastModified });
-          continue;
-        }
-        if (file.type.startsWith('image/')) {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const r = new FileReader();
-            r.onload = () => resolve(r.result as string);
-            r.onerror = () => reject(r.error);
-            r.readAsDataURL(file);
-          });
-          files.push({
-            name: file.name,
-            dataBase64: dataUrl.split(',')[1] ?? '',
-            lastModified: file.lastModified,
-          });
-        } else {
-          files.push({ name: file.name, text: await file.text(), lastModified: file.lastModified });
-        }
-      }
-      requestCapture({ files, aim });
-    },
+  const onFiles = useCallback(
+    (files: ArrivalItemInputDTO[]) => requestCapture({ files, aim: aim! }),
     [aim],
   );
-
-  return {
-    over: over && !!aim,
-    handlers: {
-      onDragOver: (e) => {
-        if (!aim || !e.dataTransfer.types.includes('Files')) return;
-        e.preventDefault();
-        e.stopPropagation();
-        setOver(true);
-      },
-      onDragLeave: (e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
-      },
-      onDrop: (e) => void onDrop(e),
-    },
-  };
+  return useFileDrop(aim ? onFiles : null);
 }

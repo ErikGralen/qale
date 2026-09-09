@@ -1,18 +1,20 @@
 /**
- * What the replay server answers from (docs/demo-mode.md DM-4).
+ * What a record run writes (docs/demo-mode.md DM-3), and the one file replay
+ * still reads from this folder, `_fallback.json`.
  *
  * One file per conversation. A conversation is everything the model was asked
  * inside one session, in order, plus the single-turn jobs (naming a session,
  * a summary, a claim check), which are conversations of length one.
  *
- * The files are plain JSON on purpose. After a recording run somebody reads
- * them, sharpens a headline and cuts a weak insight. Only the `response` side
- * may be edited: the matcher reads the `request` side, and the user side of it
- * is what identifies the conversation.
+ * Replay no longer answers from these: the scripts under `demo/scenarios/` do
+ * (docs/plan-demo-replay.md). A recording is a draft a script is made from.
+ * The user-side helpers at the end of this file are what the recorder uses to
+ * tell which file a turn continues.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { assistantCount, normalise } from './script-engine.js';
 
 /** A block inside a message. The shape is Anthropic's, kept open on purpose. */
 export type ContentBlock = { type: string; [key: string]: unknown };
@@ -133,4 +135,61 @@ export function recordingKey(firstUserText: string): string {
       .replace(/-+$/, '') || 'turn';
   const hash = createHash('sha1').update(firstUserText).digest('hex').slice(0, 6);
   return `${slug}-${hash}`;
+}
+
+/** One user message, ready to compare. */
+export interface UserTurn {
+  /** The normalised text of everything the user side of this message carries. */
+  text: string;
+  /** True when a person typed it. False when it is only tool results. */
+  typed: boolean;
+}
+
+/** The user side of a conversation, normalised, in order. */
+export function userSide(messages: readonly WireMessage[]): UserTurn[] {
+  const out: UserTurn[] = [];
+  for (const message of messages) {
+    if (message.role !== 'user') continue;
+    out.push({ text: normalise(userText(message)), typed: isTyped(message) });
+  }
+  return out;
+}
+
+/** How many leading user messages are the same text. Stops at the first miss. */
+export function prefixLength(a: readonly UserTurn[], b: readonly UserTurn[]): number {
+  const limit = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < limit && a[i]!.text === b[i]!.text) i += 1;
+  return i;
+}
+
+/** The user side of a recording, taken from its last turn's request. */
+export function recordedMessages(loaded: LoadedRecording): WireMessage[] {
+  const turns = loaded.recording.turns;
+  const last = turns[turns.length - 1];
+  return last ? last.request.messages : [];
+}
+
+export { assistantCount };
+
+/** Did a person write any of this message, or is it only tool results? */
+function isTyped(message: WireMessage): boolean {
+  if (typeof message.content === 'string') return message.content.trim().length > 0;
+  return message.content.some((b) => b.type === 'text' && typeof b.text === 'string');
+}
+
+/** Everything the user side of one message says: typed text and tool results. */
+function userText(message: WireMessage): string {
+  if (typeof message.content === 'string') return message.content;
+  return message.content.map((b) => textOf(b)).join('\n');
+}
+
+function textOf(block: unknown): string {
+  if (typeof block === 'string') return block;
+  if (Array.isArray(block)) return block.map((b) => textOf(b)).join('\n');
+  if (!block || typeof block !== 'object') return '';
+  const b = block as ContentBlock;
+  if (typeof b.text === 'string') return b.text;
+  if (b.content !== undefined) return textOf(b.content);
+  return '';
 }

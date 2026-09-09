@@ -13,15 +13,18 @@ import type { IncomingHttpHeaders, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  assistantCount,
+  prefixLength,
+  recordedMessages,
   recordingKey,
   saveRecording,
+  userSide,
   type ContentBlock,
   type LoadedRecording,
   type RecordedRequest,
   type WireMessage,
   type WireResponse,
 } from './replay-recordings.js';
-import { assistantCount, prefixLength, recordedMessages, userSide } from './replay-matcher.js';
 
 /** The request side of a turn, taken off the wire. */
 export function recordedRequest(body: Record<string, unknown>): RecordedRequest {

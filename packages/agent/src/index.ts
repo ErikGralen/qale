@@ -1,5 +1,8 @@
 export {
   AgentRuntime,
+  // The permission boundary in one function. Exported so the demo lint can ask
+  // it which tools a scripted session really has, instead of copying the rule.
+  toolNamesFor,
   type AgentRuntimeConfig,
   type AgentConnection,
   type RunInput,
@@ -18,6 +21,8 @@ export {
   FOLDER_PURPOSE_SYSTEM_PROMPT,
   type SummarySubject,
 } from './summaries.js';
+export { namingSystemPrompt, namingUserPrompt, cleanTitle } from './naming.js';
+export { stripCardState } from './card-state.js';
 export { decodeUnicodeEscapes, decodeArgs, withDecodedArgs } from './tool-args.js';
 export { PiUiBridge, type Chunk } from './bridge.js';
 export { apiErrorText, providerFault, type ProviderFault } from './api-errors.js';
@@ -136,6 +141,7 @@ export {
 export {
   createVaultTools,
   createProposeTools,
+  createWithdrawTool,
   createDraftTools,
   createTextTools,
   createVoiceGate,
@@ -147,6 +153,7 @@ export {
   type LoadableSkill,
   VAULT_TOOL_NAMES,
   PROPOSE_TOOL_NAMES,
+  WITHDRAW_TOOL_NAME,
   DRAFT_TOOL_NAMES,
   CALENDAR_TOOL_NAMES,
   USE_SKILL_TOOL_NAME,

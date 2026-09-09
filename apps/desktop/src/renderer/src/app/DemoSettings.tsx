@@ -7,17 +7,20 @@ import { useToast } from '../components/toast';
 import { Setting, SettingPanel } from '../components/Setting';
 
 /**
- * The Demo tab (docs/demo-mode.md DM-9). It exists in the demo build and
+ * The Demo tab (docs/demo-mode.md DM-9, DM-4). It exists in the demo build and
  * nowhere else: `demo:info` answers `enabled: false` in the product and
  * SettingsView never appends the tab.
  *
- * Two things, and nothing that looks like a debug panel. He opens this in
- * front of customers, so it reads as a page of the app.
+ * Reset, pressed once before a demo, and under it the five scenarios as a
+ * reminder of what to do. Nothing selects a scenario: the engine picks it from
+ * what the presenter does, so he never has to come back here mid-demo. Nothing
+ * that looks like a debug panel, because he opens this in front of customers.
  */
 export function DemoSettings({ info }: { info: DemoInfoDTO }) {
   const toast = useToast();
   const [confirming, setConfirming] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const scenarios = info.scenarios ?? [];
 
   const reset = async () => {
     setConfirming(false);
@@ -48,8 +51,9 @@ export function DemoSettings({ info }: { info: DemoInfoDTO }) {
           <>
             <p>{datedLine(info.today)}</p>
             <p>
-              A reset puts the workspace, Jira and Confluence back to the start of the script and
-              moves every date to today. Anything you did in the last demo goes.
+              Press Reset once before a demo. It puts the workspace, Jira, Confluence and the
+              calendar back to the start, dated today. Every scenario below is then available, in
+              any order, with no reset between them. Anything you did in the last demo goes.
             </p>
           </>
         }
@@ -77,6 +81,23 @@ export function DemoSettings({ info }: { info: DemoInfoDTO }) {
           )
         }
       />
+
+      <Setting
+        title="Scenarios"
+        description="What to do for each one. Qale picks the scenario from what you do, so there is nothing to select here."
+      >
+        <ol className="flex flex-col gap-2">
+          {scenarios.map((scenario) => (
+            <li
+              key={scenario.id}
+              className="space-y-0.5 rounded-lg border border-border bg-card p-3"
+            >
+              <span className="text-sm font-medium">{scenario.title}</span>
+              <p className="text-sm text-muted-foreground">{scenario.do}</p>
+            </li>
+          ))}
+        </ol>
+      </Setting>
 
       <Setting
         title="Demo files"

@@ -1420,6 +1420,12 @@ export interface DemoInfoDTO {
   today: string;
   /** The day the bundled workspace is written around, YYYY-MM-DD. */
   anchor: string;
+  /**
+   * The scenarios the build carries, in id order, listed as a reminder of
+   * what to do. Any of them runs after one Reset, in any order; nothing
+   * selects one, the engine picks it from what the presenter does.
+   */
+  scenarios?: { id: string; title: string; do: string }[];
 }
 
 /**

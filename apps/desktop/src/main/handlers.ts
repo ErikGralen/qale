@@ -692,7 +692,16 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       for (const [id, on] of Object.entries(overrides ?? {})) {
         if (on === false) await setAgentFileEnabled(ctx, id, false);
       }
-      await runMaintenance();
+      // Demo build only: the sweep runs the summary pass and maybe a librarian
+      // session, and both call the model. The replay server has no script for
+      // either, so their answers would be the off-script line, written into
+      // notes as summaries (docs/plan-demo-replay.md, section 2). Only the
+      // sync runs, so the fake tracker's mirrors are fresh after a Reset.
+      if (demo)
+        await syncService
+          .tick()
+          .catch((err) => console.error('[qale] demo: sync after open failed:', err));
+      else await runMaintenance();
       notifyProposalsFor();
     } catch (err) {
       console.error('[qale] post-open sweep failed:', err instanceof Error ? err.message : err);
@@ -858,11 +867,12 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     reconfigureAgent();
     pushSettings();
     pushEvent(getWindow(), { channel: 'connections:changed' });
-    // Reset deleted the workspace database, and the follow flag went with it,
-    // so the demo calendar is followed again and the week is pulled back in.
+    // Reset deleted the workspace database, and the follow flags went with it,
+    // so the demo calendar, the projects and the space are followed again and
+    // the week is pulled back in.
     if (demo) {
       void demo
-        .followCalendar(syncService)
+        .followSources(syncService)
         .then(() => syncService.tick())
         .catch((err) => console.error('[qale] demo: sync after reset failed:', err));
     }
@@ -2829,9 +2839,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       // would file the fallback text as its answer (DM-7). "Run now" still
       // works, and the connector sync the tick would have run happens here.
       if (demo) {
-        // The one calendar the fake serves is followed for him, once, so the
-        // launch sync has a week to pull.
-        await demo.followCalendar(syncService);
+        // The calendar, the projects and the space the fakes serve are followed
+        // for him, once, so the launch sync has a week and a tracker to pull.
+        await demo.followSources(syncService);
         void syncService
           .tick()
           .catch((err) => console.error('[qale] demo: launch sync failed:', err));

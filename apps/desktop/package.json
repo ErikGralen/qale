@@ -20,8 +20,11 @@
     "dev:demo": "QALE_DEMO=1 electron-vite dev",
     "win": "electron-vite build && electron-builder --win",
     "win:demo": "cross-env QALE_DEMO=1 electron-vite build && electron-builder --win --config electron-builder.demo.yml",
-    "lint": "eslint src",
-    "test": "tsx --test --experimental-test-module-mocks --disable-warning=ExperimentalWarning test/*.test.ts"
+    "lint": "eslint src scripts",
+    "test": "tsx --test --experimental-test-module-mocks --disable-warning=ExperimentalWarning test/*.test.ts",
+    "comment:demo-lint": "The lint opens the search index, so it needs better-sqlite3, and that module loads under one ABI only. run-with-sqlite.ts picks the runtime that can load the build this working copy has: plain node after an install, Electron's own node after a packaging or an app run. demo:draft reads and writes JSON only, so it stays on plain tsx.",
+    "demo:lint": "tsx scripts/run-with-sqlite.ts scripts/lint-scenarios.ts",
+    "demo:draft": "tsx scripts/demo-draft.ts"
   },
   "comment:deps": "electron-builder ships every `dependencies` entry into the asar verbatim. Only main-process deps belong here — the renderer is bundled by vite, so anything it imports (react, tiptap, lucide, ai) is already inside out/renderer and goes in devDependencies. Putting a renderer-only package here ships it twice and cost us ~45 MB.",
   "dependencies": {
@@ -79,6 +82,7 @@
     "react-markdown": "^10.1.0",
     "tailwindcss": "^4.3.2",
     "tsx": "^4.23.1",
+    "typebox": "1.3.7",
     "typescript": "~5.9.2",
     "use-stick-to-bottom": "^1.1.6",
     "vite": "^7.3.0"

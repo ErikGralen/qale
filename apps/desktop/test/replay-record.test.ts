@@ -99,6 +99,7 @@ test('a recorded run streams upstream bytes back and keeps the turn', async () =
   const dir = mkdtempSync(join(tmpdir(), 'qale-record-'));
   const server = await startReplayServer({
     mode: 'record',
+    scenariosDir: join(dir, 'scenarios'),
     recordingsDir: dir,
     dateOffsetDays: 0,
     upstreamApiKey: 'sk-ant-real',

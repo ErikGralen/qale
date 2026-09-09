@@ -458,9 +458,9 @@ export interface InvokeMap {
   'codebase:status': { args: []; result: CodebaseStatusDTO };
 
   // Demo build only (docs/demo-mode.md). In an ordinary build `demo:info`
-  // answers `enabled: false` with no steps and the Settings section is not
-  // drawn, so the other three are never called.
-  /** What the Demo section draws: the date it is set to, and the script. */
+  // answers `enabled: false` with no scenarios and the Settings section is
+  // not drawn, so the other two are never called.
+  /** What the Demo section draws: the date it is set to, and the scenarios. */
   'demo:info': { args: []; result: DemoInfoDTO };
   /** Back to the start of the script, dated today. Throws away the last demo. */
   'demo:reset': { args: []; result: void };

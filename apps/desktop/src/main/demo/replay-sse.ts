@@ -23,10 +23,17 @@ export interface ReplayEvent {
 }
 
 export interface PacingOptions {
-  /** Before the first byte of the answer. The turn delay, or the first-turn one. */
+  /** Before the first byte of the answer: the turn's pause. */
   leadMs: number;
   /** How fast text arrives. Tool calls are not paced: they emit whole. */
   charsPerSecond: number;
+  /**
+   * How much each text delta's pause may vary, as a fraction: 0.25 is ±25%.
+   * A metronome does not look like a model. Default none.
+   */
+  jitter?: number;
+  /** The randomness behind the jitter, 0 to 1. `Math.random` unless a test says otherwise. */
+  random?: () => number;
 }
 
 /** How much text goes in one delta. Small enough to look typed, big enough to be cheap. */
@@ -87,13 +94,13 @@ function blockDeltas(block: ContentBlock, index: number, pacing: PacingOptions):
   if (block.type === 'text' && typeof block.text === 'string')
     return chunk(block.text).map((text) => ({
       event: 'content_block_delta',
-      pauseMs: pauseFor(text, pacing.charsPerSecond),
+      pauseMs: pauseFor(text, pacing),
       data: { type: 'content_block_delta', index, delta: { type: 'text_delta', text } },
     }));
   if (block.type === 'thinking' && typeof block.thinking === 'string') {
     const out: ReplayEvent[] = chunk(block.thinking).map((thinking) => ({
       event: 'content_block_delta',
-      pauseMs: pauseFor(thinking, pacing.charsPerSecond),
+      pauseMs: pauseFor(thinking, pacing),
       data: { type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking } },
     }));
     out.push({
@@ -129,7 +136,12 @@ function chunk(text: string): string[] {
   return out;
 }
 
-function pauseFor(text: string, charsPerSecond: number): number {
-  if (charsPerSecond <= 0) return 0;
-  return Math.round((text.length / charsPerSecond) * 1000);
+/** The pause before one text delta: its length at the rate, moved by the jitter. */
+function pauseFor(text: string, pacing: PacingOptions): number {
+  if (pacing.charsPerSecond <= 0) return 0;
+  const base = (text.length / pacing.charsPerSecond) * 1000;
+  const jitter = pacing.jitter ?? 0;
+  const random = pacing.random ?? Math.random;
+  const factor = jitter > 0 ? 1 + jitter * (2 * random() - 1) : 1;
+  return Math.round(base * factor);
 }

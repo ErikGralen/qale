@@ -1,64 +1,64 @@
 /**
- * The local replay server (docs/demo-mode.md DM-3..6). Speaks the Anthropic
- * Messages API on 127.0.0.1 so the demo build's model calls never leave the
- * machine. Every pi `Model` gets its `baseUrl` pointed here, and nothing in
- * `packages/agent` knows the difference.
+ * The local replay server (docs/demo-mode.md DM-3, docs/plan-demo-replay.md).
+ * Speaks the Anthropic Messages API on 127.0.0.1 so the demo build's model
+ * calls never leave the machine. Every pi `Model` gets its `baseUrl` pointed
+ * here, and nothing in `packages/agent` knows the difference.
  *
- * Two modes. **Replay** answers from the recordings and never touches the
- * network. **Record** (dev only, with a real key) forwards to Anthropic and
- * saves what comes back.
+ * Two modes. **Replay** answers from the scenario scripts through the script
+ * engine and never touches the network. **Record** (dev only, with a real key)
+ * forwards to Anthropic and saves what comes back, as a draft for a script.
  *
  * The key is ignored: whatever the app holds, this server answers.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { providerModels } from '@qale/domain';
-import { assistantCount, flattenSystem, matchRequest } from './replay-matcher.js';
-import { shiftResponseDates } from './replay-dates.js';
-import {
-  BUILT_IN_FALLBACK,
-  loadFallback,
-  loadRecordings,
-  type LoadedRecording,
-  type Recording,
-  type WireMessage,
-  type WireResponse,
-} from './replay-recordings.js';
+import { BUILT_IN_FALLBACK, loadFallback, type WireMessage } from './replay-recordings.js';
 import { formatEvent, replayEvents } from './replay-sse.js';
 import { forwardAndRecord, Recorder } from './replay-recorder.js';
+import { loadScenarios, type ScenarioSummary } from './scenario.js';
+import { flattenSystem, ScriptEngine } from './script-engine.js';
 
 export interface ReplayServerOptions {
-  /** `replay` answers from the recordings; `record` forwards upstream and saves. */
+  /** `replay` answers from the scripts; `record` forwards upstream and saves. */
   mode: 'replay' | 'record';
-  /** Folder of recording JSON files (committed under `demo/recordings/`). */
+  /** Folder of scenario scripts (committed under `demo/scenarios/`). */
+  scenariosDir: string;
+  /** Folder of recordings: `_fallback.json` is read from it, and record mode writes to it. */
   recordingsDir: string;
-  /** Days to slide recorded date tokens by at replay (today − anchor). */
+  /** Days between the anchor and today. Every date in a script slides by it. */
   dateOffsetDays: number;
   /** Record mode only: the real key to forward with. */
   upstreamApiKey?: string;
   /** Record mode only. Default `https://api.anthropic.com`. */
   upstreamBaseUrl?: string;
-  pacing?: { firstTurnDelayMs?: number; turnDelayMs?: number; charsPerSecond?: number };
+  pacing?: {
+    charsPerSecond?: number;
+    /** ±fraction per text delta. */
+    jitter?: number;
+    /** When given, every turn waits this long instead of its own pause. For the tests. */
+    leadMs?: number;
+  };
 }
 
 export interface ReplayServer {
   /** `http://127.0.0.1:<port>`, to become every pi Model's `baseUrl`. */
   baseUrl: string;
   close(): Promise<void>;
-  /** Forget per-run state (conversation cursors). Recordings stay loaded. */
+  /** Forget every binding, and re-read the scripts from disk. */
   reset(): void;
+  /** The scenarios on disk, in id order, as the Settings page lists them. */
+  scenarios(): ScenarioSummary[];
 }
 
 /**
- * How long the answer takes to arrive. A recorded turn that lands in 30 ms
- * looks fake, so the first turn of a conversation waits the way a real one
- * does, later turns wait less, and text arrives at reading speed. The
- * recordings carry no timing of their own.
+ * How text arrives once a turn has started. The pause before a turn is the
+ * script's own (`Turn.pause`, with the engine's defaults); this is only the
+ * reading speed and how much it wobbles.
  */
 export const DEFAULT_PACING = {
-  firstTurnDelayMs: 5000,
-  turnDelayMs: 1200,
   charsPerSecond: 400,
+  jitter: 0.25,
 } as const;
 
 /** What `GET /v1/models` answers, so a key check passes without the network. */
@@ -72,12 +72,13 @@ const MODEL_IDS = [
 export async function startReplayServer(opts: ReplayServerOptions): Promise<ReplayServer> {
   const pacing = { ...DEFAULT_PACING, ...(opts.pacing ?? {}) };
   const recorder = new Recorder(opts.recordingsDir, opts.dateOffsetDays);
-  let recordings: LoadedRecording[] = [];
-  let fallback: Recording | null = null;
+  const engine = new ScriptEngine({
+    offsetDays: opts.dateOffsetDays,
+    fallbackText: fallbackText(opts.recordingsDir),
+  });
 
   const load = (): void => {
-    recordings = loadRecordings(opts.recordingsDir);
-    fallback = loadFallback(opts.recordingsDir);
+    engine.load(loadScenarios(opts.scenariosDir));
   };
   load();
 
@@ -113,7 +114,7 @@ export async function startReplayServer(opts: ReplayServerOptions): Promise<Repl
     send(res, 404, { type: 'error', error: { type: 'not_found_error', message: path } });
   }
 
-  /** One recorded turn, dated for today, paced, on the wire. */
+  /** One scripted turn, dated for today, paced, on the wire. */
   async function answer(body: string, res: ServerResponse): Promise<void> {
     const request = JSON.parse(body) as {
       system?: unknown;
@@ -121,20 +122,16 @@ export async function startReplayServer(opts: ReplayServerOptions): Promise<Repl
       model?: string;
       stream?: boolean;
     };
-    const messages = request.messages ?? [];
-    const turnIndex = assistantCount(messages);
-    const match = matchRequest({ system: flattenSystem(request.system), messages }, recordings);
-    const recorded = match?.turn.response ?? fallbackResponse(fallback, request.model);
-    // How far this demo day is from the day the answer was recorded. A recording
-    // replayed on its own record day moves nothing, which is what makes the
-    // paths inside it keep resolving.
-    const slide = opts.dateOffsetDays - (match?.loaded.recording.offsetDays ?? 0);
-    const response = shiftResponseDates(recorded, slide);
-    const leadMs = turnIndex === 0 ? pacing.firstTurnDelayMs : pacing.turnDelayMs;
+    const served = engine.answer({
+      system: flattenSystem(request.system),
+      messages: request.messages ?? [],
+      ...(request.model ? { model: request.model } : {}),
+    });
+    const leadMs = pacing.leadMs ?? served.pauseMs;
 
     if (!request.stream) {
       await wait(leadMs);
-      send(res, 200, response);
+      send(res, 200, served.response);
       return;
     }
     res.writeHead(200, {
@@ -142,9 +139,10 @@ export async function startReplayServer(opts: ReplayServerOptions): Promise<Repl
       'cache-control': 'no-cache',
       connection: 'keep-alive',
     });
-    for (const event of replayEvents(response, {
+    for (const event of replayEvents(served.response, {
       leadMs,
       charsPerSecond: pacing.charsPerSecond,
+      jitter: pacing.jitter,
     })) {
       // The PM stopped the run, or closed the app. Stop writing into a socket
       // that is gone rather than reporting it as a failed request.
@@ -162,27 +160,22 @@ export async function startReplayServer(opts: ReplayServerOptions): Promise<Repl
   return {
     baseUrl: `http://127.0.0.1:${port}`,
     close: () => closeServer(server),
-    // Nothing is held between turns: the turn to serve is read off the request.
-    // So a reset is a re-read, which is what makes a hand edit show up without
-    // a relaunch.
-    reset: load,
+    // The bindings go, and the scripts are read again, which is what makes a
+    // hand edit show up without a relaunch.
+    reset: () => {
+      engine.reset();
+      load();
+    },
+    scenarios: () => engine.scenarios(),
   };
 }
 
-/** The answer for a request nothing matched (DM-6). */
-function fallbackResponse(fallback: Recording | null, model: string | undefined): WireResponse {
-  const recorded = fallback?.turns[0]?.response;
-  if (recorded) return recorded;
-  return {
-    id: 'msg_demo_fallback',
-    type: 'message',
-    role: 'assistant',
-    model: model ?? 'claude-opus-5',
-    content: [{ type: 'text', text: BUILT_IN_FALLBACK }],
-    stop_reason: 'end_turn',
-    stop_sequence: null,
-    usage: { input_tokens: 0, output_tokens: 0 },
-  };
+/** The off-script line when a scenario has none: `_fallback.json`, else the built-in one. */
+function fallbackText(recordingsDir: string): string {
+  const block = loadFallback(recordingsDir)?.turns[0]?.response.content.find(
+    (b) => b.type === 'text' && typeof b.text === 'string',
+  );
+  return (block?.text as string | undefined) ?? BUILT_IN_FALLBACK;
 }
 
 function modelList(): Record<string, unknown> {

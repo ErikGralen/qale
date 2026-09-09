@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "id": "s5",
+  "title": "The Friday update",
+  "do": "In Home, type /, pick Write the weekly update, send with no text. Copy the exec One paragraph tab, then answer For exec. Approve the Confluence card.",
+  "offScript": "That is outside what this demo can show. The five things it can do are listed in Settings, under Demo.",
+  "conversations": [
+    {
+      "id": "update",
+      "trigger": { "kind": "skill", "skill": "weekly-update" },
+      "title": "Weekly update",
+      "turns": [
+        {
+          "tools": [
+            { "name": "vault_read", "input": { "path": "tickets/jira/APP-54.md" } },
+            { "name": "vault_read", "input": { "path": "tickets/jira/SCH-240.md" } },
+            { "name": "vault_read", "input": { "path": "tickets/jira/PLT-77.md" } },
+            { "name": "vault_read", "input": { "path": "wikipages/confluence/product-weekly-update.md" } },
+            { "name": "get_voice", "input": { "name": "exec" } },
+            { "name": "get_voice", "input": { "name": "cs" } },
+            { "name": "get_voice", "input": { "name": "sales" } }
+          ]
+        },
+        {
+          "text": "The week of 2026-07-13 to 2026-07-17. One thing shipped, nothing was decided, two things to watch. Each voice still lists three styles, so every panel gives the same news three ways.",
+          "tools": [
+            {
+              "name": "draft_text",
+              "input": {
+                "title": "Exec update, week to 2026-07-17",
+                "voice": "exec",
+                "variants": [
+                  {
+                    "label": "Three lines",
+                    "body": "Decided: nothing this week. The May order stands, payroll export first and shift swaps in Q4, both on one team of five ([[decisions/2026-05-18-h2-order-payroll-first]]).\nShipped: shift reminders in the staff app on 2026-07-15, on by default for every chain ([[tickets/jira/APP-54]]).\nWatch: the last swap story is being re-estimated, so no swap date for Café Nord's 120 locations yet, and the Fortnox connector is blocked on the token store ([[tickets/jira/SCH-240]], [[tickets/jira/PLT-77]])."
+                  },
+                  {
+                    "label": "One paragraph",
+                    "body": "Shift reminders shipped to every chain on 2026-07-15, the one customer-facing change this week ([[tickets/jira/APP-54]]). Nothing was decided: the May order stands, payroll export first and shift swaps in Q4 ([[decisions/2026-05-18-h2-order-payroll-first]]). Two things to watch. The last swap story is being re-estimated because the overtime check is bigger than scoped, so there is no swap date for Café Nord's 120 locations ([[tickets/jira/SCH-240]]), and the Fortnox connector is blocked on the platform token store, which is the risk to Q3 ([[tickets/jira/PLT-77]])."
+                  },
+                  {
+                    "label": "What changed, what's next",
+                    "body": "**What changed**\n- Shift reminders shipped in the staff app on 2026-07-15, on by default ([[tickets/jira/APP-54]]).\n- SCH-240, the last swap story, went back for a re-estimate on 2026-07-13: the overtime check is bigger than scoped ([[tickets/jira/SCH-240]]).\n- No decisions. The May order stands ([[decisions/2026-05-18-h2-order-payroll-first]]).\n\n**What's next**\n- The SCH-240 estimate, and with it the first swap date we can give Café Nord (120 locations, renewal 2026-12-01).\n- The token store: refresh-on-expiry is the piece left, and the Fortnox connector waits on it ([[tickets/jira/PLT-77]], [[tickets/jira/SCH-125]])."
+                  }
+                ],
+                "ask": {
+                  "text": "Write updates this way from now on?",
+                  "options": ["For exec", "For every audience", "Not now"]
+                }
+              }
+            },
+            {
+              "name": "draft_text",
+              "input": {
+                "title": "CS update, week to 2026-07-17",
+                "voice": "cs",
+                "variants": [
+                  {
+                    "label": "Three dated lines",
+                    "body": "Live now: shift reminders in the staff app, since 2026-07-15. Staff get a reminder before each shift once their first shift is visible, and they can switch it off in settings ([[tickets/jira/APP-54]]).\nCommitted: nothing new this week. Payroll export to Fortnox and Visma stays as already told ([[decisions/2026-05-20-fortnox-first-payroll-target]]).\nNo date yet: shift swaps. The last piece is being sized, and we do not have a date."
+                  },
+                  {
+                    "label": "A short note",
+                    "body": "Hi all, one change to pass on this week.\n\nSince 2026-07-15 staff get a reminder in the app before each shift, on by default once their first shift is visible, and they can switch it off in settings ([[tickets/jira/APP-54]]). Nothing new was promised this week. Shift swaps still have no date: the last piece is being sized, and I will say when there is one."
+                  },
+                  {
+                    "label": "Use now, coming next",
+                    "body": "**What you can use**\n- Shift reminders in the staff app, since 2026-07-15. On by default once the first shift is visible; staff can switch it off in settings ([[tickets/jira/APP-54]]).\n- Approved hours as a file per store and pay period, since 2026-06-24 ([[tickets/jira/SCH-121]]).\n\n**What's coming**\n- Shift swaps: no date yet. The last piece is being sized.\n- A direct payroll connection: no new date this week ([[decisions/2026-05-20-fortnox-first-payroll-target]])."
+                  }
+                ],
+                "ask": {
+                  "text": "Write updates this way from now on?",
+                  "options": ["For cs", "For every audience", "Not now"]
+                }
+              }
+            },
+            {
+              "name": "draft_text",
+              "input": {
+                "title": "Sales update, week to 2026-07-17",
+                "voice": "sales",
+                "variants": [
+                  {
+                    "label": "Three dated lines",
+                    "body": "Shipping: shift reminders in the staff app, live since 2026-07-15 ([[tickets/jira/APP-54]]).\nPromised: nothing changed this week. Payroll export stays as told ([[decisions/2026-05-20-fortnox-first-payroll-target]]).\nNo date yet: shift swaps. Do not put a month on it."
+                  },
+                  {
+                    "label": "One line to forward",
+                    "body": "Since 2026-07-15, staff get a reminder in the app before each shift, on by default ([[tickets/jira/APP-54]])."
+                  },
+                  {
+                    "label": "What you can tell them",
+                    "body": "- Since 2026-07-15: shift reminders in the staff app, on by default ([[tickets/jira/APP-54]]).\n- Since 2026-06-24: approved hours come out as a file per store and pay period ([[tickets/jira/SCH-121]]).\n- No date yet: shift swaps. Nothing to promise this week.\n- No change: the payroll connection dates already given stand ([[decisions/2026-05-20-fortnox-first-payroll-target]])."
+                  }
+                ],
+                "ask": {
+                  "text": "Write updates this way from now on?",
+                  "options": ["For sales", "For every audience", "Not now"]
+                }
+              }
+            },
+            {
+              "name": "draft_page_update",
+              "input": {
+                "page": "wikipages/confluence/product-weekly-update.md",
+                "body": "## 2026-07-17\n\nWeek of 2026-07-13 to 2026-07-17.\n\n### Shipped\n\n- APP-54 Push notification opt-in screen: In Progress to Done on 2026-07-15. Shift reminders are on by default once the first shift is visible.\n\n### Slipped or blocked\n\n- SCH-240 Manager approval flow and schedule update: still In Progress. Rebecca asked for a re-estimate on 2026-07-13 because the overtime check runs against both people's whole week. No swap date until it lands.\n- SCH-125 Fortnox connector: blocked on PLT-77. Refresh-on-expiry is the piece left as of 2026-07-14.\n\n### Decided\n\n- Nothing this week. The May order stands: payroll export first, shift swaps in Q4 (decision of 2026-05-18).\n\n### Open\n\n- Henrik's review of what the swap notification shows about the requesting colleague, due 2026-07-24.\n- Fjord Sports are still owed a firmer payroll-export date than Q4.\n\nSource: weekly update, 2026-07-17",
+                "sources": [
+                  "[[wikipages/confluence/product-weekly-update]]",
+                  "[[tickets/jira/APP-54]]",
+                  "[[tickets/jira/SCH-240]]",
+                  "[[tickets/jira/SCH-125]]",
+                  "[[tickets/jira/PLT-77]]",
+                  "[[decisions/2026-05-18-h2-order-payroll-first]]",
+                  "[[todos/henrik-review-swap-notifications]]"
+                ],
+                "rationale": "The weekly update goes on this page. This week: one ship, one re-estimate, one block, no decision."
+              }
+            }
+          ]
+        },
+        {
+          "pause": 1500,
+          "text": [
+            "Copy the tab you want from each panel and send it yourself. The question under a panel appears once you copy, and the answer sets that voice for next time.",
+            "",
+            "One card waits: this week's section for the Product weekly update page."
+          ]
+        },
+        {
+          "tools": [
+            { "name": "vault_read", "input": { "path": "skills/writing-skills/SKILL.md" } },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "voices/exec.md",
+                "patch": [
+                  {
+                    "search": "I do not know how you want exec updates to read yet. Until you pick, the first update comes in these three styles:\n\n### Three lines\nDecided, shipped, watch. One line each, with a number on every line.\nNo greeting, no reason, nothing else.\n\n### One paragraph\nThe result in the first sentence, then the reason. No labels.\nFour sentences at most.\n\n### What changed, what's next\nTwo short lists. \"What changed\" holds this week. \"What's next\" holds the one or two things after it.\nA number or a date on every line that has one.",
+                    "replace": "Exec updates are one paragraph, result first. Learned from the style you copied on 2026-07-17. Change this line and the next update follows it.\n\n### One paragraph\nThe result in the first sentence, then the reason. No labels.\nFour sentences at most."
+                  },
+                  {
+                    "search": "To pick now, delete two styles and keep one, or write your own in their place. The first update then comes in that style only.",
+                    "replace": "To change the style, edit the line at the top or the style under it. The next update follows it."
+                  }
+                ],
+                "rationale": "You copied One paragraph and answered For exec, so the exec voice keeps that style and drops the other two.",
+                "learned": {
+                  "what": "Exec updates: one paragraph, result first.",
+                  "from": "the style you copied on 2026-07-17"
+                },
+                "asked": true
+              }
+            }
+          ]
+        },
+        {
+          "pause": 1000,
+          "text": "Got it. Exec updates: one paragraph, result first. [[voices/exec|Exec voice]]"
+        }
+      ]
+    }
+  ]
+}

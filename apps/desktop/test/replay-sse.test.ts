@@ -75,6 +75,22 @@ test('text is cut into deltas and paced, the rest of the turn is not', () => {
   );
 });
 
+test('jitter moves each delta by up to the fraction, and only when asked for', () => {
+  const long = { ...answer, content: [{ type: 'text', text: 'x'.repeat(240) }] };
+  const total = (random: () => number): number =>
+    replayEvents(long, { leadMs: 0, charsPerSecond: 400, jitter: 0.25, random })
+      .filter((e) => e.event === 'content_block_delta')
+      .reduce((sum, d) => sum + d.pauseMs, 0);
+  // 240 characters at 400 a second is 600 ms: ±25% is 450 to 750.
+  assert.equal(total(() => 1), 750);
+  assert.equal(total(() => 0), 450);
+  assert.equal(total(() => 0.5), 600);
+  const plain = replayEvents(long, { leadMs: 0, charsPerSecond: 400, random: () => 1 })
+    .filter((e) => e.event === 'content_block_delta')
+    .reduce((sum, d) => sum + d.pauseMs, 0);
+  assert.equal(plain, 600);
+});
+
 test('an event on the wire carries its name and one JSON line', () => {
   const line = formatEvent({ event: 'message_stop', data: { type: 'message_stop' }, pauseMs: 0 });
   assert.equal(line, 'event: message_stop\ndata: {"type":"message_stop"}\n\n');

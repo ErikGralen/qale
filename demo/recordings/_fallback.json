@@ -17,7 +17,7 @@
         "content": [
           {
             "type": "text",
-            "text": "I’m the demo build, so I only know the walkthrough. Try one of the three prompts on the Home page, or drop one of the two transcripts."
+            "text": "That is outside what this demo can show. The five things it can do are listed in Settings, under Demo."
           }
         ],
         "stop_reason": "end_turn",

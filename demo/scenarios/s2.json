@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "id": "s2",
+  "title": "Who needs to know",
+  "do": "In Home, type: SCH-121 shipped three weeks ago and nobody outside the team was told. Who needs to know, and what do I tell them? Then, in the same session, type: From now on, when something a customer asked for ships, tell Ulrika before the customer.",
+  "offScript": "That is outside what this demo can show. The five things it can do are listed in Settings, under Demo.",
+  "lookups": {
+    "claims": {
+      "The approved-hours export SCH-121 has been live": "KNOWN | tickets/jira/SCH-121.md | Enabled for every chain in the 24 June release. Managers export from the period view.",
+      "Fjord Sports were told on": "KNOWN | customers/fjord-sports.md | 2026-05-26: Visma export in Q4; Fortnox is the first connector we build",
+      "Ulrika asked to be told": "KNOWN | meetings/2026-05-26-fjord-sports-payroll-call.md | Ulrika will keep them updated on release timing; she asked to be told before the customer is.",
+      "Jonas has two support tickets": "KNOWN | people/jonas-berg.md | Two tickets in June asked whether approved hours can go to payroll without retyping. He has no macro for it and has not been told the export exists"
+    }
+  },
+  "conversations": [
+    {
+      "id": "who",
+      "trigger": { "kind": "typed", "skill": "ask", "any": ["SCH-121", "who needs to know"] },
+      "title": "Who needs to know about SCH-121",
+      "turns": [
+        {
+          "tools": [
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "tickets/jira/SCH-121.md"
+              }
+            },
+            {
+              "name": "jira_get_issue",
+              "input": {
+                "key": "SCH-121"
+              }
+            },
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "customers/fjord-sports.md"
+              }
+            },
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "people/jonas-berg.md"
+              }
+            }
+          ]
+        },
+        {
+          "tools": [
+            {
+              "name": "check_claims",
+              "input": {
+                "claims": [
+                  {
+                    "claim": "The approved-hours export SCH-121 has been live for every chain since 2026-06-24.",
+                    "about": [
+                      "[[tickets/jira/SCH-121]]",
+                      "[[research/payroll-export]]"
+                    ]
+                  },
+                  {
+                    "claim": "Fjord Sports were told on 2026-05-26 that the Visma export lands in Q4.",
+                    "about": [
+                      "[[customers/fjord-sports]]",
+                      "[[people/oskar-lind]]"
+                    ]
+                  },
+                  {
+                    "claim": "Ulrika asked to be told about release timing before the customer is.",
+                    "about": [
+                      "[[people/ulrika-nystrom]]",
+                      "[[meetings/2026-05-26-fjord-sports-payroll-call]]"
+                    ]
+                  },
+                  {
+                    "claim": "Jonas has two support tickets asking whether approved hours can go to payroll, and no macro for it.",
+                    "about": [
+                      "[[people/jonas-berg]]"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "get_voice",
+              "input": {
+                "name": "cs"
+              }
+            }
+          ]
+        },
+        {
+          "text": [
+            "Four people, and the account that asked first.",
+            "",
+            "- Oskar Lind, Fjord Sports. On 2026-05-26 he asked for exactly this: approved hours per store, per pay period, as a file, until the connector exists ([[meetings/2026-05-26-fjord-sports-payroll-call]]). He was told Visma in Q4 and nothing since ([[customers/fjord-sports]]).",
+            "- Ulrika Nyström. She was on that call and asked to hear before the customer does ([[people/ulrika-nystrom]]).",
+            "- Malin Sjöberg. She wants the list of accounts that asked before any release note goes out ([[people/malin-sjoberg]]).",
+            "- Jonas Berg. Two support tickets in June asked whether approved hours can go to payroll without retyping. He has no macro, and nobody told him the export exists ([[people/jonas-berg]]).",
+            "",
+            "What is true today: the approved-hours file has been on for every chain since 2026-06-24 ([[tickets/jira/SCH-121]], Done in Jira). The Visma date is still Q4, as told ([[decisions/2026-05-20-fortnox-first-payroll-target]]). The Fortnox connector is blocked on the token store ([[tickets/jira/SCH-125]], [[tickets/jira/PLT-77]]), and Jira holds no date for Visma. So the file is the news, and Q4 stays the only date.",
+            "",
+            "This is the Kaffekopp shape: they asked, we shipped, nobody called ([[customers/kaffekopp]]). Ulrika first, then Oskar, then Malin and Jonas the same day. The two notes are below; the ledger lines are written."
+          ],
+          "tools": [
+            {
+              "name": "draft_text",
+              "input": {
+                "title": "Note to Oskar, Fjord Sports",
+                "voice": "cs",
+                "variants": [
+                  {
+                    "label": "Short",
+                    "body": "Hi Oskar,\n\nThe file you asked for on 2026-05-26 is live. Since 2026-06-24 a manager can export approved hours per store, per pay period, from the period view, and load that file into Visma.\n\nThe direct Visma connection is still on for the fourth quarter. I do not have a month for you yet. I will tell you which month as soon as I have one."
+                  },
+                  {
+                    "label": "With the how",
+                    "body": "Hi Oskar,\n\nThe file you asked for on 2026-05-26 has been live since 2026-06-24. In the period view, a manager picks the pay period and exports approved hours for their store: person, location, date, hours and cost centre, in the column set Visma accepts. Head office can do the same across every store at once. That takes the retyping out today.\n\nThe direct Visma connection is still on for the fourth quarter. I do not have a month for you yet, and I will not guess one. I will tell you which month as soon as I have one, and Ulrika will walk your regional admin through the export at your next sync."
+                  }
+                ]
+              }
+            },
+            {
+              "name": "draft_text",
+              "input": {
+                "title": "Internal note: Ulrika, Malin, Jonas",
+                "variants": [
+                  {
+                    "label": "Ulrika and Malin",
+                    "body": "The approved-hours export (SCH-121) has been live for every chain since 2026-06-24: per store, per pay period, from the period view, in a column set Fortnox and Visma both accept. Nobody outside the team was told.\n\nWho asked: Fjord Sports, on 2026-05-26. Oskar asked for exactly this file until the Visma connector exists. A note to him is drafted and goes out today, after this one.\n\nWhat has not changed: Visma is still Q4, as Oskar was told. The Fortnox connector (SCH-125) is blocked on the platform token store (PLT-77), and there is no Visma date in Jira. Please do not put a month on it.\n\nMalin: that is the whole account list. One account asked in writing; the two June support tickets are Jonas's."
+                  },
+                  {
+                    "label": "Jonas, with the macro line",
+                    "body": "Two of your June tickets asked whether approved hours can go to payroll without retyping. The answer has been yes since 2026-06-24 and nobody told you. Sorry.\n\nThe line you can send as it stands:\n\n\"Yes. Since 2026-06-24 a manager can export approved hours for a pay period as a file from the period view, one file per store, and load it into Fortnox or Visma. A direct connection to Fortnox is being built, and we do not have a date for it yet.\"\n\nIf anyone asks for a Visma date, send them to me. Q4 is what one account was told, and I would rather give the month myself."
+                  }
+                ]
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "customers/fjord-sports.md",
+                "patch": [
+                  {
+                    "search": "- 2026-05-26: Visma export in Q4; Fortnox is the first connector we build\n  ([[decisions/2026-05-20-fortnox-first-payroll-target]]).",
+                    "replace": "- 2026-05-26: Visma export in Q4; Fortnox is the first connector we build\n  ([[decisions/2026-05-20-fortnox-first-payroll-target]]).\n- 2026-07-17: the approved-hours file per store and pay period has been live since 2026-06-24\n  ([[tickets/jira/SCH-121]]); Visma still Q4, no month yet. Note to Oskar drafted today, Ulrika told first."
+                  }
+                ],
+                "rationale": "The ledger stops on 2026-05-26 and the thing Oskar asked for shipped on 2026-06-24. The line says what he is being told today and what has not changed.",
+                "sources": [
+                  "[[tickets/jira/SCH-121]]",
+                  "[[meetings/2026-05-26-fjord-sports-payroll-call]]"
+                ]
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "people/oskar-lind.md",
+                "append": "Last told 2026-07-17: the approved-hours file per store and pay period is live since 2026-06-24 ([[tickets/jira/SCH-121]]); Visma still Q4, no month yet.",
+                "frontmatter": {
+                  "last_told": "2026-07-17"
+                },
+                "rationale": "The note to Oskar is drafted today and says the file exists and that Q4 has not moved.",
+                "sources": [
+                  "[[tickets/jira/SCH-121]]",
+                  "[[meetings/2026-05-26-fjord-sports-payroll-call]]"
+                ]
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "people/ulrika-nystrom.md",
+                "append": "Last told 2026-07-17, before the customer: the approved-hours file is live since 2026-06-24 ([[tickets/jira/SCH-121]]) and Oskar hears it today; Visma still Q4, no month.",
+                "frontmatter": {
+                  "last_told": "2026-07-17"
+                },
+                "rationale": "She asked to hear before the customer, so her line is dated before Oskar's note goes out.",
+                "sources": [
+                  "[[tickets/jira/SCH-121]]",
+                  "[[meetings/2026-05-26-fjord-sports-payroll-call]]"
+                ]
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "people/malin-sjoberg.md",
+                "append": "Last told 2026-07-17: the approved-hours file is live since 2026-06-24 ([[tickets/jira/SCH-121]]); the account list is one account, Fjord Sports, plus two June support tickets ([[people/jonas-berg]]).",
+                "frontmatter": {
+                  "last_told": "2026-07-17"
+                },
+                "rationale": "Malin wants the account list before the release note, and this is the list.",
+                "sources": [
+                  "[[tickets/jira/SCH-121]]",
+                  "[[customers/fjord-sports]]"
+                ]
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "people/jonas-berg.md",
+                "append": "Last told 2026-07-17: the approved-hours export is live since 2026-06-24 ([[tickets/jira/SCH-121]]), with a macro line he can send. No Visma date to give out.",
+                "frontmatter": {
+                  "last_told": "2026-07-17"
+                },
+                "rationale": "Jonas had two tickets on this in June and no answer; the note gives him the sentence.",
+                "sources": [
+                  "[[tickets/jira/SCH-121]]",
+                  "[[people/jonas-berg]]"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "pause": 1500,
+          "text": [
+            "The ledger lines are on Fjord Sports and the four people pages, dated today. Copy the note you want and send it yourself; nothing here sends. Ulrika before Oskar."
+          ]
+        },
+        {
+          "tools": [
+            {
+              "name": "propose_instruction",
+              "input": {
+                "rule": "When something a customer asked for ships, tell Ulrika before the customer.",
+                "why": "Ulrika runs the customer syncs and asked to hear before the customer. Kaffekopp is what happens when nobody does."
+              }
+            }
+          ]
+        },
+        {
+          "pause": 1200,
+          "text": [
+            "Added to rules: when something a customer asked for ships, tell Ulrika before the customer. Every session reads it from now on. [[skills/house-rules/SKILL|House rules]]"
+          ]
+        }
+      ]
+    }
+  ]
+}

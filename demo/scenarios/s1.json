@@ -1,0 +1,354 @@
+{
+  "version": 1,
+  "id": "s1",
+  "title": "The meeting produced actions",
+  "do": "Drag steering-h2-priorities.vtt from the Qale demo files folder onto the window. On the question card, pick Same commitment.",
+  "offScript": "That is outside what this demo can show. The five things it can do are listed in Settings, under Demo.",
+  "lookups": {
+    "claims": {
+      "The PO opens a GDPR review with Henrik": "CONFLICT | todos/henrik-review-swap-notifications.md | GDPR review of swap notifications, open, due 2026-07-24, from the 1:1 on 2026-07-13",
+      "Marcus told Lena": "KNOWN | meetings/2026-06-05-cafe-nord-qbr.md | Marcus answered before I could: \"we'll have swaps for you before September.\""
+    },
+    "summaries": {
+      "sources/{{today}}-steering-transcript.md": "Steering on 2026-07-16: Åsa flipped the H2 order, shift swaps first and payroll export to Q1, with a re-estimate of SCH-240 due 2026-07-24."
+    }
+  },
+  "conversations": [
+    {
+      "id": "drop",
+      "trigger": {
+        "kind": "skill",
+        "skill": "arrival"
+      },
+      "title": "Steering: H2 priorities",
+      "turns": [
+        {
+          "text": "Yesterday's steering. The calendar holds it at 10:00 with Åsa, Rebecca and Marcus, and the transcript names the same four, so the recording goes on that page.",
+          "tools": [
+            {
+              "name": "file_source",
+              "input": {
+                "files": [
+                  "source/steering-h2-priorities.vtt"
+                ],
+                "as": "meeting",
+                "title": "Steering: H2 priorities",
+                "date": "2026-07-16",
+                "attach_to": "meetings/{{date:2026-07-16}}-steering.md"
+              }
+            },
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "decisions/2026-05-18-h2-order-payroll-first.md"
+              }
+            },
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "todos/henrik-review-swap-notifications.md"
+              }
+            }
+          ]
+        },
+        {
+          "tools": [
+            {
+              "name": "check_claims",
+              "input": {
+                "claims": [
+                  {
+                    "claim": "Åsa flipped the H2 order at steering on 2026-07-16: shift swaps ships first, payroll export moves to Q1.",
+                    "about": [
+                      "[[decisions/2026-05-18-h2-order-payroll-first]]",
+                      "[[notes/h2-capacity]]"
+                    ]
+                  },
+                  {
+                    "claim": "The PO opens a GDPR review with Henrik of the swap notification today, 2026-07-17.",
+                    "about": [
+                      "[[todos/henrik-review-swap-notifications]]",
+                      "[[people/henrik-dahl]]"
+                    ]
+                  },
+                  {
+                    "claim": "Rebecca re-scopes SCH-240 with the overtime check and gives a real estimate by 2026-07-24.",
+                    "about": [
+                      "[[tickets/jira/SCH-240]]",
+                      "[[people/rebecca-holm]]"
+                    ]
+                  },
+                  {
+                    "claim": "Marcus told Lena \"before September\" at the Café Nord QBR on 2026-06-05 and stands by it.",
+                    "about": [
+                      "[[customers/cafe-nord]]",
+                      "[[meetings/2026-06-05-cafe-nord-qbr]]"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "tools": [
+            {
+              "name": "ask_user",
+              "input": {
+                "questions": [
+                  {
+                    "header": "Henrik",
+                    "question": "You said you'd ping Henrik today. [[todos/henrik-review-swap-notifications]] is open, due 2026-07-24. Same commitment?",
+                    "options": [
+                      {
+                        "label": "Same commitment",
+                        "description": "I put yesterday's line on that todo and file nothing new."
+                      },
+                      {
+                        "label": "A new commitment",
+                        "description": "Today's ping is its own item, beside the review that is already open."
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "tools": [
+            {
+              "name": "propose_decision",
+              "input": {
+                "path": "decisions/{{date:2026-07-16}}-h2-order-swaps-first.md",
+                "frontmatter": {
+                  "type": "decision",
+                  "summary": "H2 order flipped: shift swaps ships first, payroll export moves to Q1 2027",
+                  "tags": [
+                    "shift-swaps",
+                    "payroll-export"
+                  ],
+                  "standing": "active",
+                  "date": "2026-07-16",
+                  "deciders": [
+                    "Åsa Lindgren"
+                  ],
+                  "sources": [
+                    "[[meetings/{{date:2026-07-16}}-steering]]"
+                  ]
+                },
+                "body": "Åsa reversed the May order at steering on 2026-07-16: shift swaps ([[tickets/jira/SCH-231]]) ships first, payroll export ([[tickets/jira/SCH-118]]) moves to Q1 2027 ([[meetings/{{date:2026-07-16}}-steering]]).\n\nThe May reasoning was that two accounts had asked for the export with a date attached and nobody had a hard date on swaps ([[decisions/2026-05-18-h2-order-payroll-first]]). That no longer holds. Café Nord's QBR put a date on swaps that we did not choose: their staff turn over every September and managers rebuild the week by hand because staff cannot swap shifts themselves ([[insights/cafe-nord-september-turnover]]). Two more chain accounts in the pipeline asked the same question in the same week, one of them with over a hundred locations. Payroll export helps none of the three.\n\nBoth epics sit on one team, so the second one moves a full quarter, not a few weeks ([[notes/h2-capacity]]). Åsa took that cost on purpose: \"that's the whole point of doing this today instead of next month.\"\n\nNot decided here: a ship date for swaps. Rebecca re-estimates [[tickets/jira/SCH-240]] by 2026-07-24, and that number is an estimate, not a promise.",
+                "rationale": "Åsa decided it in the room with a named reason, and it reverses the May order, so it is a new decision that supersedes the old one.",
+                "supersedes": "decisions/2026-05-18-h2-order-payroll-first",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-steering]]"
+                ]
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "meetings/{{date:2026-07-16}}-steering.md",
+                "append": "## Summary\n\nÅsa flipped the H2 order: shift swaps ships first, payroll export moves to Q1 2027 ([[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]). The May reasoning was two accounts with a date on the export and nobody with a date on swaps ([[decisions/2026-05-18-h2-order-payroll-first]]). Since then Café Nord's QBR and two more chain accounts in the pipeline asked the same question, unprompted: can staff swap their own shifts. All three hit the September turnover, six weeks out, and payroll export helps none of them.\n\nRebecca's two conditions. The last swap story, manager approval with the overtime check, is a data problem, not a UI problem: it touches the same schedule-recalc path as payroll export. She re-scopes [[tickets/jira/SCH-240]] and gives a real estimate, not a ship date, by 2026-07-24. And the swap notification shows the requesting colleague's name and phone number, which Henrik has not seen. Åsa: \"that's not optional.\" I ping Henrik today ([[todos/henrik-review-swap-notifications]]).\n\nA fourth story nobody has written: when a swap is approved, the colleague who gave up the shift is not told by the app. Today that is a message the manager sends by hand. Åsa wants it filed under [[tickets/jira/SCH-231]] this week.\n\nFor Café Nord the line stays \"before September\", as Marcus said at the QBR, and nothing firmer until Rebecca's number lands. If Lena pushes: \"more in a couple of weeks\", not a new date.\n\n## Notes\n\n- Roadmap H2 still says export first, swaps second. Åsa wants it flipped today, and a comment on [[tickets/jira/SCH-118]] saying the export moves to Q1 and why.\n- Marcus: \"my slides already say September.\" Rebecca: \"then your slides are wrong.\"\n- Rebecca has the Fortnox connector demo on Wednesday, so the estimate is next Friday, not this one.",
+                "frontmatter": {
+                  "processing": "processed"
+                },
+                "rationale": "The write-up of yesterday's steering: the order flip, Rebecca's estimate date, the GDPR gap, the fourth story, and what Café Nord gets told.",
+                "sources": [
+                  "[[sources/{{today}}-steering-transcript]]"
+                ]
+              }
+            },
+            {
+              "name": "propose_todo",
+              "input": {
+                "title": "Re-scope SCH-240 with the overtime check and give a real estimate",
+                "due": "2026-07-24",
+                "owner": "[[people/rebecca-holm]]",
+                "quote": "I'll re-scope SCH-240 properly, overtime check included, and I'll have a real estimate by next Friday.",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-steering]]"
+                ],
+                "rationale": "Rebecca committed to the estimate in steering. Next Friday from 2026-07-16 is 2026-07-24, and Åsa confirmed it as a week from tomorrow."
+              }
+            },
+            {
+              "name": "propose_todo",
+              "input": {
+                "title": "Get the fourth swap story written and filed under SCH-231",
+                "due": "2026-07-17",
+                "owner": "[[people/rebecca-holm]]",
+                "quote": "I'll make sure it exists, whether I write it or someone on the team does.",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-steering]]"
+                ],
+                "rationale": "Åsa asked for the notify-the-affected-colleague story filed this week, and Rebecca took it."
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "todos/henrik-review-swap-notifications.md",
+                "append": "Raised again at steering on 2026-07-16 ([[meetings/{{date:2026-07-16}}-steering]]). Åsa: \"that's not optional. Henrik gets that today.\" Me: \"I'll ping Henrik today.\" Same review, now with the CPO behind it.",
+                "frontmatter": {
+                  "sources": [
+                    "[[meetings/2026-07-13-1-1-rebecca]]",
+                    "[[meetings/{{date:2026-07-16}}-steering]]"
+                  ]
+                },
+                "rationale": "You said yesterday's ping is this commitment, so the steering line goes on the open todo and nothing new is filed.",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-steering]]"
+                ],
+                "asked": true
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "customers/cafe-nord.md",
+                "patch": [
+                  {
+                    "search": "holding the first one ([[meetings/2026-06-05-cafe-nord-qbr]]).",
+                    "replace": "holding the first one ([[meetings/2026-06-05-cafe-nord-qbr]]).\n- Steering flipped the order on 2026-07-16: swaps ships first, ahead of payroll export\n  ([[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]). Lena still gets \"before September\" and\n  nothing firmer until Rebecca's estimate lands on 2026-07-24 ([[meetings/{{date:2026-07-16}}-steering]])."
+                  }
+                ],
+                "rationale": "Café Nord is the account the flip was made for, and the hub still reads as if swaps sat behind payroll export.",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-steering]]",
+                  "[[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]"
+                ]
+              }
+            },
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "skills/jira/SKILL.md"
+              }
+            },
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "wikipages/confluence/roadmap-h2.md"
+              }
+            }
+          ]
+        },
+        {
+          "text": "Three things leave the workspace, so they wait for you.",
+          "tools": [
+            {
+              "name": "draft_ticket_comment",
+              "input": {
+                "ticket": "tickets/jira/SCH-118",
+                "body": "Payroll export moves from Q3 to Q1 2027. Shift swaps (SCH-231) ships first. Åsa flipped the order at steering on 2026-07-16: three chain accounts hit the same September staff turnover and asked for swaps, and the export helps none of them.\n\nWhat happens next: Rebecca re-estimates SCH-240 by 2026-07-24, an estimate and not a ship date. The Roadmap H2 page is being flipped to match.\n\nSource: Steering, 2026-07-16",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-steering]]",
+                  "[[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]",
+                  "[[tickets/jira/SCH-118]]"
+                ],
+                "linkBack": "meetings/{{date:2026-07-16}}-steering.md",
+                "rationale": "Åsa asked for a comment on the payroll epic saying it moves to Q1 and why, so nobody watching the ticket is surprised in three weeks."
+              }
+            },
+            {
+              "name": "draft_ticket",
+              "input": {
+                "container": "SCH",
+                "kind": "Story",
+                "title": "Notify the affected colleague when a swap is approved",
+                "body": "Part of SCH-231. When a manager approves a swap, the colleague who gave up the shift hears about it from the app. Today that is a message the manager sends by hand, if they remember, and support will hear about it once swaps are live for real customers.\n\nNot one of the three stories in the epic. Raised by Rebecca at steering on 2026-07-16; Åsa asked for it filed this week.\n\nAcceptance:\n- [ ] When the manager approves, the colleague who gave up the shift gets a notification naming the shift and who took it.\n- [ ] The colleague who took the shift sees it on their published schedule at the same moment.\n- [ ] Nothing is sent while the request is still pending or after a rejection.\n\nSource: Steering, 2026-07-16",
+                "labels": [
+                  "shift-swaps"
+                ],
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-steering]]",
+                  "[[tickets/jira/SCH-231]]",
+                  "[[notes/swap-rules]]"
+                ],
+                "linkBack": "meetings/{{date:2026-07-16}}-steering.md",
+                "rationale": "Agreed work that nothing in the epic covers. Åsa: \"then write it.\""
+              }
+            },
+            {
+              "name": "draft_page_update",
+              "input": {
+                "page": "wikipages/confluence/roadmap-h2.md",
+                "patch": {
+                  "search": "First: payroll export (Fortnox first), in Q3.\n\nThen: shift swaps, in Q4.",
+                  "replace": "First: shift swaps, in Q3.\n\nThen: payroll export (Fortnox first), in Q1 2027."
+                },
+                "provenance": "Source: Steering, 2026-07-16",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-steering]]",
+                  "[[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]",
+                  "[[wikipages/confluence/roadmap-h2]]"
+                ],
+                "linkBack": "meetings/{{date:2026-07-16}}-steering.md",
+                "rationale": "The page still says export first, swaps second, and customers' champions see screenshots of it. Åsa: \"that's wrong as of today.\""
+              }
+            }
+          ]
+        },
+        {
+          "pause": 1600,
+          "text": [
+            "Steering flipped the H2 order: shift swaps ships first, payroll export moves to Q1 2027. Åsa decided it, and the May decision is superseded.",
+            "",
+            "Filed: the write-up on the meeting page, the new decision, and two todos for Rebecca (the SCH-240 estimate by 2026-07-24, and the fourth swap story this week). Henrik's review stays as the one open todo, with yesterday's line on it. Café Nord's hub now says the order changed.",
+            "",
+            "Waiting for you: a comment on SCH-118, a new story under SCH-231, and the Roadmap H2 page flipped."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "brief",
+      "trigger": {
+        "kind": "skill",
+        "skill": "meeting-prep"
+      },
+      "title": "Café Nord QBR prep: brief",
+      "turns": [
+        {
+          "tools": [
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "people/lena-strand.md"
+              }
+            },
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "customers/cafe-nord.md"
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "meetings/{{date:2026-07-21}}-cafe-nord-qbr-prep.md",
+                "append": "## Prep\n\n- Since last time: steering flipped the H2 order on 2026-07-16. Swaps ships first, ahead of payroll export ([[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]). Marcus's \"before September\" is now the plan, not the slip.\n- Give no month. Rebecca's re-estimate of the last swap story lands on 2026-07-24 ([[tickets/jira/SCH-240]]). Åsa's line if Lena pushes: \"more in a couple of weeks\", not a new date ([[meetings/{{date:2026-07-16}}-steering]]).\n- Landmine: Lena wrote down September at the Q2 QBR and has not chased it ([[meetings/2026-06-05-cafe-nord-qbr]], [[people/lena-strand]]). Say the order changed before she asks.\n- What shipped since the QBR: shift reminders in the staff app on 2026-07-15 ([[tickets/jira/APP-54]]), and chain-level week templates in use across her locations.\n- Deck: [[todos/cafe-nord-qbr-prep-deck]], due 2026-07-21. Marcus's swap ETA reply is still open ([[todos/reply-marcus-swap-eta]]).",
+                "rationale": "Marcus and Lena are both in this meeting, and the swap timeline changed last week. The brief says what changed, what not to promise, and where the old number is written down.",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-steering]]",
+                  "[[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]",
+                  "[[meetings/2026-06-05-cafe-nord-qbr]]",
+                  "[[people/lena-strand]]",
+                  "[[tickets/jira/SCH-240]]",
+                  "[[tickets/jira/APP-54]]"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "pause": 1400,
+          "text": [
+            "The brief is on the meeting page. One thing to say out loud before Lena asks: the order changed on 2026-07-16, so September is the plan again, and there is no month until Rebecca's estimate on 2026-07-24."
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -265,6 +265,49 @@ test('first launch answers the whole opening, once', async () => {
   demoOff();
 });
 
+test('info lists the scenarios the build carries, once the replay server is up', async () => {
+  demoOn();
+  pinToday('2026-07-25');
+  const { root, assets } = install();
+  mkdirSync(join(assets, 'demo', 'scenarios'), { recursive: true });
+  writeFileSync(
+    join(assets, 'demo', 'scenarios', 's1.json'),
+    JSON.stringify({
+      version: 1,
+      id: 's1',
+      title: 'The meeting produced actions',
+      do: 'Drag the transcript onto the window.',
+      conversations: [
+        {
+          id: 'drop',
+          trigger: { kind: 'skill', skill: 'arrival' },
+          title: 'Steering',
+          turns: [{ text: 'Filed.' }],
+        },
+      ],
+    }),
+  );
+  const { demo, vault } = service(assets);
+  // Before the replay server is up there is nothing to list.
+  assert.deepEqual(demo.info().scenarios, []);
+  await demo.start();
+  try {
+    assert.ok(demo.baseUrl, 'the replay server is up');
+    assert.deepEqual(demo.info().scenarios, [
+      { id: 's1', title: 'The meeting produced actions', do: 'Drag the transcript onto the window.' },
+    ]);
+    // The list is a reminder, not a choice: a Reset changes nothing about it,
+    // and there is no other state for the Settings tab to read.
+    await demo.reset();
+    assert.deepEqual(vault.calls, ['disposeAgent', 'dispose', `open ${demo.workspacePath}`, 'onReset']);
+    assert.deepEqual(Object.keys(demo.info()).sort(), ['anchor', 'enabled', 'scenarios', 'today']);
+  } finally {
+    await demo.stop();
+    rmSync(root, { recursive: true, force: true });
+    demoOff();
+  }
+});
+
 test('opening the demo files fills the folder and then opens it', async () => {
   demoOn();
   const { root, assets } = install();
@@ -274,4 +317,123 @@ test('opening the demo files fills the folder and then opens it', async () => {
   assert.equal(existsSync(join(desktop, 'Qale demo files', 'transcript.txt')), true);
   rmSync(root, { recursive: true, force: true });
   demoOff();
+});
+
+/**
+ * A sync service that records what was followed and owns no database. `list()`
+ * answers from what `setFollow` has been told, the way the real one answers
+ * from the per-vault database, so the "the presenter already chose" guard is
+ * exercised rather than stubbed out.
+ */
+function fakeSync(catalogue: Record<string, string[]>): {
+  followed: string[];
+  refreshed: string[];
+  service: never;
+} {
+  const followed: string[] = [];
+  const refreshed: string[] = [];
+  const service = {
+    refreshContainers: async (connectionId: string) => {
+      refreshed.push(connectionId);
+      return (catalogue[connectionId] ?? []).map((id) => ({ id }));
+    },
+    setFollow: async (connectionId: string, containerId: string, on: boolean) => {
+      const row = `${connectionId}:${containerId}`;
+      if (on) followed.push(row);
+      else followed.splice(followed.indexOf(row), 1);
+    },
+    list: () =>
+      Object.entries(catalogue).map(([id, ids]) => ({
+        id,
+        containers: ids.map((c) => ({ id: c, followed: followed.includes(`${id}:${c}`) })),
+      })),
+  };
+  return { followed, refreshed, service: service as never };
+}
+
+/** The two fixtures `start()` reads, cut down to what the fakes need to load. */
+function writeFixtures(assets: string): void {
+  mkdirSync(join(assets, 'demo', 'scenarios'), { recursive: true });
+  writeFileSync(
+    join(assets, 'demo', 'atlassian-fixture.json'),
+    JSON.stringify({
+      anchor: ANCHOR,
+      siteUrl: 'https://rota.atlassian.net',
+      self: { accountId: 'a1', displayName: 'Demo', emailAddress: 'demo@rota.example' },
+      projects: [
+        { id: '10000', key: 'SCH', name: 'Scheduling' },
+        { id: '10001', key: 'APP', name: 'Staff app' },
+        { id: '10002', key: 'PLT', name: 'Platform' },
+      ],
+      spaces: [{ id: '65537', key: 'PROD', name: 'Product' }],
+      issues: [],
+      pages: [],
+    }),
+  );
+  writeFileSync(
+    join(assets, 'demo', 'google-fixture.json'),
+    JSON.stringify({
+      anchor: ANCHOR,
+      timeZone: 'Europe/Stockholm',
+      self: { email: 'demo@rota.example', name: 'Demo' },
+      calendars: [
+        {
+          id: 'demo@rota.example',
+          summary: 'Demo user',
+          primary: true,
+          accessRole: 'owner',
+          timeZone: 'Europe/Stockholm',
+        },
+      ],
+      events: [],
+    }),
+  );
+}
+
+/** What the fakes list: one calendar, three projects and one space. */
+const CATALOGUE = {
+  'google-calendar': ['demo@rota.example'],
+  atlassian: ['SCH', 'APP', 'PLT', 'PROD'],
+};
+
+test('the demo follows the calendar, the projects and the space, once', async () => {
+  demoOn();
+  pinToday('2026-07-25');
+  const { root, assets } = install();
+  writeFixtures(assets);
+  const { demo } = service(assets);
+  await demo.start();
+  try {
+    const sync = fakeSync(CATALOGUE);
+    await demo.followSources(sync.service);
+    // Every container the fakes serve. Without the four Atlassian ones a ticket
+    // card is refused: the workspace follows no tracker project.
+    assert.deepEqual(sync.followed, [
+      'google-calendar:demo@rota.example',
+      'atlassian:SCH',
+      'atlassian:APP',
+      'atlassian:PLT',
+      'atlassian:PROD',
+    ]);
+    // A second call changes nothing: what the presenter unfollowed during a
+    // demo stays unfollowed until the next Reset.
+    const before = [...sync.followed];
+    await demo.followSources(sync.service);
+    assert.deepEqual(sync.followed, before);
+  } finally {
+    await demo.stop();
+    rmSync(root, { recursive: true, force: true });
+    demoOff();
+  }
+});
+
+test('an ordinary build follows nothing, because there is nothing to follow', async () => {
+  demoOff();
+  const { root, assets } = install();
+  const { demo } = service(assets);
+  const sync = fakeSync(CATALOGUE);
+  await demo.followSources(sync.service);
+  assert.deepEqual(sync.followed, []);
+  assert.deepEqual(sync.refreshed, []);
+  rmSync(root, { recursive: true, force: true });
 });

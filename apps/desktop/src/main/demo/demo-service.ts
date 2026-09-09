@@ -31,6 +31,7 @@ import { CALENDAR_RW_SCOPES } from '../services/google-oauth-service.js';
 import { createFakeAtlassian, type FakeAtlassian } from './fake-atlassian.js';
 import { createFakeGoogleCalendar, type FakeGoogleCalendar } from './fake-google-calendar.js';
 import { startReplayServer, type ReplayServer } from './replay-server.js';
+import type { ScenarioSummary } from './scenario.js';
 
 /** The providers whose REST calls the fakes answer. Both ids are in the registry. */
 const ATLASSIAN_PROVIDER = 'atlassian';
@@ -51,6 +52,8 @@ export interface DemoInfo {
   today: string;
   /** The day `vault-dev/` is written around, YYYY-MM-DD. */
   anchor: string;
+  /** The scenarios the build carries, in id order. Empty until the replay server is up. */
+  scenarios: ScenarioSummary[];
 }
 
 export interface DemoServiceOptions {
@@ -70,7 +73,7 @@ export interface DemoServiceOptions {
  * the two depend on each other in both directions.
  */
 export interface DemoSyncService {
-  refreshContainers(connectionId: string): Promise<unknown[]>;
+  refreshContainers(connectionId: string): Promise<{ id: string }[]>;
   setFollow(connectionId: string, containerId: string, followed: boolean): Promise<void>;
   list(): { id: string; containers: { id: string; followed: boolean }[] }[];
 }
@@ -168,6 +171,7 @@ export class DemoService {
     try {
       this.replay = await startReplayServer({
         mode: record ? 'record' : 'replay',
+        scenariosDir: join(this.assets, 'demo', 'scenarios'),
         recordingsDir: join(this.assets, 'demo', 'recordings'),
         dateOffsetDays: this.dateOffsetDays(),
         // In record mode the stored key is the real one and the requests go
@@ -203,22 +207,29 @@ export class DemoService {
   }
 
   /**
-   * Follow the demo calendar, once, so the launch sync has something to pull.
-   * The PM of a real install picks their calendars; this one has exactly one,
-   * and a demo that opens on an empty week is not a demo.
+   * Follow what the demo reads, once: the one calendar the fake Google serves,
+   * and every Jira project and Confluence space the fake Atlassian holds.
    *
-   * Called after the workspace opens, because the follow flag lives in the
-   * per-workspace database. A calendar the presenter unfollowed during a demo
+   * The PM of a real install picks these. This install has one calendar, three
+   * projects and one space, and `vault-dev/` already mirrors all of them. A
+   * demo that opens on an empty week is not a demo, and a ticket card is
+   * refused outright while no project is followed.
+   *
+   * Called after the workspace opens, because the follow flags live in the
+   * per-workspace database. A container the presenter unfollowed during a demo
    * stays unfollowed until the next Reset, which is what the flag is for.
    */
-  async followCalendar(sync: DemoSyncService): Promise<void> {
-    if (!this.enabled || !this.google) return;
+  async followSources(sync: DemoSyncService): Promise<void> {
+    if (!this.enabled) return;
+    await this.followCalendar(sync);
+    await this.followTracker(sync);
+  }
+
+  /** The one calendar the fake Google serves. */
+  private async followCalendar(sync: DemoSyncService): Promise<void> {
+    if (!this.google) return;
     try {
-      const alreadyFollowed = sync
-        .list()
-        .find((c) => c.id === GOOGLE_PROVIDER)
-        ?.containers.some((c) => c.followed);
-      if (alreadyFollowed) return;
+      if (this.followsAnything(sync, GOOGLE_PROVIDER)) return;
       await sync.refreshContainers(GOOGLE_PROVIDER);
       await sync.setFollow(GOOGLE_PROVIDER, this.google.primaryCalendarId(), true);
     } catch (err) {
@@ -226,14 +237,48 @@ export class DemoService {
     }
   }
 
+  /**
+   * Every project and space the fake Atlassian lists. The catalogue is asked
+   * for rather than named here, so a key added to the fixture is followed
+   * without an edit in this file.
+   */
+  private async followTracker(sync: DemoSyncService): Promise<void> {
+    if (!this.fake) return;
+    try {
+      if (this.followsAnything(sync, ATLASSIAN_PROVIDER)) return;
+      const containers = await sync.refreshContainers(ATLASSIAN_PROVIDER);
+      for (const container of containers)
+        await sync.setFollow(ATLASSIAN_PROVIDER, container.id, true);
+    } catch (err) {
+      console.error('[qale] demo: could not follow the demo projects and space:', err);
+    }
+  }
+
+  /** Does this connection already follow a container? Then the presenter chose. */
+  private followsAnything(sync: DemoSyncService, connectionId: string): boolean {
+    return !!sync
+      .list()
+      .find((c) => c.id === connectionId)
+      ?.containers.some((c) => c.followed);
+  }
+
   async stop(): Promise<void> {
     await this.replay?.close().catch(() => {});
     this.replay = null;
   }
 
-  /** What the Demo section in Settings draws. */
+  /**
+   * What the Demo section in Settings draws. The scenarios are a reminder of
+   * what to do, not a choice: after one Reset the engine picks the scenario
+   * from what the presenter does (docs/demo-mode.md DM-4).
+   */
   info(): DemoInfo {
-    return { enabled: this.enabled, today: this.today(), anchor: ANCHOR };
+    return {
+      enabled: this.enabled,
+      today: this.today(),
+      anchor: ANCHOR,
+      scenarios: this.replay?.scenarios() ?? [],
+    };
   }
 
   /**
@@ -248,7 +293,7 @@ export class DemoService {
     if (!this.enabled) return false;
     const settings = this.opts.settings;
     if (settings.get().vaultPath) return false;
-    console.log('[qale] demo: first launch — building the workspace');
+    console.log('[qale] demo: first launch, building the workspace');
     // Nothing is open yet, so nothing is reopened: onReady opens the workspace
     // from `vaultPath` a few lines later.
     await this.reset({ reopen: false });
@@ -434,7 +479,7 @@ export class DemoService {
  * A packaged build carries them as `extraResources`, so they sit beside the app
  * under `Contents/Resources/demo-assets`. A dev run reads them straight out of
  * the repo, which is found by walking up from the app until a folder holds
- * `vault-dev/` — the same folder `pnpm refresh-demo` reads.
+ * `vault-dev/`, the same folder `pnpm refresh-demo` reads.
  */
 function assetsRoot(): string {
   if (app.isPackaged) return join(process.resourcesPath, 'demo-assets');
@@ -442,7 +487,9 @@ function assetsRoot(): string {
   if (fromApp) return fromApp;
   const fromHere = repoRoot(dirname(new URL(import.meta.url).pathname));
   if (fromHere) return fromHere;
-  console.error('[qale] demo: no vault-dev/ above this build — the demo has no material to copy.');
+  console.error(
+    '[qale] demo: no vault-dev/ above this build, so the demo has no material to copy.',
+  );
   return app.getAppPath();
 }
 

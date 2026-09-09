@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, useRef, useEffect, type ReactNode } from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { useStickToBottom } from 'use-stick-to-bottom';
@@ -19,6 +19,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import type {
+  ArrivalItemInputDTO,
   AskRequestDTO,
   CodebaseRequestDTO,
   NoteRefDTO,
@@ -57,6 +58,9 @@ import {
   SendButton,
   useAutoGrow,
 } from '../components/Composer';
+import { Attachments } from '../components/Attachments';
+import { attachedMessage } from '../lib/attachments';
+import { DROP_OVER, useFileDrop } from '../lib/file-drop';
 
 /**
  * Wrap bare note-path citations (decisions/adopt-workos.md) in wikilinks so they
@@ -552,6 +556,11 @@ function RunRow({
 }) {
   const targets = kickoff.targets ?? [];
   const hasObjects = targets.length > 0 || sources.length > 0;
+  // A run carrying handed-over sources is a drop, and a drop's instruction is
+  // the sentence the PM typed beside the files. It is theirs, so it is shown.
+  // Every other kickoff's instruction is machine prose composed for the model,
+  // and stays off the screen.
+  const said = sources.length > 0 ? kickoff.instruction.trim() : '';
   return (
     <div className="rounded-xl border border-border bg-secondary/40 px-3 py-2.5 text-sm">
       <div className="flex items-start gap-2.5">
@@ -620,6 +629,7 @@ function RunRow({
               );
             })}
           </div>
+          {said && <p className="mt-1 leading-6 whitespace-pre-wrap">{said}</p>}
         </div>
       </div>
     </div>
@@ -860,6 +870,7 @@ function SessionThread({
     openSessionFile,
     sessionSeeds,
     takeSessionSeed,
+    attachToSession,
     vault,
   } = useApp();
   const [needsKey, setNeedsKey] = useState(false);
@@ -1053,16 +1064,78 @@ function SessionThread({
     if (status === 'streaming') setNeedsKey(false);
   }, [status]);
 
+  /**
+   * Files dropped on this session, waiting in the composer. They are attached to
+   * the session when the message goes, never before: a file dropped by mistake
+   * costs one X and nothing is written.
+   *
+   * A session with no id yet has no folder to put them in, so it claims no
+   * drops and the Shell takes them to the Add source tray instead.
+   */
+  const [attached, setAttached] = useState<ArrivalItemInputDTO[]>([]);
+  const [attaching, setAttaching] = useState(false);
+  const takeFiles = useCallback(
+    (items: ArrivalItemInputDTO[]) => {
+      if (items.length === 0) return;
+      setAttached((prev) => [...prev, ...items]);
+      inputRef.current?.focus();
+    },
+    [inputRef],
+  );
+  const drop = useFileDrop(boundSessionId && !backgroundBusy && !askPending ? takeFiles : null);
+
+  const canSend = !busy && !backgroundBusy && !askPending && !attaching;
+
+  /**
+   * Put the attached files in this session's folder, then send the message that
+   * names them. Nothing else runs: the session already has a skill and the PM is
+   * talking to it, so forcing "Handle new sources" over the top would answer a
+   * question nobody asked. Somebody who wants the files filed picks that skill
+   * in the composer, which is the control that already does it.
+   */
+  const sendWithFiles = async (text: string) => {
+    if (!boundSessionId) return;
+    const batch = attached;
+    setAttaching(true);
+    setInput('');
+    setAttached([]);
+    try {
+      const result = await attachToSession(boundSessionId, batch);
+      if (result.files.length === 0) {
+        // Every file was refused, so there is nothing to talk about. Put them
+        // back with what was typed rather than sending a message about files
+        // that are not there.
+        setAttached(batch);
+        setInput(text);
+        return;
+      }
+      send(attachedMessage(result.files.map((f) => f.file), text));
+      setPickedSkill(null);
+    } catch {
+      setAttached(batch);
+      setInput(text);
+    } finally {
+      setAttaching(false);
+    }
+  };
+
   const submit = () => {
+    if (!canSend) return;
     const text = input.trim();
-    if (!text || busy || backgroundBusy || askPending) return;
+    // Files alone are enough to send: the message names them and says nothing
+    // else, which is what dropping a file into a conversation means.
+    if (attached.length > 0) {
+      void sendWithFiles(text);
+      return;
+    }
+    if (!text) return;
     setInput('');
     send(text);
     setPickedSkill(null);
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className={`flex h-full flex-col ${drop.over ? DROP_OVER : ''}`} {...drop.handlers}>
       {!embedded && (
         // A session states its location exactly as a note does: glyph, the list
         // it belongs to, then its own name — quiet, truncating, tooltipped. The
@@ -1358,6 +1431,13 @@ function SessionThread({
       <div className="px-6 pb-5">
         <div className={COMPOSER_SHELL}>
           {mentions.menu}
+          <Attachments
+            items={attached}
+            onRemove={(i) => {
+              setAttached((prev) => prev.filter((_, n) => n !== i));
+              inputRef.current?.focus();
+            }}
+          />
           <textarea
             ref={inputRef}
             value={input}
@@ -1386,9 +1466,11 @@ function SessionThread({
                 ? 'Answer the question above to carry on…'
                 : backgroundBusy
                   ? 'Waiting for the running turn to finish…'
-                  : pickedSkill
-                    ? `What should “${skills.find((s) => s.name === pickedSkill)?.title ?? pickedSkill}” work on?`
-                    : 'Ask your product memory…'
+                  : attached.length > 0
+                    ? 'Anything I should know about these? (optional)'
+                    : pickedSkill
+                      ? `What should “${skills.find((s) => s.name === pickedSkill)?.title ?? pickedSkill}” work on?`
+                      : 'Ask your product memory…'
             }
             rows={1}
             disabled={backgroundBusy || askPending}
@@ -1411,7 +1493,9 @@ function SessionThread({
               onClosed={() => inputRef.current?.focus()}
               disabled={backgroundBusy || askPending}
             />
-            <MentionHint show={!input.trim() && !backgroundBusy && !askPending} />
+            <MentionHint
+              show={!input.trim() && !backgroundBusy && !askPending && attached.length === 0}
+            />
             {busy ? (
               <Button
                 size="icon-sm"
@@ -1424,7 +1508,7 @@ function SessionThread({
               </Button>
             ) : (
               <SendButton
-                ready={!!input.trim() && !backgroundBusy && !askPending}
+                ready={(!!input.trim() || attached.length > 0) && canSend}
                 onClick={submit}
                 label="Send"
               />

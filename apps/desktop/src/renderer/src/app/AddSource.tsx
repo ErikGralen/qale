@@ -23,6 +23,7 @@ import {
 import type { ArrivalCheckDTO, ArrivalHandoffDTO, ArrivalItemInputDTO } from '@qale/ipc';
 import { sourceModelId, readableAs } from '@qale/domain';
 import { pathForFile } from '../lib/ipc';
+import { attachmentName, itemsFromFiles, pastedName } from '../lib/attachments';
 import { isBulkPaste } from '../lib/capture-event';
 import { aimLabel, aimSentence, type SourceAim } from '../lib/source-aim';
 import { pileWarning, submitLabel } from '../lib/source-batch';
@@ -57,26 +58,6 @@ function countWords(s: string): number {
     }
   }
   return n;
-}
-
-/** A row's own name, for the list and for the remove button's label. */
-function rowName(item: ArrivalItemInputDTO): string {
-  return item.name ?? PASTED;
-}
-
-const PASTED = 'Pasted text.md';
-
-/**
- * What a paste is called. It is a file like any other once it is in the tray —
- * it has a name and a size and it can be taken back out — so it is named like
- * one, and two pastes in the same tray are told apart by a number. What the
- * source actually IS stays the agent's to say once it has read it.
- */
-function pastedName(items: ArrivalItemInputDTO[]): string {
-  const taken = items.filter(
-    (i) => i.name === PASTED || /^Pasted text \d+\.md$/.test(i.name ?? ''),
-  ).length;
-  return taken === 0 ? PASTED : `Pasted text ${taken + 1}.md`;
 }
 
 /**
@@ -207,36 +188,7 @@ export function AddSource({
   }, [open, items, checkArrival]);
 
   const addFiles = useCallback(async (files: FileList | File[]) => {
-    const next: ArrivalItemInputDTO[] = [];
-    for (const file of Array.from(files)) {
-      // The real path where there is one: it is the only way a dropped FOLDER
-      // can be walked at all (AR-14), and it keeps fifty files off the wire.
-      const path = pathForFile(file);
-      if (path) {
-        next.push({ path, name: file.name, lastModified: file.lastModified });
-        continue;
-      }
-      // Dragged out of a browser: no path, so the bytes ride along.
-      if (readableAs(file.name) === null) {
-        next.push({ name: file.name, lastModified: file.lastModified });
-        continue;
-      }
-      if (file.type.startsWith('image/')) {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const r = new FileReader();
-          r.onload = () => resolve(r.result as string);
-          r.onerror = () => reject(r.error);
-          r.readAsDataURL(file);
-        });
-        next.push({
-          name: file.name,
-          dataBase64: dataUrl.split(',')[1] ?? '',
-          lastModified: file.lastModified,
-        });
-      } else {
-        next.push({ name: file.name, text: await file.text(), lastModified: file.lastModified });
-      }
-    }
+    const next = await itemsFromFiles(Array.from(files), pathForFile);
     setItems((prev) => [...prev, ...next]);
   }, []);
 
@@ -369,7 +321,7 @@ export function AddSource({
           ) : (
             <div className="flex max-h-56 flex-col gap-px overflow-y-auto px-2 pt-2">
               {items.map((item, i) => {
-                const name = rowName(item);
+                const name = attachmentName(item);
                 const failed = check?.items[i]?.error;
                 const Icon = readableAs(name) === 'image' ? ImageIcon : FileText;
                 // What the tray holds in its own hands it can describe: the

@@ -5,6 +5,7 @@ import type {
   AgentRunInput,
   AgentRunHandle,
   ArrivalCheckDTO,
+  ArrivalAttachDTO,
   ArrivalHandoffDTO,
   ArrivalItemInputDTO,
   ArrivalProgressDTO,
@@ -243,6 +244,16 @@ export interface InvokeMap {
   'arrival:ingest': {
     args: [items: ArrivalItemInputDTO[], instruction?: string, modelId?: string];
     result: ArrivalHandoffDTO;
+  };
+  /**
+   * Files onto a session that already exists: a drop on an open conversation.
+   * `ingest` cannot carry this: it mints a new session every time. Nothing is
+   * started here, because the session is already running; the renderer sends an
+   * ordinary message naming the files it got back.
+   */
+  'arrival:attach': {
+    args: [sessionId: string, items: ArrivalItemInputDTO[]];
+    result: ArrivalAttachDTO;
   };
   /**
    * Batches that are still being read, or that settled while this window was
@@ -535,6 +546,7 @@ export const INVOKE_CHANNELS = [
   'arrival:pick',
   'arrival:check',
   'arrival:ingest',
+  'arrival:attach',
   'arrival:batches',
   'search:query',
   'proposals:list',

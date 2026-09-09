@@ -19,6 +19,7 @@ import { ageBand, countBand, durationBand, providerWord, skillWord, wantLineWord
 import {
   AgentRuntime,
   isOffered,
+  listSessionFiles,
   sessionFilesRoot,
   summaryPrompt,
   writeSessionBinary,
@@ -108,6 +109,7 @@ import {
 } from '@qale/domain';
 import { GitAdapter, gitInstallHint } from '@qale/vault';
 import { sourceName } from './source-name.js';
+import { arrivalKickoff, arrivalManifest } from './arrival.js';
 import {
   ARRIVAL_AGENT_NAME,
   buildKickoff,
@@ -161,17 +163,6 @@ import {
   treeToDTO,
   vaultInfoToDTO,
 } from './dto.js';
-
-/**
- * The dropped files, named, for the sentence that opens an arrival session.
- * A long batch is cut short: the full list is in `input.md`, which the agent is
- * told to read in the next sentence.
- */
-function nameList(files: readonly string[], cap = 6): string {
-  const shown = files.slice(0, cap).map((f) => `\`${f}\``);
-  const rest = files.length - shown.length;
-  return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
-}
 
 /**
  * Any of the PO's own open commitments due today or already slipped. `owner`
@@ -2314,32 +2305,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
 
     // A manifest, so the agent starts from a list rather than a directory walk,
     // and so the PM opening the session folder tomorrow can see what arrived.
-    const manifest = [
-      `# What arrived`,
-      ``,
-      `${written.length} source${written.length === 1 ? '' : 's'}, handed over ${ctx.clock.now()}.`,
-      ``,
-      ...written.map((w) => `- \`${w.file}\` — dropped as "${w.original}", ${w.bytes} bytes`),
-      ...(refused.length
-        ? [
-            '',
-            'Could not be read, so they are not here:',
-            ...refused.map((r) => `- ${r.name}: ${r.error}`),
-          ]
-        : []),
-      ...(instruction?.trim() ? ['', '## What the PM asked for', '', instruction.trim()] : []),
-      ...(candidates.length
-        ? [
-            '',
-            '## Meetings on the calendar near now',
-            '',
-            'A hint and nothing more. Match a transcript on its own date, title and who speaks in it;',
-            'if the clock and the transcript disagree, the transcript is right.',
-            '',
-            ...candidates,
-          ]
-        : []),
-    ].join('\n');
+    const manifest = arrivalManifest({
+      written,
+      refused,
+      instruction,
+      candidates,
+      at: ctx.clock.now(),
+    });
     await writeSessionFile(root, 'input.md', `${manifest}\n`);
     pushEvent(getWindow(), { channel: 'session:files', sessionId });
 
@@ -2365,22 +2337,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       };
     }
 
-    const prompt = buildKickoff({
-      skill: ARRIVAL_AGENT_NAME,
-      instruction: [
-        // The names, not just the count. The agent knows what it is holding
-        // before it reads anything, and two drops stop opening with the same
-        // sentence, which is what a demo recording is matched on
-        // (docs/demo-mode.md DM-4).
-        `${written.length} source${written.length === 1 ? '' : 's'} just landed in your session folder, unfiled: ${nameList(written.map((w) => w.file))}.`,
-        `Read \`input.md\` for the list, work out what each thing is, file it, and read what is worth reading.`,
-        instruction?.trim()
-          ? `What I asked for when I handed them over, which takes precedence: ${instruction.trim()}`
-          : '',
-      ]
-        .filter(Boolean)
-        .join(' '),
-    });
+    const prompt = arrivalKickoff(instruction);
     // What reads the pile. The tray sends the model the PM chose; without one
     // (a drop from an older window, a path that never opened the tray) the
     // provider's own filing model is the default, so a Gemini workspace never
@@ -2428,6 +2385,41 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
         : `Handed over ${written.length} sources. They are being filed and read now`,
     );
     return { sessionId, landed: written.length, refused, started: true };
+  });
+
+  /**
+   * Files attached to a session that already exists: a drop on an open
+   * conversation rather than on Home.
+   *
+   * Same landing as `arrival:ingest` and deliberately nothing else: the bytes go
+   * into that session's `source/` folder and the renderer sends an ordinary
+   * message naming them. No skill is forced into a running session, because the
+   * session already has one and the person is talking to it. Somebody who wants
+   * the files filed picks "Handle new sources" in the composer, which is the
+   * control that already does that.
+   */
+  handle('arrival:attach', async (sessionId, items) => {
+    const ctx = vaultService.requireContext();
+    const landed = await resolveItems(items);
+    const refused = landed.flatMap((l) => (l.error ? [{ name: l.name, error: l.error }] : []));
+    const root = sessionFilesRoot(ctx.vault.root(), sessionId);
+    // Names already in the folder count as taken, so a second drop of the same
+    // file lands beside the first rather than over it.
+    const taken = new Set(
+      (await listSessionFiles(root))
+        .filter((f) => f.path.startsWith('source/'))
+        .map((f) => f.path.slice('source/'.length).toLowerCase()),
+    );
+    const files: { file: string; original: string }[] = [];
+    for (const piece of landed) {
+      if (piece.error) continue;
+      const file = `source/${sourceName(piece.name, taken)}`;
+      if (piece.data) await writeSessionBinary(root, file, piece.data);
+      else await writeSessionFile(root, file, piece.text ?? '');
+      files.push({ file, original: piece.name });
+    }
+    if (files.length > 0) pushEvent(getWindow(), { channel: 'session:files', sessionId });
+    return { files, refused };
   });
 
   // What a window that missed the pushes needs: the batches this process knows,

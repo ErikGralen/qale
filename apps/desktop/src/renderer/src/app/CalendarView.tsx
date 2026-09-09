@@ -4,6 +4,7 @@ import { CalendarDays } from 'lucide-react';
 import type { NoteRefDTO } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { useAimedDrop } from '../lib/aimed-drop';
+import { DROP_OVER } from '../lib/file-drop';
 import { navFromEvent } from '../lib/nav';
 import { calendarSections, meetingStanding, type MeetingTone } from '../lib/meeting-read';
 import { meetingMeta } from '../lib/note-status';
@@ -154,7 +155,7 @@ export function CalendarView() {
 
   return (
     <div
-      className={`flex h-full flex-col ${aimed.over ? 'bg-brand/5 ring-1 ring-brand/40 ring-inset' : ''}`}
+      className={`flex h-full flex-col ${aimed.over ? DROP_OVER : ''}`}
       {...aimed.handlers}
     >
       <PageHeader icon={CalendarDays} label="Calendar" />

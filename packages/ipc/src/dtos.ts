@@ -340,6 +340,19 @@ export interface ArrivalHandoffDTO {
   reason?: string;
 }
 
+/** What a drop onto an open session gets back: where the files now sit. */
+export interface ArrivalAttachDTO {
+  /** One per file that landed, in the order it was handed over. */
+  files: {
+    /** Where it sits in the session folder, e.g. `source/notes.md`. */
+    file: string;
+    /** What it was called when it was handed over. */
+    original: string;
+  }[];
+  /** Files that could not be read, so never made it in. */
+  refused: { name: string; error: string }[];
+}
+
 /**
  * How a batch of dropped sources is going (docs/critical-mass.md CM-2). A pile
  * takes minutes, so the one line the PM is watching counts instead of spinning.

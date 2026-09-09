@@ -146,53 +146,79 @@ ever runs. Bind to `127.0.0.1` only.
 
 ---
 
-### DM-4. Matching: the same prefix gets the next recorded turn
+### DM-4. Routing: a trigger kind, the skill in force, and the turn index
 
-**What:** The hard part. Requests are not byte-identical between runs: session ids, dates,
-timestamps and byte counts change. Matching on a hash of the request would never hit.
+**What:** The text-matcher below was replaced 2026-09-09 by a script engine
+(`docs/plan-demo-replay.md`), because a matcher that reads tool results breaks whenever the
+vault, a skill or a proposal id differs from the day something was recorded. A scenario is now
+data, `demo/scenarios/s1.json` to `s5.json`, not a bank of recordings to score. Nothing typed is
+compared, ever, so a typo or a paraphrase changes nothing.
 
-**Change:** Each recording is one conversation: `{ turns: [{ request, response }] }`. To
-answer a request:
+**Original change (superseded):** Each recording was one conversation. Requests were normalised
+(UUIDs, dates, timestamps and long digit runs replaced with placeholders) and matched against
+every recording's requests by longest common prefix, ties broken on the system prompt, and the
+recorded turn at `assistantCount` served.
 
-1. Normalise every `user`-role message in it (user text and tool results): replace UUIDs,
-   `YYYY-MM-DD` dates, ISO timestamps and long digit runs with placeholders.
-2. Do the same to every recording's requests once at load.
-3. Pick the recording whose normalised user-side prefix matches the request's best (longest
-   common prefix over user messages, then over the system prompt).
-4. Return the recorded turn at index = number of assistant messages already in the request.
+**What runs now:** every request is one of two kinds.
 
-Assistant messages are not compared. That is what makes hand edits possible: after you change
-a recorded answer, the app sends the changed text back in the next request, and the matcher
-still finds the conversation because it only reads the user side.
+- **A cheap single-turn call** (naming a session, a claim check, a document summary, a folder
+  purpose) is answered by rule, from `cheap-answers.ts`, classified on the first line of its
+  system prompt. A claim or a summary the running scenario names in its `lookups` gets that
+  exact line; anything else gets a quiet default (`NEW | - | -` for a claim nobody named, the
+  document's own first sentence, cut to 160 characters, for a summary nobody named).
+- **A session turn** is routed. The engine takes the first user message, strips the card-state
+  wrapper the runtime adds from the second turn on, and classifies it: a kickoff names a skill
+  (`kind: skill`), a spawned child's system prompt says so (`kind: child`), anything else was
+  typed (`kind: typed`) under whichever skill was in force. The skill in force is read off the
+  system prompt: every skill that arrived in the session is appended as a brief that opens with
+  `## Skill now in force: <name>` (`buildSkillBrief`), the last one wins, and none means the
+  base skill, `ask`, which the runtime never appends. That classification decides which
+  conversation the session is: the first free one, in every scenario in id order, whose
+  trigger fits. A `skill` trigger fits on the skill name. A `typed` trigger fits on the skill
+  in force when it names one (`trigger.skill`) and on the words it lists when it lists any
+  (`trigger.any`, case-insensitive substrings, one is enough). Once bound, that opening always
+  returns to the same conversation. The turn served is `turns[n]`, `n` being the number of
+  assistant messages the request already carries, same rule as before.
 
-Recorded responses carry the dates of the day they were recorded. Each recording stores the
-vault offset in force that day (`offsetDays`), and at replay the answers slide by today's
-offset minus that one, so a recording replayed on its own record day moves nothing. A recorded
-todo due in a week comes out a week from the demo day, whichever day that is.
+  So the presenter picks the scenario by what he does. A drop is S1 (arrival), "Brief me" is
+  S1 (meeting-prep), a bare weekly-update pick is S5, a paste under Handle a commitment is S3,
+  a line under Iterate on something is S4, and a plain question with `SCH-121` or "who needs to
+  know" in it is S2. One Reset before the demo (DM-9), then any subset in any order, each once,
+  with no reset between. There is no Start button and nothing pinned. `ScriptEngine.pin()`
+  exists for the lint, which runs one scenario alone with it; nothing in the app calls it.
 
-A date inside a path or a wikilink never slides. The vault shift renames no files (`shiftProse`
-masks wikilinks for the same reason), so `decisions/2026-05-18-h2-order-payroll-first` is that
-file's name on every demo day.
+Beyond `trigger.any`, the typed text is fingerprinted (`normalise()`: UUIDs, dates, timestamps
+and long digit runs replaced) only so the same opening keeps returning to the same binding
+across turns. Its content is not otherwise read, so what Erik types or pastes never has to match
+the script.
 
-**Decision:** build (Erik, 2026-09-05)
+**Dates.** A script is written in anchor time, the same 2026-07-17 frame as `vault-dev/`. At
+serve time every plain date slides by today's offset, the rule `replay-dates.ts` already had (a
+path or a wikilink never slides on its own). A script can also write `{{today}}`,
+`{{today+7}}`, `{{today-1}}` or `{{date:2026-07-16}}` for a value that has to land on a specific
+demo-day date: a calendar-mirror path, a `sources/` page `file_source` wrote today. Nothing
+inside a template slides twice: it resolves to a final value, that value is hidden behind a
+marker while the rest of the text takes the ordinary slide, then it is put back untouched.
 
-**Notes:** Built (`replay-matcher.ts`). **Fixed 2026-09-08:** the shift slid by the vault's whole
-offset from the anchor rather than by the distance from the record day, and it slid paths as well
-as prose. Measured against the first real recordings, all 89 date-bearing paths in the recorded
-tool calls pointed at files that do not exist, on every demo day including the record day itself.
-`replay-dates.ts` now masks paths and wikilinks, `Recording.offsetDays` carries the record day,
-and the server slides by the difference. All 89 resolve at offsets 0, 12 and 65.
+**When nothing fits:** DM-6.
 
-**Second fix, same day.** Two drops opened with the same sentence ("1 source just landed in your
-session folder, unfiled"), because the filename lived only in `input.md`, which the agent has not
-read at turn 0. Nothing on the user side told the two conversations apart, so the tie fell to the
-system-prompt comparison and the cold replay served the wrong one: a dropped steering transcript
-read `source/support-thread-brunos.md` and fell through to the fallback line. The arrival kickoff
-now names the files it hands over (`nameList` in `handlers.ts`), so the first message differs and
-a typed mismatch is never tolerated. The two arrival recordings have to be made again. Eligible when the turn index exists, the first user message matches, and the user side matches fully or the first mismatch is a tool result with ≥50% matched (`MIN_PREFIX_RATIO`). A mismatch on typed text is never tolerated. `_fallback.json` shipped. A single-turn `completeSimple` call (naming, a summary, a claim check) is a
-conversation of length one. Same mechanism. One recording file per conversation under
-`demo/recordings/<short-key>.json`, where the key is the first user line, slugged, so the
-folder reads like the demo script.
+**Decision:** build (Erik, 2026-09-05); the matcher above replaced by the script engine (Erik,
+2026-09-09, `docs/plan-demo-replay.md`).
+
+**Notes:** Built: `scenario.ts` (the `Scenario`/`Conversation`/`Turn` types and the loader),
+`script-engine.ts` (routing, binding, off-script), `script-templates.ts` (templates and the date
+slide), `cheap-answers.ts` (the four rule answers, importing the real prompts from `@qale/agent`
+so a wording change on `main` is a change here too). `replay-matcher.ts` and its test are
+deleted; the date-shift tests moved to `replay-dates.test.ts`.
+
+One gap against the plan as drafted: the naming call for a kickoff session does not read the
+conversation's own `title` field. Nothing on a kickoff's first message ties it to a bound
+conversation the way a typed session's `First message:` text does, so it falls back to the page
+the skill was pointed at, then the skill's own name. `ScriptEngine.pin()` on an unknown scenario
+id logs an error and keeps the current pin rather than clearing it; only the lint pins.
+`validateScenario()` checks shape only and returns `{ errors }`; whether a tool exists, a
+template resolves, or the `do` line carries one of `trigger.any` is the lint's job
+(`pnpm demo:lint`, DM-10).
 
 ---
 
@@ -210,25 +236,38 @@ then emit whole. The recording carries no timing.
 
 **Notes:** Built with the three constants as written (`DEFAULT_PACING`).
 
+**Superseded 2026-09-09.** The fixed constants above are the pre-script-engine numbers. The
+script engine paces per turn instead (DM-4): 700 ms before a tools-only turn, 1200 ms before a
+turn with text, 1500 ms for a conversation's first turn, unless the script's own `turn.pause`
+says otherwise. Text still streams at 400 characters a second, now with ±25% jitter on each
+delta so it does not read as a metronome (`DEFAULT_PACING` in `replay-server.ts`, the jitter in
+`replay-sse.ts`).
+
 ---
 
-### DM-6. When nothing matches
+### DM-6. When nothing matches: off script
 
-**What:** The cofounder types a question nobody recorded. The matcher scores every recording
-low.
+**What:** The cofounder types, or the model goes, somewhere none of the five scripts covers.
 
-**Change:** Below a match threshold the server returns one fixed text turn, itself in a
-recording file (`demo/recordings/_fallback.json`) so it can be edited like the rest:
+**Change:** A request goes off script in two cases: no conversation's trigger fits and nothing
+is free to bind, or a session is already bound but has run past the last turn its conversation
+defines. Either way the engine answers with one fixed text block, `end_turn`, and binds and
+advances nothing, so the same opening asked again after a Reset is free to bind.
 
-> I'm the demo build, so I only know the walkthrough. Try one of the three prompts on the
-> Home page, or drop one of the two transcripts.
+The line it answers with: for a bound session past its script, the scenario's own `offScript`
+text if it has one (each of the five carries the same customer-safe line: "That is outside what
+this demo can show. The five things it can do are listed in Settings, under Demo."), templates
+resolved the same as any turn; for an opening nothing fits, the line in
+`demo/recordings/_fallback.json` (the same sentence); failing that, one built into the server.
 
 Alternative: if the demo build also has a real key on file, forward unmatched requests live.
-Costs a key on his machine and a network. Not in this draft.
+Costs a key on his machine and a network. Not built.
 
-**Decision:** build (Erik, 2026-09-05)
+**Decision:** build (Erik, 2026-09-05); the line is per scenario as of 2026-09-09.
 
-**Notes:** Built: `demo/recordings/_fallback.json`, editable. No live fallback.
+**Notes:** Built: the `offScript()` path in `script-engine.ts`. `demo/recordings/_fallback.json`
+still exists and is still editable, and still answers when a scenario carries no `offScript` of
+its own. No live fallback, no real key involved.
 
 ---
 
@@ -324,46 +363,61 @@ whatever he did in the last demo.
 
 **Decision:** build (Erik, 2026-09-05)
 
-**Notes:** Built: `DemoService.reset()`; Settings → Demo tab (`DemoSettings.tsx`) with Reset (inline confirm) and Open demo files (`~/Desktop/Qale demo files/`). The step buttons were deleted on 2026-09-08. Shift logic now lives in `@qale/domain/demo` (`packages/domain/src/demo/shift.ts`), shared with `refresh-demo.ts` (dry output byte-identical). Unit-tested against temp dirs; the button was NOT clicked in a live window. Open point: the reset workspace has no `.git`, so "put it back" is unavailable during a demo. The demo files he drags in have to be somewhere he can find them. Reset also copies
+**Notes:** Built: `DemoService.reset()`; Settings → Demo tab (`DemoSettings.tsx`) with Reset (inline confirm), a read-only list of the five scenarios (title and `do` line) as a reminder, and Open demo files (`~/Desktop/Qale demo files/`). The step buttons were deleted on 2026-09-08; the per-scenario Start button was added and deleted on 2026-09-09, because the engine picks the scenario from what the presenter does (DM-4) and Reset is pressed once before a demo. Shift logic now lives in `@qale/domain/demo` (`packages/domain/src/demo/shift.ts`), shared with `refresh-demo.ts` (dry output byte-identical). Unit-tested against temp dirs; the button was NOT clicked in a live window. Open point: the reset workspace has no `.git`, so "put it back" is unavailable during a demo. The demo files he drags in have to be somewhere he can find them. Reset also copies
 `demo-samples/` to `~/Desktop/Qale demo files/`, and the Demo section has an "Open demo
 files" button.
 
 ---
 
-## E. The recording workflow
+## E. The authoring workflow
 
-### DM-10. Record once, tweak, commit (stage 2)
+### DM-10. Author a script: record once, draft, edit, lint, run cold
 
-**What:** How the recordings get made, and how they stay honest. This is the stage 2 work. The
-script below uses the current `demo-samples/` as a stand-in; the real walkthrough replaces it
-when the scenario is prepared.
+**What:** How the five files under `demo/scenarios/` get made and stay right. A script ships;
+a recording is only ever a draft of one, and editing it costs minutes, not a re-record.
 
-**Change:** A runbook, in this doc once decided:
+**Change:**
 
-1. `git checkout demo`, `pnpm refresh-demo`.
-2. `QALE_DEMO=1 QALE_DEMO_RECORD=1 pnpm desktop` with a real Anthropic key in Settings. The
-   replay server proxies and records into `demo/recordings/`.
-3. Walk the script in order: drop the Nordkap transcript, approve the cards; drop the
-   Kranelund transcript, approve; paste the standup note; the three chat prompts; one Jira
-   write (create the SCIM ticket) and one Confluence write; one librarian "Run now" if DM-7
-   wants it.
-4. Read the recordings. Fix wording, cut a weak insight, sharpen a headline. Only edit
-   `response` content. Do not touch the `request` side: that is what the matcher reads.
-5. `pnpm test`, then a full replay run with the clock pinned to another day to prove the date
-   shift holds: `QALE_DEMO=1 QALE_DEMO_TODAY=2026-10-01 pnpm desktop`.
-6. Commit recordings + fixture on `demo`. Build the dmg.
+1. Reset, then run the scenario once in record mode, same as before:
+   `QALE_DEMO=1 QALE_DEMO_RECORD=1 pnpm desktop` with a real Anthropic key in Settings. The
+   replay server proxies to Anthropic and writes every turn into `demo/recordings/`.
+2. `pnpm demo:draft --scenario s1 --from demo/recordings/<file>.json` runs
+   `script-from-recording.ts`. It keeps each assistant turn's text and tool calls, drops read
+   tools (`vault_read`, `vault_list`, `vault_grep`, `files_*`, the connector reads) and
+   `check_claims` unless told to keep them, drops thinking blocks, un-slides every date by the
+   recording's own offset so the file reads in anchor time, and turns a path or wikilink dated
+   within two weeks of the record day into a `{{today}}` or `{{date:X}}` template. It writes
+   `demo/scenarios/s1.json` with `draft: true` and prints what it could not make stable by
+   itself: a proposal id, a Jira page id, a value reused from the previous tool result, a
+   `withdraw_proposal` call.
+3. Edit the file by hand. There is no "request side" any more, so any field may change:
+   sharpen the text, cut a card, fix a `search` block, remove what the draft flagged. A typed
+   conversation gets the skill it is typed under (`trigger.skill`, `ask` for none) and a word
+   or two the `do` line makes the presenter type (`trigger.any`).
+4. `pnpm demo:lint` (`apps/desktop/scripts/lint-scenarios.ts`), headless, no Electron, no model.
+   Per scenario, at three date offsets (0, 12 and 65 days from the anchor), it checks the
+   file's shape, builds a workspace the way Reset builds one, and runs every scripted tool call
+   for real against it: a refusal, a throw, an unresolved template, an unknown tool or a schema
+   mismatch is an error naming the scenario, the turn and the tool. It also drives one script
+   engine over every scenario forwards and backwards, with nothing pinned, to prove `reset()`
+   leaves no binding behind. Then the sequence pass: for each of four orders it builds one
+   workspace, routes every scenario's opening through an unpinned engine (a real system prompt
+   with the `## Skill now in force:` line for S3 and S4) and runs every tool call, with no reset
+   between scenarios; a wrong binding or a call that fails because an earlier scenario changed
+   the workspace is an error naming the order. Fix until it prints `OK`.
+5. `QALE_DEMO=1 QALE_DEMO_TODAY=2026-10-01 pnpm desktop`, Reset, run the scenario once cold on a
+   day nobody drafted against, and look at the cards. Commit, with `draft: true` removed.
 
-For stage 1, steps 2 to 5 run once with whatever the current vault and samples produce, and
-those recordings are thrown away. They exist to prove the matcher, the pacing, the date shift
-and Reset, not to be shown to anyone.
+**Decision:** build (Erik, 2026-09-05); steps 2 to 5 replaced by the script/lint workflow (Erik,
+2026-09-09, `docs/plan-demo-replay.md`).
 
-**Decision:**
-
-**Notes:** Recordings contain the system prompt, which contains the skill files. When a skill
-changes on `main` and `demo` takes the merge, the prefix match still holds (the system prompt
-is the tiebreaker, not the key), but the recorded answers may no longer fit the new
-instructions. Re-record after any merge that touches `skills/` or `prompts.ts`. Budget a
-re-record as a one-hour job.
+**Notes:** Built: `demo-draft.ts` (`pnpm demo:draft`), `lint-scenarios.ts` (`pnpm demo:lint
+[--scenario s1] [--offsets 0,12,65]`). Not wired into CI; run it by hand before a demo day, and
+again after any merge from `main` that touches `packages/agent/src/tools.ts` or the proposals
+use case (`docs/demo-runbook.md`). The five scripts are `s1.json` "The meeting produced actions"
+through `s5.json` "The Friday update"; each carries the `do` line shown on its Settings row
+(DM-9) and its own off-script line (DM-6). The recordings under `demo/recordings/` are removed
+once the lint is green on all five; `_fallback.json` stays.
 
 ---
 

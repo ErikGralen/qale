@@ -61,7 +61,7 @@ Customers (the `customers/` folder):
 | Fjord Sports | Active, retail, 60 stores | Was told "Q4" for payroll export. That answer is about to be wrong. |
 | Kaffekopp | Churned | Churned last year after asking for something that had already shipped. The cautionary tale on the customer page. |
 
-Themes (`themes/`): **Shift swaps** (staff trade shifts in the app, manager approves; committed), **Payroll
+Themes (`research/`): **Shift swaps** (staff trade shifts in the app, manager approves; committed), **Payroll
 export** (hours to payroll systems; committed, about to be deferred), **Auto-schedule suggestions** (exploring),
 **Offline mode** (won't-do, declined twice).
 
@@ -83,6 +83,12 @@ The storyline spine, in anchor-relative dates (`ANCHOR = 2026-07-17`, so `refres
   recurring, "Bruno's CS sync" (anchor plus 4 days).
 
 ## 3. The flows
+
+> Replaced 2026-09-09. The six flows below are the chain this doc argued for; they depended on
+> each other and ran in a fixed order. `docs/plan-demo-scenarios.md` recut them into five
+> independent scenarios, `demo/scenarios/s1.json` to `s5.json`, run through the script engine in
+> `docs/demo-mode.md`. Kept here for the pains and the beats each flow was built to show; the
+> dataset in sections 1 and 2 above still holds.
 
 Each flow is one door, one batch of cards, one approval. All of them run on the current product: the `arrival`
 session on drop or long paste, Ask with citations, the Jira/Confluence mirror in `tickets/` and `wikipages/`,
@@ -182,6 +188,10 @@ the open re-estimate.
 
 ## 4. Suggested 12-minute arc
 
+> Replaced 2026-09-09, along with section 3: the arc below chains the six flows in a fixed
+> order, which is exactly what the five scenarios were built to stop needing. Run any of S1 to
+> S5 in `demo/scenarios/`, in any order, from `docs/demo-runbook.md`.
+
 | Min | Flow | Beat |
 |---|---|---|
 | 0-1 | Setup | Finder: the vault is markdown. Jira and Confluence in another tab, real. |
@@ -200,7 +210,7 @@ Vault (`vault-dev/`), all new content, dates relative to `2026-07-17`:
 
 - `people/` 7 notes with `email`, `role`, `cares_about`, `last_told`.
 - `customers/` 4 notes, Kaffekopp with the churn story in prose.
-- `themes/` 4 notes with `stance` and `evidence`.
+- `research/` 4 notes with `stance` and `evidence`.
 - `decisions/` the standing H2-order decision (`standing: active`), the offline-mode won't-do, and 2 to 3 older ones
   so the decision spine looks lived-in.
 - `insights/` 3 to 4 seeded (Café Nord's September turnover, Fjord Sports' Q4 expectation, one on auto-schedule).
@@ -208,7 +218,6 @@ Vault (`vault-dev/`), all new content, dates relative to `2026-07-17`:
 - `todos/` 4 to 5, one overdue (Fjord Sports), one waiting-on (Henrik).
 - `meetings/` the Q2 Café Nord QBR (with Marcus's promise in the notes), last steering, two 1:1s.
 - `tickets/jira/` mirror files for `SCH-231` and its three stories, `SCH-118` and two stories, three `PLT` fillers.
-  A second snapshot (or a `--done` flag in `refresh-demo`) with `SCH-231` and its last story Done for Flow 4.
   `wikipages/confluence/roadmap-h2.md` and `product-weekly-update.md`.
 - `skills/` keep `arrival`, `commitment-check`, `process-note`, `weekly-update`, `spec`, `iterate`, `tell-qale`,
   house rules, the Jira and Confluence style guides. No `broken-demo` or any other fixture a real user would not
@@ -222,7 +231,7 @@ Connector seeds:
   `SCH`, `APP`, `PLT`; the epics and stories above with states, assignees, one Blocks link, seeded comments;
   Confluence space `PROD` with "Roadmap H2" and "Product weekly update", bodies read from
   `vault-dev/wikipages/confluence/`. Demo-created items (the new `SCH` story from Flow 1, the two comments) are absent
-  from `CAST` so reset removes them. `--done` flips the keys in `DONE_SNAPSHOT_KEYS` for Flow 4.
+  from `CAST` so reset removes them. One cast serves every scenario; there is no second snapshot.
   **The Atlassian site must have the three projects created by hand** (default To Do / In Progress / Done workflow);
   the script creates issues and the space, never projects. `tavla-demo.atlassian.net` has none of them yet.
 - `scripts/seed-google-calendar.ts` `CAST_MEETINGS`: past = vault, upcoming = calendar. Steering weekly from

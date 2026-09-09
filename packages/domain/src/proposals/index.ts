@@ -49,6 +49,7 @@ export {
 export {
   writePolicy,
   SEND_WAITS_REASON,
+  NEW_DOCUMENT_WAITS_REASON,
   APPROVED_REASON,
   appliesSilently,
   describeWritePolicy,

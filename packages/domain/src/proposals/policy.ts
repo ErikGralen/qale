@@ -1,12 +1,17 @@
 /**
  * The write policy: which writes wait for the PM (docs/fewer-approvals.md FA-1).
  *
- * The rule is what a write DOES, not where the file sits. Four things wait: a
- * send out of the workspace, a delete, a rewrite of prose the PM typed, and
- * anything Qale had to assume. Everything else lands as it is written: a
- * meeting page from a transcript, a todo, text added at the end, a new
- * document, and all of Qale's memory. Git commits every landed write, Activity
- * keeps the row, and one press puts it back.
+ * The rule is what a write DOES, not where the file sits. Five things wait: a
+ * send out of the workspace, a delete, a rewrite of prose the PM typed,
+ * anything Qale had to assume, and a new page in Documents. Everything else
+ * lands as it is written: a meeting page from a transcript, a todo, text added
+ * at the end, and all of Qale's memory. Git commits every landed write,
+ * Activity keeps the row, and one press puts it back.
+ *
+ * Documents is the one folder the rule still names, and it names it for what
+ * the write does: a new page there is a document the PM did not write, sitting
+ * with the ones they did. Qale takes its own notes in Memory, so a page it
+ * wants for itself goes to `research/` and lands.
  *
  * The policy used to decide by folder, and asked for every write in the PM's
  * three folders. That made the PM confirm their own words: a card asking
@@ -115,7 +120,8 @@ export function isStyleFile(path: string | null | undefined): boolean {
 
 /**
  * The folder behind the Documents screen. It holds what the PM writes: scratch
- * notes, briefs, PRDs, specs (E-14).
+ * notes, briefs, PRDs, specs (E-14). A new page here always waits, see
+ * {@link isNewUserDocument}.
  */
 export const USER_DOCUMENTS_DIR = 'notes/';
 
@@ -204,7 +210,29 @@ export const SEND_WAITS_REASON = 'Nothing sent to another system can be taken ba
 export const APPROVED_REASON = 'You approved it.';
 
 /**
- * The four writes that wait, wherever they point. First rule that matches wins.
+ * Why a new document waits. The Activity row and the card both say it, so it is
+ * written once here.
+ */
+export const NEW_DOCUMENT_WAITS_REASON =
+  'Documents are yours. Qale wrote a new page there, so you see it first.';
+
+/**
+ * Is this write a new page in the PM's own folder?
+ *
+ * `kind` is what says new: a `note` makes a page, an `update` changes one that
+ * is already there. The path is what says whose folder it is. A todo and a
+ * meeting page are made by the same kind, and they live in folders of their
+ * own, so the path keeps them out of this rule.
+ *
+ * Agents take their notes in Memory, not in Documents. A page Qale wants for
+ * itself belongs in `research/`, and that one lands.
+ */
+function isNewUserDocument(facts: WriteFacts): boolean {
+  return facts.kind === 'note' && (facts.targetPath ?? '').startsWith(USER_DOCUMENTS_DIR);
+}
+
+/**
+ * The five writes that wait, wherever they point. First rule that matches wins.
  *
  * 1. A send goes to Jira, Confluence, a calendar or mail, and the code has no
  *    compensating action for it. One card per send, every time (E-7). No flag
@@ -217,7 +245,12 @@ export const APPROVED_REASON = 'You approved it.';
  * 3. Qale assumed something. An unattended run out of questions picks an option
  *    and writes "Assumed:" in the rationale, and the rationale is only read on
  *    a card.
- * 4. The write rewrites prose the PM typed. What they asked for in the chat is
+ * 4. The write makes a new page in Documents. That folder is the PM's, and a
+ *    document they did not write is not a small thing to find in it. `asked`
+ *    does not lift this one: pressing Approve is the confirmation, and a claim
+ *    by the agent that the PM asked is not. An update to a page already there
+ *    keeps rule 5, so an append still lands.
+ * 5. The write rewrites prose the PM typed. What they asked for in the chat is
  *    the one exception: they said to change it, so a card would ask them to
  *    confirm their own instruction (E-4).
  */
@@ -230,6 +263,9 @@ function rulingThatWaits(facts: WriteFacts): WriteRuling | null {
   }
   if (facts.assumed) {
     return { disposition: 'ask', reason: 'Qale assumed something here, so it waits for you.' };
+  }
+  if (isNewUserDocument(facts)) {
+    return { disposition: 'ask', reason: NEW_DOCUMENT_WAITS_REASON };
   }
   if (facts.rewritesUserText && !facts.asked) {
     return { disposition: 'ask', reason: 'This rewrites what you wrote, so you see it first.' };
@@ -343,10 +379,6 @@ const LANDS: readonly ExplainedWrite[] = [
     facts: { kind: 'update', noteType: 'todo', targetPath: 'todos/2026-09-07-send-the-dates.md' },
   },
   {
-    what: 'A new document',
-    facts: { kind: 'note', targetPath: 'notes/pricing-brief.md' },
-  },
-  {
     what: 'Text added at the end of a document or a meeting page',
     facts: { kind: 'update', appendOnly: true, targetPath: 'notes/rollout-runbook.md' },
   },
@@ -385,6 +417,10 @@ const WAITS: readonly ExplainedWrite[] = [
     facts: { kind: 'outbound' },
   },
   { what: 'Deleting a page, wherever it sits', facts: { kind: 'delete' } },
+  {
+    what: 'A new document, because that folder is yours',
+    facts: { kind: 'note', targetPath: 'notes/pricing-brief.md' },
+  },
   {
     what: 'A rewrite of something you wrote, in a document or in your meeting notes',
     facts: { kind: 'update', rewritesUserText: true, targetPath: 'notes/rollout-runbook.md' },

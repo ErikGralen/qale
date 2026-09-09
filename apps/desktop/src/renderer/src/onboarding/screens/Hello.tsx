@@ -49,9 +49,10 @@ export function Hello({ onNext }: { onNext: () => void }) {
           <p>
             That folder is where you work. Write notes, drop in transcripts, ask questions. The AI
             reads what you give it, files it, and drafts the follow-ups. Most of that lands as it is
-            written, listed in Activity, where one press puts it back. Four things wait for you
-            first: anything sent to Jira, Confluence or a calendar, a page deleted, a rewrite of
-            something you wrote, and anything the AI had to assume.
+            written, listed in Activity, where one press puts it back. Five things wait for you
+            first: anything sent to Jira, Confluence or a calendar, a page deleted, a new document
+            in your own folder, a rewrite of something you wrote, and anything the AI had to
+            assume.
           </p>
           {/* The why, then the limit of the promise in the same breath (OW10).
               "Nothing leaves" was never true of the model, and a boundary

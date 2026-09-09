@@ -5,10 +5,10 @@ them in any order and show as many as you have time for, each once. Press **Rese
 Settings → Demo once before the demo, then leave Settings closed: Qale picks the scenario from
 what you do.
 
-| File                         | What you do with it                    | Scenario |
-| ---------------------------- | -------------------------------------- | -------- |
-| `steering-h2-priorities.vtt` | Drag it into Home, type a line, send   | Meeting  |
-| `marcus-offline-mode.md`     | Copy the text, paste it into Home      | Request  |
+| File                         | What you do with it                  | Scenario |
+| ---------------------------- | ------------------------------------ | -------- |
+| `steering-h2-priorities.vtt` | Drag it into Home, type a line, send | Meeting  |
+| `marcus-offline-mode.md`     | Copy the text, paste it into Home    | Request  |
 
 Use the copies in this folder. They are dated so that the steering meeting was yesterday.
 

@@ -24,17 +24,27 @@ import type { ContentBlock, WireMessage } from '../src/main/demo/replay-recordin
  * someone runs a vault path through `path.join` is one that hands the loader a
  * Windows-shaped folder deliberately and then reads the served tool calls back.
  *
- * A backslash is a legal character in a macOS filename, so the folder below is
- * a real directory whose NAME is `C:\Program Files\Qale Demo\...`. That is what
- * makes the loader prove it treats the folder as opaque rather than parsing it.
+ * The folder is built differently on the two platforms, because the shape has
+ * to be real on both. On Windows the temp root is already a drive-letter path
+ * with backslashes, and `:` and `\` cannot appear in a name at all, so the
+ * shape comes free and the test folder only adds the spaces. On macOS both
+ * characters are legal in a name, so the whole Windows path becomes one folder
+ * NAME. That is what makes the loader prove it treats the folder as opaque
+ * rather than parsing it.
  */
 
 const FIXTURE = join(import.meta.dirname, 'fixtures', 'scenario-s1.json');
 
-/** A scenarios folder named the way Windows would name it. */
+/** The tail every install has under it, with the space Windows puts in it. */
+const TAIL = ['Qale Demo', 'resources', 'demo-assets', 'demo', 'scenarios'];
+
+/** A scenarios folder shaped the way Windows shapes one. */
 function windowsScenariosDir(): string {
   const root = mkdtempSync(join(tmpdir(), 'qale-win-'));
-  const dir = join(root, 'C:\\Program Files\\Qale Demo\\resources\\demo-assets\\demo\\scenarios');
+  const dir =
+    process.platform === 'win32'
+      ? join(root, 'Program Files', ...TAIL)
+      : join(root, `C:\\Program Files\\${TAIL.join('\\')}`);
   mkdirSync(dir, { recursive: true });
   cpSync(FIXTURE, join(dir, 's1.json'));
   return dir;
@@ -74,7 +84,9 @@ function arrival(assistantTurns: number): WireMessage[] {
 
 test('a Windows scenarios folder loads, and the vault paths inside it stay posix', () => {
   const dir = windowsScenariosDir();
-  assert.match(dir, /C:\\Program Files\\Qale Demo\\/);
+  // A drive letter, backslashes and a space, on both platforms.
+  assert.match(dir, /[A-Za-z]:\\/);
+  assert.match(dir, /Qale Demo\\resources\\demo-assets\\demo\\scenarios$/);
 
   const scenarios = loadScenarios(dir);
   assert.equal(scenarios.length, 1);

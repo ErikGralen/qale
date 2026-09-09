@@ -13,22 +13,45 @@
   "conversations": [
     {
       "id": "request",
-      "trigger": { "kind": "typed", "skill": "ask", "any": ["offline"] },
+      "trigger": {
+        "kind": "typed",
+        "skill": "ask",
+        "any": ["offline"]
+      },
       "title": "Marcus: offline mode for a retail prospect",
       "turns": [
         {
           "text": "This is a request from sales, so I am pulling in Handle a commitment and reading Marcus's ask against what the record says about offline mode.",
           "tools": [
-            { "name": "use_skill", "input": { "name": "commitment-check" } },
-            { "name": "vault_read", "input": { "path": "decisions/2026-02-12-decline-offline-mode.md" } },
-            { "name": "vault_read", "input": { "path": "meetings/2026-07-09-steering.md" } },
+            {
+              "name": "use_skill",
+              "input": {
+                "name": "commitment-check"
+              }
+            },
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "decisions/2026-02-12-decline-offline-mode.md"
+              }
+            },
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "meetings/2026-07-09-steering.md"
+              }
+            },
             {
               "name": "check_claims",
               "input": {
                 "claims": [
                   {
                     "claim": "Åsa reopened offline mode for H2 at steering on 2026-07-09.",
-                    "about": ["[[decisions/2026-02-12-decline-offline-mode]]", "[[meetings/2026-07-09-steering]]", "[[research/offline-mode]]"]
+                    "about": [
+                      "[[decisions/2026-02-12-decline-offline-mode]]",
+                      "[[meetings/2026-07-09-steering]]",
+                      "[[research/offline-mode]]"
+                    ]
                   },
                   {
                     "claim": "Marcus has brought offline mode to the PO for prospects before, and the answer was the February decision.",
@@ -37,7 +60,8 @@
                 ]
               }
             }
-          ]
+          ],
+          "pause": 3500
         },
         {
           "tools": [
@@ -62,11 +86,17 @@
                 ]
               }
             }
-          ]
+          ],
+          "pause": 1500
         },
         {
           "tools": [
-            { "name": "get_voice", "input": { "name": "sales" } },
+            {
+              "name": "get_voice",
+              "input": {
+                "name": "sales"
+              }
+            },
             {
               "name": "propose_note",
               "input": {

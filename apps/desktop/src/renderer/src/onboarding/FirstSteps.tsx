@@ -16,6 +16,7 @@ import {
 import type { ConnectionProgress, OnboardingDTO, SettingsDTO } from '@qale/ipc';
 import { connections, type ProviderDescriptorDTO } from '../lib/connections';
 import { MEETING_TOOLS, firstStepsTally, stepRank } from '../lib/first-steps';
+import { requestCapture } from '../lib/capture-event';
 import { invoke } from '../lib/ipc';
 import type { SettingsSection } from '../lib/settings-sections';
 import { useApp } from '../state/app-state';
@@ -67,7 +68,7 @@ function rank(r: Row): number {
 /** The row that folds open into "where do your meetings live". */
 const BACKLOG_ROW = 'transcript';
 
-export function FirstSteps({ onAddSource }: { onAddSource: () => void }) {
+export function FirstSteps() {
   const {
     settings,
     patchOnboarding,
@@ -140,7 +141,7 @@ export function FirstSteps({ onAddSource }: { onAddSource: () => void }) {
       // The Calendar is its own screen now (E-12), so the row that wants a
       // meeting to brief goes there, not into the folder underneath it.
       openCalendar: () => openCalendar(),
-      addSource: onAddSource,
+      addSource: () => requestCapture(),
       ask: () => openSession('ask'),
       // The interview, not a file to edit (docs/product-understanding.md U-4).
       // It opens in its own tab and starts talking, because the whole lesson of
@@ -170,7 +171,6 @@ export function FirstSteps({ onAddSource }: { onAddSource: () => void }) {
     openChats,
     openSession,
     openChat,
-    onAddSource,
   ]);
 
   const remaining = rows.filter((r) => !r.done).length;

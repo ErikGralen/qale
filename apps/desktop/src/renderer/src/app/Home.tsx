@@ -36,7 +36,7 @@ import { Attachments } from '../components/Attachments';
 import { useToast } from '../components/toast';
 import { FirstSteps } from '../onboarding/FirstSteps';
 import { contentNotes } from '../lib/contexts';
-import { isBulkPaste } from '../lib/capture-event';
+import { isBulkPaste, requestCapture } from '../lib/capture-event';
 import { itemsFromFiles, pastedName } from '../lib/attachments';
 import { DROP_OVER, useFileDrop } from '../lib/file-drop';
 import { localDateStr } from '../lib/dates';
@@ -55,7 +55,7 @@ import { localDateStr } from '../lib/dates';
  * with a destination.
  */
 export function Home() {
-  const { vault, openVaultDialog, skills, pickSource } = useApp();
+  const { vault, openVaultDialog, skills } = useApp();
   // The composer's text lives out here because two things write it: the PO
   // typing, and a starter below the bar handing it a first sentence. The
   // picked skill lives out here too, for the same reason: a starter with an
@@ -78,11 +78,6 @@ export function Home() {
     inputRef.current?.focus();
   };
   const drop = useFileDrop(addFiles);
-
-  const choose = async () => {
-    const picked = await pickSource().catch(() => []);
-    addFiles(picked);
-  };
 
   if (!vault) return <NoWorkspace onOpen={openVaultDialog} />;
 
@@ -109,10 +104,10 @@ export function Home() {
         <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-8 pt-[clamp(48px,13vh,144px)] pb-16">
           <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
             <Greeting />
-            <QuickActions onAddSource={() => void choose()} />
+            <QuickActions />
           </div>
           <Notices />
-          <FirstSteps onAddSource={() => void choose()} />
+          <FirstSteps />
           {/* Extra air on top of the column gap: the pause before the page's
               centerpiece is part of what makes it the centerpiece. */}
           <div className="mt-4 flex flex-col gap-3">
@@ -201,13 +196,11 @@ function Greeting() {
  * ways of putting something *in*, and they sit up here rather than inside the
  * composer strip so a new user sees both verbs before they ever focus the bar.
  *
- * Add source opens the file picker and puts what it gets in the bar below, the
- * same place a drop lands. On a page with a composer a source goes into the
- * composer: the chips say what is about to happen, and the PO can say something
- * about the files before anything runs. The sidebar's Add source and ⇧⌘N still
- * open the tray, because they fire from pages that have no composer to fill.
+ * Add source opens the tray, the same one the sidebar button and ⇧⌘N open. A
+ * drop on the page is different: it lands in the bar below as chips, so the PO
+ * can say something about the files before anything runs.
  */
-function QuickActions({ onAddSource }: { onAddSource: () => void }) {
+function QuickActions() {
   const { captureNote, openDoc } = useApp();
 
   const newNote = async () => {
@@ -224,8 +217,8 @@ function QuickActions({ onAddSource }: { onAddSource: () => void }) {
       <Button
         variant="outline"
         size="sm"
-        title="Add a transcript, link or screenshot to the bar below"
-        onClick={onAddSource}
+        title="Add a transcript, link or screenshot"
+        onClick={() => requestCapture()}
       >
         <FileUp className="size-3.5 text-muted-foreground" aria-hidden /> Add source
       </Button>

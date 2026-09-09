@@ -37,6 +37,18 @@ test('a bare filename and an unknown type still have to sit one level deep', () 
   assert.equal(placementError('research/competitors.md', undefined), null);
 });
 
+test('a voice is a skill by type but lives in voices/, and the path says so', () => {
+  // The weekly-update skill rewrites voices/exec.md the first time it runs.
+  assert.equal(placementError('voices/exec.md', 'skill'), null);
+  assert.equal(placementError('voices/customer.md', undefined), null);
+  // Still one level deep: voices/ is flat, and Qale makes no folders.
+  const said = placementError('voices/team/exec.md', 'skill');
+  assert.match(said!, /^Rejected: a voice lives in voices\//);
+  assert.match(said!, /Qale makes no folders/);
+  // A real skill page is unmoved by any of this.
+  assert.match(placementError('notes/weekly-update.md', 'skill')!, /lives in skills\//);
+});
+
 test("a document may go into a folder the PM made, never into one they didn't", () => {
   const theirs = (dir: string) => dir === 'notes/specs';
   assert.equal(placementError('notes/specs/checkout.md', 'note', theirs), null);

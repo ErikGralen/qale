@@ -20,6 +20,7 @@ import type { NoteRefDTO } from '@qale/ipc';
 import { buildKickoff } from '@qale/sessions';
 import { useApp } from '../state/app-state';
 import { useChatMentions } from './ChatMentions';
+import { ModelPicker } from './ModelPicker';
 import { SkillPicker } from './SkillPicker';
 import { PageHeader } from '../components/PageHeader';
 import { NewWorkspace } from '../components/NewWorkspace';
@@ -235,6 +236,11 @@ function HomeComposer({
 }) {
   const { tree, skills, openSession } = useApp();
   const [skillMenuOpen, setSkillMenuOpen] = useState(false);
+  // The model this question opens on, when the PO wants it off the workspace
+  // default. It has to be here rather than only in the session: the first
+  // message goes as the session opens, so by the time that view has a composer
+  // the turn a pick would have governed is already running.
+  const [pickedModel, setPickedModel] = useState<string | null>(null);
   const mentions = useChatMentions(tree, inputRef, ask, setAsk);
   useAutoGrow(inputRef, ask);
 
@@ -244,14 +250,18 @@ function HomeComposer({
     // required for the plain, skill-less ask.
     if (!q && !pickedSkill) return;
     setAsk('');
-    // One start, not a mode: the pick is spent on the session it opens, so the
-    // bar you come back to is the plain front door again.
+    // One start, not a mode: the picks are spent on the session they open, so
+    // the bar you come back to is the plain front door again.
     setPickedSkill(null);
+    setPickedModel(null);
     // No text but a skill picked is a bare kickoff — composed prose, not
     // something the PO typed, so it goes through buildKickoff and renders as
     // a run row rather than a message bubble.
     const prompt = q || buildKickoff({ skill: pickedSkill!, instruction: '' });
-    openSession(pickedSkill ?? 'ask', { initialPrompt: prompt });
+    openSession(pickedSkill ?? 'ask', {
+      initialPrompt: prompt,
+      ...(pickedModel ? { modelId: pickedModel } : {}),
+    });
   };
 
   return (
@@ -327,6 +337,16 @@ function HomeComposer({
           onClosed={() => inputRef.current?.focus()}
           open={skillMenuOpen}
           onOpenChange={setSkillMenuOpen}
+        />
+        {/* Same pair, in the same order, as the session composer's: which skill
+            runs, then which model runs it. */}
+        <ModelPicker
+          pinned={pickedModel}
+          onPick={setPickedModel}
+          onClosed={() => inputRef.current?.focus()}
+          describe={(label) => `${label} answers this. Pick another for the session it opens.`}
+          scope="the session this opens"
+          note="Applies to the session this opens. Your other sessions keep their own model."
         />
         {/* The lead carries its own word already; the hint steps aside as soon
             as a skill is picked so the strip never runs two deep. */}

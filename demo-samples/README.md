@@ -1,8 +1,9 @@
 # Qale demo files
 
-Five scenarios. Each one stands alone, so run them in any order and show as many as you have
-time for, each once. Press **Reset demo** in Settings → Demo once before the demo, then leave
-Settings closed: Qale picks the scenario from what you do.
+Five scenarios, plus a meeting brief that stands on its own. Each one is independent, so run
+them in any order and show as many as you have time for, each once. Press **Reset demo** in
+Settings → Demo once before the demo, then leave Settings closed: Qale picks the scenario from
+what you do.
 
 | File                         | What you do with it                    | Scenario |
 | ---------------------------- | -------------------------------------- | -------- |
@@ -37,6 +38,21 @@ SCH-231, a patch to the Roadmap H2 page. Approve them one at a time.
 
 **Open at the end:** the SCH-118 mirror, to show the comment with its source line, and Roadmap H2
 at version 18.
+
+## The brief for the next meeting
+
+**Do:** open **Calendar** from the rail, click **Café Nord QBR prep** four days out, and press
+**Get the brief**.
+
+**Type:** nothing.
+
+**Expect:** one proposal that writes a `## Prep` section on the meeting page: what Café Nord was
+last told and when, that Lena left the Q2 QBR with Marcus's "before September", that Marcus is in
+the room and still waiting on an ETA, and why no month goes out before Rebecca re-estimates
+SCH-240. Approve it.
+
+This one reads only the seed, so show it before the steering drop, after it, or on its own. A
+meeting never sits on the rail: Calendar is its home.
 
 ## Who needs to know
 

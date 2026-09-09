@@ -298,16 +298,30 @@
               }
             },
             {
+              "name": "vault_read",
+              "input": {
+                "path": "meetings/2026-06-05-cafe-nord-qbr.md"
+              }
+            },
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "tickets/jira/SCH-240.md"
+              }
+            },
+            {
               "name": "propose_update",
               "input": {
                 "path": "meetings/{{date:2026-07-21}}-cafe-nord-qbr-prep.md",
-                "append": "## Prep\n\n- Since last time: steering flipped the H2 order on 2026-07-16. Swaps ships first, ahead of payroll export ([[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]). Marcus's \"before September\" is now the plan, not the slip.\n- Give no month. Rebecca's re-estimate of the last swap story lands on 2026-07-24 ([[tickets/jira/SCH-240]]). Åsa's line if Lena pushes: \"more in a couple of weeks\", not a new date ([[meetings/{{date:2026-07-16}}-steering]]).\n- Landmine: Lena wrote down September at the Q2 QBR and has not chased it ([[meetings/2026-06-05-cafe-nord-qbr]], [[people/lena-strand]]). Say the order changed before she asks.\n- What shipped since the QBR: shift reminders in the staff app on 2026-07-15 ([[tickets/jira/APP-54]]), and chain-level week templates in use across her locations.\n- Deck: [[todos/cafe-nord-qbr-prep-deck]], due 2026-07-21. Marcus's swap ETA reply is still open ([[todos/reply-marcus-swap-eta]]).",
-                "rationale": "Marcus and Lena are both in this meeting, and the swap timeline changed last week. The brief says what changed, what not to promise, and where the old number is written down.",
+                "append": "## Prep\n\n- Last told, 2026-06-05: shift swaps in Q4, behind payroll export ([[meetings/2026-06-05-cafe-nord-qbr]], [[customers/cafe-nord]]).\n- What Lena left with is Marcus's \"before September\", said in the same hour. She wrote that down and has not chased it since ([[people/lena-strand]]). Say which number is true before she asks.\n- Marcus is in this meeting too, and he has asked three times this week for a swap ETA he can send ([[todos/reply-marcus-swap-eta]], [[people/marcus-ek]]). Agree one sentence with him first, or Lena hears two answers.\n- Give no month. Two of the three swap stories are done and [[tickets/jira/SCH-240]] is the one left; Rebecca asked on 2026-07-13 for a re-estimate before anyone quotes a date ([[tickets/jira/SCH-231]]). The deck says the same: no month on a slide before that estimate ([[todos/cafe-nord-qbr-prep-deck]], due 2026-07-21).\n- The H2 order is what she hears first. Åsa put payroll export in Q3 and swaps in Q4 on 2026-05-18 ([[decisions/2026-05-18-h2-order-payroll-first]]). If steering has moved it since, [[customers/cafe-nord]] says so, and that is the opening line.\n- What shipped since the Q2 QBR: shift reminders in the staff app on 2026-07-15 ([[tickets/jira/APP-54]]), and chain-level week templates, which Lena called the first thing that saved her regionals real time ([[decisions/2026-04-22-week-templates-chain-level]]).",
+                "rationale": "Lena and Marcus are both in this meeting, and the number Lena left the last QBR with is not the number on the record. The brief says what she was told, what not to promise, and what has shipped since.",
                 "sources": [
-                  "[[meetings/{{date:2026-07-16}}-steering]]",
-                  "[[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]",
                   "[[meetings/2026-06-05-cafe-nord-qbr]]",
+                  "[[customers/cafe-nord]]",
                   "[[people/lena-strand]]",
+                  "[[people/marcus-ek]]",
+                  "[[decisions/2026-05-18-h2-order-payroll-first]]",
+                  "[[tickets/jira/SCH-231]]",
                   "[[tickets/jira/SCH-240]]",
                   "[[tickets/jira/APP-54]]"
                 ]
@@ -318,7 +332,7 @@
         {
           "pause": 1400,
           "text": [
-            "The brief is on the meeting page. One thing to say out loud before Lena asks: the order changed on 2026-07-16, so September is the plan again, and there is no month until Rebecca's estimate on 2026-07-24."
+            "The brief is on the meeting page. One thing to settle before you walk in: Lena left the last QBR with Marcus's \"before September\", and there is no month to give her until Rebecca re-estimates SCH-240."
           ]
         }
       ]

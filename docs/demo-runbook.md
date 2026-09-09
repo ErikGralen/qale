@@ -39,6 +39,12 @@ the decision that supersedes the May order, and the todos, then the three outbou
 a time (a comment on SCH-118, a new SCH story, a Roadmap H2 patch). Open SCH-118 in the Jira tab
 to show the comment landed.
 
+**S1's brief, which stands on its own.** Open **Calendar**, click the Café Nord QBR prep four
+days out, and press **Get the brief**. It reads only the seed, so it can be shown before S1's
+drop, after it, or with no drop at all. One proposal writes a `## Prep` section on the meeting
+page: what Café Nord was last told, what Lena left the last QBR believing, and why no month goes
+out until Rebecca re-estimates SCH-240.
+
 **S2, who needs to know.** In Home, type: "SCH-121 shipped three weeks ago and nobody outside
 the team was told. Who needs to know, and what do I tell them?" Approve the ledger entries it
 proposes for Fjord Sports and the three colleagues. In the same session, type: "From now on,

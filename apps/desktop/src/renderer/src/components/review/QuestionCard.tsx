@@ -6,6 +6,7 @@ import { useApp } from '../../state/app-state';
 import { Key, useAutoGrow } from '../Composer';
 import { Markdown } from '../Markdown';
 import { stripWikilinks, WikiText } from './shared';
+import { linkifyNotePaths, outsideCode } from '../../lib/note-links';
 
 /**
  * The agent asking the PO something mid-turn (the `ask_user` tool). Inline in
@@ -425,7 +426,7 @@ function QuestionStep({
           {question.header}
         </span>
         <span className="font-medium text-foreground">
-          <WikiText text={question.question} onOpen={onOpen} />
+          <WikiText text={linkifyNotePaths(question.question)} onOpen={onOpen} />
         </span>
         {question.multiSelect && (
           <span className="ml-1.5 text-xs text-muted-foreground">
@@ -440,7 +441,10 @@ function QuestionStep({
           few paragraphs at most and never a document. */}
       {question.body && (
         <div className="mb-3 max-w-[64ch]">
-          <Markdown content={question.body} onOpenNote={(p) => onOpen(p)} />
+          <Markdown
+            content={outsideCode(question.body, linkifyNotePaths)}
+            onOpenNote={(p) => onOpen(p)}
+          />
         </div>
       )}
 

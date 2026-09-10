@@ -45,6 +45,7 @@ import { LandedRows } from '../components/review/LandedRows';
 import { SpawnCard } from '../components/review/SpawnCard';
 import { CodebaseCard } from '../components/review/CodebaseCard';
 import { QuestionCard } from '../components/review/QuestionCard';
+import { WikiText } from '../components/review/shared';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { useChatMentions } from './ChatMentions';
@@ -61,24 +62,7 @@ import {
 import { Attachments } from '../components/Attachments';
 import { attachedMessage } from '../lib/attachments';
 import { DROP_OVER, useFileDrop } from '../lib/file-drop';
-
-/**
- * Wrap bare note-path citations (decisions/adopt-workos.md) in wikilinks so they
- * render clickable. Skips paths already inside wikilinks or markdown link parens
- * (those are preceded by `[` / `(`, which the prefix class excludes).
- */
-function linkifyNotePaths(text: string): string {
-  return text.replace(/(^|[\s,;:])([a-z][\w-]*\/[\w./-]+\.md)\b/gim, '$1[[$2]]');
-}
-
-/** Rewrite prose only — a fenced block is data (a proposal payload, a diff) and
- *  stays exactly as written, paths and all. */
-function outsideCode(text: string, rewrite: (chunk: string) => string): string {
-  return text
-    .split(/(```[\s\S]*?```)/)
-    .map((chunk, i) => (i % 2 === 1 ? chunk : rewrite(chunk)))
-    .join('');
-}
+import { linkifyNotePaths, outsideCode } from '../lib/note-links';
 
 /**
  * What the PM sent, as markdown: the paths and `[[mentions]]` in it become
@@ -431,7 +415,15 @@ function ToolStep({ part }: { part: AnyPart }) {
  * as provenance ("Reasoning · 7 sources · 4 searches"); while streaming it
  * narrates the current step; expanded it shows the chronological trail.
  */
-function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
+function ActivityBlock({
+  parts,
+  live,
+  onOpen,
+}: {
+  parts: AnyPart[];
+  live: boolean;
+  onOpen: (path: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const elapsed = useElapsed(live);
   const sources = new Set<string>();
@@ -505,7 +497,7 @@ function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
                   key={i}
                   className="px-1.5 py-1 leading-relaxed whitespace-pre-wrap text-muted-foreground"
                 >
-                  {part.text}
+                  <WikiText text={linkifyNotePaths(part.text ?? '')} onOpen={onOpen} />
                 </div>
               );
             return <ToolStep key={i} part={part} />;
@@ -1273,7 +1265,12 @@ function SessionThread({
                 if (pending.length === 0) return;
                 const landed = landedWrites(pending);
                 nodes.push(
-                  <ActivityBlock key={`activity-${pendingFrom}`} parts={pending} live={live} />,
+                  <ActivityBlock
+                    key={`activity-${pendingFrom}`}
+                    parts={pending}
+                    live={live}
+                    onOpen={openDoc}
+                  />,
                 );
                 if (landed.length > 0)
                   nodes.push(

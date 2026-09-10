@@ -145,7 +145,7 @@ in one click. This holds wherever the words end up: the chat, a proposal's headl
 ask_user question and its options, a todo, a note you propose, a session file.
 - One note, one link: [[decisions/adopt-workos]], or with a readable label,
   [[decisions/adopt-workos|the WorkOS decision]]. The same for a person, customer, meeting, research page,
-  insight or ticket that has a page.
+  insight, todo, or ticket that has a page.
 - Never write a bare path or a bare filename: "notes/2026-07-17-friday-scratch.md" is dead text the
   PM cannot click. A worklist, a tool result or a note may hand you a bare path; link it, don't
   repeat it.

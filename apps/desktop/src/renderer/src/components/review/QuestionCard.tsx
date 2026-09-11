@@ -7,6 +7,7 @@ import { Key, useAutoGrow } from '../Composer';
 import { Markdown } from '../Markdown';
 import { stripWikilinks } from './shared';
 import { linkifyNotePaths, outsideCode } from '../../lib/note-links';
+import { isAnswered, isBatch, isWritten } from '../../lib/ask-card';
 
 /**
  * The agent asking the PO something mid-turn (the `ask_user` tool). Inline in
@@ -33,7 +34,8 @@ import { linkifyNotePaths, outsideCode } from '../../lib/note-links';
  * idea, a few paragraphs, rendered under the question line. And a question may
  * carry no options at all: then the box is open from the start and the answer
  * is what gets written in it. ↵ is a new line in the box and ⌘↵ moves on, the
- * way the composer sends.
+ * way the composer sends. Answer is live there from the first frame: an empty
+ * box says "nothing to add", which is an answer the PM is entitled to give.
  *
  * Two things it refuses to be:
  * - **A modal.** Skip is on every step and skipping does not stop the run: an
@@ -104,17 +106,8 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
     return { selected: picked[qi] ?? [], ...(text ? { written: text } : {}) };
   };
 
-  const isAnswered = (qi: number): boolean => {
-    const a = answerFor(qi);
-    if (a.selected.length > 0 || !!a.written) return true;
-    // Clearing every box on a batch is a decision, so the confirm stays live.
-    // Forcing "none of these" out through Skip would tell the agent to decide
-    // for itself, which is the opposite of what they just did.
-    return isBatch(request.questions[qi]!);
-  };
-
   const question = request.questions[step]!;
-  const answeredHere = isAnswered(step);
+  const answeredHere = isAnswered(question, answerFor(step));
   const last = step === total - 1;
 
   const finish = (answers: AskAnswerDTO[]) => {
@@ -259,7 +252,8 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
           </Button>
           {/* An inactive control never wears the accent (DESIGN §6): the accent
               arrives the moment the step is answered, and that arrival is the
-              only colour event in the component. */}
+              only colour event in the component. A written step is answerable
+              from the start, so it arrives already wearing it. */}
           <Button
             size="sm"
             variant={answeredHere ? 'default' : 'secondary'}
@@ -272,20 +266,6 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
       </div>
     </div>
   );
-}
-
-/**
- * Is this question a batch to review rather than a choice to make? One ticked
- * row is enough: the agent is saying "here is what I would do", and the whole
- * step reads differently from that point on.
- */
-function isBatch(question: AskQuestionDTO): boolean {
-  return question.options.some((o) => o.checked);
-}
-
-/** A question with no rows: the answer is what gets written. */
-function isWritten(question: AskQuestionDTO): boolean {
-  return question.options.length === 0;
 }
 
 /** What each question starts with ticked, by question index. */

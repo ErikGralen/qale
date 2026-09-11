@@ -100,8 +100,9 @@ Each one comes back as already known (do nothing), new (propose it below as you 
 conflict with a note we hold, implying something that is not there, or no answer. No answer means
 nothing was settled, so treat it as if you had never asked.
 
-A conflict is a question every time, asked before you write either side: what the material says,
-the note as a link, one question, and the two answers as options. Write what they chose and set
+A conflict is a question every time, asked before you write either side. Ask it in one line, under
+about twelve words, with no citation in it. What the material says and the note as a link go in
+the body, in one sentence. The two answers are the options. Write what they chose and set
 `asked`. A gap you can fill from the source is not a question at all; fill it. A gap only the PM
 can fill can earn one. Ask about their world, never about our filing. The answer says how many of
 them to ask.

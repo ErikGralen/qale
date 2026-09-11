@@ -58,10 +58,11 @@ Before you close a todo, move its date, or write an owner or a number, call `che
 with what you are about to write, the way the arrival skill does. Scope each claim to the pages it
 is about: the todo, the person, the customer.
 
-A conflict is a question every time, asked before the write: what you have, the note as a link, one
-question, and the two answers as options. Then write what they chose and set `asked`. A close the
+A conflict is a question every time, asked before the write. Ask it in one line, under about twelve
+words, with no citation in it. What you have and the note as a link go in the body, in one sentence.
+The two answers are the options. Then write what they chose and set `asked`. A close the
 PM said out loud in a source is theirs, so write it. A close you worked out yourself is a question
-("Lena said the October plan arrived. Mark the send-lena-the-october-plan todo done?").
+("Mark the send-lena-the-october-plan todo done?", with what Lena said about the plan in the body).
 
 ## Produce: a commitment of yours
 

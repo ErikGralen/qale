@@ -51,11 +51,12 @@ export const ASK_MAX_QUESTIONS = 20;
 export const ASK_MAX_OPTIONS = 4;
 
 /**
- * The paragraphs under a question, when it carries any (docs/iterate-in-chat.md).
- * An idea in a round is argued in a few paragraphs and read on the card, so the
- * card has to hold them. Markdown, never flattened, and NOT replayed after a
- * quit (see {@link formatAnswers}), which is why this can be roomier than the
- * question line without the OW9 concern below: it is drawn, never promoted.
+ * The text under a question, when it carries any (docs/iterate-in-chat.md). The
+ * rule in prose is a sentence or two, because the PM glances at a card; this is
+ * the ceiling past which the card stops being one, and a body under the rule is
+ * nowhere near it. Markdown, never flattened, and NOT replayed after a quit (see
+ * {@link formatAnswers}), which is why it can be roomier than the question line
+ * without the OW9 concern below: it is drawn, never promoted.
  */
 export const ASK_BODY_MAX = 4000;
 
@@ -85,10 +86,9 @@ export const ASK_HEADER_MAX = 12;
  *
  * Nothing here can stop the model asking a leading question, and nothing should:
  * asking is the point. What these do is keep a question the SIZE of a question.
- * Flattened, bounded and stripped of envelope markers, it can hold the short
- * paragraph somebody has to read and not a page of instructions dressed as one —
- * and the card renders the same text, so the PM sees exactly what will be
- * replayed.
+ * Flattened, bounded and stripped of envelope markers, it can hold a line
+ * somebody reads at a glance and not a page of instructions dressed as one, and
+ * the card renders the same text, so the PM sees exactly what will be replayed.
  *
  * Over the ceiling the question is REFUSED, never cut (see {@link bounded}). The
  * numbers are set where a real question fits under them: a first-look debrief
@@ -99,7 +99,7 @@ export const ASK_QUESTION_MAX = 700;
 export const ASK_LABEL_MAX = 100;
 export const ASK_DESCRIPTION_MAX = 200;
 
-/** One choice on the card. The description is where the trade-off goes. */
+/** One choice on the card. The description is a few words on where it leads. */
 export interface AskOption {
   label: string;
   description?: string;
@@ -118,9 +118,9 @@ export interface AskQuestion {
   header: string;
   question: string;
   /**
-   * Paragraphs under the question line, markdown. A round's idea is argued
-   * here, cost and all, so the PM reads the case on the card rather than
-   * scrolling up to find it.
+   * A sentence or two under the question line, markdown. Where the idea comes
+   * from and what stands against it, sources named as wikilinks, so the PM
+   * weighs it on the card rather than scrolling up to find it.
    */
   body?: string;
   /**
@@ -296,7 +296,7 @@ export function planAsk(input: unknown): { plan: AskPlan } | { error: string } {
       const bare = bounded(opt?.label ?? '', ASK_LABEL_MAX);
       if ('tooLong' in bare) {
         return {
-          error: `${at}.options[${j}]: the label is ${bare.tooLong} characters; keep it under ${ASK_LABEL_MAX}. The label is the choice in a few words — the sentence about it goes in description.`,
+          error: `${at}.options[${j}]: the label is ${bare.tooLong} characters; keep it under ${ASK_LABEL_MAX}. The label is the choice in a few words. Anything more about it goes in description.`,
         };
       }
       const label = bare.text;
@@ -307,7 +307,7 @@ export function planAsk(input: unknown): { plan: AskPlan } | { error: string } {
       const said = bounded(opt.description ?? '', ASK_DESCRIPTION_MAX);
       if ('tooLong' in said) {
         return {
-          error: `${at}.options[${j}]: the description is ${said.tooLong} characters; keep it under ${ASK_DESCRIPTION_MAX}. One short sentence on what picking this leads to.`,
+          error: `${at}.options[${j}]: the description is ${said.tooLong} characters; keep it under ${ASK_DESCRIPTION_MAX}. A few words on what picking this leads to, or nothing at all.`,
         };
       }
       const description = said.text;
@@ -337,7 +337,7 @@ export function planAsk(input: unknown): { plan: AskPlan } | { error: string } {
     const asked = bounded(q.question, ASK_QUESTION_MAX);
     if ('tooLong' in asked) {
       return {
-        error: `${at}: the question is ${asked.tooLong} characters; keep it under ${ASK_QUESTION_MAX}. Ask the thing you are blocked on and leave the recap out — name the notes as wikilinks and the PM can open them, or put the case in body.`,
+        error: `${at}: the question is ${asked.tooLong} characters; keep it under ${ASK_QUESTION_MAX}. Ask the thing you are blocked on in one line, under about twelve words, with no citation in it. What you read goes in body, in a sentence, with the notes named as wikilinks.`,
       };
     }
     // The body keeps its paragraphs: it is rendered as markdown on the card,
@@ -346,7 +346,7 @@ export function planAsk(input: unknown): { plan: AskPlan } | { error: string } {
     const body = typeof q.body === 'string' ? q.body.trim() : '';
     if (body.length > ASK_BODY_MAX) {
       return {
-        error: `${at}: the body is ${body.length} characters; keep it under ${ASK_BODY_MAX}. A body is the case for one idea in a few paragraphs. Anything longer goes in a session file with files_write, named in the question as a link.`,
+        error: `${at}: the body is ${body.length} characters; keep it under ${ASK_BODY_MAX}, and the rule is far shorter: one or two sentences, thirty words in all. Anything longer goes in a session file with files_write, named in the body as a link.`,
       };
     }
     out.push({
@@ -428,38 +428,42 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
     description:
       'Ask the PM a question and wait for their answer, without ending your turn. Use this when what you read ' +
       'does not settle what to write: two readings, two candidates, or a conflict between what they said and ' +
-      'what a note says. Ask it as the conflict: what was said, what the workspace holds as a link, one ' +
-      'question, and the two answers as options, each naming the write it leads to. For example: "You said the ' +
-      'launch is 14 Oct. [[decisions/launch-date]] says 30 Sep. Is 14 Oct the new date?", with "Yes, 14 Oct ' +
-      'replaces it" and "No, 30 Sep stands" as the options. Then write what they chose and set `asked`. ' +
-      'A skill that works in rounds ' +
-      '(Iterate) uses it as the round itself: one question per idea, the case for the idea in body, and the PM ' +
+      'what a note says. Ask it as the conflict: the question on its own, what was said and what the workspace ' +
+      'holds as a link in body, and the two answers as options, each naming the write it leads to. For ' +
+      'example: "Is 14 Oct the new date?", with body "You said 14 Oct. [[decisions/launch-date]] says 30 Sep.", ' +
+      'and "Yes, 14 Oct replaces it" and "No, 30 Sep stands" as the options. Then write what they chose and ' +
+      'set `asked`. A skill that works in rounds ' +
+      '(Iterate) uses it as the round itself: one question per idea, a sentence of body under it, and the PM ' +
       'reacts to each. Do NOT use it to check whether you ' +
       'may proceed, to confirm a plan, to pick something with an obvious default, or to ask something the ' +
-      'workspace already answers: read the note instead. Ask it the way you would say it out loud: "What date ' +
-      'was this meeting?", not a paragraph recapping what you read and why it matters. That reasoning goes in ' +
-      "the options' descriptions or in body, where the PM reads it only if they want to. Give 2-4 concrete " +
+      'workspace already answers: read the note instead. A card is for glancing at, not for reading, so keep ' +
+      'every part of it short. The question is one line, a real question, under about twelve words, with no ' +
+      'citation in it: "What date was this meeting?", never a paragraph recapping what you read. The body is ' +
+      'one or two sentences, thirty words in all, and an option description is a few words or nothing. Give ' +
+      '2-4 concrete ' +
       'options whenever the answer is one of a few things you can name; leave options out when you want their ' +
       'words (a reaction to a draft, a name, a sentence). The PM can always write beside the options, so never ' +
       'add an "Other" option yourself. Ask everything ' +
       'you need in ONE call, usually one to four questions, rather than one card after another. If you can do useful work ' +
       'without the answer, do that work first and ask at the point it actually matters. Name any note you ' +
-      'mention as a wikilink ([[notes/2026-07-17-friday-scratch]]), in the question and in the options alike: ' +
-      'the card renders them, so the PM can open the note before they answer. A bare path is dead text on a ' +
+      'mention as a wikilink ([[notes/2026-07-17-friday-scratch]]), in body and in the options: the card draws ' +
+      'each one as the note\'s title, so write the sentence to read with a title in that place ("Mentioned in ' +
+      '[[meetings/2026-06-02-brasserie-lund-review]]"), and the PM can open the note before they answer. A ' +
+      'bare path is dead text on a ' +
       'card, and this is often a question about a file they have not read. Asking is cheaper than a wrong write ' +
       'and cheaper than a card, so ask when a five-second answer settles it, and write the moment it is settled.',
     parameters: Type.Object({
       questions: Type.Array(
         Type.Object({
           header: Type.String({
-            description: `Short chip label for this question, max ${ASK_HEADER_MAX} characters, e.g. "Scope" or "Which theme".`,
+            description: `Short chip label for this question, one or two words, max ${ASK_HEADER_MAX} characters, e.g. "Scope" or "Lunch fee". Longer than that and the card cuts it.`,
           }),
           question: Type.String({
-            description: `The question, plainly asked, the way you would say it out loud: "What date was this meeting?" Under ${ASK_QUESTION_MAX} characters, or the call is refused. Leave out the recap of what you read and the reasoning behind it — that goes in the options' descriptions, or in body.`,
+            description: `The question, plainly asked, the way you would say it out loud: "What date was this meeting?" One line, a real question, under about twelve words, with no citation in it. Under ${ASK_QUESTION_MAX} characters, or the call is refused. The recap of what you read goes in body.`,
           }),
           body: Type.Optional(
             Type.String({
-              description: `Paragraphs under the question, markdown, under ${ASK_BODY_MAX} characters. For a round: the case for this idea and its cost, a few short paragraphs. Leave it out on a plain question.`,
+              description: `One or two sentences under the question, markdown, thirty words in all (${ASK_BODY_MAX} characters is the hard ceiling). Where the idea comes from and what stands against it, each source a wikilink in the sentence: "Mentioned in [[meetings/2026-06-02-brasserie-lund-review]], but only one fee is in [[notes/fee-rules]]." Leave it out on a plain question.`,
             }),
           ),
           options: Type.Optional(
@@ -470,7 +474,7 @@ export function createAskTool(deps: AskDeps): ToolDefinition {
                 }),
                 description: Type.Optional(
                   Type.String({
-                    description: `What picking this means or leads to. One short sentence, under ${ASK_DESCRIPTION_MAX} characters.`,
+                    description: `What picking this means or leads to, in a few words. Leave it out where the label already says it. Under ${ASK_DESCRIPTION_MAX} characters.`,
                   }),
                 ),
                 checked: Type.Optional(

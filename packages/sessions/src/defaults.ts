@@ -147,8 +147,9 @@ Each one comes back as already known (do nothing), new (propose it below as you 
 conflict with a note we hold, implying something that is not there, or no answer. No answer means
 nothing was settled, so treat it as if you had never asked.
 
-A conflict is a question every time, asked before you write either side: what the material says,
-the note as a link, one question, and the two answers as options. Write what they chose and set
+A conflict is a question every time, asked before you write either side. Ask it in one line, under
+about twelve words, with no citation in it. What the material says and the note as a link go in
+the body, in one sentence. The two answers are the options. Write what they chose and set
 \`asked\`. A gap you can fill from the source is not a question at all; fill it. A gap only the PM
 can fill can earn one. Ask about their world, never about our filing. The answer says how many of
 them to ask.
@@ -322,8 +323,9 @@ plain line rather than guess one.
 
 Before you write a date, an owner, a number or a standing decision the workspace may already hold,
 call \`check_claims\` once with what you are about to write, the way the arrival skill does. Scope
-each claim to the pages it is about. A conflict is a question, asked before the write: what you
-have, the note as a link, one question, and the two answers as options. Then write what they chose
+each claim to the pages it is about. A conflict is a question, asked before the write. Ask it in
+one line, under about twelve words, with no citation in it. What you have and the note as a link go
+in the body, in one sentence. The two answers are the options. Then write what they chose
 and set \`asked\`.
 
 Nothing lands in the memory on its own, but you do have session files: a question too big for
@@ -373,8 +375,9 @@ Each one comes back as already known (do nothing), new (file it below as you wou
 conflict with a note we hold, implying something that is not there, or no answer. No answer means
 nothing was settled, so treat it as if you had never asked.
 
-A conflict is a question every time, asked before you write either side: what the material says,
-the note as a link, one question, and the two answers as options. Write what they chose and set
+A conflict is a question every time, asked before you write either side. Ask it in one line, under
+about twelve words, with no citation in it. What the material says and the note as a link go in
+the body, in one sentence. The two answers are the options. Write what they chose and set
 \`asked\`. A gap you can fill from the source is not a question at all; fill it. A gap only the PM
 can fill can earn one. Ask about their world, never about our filing. The answer says how many of
 them to ask.
@@ -1735,10 +1738,11 @@ Before you close a todo, move its date, or write an owner or a number, call \`ch
 with what you are about to write, the way the arrival skill does. Scope each claim to the pages it
 is about: the todo, the person, the customer.
 
-A conflict is a question every time, asked before the write: what you have, the note as a link, one
-question, and the two answers as options. Then write what they chose and set \`asked\`. A close the
+A conflict is a question every time, asked before the write. Ask it in one line, under about twelve
+words, with no citation in it. What you have and the note as a link go in the body, in one sentence.
+The two answers are the options. Then write what they chose and set \`asked\`. A close the
 PM said out loud in a source is theirs, so write it. A close you worked out yourself is a question
-("Åsa said the dates went out. Mark the send-Nordkap-the-dates todo done?").
+("Mark the send-Nordkap-the-dates todo done?", with what Åsa said about the dates in the body).
 
 ## Produce: a commitment of yours
 The right handling for this one commitment, each option as its own write. Pick what fits;
@@ -1947,10 +1951,14 @@ Out: <what it deliberately does not, and why>
 
 /**
  * Iterate (docs/iterate-in-chat.md): the draft-react-redraft loop, in the chat.
- * A round is one ask_user call: one question per idea, the case for the idea
- * in its body, "Keep it" / "Cut it" as the options, and a written question at
- * the end for whatever the rows did not catch. The PM reacts to each idea where
- * they read it, and the next round is written from what came back.
+ * A round is one ask_user call: one question per idea, a sentence of body under
+ * it, "Keep it" / "Cut it" as the options, and a written question at the end for
+ * whatever the rows did not catch. The PM reacts to each idea where they read
+ * it, and the next round is written from what came back.
+ *
+ * The card is glanced at, so the skill spends words on keeping each idea short.
+ * A paragraph per idea reads as a form, and a form gets one answer at the bottom
+ * instead of six reactions.
  *
  * The two rules the body spends its words on are the two that fail quietly.
  * Round one carries rough ideas as well as framing, because a framing form on
@@ -1995,16 +2003,25 @@ Then ask for the round with ask_user. One call is one round.
 
 Two to six per round. One is not a round, and more than six is a card nobody finishes.
 
-Each idea is one question on the card:
+Each idea is one question on the card. A card is for glancing at, not for reading, so every part
+is short:
 
-- header: the idea's short name, a word or two.
-- question: the idea in one line.
-- body: the case for it in a few short paragraphs, and its cost in the same breath: what it gives
-  up, who has to do the work, what it makes harder later. An idea with no cost written down cannot
-  be weighed against the one next to it.
+- header: one or two words. The card cuts it at twelve characters.
+- question: one line, a real question, under about twelve words, with no citation in it.
+- body: one or two sentences, thirty words in all. Say where the idea comes from and what stands
+  against it, and name each source as a wikilink inside the sentence. A link draws as the note's
+  title, so write the sentence to read with a title in that place.
 - options: "Keep it" and "Cut it". Add a third when the idea has a natural variant ("Keep, but
-  smaller"). The card offers a written answer beside the options on its own, so never add an
-  "Other" option.
+  smaller"). A description is a few words, or nothing at all. The card offers a written answer
+  beside the options on its own, so never add an "Other" option.
+
+One idea, whole: header "Lunch fee", question "Is a different fee for lunch and dinner in scope?",
+body "Mentioned in [[meetings/2026-06-02-brasserie-lund-review]], but only one fee is in
+[[notes/fee-rules]].", options "Keep it" and "Cut it".
+
+A paragraph per idea is a form, and a form gets one answer at the bottom instead of six. The PM
+glances at the card, picks, and writes a line where they disagree. An argument that does not fit
+the rule above goes in the chat above the round, where the framing already is.
 
 Close the card with one written question, no options, header "Anything else": what is missing,
 what to merge, what you got wrong. That is where the reaction to the whole round lands.

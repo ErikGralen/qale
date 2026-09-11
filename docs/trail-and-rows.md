@@ -77,6 +77,12 @@ The rows (`lib/receipt-block.ts`, `LandedRows.tsx`):
 - One to three writes draw as rows. From four they fold, collapsed by default, behind one line.
   The whole line is the button that opens it, with the same classes as the work trail above it
   and the chevron at the end. Its own words are its label. Expanded, the rows draw as before.
+- **Memory is the one tier that always folds** (Erik, 2026-09-11, amended same day). The fold-from-
+  four count is taken over everything except memory. However few memory writes a turn made, one or
+  ten, they draw as their own "Updated memory" line with its own chevron, never as separate rows
+  with page names. A turn that wrote only to memory is that one line and nothing else. This
+  reinstates the "Memory is one line" rule from `docs/receipt-redesign.md` RC-1, which the same-day
+  fold-from-four rework had, without meaning to, made conditional on the total count.
 - Both the line and the rows read in five tiers, in this order (`orderLanded`, `tierForRow`):
 
   1. **New to-dos and new meeting pages.** "3 new todos", "new meeting page", "2 new meeting

@@ -1,4 +1,12 @@
-import { useMemo, useRef, useState, type ComponentProps } from 'react';
+import {
+  createContext,
+  memo,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from 'react';
 import ReactMarkdown from 'react-markdown';
 import { remarkPlugins } from '@qale/markdown';
 import { slugFromPath, titleForRef } from '@qale/domain';
@@ -111,7 +119,118 @@ function remarkTicketKeys() {
 
 const PLUGINS = [...remarkPlugins, remarkTicketKeys];
 
-export function Markdown({
+/**
+ * What the link components need from the render that drew them. It travels
+ * by context so the components themselves can be module constants.
+ *
+ * They used to be built inline, a new function on every render. To React a
+ * new function is a new component type, so every link and every ticket chip
+ * in the transcript unmounted and mounted again on each streamed token. A chip
+ * starts as plain text until its lookup answers, so the whole chat flickered
+ * between text and chip, and reflowed with it, for as long as the model wrote.
+ */
+interface LinkContext {
+  onOpenNote?: (path: string, opts?: NavOpts) => void;
+  titleBySlug: Map<string, string>;
+}
+const LinkCtx = createContext<LinkContext>({ titleBySlug: new Map() });
+
+function TicketSpan({
+  node: _node,
+  ...props
+}: ComponentProps<'span'> & { node?: unknown; 'data-ticket-key'?: string }) {
+  const { onOpenNote } = useContext(LinkCtx);
+  const key = props['data-ticket-key'];
+  return key ? <TicketKeyText target={key} onOpen={onOpenNote} /> : <span {...props} />;
+}
+
+function Anchor(
+  props: ComponentProps<'a'> & { 'data-target'?: string; 'data-link-type'?: string },
+) {
+  const { onOpenNote, titleBySlug } = useContext(LinkCtx);
+  // Wikilinks carry data-target; a relative href is a note path too
+  // (e.g. a session answer's [label](decisions/x.md)). Both route in-app.
+  const dataTarget = props['data-target'];
+  // `[[type::target]]` links carry their relationship as a display
+  // label — rendered as a muted prefix chip before the link.
+  const linkType = props['data-link-type'];
+  const href = props.href ?? '';
+  // A real web address — `https://…`, a GFM-autolinked bare URL, or a
+  // scheme-less `www.`/`host.tld` an author typed as a link target —
+  // opens in the system browser. Wikilinks (data-target) never do.
+  const external = dataTarget ? null : webUrl(href);
+  if (external) {
+    return (
+      <a {...props} href={external} target="_blank" rel="noreferrer">
+        {props.children}
+      </a>
+    );
+  }
+  const target =
+    dataTarget ??
+    (href && !/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith('#')
+      ? decodeURIComponent(href)
+      : undefined);
+  if (target && isExternalRef(target)) {
+    // A ticket/wikipage reference renders as a live chip — key +
+    // state pill from the local mirror, hover card via the shared
+    // layer. A target that merely looks like a ticket key still
+    // opens its vault note: the chip falls back to the ordinary
+    // resolve when no mirror answers.
+    return (
+      <>
+        <TypeChip label={linkType} />
+        <ExternalRefChip
+          target={target}
+          alias={typeof props.children === 'string' ? props.children : undefined}
+          onOpen={onOpenNote}
+        />
+      </>
+    );
+  }
+  if (target) {
+    const open = async (e: React.MouseEvent) => {
+      e.preventDefault();
+      const opts = navFromEvent(e);
+      const path = await invoke['note:resolveLink'](target);
+      if (path) onOpenNote?.(path, opts);
+    };
+    // No alias means the link prints its target, which is a slug.
+    // Show the note's name when the workspace holds it, and its own
+    // last segment de-slugged when it does not: a page the session is
+    // still proposing is not in the tree yet, and printing the whole
+    // storage path there was the one place a slug reached the reader.
+    const written = typeof props.children === 'string' ? props.children : null;
+    const title =
+      written && written === target
+        ? (titleBySlug.get(slugFromPath(target)) ?? titleForRef(target))
+        : undefined;
+    return (
+      <>
+        <TypeChip label={linkType} />
+        <a
+          {...props}
+          href="#"
+          onClick={open}
+          // Middle-click = open in background tab (browser semantics).
+          onAuxClick={(e) => e.button === 1 && void open(e)}
+          data-unresolved={undefined}
+        >
+          {title ?? props.children}
+        </a>
+      </>
+    );
+  }
+  return <a {...props} target="_blank" rel="noreferrer" />;
+}
+
+const COMPONENTS = { pre: CodeBlock, span: TicketSpan, a: Anchor };
+
+/**
+ * Memoised on its props: a transcript re-renders on every streamed token, and
+ * the answers above the live one have not changed.
+ */
+export const Markdown = memo(function Markdown({
   content,
   onOpenNote,
   compact = false,
@@ -134,102 +253,15 @@ export function Markdown({
     for (const g of tree?.groups ?? []) for (const n of g.notes) m.set(n.slug, n.title);
     return m;
   }, [tree]);
+  const links = useMemo(() => ({ onOpenNote, titleBySlug }), [onOpenNote, titleBySlug]);
 
   return (
-    <div className={compact ? 'note-body note-body-sm' : 'note-body'}>
-      <ReactMarkdown
-        remarkPlugins={PLUGINS}
-        components={{
-          pre: CodeBlock,
-          span: ({
-            node: _node,
-            ...props
-          }: ComponentProps<'span'> & { node?: unknown; 'data-ticket-key'?: string }) => {
-            const key = props['data-ticket-key'];
-            return key ? <TicketKeyText target={key} onOpen={onOpenNote} /> : <span {...props} />;
-          },
-          a: (
-            props: ComponentProps<'a'> & { 'data-target'?: string; 'data-link-type'?: string },
-          ) => {
-            // Wikilinks carry data-target; a relative href is a note path too
-            // (e.g. a session answer's [label](decisions/x.md)). Both route in-app.
-            const dataTarget = props['data-target'];
-            // `[[type::target]]` links carry their relationship as a display
-            // label — rendered as a muted prefix chip before the link.
-            const linkType = props['data-link-type'];
-            const href = props.href ?? '';
-            // A real web address — `https://…`, a GFM-autolinked bare URL, or a
-            // scheme-less `www.`/`host.tld` an author typed as a link target —
-            // opens in the system browser. Wikilinks (data-target) never do.
-            const external = dataTarget ? null : webUrl(href);
-            if (external) {
-              return (
-                <a {...props} href={external} target="_blank" rel="noreferrer">
-                  {props.children}
-                </a>
-              );
-            }
-            const target =
-              dataTarget ??
-              (href && !/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith('#')
-                ? decodeURIComponent(href)
-                : undefined);
-            if (target && isExternalRef(target)) {
-              // A ticket/wikipage reference renders as a live chip — key +
-              // state pill from the local mirror, hover card via the shared
-              // layer. A target that merely looks like a ticket key still
-              // opens its vault note: the chip falls back to the ordinary
-              // resolve when no mirror answers.
-              return (
-                <>
-                  <TypeChip label={linkType} />
-                  <ExternalRefChip
-                    target={target}
-                    alias={typeof props.children === 'string' ? props.children : undefined}
-                    onOpen={onOpenNote}
-                  />
-                </>
-              );
-            }
-            if (target) {
-              const open = async (e: React.MouseEvent) => {
-                e.preventDefault();
-                const opts = navFromEvent(e);
-                const path = await invoke['note:resolveLink'](target);
-                if (path) onOpenNote?.(path, opts);
-              };
-              // No alias means the link prints its target, which is a slug.
-              // Show the note's name when the workspace holds it, and its own
-              // last segment de-slugged when it does not: a page the session is
-              // still proposing is not in the tree yet, and printing the whole
-              // storage path there was the one place a slug reached the reader.
-              const written = typeof props.children === 'string' ? props.children : null;
-              const title =
-                written && written === target
-                  ? (titleBySlug.get(slugFromPath(target)) ?? titleForRef(target))
-                  : undefined;
-              return (
-                <>
-                  <TypeChip label={linkType} />
-                  <a
-                    {...props}
-                    href="#"
-                    onClick={open}
-                    // Middle-click = open in background tab (browser semantics).
-                    onAuxClick={(e) => e.button === 1 && void open(e)}
-                    data-unresolved={undefined}
-                  >
-                    {title ?? props.children}
-                  </a>
-                </>
-              );
-            }
-            return <a {...props} target="_blank" rel="noreferrer" />;
-          },
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
+    <LinkCtx.Provider value={links}>
+      <div className={compact ? 'note-body note-body-sm' : 'note-body'}>
+        <ReactMarkdown remarkPlugins={PLUGINS} components={COMPONENTS}>
+          {content}
+        </ReactMarkdown>
+      </div>
+    </LinkCtx.Provider>
   );
-}
+});

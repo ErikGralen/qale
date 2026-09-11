@@ -763,8 +763,13 @@ export function SessionView({ sessionId, draftKey, ...props }: SessionViewProps)
 
   const overview = initialSessionId ? sessions.find((s) => s.id === initialSessionId) : undefined;
   const backgroundRunning = !!overview?.running;
-  // True while THIS view's composer drives the stream — its useChat already
-  // renders the live turn, so the settle refresh must not remount it.
+  // True once THIS view's composer has started a run: its useChat already
+  // renders the turn, so the settle refresh below must not remount it. Set
+  // when a turn starts here and spent by the settle that follows, not mirrored
+  // from `busy`. The finish chunk closes the stream a beat before main reports
+  // the settle, so a mirror already read false when the check ran, and every
+  // turn ended with the transcript unmounting into "Opening the session…" and
+  // mounting again.
   const ownStream = useRef(false);
   const wasRunning = useRef(backgroundRunning);
 
@@ -790,10 +795,14 @@ export function SessionView({ sessionId, draftKey, ...props }: SessionViewProps)
 
   // A background run settled while this tab watched — replay the full transcript.
   useEffect(() => {
-    if (wasRunning.current && !backgroundRunning && !ownStream.current && initialSessionId) {
-      setHistory(null);
-      setReloadKey((k) => k + 1);
-      markSessionSeen(initialSessionId);
+    if (wasRunning.current && !backgroundRunning && initialSessionId) {
+      if (ownStream.current) {
+        ownStream.current = false;
+      } else {
+        setHistory(null);
+        setReloadKey((k) => k + 1);
+        markSessionSeen(initialSessionId);
+      }
     }
     wasRunning.current = backgroundRunning;
   }, [backgroundRunning, initialSessionId, markSessionSeen]);
@@ -814,7 +823,10 @@ export function SessionView({ sessionId, draftKey, ...props }: SessionViewProps)
       initialMessages={history}
       backgroundStreamId={backgroundRunning ? overview?.streamId : undefined}
       onOwnStream={(busy) => {
-        ownStream.current = busy;
+        if (busy) ownStream.current = true;
+        // A turn that ended before main ever reported it running (refused
+        // before it started) has no settle coming to spend the flag.
+        else if (!wasRunning.current) ownStream.current = false;
       }}
     />
   );

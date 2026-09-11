@@ -48,10 +48,10 @@
                   },
                   {
                     "header": "A/B test",
-                    "question": "Test the wording of the fee notice first?",
-                    "body": "[[notes/fee-rules]] says the wording may cost bookings. Two wordings on a few restaurants first, before [[customers/brasserie-lund]] gets it.",
+                    "question": "A/B test the fee notice wording first?",
+                    "body": "[[notes/fee-rules]] says the wording may cost bookings. An A/B test on a few restaurants first, before [[customers/brasserie-lund]] gets it.",
                     "options": [
-                      { "label": "Keep it", "description": "A third story: two wordings and a report." },
+                      { "label": "Keep it", "description": "A third story: an A/B test and a report." },
                       { "label": "Cut it", "description": "One wording; we find out in December." }
                     ]
                   },
@@ -66,7 +66,7 @@
         },
         {
           "text": [
-            "One fee per restaurant: the lunch and dinner fee is cut. The stories cover online and Google bookings only, and the notice wording gets a test.",
+            "One fee per restaurant: the lunch and dinner fee is cut. The stories cover online and Google bookings only, and the notice wording gets an A/B test.",
             "",
             "Three stories, three checks each. Keep or cut."
           ],
@@ -95,8 +95,8 @@
                   },
                   {
                     "header": "Story 3",
-                    "question": "Fee notice wording test.",
-                    "body": "- Two wordings of the notice.\n- A restaurant gets one or the other.\n- The report shows completed bookings per wording.",
+                    "question": "Fee notice A/B test.",
+                    "body": "- Two wordings of the notice, tested as an A/B test.\n- A restaurant gets one or the other.\n- The report shows completed bookings per wording.",
                     "options": [
                       { "label": "Keep it", "description": "Filed as written." },
                       { "label": "Cut it", "description": "Dropped." }
@@ -153,8 +153,8 @@
               "input": {
                 "container": "BOK",
                 "kind": "Story",
-                "title": "Fee notice wording test",
-                "body": "Brasserie Lund's 40 restaurants get the fee first, so the notice wording gets a test on a few restaurants before every restaurant sees it.\n\nPart of BOK-300 (no-show fees), first release. Two wordings of the notice on the booking page, a switch per restaurant, and a report, so we know before December whether the notice costs bookings.\n\nAcceptance:\n- [ ] Two wordings of the notice.\n- [ ] A restaurant gets one or the other.\n- [ ] The report shows completed bookings per wording.\n\nSource: story round in Qale, 2026-07-17",
+                "title": "Fee notice A/B test",
+                "body": "Brasserie Lund's 40 restaurants get the fee first, so the notice wording gets an A/B test on a few restaurants before every restaurant sees it.\n\nPart of BOK-300 (no-show fees), first release. An A/B test of two wordings of the notice on the booking page, a switch per restaurant, and a report, so we know before December whether the notice costs bookings.\n\nAcceptance:\n- [ ] Two wordings of the notice, tested as an A/B test.\n- [ ] A restaurant gets one or the other.\n- [ ] The report shows completed bookings per wording.\n\nSource: story round in Qale, 2026-07-17",
                 "labels": ["no-show-fees"],
                 "sources": [
                   "[[tickets/jira/BOK-300]]",
@@ -172,7 +172,7 @@
                   "commitment": "done",
                   "resolved": "{{today}}"
                 },
-                "append": "Done 2026-07-17: three stories drafted under [[tickets/jira/BOK-300]], three checks each, ahead of sprint planning on 2026-07-22. The stories: card on file at booking, charge the fee after a no-show, fee notice wording test. The lunch and dinner fee is cut from the first release. The rounds and the reasoning are in the session that drafted them.",
+                "append": "Done 2026-07-17: three stories drafted under [[tickets/jira/BOK-300]], three checks each, ahead of sprint planning on 2026-07-22. The stories: card on file at booking, charge the fee after a no-show, fee notice A/B test. The lunch and dinner fee is cut from the first release. The rounds and the reasoning are in the session that drafted them.",
                 "rationale": "The stories are drafted, three of them with three checks each, before the 2026-07-21 due date, so the commitment from the 1:1 is met.",
                 "sources": [
                   "[[meetings/2026-07-13-1-1-rebecca]]",
@@ -187,7 +187,7 @@
           "text": [
             "The todo from the 1:1 is closed: [[todos/bok-300-stories-before-sprint-planning]]. The stories are drafted before sprint planning on 2026-07-22.",
             "",
-            "Three cards wait under BOK-300: the card at booking, the charge after a no-show, the wording test. Approve one and it lands in Jira with the label and the three checks. No date on any card: [[people/rebecca-holm|Rebecca]] estimates after the stories are written, not before. Nothing is in Jira yet."
+            "Three cards wait under BOK-300: the card at booking, the charge after a no-show, the A/B test. Approve one and it lands in Jira with the label and the three checks. No date on any card: [[people/rebecca-holm|Rebecca]] estimates after the stories are written, not before. Nothing is in Jira yet."
           ]
         }
       ]

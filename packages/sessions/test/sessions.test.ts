@@ -11,7 +11,7 @@ import {
   ASK_SKILL,
   WEEKLY_UPDATE_SKILL,
   SYNTHESIS_SKILL,
-  VOICE_EXEC,
+  VOICE_INTERNAL,
   HOUSE_RULES,
   HOUSE_RULES_NAME,
   WANT_LIST_LINES,
@@ -419,7 +419,7 @@ test('scenarios: a list when the file writes one, empty when it does not', () =>
   const none = parseRunnable(`---\ntype: skill\nsummary: s\n---\nX.\n`, 't');
   assert.deepEqual(none.scenarios, []);
   assert.deepEqual(none.errors, []);
-  assert.deepEqual(parseRunnable(VOICE_EXEC, 'exec').scenarios, []);
+  assert.deepEqual(parseRunnable(VOICE_INTERNAL, 'internal').scenarios, []);
 });
 
 /**
@@ -700,12 +700,12 @@ test('a message the PM typed is never mistaken for a kickoff', () => {
 test('the voices ship in voices/, as flat files, with nothing but tone in them', () => {
   assert.deepEqual(
     DEFAULT_VOICES.map((v) => v.file),
-    ['voices/exec.md', 'voices/cs.md', 'voices/sales.md'],
+    ['voices/internal.md', 'voices/cs.md', 'voices/sales.md'],
   );
   // Not a skill, and not in the by-name registry: nothing invokes a voice.
   const skillFiles = DEFAULT_SKILLS.map((s) => s.file);
   for (const v of DEFAULT_VOICES) assert.ok(!skillFiles.includes(v.file));
-  assert.ok(!('exec' in DEFAULT_SKILL_BY_NAME));
+  assert.ok(!('internal' in DEFAULT_SKILL_BY_NAME));
   assert.ok(!('cs' in DEFAULT_SKILL_BY_NAME));
 
   for (const { file, content } of DEFAULT_VOICES) {
@@ -729,25 +729,29 @@ test('the voices ship in voices/, as flat files, with nothing but tone in them',
 });
 
 /**
- * SK-10: the weekly update names its audiences and drafts one panel each. The
- * confidentiality lines are the round-5 KISS call (R5-3): they used to sit in an
- * audience-scoped voice, and a voice carries tone only now, so the skill that
- * drafts to customers carries them.
+ * SK-10: the weekly update names who it goes to and drafts one panel each. It
+ * ships aimed at the internal channel and the public changelog page, and the
+ * list stays a list the PM adds a voice to. The confidentiality lines are the
+ * round-5 KISS call (R5-3): they used to sit in an audience-scoped voice, and a
+ * voice carries tone only now, so the skill that drafts in public carries them.
  */
-test('the weekly update lists its voices, and holds the CS draft to what it may not say', () => {
+test('the weekly update lists its voices, and holds the public section to what it may not say', () => {
   const c = parseRunnable(WEEKLY_UPDATE_SKILL, 'weekly-update');
   assert.deepEqual(c.errors, []);
-  // Both shipped voices are named, and the list says it is a list to add to.
-  assert.match(c.body, /\*\*exec\*\*/);
-  assert.match(c.body, /\*\*cs\*\*/);
+  // The shipped voice is named, and the list says it is a list to add to.
+  assert.match(c.body, /\*\*internal\*\*/);
+  assert.match(c.body, /\*\*The changelog page\*\*/);
   assert.match(c.body, /Add a voice here/);
   // One panel per voice, with a variant per take, rather than one call per take.
   assert.match(c.body, /One `draft_text` call per voice/);
   assert.ok(c.body.includes('**Full**') && c.body.includes('**Short**'));
   // The guardrails the voices no longer carry.
-  assert.ok(c.body.includes('## Never in the CS draft'), 'the confidentiality section is gone');
-  for (const rule of ['No internal metrics', 'No other customer', 'No internal shorthand']) {
-    assert.ok(c.body.includes(rule), `the CS draft is not held to "${rule}"`);
+  assert.ok(
+    c.body.includes('## Never in the changelog section'),
+    'the confidentiality section is gone',
+  );
+  for (const rule of ['No internal metrics', 'No customer', 'No internal shorthand']) {
+    assert.ok(c.body.includes(rule), `the changelog section is not held to "${rule}"`);
   }
   // The output shape stays the last thing in the body: the preamble reads a
   // trailing fenced block as the shape of the drafts.

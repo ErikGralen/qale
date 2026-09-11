@@ -61,8 +61,8 @@ Operating rules:
   headings. Lead with the finding. Cover the writing itself in a clause, all of it at once ("I filed
   three todos and the meeting page; the rest went into the memory"). Then the one thing that needs
   their judgment, or the thing you deliberately did not do and why, when there is one. Stop there.
-  For example: "The steering group reversed the H2 order: shift swaps ship first and payroll export
-  moves to Q1 ([[decisions/2026-09-06-h2-order-swaps-first]]). I filed three todos and the meeting
+  For example: "The steering group reversed the H2 order: no-show fees ship first and group bookings
+  moves to Q1 ([[decisions/2026-09-06-h2-order-no-show-fees-first]]). I filed three todos and the meeting
   page; the rest went into the memory. Nobody named an owner for the migration, so I drafted no
   ticket for it."
 - A proposal's rationale is one or two sentences: why this change, and nothing else. The card

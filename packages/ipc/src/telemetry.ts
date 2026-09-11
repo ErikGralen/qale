@@ -252,10 +252,10 @@ export function wantLineWord(id: string | null | undefined): string {
 }
 
 /**
- * Which voice a style pick was for (ticket 15). Two voices ship; a voice the PM
- * added is named in their own words, so it reports as `custom`.
+ * Which voice a style pick was for (ticket 15). Three voices ship; a voice the
+ * PM added is named in their own words, so it reports as `custom`.
  */
-export const VOICE_WORDS = ['exec', 'cs', 'custom'] as const;
+export const VOICE_WORDS = ['internal', 'cs', 'custom'] as const;
 
 /** A voice file or name, folded to one of those words. */
 export function voiceWord(voice: string | null | undefined): string {
@@ -266,12 +266,12 @@ export function voiceWord(voice: string | null | undefined): string {
 
 /**
  * The update styles the first draft offers, one word each, plus `custom` for a
- * style the PM wrote in their own voice file. The three exec styles and the
- * three CS ones are the `###` headings in `VOICE_EXEC` and `VOICE_CS`
+ * style the PM wrote in their own voice file. The three internal styles and the
+ * three CS ones are the `###` headings in `VOICE_INTERNAL` and `VOICE_CS`
  * (`@qale/sessions`), and a desktop test holds the two together.
  */
 export const STYLE_WORDS = [
-  'three-lines',
+  'three-labelled-lines',
   'one-paragraph',
   'what-changed',
   'three-dated-lines',
@@ -282,7 +282,7 @@ export const STYLE_WORDS = [
 
 /** The heading each shipped style carries, and the word it reports as. */
 const STYLE_LABEL_WORDS: Readonly<Record<string, string>> = {
-  'three lines': 'three-lines',
+  'three labelled lines': 'three-labelled-lines',
   'one paragraph': 'one-paragraph',
   "what changed, what's next": 'what-changed',
   'three dated lines': 'three-dated-lines',
@@ -314,7 +314,7 @@ export const STYLE_ANSWERS = ['this-voice', 'every-voice', 'not-now', 'again'] a
 /**
  * An answer button's label, folded to one of those words.
  *
- * The first option names the voice ("For exec"), so the voice's own name is in
+ * The first option names the voice ("For internal"), so the voice's own name is in
  * the label and must not go out. It folds to `this-voice`, and the voice goes
  * out separately as a word from {@link VOICE_WORDS}. An answer we do not know
  * returns nothing, so the caller sends no answer rather than a guess.

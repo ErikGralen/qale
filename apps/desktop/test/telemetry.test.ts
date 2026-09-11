@@ -35,7 +35,7 @@ import {
   DEFAULT_AGENTS,
   DEFAULT_SKILLS,
   VOICE_CS,
-  VOICE_EXEC,
+  VOICE_INTERNAL,
   WANT_LIST_LINES,
   wantLineId,
 } from '@qale/sessions';
@@ -355,14 +355,14 @@ test('a style pick reports three words, and none of them is a heading', () => {
   assert.equal(telemetryAllows(true, 'style.picked'), true);
   assert.deepEqual(
     filterTelemetryProps('style.picked', {
-      voice: voiceWord('voices/exec.md'),
+      voice: voiceWord('voices/internal.md'),
       style: styleWord('One paragraph'),
-      answer: styleAnswerWord('For exec'),
+      answer: styleAnswerWord('For internal'),
       // What the panel holds and what must never leave.
       draft: 'We ship SCIM on the 14th.',
       label: 'One paragraph',
     }),
-    { voice: 'exec', style: 'one-paragraph', answer: 'this-voice' },
+    { voice: 'internal', style: 'one-paragraph', answer: 'this-voice' },
   );
   assert.equal(styleAnswerWord('For every audience'), 'every-voice');
   assert.equal(styleAnswerWord('Not now'), 'not-now');
@@ -399,7 +399,7 @@ test('every style the voices offer has a word of its own', () => {
       .split('\n')
       .filter((line) => line.startsWith('### '))
       .map((line) => line.slice(4).trim());
-  const styles = [...headings(VOICE_EXEC), ...headings(VOICE_CS)];
+  const styles = [...headings(VOICE_INTERNAL), ...headings(VOICE_CS)];
   assert.equal(styles.length, 6);
   for (const label of styles) {
     assert.notEqual(styleWord(label), 'custom', `${label} has no word`);

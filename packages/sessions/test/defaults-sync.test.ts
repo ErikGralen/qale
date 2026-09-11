@@ -87,10 +87,26 @@ function seededFiles(): { file: string; content: string; constant: string }[] {
 
 const HOUSE_RULES_FILE = 'skills/house-rules/SKILL.md';
 
+/**
+ * A voice ships with three styles and a first line that says no pick yet, and
+ * the PM picks one by deleting the other two. The demo vault shows a workspace
+ * that has picked, so its three voices hold one style each and the learned first
+ * line (docs/plan-demo-bookings.md D5). That is the file working as designed,
+ * not drift, so a word-for-word comparison would be wrong here for the same
+ * reason it is wrong for the two conventions skills. The shape is still checked
+ * on both sides: `each voice ships with the no-pick line and three named styles`
+ * in sessions.test.ts holds the seeded copies, and the last test in this file
+ * holds the demo copies.
+ */
+function isVoice(file: string): boolean {
+  return file.startsWith('voices/');
+}
+
 test('every seeded skill, agent and voice says the same thing as its demo copy', () => {
-  const pairs = seededFiles().filter(({ file }) => file !== HOUSE_RULES_FILE);
+  const pairs = seededFiles().filter(({ file }) => file !== HOUSE_RULES_FILE && !isVoice(file));
   // A registry that came back empty would pass the loop below in silence.
-  assert.ok(pairs.length >= 12, `only ${pairs.length} seeded files were found`);
+  assert.ok(seededFiles().length >= 12, `only ${seededFiles().length} seeded files were found`);
+  assert.ok(pairs.length >= 10, `only ${pairs.length} pairs were compared`);
   for (const { file, content, constant } of pairs) {
     sameWords(
       file,
@@ -138,10 +154,10 @@ test('the house rules match down to Your rules, where the demo carries its own e
  */
 test('a demo skill, agent or voice with no seeded pair is named here or it fails', () => {
   // The two conventions skills are demo-only for the opposite reason: nothing
-  // seeds them (they are created on first use), and the demo copies hold Rota's
-  // own rules rather than the template's example lines, so a word-for-word
-  // comparison would be wrong. The next test checks the part that must not
-  // drift, which is their shape.
+  // seeds them (they are created on first use), and the demo copies hold the
+  // demo team's own rules rather than the template's example lines, so a
+  // word-for-word comparison would be wrong. A later test checks the part that
+  // must not drift, which is their shape.
   // The three `index.md` files are the folders' own orientation pages. Their
   // body is a list of what is in the folder, so a demo copy is right to differ
   // from a seeded one and there is nothing to compare.
@@ -239,8 +255,8 @@ test('each conventions template ends with the Standing instructions section', ()
 
 /**
  * The demo copies (CV-5) are not mirrors. A real workspace fills the template
- * with its own rules, so `vault-dev/skills/jira/SKILL.md` holds Rota's rules
- * and says nothing the template says. What must still hold is the shape: the
+ * with its own rules, so `vault-dev/skills/jira/SKILL.md` holds the demo team's
+ * rules and says nothing the template says. What must still hold is the shape: the
  * same title, and the same headings in the same order, ending on the anchor
  * `propose_instruction` appends to. A demo file that lost a drafting moment
  * would show the feature wrong on the Skills page.
@@ -258,5 +274,34 @@ test('each conventions demo file keeps its template shape', () => {
     const title = /^title: (.+)$/m.exec(content)?.[1];
     assert.match(demo, new RegExp(`^title: ${title}$`, 'm'));
     assert.notEqual(demo.trim(), content.trim(), `vault-dev/${file} is still the empty template`);
+  }
+});
+
+/**
+ * The demo voices are not mirrors either, for the reason `isVoice` gives: the
+ * demo workspace has picked. What must still hold is the shape. Each demo voice
+ * carries the seeded title and a "How it sounds" section, and it is either the
+ * shipped file word for word or one style picked out of it, with the no-pick
+ * line gone. A demo voice that drifted in wording while still offering three
+ * styles falls through neither branch and fails here.
+ */
+test('each demo voice is the seeded file, or one style picked out of it', () => {
+  const title = (lines: string[]): string | undefined => lines.find((l) => l.startsWith('title: '));
+  for (const { file, content } of defaults.DEFAULT_VOICES) {
+    const demo = words(readFileSync(join(REPO, 'vault-dev', file), 'utf8'));
+    const seeded = words(content);
+    assert.equal(title(demo), title(seeded), `vault-dev/${file} does not carry the seeded title`);
+    assert.ok(demo.includes('## How it sounds'), `vault-dev/${file} lost its tone section`);
+    if (demo.length === seeded.length && demo.every((line, i) => line === seeded[i])) continue;
+    const styles = demo.filter((line) => line.startsWith('### '));
+    assert.equal(
+      styles.length,
+      1,
+      `vault-dev/${file} is neither the seeded voice nor one picked style`,
+    );
+    assert.ok(
+      !demo.some((line) => line.startsWith('I do not know how you want')),
+      `vault-dev/${file} says no pick has been made, over a single style`,
+    );
   }
 });

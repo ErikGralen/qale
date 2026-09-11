@@ -57,7 +57,7 @@ summary: Files what you just dropped in, and reads what is worth reading.
 scenarios:
   - putting sources that just arrived where they belong ("file this transcript")
   - going through a drop of new files and pulling out what they commit us to ("I dropped three recordings in, work through them")
-  - reading one meeting from its own page ("read the Café Nord meeting and write it up")
+  - reading one meeting from its own page ("read the Brasserie Lund meeting and write it up")
 can: [file-source, keep-working-files, draft-outbound, draft-calendar, track-external]
 ---
 
@@ -259,7 +259,7 @@ screen; every line cites its source.
   \`last_told\` entries against the decision spine and shipped tickets, and flag decisions they may
   still know only in the superseded version.
 - **Delivery**: ticket movement since the previous meeting, straight from the mirror notes
-  ("Since Jul 14: SCH-125 In Progress → Blocked"). Leave out tickets that did not move.
+  ("Since 2026-07-09: BOK-412 In Progress → Done"). Leave out tickets that did not move.
 - **Open questions**: from the hubs' open-question lists, as checkboxes.
 - **Loose ends**: unresolved actions and commitments from the previous meeting in the series.
 - **Landmines**: anything promised externally that a current decision contradicts, or whose linked
@@ -481,7 +481,7 @@ search tools, and search the workspace as well:
 Then make one \`ask_user\` call. Name the whole haul in one line, with the real names and the real
 numbers, and end your turn:
 
-"I read SCH and APP, 214 tickets and 40 pages, and a month of your calendar. Want to walk
+"I read BOK and GST, 214 tickets and 40 pages, and a month of your calendar. Want to walk
 through what I found?"
 
 Two options: yes, walk me through it / not now. Write nothing, propose nothing, say nothing else.
@@ -493,11 +493,11 @@ they meet most, which topics keep coming back. Every claim cites the ticket, the
 meeting it came from. A sentence with no citation does not belong in this part.
 
 Where two sources agree, say so. That is the line no single source can give you, so it is worth
-the most: "Checkout Rewrite is in 9 tickets and came up in 4 of your meetings this month." Where
+the most: "No-show fees is in 9 tickets and came up in 4 of your meetings this month." Where
 they disagree, say that too, and ask which one is current.
 
 Then work the areas below, hypothesis first. The sources propose and you put it as a question.
-"Checkout Rewrite looks like the main thing right now. Is it?" beats "what are you working on?",
+"No-show fees looks like the main thing right now. Is it?" beats "what are you working on?",
 because they can correct it in four words. Where the sources are thin, fall back to the open ask
 above. Never read the debrief back into a note: the picture that lasts is the area notes.
 
@@ -962,12 +962,12 @@ take the rule instead.
 A file Qale learns into starts with one line that says what Qale knows and where it came from.
 It has two forms.
 
-- No pick yet: "I do not know how you want exec updates to read yet. Until you pick, the first
-  update comes in these three styles:" with the styles listed under it.
-- Learned: "Read from your last thirty tickets in SCH, APP and PLT on 2 September. A guess from
-  your tickets, not a rule you gave me." Or: "Exec updates are one paragraph, result first.
-  Learned from the style you copied on 5 September. Change this line and the next update follows
-  it."
+- No pick yet: "I do not know how you want internal updates to read yet. Until you pick, the
+  first update comes in these three styles:" with the styles listed under it.
+- Learned: "Read from your last thirty tickets in BOK, GST and PAY on 2 September. A guess from
+  your tickets, not a rule you gave me." Or: "Internal updates are three labelled lines, a date on
+  each. Learned from the style you copied on 5 September. Change this line and the next update
+  follows it."
 
 When you learn something new, rewrite this line with the new source and date. Never add a second
 first line. When the material was thin, the line says so: "Only four recent tickets were written
@@ -978,7 +978,7 @@ here, so this is thin." When the material was not the PM's own, the line says wh
 
 Every rule is one bullet with its source and date. "Start summaries with a verb. From your edit
 on 2 September." A rule the PM said in chat cites the chat: "From what you said on 5 September."
-A rule read from material cites the material: "From your SCH stories, read on 2 September." The
+A rule read from material cites the material: "From your BOK stories, read on 2 September." The
 PM reads the file, sees where each line came from, and deletes any line they do not want.
 
 ## Styles that were not picked
@@ -1091,23 +1091,29 @@ Rules you asked for in a chat, and answers you gave to a question, land here.
 `;
 
 /**
- * The Friday update (SK-10). What to include per audience is the skill's job, so
+ * The Friday update (SK-10). What to include per reader is the skill's job, so
  * that list stayed here when the voices shrank to tone (R4-3). The
  * confidentiality lines the old audience-scoped voices carried landed here too,
  * in one section, rather than in the cs voice: the round-5 KISS call (R5-3), and
  * the cost of it is that the next skill drafting to customers repeats them.
  *
+ * It ships aimed at one internal post and one public changelog section, rather
+ * than at three parallel audience drafts. A week is one set of facts, and the
+ * two readers that differ are the company and everyone outside it; the rest is
+ * the same news at another length. "Who it goes to" is still a list the PM adds
+ * a voice to, so a team that does want a separate board update writes one line.
+ *
  * Each voice is one `draft_text` panel with a Full and a Short variant, because a
  * weekly update is one week said at two lengths and not two drafts. The panel is
- * text to copy. The team page and the page update are the proposals that land.
+ * text to copy. The changelog section is the proposal that lands.
  */
 export const WEEKLY_UPDATE_SKILL = `---
 type: skill
 title: Write the weekly update
-summary: Drafts this week's update for each audience, from what actually changed.
+summary: Drafts this week's news once, for the internal channel and the public changelog, from what actually changed.
 scenarios:
-  - drafting this week's update for each audience ("write the Friday update")
-  - saying what changed to the people who were not there ("what do I tell the exec team about this week")
+  - drafting this week's update ("write the Friday update")
+  - saying what changed to the people who were not there ("what do I post in the product channel this week")
   - a dry run over a week that has already passed ("do last week as a test")
 can: [draft-outbound]
 ---
@@ -1123,59 +1129,59 @@ the week's delivery facts from ticket mirror notes (vault_list type "ticket") wh
 got blocked. Use the "This week" lens as the scope.
 
 ## Who it goes to
-One draft per voice in this list, and what belongs in each. Add a voice here to draft for it. Take
-one out and the next run stops writing it.
+One voice and one page. Add a voice here to draft for it. Take one out and the next run stops
+writing it.
 
-One draft per voice holds while the line about the week's news in the words each group needs is
-on the list in house rules under 'What you want from Qale'. With that line off, write one draft,
-plainly, and read no voice.
+The draft holds while the line about the week's news in the words each group needs is on the list
+in house rules under 'What you want from Qale'. With that line off, write one draft, plainly, and
+read no voice.
 
-- **exec**: the decisions and who made them, what reached customers, and the one thing that could
-  go wrong next. Put a number on it wherever a number exists: the date, the count, the money at
-  risk. Leave the process out.
-- **cs**: what customers can use today and since when, what is promised and on what date, and what
-  they keep asking about that nothing commits to. Say the uncertain part out loud instead of
-  over-promising. Every "live now" and "committed" line stands on a shipped ticket or a decision.
-- **sales**: the dates that changed this week, and nothing else. What a deal can now point to, what
-  slipped and to when, and what still has no date. No process, no reasoning: sales relays this
-  verbatim to an account.
+- **internal**: the post for everyone inside the company: leadership, CS, sales and support. What
+  shipped and on what date, what changed this week (a date that moved, a decision and who made it,
+  who was told), and the one thing to watch next. A date or a number on every line. Ticket keys in
+  brackets at the end of a line. Every shipped line stands on a ticket mirror; every changed line
+  stands on a decision or a ledger entry.
+- **The changelog page**: the page the workspace mirrors in wikipages/ as its changelog or release
+  notes. A new section on top for this week, under a dated heading, with plain-word bullets of what
+  a customer can use now. It is public, so it holds only what shipped. Where the workspace mirrors
+  no such page, write the section as a note instead.
 
-The voice file says how each one sounds. This list says what goes in. Read the voice with
-\`get_voice\` before writing a word of that draft.
+The voice file says how the post sounds. This list says what goes in. Read the voice with
+\`get_voice\` before writing a word of the draft.
 
-## Never in the CS draft
-It gets forwarded word for word, so hold it to these whatever the sources say:
+## Never in the changelog section
+The page is public and every customer reads it, so hold the section to these whatever the
+sources say:
 
 - No internal metrics. Revenue, pipeline, headcount, error rates, velocity: all of it stays inside.
-- No other customer, by name or by description. "Other teams have asked for this too" is as far as
-  it goes.
-- No internal shorthand in the sentence itself: ticket keys, team names, project code names, tool
-  names. The wikilink at the end of a line is the citation, and it comes off before the text is
-  pasted to anyone.
-- No date that nothing backs. No decision and no shipped ticket means no date.
+- No customer, by name or by description. "Some customers asked for this" is as far as it goes.
+- No internal shorthand: ticket keys, team names, project code names, tool names. The citation
+  goes in the proposal's rationale, never in the section.
+- No target date. A changelog line says what shipped and when it shipped. What is planned is not
+  news for this page, however sure the date is.
 
 ## The first time
 A voice that still lists three styles has no pick yet: its first line says so, or it holds more
 than one \`###\` style. For that voice, draw one \`draft_text\` panel with one tab per style, the
 style's name as the label, Full only, and the same news in all three. Set \`ask\` to the question
-{ text: "Write updates this way from now on?", options: ["For exec", "For every audience", "Not now"] },
+{ text: "Write updates this way from now on?", options: ["For internal", "For every audience", "Not now"] },
 with the voice's own name in the first option. When the PM copies a tab, the question appears under
-the panel, and the answer comes back as a turn: \`I copied "One paragraph" and answered "For exec".\`
+the panel, and the answer comes back as a turn: \`I copied "Three labelled lines" and answered "For internal".\`
 
 What each answer means:
 - "For <voice>": vault_read \`skills/writing-skills/SKILL.md\`, read the voice with \`get_voice\`, then
   \`propose_update\` the voice file with \`patch\` blocks. The first line becomes the learned form:
-  "Exec updates are one paragraph, result first. Learned from the style you copied on 5 September.
-  Change this line and the next update follows it." The picked \`###\` style stays, the other two go,
-  and "How it sounds" stays as it is. Set \`learned\` to what you now know and where it came from.
-  The write lands without a card. Then reply with one line: "Got it. Exec updates: one paragraph,
-  result first. [[voices/exec|Exec voice]]".
+  "Internal updates are three labelled lines, a date on each. Learned from the style you copied on
+  5 September. Change this line and the next update follows it." The picked \`###\` style stays, the
+  other two go, and "How it sounds" stays as it is. Set \`learned\` to what you now know and where it
+  came from. The write lands without a card. Then reply with one line: "Got it. Internal updates:
+  three labelled lines. [[voices/internal|Internal voice]]".
 - "For every audience": the same for every voice under "Who it goes to", in one turn, one receipt
   line per voice.
 - "Not now": change nothing. The three styles come back next Friday.
-- \`I copied "One paragraph" again without answering, so treat it as the pick for exec.\`: the same
-  as "For exec", and the receipt says that two copies counted as the pick and that the file is
-  where to change it.
+- \`I copied "Three labelled lines" again without answering, so treat it as the pick for internal.\`:
+  the same as "For internal", and the receipt says that two copies counted as the pick and that the
+  file is where to change it.
 
 After a pick the voice holds one style, and the drafts come as Full and Short as under "Produce".
 If the PM asks for another way, draw the three styles again, with the same \`ask\`.
@@ -1184,25 +1190,23 @@ If the PM asks for another way, draw the three styles again, with the same \`ask
 One \`draft_text\` call per voice, with \`voice\` set and two variants in the same panel (a voice
 with no pick yet gets the panel under "The first time" instead):
 
-- **Full**: every heading in the shape below, in order. It goes in the mail.
-- **Short**: the one thing that audience would act on, in a line or two. It gets pasted into a
-  chat.
+- **Full**: the three lines in the shape below, in order. It goes in the internal channel.
+- **Short**: the one thing that channel would act on, in a line or two. It gets pasted into a
+  thread.
 
-The team page is not a voice, and it is a proposal that lands: shipped, slipped, and why, grounded in
-the week's ticket transitions and linking the decisions and mirrors. Where a status or update page
-mirrored in wikipages/ is the update's home, propose a draft_page_update against that page,
-ending with a source line ("Source: weekly update, <date>"). Otherwise write it as a note. Read
-\`skills/confluence/SKILL.md\` before drafting the page update, when the workspace has one: it says
-how this team writes pages.
+The changelog is not a voice, and it is a proposal that waits: one \`draft_page_update\` against the
+changelog page, a new section on top, ending with a source line ("Source: weekly update, <date>").
+Read \`skills/confluence/SKILL.md\` before drafting it, when the workspace has one: it says how this
+team writes pages, and what a public page may not carry.
 
 Hold every draft to two rules:
 - Only this week's genuine changes. An update that restates old news teaches people to skip it.
 - No shipped, slipped, or blocked claim without a ticket mirror behind it.
 
 ## Then
-The per-voice drafts stay in the chat. Copy the one you want and send it yourself. The team page is
-the proposal that waits in the session: an approved wikipage update pushes upstream, files the deep link
-back, and the mirror re-syncs on the next pull.
+The post stays in the chat. Copy the variant you want and post it yourself. The changelog section
+is the proposal that waits in the session: an approved page update pushes upstream, files the deep
+link back, and the mirror re-syncs on the next pull.
 
 ## The shape of the drafts
 Where a line has nothing behind it, write "nothing this week" and keep the line. A week with nothing
@@ -1213,39 +1217,19 @@ pick yet takes the shape of each of its three styles instead of the Full shape b
 The bracketed label names the draft and its variant. It is not part of the draft.
 
 \`\`\`
-[exec, variant "Full"]
-Decided: <what was decided, and who decided it> ([[decisions/...]])
-Shipped: <what reached customers> ([[tickets/KEY]])
-Watch: <the one thing that could go wrong next> ([[...]])
+[internal, variant "Full"]
+Shipped: <what reached customers, and the date> [KEY] ([[tickets/KEY]])
+Changed: <a date that moved or a decision made this week, and who was told> ([[decisions/...]] | [[customers/...]])
+Watch: <the one thing that could go wrong next, with its date> [KEY] ([[...]])
 
-[exec, variant "Short"]
-<the one line that matters, with its number> ([[decisions/...]])
+[internal, variant "Short"]
+<the one line that matters, with its date or number> [KEY] ([[tickets/KEY]])
 
-[cs, variant "Full"]
-Live now: <what customers can use today, and since when> ([[tickets/KEY]])
-Committed: <what is promised, and the date> ([[decisions/...]])
-No date yet: <what they keep asking about that nothing commits to>
-
-[cs, variant "Short"]
-<the one change customers will notice, and when> ([[tickets/KEY]])
-
-[sales, variant "Full"]
-Now: <what an account can be told is live, and since when> ([[tickets/KEY]])
-Changed: <a date that moved this week, old date to new> ([[decisions/...]])
-No date: <what still has nothing to promise>
-
-[sales, variant "Short"]
-<the one date to relay this week> ([[decisions/...]])
-
-[team: draft_page_update, or a note]
-## Shipped
-- <KEY title>: <state last Friday> to <state now> ([[tickets/KEY]])
-## Slipped or blocked
-- <KEY title>: <what moved it, from the mirror> ([[tickets/KEY]])
-## Decided
-- <the decision, and the decider> ([[decisions/...]])
-## Open
-- <what this week left unanswered> ([[...]])
+[changelog: draft_page_update, a new section on top of the page]
+## <YYYY-MM-DD>
+- <what a customer can use now, in plain words>
+- <what a customer can use now, in plain words>
+Source: weekly update, <date>
 \`\`\`
 `;
 
@@ -1255,14 +1239,14 @@ title: Find the pattern
 summary: Reads a stack of interviews and says what they add up to.
 scenarios:
   - weighing a stack of material already in the workspace against one question ("what do these nine interviews add up to")
-  - counting how many accounts say the same thing ("who else has asked for shift swaps")
+  - counting how many accounts say the same thing ("who else has asked for group bookings")
   - reading a body of tagged material for whatever is in it ("read everything tagged onboarding and tell me what is there")
 can: [draft-outbound, keep-working-files]
 ---
 
 ## When
 You point at a body of material and ask what it adds up to. The question can be pointed
-("who wants scheduled exports?") or open ("read these and tell me what's there"). The material is
+("who wants a waitlist?") or open ("read these and tell me what's there"). The material is
 usually transcripts and sources, sometimes existing insights, sometimes one document read several
 ways. Nothing in the memory yet says which accounts said the same thing. Finding that is the work.
 
@@ -1362,11 +1346,11 @@ them was worth proposing as a note, and any quote worth keeping belongs in an in
 `;
 
 /**
- * The two voices the pack ships (SK-6). A voice is HOW a draft sounds and
+ * The three voices the pack ships (SK-6). A voice is HOW a draft sounds and
  * nothing else: register, sentence length, word choice, the phrases to keep out.
  * What a draft says stays with the skill that asked for it, because the same
- * facts go to the exec team and to CS for different reasons, and a file that
- * decided both would quietly rewrite every skill that drafts.
+ * facts go to the internal channel and to CS for different reasons, and a file
+ * that decided both would quietly rewrite every skill that drafts.
  *
  * They carry `type: skill` because that is the note type the workspace already
  * has for an instruction file the PM edits; the FOLDER says it is a voice, and
@@ -1375,34 +1359,34 @@ them was worth proposing as a note, and any quote worth keeping belongs in an in
  * performs nothing).
  *
  * The summary says who reads it before it says how it sounds, because it is the
- * only line a model sees before choosing (see `voiceRoster`). "Short, decided,
- * quantified" is a fair description of the exec voice and still leaves a note to
+ * only line a model sees before choosing (see `voiceRoster`). "Short, dated, no
+ * process" is a fair description of the internal voice and still leaves a note to
  * the CEO looking like it belongs to no voice at all. Who it is for is the part
  * that makes it pickable, and the body then says how it sounds.
  *
- * Both ship with three styles and a first line that says no pick yet
+ * All three ship with three styles and a first line that says no pick yet
  * (docs/learning-how-you-work.md, ticket 10). The first weekly update draws all
  * three, the PM copies one, and the pick rewrites the file: the first line turns
  * into the learned form, the picked `###` style stays, the other two go. The
  * "How it sounds" bullets hold whichever style is picked, so they are written to
  * fit a three-liner and a paragraph alike.
  */
-export const VOICE_EXEC = `---
+export const VOICE_INTERNAL = `---
 type: skill
-title: Exec voice
-summary: For leadership and the board. Short, decided, quantified. No process.
+title: Internal voice
+summary: For the internal channel, read by leadership, CS, sales and support. Short, dated, no process.
 ---
 
-# Exec voice
+# Internal voice
 
-I do not know how you want exec updates to read yet. Until you pick, the first update comes in these three styles:
+I do not know how you want internal updates to read yet. Until you pick, the first update comes in these three styles:
 
-### Three lines
-Decided, shipped, watch. One line each, with a number on every line.
-No greeting, no reason, nothing else.
+### Three labelled lines
+Shipped, changed, watch. One line each, with a date or a number on every line.
+Ticket keys go in brackets at the end of a line, never inside the sentence. No greeting, nothing else.
 
 ### One paragraph
-The result in the first sentence, then the reason. No labels.
+The result in the first sentence, then what changed. No labels.
 Four sentences at most.
 
 ### What changed, what's next
@@ -1411,12 +1395,12 @@ A number or a date on every line that has one.
 
 ## How it sounds
 
-The reader runs the company and reads this on a phone between two meetings.
+The reader sits in leadership, CS, sales or support, and reads the channel on a phone between two meetings.
 
-- Put the outcome or the decision in the first sentence. Reasoning comes after it.
-- Short. Three sentences, or one line per item. If more is needed, make it a number.
-- Say it flat. "We ship on the 14th", not "we are hoping to be able to ship".
-- Use the number instead of the adjective: "two accounts, 180k SEK", not "significant risk".
+- The fact first, then the date. "Table areas shipped on the 14th", not "we are pleased to say".
+- A date or a number on every line. "Four support tickets", not "several".
+- Say it flat. "No-show fees: end of October", not "we are hoping for October".
+- Say what changed for customers in plain words, and put the key in brackets at the end of the line: "(BOK-412)".
 - Plain words over trade words: "we stopped work on X", not "we deprioritised the X workstream".
 - No greeting, no sign-off, no "hope you are well".
 - Never write: "just wanted to", "circle back", "synergy", "leverage" as a verb, "touch base".
@@ -1486,7 +1470,7 @@ No line without a date or a plain "no date yet".
 
 The reader is closing or renewing a deal and will paste this straight into their own message.
 
-- The date first. "Shift swaps ship in Q4" before any reasoning.
+- The date first. "No-show fees ship in Q4" before any reasoning.
 - Say plainly what can be promised and what cannot. "We do not have a date yet" beats a soft one.
 - No engineering caveats the customer can't act on: no ticket keys, no blocked-by, no re-estimate,
   no team names. If it isn't a date or a fact they can repeat to their boss, cut it.
@@ -1688,10 +1672,10 @@ title: Handle a commitment
 summary: Works out what to do about a promise that's slipping, or a request that just came in.
 scenarios:
   - one todo that has gone past its date ("this one is overdue, what do I do about it")
-  - something owed to a named person ("I still owe Marcus the swap ETA for Café Nord")
+  - something owed to a named person ("I still owe Marcus the group bookings answer for Nordic Steak")
   - deciding whether a commitment can be closed or has to move ("can I close this one out")
   - a request that just came in where it is not obvious what it wants ("what do I do with this message from sales?")
-  - a request from somebody whose position changes the answer ("the CPO wants shift swaps live before September, what now")
+  - a request from somebody whose position changes the answer ("the CPO wants no-show fees live before November, what now")
   - working out what to say back to one ("how should I answer this")
 ---
 
@@ -1742,7 +1726,7 @@ A conflict is a question every time, asked before the write. Ask it in one line,
 words, with no citation in it. What you have and the note as a link go in the body, in one sentence.
 The two answers are the options. Then write what they chose and set \`asked\`. A close the
 PM said out loud in a source is theirs, so write it. A close you worked out yourself is a question
-("Mark the send-Nordkap-the-dates todo done?", with what Åsa said about the dates in the body).
+("Mark the send-lena-the-october-plan todo done?", with what Lena said about the plan in the body).
 
 ## Produce: a commitment of yours
 The right handling for this one commitment, each option as its own write. Pick what fits;
@@ -1844,9 +1828,9 @@ type: skill
 title: Write a spec
 summary: Turns a research page's insights and decisions into a document a team can build from.
 scenarios:
-  - turning a research page or a tag the workspace already backs into something a team can build ("write a spec for the pricing page")
-  - writing up what we are committing to, from insights and decisions already filed ("draft the PRD for scheduled exports")
-  - checking whether the evidence carries a spec yet ("is there enough here to spec onboarding")
+  - turning a research page or a tag the workspace already backs into something a team can build ("write a spec for the waitlist")
+  - writing up what we are committing to, from insights and decisions already filed ("draft the PRD for no-show fees")
+  - checking whether the evidence carries a spec yet ("is there enough here to spec group bookings")
 ---
 
 ## When
@@ -2203,7 +2187,7 @@ export const RETIRED_SKILLS: string[] = ['skills/incoming-request/SKILL.md'];
  * runnable folder, so no voice can ever be invoked as a skill.
  */
 export const DEFAULT_VOICES: DefaultSkill[] = [
-  { file: 'voices/exec.md', content: VOICE_EXEC },
+  { file: 'voices/internal.md', content: VOICE_INTERNAL },
   { file: 'voices/cs.md', content: VOICE_CS },
   { file: 'voices/sales.md', content: VOICE_SALES },
 ];

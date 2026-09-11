@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type MouseEvent } from 'react';
+import { Fragment, useCallback, useRef, useState, type MouseEvent } from 'react';
 import { Spinner } from '@qale/ui';
 import {
   Check,
@@ -10,29 +10,46 @@ import {
   Undo2,
   type LucideIcon,
 } from 'lucide-react';
-import { typeForDir, type AppliedRow, type AppliedVerb } from '@qale/domain';
+import type { AppliedRow, AppliedVerb } from '@qale/domain';
 import type { ProposalDTO, UpdatePayloadDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 import { invoke } from '../../lib/ipc';
 import { navFromEvent, type NavOpts } from '../../lib/nav';
 import { noteTypeIcon } from '../../lib/note-icons';
 import { useToast } from '../toast';
-import { orderLanded, putRowBack } from '../../lib/receipt-block';
+import {
+  chipForRow,
+  foldsLanded,
+  landedSummary,
+  orderLanded,
+  putRowBack,
+  rowChange,
+  type LandedSummary,
+  type SummaryChip,
+} from '../../lib/receipt-block';
 import { ChangePreview } from './CardItem';
 
 /**
- * What one turn wrote, as lines (docs/fewer-approvals.md FA-4).
+ * What one turn wrote (docs/fewer-approvals.md FA-4).
  *
  * A write that needs no card still has to be seen, and seen where the PM is
  * already looking. But it is not a decision they have to make, so it must not
- * look like one: a card asks, and these lines only report. Each is one line and
- * never more: a mark for what happened (plus, pencil, check, minus), the thing
- * it happened to as the chip a ticket wears in a page, and for a change, what
- * moved. The chevron opens the diff and the Undo.
+ * look like one: a card asks, and this only reports.
  *
- * The lines sit in the order the PM reads them: todos first, then the meeting,
- * their documents, and last Qale's own record. No word over a group and no
- * control for the whole turn (docs/receipt-redesign.md, notes at the bottom).
+ * One to three writes draw as rows: a mark for what happened (plus, pencil,
+ * check, minus) and the thing it happened to, as the chip a ticket wears in a
+ * page. From four, the rows fold behind one line that says what the turn
+ * touched, and the chevron opens them. Seven rows in a row read as a wall and
+ * the PM scrolled past all of it (Erik, 2026-09-09). The line names pages
+ * rather than counting them, because "changed 3 pages" answers nobody's
+ * question and "did it touch the thing I care about" is the question.
+ *
+ * The line and the rows read in one fixed order, by what the PM has to act on:
+ * to-dos and meeting pages Qale made, then to-dos and meeting pages that moved,
+ * then their documents, then everything Qale filed for itself, then anything
+ * that went (`orderLanded`). No word over a tier and no control for the whole
+ * turn (docs/receipt-redesign.md, notes at the bottom). The chevron on a row
+ * opens the diff and the Undo.
  *
  * Activity stays the long-term ledger with the same mechanism. This is the same
  * undo, said at the moment it is cheapest to use.
@@ -59,6 +76,7 @@ export function LandedRows({
   const toast = useToast();
   const [undone, setUndone] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const cards = useCards(sessionId);
 
   if (rows.length === 0) return null;
@@ -79,20 +97,85 @@ export function LandedRows({
       toast('Undone as a whole page. Anything you wrote after this went with it.');
   };
 
-  return (
+  const ordered = orderLanded(rows);
+  const isUndone = (row: AppliedRow) => !!row.activityId && !!undone[row.activityId];
+  const list = (
     <ul aria-label={label ?? undefined} className="my-1 flex flex-col gap-0.5">
-      {orderLanded(rows).map((row, i) => (
+      {ordered.map((row, i) => (
         <LandedRow
           key={row.activityId ?? row.proposalId ?? `${row.path ?? ''}-${i}`}
           row={row}
           busy={busy === row.activityId}
-          undone={!!row.activityId && !!undone[row.activityId]}
+          undone={isUndone(row)}
           card={cards.get}
           onOpen={onOpen}
           onPutBack={() => row.activityId && void putBack(row.activityId)}
         />
       ))}
     </ul>
+  );
+  if (!foldsLanded(ordered)) return list;
+
+  // The line is built from what still stands, so a row put back from the open
+  // list takes itself out of the line rather than leaving it to lie.
+  const summary = landedSummary(ordered.filter((row) => !isUndone(row)));
+  return (
+    <div className="my-1 text-xs">
+      {/* The same shape and the same classes as the work trail above it: one
+          line, one button, the chevron at the end. The line's own words are its
+          label, so it needs no other one. */}
+      <button
+        className="flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {/* One mark for the line, in ink: four marks over a fold would be a
+            legend for rows nobody has opened yet. A plus when the turn made a
+            to-do or a meeting page, a pencil when it only moved things that
+            were already there. */}
+        <LineMark mark={summary.mark} />
+        <span className="truncate">
+          {summary.text ? <SummaryLine summary={summary} /> : 'Undone'}
+        </span>
+        <ChevronDown
+          className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+          aria-hidden
+        />
+      </button>
+      {open && list}
+    </div>
+  );
+}
+
+/** The one mark over a folded line. It follows the line's first tier: a plus
+ *  when the turn made a to-do or a meeting page, a pencil otherwise. */
+function LineMark({ mark }: { mark: LandedSummary['mark'] }) {
+  const Mark = mark === 'new' ? Plus : Pencil;
+  return <Mark className="size-3.5 shrink-0 text-foreground/70" strokeWidth={2.25} aria-hidden />;
+}
+
+/**
+ * The folded line itself: one clause per tier, with a dot between them.
+ *
+ * Words only. Naming every page made the line longer than the rows it stands
+ * for, and a name that matters is one chevron away on its own row, where it
+ * opens (Erik, 2026-09-11). A page that went keeps its name and its colour:
+ * nothing else on screen says it is gone.
+ */
+function SummaryLine({ summary }: { summary: LandedSummary }) {
+  return (
+    <>
+      {summary.clauses.map((clause, i) => (
+        <Fragment key={`${clause.tier}-${i}`}>
+          {i > 0 && ' · '}
+          {clause.tier === 'removed' ? (
+            <span className="text-destructive">{clause.text}</span>
+          ) : (
+            clause.text
+          )}
+        </Fragment>
+      ))}
+    </>
   );
 }
 
@@ -126,10 +209,10 @@ function useCards(sessionId: string | null) {
  * The diff for a write that already landed, off the card's own payload.
  *
  * The preview a waiting card uses re-places its change against the file, which
- * a landed write is already part of. So the line draws the write's own diff, the
+ * a landed write is already part of. So the row draws the write's own diff, the
  * same one the undo reverses: what the patch replaced, and what the append
- * added. Null when nothing but the properties moved, which the line already
- * says in words.
+ * added. Null when nothing but the properties moved, which the open row says in
+ * words.
  */
 function landedPreview(card: ProposalDTO): { before: string; after: string } | null {
   if (card.kind === 'delete') return null;
@@ -147,16 +230,16 @@ function landedPreview(card: ProposalDTO): { before: string; after: string } | n
 }
 
 /**
- * The mark in front of the line, by what happened: plus for new, a pencil for
+ * The mark in front of the row, by what happened: plus for new, a pencil for
  * changed, a check for done, minus for removed.
  *
  * The shape carries the meaning, not the colour. Colour-coding four verbs made
- * a stack of lines read as a chart with a legend nobody was handed, and the
+ * a stack of rows read as a chart with a legend nobody was handed, and the
  * tones quiet enough to sit in a chat were too dim to tell apart at this size
  * (Erik, 2026-09-08). So every mark is ink, one tone, a shade darker than the
- * line it stands in front of, and big enough to read. The one exception is a
- * line that took something away: that one stays red, because it is the line you
- * must not miss. A send never draws here.
+ * row it stands in front of, and big enough to read. The one exception is a row
+ * that took something away: that one stays red, because it is the row you must
+ * not miss. A send never draws here.
  */
 const MARK: Record<AppliedVerb, LucideIcon> = {
   New: Plus,
@@ -169,27 +252,20 @@ const MARK: Record<AppliedVerb, LucideIcon> = {
   Sent: Plus,
 };
 
-/** Whether the line says what moved. A new page and a removed one have nothing
- *  to add: the mark and the name are the whole story. */
-const SAYS_CHANGE = new Set<AppliedVerb>(['Changed', 'Todo changed', 'Done', 'Todo done']);
-
 /**
  * The thing a write touched, drawn the way a ticket is drawn inside a page:
  * a small chip with the kind's icon and the name, that opens it. A removed
  * page, and a row from before this block existed, have nothing to open and
  * draw as plain words.
  */
-function TargetChip({
-  row,
+function Chip({
+  chip,
   onOpen,
 }: {
-  row: AppliedRow;
+  chip: SummaryChip;
   onOpen: (path: string, opts?: NavOpts) => void;
 }) {
-  const title = row.title ?? 'a page';
-  const path = row.verb === 'Removed' ? null : (row.path ?? null);
-  const dir = (row.path ?? '').split('/')[0] ?? '';
-  const type = typeForDir(dir);
+  const { path, label, type } = chip;
   const Icon = type ? noteTypeIcon(type) : FileText;
   const open = (e: MouseEvent) => {
     if (!path) return;
@@ -202,7 +278,7 @@ function TargetChip({
     return (
       <span className={`${shape} bg-muted text-muted-foreground`}>
         <Icon className="size-3 shrink-0 opacity-70" aria-hidden />
-        <span className="truncate">{title}</span>
+        <span className="truncate">{label}</span>
       </span>
     );
   return (
@@ -212,15 +288,16 @@ function TargetChip({
       onClick={open}
       // Middle-click = open in background tab, as every other link in the app.
       onAuxClick={(e) => e.button === 1 && open(e)}
-      title={`Open ${title}`}
+      title={`Open ${label}`}
     >
       <Icon className="size-3 shrink-0 opacity-70" aria-hidden />
-      <span className="truncate">{title}</span>
+      <span className="truncate">{label}</span>
     </button>
   );
 }
 
-/** One landed write, on one line. */
+/** One landed write, on one line: the mark, the page, and for a page that
+ *  changed, how much of its body moved. */
 function LandedRow({
   row,
   busy,
@@ -245,9 +322,9 @@ function LandedRow({
   const preview = stored ? landedPreview(stored) : null;
   // The chevron has something to show only when the card is still there to read.
   const canOpen = !!row.proposalId;
-  const change = SAYS_CHANGE.has(row.verb) ? row.change : undefined;
+  const change = rowChange(row);
   const Mark = MARK[row.verb];
-  // The whole story on hover, for the one line in ten where the mark and the
+  // The whole story on hover, for the one row in ten where the mark and the
   // name are not enough.
   const hover = [row.verb, row.title, row.change].filter(Boolean).join(' · ');
 
@@ -263,7 +340,7 @@ function LandedRow({
         <p
           className={`flex min-w-0 flex-1 items-center gap-1.5 ${undone ? 'line-through opacity-60' : ''}`}
         >
-          <TargetChip row={row} onOpen={onOpen} />
+          <Chip chip={chipForRow(row)} onOpen={onOpen} />
           {change && <span className="truncate">{change}</span>}
         </p>
         {undone && (

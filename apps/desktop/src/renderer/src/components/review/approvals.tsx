@@ -1,17 +1,11 @@
 import { useCallback, useState } from 'react';
 import { Button } from '@qale/ui';
-import { ArrowUpRight, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
 import type { MeetingReviewAskDTO, OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
-import type { NavOpts } from '../../lib/nav';
-import { ExternalRefChip } from '../ExternalRef';
+import type { SittingSend } from '../../lib/sent-cards';
 import { useToast } from '../toast';
 import { outboundAct, sentLine, staleAcceptMessage, type SentLine } from './shared';
-
-/** One thing that left the workspace, as the green card says it. */
-export interface SentReceipt extends SentLine {
-  id: string;
-}
 
 /**
  * The receipt line for one send: the sentence, with the item split out so the
@@ -22,19 +16,15 @@ export interface SentReceipt extends SentLine {
  * a session is reopened the same line comes off the stored card, which the
  * accept stamped with the same two facts.
  */
-export function sentReceiptOf(
-  id: string,
+export function sentLineOf(
   ob: OutboundPayloadDTO,
   landed?: { externalId?: string; url?: string },
-): SentReceipt {
-  return {
-    id,
-    ...sentLine({
-      ...ob,
-      ...(landed?.externalId ? { targetId: ob.targetId ?? landed.externalId } : {}),
-      ...(landed?.url ? { url: ob.url ?? landed.url } : {}),
-    }),
-  };
+): SentLine {
+  return sentLine({
+    ...ob,
+    ...(landed?.externalId ? { targetId: ob.targetId ?? landed.externalId } : {}),
+    ...(landed?.url ? { url: ob.url ?? landed.url } : {}),
+  });
 }
 
 /**
@@ -54,7 +44,17 @@ export interface Approvals {
   /** Outbound sends refused because the target moved after drafting. */
   staleSends: Record<string, boolean>;
   receipt: { accepted: number; rejected: number };
-  sent: SentReceipt[];
+  /** The sends that left in this sitting. Each keeps its card on screen,
+   *  settled (docs/receipt-redesign.md, RC-3 revised 2026-09-11). */
+  sent: SittingSend[];
+  /**
+   * Send cards whose accept is in flight. The pending list drops a card the
+   * moment main accepts it, a beat before the send's result is back, and a
+   * card that vanished for one frame and came back settled would flicker. So
+   * the review keeps drawing these until the result lands, one way or the
+   * other.
+   */
+  held: ProposalDTO[];
   reviewAsks: MeetingReviewAskDTO[];
   answerReviewAsk: (ask: MeetingReviewAskDTO) => void;
   dismissReviewAsk: (ask: MeetingReviewAskDTO) => void;
@@ -73,7 +73,8 @@ export function useApprovals(): Approvals {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [staleSends, setStaleSends] = useState<Record<string, boolean>>({});
   const [receipt, setReceipt] = useState({ accepted: 0, rejected: 0 });
-  const [sent, setSent] = useState<SentReceipt[]>([]);
+  const [sent, setSent] = useState<SittingSend[]>([]);
+  const [held, setHeld] = useState<ProposalDTO[]>([]);
   const [reviewAsks, setReviewAsks] = useState<MeetingReviewAskDTO[]>([]);
   const toast = useToast();
   const vaultPath = vault?.path ?? '';
@@ -129,6 +130,7 @@ export function useApprovals(): Approvals {
     async (p: ProposalDTO, edited?: unknown): Promise<boolean> => {
       const release = hold();
       setError(p.id, null);
+      if (p.kind === 'outbound') setHeld((h) => (h.some((c) => c.id === p.id) ? h : [...h, p]));
       try {
         const r = await acceptProposal(p.id, edited);
         noteReviewAsk(r.review);
@@ -141,7 +143,7 @@ export function useApprovals(): Approvals {
           });
           if (p.kind === 'outbound') {
             const ob = p.payload as OutboundPayloadDTO;
-            setSent((s) => [...s, sentReceiptOf(p.id, ob, r)]);
+            setSent((s) => [...s, { card: p, line: sentLineOf(ob, r), at: Date.now() }]);
           }
           return true;
         }
@@ -173,6 +175,10 @@ export function useApprovals(): Approvals {
         );
         return false;
       } finally {
+        // Landed or refused, the result is on screen now: the settled card or
+        // the pending one with its error row. React batches this with the
+        // state set above, so the card never draws twice or not at all.
+        setHeld((h) => h.filter((c) => c.id !== p.id));
         release();
       }
     },
@@ -244,6 +250,7 @@ export function useApprovals(): Approvals {
     staleSends,
     receipt,
     sent,
+    held,
     reviewAsks,
     answerReviewAsk,
     dismissReviewAsk,
@@ -252,43 +259,6 @@ export function useApprovals(): Approvals {
     acceptAll: (cards) => void acceptAll(cards),
     rejectAll: (cards) => void rejectAll(cards),
   };
-}
-
-/** The receipt for what left the workspace, in the banner's own past tense.
- *  Each line opens the thing it touched, so "Commented on PAY-142" is a way to
- *  the ticket and not only a sentence about it. */
-export function SentReceipts({
-  sent,
-  onOpen,
-}: {
-  sent: SentReceipt[];
-  onOpen: (path: string, opts?: NavOpts) => void;
-}) {
-  if (sent.length === 0) return null;
-  return (
-    <div className="mb-3 flex items-start gap-2 rounded-lg border border-success/30 bg-success/8 px-3 py-2 text-sm">
-      <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-success" />
-      <div className="min-w-0 flex-1">
-        {/* The banner promised "leaves your workspace"; the receipt says it
-            left, in the same words and in past tense. */}
-        <span className="font-medium text-foreground">Left your workspace</span>
-        <ul className="mt-0.5 text-muted-foreground">
-          {sent.map((s) => (
-            <li key={s.id} className="truncate">
-              {s.act}
-              {s.item && (
-                <>
-                  {' '}
-                  <ExternalRefChip target={s.item} alias={s.name} url={s.url} onOpen={onOpen} />
-                </>
-              )}
-              {s.tail ? ` ${s.tail}` : ''}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
 }
 
 /**

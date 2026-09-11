@@ -2,6 +2,7 @@ import { Button } from '@qale/ui';
 import { Check } from 'lucide-react';
 import type { ProposalDTO } from '@qale/ipc';
 import type { NavOpts } from '../../lib/nav';
+import type { SentCard } from '../../lib/sent-cards';
 import { CardItem } from './CardItem';
 import { cardGroups, cardHeadline, cardTitle } from './cardMeta';
 import { useNoteName } from './titles';
@@ -47,6 +48,9 @@ export interface CardRowsProps {
   onOpen: (path: string, opts?: NavOpts) => void;
   /** The cards came from more than one source, so each row names its own. */
   showSource?: boolean;
+  /** The sends in the list that have already left, by card id. Each keeps
+   *  its own row, settled, in the place it was judged. */
+  settled?: ReadonlyMap<string, SentCard>;
 }
 
 /**
@@ -56,7 +60,15 @@ export interface CardRowsProps {
  * Cards that change the same thing sit together under its name. Everything else
  * is a row of its own.
  */
-export function CardRows({ cards, approvals, focusedId, onFocus, onOpen, showSource }: CardRowsProps) {
+export function CardRows({
+  cards,
+  approvals,
+  focusedId,
+  onFocus,
+  onOpen,
+  showSource,
+  settled,
+}: CardRowsProps) {
   const { busy, errors, staleSends, accept, reject } = approvals;
   const row = (p: ProposalDTO, inGroup: boolean) => (
     <CardItem
@@ -72,22 +84,34 @@ export function CardRows({ cards, approvals, focusedId, onFocus, onOpen, showSou
       onOpen={onOpen}
       inGroup={inGroup}
       showSource={showSource}
+      sent={settled?.get(p.id) ?? null}
     />
   );
+  // A settled send is never grouped: it is done, and a header over one done
+  // row and one waiting row would ask the reader to judge them as a pair. It
+  // keeps its own row where the list put it, so the card the PO just pressed
+  // stays under their eye.
+  const waiting = cards.filter((p) => !settled?.has(p.id));
+  const groupOf = new Map<string, { key: string; cards: ProposalDTO[] }>();
+  for (const group of cardGroups(waiting)) for (const p of group.cards) groupOf.set(p.id, group);
+  const drawn = new Set<string>();
   return (
     <ul className="flex flex-col gap-2">
-      {cardGroups(cards).map((group) =>
-        group.cards.length === 1 ? (
-          row(group.cards[0]!, false)
-        ) : (
+      {cards.map((p) => {
+        if (settled?.has(p.id)) return row(p, false);
+        const group = groupOf.get(p.id);
+        if (!group || group.cards.length === 1) return row(p, false);
+        if (drawn.has(group.key)) return null;
+        drawn.add(group.key);
+        return (
           <TargetGroupRows
             key={group.key}
             cards={group.cards}
             onOpen={onOpen}
-            row={(p) => row(p, true)}
+            row={(c) => row(c, true)}
           />
-        ),
-      )}
+        );
+      })}
     </ul>
   );
 }

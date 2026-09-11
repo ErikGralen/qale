@@ -1045,6 +1045,22 @@ function undeletable(type: string): string | null {
   return null;
 }
 
+/**
+ * What every silent write tells the model after the receipt line
+ * (`appliedReceipt`), the same words each time so the four call sites cannot
+ * drift.
+ *
+ * The app draws the write as a row under the model's message, with its own
+ * diff and an undo, so the model does not have to report it: SHARED_PREAMBLE
+ * already tells it never to list what it filed. This is the one place that
+ * used to say the opposite ("say what you did in one short line"), which is
+ * why a real transcript showed the model repeating every row back in prose
+ * right above the rows themselves.
+ */
+const APPLIED_TAIL =
+  'It is done and nobody has to click: the chat shows it as a row with its diff and an undo. ' +
+  "Don't say what you did; when you're done, say what it means.";
+
 export function createProposeTools(
   ctx: UseCaseContext,
   sessionId: string,
@@ -1164,10 +1180,9 @@ export function createProposeTools(
    *
    * The first line is the receipt itself, written once in the domain, because
    * the session view reads it straight back out of this result to draw the
-   * quiet "Created X" row in the trail. Everything after it is for the model,
-   * and it says the one thing the old "Awaiting review" sentence got wrong:
-   * this is done, nobody has to click, so do not talk about it as if it were
-   * pending.
+   * quiet "Created X" row in the trail. Everything after it is for the model:
+   * APPLIED_TAIL, then whatever extra place a caller wants named (`tail`,
+   * e.g. " It is at path.md."), then the landed row for the chat.
    */
   const applied = (
     action: ActivityAction,
@@ -1176,11 +1191,7 @@ export function createProposeTools(
     /** What landed, in fields, for the chat's receipt block (FA-4). */
     filed?: { landed?: AppliedRow },
   ): ReturnType<typeof text> =>
-    text(
-      `${appliedReceipt(action, subject)}.\n` +
-        'It is in the workspace now and nothing is waiting on the PM. Say what you did in one ' +
-        `short line and carry on.${tail}${landedLine(filed)}`,
-    );
+    text(`${appliedReceipt(action, subject)}.\n` + `${APPLIED_TAIL}${tail}${landedLine(filed)}`);
 
   /**
    * The last line of a landed result: the same write in fields, so the chat can
@@ -2202,8 +2213,7 @@ export function createProposeTools(
           if (filed.disposition === 'silent') {
             return text(
               `${appliedReceipt('learned', `that "${line}" comes off the list`)}.\n` +
-                'It is off the list of what you want from Qale, and Activity keeps the row. ' +
-                'Nothing is waiting on the PM: say you have taken it off, in one short line, and carry on.' +
+                APPLIED_TAIL +
                 landedLine(filed),
             );
           }
@@ -2297,10 +2307,7 @@ export function createProposeTools(
         harness?.recordWrite(path, filed.rec.id, home ? 'update' : 'note');
         if (filed.disposition === 'silent') {
           return text(
-            `${appliedReceipt('learned', `"${rule}"`)}.\n` +
-              `It is on the list in house rules under '${listName}' now, and every session reads it. ` +
-              'Nothing is waiting on the PM: say you have noted it, in one short line, and carry on.' +
-              landedLine(filed),
+            `${appliedReceipt('learned', `"${rule}"`)}.\n` + APPLIED_TAIL + landedLine(filed),
           );
         }
         return text(
@@ -2355,8 +2362,7 @@ export function createProposeTools(
         filed.disposition === 'silent'
           ? text(
               `${appliedReceipt('remembered', `"${rule}"`)}.\n` +
-                `It is in ${name} now, and every session that reads that file follows it. Nothing is ` +
-                `waiting on the PM: say you have noted it, in one short line, and carry on.${misfiled}` +
+                `${APPLIED_TAIL}${misfiled}` +
                 landedLine(filed),
             )
           : text(

@@ -33,11 +33,11 @@
                 "variants": [
                   {
                     "label": "Full",
-                    "body": "Shipped: table areas on the booking page, live since 2026-07-14, guests pick window, terrace or bar when they book ([[tickets/jira/GST-140]]); one reminder per booking whatever the source, fixed 2026-07-17 after four support tickets ([[tickets/jira/BOK-412]]).\nChanged: no-show fees is now aimed at end of October, told to Brasserie Lund on 2026-07-16 ([[customers/brasserie-lund]]); the stories go to sprint planning on 2026-07-22 ([[tickets/jira/BOK-300]]).\nWatch: group bookings still waits on the deposits work, and Payments has given no date ([[tickets/jira/PAY-210]]); the waitlist text story is in progress, the 15-minute window and the hand-off to the next guest are what is left ([[tickets/jira/BOK-265]])."
+                    "body": "Shipped: [[tickets/jira/GST-140]], table areas on the booking page, live since 2026-07-14, guests pick window, terrace or bar when they book; [[tickets/jira/BOK-412]], one reminder per booking whatever the source, fixed 2026-07-17 after four support tickets.\nChanged: no-show fees is now aimed at end of October, told to [[customers/brasserie-lund]] on 2026-07-16; the [[tickets/jira/BOK-300]] stories go to sprint planning on 2026-07-22.\nWatch: group bookings still waits on [[tickets/jira/PAY-210]], the deposits work, and Payments has given no date; [[tickets/jira/BOK-265]], the waitlist text story, is in progress, and the 15-minute window and the hand-off to the next guest are what is left."
                   },
                   {
                     "label": "Short",
-                    "body": "Shipped: table areas on the booking page (2026-07-14) and the reminder fix (2026-07-17), so guests who book through Google get one reminder, not two ([[tickets/jira/GST-140]], [[tickets/jira/BOK-412]]).\nChanged: no-show fees is now aimed at end of October, told to Brasserie Lund on 2026-07-16 ([[tickets/jira/BOK-300]]).\nWatch: group bookings still waits on the deposits work, and Payments has given no date ([[tickets/jira/PAY-210]])."
+                    "body": "Shipped: [[tickets/jira/GST-140]], table areas on the booking page (2026-07-14), and [[tickets/jira/BOK-412]], the reminder fix (2026-07-17), so guests who book through Google get one reminder, not two.\nChanged: [[tickets/jira/BOK-300]], no-show fees, is now aimed at end of October, told to Brasserie Lund on 2026-07-16.\nWatch: group bookings still waits on [[tickets/jira/PAY-210]], the deposits work, and Payments has given no date."
                   }
                 ]
               }

@@ -98,15 +98,16 @@
                 "questions": [
                   {
                     "header": "Q1 2027",
-                    "question": "Two things in Marcus's message. Google bookings has been live since 2026-05-12 ([[tickets/jira/GST-77]]); that one is a yes. Group bookings is Q1 2027 on Roadmap H2, two quarters out. Åsa decided on 2026-06-18 that it waits on the deposits work Payments has planned for Q4, and steering on 2026-07-09 kept that ([[decisions/2026-06-18-group-bookings-after-deposits]], [[meetings/2026-07-09-steering]]). Marcus says Nordic Steak needs it this autumn to sign. Do you want to move group bookings up?",
+                    "question": "Do you want to move group bookings up?",
+                    "body": "The record says Q1 2027, after deposits: [[decisions/2026-06-18-group-bookings-after-deposits]], kept at [[meetings/2026-07-09-steering]]. Marcus says Nordic Steak needs it this autumn to sign.",
                     "options": [
                       {
                         "label": "No, Q1 stands",
-                        "description": "Marcus gets a yes on the button and a no on group bookings, with the reason. The ask is kept as an insight."
+                        "description": "Marcus gets the reason; the ask becomes an insight."
                       },
                       {
                         "label": "Yes, I'll raise it at steering",
-                        "description": "Marcus is told the date is open until steering on Thursday, and the ask goes on the steering brief."
+                        "description": "Open until steering on Thursday; on the brief."
                       }
                     ]
                   }
@@ -142,7 +143,7 @@
                   "confidence": "high",
                   "customer": "[[customers/nordic-steak]]"
                 },
-                "body": "Nordic Steak wants group bookings in the contract before they sign. The ask reached me through sales as a contract line, not as a problem a restaurant has had. That is the third time, after June and the steering on 2026-07-09, and the shape is the same ([[people/marcus-ek]], [[customers/nordic-steak]], [[research/group-bookings]]). The answer has not moved: group bookings waits on the deposits work, so Q1 2027 ([[decisions/2026-06-18-group-bookings-after-deposits]]). The same message asks for the Google button as if it were coming. It has been live since 2026-05-12, and sales was not told ([[tickets/jira/GST-77]]).\n\nMarcus Ek, in #sales at 08:52 on 2026-07-17, wants an answer this week: \"Their ops lead needs two things in the contract: group bookings with a set menu, and the Google \"Book a table\" button on every restaurant. Can I tell them both are coming this autumn? I NEED BOTH TO SIGN THEM.\"",
+                "body": "[[customers/nordic-steak]] wants group bookings in the contract before they sign. The ask reached me through [[people/marcus-ek|Marcus]] as a contract line, not as a problem a restaurant has had. That is the third time, after June and the [[meetings/2026-07-09-steering]], and the shape is the same. The answer has not moved: group bookings waits on the deposits work, so Q1 2027, as [[decisions/2026-06-18-group-bookings-after-deposits]] says. The same message asks for the Google button as if it were coming. [[tickets/jira/GST-77]] has been live since 2026-05-12, and sales was not told.\n\nMarcus Ek, in #sales at 08:52 on 2026-07-17, wants an answer this week: \"Their ops lead needs two things in the contract: group bookings with a set menu, and the Google \"Book a table\" button on every restaurant. Can I tell them both are coming this autumn? I NEED BOTH TO SIGN THEM.\"",
                 "rationale": "The record of what was asked, so the next group bookings question from sales lands on it instead of starting over.",
                 "sources": [
                   "[[decisions/2026-06-18-group-bookings-after-deposits]]",
@@ -157,7 +158,7 @@
               "name": "propose_update",
               "input": {
                 "path": "customers/nordic-steak.md",
-                "append": "- 2026-07-17: told through Marcus: the Google button is live now, switched on under Settings, Booking channels ([[tickets/jira/GST-77]]); group bookings is Q1 2027, after deposits ([[decisions/2026-06-18-group-bookings-after-deposits]]).",
+                "append": "- 2026-07-17: told through Marcus: the Google button, [[tickets/jira/GST-77]], is live now, switched on under Settings, Booking channels. Group bookings is Q1 2027, after deposits, per [[decisions/2026-06-18-group-bookings-after-deposits]].",
                 "rationale": "The ledger's last line is \"on the roadmap\" with no quarter. Today Marcus gets a date for the button and a quarter for group bookings, and this is what Oskar hears.",
                 "sources": [
                   "[[tickets/jira/GST-77]]",
@@ -169,7 +170,7 @@
               "name": "propose_update",
               "input": {
                 "path": "people/marcus-ek.md",
-                "append": "- 2026-07-17: the Google button has been live since 2026-05-12 ([[tickets/jira/GST-77]]), so it goes in the Nordic Steak contract as done; group bookings is Q1 2027 and the date is not open ([[decisions/2026-06-18-group-bookings-after-deposits]]).",
+                "append": "- 2026-07-17: the Google button, [[tickets/jira/GST-77]], has been live since 2026-05-12, so it goes in the Nordic Steak contract as done. Group bookings is Q1 2027 and the date is not open, per [[decisions/2026-06-18-group-bookings-after-deposits]].",
                 "frontmatter": {
                   "last_told": "2026-07-17"
                 },
@@ -203,9 +204,9 @@
         {
           "pause": 4000,
           "text": [
-            "One yes and one no. The yes shipped on 2026-05-12 and sales was not told ([[tickets/jira/GST-77]]). The no was decided on 2026-06-18, and nothing since has changed it: steering on 2026-07-09 took no decisions ([[decisions/2026-06-18-group-bookings-after-deposits]], [[meetings/2026-07-09-steering]]).",
+            "One yes and one no. The yes, [[tickets/jira/GST-77]], shipped on 2026-05-12 and sales was not told. The no was decided on 2026-06-18, [[decisions/2026-06-18-group-bookings-after-deposits]], and nothing since has changed it: the [[meetings/2026-07-09-steering]] took no decisions.",
             "",
-            "On the record: the third ask as an insight, so the next one lands on it, and what Nordic Steak and Marcus are told today ([[customers/nordic-steak]], [[people/marcus-ek]]). Nothing waits for approval. Nothing was sent: the reply is above in the sales voice, copy the tab you want and send it yourself."
+            "On the record: the third ask as an insight, so the next one lands on it. Also what [[customers/nordic-steak]] and [[people/marcus-ek|Marcus]] are told today. Nothing waits for approval. Nothing was sent: the reply is above in the sales voice, copy the tab you want and send it yourself."
           ]
         }
       ]

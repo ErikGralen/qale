@@ -109,13 +109,13 @@
           "text": [
             "Three people have been waiting for this, in this order: two CSMs and the support lead.",
             "",
-            "- Ulrika Nyström, CS for Sjögatan and Brasserie Lund. Sjögatan reported it through support on 2026-06-24 and was told we are looking into it ([[customers/sjogatan]]). Brasserie Lund raised it in yesterday's review, and Lena is being told today ([[customers/brasserie-lund]]).",
-            "- Petra Alm, CS for Pizzeria Napoli. They reported it on 2026-06-26 and got the same answer ([[customers/pizzeria-napoli]]).",
-            "- Jonas Berg, support. Four open tickets, and a macro that still says we are looking into it ([[people/jonas-berg]]).",
+            "- [[people/ulrika-nystrom]], CS for Sjögatan and Brasserie Lund. [[customers/sjogatan]] reported it through support on 2026-06-24 and was told we are looking into it. [[customers/brasserie-lund]] raised it in yesterday's review, and Lena is being told today.",
+            "- [[people/petra-alm]], CS for [[customers/pizzeria-napoli]]. They reported it on 2026-06-26 and got the same answer.",
+            "- [[people/jonas-berg]], support. Four open tickets, and a macro that still says we are looking into it.",
             "",
-            "What they hear: since the 09:10 deploy on 2026-07-17, a guest gets one reminder per booking, whatever the source ([[tickets/jira/BOK-412]]).",
+            "What they hear: [[tickets/jira/BOK-412]] is fixed. Since the 09:10 deploy on 2026-07-17, a guest gets one reminder per booking, whatever the source.",
             "",
-            "Kaffekopp left in 2025 after asking for something that had already shipped, because nobody told them ([[customers/kaffekopp]]). Sjögatan has been waiting three weeks for this one. Two notes below, ready to copy."
+            "[[customers/kaffekopp]] left in 2025 after asking for something that had already shipped, because nobody told them. Sjögatan has been waiting three weeks for this one. Two notes below, ready to copy."
           ],
           "tools": [
             {
@@ -155,7 +155,7 @@
               "name": "propose_update",
               "input": {
                 "path": "customers/sjogatan.md",
-                "append": "- 2026-07-17: fixed. One reminder per booking since 2026-07-17 ([[tickets/jira/BOK-412]]). Ulrika is telling them today.",
+                "append": "- 2026-07-17: [[tickets/jira/BOK-412]] is fixed, one reminder per booking since 2026-07-17. Ulrika is telling them today.",
                 "rationale": "The ledger stops at 2026-06-24 with no date. The fix shipped this morning and Ulrika has the note to forward, so the line says what they are told today.",
                 "sources": [
                   "[[tickets/jira/BOK-412]]",
@@ -167,7 +167,7 @@
               "name": "propose_update",
               "input": {
                 "path": "customers/pizzeria-napoli.md",
-                "append": "- 2026-07-17: fixed. One reminder per booking since 2026-07-17 ([[tickets/jira/BOK-412]]). Petra is telling them today.",
+                "append": "- 2026-07-17: [[tickets/jira/BOK-412]] is fixed, one reminder per booking since 2026-07-17. Petra is telling them today.",
                 "rationale": "The ledger stops at 2026-06-26 with no date. The fix shipped this morning and Petra has the note to forward, so the line says what they are told today.",
                 "sources": [
                   "[[tickets/jira/BOK-412]]",
@@ -179,7 +179,7 @@
               "name": "propose_update",
               "input": {
                 "path": "people/ulrika-nystrom.md",
-                "append": "Last told 2026-07-17, before the changelog: the double reminder is fixed, one reminder per booking since 2026-07-17 ([[tickets/jira/BOK-412]]). She has the note for Sjögatan and Brasserie Lund to forward.",
+                "append": "Last told 2026-07-17, before the changelog: [[tickets/jira/BOK-412]], the double reminder, is fixed, one reminder per booking since 2026-07-17. She has the note for Sjögatan and Brasserie Lund to forward.",
                 "frontmatter": {
                   "last_told": "2026-07-17"
                 },
@@ -194,7 +194,7 @@
               "name": "propose_update",
               "input": {
                 "path": "people/petra-alm.md",
-                "append": "Last told 2026-07-17, before the changelog: the double reminder is fixed, one reminder per booking since 2026-07-17 ([[tickets/jira/BOK-412]]). She has the note for Pizzeria Napoli to forward as it is.",
+                "append": "Last told 2026-07-17, before the changelog: [[tickets/jira/BOK-412]], the double reminder, is fixed, one reminder per booking since 2026-07-17. She has the note for Pizzeria Napoli to forward as it is.",
                 "frontmatter": {
                   "last_told": "2026-07-17"
                 },
@@ -209,7 +209,7 @@
               "name": "propose_update",
               "input": {
                 "path": "people/jonas-berg.md",
-                "append": "Last told 2026-07-17: the double reminder is fixed since the 09:10 deploy ([[tickets/jira/BOK-412]]), with the line that closes the four tickets and a macro replacement.",
+                "append": "Last told 2026-07-17: [[tickets/jira/BOK-412]], the double reminder, is fixed since the 09:10 deploy. He has the line that closes the four tickets and a macro replacement.",
                 "frontmatter": {
                   "last_told": "2026-07-17"
                 },

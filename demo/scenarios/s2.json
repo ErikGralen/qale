@@ -12,7 +12,7 @@
       "turns": [
         {
           "text": [
-            "The first release of no-show fees, as three stories before sprint planning on 2026-07-22 ([[meetings/2026-07-13-1-1-rebecca]]). Deciding: what is in the first release ([[tickets/jira/BOK-300]]). Out of scope: a date, and anything the Payments team owns ([[tickets/jira/PAY-190]] is done, deposits are not ours). Done looks like: three stories with three checks each, so Rebecca's team can start on Wednesday.",
+            "The first release of no-show fees, as three stories before sprint planning on 2026-07-22, the ask from [[meetings/2026-07-13-1-1-rebecca]]. Deciding: what is in the first release of [[tickets/jira/BOK-300]]. Out of scope: a date, and anything the Payments team owns. [[tickets/jira/PAY-190]] is done, and deposits are not ours. Done looks like: three stories with three checks each, so Rebecca's team can start on Wednesday.",
             "",
             "Three ideas first. Keep or cut each one."
           ],
@@ -30,29 +30,29 @@
                 "questions": [
                   {
                     "header": "Per sitting",
-                    "question": "In the notes from the Brasserie Lund review on 2026-06-02, one idea was to let a restaurant set a different fee for lunch and dinner ([[meetings/2026-06-02-brasserie-lund-review]]). Is it in scope for October?",
-                    "body": "The case: Lena asked for it in June and again yesterday, and it is still an open question on the research page ([[research/no-show-fees]]). A restaurant that serves lunch and dinner would set a lower fee at lunch.\n\nThe cost: two amounts per restaurant, on the settings page, on the booking page and on the receipt. The working notes say one fee per restaurant in the first release ([[notes/fee-rules]]). Every extra amount is a story the team has to estimate before October.",
+                    "question": "Is a different fee for lunch and dinner in scope?",
+                    "body": "Lena asked at the [[meetings/2026-06-02-brasserie-lund-review]] and again yesterday, but only one fee is in [[notes/fee-rules]].",
                     "options": [
-                      { "label": "Keep it", "description": "A fourth story for a lunch fee and a dinner fee. October gets tighter." },
-                      { "label": "Cut it", "description": "One fee per restaurant. The lunch and dinner idea stays open on the research page for a later release." }
+                      { "label": "Keep it", "description": "A fourth story; October gets tighter." },
+                      { "label": "Cut it", "description": "One fee per restaurant; the idea stays open." }
                     ]
                   },
                   {
                     "header": "Online only",
-                    "question": "Charge the fee on online and Google bookings only, so a booking a member of staff takes by phone gets no fee. Keep that for the first release?",
-                    "body": "The case: a guest who books by phone never saw the notice, so there is nothing to charge. The working notes already say so ([[notes/fee-rules]]), and the epic says the same ([[tickets/jira/BOK-300]]).\n\nThe cost: a restaurant that takes many bookings by phone gets fees on part of its list, and the booking list has to show which bookings carry a fee.",
+                    "question": "Charge the fee on online and Google bookings only?",
+                    "body": "A phone guest never saw the notice. [[notes/fee-rules]] and [[tickets/jira/BOK-300]] both say no fee on phone bookings.",
                     "options": [
-                      { "label": "Keep it", "description": "The stories say online and Google bookings only, in plain words." },
-                      { "label": "Cut it", "description": "Then the stories need a way for staff to take a card over the phone, which is a story nobody has written." }
+                      { "label": "Keep it", "description": "Online and Google only, in plain words." },
+                      { "label": "Cut it", "description": "Staff need a way to take a card by phone." }
                     ]
                   },
                   {
                     "header": "A/B test",
-                    "question": "Run an A/B test on the wording of the fee notice on the booking page, on a few restaurants, before every restaurant gets it?",
-                    "body": "The case: the working notes flag that the wording of the notice may change how many guests finish the booking ([[notes/fee-rules]]). Two wordings on a few restaurants first means Brasserie Lund's 40 restaurants get the one that costs fewer bookings ([[customers/brasserie-lund]]).\n\nThe cost: a third story, with a switch per restaurant and a report. It is work before October, and it has to run before the fee goes to every restaurant.",
+                    "question": "Test the wording of the fee notice first?",
+                    "body": "[[notes/fee-rules]] says the wording may cost bookings. Two wordings on a few restaurants first, before [[customers/brasserie-lund]] gets it.",
                     "options": [
-                      { "label": "Keep it", "description": "One story: two wordings, a few restaurants, a report of completed bookings per wording." },
-                      { "label": "Cut it", "description": "One wording for everyone, and we find out in December whether it cost bookings." }
+                      { "label": "Keep it", "description": "A third story: two wordings and a report." },
+                      { "label": "Cut it", "description": "One wording; we find out in December." }
                     ]
                   },
                   {
@@ -78,7 +78,7 @@
                   {
                     "header": "Story 1",
                     "question": "Card on file at booking.",
-                    "body": "- The guest enters a card on the booking page when the restaurant has fees on.\n- The card is stored through PAY-190 and never in the bookings service.\n- The confirmation says a fee applies and how much.",
+                    "body": "- The guest enters a card at booking when fees are on.\n- The card is stored through PAY-190, never in the bookings service.\n- The confirmation says a fee applies and how much.",
                     "options": [
                       { "label": "Keep it", "description": "Filed as written." },
                       { "label": "Cut it", "description": "Dropped." }
@@ -87,7 +87,7 @@
                   {
                     "header": "Story 2",
                     "question": "Charge the fee after a no-show.",
-                    "body": "- The restaurant marks the booking as a no-show from the booking list.\n- The charge goes through the next morning, not on the spot.\n- The guest gets a receipt by text.",
+                    "body": "- The restaurant marks a no-show from the booking list.\n- The charge goes through the next morning, not on the spot.\n- The guest gets a receipt by text.",
                     "options": [
                       { "label": "Keep it", "description": "Filed as written." },
                       { "label": "Cut it", "description": "Dropped." }
@@ -172,7 +172,7 @@
                   "commitment": "done",
                   "resolved": "{{today}}"
                 },
-                "append": "Done 2026-07-17: three stories drafted under [[tickets/jira/BOK-300]] (card on file at booking, charge the fee after a no-show, fee notice wording test), three checks each, ahead of sprint planning on 2026-07-22. The lunch and dinner fee is cut from the first release. The rounds and the reasoning are in the session that drafted them.",
+                "append": "Done 2026-07-17: three stories drafted under [[tickets/jira/BOK-300]], three checks each, ahead of sprint planning on 2026-07-22. The stories: card on file at booking, charge the fee after a no-show, fee notice wording test. The lunch and dinner fee is cut from the first release. The rounds and the reasoning are in the session that drafted them.",
                 "rationale": "The stories are drafted, three of them with three checks each, before the 2026-07-21 due date, so the commitment from the 1:1 is met.",
                 "sources": [
                   "[[meetings/2026-07-13-1-1-rebecca]]",
@@ -185,9 +185,9 @@
         {
           "pause": 1500,
           "text": [
-            "The todo from the 1:1 is closed: the stories are drafted before sprint planning on 2026-07-22 ([[todos/bok-300-stories-before-sprint-planning]]).",
+            "The todo from the 1:1 is closed: [[todos/bok-300-stories-before-sprint-planning]]. The stories are drafted before sprint planning on 2026-07-22.",
             "",
-            "Three cards wait under BOK-300: the card at booking, the charge after a no-show, the wording test. Approve one and it lands in Jira with the label and the three checks. No date on any card: Rebecca estimates after the stories are written, not before ([[people/rebecca-holm]]). Nothing is in Jira yet."
+            "Three cards wait under BOK-300: the card at booking, the charge after a no-show, the wording test. Approve one and it lands in Jira with the label and the three checks. No date on any card: [[people/rebecca-holm|Rebecca]] estimates after the stories are written, not before. Nothing is in Jira yet."
           ]
         }
       ]

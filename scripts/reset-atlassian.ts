@@ -1,26 +1,27 @@
 /**
- * Converge the live Atlassian demo site to the Rota baseline, the scripted
+ * Converge the live Atlassian demo site to the Bord baseline, the scripted
  * counterpart of docs/jira-demo-setup.md. One command both seeds a fresh site
  * and resets it after a demo run; it always drives toward the same desired
  * state, so run it as often as you like.
  *
  * What it converges:
- *  - Jira `SCH`, `APP` and `PLT`: the cast issues exist (two epics In Progress
- *    with their stories, the platform tasks, the staff-app filler),
- *    descriptions and statuses match, every issue carries its one area label,
- *    both epics are assigned to you, and comment threads are reset to the
- *    seeds. Issues NOT in the cast, such as the swap-notification story the
- *    after-meeting demo creates live, are DELETED (skip with --keep-extras).
- *  - Confluence: the "Product" space exists; "Roadmap H2" and "Product weekly
- *    update" are rewritten to their canonical bodies from
- *    vault-dev/wikipages/confluence/, which un-does the roadmap re-order and
- *    the weekly-update appends. Extra pages are listed but never deleted.
+ *  - Jira `BOK`, `GST` and `PAY`: the cast issues exist (the three Bookings
+ *    epics with their stories, the double-reminder bug, the Guest stories, the
+ *    Payments work the demo waits on), descriptions and statuses match, every
+ *    issue carries its one area label, every assigned issue is assigned to you,
+ *    and comment threads are reset to the seeds. Issues NOT in the cast, such
+ *    as the story the after-meeting demo creates live, are DELETED (skip with
+ *    --keep-extras).
+ *  - Confluence: the "Product" space exists; "Roadmap H2" and "Changelog" are
+ *    rewritten to their canonical bodies from vault-dev/wikipages/confluence/,
+ *    which un-does the roadmap patch and the changelog appends. Extra pages are
+ *    listed but never deleted.
  *  - The runtime vault (.vault-dev): the canonical scenario ships with STATIC
- *    mirrors (tickets/jira/SCH-231.md, fake rota.atlassian.net URLs, made-up
+ *    mirrors (tickets/jira/BOK-300.md, fake bord.atlassian.net URLs, made-up
  *    page ids) so the demo works offline. Against a live site those are wrong:
  *    the keys don't exist and outbound/librarian cards would target dead ids.
  *    So the script renames the static ticket mirrors to the live keys, rewrites
- *    every [[SCH-231]] link and prose mention across the vault, swaps the fake
+ *    every [[BOK-300]] link and prose mention across the vault, swaps the fake
  *    host for the real site, and re-points the wikipage external_ids. The
  *    canonical vault-dev/ is NEVER touched. After each `pnpm refresh-demo` the
  *    static ids are back, so re-run this script (that order: refresh, then
@@ -33,13 +34,13 @@
  *
  * What stays manual (once, ~10 min, see docs/jira-demo-setup.md):
  *  - the free Jira+Confluence site and the API token;
- *  - the three projects themselves: SCH (Scheduling), APP (Staff app) and PLT
- *    (Platform). The REST API cannot create a project on a free site, so the
+ *  - the three projects themselves: BOK (Bookings), GST (Guest) and PAY
+ *    (Payments). The REST API cannot create a project on a free site, so the
  *    script only verifies them and names the ones that are missing. Their
  *    workflows need the plain "To Do" / "In Progress" / "Done" statuses, which
  *    is what every default template gives you.
  *
- *   pnpm reset-atlassian --site=rota-demo.atlassian.net --email=you@x --token=... --save
+ *   pnpm reset-atlassian --site=bord-demo.atlassian.net --email=you@x --token=... --save
  *   pnpm reset-atlassian                  # creds from .atlassian-demo.json / env
  *   pnpm reset-atlassian --dry            # print the plan, write nothing
  *   pnpm reset-atlassian --keep-extras    # don't delete non-cast issues
@@ -68,7 +69,7 @@ import {
   STATIC_TICKETS,
   markdownToStorage,
 } from './lib/atlassian-cast.ts';
-import type { CastIssue } from './lib/atlassian-cast.ts';
+import type { CastComment, CastIssue } from './lib/atlassian-cast.ts';
 
 const CREDS_FILE = '.atlassian-demo.json';
 
@@ -402,16 +403,20 @@ async function transitionTo(api: Api, key: string, targetStatus: string): Promis
   return true;
 }
 
-/** Rewrite the thread only when it deviates from the seeds — an unnecessary
+/** Rewrite the thread only when it deviates from the seeds. An unnecessary
  *  delete/re-post bumps the issue's `updated`, which re-syncs the mirror and
- *  makes every pending card drafted against it refuse once. */
+ *  makes every pending card drafted against it refuse once.
+ *
+ *  Only the text is posted. A live site can post as one account, so the cast's
+ *  comment authors and dates stay in the offline fixture and the story here
+ *  lives in the words. */
 async function resetComments(
   api: Api,
   key: string,
-  seeds: string[],
+  seeds: CastComment[],
   offset: number,
 ): Promise<boolean> {
-  const expected = seeds.map((s) => shiftDates(s, offset));
+  const expected = seeds.map((s) => shiftDates(s.body, offset));
   const data = await api.request<{ comments?: { id: string; body?: unknown }[] }>(
     `/rest/api/3/issue/${key}/comment?maxResults=100`,
   );
@@ -484,7 +489,7 @@ async function convergeJira(
   const castSummaries = new Set(cast.map((m) => m.summary));
   const keyBySummary = new Map<string, string>();
 
-  // Extras first (the demo-created swap-notification story, edited-summary
+  // Extras first (the story the demo files live, edited-summary
   // strays): delete, so a renamed cast member is recreated cleanly below.
   const extras = live.filter((i) => !castSummaries.has(i.summary));
   for (const extra of extras) {
@@ -548,7 +553,9 @@ async function convergeJira(
           );
         }
       }
-      if (member.assignSelf && existing?.assigneeId !== accountId) {
+      // The cast names a colleague, but a demo site has one account: anything
+      // the cast gives an owner is assigned to whoever runs this.
+      if (member.assignee && existing?.assigneeId !== accountId) {
         await api.request(`/rest/api/3/issue/${key}/assignee`, {
           method: 'PUT',
           body: JSON.stringify({ accountId }),
@@ -570,8 +577,8 @@ async function convergeJira(
     }
   }
 
-  // Typed issue links: the Fortnox connector reads "is blocked by" the platform
-  // token store, the one cross-project dependency in the scenario. Sync mirrors
+  // Typed issue links: group bookings reads "is blocked by" deposits, the one
+  // cross-project dependency in the scenario. Sync mirrors
   // it into ticket frontmatter and the app renders it on both notes.
   for (const link of CAST_LINKS) {
     const inwardKey = keyBySummary.get(link.inward);
@@ -788,7 +795,7 @@ function reconcileVault(
     if (!live || live === staticKey) continue;
     replacements.push([new RegExp(`\\b${staticKey}\\b`, 'g'), live]);
     // Mirrors live under their provider folder (docs/provider-decoupling.md
-    // PD-10): tickets/jira/SCH-231.md.
+    // PD-10): tickets/jira/BOK-300.md.
     renames.push([
       join(vaultRoot, 'tickets', 'jira', `${staticKey}.md`),
       join(vaultRoot, 'tickets', 'jira', `${live}.md`),

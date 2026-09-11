@@ -8,7 +8,7 @@
  * Bare-domain detection is deliberately conservative so it never hijacks an
  * in-app note path: the host (everything before the first `/`) must itself
  * contain a dot and end in a letters-only TLD, which the folder segments of a
- * vault path (`decisions/x.md`, `spaces/PRODUCT/pages/1`) never do. Links that
+ * vault path (`decisions/x.md`, `spaces/PROD/pages/1`) never do. Links that
  * point at a local `.md`/`.markdown` file stay note links even so.
  */
 export function webUrl(raw: unknown): string | null {

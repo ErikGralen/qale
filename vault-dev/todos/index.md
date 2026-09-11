@@ -8,11 +8,7 @@ tracked commitments — the PO’s own and what they are waiting on
 
 ## Open
 
-* due 2026-07-14 — [Tell Fjord Sports the payroll-export timeline](todos/tell-fjord-sports-payroll-timeline.md) — Give Oskar a tighter payroll-export date than "Q4" before he plans the Visma cutover around it
-* due 2026-07-17 — [Reply to Marcus about the swap ETA](todos/reply-marcus-swap-eta.md) — Reply to Marcus with what he can and cannot say to Café Nord about the swap ETA
-* due 2026-07-21 — [Prep deck for the Café Nord QBR](todos/cafe-nord-qbr-prep-deck.md) — Prep the deck for the Café Nord QBR prep session with Marcus and Lena
-* due 2026-07-24 · [Henrik Dahl](people/henrik-dahl.md) — [GDPR review of swap notifications](todos/henrik-review-swap-notifications.md) — Henrik to review what the swap request notification shows about the requesting colleague
-
-## Done
-
-* [Send Åsa the H2 capacity numbers](todos/send-asa-h2-numbers.md) — Send Åsa the H2 capacity numbers for both epics so the ordering argument runs on figures
+* due 2026-07-17 — [Reply to Marcus about group bookings](todos/reply-marcus-group-bookings.md) — Reply to Marcus with what he can tell Nordic Steak about group bookings
+* due 2026-07-21 — [Get the BOK-300 stories written before sprint planning](todos/bok-300-stories-before-sprint-planning.md) — Get the BOK-300 stories written before sprint planning on 2026-07-22
+* due 2026-07-23 · [Henrik Dahl](people/henrik-dahl.md) — [Ask Henrik for a PAY-210 date](todos/ask-henrik-for-pay-210-date.md) — Henrik to give a date for PAY-210 (deposits), which group bookings waits on
+* due 2026-07-24 — [Send Åsa the Q4 numbers](todos/send-asa-q4-numbers.md) — Send Åsa the Q4 numbers once the no-show fee stories are estimated

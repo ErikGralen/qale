@@ -11,7 +11,7 @@ import { Setting, SettingPanel } from '../components/Setting';
  * nowhere else: `demo:info` answers `enabled: false` in the product and
  * SettingsView never appends the tab.
  *
- * Reset, pressed once before a demo, and under it the five scenarios as a
+ * Reset, pressed once before a demo, and under it the six scenarios as a
  * reminder of what to do. Nothing selects a scenario: the engine picks it from
  * what the presenter does, so he never has to come back here mid-demo. Nothing
  * that looks like a debug panel, because he opens this in front of customers.
@@ -52,8 +52,8 @@ export function DemoSettings({ info }: { info: DemoInfoDTO }) {
             <p>{datedLine(info.today)}</p>
             <p>
               Press Reset once before a demo. It puts the workspace, Jira, Confluence and the
-              calendar back to the start, dated today. Every scenario below is then available, in
-              any order, with no reset between them. Anything you did in the last demo goes.
+              calendar back to the start, dated today. Every scenario below is then available, with
+              no reset between them. Anything you did in the last demo goes.
             </p>
           </>
         }
@@ -86,6 +86,9 @@ export function DemoSettings({ info }: { info: DemoInfoDTO }) {
         title="Scenarios"
         description="What to do for each one. Qale picks the scenario from what you do, so there is nothing to select here."
       >
+        <p className="max-w-[68ch] text-sm text-muted-foreground">
+          The first two run first, in order. The rest run in any order.
+        </p>
         <ol className="flex flex-col gap-2">
           {scenarios.map((scenario) => (
             <li

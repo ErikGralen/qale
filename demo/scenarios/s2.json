@@ -1,216 +1,182 @@
 {
   "version": 1,
   "id": "s2",
-  "title": "Who needs to know",
-  "do": "In Home, type: SCH-121 shipped three weeks ago and nobody outside the team was told. Who needs to know, and what do I tell them? Then, in the same session, type: From now on, when something a customer asked for ships, tell Ulrika before the customer.",
-  "offScript": "That is outside what this demo can show. The five things it can do are listed in Settings, under Demo.",
-  "lookups": {
-    "claims": {
-      "The approved-hours export SCH-121 has been live": "KNOWN | tickets/jira/SCH-121.md | Enabled for every chain in the 24 June release. Managers export from the period view.",
-      "Fjord Sports were told on": "KNOWN | customers/fjord-sports.md | 2026-05-26: Visma export in Q4; Fortnox is the first connector we build",
-      "Ulrika asked to be told": "KNOWN | meetings/2026-05-26-fjord-sports-payroll-call.md | Ulrika will keep them updated on release timing; she asked to be told before the customer is.",
-      "Jonas has two support tickets": "KNOWN | people/jonas-berg.md | Two tickets in June asked whether approved hours can go to payroll without retyping. He has no macro for it and has not been told the export exists"
-    }
-  },
+  "title": "Refine the epic",
+  "do": "In Home, type /, pick Iterate on something, type: No-show fees moved up to end of October. Help me refine BOK-300 so Rebecca's team can start at sprint planning on Wednesday. Round one: Cut it on Per sitting, Keep it on the other two, skip Anything else. Round two: keep all three.",
+  "offScript": "That is outside what this demo can show. The six things it can do are listed in Settings, under Demo.",
   "conversations": [
     {
-      "id": "who",
-      "trigger": { "kind": "typed", "skill": "ask", "any": ["SCH-121", "who needs to know"] },
-      "title": "Who needs to know about SCH-121",
+      "id": "stories",
+      "trigger": { "kind": "typed", "skill": "iterate", "any": ["BOK-300", "no-show"] },
+      "title": "No-show fees stories",
       "turns": [
         {
+          "text": [
+            "The first release of no-show fees, as three stories before sprint planning on 2026-07-22 ([[meetings/2026-07-13-1-1-rebecca]]). Deciding: what is in the first release ([[tickets/jira/BOK-300]]). Out of scope: a date, and anything the Payments team owns ([[tickets/jira/PAY-190]] is done, deposits are not ours). Done looks like: three stories with three checks each, so Rebecca's team can start on Wednesday.",
+            "",
+            "Three ideas first. Keep or cut each one."
+          ],
           "tools": [
+            { "name": "vault_read", "input": { "path": "research/no-show-fees.md" } },
+            { "name": "vault_read", "input": { "path": "meetings/2026-06-02-brasserie-lund-review.md" } },
+            { "name": "vault_read", "input": { "path": "meetings/2026-07-13-1-1-rebecca.md" } },
+            { "name": "vault_read", "input": { "path": "tickets/jira/BOK-300.md" } },
+            { "name": "vault_read", "input": { "path": "tickets/jira/PAY-190.md" } },
+            { "name": "vault_read", "input": { "path": "notes/fee-rules.md" } },
+            { "name": "vault_read", "input": { "path": "skills/jira/SKILL.md" } },
             {
-              "name": "vault_read",
+              "name": "ask_user",
               "input": {
-                "path": "tickets/jira/SCH-121.md"
-              }
-            },
-            {
-              "name": "jira_get_issue",
-              "input": {
-                "key": "SCH-121"
-              }
-            },
-            {
-              "name": "vault_read",
-              "input": {
-                "path": "customers/fjord-sports.md"
-              }
-            },
-            {
-              "name": "vault_read",
-              "input": {
-                "path": "people/jonas-berg.md"
-              }
-            }
-          ]
-        },
-        {
-          "tools": [
-            {
-              "name": "check_claims",
-              "input": {
-                "claims": [
+                "questions": [
                   {
-                    "claim": "The approved-hours export SCH-121 has been live for every chain since 2026-06-24.",
-                    "about": [
-                      "[[tickets/jira/SCH-121]]",
-                      "[[research/payroll-export]]"
+                    "header": "Per sitting",
+                    "question": "In the notes from the Brasserie Lund review on 2026-06-02, one idea was to let a restaurant set a different fee for lunch and dinner ([[meetings/2026-06-02-brasserie-lund-review]]). Is it in scope for October?",
+                    "body": "The case: Lena asked for it in June and again yesterday, and it is still an open question on the research page ([[research/no-show-fees]]). A restaurant that serves lunch and dinner would set a lower fee at lunch.\n\nThe cost: two amounts per restaurant, on the settings page, on the booking page and on the receipt. The working notes say one fee per restaurant in the first release ([[notes/fee-rules]]). Every extra amount is a story the team has to estimate before October.",
+                    "options": [
+                      { "label": "Keep it", "description": "A fourth story for a lunch fee and a dinner fee. October gets tighter." },
+                      { "label": "Cut it", "description": "One fee per restaurant. The lunch and dinner idea stays open on the research page for a later release." }
                     ]
                   },
                   {
-                    "claim": "Fjord Sports were told on 2026-05-26 that the Visma export lands in Q4.",
-                    "about": [
-                      "[[customers/fjord-sports]]",
-                      "[[people/oskar-lind]]"
+                    "header": "Online only",
+                    "question": "Charge the fee on online and Google bookings only, so a booking a member of staff takes by phone gets no fee. Keep that for the first release?",
+                    "body": "The case: a guest who books by phone never saw the notice, so there is nothing to charge. The working notes already say so ([[notes/fee-rules]]), and the epic says the same ([[tickets/jira/BOK-300]]).\n\nThe cost: a restaurant that takes many bookings by phone gets fees on part of its list, and the booking list has to show which bookings carry a fee.",
+                    "options": [
+                      { "label": "Keep it", "description": "The stories say online and Google bookings only, in plain words." },
+                      { "label": "Cut it", "description": "Then the stories need a way for staff to take a card over the phone, which is a story nobody has written." }
                     ]
                   },
                   {
-                    "claim": "Ulrika asked to be told about release timing before the customer is.",
-                    "about": [
-                      "[[people/ulrika-nystrom]]",
-                      "[[meetings/2026-05-26-fjord-sports-payroll-call]]"
+                    "header": "A/B test",
+                    "question": "Run an A/B test on the wording of the fee notice on the booking page, on a few restaurants, before every restaurant gets it?",
+                    "body": "The case: the working notes flag that the wording of the notice may change how many guests finish the booking ([[notes/fee-rules]]). Two wordings on a few restaurants first means Brasserie Lund's 40 restaurants get the one that costs fewer bookings ([[customers/brasserie-lund]]).\n\nThe cost: a third story, with a switch per restaurant and a report. It is work before October, and it has to run before the fee goes to every restaurant.",
+                    "options": [
+                      { "label": "Keep it", "description": "One story: two wordings, a few restaurants, a report of completed bookings per wording." },
+                      { "label": "Cut it", "description": "One wording for everyone, and we find out in December whether it cost bookings." }
                     ]
                   },
                   {
-                    "claim": "Jonas has two support tickets asking whether approved hours can go to payroll, and no macro for it.",
-                    "about": [
-                      "[[people/jonas-berg]]"
-                    ]
+                    "header": "Anything else",
+                    "question": "What is missing, what should merge, what did I get wrong?"
                   }
                 ]
-              }
-            },
-            {
-              "name": "get_voice",
-              "input": {
-                "name": "cs"
               }
             }
           ]
         },
         {
           "text": [
-            "Four people, in this order.",
+            "One fee per restaurant: the lunch and dinner fee is cut. The stories cover online and Google bookings only, and the notice wording gets a test.",
             "",
-            "- Ulrika Nyström, CS for Fjord Sports. She asked to hear before the customer does ([[meetings/2026-05-26-fjord-sports-payroll-call]]).",
-            "- Oskar Lind, Fjord Sports. On 2026-05-26 he asked for exactly this file, and has heard nothing since ([[customers/fjord-sports]]).",
-            "- Malin Sjöberg, CS lead. She wants the list of accounts that asked before any release note goes out ([[people/malin-sjoberg]]).",
-            "- Jonas Berg, support. Two June tickets asked for this, and he has no answer to send ([[people/jonas-berg]]).",
-            "",
-            "What they hear: the approved-hours file has been live for every chain since 2026-06-24 ([[tickets/jira/SCH-121]]). Visma stays Q4 with no month, as Oskar was told, because the Fortnox connector is still blocked on the token store ([[tickets/jira/PLT-77]]).",
-            "",
-            "Two notes below, ready to copy: one to Oskar, one for the three inside. Kaffekopp churned over a feature we had shipped and never mentioned ([[customers/kaffekopp]]); this is the same shape, three weeks in."
+            "Three stories, three checks each. Keep or cut."
           ],
           "tools": [
             {
-              "name": "draft_text",
+              "name": "ask_user",
               "input": {
-                "title": "Note to Oskar, Fjord Sports",
-                "voice": "cs",
-                "variants": [
+                "questions": [
                   {
-                    "label": "Short",
-                    "body": "Hi Oskar,\n\nThe file you asked for on 2026-05-26 is live. Since 2026-06-24 a manager can export approved hours per store, per pay period, from the period view, and load that file into Visma.\n\nThe direct Visma connection is still on for the fourth quarter. I do not have a month for you yet. I will tell you which month as soon as I have one."
+                    "header": "Story 1",
+                    "question": "Card on file at booking.",
+                    "body": "- The guest enters a card on the booking page when the restaurant has fees on.\n- The card is stored through PAY-190 and never in the bookings service.\n- The confirmation says a fee applies and how much.",
+                    "options": [
+                      { "label": "Keep it", "description": "Filed as written." },
+                      { "label": "Cut it", "description": "Dropped." }
+                    ]
                   },
                   {
-                    "label": "With the how",
-                    "body": "Hi Oskar,\n\nThe file you asked for on 2026-05-26 has been live since 2026-06-24. In the period view, a manager picks the pay period and exports approved hours for their store: person, location, date, hours and cost centre, in the columns Visma accepts. That takes the retyping out today.\n\nThe direct Visma connection is still on for the fourth quarter. I do not have a month for you yet, and I will not guess one. Ulrika will walk your regional admin through the export at your next sync."
+                    "header": "Story 2",
+                    "question": "Charge the fee after a no-show.",
+                    "body": "- The restaurant marks the booking as a no-show from the booking list.\n- The charge goes through the next morning, not on the spot.\n- The guest gets a receipt by text.",
+                    "options": [
+                      { "label": "Keep it", "description": "Filed as written." },
+                      { "label": "Cut it", "description": "Dropped." }
+                    ]
+                  },
+                  {
+                    "header": "Story 3",
+                    "question": "Fee notice wording test.",
+                    "body": "- Two wordings of the notice.\n- A restaurant gets one or the other.\n- The report shows completed bookings per wording.",
+                    "options": [
+                      { "label": "Keep it", "description": "Filed as written." },
+                      { "label": "Cut it", "description": "Dropped." }
+                    ]
+                  },
+                  {
+                    "header": "Anything else",
+                    "question": "Anything to change before they become tickets?"
                   }
                 ]
               }
-            },
+            }
+          ]
+        },
+        {
+          "text": "Three ticket cards wait under BOK-300, one per story, in the team's shape: the label, Brasserie Lund in the first line, three checks. The reasoning stays in this session.",
+          "tools": [
             {
-              "name": "draft_text",
+              "name": "draft_ticket",
               "input": {
-                "title": "Internal note: Ulrika, Malin, Jonas",
-                "variants": [
-                  {
-                    "label": "Ulrika and Malin",
-                    "body": "The approved-hours export (SCH-121) has been live for every chain since 2026-06-24: per store, per pay period, from the period view, in columns Fortnox and Visma both accept. Nobody outside the team was told. Sorry.\n\nWho asked: Fjord Sports, on 2026-05-26. A note to Oskar goes out today, after this one.\n\nWhat has not changed: Visma is still Q4, as Oskar was told. The Fortnox connector (SCH-125) is blocked on the token store (PLT-77), and there is no Visma date in Jira. Please do not put a month on it.\n\nMalin: that is the whole account list. One account asked in writing, plus two June support tickets with Jonas."
-                  },
-                  {
-                    "label": "Jonas, with the macro line",
-                    "body": "Two of your June tickets asked whether approved hours can go to payroll without retyping. The answer has been yes since 2026-06-24 and nobody told you. Sorry.\n\nThe line you can send as it stands:\n\n\"Yes. Since 2026-06-24 a manager can export approved hours for a pay period as a file from the period view, one file per store, and load it into Fortnox or Visma. A direct connection to Fortnox is being built, and we do not have a date for it yet.\"\n\nIf anyone asks for a Visma date, send them to me. Q4 is what one account was told, and I would rather give the month myself."
-                  }
-                ]
-              }
-            },
-            {
-              "name": "propose_update",
-              "input": {
-                "path": "customers/fjord-sports.md",
-                "patch": [
-                  {
-                    "search": "- 2026-05-26: Visma export in Q4; Fortnox is the first connector we build\n  ([[decisions/2026-05-20-fortnox-first-payroll-target]]).",
-                    "replace": "- 2026-05-26: Visma export in Q4; Fortnox is the first connector we build\n  ([[decisions/2026-05-20-fortnox-first-payroll-target]]).\n- 2026-07-17: the approved-hours file per store and pay period has been live since 2026-06-24\n  ([[tickets/jira/SCH-121]]); Visma still Q4, no month yet. Note to Oskar drafted today, Ulrika told first."
-                  }
+                "container": "BOK",
+                "kind": "Story",
+                "title": "Card on file at booking",
+                "body": "Brasserie Lund needs this before their Christmas bookings open on 1 November: a card on file at booking, so a no-show can be charged.\n\nPart of BOK-300 (no-show fees), first release. One fee per restaurant. Online and Google bookings only; a booking a member of staff takes by phone gets no fee. Card storage through PAY-190, which is done.\n\nAcceptance:\n- [ ] The guest enters a card on the booking page when the restaurant has fees on.\n- [ ] The card is stored through PAY-190 and never in the bookings service.\n- [ ] The confirmation says a fee applies and how much.\n\nSource: story round in Qale, 2026-07-17",
+                "labels": ["no-show-fees"],
+                "sources": [
+                  "[[tickets/jira/BOK-300]]",
+                  "[[tickets/jira/PAY-190]]",
+                  "[[notes/fee-rules]]",
+                  "[[customers/brasserie-lund]]"
                 ],
-                "rationale": "The ledger stops on 2026-05-26 and the thing Oskar asked for shipped on 2026-06-24. The line says what he is being told today and what has not changed.",
+                "rationale": "First of the three stories you kept. The other two need a card on file before they can charge anything."
+              }
+            },
+            {
+              "name": "draft_ticket",
+              "input": {
+                "container": "BOK",
+                "kind": "Story",
+                "title": "Charge the fee after a no-show",
+                "body": "Brasserie Lund lost about one table a night per restaurant to no-shows last December: this is the charge that makes the card on file worth taking.\n\nPart of BOK-300 (no-show fees), first release. The restaurant decides from the booking list; the charge runs the next morning, so a manager can undo a mistake the same evening. Uses the token PAY-190 stores.\n\nAcceptance:\n- [ ] The restaurant marks the booking as a no-show from the booking list.\n- [ ] The charge goes through the next morning, not on the spot.\n- [ ] The guest gets a receipt by text.\n\nSource: story round in Qale, 2026-07-17",
+                "labels": ["no-show-fees"],
                 "sources": [
-                  "[[tickets/jira/SCH-121]]",
-                  "[[meetings/2026-05-26-fjord-sports-payroll-call]]"
-                ]
+                  "[[tickets/jira/BOK-300]]",
+                  "[[tickets/jira/PAY-190]]",
+                  "[[notes/fee-rules]]",
+                  "[[meetings/2026-06-02-brasserie-lund-review]]"
+                ],
+                "rationale": "Second of the three stories you kept. Charged the morning after, as the working notes say."
+              }
+            },
+            {
+              "name": "draft_ticket",
+              "input": {
+                "container": "BOK",
+                "kind": "Story",
+                "title": "Fee notice wording test",
+                "body": "Brasserie Lund's 40 restaurants get the fee first, so the notice wording gets a test on a few restaurants before every restaurant sees it.\n\nPart of BOK-300 (no-show fees), first release. Two wordings of the notice on the booking page, a switch per restaurant, and a report, so we know before December whether the notice costs bookings.\n\nAcceptance:\n- [ ] Two wordings of the notice.\n- [ ] A restaurant gets one or the other.\n- [ ] The report shows completed bookings per wording.\n\nSource: story round in Qale, 2026-07-17",
+                "labels": ["no-show-fees"],
+                "sources": [
+                  "[[tickets/jira/BOK-300]]",
+                  "[[notes/fee-rules]]",
+                  "[[customers/brasserie-lund]]"
+                ],
+                "rationale": "Third of the three stories you kept: the test you said yes to in round one."
               }
             },
             {
               "name": "propose_update",
               "input": {
-                "path": "people/oskar-lind.md",
-                "append": "Last told 2026-07-17: the approved-hours file per store and pay period is live since 2026-06-24 ([[tickets/jira/SCH-121]]); Visma still Q4, no month yet.",
+                "path": "todos/bok-300-stories-before-sprint-planning.md",
                 "frontmatter": {
-                  "last_told": "2026-07-17"
+                  "commitment": "done",
+                  "resolved": "{{today}}"
                 },
-                "rationale": "The note to Oskar is drafted today and says the file exists and that Q4 has not moved.",
+                "append": "Done 2026-07-17: three stories drafted under [[tickets/jira/BOK-300]] (card on file at booking, charge the fee after a no-show, fee notice wording test), three checks each, ahead of sprint planning on 2026-07-22. The lunch and dinner fee is cut from the first release. The rounds and the reasoning are in the session that drafted them.",
+                "rationale": "The stories are drafted, three of them with three checks each, before the 2026-07-21 due date, so the commitment from the 1:1 is met.",
                 "sources": [
-                  "[[tickets/jira/SCH-121]]",
-                  "[[meetings/2026-05-26-fjord-sports-payroll-call]]"
-                ]
-              }
-            },
-            {
-              "name": "propose_update",
-              "input": {
-                "path": "people/ulrika-nystrom.md",
-                "append": "Last told 2026-07-17, before the customer: the approved-hours file is live since 2026-06-24 ([[tickets/jira/SCH-121]]) and Oskar hears it today; Visma still Q4, no month.",
-                "frontmatter": {
-                  "last_told": "2026-07-17"
-                },
-                "rationale": "She asked to hear before the customer, so her line is dated before Oskar's note goes out.",
-                "sources": [
-                  "[[tickets/jira/SCH-121]]",
-                  "[[meetings/2026-05-26-fjord-sports-payroll-call]]"
-                ]
-              }
-            },
-            {
-              "name": "propose_update",
-              "input": {
-                "path": "people/malin-sjoberg.md",
-                "append": "Last told 2026-07-17: the approved-hours file is live since 2026-06-24 ([[tickets/jira/SCH-121]]); the account list is one account, Fjord Sports, plus two June support tickets ([[people/jonas-berg]]).",
-                "frontmatter": {
-                  "last_told": "2026-07-17"
-                },
-                "rationale": "Malin wants the account list before the release note, and this is the list.",
-                "sources": [
-                  "[[tickets/jira/SCH-121]]",
-                  "[[customers/fjord-sports]]"
-                ]
-              }
-            },
-            {
-              "name": "propose_update",
-              "input": {
-                "path": "people/jonas-berg.md",
-                "append": "Last told 2026-07-17: the approved-hours export is live since 2026-06-24 ([[tickets/jira/SCH-121]]), with a macro line he can send. No Visma date to give out.",
-                "frontmatter": {
-                  "last_told": "2026-07-17"
-                },
-                "rationale": "Jonas had two tickets on this in June and no answer; the note gives him the sentence.",
-                "sources": [
-                  "[[tickets/jira/SCH-121]]",
-                  "[[people/jonas-berg]]"
+                  "[[meetings/2026-07-13-1-1-rebecca]]",
+                  "[[tickets/jira/BOK-300]]"
                 ]
               }
             }
@@ -219,24 +185,9 @@
         {
           "pause": 1500,
           "text": [
-            "Each page now says what its person was told today: Fjord Sports and the four people. Copy the note you want and send it yourself; nothing here sends. Ulrika before Oskar."
-          ]
-        },
-        {
-          "tools": [
-            {
-              "name": "propose_instruction",
-              "input": {
-                "rule": "When something a customer asked for ships, tell Ulrika before the customer.",
-                "why": "Ulrika runs the customer syncs and asked to hear before the customer. Kaffekopp is what happens when nobody does."
-              }
-            }
-          ]
-        },
-        {
-          "pause": 1200,
-          "text": [
-            "Added to your rules: when something a customer asked for ships, tell Ulrika before the customer. Every session reads it from now on. [[skills/house-rules/SKILL|House rules]]"
+            "The todo from the 1:1 is closed: the stories are drafted before sprint planning on 2026-07-22 ([[todos/bok-300-stories-before-sprint-planning]]).",
+            "",
+            "Three cards wait under BOK-300: the card at booking, the charge after a no-show, the wording test. Approve one and it lands in Jira with the label and the three checks. No date on any card: Rebecca estimates after the stories are written, not before ([[people/rebecca-holm]]). Nothing is in Jira yet."
           ]
         }
       ]

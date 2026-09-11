@@ -8,12 +8,7 @@ the append-only decision spine
 
 ## Active
 
-* [Decline Offline Mode](decisions/2026-02-12-decline-offline-mode.md) — Decline offline mode; the staff app already caches the current week
-* [Fortnox First Payroll Target](decisions/2026-05-20-fortnox-first-payroll-target.md) — Fortnox is the first payroll connector; Visma follows in Q4
-* [H2 Order Payroll First](decisions/2026-05-18-h2-order-payroll-first.md) — H2 order: payroll export ships first in Q3, shift swaps follow in Q4
-* [Swap Approval by Manager](decisions/2026-04-08-swap-approval-by-manager.md) — Every shift swap goes through manager approval; no auto-approve path in v1
-* [Week Templates Chain Level](decisions/2026-04-22-week-templates-chain-level.md) — Week templates can be shared chain-wide, with per-location edits on top
-
-## Superseded
-
-* [Week Templates per Location](decisions/2026-03-03-week-templates-per-location.md) — Week templates stay per location; no chain-wide sharing
+* [Decline Gift Cards](decisions/2026-03-10-decline-gift-cards.md) — Decline gift cards, for the second time; a gift card is a payments product and Bord is a bookings product
+* [Group Bookings After Deposits](decisions/2026-06-18-group-bookings-after-deposits.md) — Group bookings waits for the Payments team's deposits work (PAY-210, planned Q4), so it is Q1 2027
+* [H2 Order No Show Fees First](decisions/2026-05-14-h2-order-no-show-fees-first.md) — H2 order: no-show fees ships first in Q4, waitlist follows
+* [One Reminder Day Before](decisions/2026-04-02-one-reminder-day-before.md) — One SMS reminder per booking, the day before at 17:00 local; no second text

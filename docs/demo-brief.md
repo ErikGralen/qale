@@ -1,10 +1,10 @@
 # The demo, in one page
 
-Orientation for someone picking this up cold. Written 2026-09-05, updated 2026-09-09. The
+Orientation for someone picking this up cold. Written 2026-09-05, updated 2026-09-10. The
 detail is in `docs/demo-mode.md` (the machinery), `docs/demo-runbook.md` (how to run or author a
-scenario), and `docs/plan-demo-scenarios.md` (why the five scenarios are what they are).
-`docs/demo-flows.md` and `docs/demo-scenarios.md` are earlier drafts, kept for their reasoning
-and marked as replaced where they are.
+scenario), and `docs/plan-demo-bookings.md` (why the six scenarios are what they are).
+`docs/demo-flows.md`, `docs/demo-scenarios.md` and `docs/plan-demo-scenarios.md` describe the
+earlier demo, kept for their reasoning and marked as replaced where they are.
 
 ## What Qale is
 
@@ -21,11 +21,11 @@ tools run for real against a real workspace, so every card, diff and Activity ro
 the way it is in production. Four things are swapped underneath:
 
 - **The model.** A replay server on `127.0.0.1` speaks the Anthropic Messages API. Every pi
-  `Model` gets its `baseUrl` pointed at it. Five scenario scripts, `demo/scenarios/s1.json` to
-  `s5.json`, say what the assistant says and which tools it calls, turn by turn. A script engine
+  `Model` gets its `baseUrl` pointed at it. Six scenario scripts, `demo/scenarios/s1.json` to
+  `s6.json`, say what the assistant says and which tools it calls, turn by turn. A script engine
   classifies what starts a session (a skill kickoff by its skill name, something typed by the
   skill in force when it was typed plus a word the `do` line makes the presenter type, a
-  spawned child), binds it to the first free matching conversation across the five scenarios,
+  spawned child), binds it to the first free matching conversation across the six scenarios,
   and serves the turn at that position. Beyond those words nothing typed is read, so a typo or
   a paraphrase changes nothing. Off script, one fixed line answers and nothing advances.
 - **Jira and Confluence.** An in-memory fake behind the connector's `fetchImpl`, fed from
@@ -45,43 +45,43 @@ good day at the model. Same input, same answer, every time.
 
 ## The dataset
 
-**Rota**, a Nordic company of about 250 people making staff-scheduling software for restaurant
-and retail chains. You are the PO for two teams. The cast, the tickets (`SCH`, `APP`, `PLT`),
-the Confluence space (`PROD`) and the customers are in `vault-dev/`. Five independent scenarios,
-in `demo/scenarios/`: drop a steering transcript and get decisions and todos; ask who needs to
-know that something shipped; decode an inbound ask that contradicts a live decision; break a
-committed theme into Jira stories; write the Friday update in three voices. One Reset before
-the demo, then any subset of them in any order, each once, with no reset between: the engine
-picks the scenario from what the presenter does.
+**Bord**, a Nordic company of about 250 people making table-booking software for restaurants.
+A guest books on the restaurant's website or through Google, and a text reminder goes out the
+day before. You are the PO for two teams, Bookings (`BOK`) and Guest (`GST`); Payments (`PAY`)
+is another team. The cast, the tickets, the Confluence space (`PROD`) and the customers are in
+`vault-dev/`; the names and facts are in the plan, `docs/plan-demo-bookings.md`. Six scenarios
+in `demo/scenarios/`, and the first two always run first, in order: drop yesterday's customer
+review and get the date you gave and the bug you missed onto Jira, Confluence and the record
+(S1); refine the epic into stories in two rounds of chips (S2). Then any of the rest, in any
+order, each once: who should know a fix shipped (S3); an urgent sales ask checked against the
+record (S4); the Friday update for one channel and the public Changelog (S5); the brief for
+Thursday's steering (S6). One Reset before the demo, none between: the engine picks the scenario
+from what the presenter does. The five pains behind them are in the plan's header.
 
 ## What we are trying to do now
 
-**Getting `pnpm demo:lint` green on all five scripts and cutting over from recordings to
-scripts as the source of truth.** The scripts, the engine, the Settings tab and the seed recut
-are built (`docs/plan-demo-replay.md`, `docs/plan-demo-scenarios.md`). What is still in flight:
-two product gaps the reset routine had (it followed the calendar on Reset but not the Jira
-projects or the Confluence space, and a voice file needed a matching patch) are being fixed
-alongside this. Once the lint is clean at three date offsets, the old per-conversation
-recordings under `demo/recordings/` (everything but `_fallback.json`) come out, because they
-were only ever a way to draft the scripts.
+**Running the Bord recut in front of a room.** The recut is built: the vault, the two fixtures,
+the six scripts, the pins and the lint's sequence pass (`docs/plan-demo-bookings.md`). The
+presenter's card is `demo-samples/README.md` and the turn-by-turn is `docs/demo-runbook.md`.
+What is left is a cold run of the packaged demo build on a day nobody drafted against, and
+whatever that run turns up. The old per-conversation recordings under `demo/recordings/`
+(everything but `_fallback.json`) were only ever a way to draft scripts and can go.
 
-## Where things stand (2026-09-09)
+## Where things stand (2026-09-10)
 
 - **Branch `demo`.** Merges go one way, `main` into `demo`.
-- **The script engine replaces the text matcher.** `replay-matcher.ts` is deleted.
-  `scenario.ts`, `script-engine.ts`, `script-templates.ts` and `cheap-answers.ts` serve the five
-  scripts; `script-from-recording.ts` and `pnpm demo:draft` turn a recording into one;
-  `pnpm demo:lint` runs every script headlessly, at three date offsets, against a real
-  workspace and the real tools.
-- **The seed is recut per scenario.** `APP-54` Done, a second `SCH-121` comment, the Fjord
-  Sports/Jonas/Marcus lines, the trimmed steering transcript, the Marcus Slack message in the
-  samples README, the Bruno's support thread removed, the `--done` fixture overlay removed.
-- **Settings has one Reset button and the five scenarios as a reminder** (`DemoSettings.tsx`).
-  There is no Start button and no pin: after one Reset the engine picks the scenario from what
-  the presenter does (a drop, a bare skill pick, or the skill in force when he typed), and
-  `pnpm demo:lint` runs the five in four orders with no reset between to prove it.
-- **The old recordings are still on disk**, kept until the lint is green on the finished
-  scripts; they are drafts now, not the thing that ships.
+- **The Bord recut is built.** `vault-dev/` is Bord (people, customers, research, decisions,
+  insights, meetings, todos, notes, ticket mirrors, the two Confluence pages, three voices), the
+  Atlassian and Google fixtures are rebuilt from the new casts, `demo-samples/` holds the
+  Brasserie Lund transcript and the Marcus message, and `DEFAULT_PINS` is the six Bord paths.
+- **Six scripts, `s1.json` to `s6.json`.** S1 and S2 always first, in order; S3 to S6 in any
+  order, each once. Every script's text may assume S1 and S2 ran; no tool call does.
+- **The lint is green**: every script alone at three date offsets, and the sequence pass in four
+  orders (S1, S2, then S3 to S6 forwards; backwards; S4 then S3; S6 alone) on one workspace with
+  no reset between. The desktop tests pass.
+- **Settings has one Reset button and the six scenarios as a reminder** (`DemoSettings.tsx`).
+  The first two rows say they run first, in order. There is no Start button and no pin.
+- **Not yet done:** a cold run of the packaged demo build on a day nobody drafted against.
 
 ## Things that will bite you
 

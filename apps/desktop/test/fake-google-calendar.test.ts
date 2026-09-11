@@ -22,12 +22,14 @@ const ROOT = join(import.meta.dirname, '..', '..', '..');
 const FIXTURE = join(ROOT, 'demo', 'google-fixture.json');
 const CALENDAR: ExternalContainer = {
   kind: 'calendar',
-  id: 'demo@rota.example',
+  id: 'demo@bord.example',
   name: 'Demo user',
 };
 
-/** The anchored day the demo's yesterday-Steering is written against. */
-const STEERING = '2026-07-16';
+/** The anchored day the demo's yesterday-meeting is written against. */
+const REVIEW = '2026-07-16';
+/** How many events the cast puts in the pull window. */
+const CAST_SIZE = 6;
 /** Noon on the anchor day, so a pull's ±30/+60 window covers the whole cast. */
 const AT_ANCHOR = Date.parse(`${ANCHOR}T12:00:00Z`);
 
@@ -52,7 +54,7 @@ test('the probe passes and reports the demo account', async () => {
   const verify = await connectorFor(fake()).verifyAuth();
   assert.equal(verify.ok, true);
   assert.equal(verify.health, 'ok');
-  assert.equal(verify.identity?.email, 'demo@rota.example');
+  assert.equal(verify.identity?.email, 'demo@bord.example');
 });
 
 test('a request to another host is a 404, not a live call', async () => {
@@ -78,7 +80,7 @@ test('listContainers returns the one primary calendar', async () => {
   const containers = await connectorFor(fake()).listContainers();
   assert.deepEqual(
     containers.map((c) => [c.kind, c.id]),
-    [['calendar', 'demo@rota.example']],
+    [['calendar', 'demo@bord.example']],
   );
 });
 
@@ -86,30 +88,34 @@ test('a full pull returns the week, attendees and the Steering series', async ()
   const pulled = await connectorFor(fake()).pullChanges(CALENDAR, null, { now: AT_ANCHOR });
   const titles = pulled.changes.map((c) => c.title);
   assert.deepEqual(titles, [
-    'Steering',
+    'Brasserie Lund quarterly review',
     '1:1 Rebecca',
-    'Café Nord QBR prep',
-    "Bruno's CS sync",
+    'Sjögatan check-in',
+    'Sprint planning',
     'Steering',
-    'Fjord Sports call',
     'Steering',
   ]);
-  const steering = pulled.changes[0];
+  const steering = pulled.changes[4];
   assert.equal(steering?.kind, 'event');
   if (steering?.kind !== 'event') return;
-  assert.equal(steering.start.slice(0, 10), STEERING);
+  // Fortnightly Thursdays: the first instance is the week after the anchor.
+  assert.equal(steering.start.slice(0, 10), '2026-07-23');
   assert.equal(steering.event_status, 'confirmed');
   assert.equal(steering.recurring_event_id, 'qale-demo-steering');
   // The PM is stamped `self`, everyone else is a participant to resolve.
   assert.deepEqual(
     steering.attendees.map((a) => [a.email, a.self === true]),
     [
-      ['demo@rota.example', true],
-      ['asa.lindgren@rota.example', false],
-      ['rebecca.holm@rota.example', false],
-      ['marcus.ek@rota.example', false],
+      ['demo@bord.example', true],
+      ['asa.lindgren@bord.example', false],
+      ['rebecca.holm@bord.example', false],
+      ['marcus.ek@bord.example', false],
+      ['henrik.dahl@bord.example', false],
     ],
   );
+  // The star sits the day before the anchor, which is what the drop matches.
+  const review = pulled.changes[0];
+  assert.equal(review?.kind === 'event' && review.start.slice(0, 10), REVIEW);
   assert.ok(pulled.highWaterMark, 'the pull mints a sync token');
 });
 
@@ -129,7 +135,7 @@ test('an incremental pull with a fresh sync token returns nothing', async () => 
 test('an unusable sync token is a 410, and the connector re-lists', async () => {
   const f = fake();
   const raw = await f.fetchImpl(
-    'https://www.googleapis.com/calendar/v3/calendars/demo%40rota.example/events?syncToken=rubbish',
+    'https://www.googleapis.com/calendar/v3/calendars/demo%40bord.example/events?syncToken=rubbish',
   );
   assert.equal(raw.status, 410);
   // v2|<anchorMs>|<token> is the mark format; a token the fake refuses costs
@@ -137,22 +143,22 @@ test('an unusable sync token is a 410, and the connector re-lists', async () => 
   const pulled = await connectorFor(f).pullChanges(CALENDAR, `v2|${AT_ANCHOR}|rubbish`, {
     now: AT_ANCHOR,
   });
-  assert.equal(pulled.changes.length, 7);
+  assert.equal(pulled.changes.length, CAST_SIZE);
 });
 
-test('the shift moves the cast: the anchored Steering lands yesterday', async () => {
+test('the shift moves the cast: the anchored review lands yesterday', async () => {
   const today = new Date().toISOString().slice(0, 10);
   const offset = daysBetween(ANCHOR, today);
   const pulled = await connectorFor(fake(offset)).pullChanges(CALENDAR, null, { now: Date.now() });
-  const steering = pulled.changes.find((c) => c.title === 'Steering');
-  assert.ok(steering && steering.kind === 'event');
-  if (!steering || steering.kind !== 'event') return;
+  const review = pulled.changes.find((c) => c.title === 'Brasserie Lund quarterly review');
+  assert.ok(review && review.kind === 'event');
+  if (!review || review.kind !== 'event') return;
   const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000)
     .toISOString()
     .slice(0, 10);
-  assert.equal(steering.start.slice(0, 10), yesterday);
+  assert.equal(review.start.slice(0, 10), yesterday);
   // The wall clock survives the slide, whatever the season did to the offset.
-  assert.equal(steering.start.slice(11, 16), '10:00');
+  assert.equal(review.start.slice(11, 16), '10:00');
 });
 
 test('an RSVP lands on the event and persists', async () => {
@@ -168,7 +174,7 @@ test('an RSVP lands on the event and persists', async () => {
     provider: 'google-calendar',
     action: 'respond_to_event',
     eventId: 'qale-demo-1-1-rebecca',
-    attendeeEmail: 'demo@rota.example',
+    attendeeEmail: 'demo@bord.example',
     responseStatus: 'declined',
     body: 'Cannot make it.',
     rationale: 'The PM asked to decline.',
@@ -180,11 +186,11 @@ test('an RSVP lands on the event and persists', async () => {
   };
   const event = saved.events.find((e) => e.id === 'qale-demo-1-1-rebecca');
   assert.equal(
-    event?.attendees.find((a) => a.email === 'demo@rota.example')?.responseStatus,
+    event?.attendees.find((a) => a.email === 'demo@bord.example')?.responseStatus,
     'declined',
   );
   // The other guest is never dropped by an RSVP.
-  assert.ok(event?.attendees.some((a) => a.email === 'rebecca.holm@rota.example'));
+  assert.ok(event?.attendees.some((a) => a.email === 'rebecca.holm@bord.example'));
 
   // A relaunch reads the saved state, not the fixture.
   const relaunched = createFakeGoogleCalendar({
@@ -206,17 +212,17 @@ test('a created event turns up in the next pull', async () => {
   const created = await connector.execute({
     provider: 'google-calendar',
     action: 'create_event',
-    title: 'H2 order follow-up',
+    title: 'No-show fees follow-up',
     start: `${ANCHOR}T15:00:00+02:00`,
     end: `${ANCHOR}T15:30:00+02:00`,
-    attendees: ['rebecca.holm@rota.example'],
-    body: 'Fifteen minutes on the re-estimate.',
+    attendees: ['rebecca.holm@bord.example'],
+    body: 'Fifteen minutes on the stories.',
     rationale: 'The PM approved the card.',
   });
   assert.ok(created.externalId);
   assert.ok(created.url.includes(created.externalId));
   const pulled = await connector.pullChanges(CALENDAR, null, { now: AT_ANCHOR });
-  assert.ok(pulled.changes.some((c) => c.title === 'H2 order follow-up'));
+  assert.ok(pulled.changes.some((c) => c.title === 'No-show fees follow-up'));
 });
 
 test('reset puts the fixture back', async () => {
@@ -238,7 +244,7 @@ test('reset puts the fixture back', async () => {
   });
   f.reset();
   const pulled = await connectorFor(f).pullChanges(CALENDAR, null, { now: AT_ANCHOR });
-  assert.equal(pulled.changes.length, 7);
+  assert.equal(pulled.changes.length, CAST_SIZE);
   assert.ok(!pulled.changes.some((c) => c.title === 'Gone after reset'));
 });
 
@@ -250,8 +256,8 @@ test('the generated fixture is valid JSON with the cast in it', () => {
   };
   assert.equal(fixture.anchor, ANCHOR);
   assert.equal(fixture.calendars.filter((c) => c.primary).length, 1);
-  assert.equal(fixture.events.length, 7);
-  assert.equal(fixture.events.filter((e) => e.summary === 'Steering').length, 3);
+  assert.equal(fixture.events.length, CAST_SIZE);
+  assert.equal(fixture.events.filter((e) => e.summary === 'Steering').length, 2);
   assert.ok(
     fixture.events.every((e) =>
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/.test(e.start.dateTime),

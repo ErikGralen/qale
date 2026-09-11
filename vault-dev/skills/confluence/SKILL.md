@@ -19,9 +19,12 @@ rule you gave me. Change any line and I draft the new way from the next page on.
 ## When you update a page
 
 - Product pages live in the Product space (key `PROD`). Never propose a page in another space.
-- Edit under the headings the page already has. Never add a section at the bottom.
-- The weekly update goes on the Product weekly update page, newest week first, with the week's
-  dates in the opening line.
+- Edit under the headings the page already has. Never add a section at the bottom. The Changelog
+  is the one exception: each week is a new section on top, under a dated heading (2026-07-17).
+- The Changelog is public. It gets no ticket keys, no customer names and no target dates: only
+  what a restaurant can use now, in plain words.
+- Roadmap H2 holds the quarter a feature is aimed at, with its ticket key in brackets. A date
+  that moves is a patch to the line that names it, never a new line.
 
 ## Standing instructions
 

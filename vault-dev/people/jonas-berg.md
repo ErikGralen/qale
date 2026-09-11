@@ -1,28 +1,26 @@
 ---
 type: 'person'
-summary: 'Jonas Berg: Support Lead, wants to know what shipped before the tickets arrive'
-tags: ['shift-swaps']
-role: 'Support Lead'
-email: 'jonas.berg@rota.example'
-cares_about: ['support macros', 'what shipped', 'not being the last to know']
-last_told: '2026-06-30'
+title: 'Jonas Berg'
+summary: 'Jonas Berg: Support lead, four open tickets on the double reminder and a macro that says we are looking into it'
+tags: ['reminders']
+role: 'Support lead'
+email: 'jonas.berg@bord.example'
+cares_about: ['a macro he is allowed to send', 'a date to give', 'not being the last to know']
+last_told: '2026-07-06'
 ---
 
-Runs support. He is the first person who sees a pattern, usually months before it reaches me,
+Runs support. He is the first person who sees a pattern, usually weeks before it reaches me,
 and he sees it as a ticket count rather than a story.
 
-At the support sync on 2026-07-02 ([[meetings/2026-07-02-support-sync]]) he asked for a macro
-on "can staff swap shifts themselves" — four tickets in a month and he is tired of writing the
-same paragraph by hand. He didn't ask for the feature, he asked for a sentence he's allowed to
-send. I still owe him a version that doesn't promise a date
-([[research/shift-swaps]], [[tickets/jira/SCH-231]]).
+At the support sync on 2026-07-06 ([[meetings/2026-07-06-support-sync]]) he had four tickets
+on the same thing: guests who booked through Google got the day-before reminder twice. He
+opened [[tickets/jira/BOK-412]] from those tickets on 2026-07-08. His macro says "we are
+looking into it", and he asked for a date he can give instead. He has not had one.
 
-Two tickets in June asked whether approved hours can go to payroll without retyping. He has no
-macro for it and has not been told the export exists ([[tickets/jira/SCH-121]],
-[[research/payroll-export]]).
+He did not ask for the fix. He asked for a sentence he is allowed to send. When the fix ships,
+the first thing he needs is the line that closes the four tickets.
 
-The complaint underneath is fair: support learns what shipped from customers. He found out
-about week templates that way, which is one of the threads that ends with
-[[customers/kaffekopp]] leaving.
+The complaint underneath is fair: support learns what shipped from restaurants. That is one of
+the threads that ends with [[customers/kaffekopp]] leaving.
 
-Last told 2026-06-30: swaps are being built, no date to give out yet.
+Last told 2026-07-06: the double reminder is with the Guest team, no date to give out yet.

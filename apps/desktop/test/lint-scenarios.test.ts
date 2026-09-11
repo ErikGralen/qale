@@ -80,7 +80,7 @@ test(
     const patch = at(report.errors, 'stale-patch turn 0 propose_update');
     assert.equal(patch.scenario, 'lint-fail');
     assert.match(patch.message, /^Rejected:/);
-    assert.match(patch.message, /search text is not in customers\/fjord-sports\.md/);
+    assert.match(patch.message, /search text is not in customers\/nordic-steak\.md/);
 
     // The tool: named before anything is run, because there is nothing to run.
     const gone = at(report.errors, 'stale-patch turn 1 propose_ticket_comment');

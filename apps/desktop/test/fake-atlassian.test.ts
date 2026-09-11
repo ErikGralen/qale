@@ -17,12 +17,16 @@ import { createFakeAtlassian, type FakeAtlassian } from '../src/main/demo/fake-a
 
 const ROOT = join(import.meta.dirname, '..', '..', '..');
 const FIXTURE = join(ROOT, 'demo', 'atlassian-fixture.json');
-const SITE = 'https://rota.atlassian.net';
+const SITE = 'https://bord.atlassian.net';
 
-const CREDS = { siteUrl: SITE, email: 'demo@rota.example', apiToken: 'demo' };
+const CREDS = { siteUrl: SITE, email: 'demo@bord.example', apiToken: 'demo' };
 
-const TICKETS: ExternalContainer = { kind: 'ticket', id: 'SCH', name: 'Scheduling' };
+const TICKETS: ExternalContainer = { kind: 'ticket', id: 'BOK', name: 'Bookings' };
 const PAGES: ExternalContainer = { kind: 'wikipage', id: 'PROD', name: 'Product' };
+
+/** The Bookings issues, in key order. The pull order is by update time, which
+ *  the ticket mirrors own, so only the set is asserted below. */
+const BOOKINGS_KEYS = ['BOK-260', 'BOK-262', 'BOK-265', 'BOK-300', 'BOK-301', 'BOK-412', 'BOK-520'];
 
 function fake(dateOffsetDays = 0): FakeAtlassian {
   const dir = mkdtempSync(join(tmpdir(), 'qale-fake-atlassian-'));
@@ -60,43 +64,49 @@ test('listContainers returns the three projects and the Product space', async ()
   const containers = await connectorFor(fake()).listContainers();
   assert.deepEqual(
     containers.map((c) => `${c.kind}:${c.id}`),
-    ['ticket:SCH', 'ticket:APP', 'ticket:PLT', 'wikipage:PROD'],
+    ['ticket:BOK', 'ticket:GST', 'ticket:PAY', 'wikipage:PROD'],
   );
 });
 
 test('a full ticket pull returns the cast, oldest first, with state categories', async () => {
   const pull = await connectorFor(fake()).pullChanges(TICKETS, null);
-  assert.deepEqual(
-    pull.changes.map((c) => c.external_id),
-    ['SCH-121', 'SCH-232', 'SCH-236', 'SCH-118', 'SCH-240', 'SCH-125', 'SCH-231'],
-  );
+  assert.deepEqual([...pull.changes.map((c) => c.external_id)].sort(), BOOKINGS_KEYS);
   const byKey = new Map(pull.changes.map((c) => [c.external_id, c]));
-  assert.equal(
-    byKey.get('SCH-231')?.kind === 'ticket' && byKey.get('SCH-231')?.state,
-    'In Progress',
-  );
-  const categories = pull.changes.map((c) => (c.kind === 'ticket' ? c.state_category : ''));
-  assert.deepEqual(categories, [
-    'done',
-    'done',
-    'done',
-    'in_progress',
-    'in_progress',
-    'in_progress',
-    'in_progress',
-  ]);
-  assert.equal(pull.highWaterMark, '2026-07-15T14:20:00Z');
+  const stateOf = (key: string): string => {
+    const change = byKey.get(key);
+    return change?.kind === 'ticket' ? change.state : '';
+  };
+  const categoryOf = (key: string): string => {
+    const change = byKey.get(key);
+    return change?.kind === 'ticket' ? change.state_category : '';
+  };
+  assert.equal(stateOf('BOK-300'), 'In Progress');
+  assert.equal(stateOf('BOK-412'), 'Done');
+  assert.equal(stateOf('BOK-520'), 'To Do');
+  assert.equal(categoryOf('BOK-300'), 'in_progress');
+  assert.equal(categoryOf('BOK-412'), 'done');
+  assert.equal(categoryOf('BOK-520'), 'open');
+  // The bug was fixed on the anchor day, so it is the last thing that moved.
+  assert.equal(pull.changes.at(-1)?.external_id, 'BOK-412');
+  assert.match(pull.highWaterMark ?? '', /^2026-07-17/);
 });
 
 test('a ticket fetch carries description, comments and the blocks link', async () => {
-  const item = await connectorFor(fake()).fetchFull('ticket', 'SCH-125');
-  assert.equal(item.title, 'Fortnox connector');
-  assert.match(item.bodyMarkdown, /Push approved hours straight into Fortnox/);
-  assert.match(item.bodyMarkdown, /Mapping and the push work against the Fortnox sandbox/);
-  assert.deepEqual(item.kind === 'ticket' ? item.links : [], [
-    { type: 'blocks', key: 'PLT-77', reversed: true },
+  const connector = connectorFor(fake());
+  const epic = await connector.fetchFull('ticket', 'BOK-520');
+  assert.equal(epic.title, 'Group bookings (epic)');
+  assert.match(epic.bodyMarkdown, /set menu/);
+  // Deposits block group bookings, the one cross-project dependency.
+  assert.deepEqual(epic.kind === 'ticket' ? epic.links : [], [
+    { type: 'blocks', key: 'PAY-210', reversed: true },
   ]);
-  assert.equal(item.kind === 'ticket' ? item.parentKey : '', 'SCH-118');
+
+  const bug = await connectorFor(fake()).fetchFull('ticket', 'BOK-412');
+  assert.equal(bug.title, 'Reminder SMS sent twice for Google bookings');
+  assert.match(bug.bodyMarkdown, /one reminder per booking/);
+
+  const story = await connectorFor(fake()).fetchFull('ticket', 'BOK-265');
+  assert.equal(story.kind === 'ticket' ? story.parentKey : '', 'BOK-260');
 });
 
 test('a full page pull returns both wikipages with their versions', async () => {
@@ -109,7 +119,10 @@ test('a full page pull returns both wikipages with their versions', async () => 
   const page = await connector.fetchFull('wikipage', '4521985');
   assert.equal(page.title, 'Roadmap H2');
   assert.equal(page.url, `${SITE}/wiki/spaces/PROD/pages/4521985`);
-  assert.match(page.bodyMarkdown, /First: payroll export \(Fortnox first\), in Q3\./);
+  assert.match(
+    page.bodyMarkdown,
+    /No-show fees: Q4\. A card at booking, charged when the guest does not turn up\. \(BOK-300\)/,
+  );
 });
 
 test('an incremental pull with a fresh mark returns nothing', async () => {
@@ -121,20 +134,18 @@ test('an incremental pull with a fresh mark returns nothing', async () => {
 
 test('dates slide by the demo offset', async () => {
   const pull = await connectorFor(fake(10)).pullChanges(TICKETS, null);
-  const epic = pull.changes.find((c) => c.external_id === 'SCH-231');
-  assert.equal(epic?.remote_updated, '2026-07-25T14:20:00Z');
+  const bug = pull.changes.find((c) => c.external_id === 'BOK-412');
+  // Fixed on the anchor day, so ten days on it reads as the 27th.
+  assert.match(bug?.remote_updated ?? '', /^2026-07-27/);
 });
 
 test('tracked keys pull by id, unknown keys drop out', async () => {
   const changes = await connectorFor(fake()).pullByKeys('ticket', [
-    'SCH-125',
-    'SCH-231',
-    'SCH-999',
+    'BOK-300',
+    'PAY-210',
+    'BOK-999',
   ]);
-  assert.deepEqual(
-    changes.map((c) => c.external_id),
-    ['SCH-125', 'SCH-231'],
-  );
+  assert.deepEqual([...changes.map((c) => c.external_id)].sort(), ['BOK-300', 'PAY-210']);
 });
 
 test('a created ticket gets the next key and turns up in a pull', async () => {
@@ -144,25 +155,22 @@ test('a created ticket gets the next key and turns up in a pull', async () => {
     provider: 'jira',
     system: 'jira',
     action: 'create_ticket',
-    container: 'SCH',
-    title: 'Notify the affected colleague of a swap request',
-    body: 'Send the colleague a notification when a swap request names them.',
-    rationale: 'Agreed in the steering meeting.',
+    container: 'BOK',
+    title: 'Charge the fee the morning after a no-show',
+    body: 'Charge the stored card the morning after the booking, and send a receipt by text.',
+    rationale: 'Agreed at the quarterly review.',
   });
-  assert.equal(out.externalId, 'SCH-241');
-  assert.equal(out.url, `${SITE}/browse/SCH-241`);
+  assert.equal(out.externalId, 'BOK-521');
+  assert.equal(out.url, `${SITE}/browse/BOK-521`);
 
   const pull = await connector.pullChanges(TICKETS, null);
-  const created = pull.changes.find((c) => c.external_id === 'SCH-241');
-  assert.equal(created?.title, 'Notify the affected colleague of a swap request');
+  const created = pull.changes.find((c) => c.external_id === 'BOK-521');
+  assert.equal(created?.title, 'Charge the fee the morning after a no-show');
   assert.equal(created?.kind === 'ticket' && created.state_category, 'open');
 
   // The write persisted, so a relaunch of the fake still has it.
-  const item = await connectorFor(f).fetchFull('ticket', 'SCH-241');
-  assert.match(
-    item.bodyMarkdown,
-    /Send the colleague a notification when a swap request names them\./,
-  );
+  const item = await connectorFor(f).fetchFull('ticket', 'BOK-521');
+  assert.match(item.bodyMarkdown, /send a receipt by text\./);
 });
 
 test('a comment lands on the ticket thread', async () => {
@@ -171,13 +179,16 @@ test('a comment lands on the ticket thread', async () => {
     provider: 'jira',
     system: 'jira',
     action: 'comment_ticket',
-    targetId: 'SCH-118',
-    body: 'Payroll export moves to Q1 after the steering call.',
-    rationale: 'Decided in the steering meeting.',
+    targetId: 'BOK-300',
+    body: 'The stories are written, so this is ready for sprint planning.',
+    rationale: 'Agreed in the 1:1.',
   });
-  assert.equal(out.externalId, 'SCH-118');
-  const item = await connector.fetchFull('ticket', 'SCH-118');
-  assert.match(item.bodyMarkdown, /Payroll export moves to Q1 after the steering call\./);
+  assert.equal(out.externalId, 'BOK-300');
+  const item = await connector.fetchFull('ticket', 'BOK-300');
+  assert.match(
+    item.bodyMarkdown,
+    /The stories are written, so this is ready for sprint planning\./,
+  );
 });
 
 test('a page update bumps the version and a stale version is refused', async () => {
@@ -188,13 +199,13 @@ test('a page update bumps the version and a stale version is refused', async () 
     system: 'confluence',
     action: 'update_page',
     targetId: '4521985',
-    body: '## Committed\n\nShift swaps ship before payroll export.',
-    provenance: 'Source: decisions/2026-07-16-swaps-before-payroll-export',
-    rationale: 'The page still describes the old H2 order.',
+    body: '## Committed\n\nNo-show fees: Q4, live by the end of October.',
+    provenance: 'Source: meetings/2026-07-16-brasserie-lund-quarterly-review',
+    rationale: 'The page does not carry the date the customer was given.',
   });
   const page = await connector.fetchFull('wikipage', '4521985');
   assert.equal(page.kind === 'wikipage' ? page.version : 0, 18);
-  assert.match(page.bodyMarkdown, /Shift swaps ship before payroll export\./);
+  assert.match(page.bodyMarkdown, /No-show fees: Q4, live by the end of October\./);
 
   const stale = await f.fetchImpl(`${SITE}/wiki/api/v2/pages/4521985`, {
     method: 'PUT',
@@ -216,17 +227,20 @@ test('reset puts the fixture back', async () => {
     provider: 'jira',
     system: 'jira',
     action: 'create_ticket',
-    container: 'SCH',
+    container: 'BOK',
     title: 'Thrown away by reset',
     body: 'Temporary.',
     rationale: 'Testing reset.',
   });
-  assert.equal((await connectorFor(f).pullChanges(TICKETS, null)).changes.length, 8);
+  assert.equal(
+    (await connectorFor(f).pullChanges(TICKETS, null)).changes.length,
+    BOOKINGS_KEYS.length + 1,
+  );
   f.reset();
   const after = await connectorFor(f).pullChanges(TICKETS, null);
-  assert.equal(after.changes.length, 7);
+  assert.equal(after.changes.length, BOOKINGS_KEYS.length);
   assert.equal(
-    after.changes.some((c) => c.external_id === 'SCH-241'),
+    after.changes.some((c) => c.external_id === 'BOK-521'),
     false,
   );
 });
@@ -236,8 +250,8 @@ test('the footprint survey finds the project and the space', async () => {
   const offset = Math.round((Date.now() - Date.parse('2026-07-17T00:00:00Z')) / 86_400_000);
   const footprint = await connectorFor(fake(offset)).surveyFootprint();
   const tickets = footprint.find((f) => f.kind === 'ticket');
-  assert.equal(tickets?.id, 'SCH');
-  assert.equal(tickets?.count, 7);
+  assert.equal(tickets?.id, 'BOK');
+  assert.equal(tickets?.count, BOOKINGS_KEYS.length);
   const pages = footprint.find((f) => f.kind === 'wikipage');
   assert.equal(pages?.id, 'PROD');
   assert.equal(pages?.count && pages.count >= 1, true);
@@ -260,16 +274,18 @@ test('the generated fixture is valid JSON with the cast in it', () => {
   assert.deepEqual(
     fixture.issues.map((i) => i.key),
     [
-      'APP-54',
-      'PLT-77',
-      'PLT-80',
-      'SCH-118',
-      'SCH-121',
-      'SCH-125',
-      'SCH-231',
-      'SCH-232',
-      'SCH-236',
-      'SCH-240',
+      'BOK-260',
+      'BOK-262',
+      'BOK-265',
+      'BOK-300',
+      'BOK-301',
+      'BOK-412',
+      'BOK-520',
+      'GST-140',
+      'GST-160',
+      'GST-77',
+      'PAY-190',
+      'PAY-210',
     ],
   );
   // Every ticket carries its one area label (the conventions skill names it).
@@ -281,31 +297,36 @@ test('the generated fixture is valid JSON with the cast in it', () => {
     fixture.pages.map((p) => p.id),
     ['4521985', '4784129'],
   );
-  assert.match(fixture.pages[0]?.body ?? '', /^<h1>Roadmap H2<\/h1>/);
+  assert.match(fixture.pages[0]?.body ?? '', /^<h1>Roadmap H2 2026<\/h1>/);
 });
 
 test('a patch that spans two paragraphs lands, and stays two paragraphs', async () => {
   const f = fake();
   const connector = connectorFor(f);
-  // The exact edit Flow 1 drafts: the two order lines are two paragraphs in
+  // The exact edit S1 drafts: the two committed lines are two paragraphs in
   // storage, with no whitespace between them, only `</p><p>`.
+  const committed =
+    'No-show fees: Q4. A card at booking, charged when the guest does not turn up. (BOK-300)' +
+    '\n\nWaitlist: Q4, after no-show fees. (BOK-260)';
   await connector.execute({
     provider: 'confluence',
     system: 'confluence',
     action: 'update_page',
     targetId: '4521985',
-    body: 'The H2 order after the steering call.',
+    body: 'The date the customer was given.',
     patch: {
-      search: 'First: payroll export (Fortnox first), in Q3.\n\nThen: shift swaps, in Q4.',
-      replace: 'First: shift swaps, in Q3 and Q4.\n\nThen: payroll export (Fortnox first), in Q1.',
+      search: committed,
+      replace:
+        'No-show fees: Q4, live by the end of October. A card at booking, charged when the ' +
+        'guest does not turn up. (BOK-300)\n\nWaitlist: Q4, after no-show fees. (BOK-260)',
     },
-    provenance: 'Source: decisions/2026-07-16-h2-order-swaps-first',
-    rationale: 'The steering call flipped the order.',
+    provenance: 'Source: meetings/2026-07-16-brasserie-lund-quarterly-review',
+    rationale: 'Lena was told the end of October and the page does not say it.',
   });
   const page = await connector.fetchFull('wikipage', '4521985');
-  assert.match(page.bodyMarkdown, /First: shift swaps, in Q3 and Q4\./);
-  assert.match(page.bodyMarkdown, /Then: payroll export \(Fortnox first\), in Q1\./);
-  assert.doesNotMatch(page.bodyMarkdown, /payroll export \(Fortnox first\), in Q3/);
+  assert.match(page.bodyMarkdown, /No-show fees: Q4, live by the end of October\./);
+  assert.match(page.bodyMarkdown, /Waitlist: Q4, after no-show fees\. \(BOK-260\)/);
+  assert.doesNotMatch(page.bodyMarkdown, /No-show fees: Q4\. A card/);
   // Two paragraphs in, two paragraphs out: the lines are not on one line.
-  assert.doesNotMatch(page.bodyMarkdown, /Q4\. Then: payroll/);
+  assert.doesNotMatch(page.bodyMarkdown, /\(BOK-300\) Waitlist/);
 });

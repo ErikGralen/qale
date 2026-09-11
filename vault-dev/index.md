@@ -9,16 +9,16 @@ This workspace is an Open Knowledge Format bundle. Each folder has an `index.md`
 
 ## Folders
 
-* [Meetings](meetings/index.md) — meeting pages: prep, notes, and processed summaries (5)
-* [Decisions](decisions/index.md) — the append-only decision spine (6)
-* [Insights](insights/index.md) — analyses over the raw layer, each citing its evidence (4)
-* [Customers](customers/index.md) — customer hubs — who they are and where they stand (4)
+* [Meetings](meetings/index.md) — meeting pages: prep, notes, and processed summaries (4)
+* [Decisions](decisions/index.md) — the append-only decision spine (4)
+* [Insights](insights/index.md) — analyses over the raw layer, each citing its evidence (3)
+* [Customers](customers/index.md) — customer hubs — who they are and where they stand (5)
 * [Research](research/index.md) — what Qale worked out: the case for a problem, a competitor scan (4)
 * [People](people/index.md) — people the work touches and what they were last told (10)
 * [Skills](skills/index.md) — the written instructions the agent follows when you hand work over (12)
 * [Agents](agents/index.md) — self-starting agents — what fires on workspace events, and when (2)
-* [Todos](todos/index.md) — tracked commitments — the PO’s own and what they are waiting on (5)
-* [Notes](notes/index.md) — the documents you write: scratch notes, briefs, PRDs, specs (3)
-* [Tickets](tickets/index.md) — mirrored tracker items, never edited locally (10)
+* [Todos](todos/index.md) — tracked commitments — the PO’s own and what they are waiting on (4)
+* [Notes](notes/index.md) — the documents you write: scratch notes, briefs, PRDs, specs (2)
+* [Tickets](tickets/index.md) — mirrored tracker items, never edited locally (12)
 * [Wikipages](wikipages/index.md) — mirrored living documents, never edited locally (2)
 * [Voices](voices/index.md) — how a draft sounds — tone and wording, applied when something is drafted (3)

@@ -1,5 +1,9 @@
 # Demo scenarios (v2): new dataset, built from the research
 
+**This file describes the Rota demo, replaced on 2026-09-10 by `docs/plan-demo-bookings.md`
+(Bord, six scenarios).** Kept for the research in section 1 and the reasoning; nothing below
+is what ships.
+
 This replaces the Tavla-based demo. Tavla is a customer-discovery story for a startup PM: insights with confidence
 scores, churn signals, on-prem asks. The 42-interview research in `transcripts2/combined/` describes a different job:
 a PO at a mid-size Nordic product company who spends most of the week in meetings with people who want something,

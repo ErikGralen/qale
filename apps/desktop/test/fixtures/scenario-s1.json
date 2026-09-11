@@ -2,49 +2,52 @@
   "version": 1,
   "id": "s1",
   "title": "The meeting produced actions",
-  "do": "Drag steering-h2-priorities.vtt onto the window.",
+  "do": "Drag brasserie-lund-review.vtt onto the window.",
   "offScript": "That is outside what this scenario can show in the demo build.",
   "lookups": {
     "claims": {
-      "Åsa reverses H2 order": "CONFLICT | decisions/2026-05-18-h2-order-payroll-first.md | Åsa picked payroll export for Q3 and shift swaps for Q4."
+      "No-show fees live by the end of October": "CONFLICT | customers/brasserie-lund.md | Lena was told Q4, before the Christmas season, on 2026-06-02."
     },
     "summaries": {
-      "sources/{{today}}-steering-transcript.md": "Steering call where Åsa moved shift swaps ahead of payroll export, dated {{today-1}}."
+      "sources/{{today}}-brasserie-lund-review.md": "Quarterly review where Lena heard the end of October, dated {{today-1}}."
     }
   },
   "conversations": [
     {
       "id": "drop",
       "trigger": { "kind": "skill", "skill": "arrival" },
-      "title": "Steering: H2 priorities",
+      "title": "Brasserie Lund quarterly review",
       "turns": [
         {
           "tools": [
             {
               "name": "file_source",
-              "input": { "path": "sources/{{today}}-steering-transcript.md", "from": "steering.vtt" }
+              "input": {
+                "path": "sources/{{today}}-brasserie-lund-review.md",
+                "from": "brasserie-lund-review.vtt"
+              }
             }
           ]
         },
         {
           "pause": 700,
-          "text": "Filed it as [[sources/{{today}}-steering-transcript]]. The workshop is on 2026-07-25.",
+          "text": "Filed it as [[sources/{{today}}-brasserie-lund-review]]. Sprint planning is on 2026-07-22.",
           "tools": [
             {
               "name": "propose_todo",
               "input": {
                 "due": "2026-07-25",
-                "sources": ["[[meetings/{{date:2026-07-16}}-steering]]"],
-                "note": "Decided on {{today-1}}, see decisions/2026-05-18-h2-order-payroll-first.md"
+                "sources": ["[[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]"],
+                "note": "Decided on {{today-1}}, see decisions/2026-05-14-h2-order-no-show-fees-first.md"
               }
             }
           ]
         },
         {
           "text": [
-            "Steering flipped the H2 order: shift swaps ships first.",
+            "No-show fees has a date now: the end of October.",
             "",
-            "Rebecca re-scopes SCH-240 by {{today+10}}."
+            "Rebecca writes the BOK-300 stories by {{today+10}}."
           ]
         }
       ]
@@ -52,14 +55,14 @@
     {
       "id": "who-to-tell",
       "trigger": { "kind": "typed" },
-      "title": "Who to tell about SCH-231",
-      "turns": [{ "text": "Three people need to know, and Oskar first." }]
+      "title": "Who to tell about BOK-412",
+      "turns": [{ "text": "Three people need to know, and Jonas first." }]
     },
     {
       "id": "follow-up",
       "trigger": { "kind": "typed" },
-      "title": "Fjord Sports timeline",
-      "turns": [{ "text": "Oskar was told Q4 in May." }]
+      "title": "Nordic Steak timeline",
+      "turns": [{ "text": "Oskar was told \"on the roadmap\" in July." }]
     }
   ]
 }

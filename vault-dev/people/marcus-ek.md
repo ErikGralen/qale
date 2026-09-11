@@ -1,28 +1,32 @@
 ---
 type: 'person'
-summary: 'Marcus Ek: Head of Sales, owns Café Nord and the swap promise made at the QBR'
-tags: ['shift-swaps']
+title: 'Marcus Ek'
+summary: 'Marcus Ek: Head of Sales, owns Nordic Steak and Brasserie Lund, asks for dates he can put in a contract'
+tags: ['group-bookings', 'booking-page']
 role: 'Head of Sales'
-email: 'marcus.ek@rota.example'
-cares_about: ['delivery dates for Café Nord', 'what he can promise', 'renewals']
-last_told: '2026-06-05'
+email: 'marcus.ek@bord.example'
+cares_about: ['what he can put in a contract', 'Nordic Steak', 'dates he can repeat']
+last_told: '2026-07-09'
 ---
 
-Head of Sales. [[customers/cafe-nord]] is his account and their renewal on 2026-12-01 is the
-biggest number on his board.
+Head of Sales. [[customers/nordic-steak]] is his deal, 25 restaurants and close to signing. He
+also owns the [[customers/brasserie-lund]] relationship and was in their review on 2026-06-02
+([[meetings/2026-06-02-brasserie-lund-review]]).
 
-At the Q2 QBR on 2026-06-05 he told Lena we'd have shift swaps "before September"
-([[meetings/2026-06-05-cafe-nord-qbr]]). I said Q4 in the same meeting, and behind payroll
-export. Both sentences are in the notes; only one of them travelled. That is the thing to
-manage with Marcus — he doesn't invent dates, he repeats the most optimistic one he heard and
-means it kindly.
+He does not invent dates. He repeats the most hopeful one he heard and means it kindly. That is
+the thing to manage with Marcus, and it is why the sales voice exists: date first, what can be
+promised, what cannot.
 
-He has asked in #sales three times this week what the swap ETA actually is
-([[todos/reply-marcus-swap-eta]]). He deserves a straight answer he can use, which is why the
-sales voice exists: date first, what can be promised, what can't.
+He has asked twice to move group bookings up for Nordic Steak, once in June and again at
+steering on 2026-07-09 ([[meetings/2026-07-09-steering]]). Both times the answer was the
+decision of 2026-06-18: it waits on the Payments team's deposits work, so Q1 2027
+([[decisions/2026-06-18-group-bookings-after-deposits]]). He has asked in #sales this week
+what he can tell Oskar ([[todos/reply-marcus-group-bookings]]).
 
-He has brought offline mode to me for prospects twice, and both times the answer was the
-February decision ([[decisions/2026-02-12-decline-offline-mode]]).
+Nobody has told sales in writing that Google bookings shipped on 2026-05-12
+([[tickets/jira/GST-77]]). He still lists it as coming.
 
-Last told 2026-06-05: swaps in Q4, dependent on payroll export
-([[decisions/2026-05-18-h2-order-payroll-first]]).
+## What he has been told
+
+- 2026-06-18: group bookings waits for deposits, Q1 2027.
+- 2026-07-09: same answer at steering; Henrik gave no date for PAY-210.

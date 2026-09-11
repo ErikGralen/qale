@@ -1,5 +1,5 @@
 /**
- * The Rota cast: the desired state of the Atlassian demo site, in one place.
+ * The Bord cast: the desired state of the Atlassian demo site, in one place.
  * `scripts/reset-atlassian.ts` converges the live site to it, and
  * `scripts/build-demo-fixture.ts` bakes it into the offline fixture the demo
  * build's fake Atlassian serves (docs/demo-mode.md DM-8). Both must read the
@@ -11,15 +11,16 @@
 
 export const ANCHOR = '2026-07-17';
 
-/** The three Jira projects the scenario spans. They must exist on the site —
+/** The three Jira projects the scenario spans. They must exist on the site:
  *  the script creates issues, never projects (see reset-atlassian.ts's
- *  preconditions). Scheduling and Staff app are the PO's own two teams. */
-export const PROJECT_KEYS = ['SCH', 'APP', 'PLT'] as const;
+ *  preconditions). Bookings and Guest are the PO's own two teams. Payments is
+ *  Henrik's, and the demo only waits on it. */
+export const PROJECT_KEYS = ['BOK', 'GST', 'PAY'] as const;
 export type ProjectKey = (typeof PROJECT_KEYS)[number];
 export const PROJECT_NAMES: Record<ProjectKey, string> = {
-  SCH: 'Scheduling',
-  APP: 'Staff app',
-  PLT: 'Platform',
+  BOK: 'Bookings',
+  GST: 'Guest',
+  PAY: 'Payments',
 };
 
 export const SPACE_NAME = 'Product';
@@ -28,7 +29,7 @@ export const DATE_RE = /\d{4}-\d{2}-\d{2}/g;
 export const FRONTMATTER_RE = /^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 
 // ---------------------------------------------------------------------------
-// The desired state. Summaries are the identity — the live site mints its own
+// The desired state. Summaries are the identity: the live site mints its own
 // issue keys, so the script matches cast members by exact summary. `key` is the
 // STATIC key the canonical mirror in vault-dev/tickets/jira/ carries, which is
 // what the offline fixture serves and what reconciliation rewrites when the
@@ -39,233 +40,307 @@ export const FRONTMATTER_RE = /^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 /** The one area label every cast issue carries, matching the `tags` on its
  *  static mirror. It is the house shape the conventions skill names
  *  (docs/conventions.md CV-5), so the live site has to show it. */
-export const CAST_LABELS = ['shift-swaps', 'payroll-export', 'platform', 'staff-app'] as const;
+export const CAST_LABELS = [
+  'no-show-fees',
+  'waitlist',
+  'group-bookings',
+  'reminders',
+  'booking-page',
+  'payments',
+] as const;
 export type CastLabel = (typeof CAST_LABELS)[number];
 
+/** One comment on the thread. The author and the date are the story's, not the
+ *  run's: the fixture builder stamps them straight onto the fake's thread. A
+ *  live site can only post as the account running the script, so there the
+ *  author is dropped and the text carries the story. */
+export interface CastComment {
+  author: string;
+  /** ANCHOR-relative date, YYYY-MM-DD. */
+  date: string;
+  body: string;
+}
+
 export interface CastIssue {
-  /** The static key its canonical mirror carries, e.g. "SCH-231". */
+  /** The static key its canonical mirror carries, e.g. "BOK-300". */
   key: string;
   project: ProjectKey;
   summary: string;
-  issueType: 'Epic' | 'Story' | 'Task';
+  issueType: 'Epic' | 'Story' | 'Task' | 'Bug';
   status: string;
   description: string;
   label: CastLabel;
-  /** Seeded oldest-first after wiping the live thread. Comment authorship and
-   *  timestamps are whoever runs the script, now — the story lives in the text. */
-  comments?: string[];
-  assignSelf?: boolean;
-  /** The SUMMARY of the epic this one hangs under — resolved to a live key at
+  /** The person who owns it, or null when nobody does. A live demo site has
+   *  one account, so reset-atlassian gives every assigned issue to whoever
+   *  runs it. */
+  assignee: string | null;
+  /** ANCHOR-relative dates, YYYY-MM-DD. A mirror's `remote_updated` wins over
+   *  `updated` when the fixture is built, because the mirror is what the demo
+   *  shows before the first sync. */
+  created: string;
+  updated: string;
+  /** Seeded oldest-first after wiping the live thread. */
+  comments?: CastComment[];
+  /** The SUMMARY of the epic this one hangs under, resolved to a live key at
    *  run time, because the site mints its own. */
   parent?: string;
 }
 
 // The star + supporting cast (vault-dev/tickets/jira/). Anything the demo
-// CREATES live is deliberately absent — the swap-notification story the
-// after-meeting session drafts as an approval card, for one — which is exactly
-// why this script deletes non-cast issues again on reset.
+// CREATES live is deliberately absent, which is exactly why this script deletes
+// non-cast issues again on reset.
 export const CAST: CastIssue[] = [
   {
-    key: 'SCH-231',
-    project: 'SCH',
-    summary: 'Shift swaps (epic)',
-    label: 'shift-swaps',
+    key: 'BOK-300',
+    project: 'BOK',
+    summary: 'No-show fees (epic)',
+    label: 'no-show-fees',
     issueType: 'Epic',
     status: 'In Progress',
-    assignSelf: true,
+    assignee: 'Rebecca Holm',
+    created: '2026-05-20',
+    updated: '2026-07-13',
     description:
-      'Staff propose a shift swap in the app, the affected colleague accepts, the manager ' +
-      'approves, and the schedule updates for both people. Three stories: the swap request ' +
-      'model and API, the request screen in the staff app, and the manager approval flow. ' +
-      'Rules: same role, same location, manager approves, no overtime beyond contract.',
+      'A restaurant with fees switched on takes a card when the guest books, and charges a fee ' +
+      'when the guest does not turn up. The first release has one fee per restaurant, on ' +
+      'bookings from the restaurant website and from Google. Card storage goes through PAY-190.',
     comments: [
-      'Scope agreed: same role, same location, manager approves, and a swap can never push ' +
-        'either person past their contracted hours. Split into three stories.',
-      'The model/API story and the staff-app screen are Done. The manager approval flow is what ' +
-        'is left, and the overtime check in it is bigger than the original estimate. Re-estimate ' +
-        'before anyone quotes a date.',
+      {
+        author: 'Rebecca Holm',
+        date: '2026-07-03',
+        body:
+          'Spike done (BOK-301). PAY-190 stores the card and gives us a token to charge later. ' +
+          'No stories yet. I want them before sprint planning on 22 July.',
+      },
     ],
   },
   {
-    key: 'SCH-232',
-    project: 'SCH',
-    summary: 'Swap request model and API',
-    label: 'shift-swaps',
-    issueType: 'Story',
+    key: 'BOK-301',
+    project: 'BOK',
+    summary: 'Spike: store a card through PAY-190',
+    label: 'no-show-fees',
+    issueType: 'Task',
     status: 'Done',
-    parent: 'Shift swaps (epic)',
+    assignee: 'Rebecca Holm',
+    parent: 'No-show fees (epic)',
+    created: '2026-06-26',
+    updated: '2026-07-03',
     description:
-      'A swap request as a first-class object: who proposes it, which shift, which colleague, ' +
-      'and the state it is in (proposed, accepted by the colleague, approved, rejected). Plus ' +
-      'the REST endpoints the staff app and the manager web both read and write.',
-    comments: [
-      'Endpoints are live behind the swaps flag, with same-role and same-location validation on ' +
-        'the request itself. Closing.',
-    ],
+      'Find out whether PAY-190 can hold a card at booking and give us a token to charge days ' +
+      'later, and what the Payments team needs from us to do it.',
   },
   {
-    key: 'SCH-236',
-    project: 'SCH',
-    summary: 'Swap request screen in staff app',
-    label: 'shift-swaps',
-    issueType: 'Story',
+    key: 'BOK-412',
+    project: 'BOK',
+    summary: 'Reminder SMS sent twice for Google bookings',
+    label: 'reminders',
+    issueType: 'Bug',
     status: 'Done',
-    parent: 'Shift swaps (epic)',
+    assignee: 'Amir Haddad',
+    created: '2026-07-08',
+    updated: '2026-07-17',
     description:
-      'The staff-app screen where someone picks one of their own shifts, picks a colleague who ' +
-      'can work that role at that location, and sends the swap request. Includes the list of ' +
-      'requests they have sent and received.',
+      'Guests who book through the Google button get the day-before reminder twice, once from ' +
+      'the Google booking record and once from ours. Sjögatan reported it on 2026-06-24 and ' +
+      'Pizzeria Napoli on 2026-06-26, both through support. Four tickets so far.',
     comments: [
-      'Shipped behind the swaps flag. The sent/received list reuses the shift list component, so ' +
-        'nothing new to maintain. Closing.',
+      {
+        author: 'Jonas Berg',
+        date: '2026-07-08',
+        body: 'Four support tickets so far, all Google bookings. The macro says we are looking into it.',
+      },
+      {
+        author: 'Amir Haddad',
+        date: '2026-07-17',
+        body:
+          'Fixed: one reminder per booking, whatever the source. Released in the 09:10 deploy on ' +
+          '2026-07-17.',
+      },
     ],
   },
   {
-    key: 'SCH-240',
-    project: 'SCH',
-    summary: 'Manager approval flow and schedule update',
-    label: 'shift-swaps',
-    issueType: 'Story',
-    status: 'In Progress',
-    parent: 'Shift swaps (epic)',
-    description:
-      "The manager sees the week's pending swaps, approves or rejects each one, and an approval " +
-      'rewrites the schedule for both people. The approval must refuse anything that pushes ' +
-      'either person past their contracted hours for the week.',
-    comments: [
-      'Approval list and the reject path work against the API. Starting on the schedule write.',
-      'This needs a re-estimate. The overtime check has to run against both people’s ' +
-        'contracted hours for the whole week, not just the two shifts, and the week can already ' +
-        'contain other approved swaps. I would rather re-estimate than give a date now.',
-    ],
-  },
-  {
-    key: 'SCH-118',
-    project: 'SCH',
-    summary: 'Payroll export (epic)',
-    label: 'payroll-export',
+    key: 'BOK-260',
+    project: 'BOK',
+    summary: 'Waitlist (epic)',
+    label: 'waitlist',
     issueType: 'Epic',
     status: 'In Progress',
-    assignSelf: true,
+    assignee: 'Rebecca Holm',
+    created: '2026-05-20',
+    updated: '2026-07-15',
     description:
-      "Approved hours from the schedule go to the customer's payroll system instead of being " +
-      'retyped. A CSV export first, then a direct Fortnox connector; Visma after that. Fortnox ' +
-      'is the first target.',
-    comments: [
-      'The approved-hours CSV is out. The Fortnox connector is in progress and needs the ' +
-        'platform token store before it can hold real customer credentials.',
-    ],
+      'A guest who finds no free table joins the waitlist, and the restaurant texts the first ' +
+      'guest on it when a table frees. Q4, after no-show fees.',
   },
   {
-    key: 'SCH-121',
-    project: 'SCH',
-    summary: 'Approved-hours export (CSV)',
-    label: 'payroll-export',
+    key: 'BOK-262',
+    project: 'BOK',
+    summary: 'Join the waitlist from the booking page',
+    label: 'waitlist',
     issueType: 'Story',
     status: 'Done',
-    parent: 'Payroll export (epic)',
+    assignee: 'Amir Haddad',
+    parent: 'Waitlist (epic)',
+    created: '2026-06-15',
+    updated: '2026-07-10',
     description:
-      'Export approved hours for a period as CSV: person, location, date, hours, cost centre. ' +
-      'One column set that both Fortnox and Visma accept, so the connectors later map from the ' +
-      'same shape.',
-    comments: [
-      'Column set verified against a real Fortnox import template and a Visma one. Closing.',
-      'Enabled for every chain in the 24 June release. Managers export from the period view.',
-    ],
+      'When the booking page has no free table for the time a guest asked for, it offers the ' +
+      'waitlist instead: name, party size, phone number, and the window the guest can come in.',
   },
   {
-    key: 'SCH-125',
-    project: 'SCH',
-    summary: 'Fortnox connector',
-    label: 'payroll-export',
+    key: 'BOK-265',
+    project: 'BOK',
+    summary: 'Text the first guest on the waitlist when a table frees',
+    label: 'waitlist',
     issueType: 'Story',
     status: 'In Progress',
-    parent: 'Payroll export (epic)',
+    assignee: 'Rebecca Holm',
+    parent: 'Waitlist (epic)',
+    created: '2026-06-15',
+    updated: '2026-07-15',
     description:
-      'Push approved hours straight into Fortnox instead of handing the manager a file: OAuth ' +
-      "against the customer's Fortnox account, locations mapped to cost centres, one push per " +
-      'period, and a readable report of what Fortnox rejected.',
-    comments: [
-      'Mapping and the push work against the Fortnox sandbox. Real customer accounts need ' +
-        'somewhere to keep refresh tokens, which is the platform token store — I am not putting ' +
-        'them in this service.',
-    ],
+      'A cancellation frees a table, so the first guest on the waitlist for that window gets a ' +
+      'text with a link to take it. The offer runs out after fifteen minutes and moves on.',
   },
   {
-    key: 'PLT-77',
-    project: 'PLT',
-    summary: 'OAuth token store for integrations',
-    label: 'platform',
-    issueType: 'Task',
-    status: 'In Progress',
+    key: 'BOK-520',
+    project: 'BOK',
+    summary: 'Group bookings (epic)',
+    label: 'group-bookings',
+    issueType: 'Epic',
+    status: 'To Do',
+    assignee: null,
+    created: '2026-06-18',
+    updated: '2026-06-18',
     description:
-      'One encrypted store for third-party OAuth tokens — Fortnox first, Visma next — with ' +
-      'refresh handling and per-tenant isolation, so every integration does not invent its own.',
-    comments: [
-      'Encryption and per-tenant isolation are in. Refresh-on-expiry is the piece left, and the ' +
-        'Fortnox connector needs it before it can talk to a real Fortnox account.',
-    ],
+      'Parties over eight book a set menu and pay a deposit. It waits on PAY-210 (deposits), ' +
+      'so Roadmap H2 says Q1 2027.',
   },
   {
-    key: 'PLT-80',
-    project: 'PLT',
-    summary: 'Nightly schedule backup job',
-    label: 'platform',
-    issueType: 'Task',
-    status: 'Done',
-    description:
-      'Nightly snapshot of every published schedule to object storage with 30-day retention, so ' +
-      "a bad bulk edit on a chain's week can be rolled back instead of rebuilt by hand.",
-  },
-  {
-    key: 'APP-54',
-    project: 'APP',
-    summary: 'Push notification opt-in screen',
-    label: 'staff-app',
+    key: 'GST-77',
+    project: 'GST',
+    summary: '"Book a table" button on Google',
+    label: 'booking-page',
     issueType: 'Story',
     status: 'Done',
+    assignee: 'Amir Haddad',
+    created: '2026-04-20',
+    updated: '2026-05-12',
     description:
-      'Ask for push permission at the moment it means something — after the first shift is ' +
-      'visible, not on first launch — and let staff turn shift reminders on and off from ' +
-      'settings.',
+      "A guest books from the restaurant's Google listing instead of finding the website " +
+      'first. The booking lands in the same list as every other one.',
     comments: [
-      'Shipped in the 15 July staff-app release. Shift reminders are on by default once the ' +
-        'first shift is visible.',
+      {
+        author: 'Amir Haddad',
+        date: '2026-05-12',
+        body: 'Live for every restaurant. Switch it on under Settings, Booking channels.',
+      },
+    ],
+  },
+  {
+    key: 'GST-140',
+    project: 'GST',
+    summary: 'Table areas on the booking page',
+    label: 'booking-page',
+    issueType: 'Story',
+    status: 'Done',
+    assignee: 'Amir Haddad',
+    created: '2026-06-10',
+    updated: '2026-07-14',
+    description:
+      'A restaurant names the areas it seats guests in, and a guest picks one when booking. ' +
+      'An area with no free table for that time is shown as full.',
+    comments: [
+      {
+        author: 'Amir Haddad',
+        date: '2026-07-14',
+        body:
+          'Released. A restaurant names its areas (window, terrace, bar) and guests pick one ' +
+          'when they book.',
+      },
+    ],
+  },
+  {
+    key: 'GST-160',
+    project: 'GST',
+    summary: 'Booking page in Finnish',
+    label: 'booking-page',
+    issueType: 'Story',
+    status: 'To Do',
+    assignee: null,
+    created: '2026-07-01',
+    updated: '2026-07-01',
+    description:
+      'The booking page in Finnish, for the restaurants that asked for it. Same text as the ' +
+      'Swedish page, translated once and kept in the same file.',
+  },
+  {
+    key: 'PAY-190',
+    project: 'PAY',
+    summary: 'Store a card for a later charge',
+    label: 'payments',
+    issueType: 'Story',
+    status: 'Done',
+    assignee: 'Henrik Dahl',
+    created: '2026-06-01',
+    updated: '2026-06-30',
+    description:
+      'Take a card at booking, keep it with the acquirer, and hand back a token the booking ' +
+      'side can charge days later. Nothing is charged here.',
+  },
+  {
+    key: 'PAY-210',
+    project: 'PAY',
+    summary: 'Deposits: charge at booking, refund on cancellation',
+    label: 'payments',
+    issueType: 'Epic',
+    status: 'In Progress',
+    assignee: 'Henrik Dahl',
+    created: '2026-06-18',
+    updated: '2026-07-09',
+    description:
+      'A guest pays a deposit when the booking is made, and gets it back when the booking is ' +
+      'cancelled in time. Planned for Q4.',
+    comments: [
+      {
+        author: 'Henrik Dahl',
+        date: '2026-07-09',
+        body: 'Design started. No date yet: the refund path depends on the acquirer.',
+      },
     ],
   },
 ];
 
 // Issue links between cast members, by summary. Direction per Jira's model:
 // the INWARD issue applies the type's outward description to the OUTWARD issue
-// ("OAuth token store" blocks "Fortnox connector").
+// ("Deposits" blocks "Group bookings").
 export const CAST_LINKS: { type: string; inward: string; outward: string }[] = [
   {
     type: 'Blocks',
-    inward: 'OAuth token store for integrations',
-    outward: 'Fortnox connector',
+    inward: 'Deposits: charge at booking, refund on cancellation',
+    outward: 'Group bookings (epic)',
   },
 ];
 
 // Canonical Confluence bodies come from the git-tracked mirrors so the
-// load-bearing text (the two numbered roadmap lines the demo patches) is
-// verbatim by construction — vault-dev/wikipages/confluence/ is the single
-// source of truth.
+// load-bearing text (the roadmap lines the demo patches) is verbatim by
+// construction. vault-dev/wikipages/confluence/ is the single source of truth.
 export const PAGES = [
   { title: 'Roadmap H2', file: 'roadmap-h2.md' },
-  { title: 'Product weekly update', file: 'product-weekly-update.md' },
+  { title: 'Changelog', file: 'changelog.md' },
 ];
 
 // The fictional ids the canonical vault's static mirrors carry, mapped to the
 // cast identity that owns them on the live site. Reconciliation rewrites these
 // tokens (and the fake host) across the runtime vault.
-export const STATIC_HOST = 'rota.atlassian.net';
+export const STATIC_HOST = 'bord.atlassian.net';
 /** Static key → cast summary, derived so the cast can never drift from it. */
 export const STATIC_TICKETS: Record<string, string> = Object.fromEntries(
   CAST.map((m) => [m.key, m.summary]),
 );
 export const STATIC_PAGE_IDS: Record<string, string> = {
   '4521985': 'Roadmap H2',
-  '4784129': 'Product weekly update',
+  '4784129': 'Changelog',
 };
 
 // ---------------------------------------------------------------------------

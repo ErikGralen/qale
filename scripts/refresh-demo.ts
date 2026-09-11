@@ -1,7 +1,7 @@
 /**
  * Refresh the demo workspace — the successor to seed-demo.ts.
  *
- * `vault-dev/` is the *canonical* demo source: the Rota scenario, frozen on a
+ * `vault-dev/` is the *canonical* demo source: the Bord scenario, frozen on a
  * fictional "today" of ANCHOR (2026-07-17). This script copies it to a runtime
  * target (default `.vault-dev`, gitignored) and slides every date forward by
  * (real today − ANCHOR) so the demo always reads as *now*: the upcoming meeting

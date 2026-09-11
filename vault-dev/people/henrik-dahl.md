@@ -1,25 +1,26 @@
 ---
 type: 'person'
-summary: 'Henrik Dahl: Legal and GDPR, reviews anything that shows staff personal data'
-tags: ['gdpr', 'shift-swaps']
-role: 'Legal & GDPR'
-email: 'henrik.dahl@rota.example'
-cares_about: ['staff personal data', 'being asked early']
-last_told: '2026-06-12'
+title: 'Henrik Dahl'
+summary: 'Henrik Dahl: Tech lead on Payments, owns the deposits work that group bookings waits on'
+tags: ['payments', 'group-bookings']
+role: 'Tech lead, Payments'
+email: 'henrik.dahl@bord.example'
+cares_about: ['the refund path', 'dates he can keep', 'being asked before a date is promised']
+last_told: '2026-07-09'
 ---
 
-Legal, and the person who owns GDPR here. Our staff data is the sensitive kind — schedules,
-contracted hours, phone numbers, who works where — and he treats every new screen that shows
-one employee something about another as a question worth asking out loud.
+Tech lead on Payments. Two of his tickets matter to my teams. [[tickets/jira/PAY-190]] stores a
+card for a later charge; it is done (2026-06-30) and no-show fees builds on it.
+[[tickets/jira/PAY-210]] is deposits: charge at booking, refund on cancellation. It is planned
+for Q4 and group bookings waits on it ([[decisions/2026-06-18-group-bookings-after-deposits]]).
 
-He is fast when asked early and immovable when asked late. A week of notice gets a written
-answer; a day before release gets "then don't release it". I have been on the wrong side of
-that once and it cost a sprint.
+He gives a date when he has one and not before. At steering on 2026-07-09 I asked for a date
+on PAY-210 and he did not give one: design has started, and the refund path depends on the
+acquirer ([[meetings/2026-07-09-steering]]). That is the open item I am waiting on
+([[todos/ask-henrik-for-pay-210-date]]).
 
-Open with him now: swap requests display the affected colleague's name and phone number, which
-came out of my 1:1 with Rebecca on 2026-07-13
-([[insights/swap-notifications-show-personal-data]],
-[[todos/henrik-review-swap-notifications]], due 2026-07-24).
+Until he names a quarter with a month in it, "Q1 2027" for group bookings is the only date
+sales can use.
 
-Last told 2026-06-12: shift swaps in build, payroll export ahead of it
-([[research/shift-swaps]], [[research/payroll-export]]).
+Last told 2026-07-09: group bookings is Q1 2027 behind PAY-210, and no-show fees charges
+through PAY-190.

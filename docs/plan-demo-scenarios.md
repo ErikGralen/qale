@@ -1,5 +1,8 @@
 # Five independent demo scenarios
 
+**This plan describes the Rota demo, replaced on 2026-09-10 by `docs/plan-demo-bookings.md`
+(Bord, six scenarios).** The feature inventory in section 1 still holds; the scenarios do not.
+
 **Implemented 2026-09-09.** `docs/demo-mode.md` is now the reference; read that first. The five
 scenarios shipped as written here, as `demo/scenarios/s1.json` to `s5.json`.
 

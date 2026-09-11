@@ -1,154 +1,250 @@
 {
   "version": 1,
   "id": "s3",
-  "title": "A request came in",
-  "do": "In Home, paste the Slack message from the README (scenario 3, the one about offline mode) and send. Pick no skill. On the question card, pick No, the decision stands.",
-  "offScript": "That is outside what this demo can show. The five things it can do are listed in Settings, under Demo.",
+  "title": "Who should know",
+  "do": "In Home, type: The fix for BOK-412 went out this morning. Who should know? Then, in the same session, type: From now on, when a fix ships, tell the CSMs before the changelog.",
+  "offScript": "That is outside what this demo can show. The six things it can do are listed in Settings, under Demo.",
   "lookups": {
     "claims": {
-      "Åsa reopened offline mode": "CONFLICT | decisions/2026-02-12-decline-offline-mode.md | Åsa's words: \"we are not doing offline mode.\"",
-      "Marcus has brought offline mode": "KNOWN | people/marcus-ek.md | He has brought offline mode to me for prospects twice, and both times the answer was the February decision"
+      "The fix for BOK-412": "KNOWN | tickets/jira/BOK-412.md | Fixed: one reminder per booking whatever the source. Released in the 09:10 deploy on 2026-07-17.",
+      "Sjögatan reported the double reminder": "KNOWN | customers/sjogatan.md | 2026-06-24: we are looking into the double reminder; no date given.",
+      "Pizzeria Napoli reported the double reminder": "KNOWN | customers/pizzeria-napoli.md | 2026-06-26: we are looking into the double reminder; no date given.",
+      "Jonas has four open": "KNOWN | people/jonas-berg.md | His macro says \"we are looking into it\", and he asked for a date he can give instead. He has not had one."
     }
   },
   "conversations": [
     {
-      "id": "request",
+      "id": "who",
       "trigger": {
         "kind": "typed",
         "skill": "ask",
-        "any": ["offline"]
+        "any": ["BOK-412", "who should know", "who needs to know"]
       },
-      "title": "Marcus: offline mode for a retail prospect",
+      "title": "Who should know about the BOK-412 fix",
       "turns": [
         {
-          "text": "Marcus wants a yes by Thursday. Before I answer him, I am checking his claim that Åsa reopened offline mode against the February decision and the 2026-07-09 steering page.",
           "tools": [
             {
-              "name": "use_skill",
+              "name": "vault_read",
               "input": {
-                "name": "commitment-check"
+                "path": "tickets/jira/BOK-412.md"
+              }
+            },
+            {
+              "name": "jira_get_issue",
+              "input": {
+                "key": "BOK-412"
               }
             },
             {
               "name": "vault_read",
               "input": {
-                "path": "decisions/2026-02-12-decline-offline-mode.md"
+                "path": "customers/sjogatan.md"
               }
             },
             {
               "name": "vault_read",
               "input": {
-                "path": "meetings/2026-07-09-steering.md"
+                "path": "customers/pizzeria-napoli.md"
               }
             },
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "people/jonas-berg.md"
+              }
+            },
+            {
+              "name": "vault_read",
+              "input": {
+                "path": "customers/kaffekopp.md"
+              }
+            }
+          ]
+        },
+        {
+          "tools": [
             {
               "name": "check_claims",
               "input": {
                 "claims": [
                   {
-                    "claim": "Åsa reopened offline mode for H2 at steering on 2026-07-09.",
+                    "claim": "The fix for BOK-412 has been live since the 09:10 deploy on 2026-07-17: one reminder per booking, whatever the source.",
                     "about": [
-                      "[[decisions/2026-02-12-decline-offline-mode]]",
-                      "[[meetings/2026-07-09-steering]]",
-                      "[[research/offline-mode]]"
+                      "[[tickets/jira/BOK-412]]"
                     ]
                   },
                   {
-                    "claim": "Marcus has brought offline mode to the PO for prospects before, and the answer was the February decision.",
-                    "about": ["[[people/marcus-ek]]"]
-                  }
-                ]
-              }
-            }
-          ],
-          "pause": 3500
-        },
-        {
-          "tools": [
-            {
-              "name": "ask_user",
-              "input": {
-                "questions": [
+                    "claim": "Sjögatan reported the double reminder on 2026-06-24 and was told we are looking into it, with no date.",
+                    "about": [
+                      "[[customers/sjogatan]]",
+                      "[[people/ulrika-nystrom]]"
+                    ]
+                  },
                   {
-                    "header": "Offline mode",
-                    "question": "Marcus says Åsa reopened offline mode at steering on 2026-07-09. [[decisions/2026-02-12-decline-offline-mode]] says we are not doing it, and [[meetings/2026-07-09-steering]] records no decisions. Did Åsa reopen it?",
-                    "options": [
-                      {
-                        "label": "No, the decision stands",
-                        "description": "I write Marcus a no, with the February reason, and keep a note of the request in Memory."
-                      },
-                      {
-                        "label": "Yes, Åsa reopened it",
-                        "description": "The record is behind. I keep the note with your word for it, and a new decision with Åsa as decider is the next thing to file."
-                      }
+                    "claim": "Pizzeria Napoli reported the double reminder on 2026-06-26 and was told we are looking into it, with no date.",
+                    "about": [
+                      "[[customers/pizzeria-napoli]]",
+                      "[[people/petra-alm]]"
+                    ]
+                  },
+                  {
+                    "claim": "Jonas has four open support tickets on the double reminder and a macro that still says we are looking into it.",
+                    "about": [
+                      "[[people/jonas-berg]]"
                     ]
                   }
                 ]
               }
-            }
-          ],
-          "pause": 1500
-        },
-        {
-          "tools": [
+            },
             {
               "name": "get_voice",
               "input": {
-                "name": "sales"
+                "name": "cs"
               }
-            },
+            }
+          ]
+        },
+        {
+          "text": [
+            "Three people have been waiting for this, in this order: two CSMs and the support lead.",
+            "",
+            "- Ulrika Nyström, CS for Sjögatan and Brasserie Lund. Sjögatan reported it through support on 2026-06-24 and was told we are looking into it ([[customers/sjogatan]]). Brasserie Lund raised it in yesterday's review, and Lena is being told today ([[customers/brasserie-lund]]).",
+            "- Petra Alm, CS for Pizzeria Napoli. They reported it on 2026-06-26 and got the same answer ([[customers/pizzeria-napoli]]).",
+            "- Jonas Berg, support. Four open tickets, and a macro that still says we are looking into it ([[people/jonas-berg]]).",
+            "",
+            "What they hear: since the 09:10 deploy on 2026-07-17, a guest gets one reminder per booking, whatever the source ([[tickets/jira/BOK-412]]).",
+            "",
+            "Kaffekopp left in 2025 after asking for something that had already shipped, because nobody told them ([[customers/kaffekopp]]). Sjögatan has been waiting three weeks for this one. Two notes below, ready to copy."
+          ],
+          "tools": [
             {
-              "name": "propose_note",
+              "name": "draft_text",
               "input": {
-                "path": "insights/offline-mode-asked-a-third-time-through-sales.md",
-                "frontmatter": {
-                  "type": "insight",
-                  "summary": "Offline mode is asked for a third time, through sales as a line for a proposal, and still no chain has described losing a schedule",
-                  "tags": ["offline-mode"],
-                  "evidence": [
-                    "[[people/marcus-ek]]",
-                    "[[decisions/2026-02-12-decline-offline-mode]]",
-                    "[[research/offline-mode]]",
-                    "[[meetings/2026-07-09-steering]]"
-                  ],
-                  "confidence": "high"
-                },
-                "body": "A retail prospect with about seventy locations wants offline mode in the staff app, and the ask reached me through sales as a line for the proposal, not as a problem a store has had. That is the third time, and the shape is the same as the two before ([[people/marcus-ek]], [[research/offline-mode]]): nobody has described a chain losing a schedule to a dead connection. The February decision holds, and the claim that Åsa reopened it on 2026-07-09 has no support on the steering page ([[decisions/2026-02-12-decline-offline-mode]], [[meetings/2026-07-09-steering]]).\n\nMarcus Ek, in #sales at 08:41 on 2026-07-17, wants an answer by Thursday 2026-07-23: \"As I understood it, Åsa reopened offline mode for H2 at steering on 2026-07-09, so I'd like to tell him it's on the H2 list. Can you confirm by Thursday?\"",
-                "rationale": "The record of what was asked, so the next offline-mode question lands on it instead of starting over.",
-                "sources": [
-                  "[[people/marcus-ek]]",
-                  "[[decisions/2026-02-12-decline-offline-mode]]",
-                  "[[research/offline-mode]]",
-                  "[[meetings/2026-07-09-steering]]"
+                "title": "For Ulrika and Petra to forward",
+                "voice": "cs",
+                "variants": [
+                  {
+                    "label": "Short",
+                    "body": "Hi,\n\nSince this morning, guests who book through Google get one reminder, the day before at 17:00. Before today some of them got two. Sorry for the noise."
+                  },
+                  {
+                    "label": "With what to do",
+                    "body": "Hi,\n\nSince this morning, guests who book through Google get one reminder, the day before at 17:00. Before today some of them got two, and we are sorry for the noise. If a guest still asks whether their booking is right, the answer is yes: one text means one booking. If a guest gets two texts for a booking made after this morning, send us the booking and we will look at it."
+                  }
                 ]
               }
             },
             {
               "name": "draft_text",
               "input": {
-                "title": "Reply to Marcus",
-                "voice": "sales",
+                "title": "For Jonas",
                 "variants": [
                   {
-                    "label": "One line to forward",
-                    "body": "No: offline mode is not on the H2 list, and it will not be. Åsa declined it on 2026-02-12 and the reason stands: staff already see their shifts offline, and editing a schedule offline means merging two managers' changes afterwards, most of a quarter of the team's time.\n\nFor the prospect: today the staff app keeps the current and next week on the phone, so staff see their shifts with no connection, and if the wifi drops mid-edit the change is saved and sent when it is back. Editing a whole schedule offline has no date."
+                    "label": "To close the four tickets",
+                    "body": "Fixed this morning. Guests who book through Google now get one reminder, the day before at 17:00. Sorry for the delay and for the noise. If a booking made after today gets two texts, reply here and we will look at it."
                   },
                   {
-                    "label": "What you can tell them",
-                    "body": "- Today: staff see their shifts in the app with no connection. The current and next week are on the phone.\n- Today: if the wifi drops while a manager is editing, the change is saved and sent when the connection is back.\n- No date: editing a whole schedule offline. It is not on the H2 list, and we will not put a quarter on it."
+                    "label": "Macro replacement",
+                    "body": "Fixed on 2026-07-17: guests who book through Google get one reminder, the day before at 17:00. If a booking made after that date gets two texts, send us the booking."
                   }
                 ]
               }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "customers/sjogatan.md",
+                "append": "- 2026-07-17: fixed. One reminder per booking since 2026-07-17 ([[tickets/jira/BOK-412]]). Ulrika is telling them today.",
+                "rationale": "The ledger stops at 2026-06-24 with no date. The fix shipped this morning and Ulrika has the note to forward, so the line says what they are told today.",
+                "sources": [
+                  "[[tickets/jira/BOK-412]]",
+                  "[[customers/sjogatan]]"
+                ]
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "customers/pizzeria-napoli.md",
+                "append": "- 2026-07-17: fixed. One reminder per booking since 2026-07-17 ([[tickets/jira/BOK-412]]). Petra is telling them today.",
+                "rationale": "The ledger stops at 2026-06-26 with no date. The fix shipped this morning and Petra has the note to forward, so the line says what they are told today.",
+                "sources": [
+                  "[[tickets/jira/BOK-412]]",
+                  "[[customers/pizzeria-napoli]]"
+                ]
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "people/ulrika-nystrom.md",
+                "append": "Last told 2026-07-17, before the changelog: the double reminder is fixed, one reminder per booking since 2026-07-17 ([[tickets/jira/BOK-412]]). She has the note for Sjögatan and Brasserie Lund to forward.",
+                "frontmatter": {
+                  "last_told": "2026-07-17"
+                },
+                "rationale": "She asked to hear before her restaurants do. The note is drafted today, so her line is dated before it goes out.",
+                "sources": [
+                  "[[tickets/jira/BOK-412]]",
+                  "[[people/ulrika-nystrom]]"
+                ]
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "people/petra-alm.md",
+                "append": "Last told 2026-07-17, before the changelog: the double reminder is fixed, one reminder per booking since 2026-07-17 ([[tickets/jira/BOK-412]]). She has the note for Pizzeria Napoli to forward as it is.",
+                "frontmatter": {
+                  "last_told": "2026-07-17"
+                },
+                "rationale": "She asks for a line per release that she can forward as it is, with no ticket key in it. This is that line for the double reminder.",
+                "sources": [
+                  "[[tickets/jira/BOK-412]]",
+                  "[[people/petra-alm]]"
+                ]
+              }
+            },
+            {
+              "name": "propose_update",
+              "input": {
+                "path": "people/jonas-berg.md",
+                "append": "Last told 2026-07-17: the double reminder is fixed since the 09:10 deploy ([[tickets/jira/BOK-412]]), with the line that closes the four tickets and a macro replacement.",
+                "frontmatter": {
+                  "last_told": "2026-07-17"
+                },
+                "rationale": "He asked for a sentence he is allowed to send, and the fix gives him one. His macro still said we are looking into it.",
+                "sources": [
+                  "[[tickets/jira/BOK-412]]",
+                  "[[people/jonas-berg]]"
+                ]
+              }
             }
-          ],
-          "pause": 5000
+          ]
         },
         {
-          "pause": 4000,
+          "pause": 1500,
           "text": [
-            "The answer for Marcus is no, and it was decided on 2026-02-12: Åsa declined offline mode, the 2026-07-09 steering took no decisions, and Roadmap H2 lists it under Not doing. This is the third time it has come through sales as a line for a proposal rather than a problem a store has had. My guess, not his words: the ops director wants one sentence about what happens when a store loses its connection, and the app has one.",
+            "On the record: what Sjögatan, Pizzeria Napoli, Ulrika, Petra and Jonas hear today, on each of their pages. Nothing waits for approval.",
             "",
-            "The reply is above in the sales voice: copy the tab you want and send it yourself. I kept a note of the request in Memory, under Insights, so the next time it comes up it lands on something. Nothing was sent and nothing waits."
+            "Nothing was sent. Copy the note you want and send it yourself, Ulrika and Petra first. Their restaurants asked for this, and the changelog is for everyone else."
+          ]
+        },
+        {
+          "tools": [
+            {
+              "name": "propose_instruction",
+              "input": {
+                "rule": "When a fix ships, tell the CSMs before the changelog.",
+                "why": "The CSMs hear what shipped from their restaurants or from the changelog. Kaffekopp is what that costs."
+              }
+            }
+          ]
+        },
+        {
+          "pause": 1200,
+          "text": [
+            "Added to your rules: when a fix ships, tell the CSMs before the changelog. Every session reads it from now on. [[skills/house-rules/SKILL|House rules]]"
           ]
         }
       ]

@@ -21,22 +21,23 @@
  *    A refusal or a throw is an error naming the scenario, the conversation,
  *    the turn, the tool and what came back. A `use_skill` call runs for real
  *    too, through the same tool the runtime gives the model, so the harness
- *    records the skill and every turn after it gets that skill's tools (S3
- *    pulls in `commitment-check` this way). Then every send the conversation
+ *    records the skill and every turn after it gets that skill's tools (a
+ *    script pulls in `commitment-check` this way). Then every send the conversation
  *    drafted is approved through the real accept path, with one sync run after
  *    each the way the demo build runs one, because a card the PM cannot approve
  *    is the demo failing in front of the audience.
  * 4. Order. Every scenario through one `ScriptEngine` twice, forwards and
  *    backwards, with a reset between, to prove `reset()` leaves no binding
  *    behind.
- * 5. Sequence. The presenter presses Reset once and then runs any subset of
- *    the scenarios in any order, with no reset between. So: four orders, and
- *    for each one workspace at offset 0, one engine with nothing pinned, and
- *    every scenario's conversations routed through the engine by what the
- *    presenter does (the kickoff, or the `do` line typed under the skill in
- *    force) and run through the real tools, one after the other. A wrong
- *    binding or a tool that fails because an earlier scenario changed the
- *    workspace is an error naming the order.
+ * 5. Sequence. The presenter presses Reset once, runs the first two scenarios
+ *    in order, and then runs any subset of the rest in any order, with no reset
+ *    between. So: four orders, each opening with the first two ids and ending
+ *    with a different subset of the rest, and for each one workspace at offset
+ *    0, one engine with nothing pinned, and every scenario's conversations
+ *    routed through the engine by what the presenter does (the kickoff, or the
+ *    `do` line typed under the skill in force) and run through the real tools,
+ *    one after the other. A wrong binding or a tool that fails because an
+ *    earlier scenario changed the workspace is an error naming the order.
  *
  * No Electron and no model: the cheap calls are answered by the same rules the
  * demo build answers them with (`cheap-answers.ts`).
@@ -122,8 +123,8 @@ import type { GoogleOAuthService } from '../src/main/services/google-oauth-servi
 import type { SettingsService } from '../src/main/services/settings-service.js';
 
 /** The site and the account the `vault-dev/` mirrors name. Neither exists. */
-const DEMO_SITE_URL = 'https://rota.atlassian.net';
-const DEMO_ACCOUNT_EMAIL = 'demo@rota.example';
+const DEMO_SITE_URL = 'https://bord.atlassian.net';
+const DEMO_ACCOUNT_EMAIL = 'demo@bord.example';
 const ATLASSIAN_PROVIDER = 'atlassian';
 const GOOGLE_PROVIDER = 'google-calendar';
 
@@ -131,15 +132,11 @@ const GOOGLE_PROVIDER = 'google-calendar';
 const DEFAULT_OFFSETS = [0, 12, 65];
 
 /**
- * The orders the sequence pass runs the scenarios in: forwards, backwards, and
- * two fixed shuffles. Fixed, so a failure is the same failure tomorrow.
+ * How many scenarios open every demo, in id order. The presenter always runs
+ * those two first and in that order; everything after them is optional and in
+ * any order (docs/plan-demo-bookings.md, section 2).
  */
-const SEQUENCE_ORDERS = [
-  ['s1', 's2', 's3', 's4', 's5'],
-  ['s5', 's4', 's3', 's2', 's1'],
-  ['s4', 's2', 's5', 's1', 's3'],
-  ['s3', 's5', 's1', 's4', 's2'],
-];
+const OPENING_COUNT = 2;
 
 /** The line every session's system prompt opens with, as far as the engine reads it. */
 const SESSION_SYSTEM = 'You are Qale, working inside a workspace of notes.';
@@ -185,8 +182,8 @@ export interface LintOptions {
   repoRoot: string;
   /**
    * Also run the engine over every scenario in two orders, and the sequence
-   * pass over every scenario in four orders with no reset between. Off for
-   * one file.
+   * pass in four orders with no reset between: the two opening scenarios, then
+   * a different subset of the rest each time. Off for one file.
    */
   engineCheck?: boolean;
 }
@@ -682,7 +679,7 @@ export async function lintScenarios(opts: LintOptions): Promise<LintReport> {
       const counts = await lintSequence(good, order, opts.repoRoot, err);
       const bad = errors.length - wasErrors;
       lines.push(
-        `${pad('sequence', 10)}${pad(order.join(','), 16)}` +
+        `${pad('sequence', 10)}${pad(order.join(','), 20)}` +
           `${pad(`${counts.conversations} conv`, 9)}${pad(`${counts.turns} turns`, 10)}` +
           `${pad(`${counts.calls} calls`, 10)}${bad === 0 ? 'ok' : `${bad} error(s)`}`,
       );
@@ -693,17 +690,29 @@ export async function lintScenarios(opts: LintOptions): Promise<LintReport> {
 }
 
 /**
- * The fixed orders, cut to the scenarios that loaded, plus forwards and
- * backwards for a folder whose ids are not `s1` to `s5`.
+ * The orders the sequence pass runs, derived from the scenarios that loaded.
+ *
+ * Every order opens with the first two ids in sort order, because the presenter
+ * always runs those two first and in that order. After them come the rest, in
+ * four fixed subsets: all of them forwards, all of them backwards, the first
+ * two of them backwards, and the last one alone. Fixed, so a failure is the
+ * same failure tomorrow, and derived, so a sixth scenario needs no edit here.
  */
 function sequenceOrders(scenarios: Scenario[]): string[][] {
-  const ids = scenarios.map((s) => s.id);
-  const known = new Set(ids);
-  const fixed = SEQUENCE_ORDERS.map((order) => order.filter((id) => known.has(id))).filter(
-    (order) => order.length === ids.length,
-  );
-  if (fixed.length > 0) return fixed;
-  return [ids, [...ids].reverse()];
+  const ids = scenarios.map((s) => s.id).sort();
+  const opening = ids.slice(0, OPENING_COUNT);
+  const rest = ids.slice(OPENING_COUNT);
+  const tails = [rest, [...rest].reverse(), [...rest.slice(0, 2)].reverse(), rest.slice(-1)];
+  const seen = new Set<string>();
+  const orders: string[][] = [];
+  for (const tail of tails) {
+    const order = [...opening, ...tail];
+    const key = order.join(',');
+    if (order.length === 0 || seen.has(key)) continue;
+    seen.add(key);
+    orders.push(order);
+  }
+  return orders;
 }
 
 interface Counts {
@@ -1074,12 +1083,12 @@ function briefLine(conversation: Conversation): string {
 }
 
 // ---------------------------------------------------------------------------
-// The sequence: one Reset, then every scenario in one order, no reset between
+// The sequence: one Reset, then the scenarios in one order, no reset between
 // ---------------------------------------------------------------------------
 
 /**
- * One workspace at offset 0, one engine with nothing pinned, and every
- * scenario's conversations in `order`: each opening goes through the engine
+ * One workspace at offset 0, one engine with nothing pinned, and the
+ * conversations of every scenario in `order`: each opening goes through the engine
  * the way a real session's first request does, has to bind to its own
  * conversation, and then every tool call runs against the workspace the
  * earlier scenarios already wrote into. Errors carry the order. Warnings are

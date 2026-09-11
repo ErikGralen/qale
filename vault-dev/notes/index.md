@@ -6,6 +6,5 @@ description: 'the documents you write: scratch notes, briefs, PRDs, specs'
 
 the documents you write: scratch notes, briefs, PRDs, specs
 
-* [Auto-schedule interviews](notes/auto-schedule-interviews.md) — Raw notes from four manager interviews on auto-schedule. Unsorted, not written up yet
-* [H2 capacity](notes/h2-capacity.md) — Scheduling capacity Jul–Dec: both H2 epics on one team, so one moving slips the other
-* [Swap rules](notes/swap-rules.md) — Product rules for shift swaps: same role, same location, manager approves, no overtime
+* [Christmas season playbook](notes/christmas-season-playbook.md) — What restaurant chains do in November and December, why no-shows peak, and what Bord recommends
+* [Fee rules](notes/fee-rules.md) — The team's working notes on what a no-show fee may and may not do in the first release

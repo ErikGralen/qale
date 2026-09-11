@@ -1,25 +1,26 @@
 ---
 type: 'person'
 title: 'Ulrika Nyström'
-summary: "Ulrika Nyström: CS manager for Bruno's Burgers and Fjord Sports"
-tags: ['payroll-export']
-role: "CS Manager (Bruno's Burgers, Fjord Sports)"
-email: 'ulrika.nystrom@rota.example'
-cares_about: ["what to tell Bruno's", 'release timing']
-last_told: '2026-06-26'
+summary: 'Ulrika Nyström: Customer success for Brasserie Lund and Sjögatan, wants to hear before her restaurants do'
+tags: ['reminders', 'no-show-fees']
+role: 'Customer success, Brasserie Lund and Sjögatan'
+email: 'ulrika.nystrom@bord.example'
+cares_about: ['hearing before her restaurants do', 'what to tell Sjögatan about the double reminder', 'release timing']
+last_told: '2026-06-24'
 ---
 
-CS manager for [[customers/brunos-burgers]] and [[customers/fjord-sports]], on
-[[people/malin-sjoberg]]'s team.
+Customer success for [[customers/brasserie-lund]] and [[customers/sjogatan]]. She runs the
+monthly check-ins and she is the one in the room when something is wrong.
 
-She was on the Fjord Sports payroll call on 2026-05-26 where I said Visma export in Q4
-([[meetings/2026-05-26-fjord-sports-payroll-call]]), so she is carrying that date with Oskar
-whether or not it survives. If it moves she needs to know the week before, not the week after —
-she runs the monthly syncs and she is the one in the room.
+Sjögatan reported the double reminder through her on 2026-06-24: guests who book through
+Google get the day-before text twice ([[tickets/jira/BOK-412]]). She passed on what support
+had, "we are looking into it", with no date. She has not heard anything since.
 
-Her recurring ask is simple and I keep half-answering it: give her the release timing early
-enough that she can decide what to say, and tell her when something ships that a customer once
-asked about. That second half is exactly what we got wrong with [[customers/kaffekopp]].
+Her standing request is simple and I keep half-answering it. Tell her the release timing early
+enough that she can decide what to say. And tell her when something ships that one of her
+restaurants once asked for. That second half is what we got wrong with
+[[customers/kaffekopp]].
 
-Last told 2026-06-26: payroll export Q3–Q4, Fortnox first
-([[decisions/2026-05-20-fortnox-first-payroll-target]]), swaps after.
+Next Sjögatan check-in is 2026-07-21, with Karin Ahlgren.
+
+Last told 2026-06-24: we are looking into the double reminder; no date given.

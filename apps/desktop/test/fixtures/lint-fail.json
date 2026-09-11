@@ -14,14 +14,14 @@
             {
               "name": "propose_update",
               "input": {
-                "path": "customers/fjord-sports.md",
+                "path": "customers/nordic-steak.md",
                 "patch": [
                   {
-                    "search": "- Oskar was promised the export in the second week of March.",
-                    "replace": "- Oskar was promised the export in Q1."
+                    "search": "- Oskar was promised group bookings in the second week of March.",
+                    "replace": "- Oskar was promised group bookings in Q1."
                   }
                 ],
-                "sources": ["[[customers/fjord-sports]]"],
+                "sources": ["[[customers/nordic-steak]]"],
                 "rationale": "The anchor was rewritten on main, so this patch has nothing to match."
               }
             }
@@ -29,7 +29,7 @@
         },
         {
           "text": "And a tool that went away.",
-          "tools": [{ "name": "propose_ticket_comment", "input": { "ticket": "SCH-118" } }]
+          "tools": [{ "name": "propose_ticket_comment", "input": { "ticket": "BOK-300" } }]
         }
       ]
     },
@@ -40,7 +40,7 @@
       "turns": [
         {
           "tools": [
-            { "name": "track_external", "input": { "kind": "ticket", "external_id": "SCH-118" } }
+            { "name": "track_external", "input": { "kind": "ticket", "external_id": "BOK-300" } }
           ]
         },
         {

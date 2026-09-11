@@ -27,7 +27,7 @@ packages/ipc        IPC contract shared by main/preload/renderer
 packages/markdown   remark pipeline + wikilink syntax
 packages/atlassian  Jira/Confluence client + ADF
 packages/ui         Shared shadcn/ui components + global styles
-vault-dev           Demo vault (Rota scenario) used as dev fixtures
+vault-dev           Demo vault (Bord scenario, table booking for restaurants) used as dev fixtures
 ```
 
 ## Development
@@ -40,7 +40,7 @@ pnpm check-types    # tsc across all packages
 pnpm lint
 ```
 
-Dev vault: `pnpm refresh-demo` builds the runtime `.vault-dev/` from the canonical `vault-dev/` Rota scenario (staff scheduling for restaurant and retail chains) with every date slid to today, so the demo reads as current — point the app at `.vault-dev/` (the macOS folder picker hides dot-dirs, so press **⌘⇧.** to reveal it the first time; the app remembers it afterwards). The `/update-demo` skill wraps it with a cleanup + verify pass, and `demo-samples/` holds ready-to-ingest material for the demo flows. An Anthropic API key (Settings → API key) is required for agent sessions; the rest of the app works without one.
+Dev vault: `pnpm refresh-demo` builds the runtime `.vault-dev/` from the canonical `vault-dev/` Bord scenario (table booking for restaurants) with every date slid to today, so the demo reads as current. Point the app at `.vault-dev/` (the macOS folder picker hides dot-dirs, so press **⌘⇧.** to reveal it the first time; the app remembers it afterwards). The `/update-demo` skill wraps it with a cleanup + verify pass, and `demo-samples/` holds ready-to-ingest material for the demo flows. An Anthropic API key (Settings → API key) is required for agent sessions; the rest of the app works without one.
 
 ## Status
 

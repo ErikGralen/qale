@@ -1,5 +1,5 @@
 /**
- * The Rota calendar cast: the week the demo opens on, in one place.
+ * The Bord calendar cast: the week the demo opens on, in one place.
  * `scripts/seed-google-calendar.ts` pushes it to a live Google account, and
  * `scripts/build-demo-google-fixture.ts` bakes it into the offline fixture the
  * demo build's fake Google Calendar serves. Both must read the same source, or
@@ -10,8 +10,8 @@
  *
  * Dates are anchored on {@link ANCHOR} and slid by (today − anchor) at run
  * time: the seeder slides them as it writes, the fake slides them as it loads.
- * The 2026-07-16 steering is therefore always yesterday, and the rest of the
- * cast is always the week ahead.
+ * The 2026-07-16 Brasserie Lund review is therefore always yesterday, and the
+ * rest of the cast is always the week ahead.
  */
 
 export const ANCHOR = '2026-07-17';
@@ -24,7 +24,7 @@ export const DEFAULT_TIMEZONE = 'Europe/Stockholm';
  * entry is what new events get stamped with; the rest are older scenarios the
  * seeder has written in the past, kept here so a reset still sweeps them up.
  */
-export const DEMO_TAGS = ['rota', 'tavla'] as const;
+export const DEMO_TAGS = ['bord', 'rota', 'tavla'] as const;
 export const DEMO_TAG = DEMO_TAGS[0];
 
 export interface CastMeeting {
@@ -37,7 +37,8 @@ export interface CastMeeting {
   /** Invitee emails (the seeded account is the organizer, not listed here). */
   attendees: string[];
   description: string;
-  /** RRULE bodies, e.g. "RRULE:FREQ=WEEKLY;COUNT=5" — omit for a one-off. */
+  /** RRULE bodies, e.g. "RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=2" — omit for a
+   *  one-off. Weekly is the only frequency, with or without an interval. */
   recurrence?: string[];
 }
 
@@ -49,54 +50,63 @@ export interface CastMeeting {
  */
 export const CAST_MEETINGS: CastMeeting[] = [
   {
-    // The star. DTSTART is the Thursday before the anchor (2026-07-16, then
-    // 07-23 and 07-30): the vault already ships the hand-authored 2026-07-09
-    // instance, so a seeded one would be a near-duplicate. Past = vault,
-    // yesterday + upcoming = calendar. The 07-16 instance is what the dropped
-    // steering transcript matches against; before-meeting auto-prep reads 07-23.
-    title: 'Steering',
+    // The star. It sits the day before the anchor, so the dropped transcript
+    // always matches yesterday's meeting. Past = vault, yesterday and upcoming
+    // = calendar.
+    title: 'Brasserie Lund quarterly review',
     date: '2026-07-16',
     time: '10:00',
-    durationMin: 45,
-    attendees: ['asa.lindgren@rota.example', 'rebecca.holm@rota.example', 'marcus.ek@rota.example'],
+    durationMin: 60,
+    attendees: ['lena.strand@brasserielund.example', 'marcus.ek@bord.example'],
     description:
-      'Weekly steering. Standing items: H2 order, what we can promise customers, capacity.',
-    recurrence: ['RRULE:FREQ=WEEKLY;COUNT=3'],
+      'Quarterly review with our largest account. Standing items: the Christmas season, ' +
+      'no-show fees, open support themes.',
   },
   {
-    // The upcoming Monday only. The 2026-07-13 instance, where the re-estimate
-    // was asked for, is a hand-authored vault note already.
+    // The upcoming Monday only. The 2026-07-13 instance, where the BOK-300
+    // stories were asked for, is a hand-authored vault note already.
     title: '1:1 Rebecca',
     date: '2026-07-20',
     time: '09:30',
     durationMin: 30,
-    attendees: ['rebecca.holm@rota.example'],
-    description: 'Weekly 1:1 with the Scheduling tech lead. Estimates, on-call load, scope.',
+    attendees: ['rebecca.holm@bord.example'],
+    description: 'Weekly 1:1 with the Bookings tech lead. Estimates, on-call load, scope.',
   },
   {
-    title: 'Café Nord QBR prep',
+    title: 'Sjögatan check-in',
     date: '2026-07-21',
     time: '14:00',
-    durationMin: 60,
-    attendees: ['marcus.ek@rota.example', 'lena.strand@cafenord.example'],
-    description:
-      'Prep for the Café Nord quarterly business review: what we say about shift swaps and September.',
+    durationMin: 30,
+    attendees: ['ulrika.nystrom@bord.example', 'karin.ahlgren@sjogatan.example'],
+    description: 'Sjögatan: the double reminder, and what they hear about the fix.',
   },
   {
-    title: "Bruno's CS sync",
+    title: 'Sprint planning',
     date: '2026-07-22',
-    time: '11:00',
-    durationMin: 30,
-    attendees: ['ulrika.nystrom@rota.example', 'petra.alm@brunos.example'],
-    description: "Monthly sync with Bruno's Burgers: open support themes and release timing.",
+    time: '13:00',
+    durationMin: 90,
+    attendees: ['rebecca.holm@bord.example', 'amir.haddad@bord.example'],
+    description: 'Bookings sprint planning. The no-show fees stories are the first item.',
   },
   {
-    title: 'Fjord Sports call',
-    date: '2026-07-24',
-    time: '13:00',
-    durationMin: 30,
-    attendees: ['oskar.lind@fjordsports.example', 'ulrika.nystrom@rota.example'],
-    description: 'Fjord Sports: payroll export timeline against their Visma migration.',
+    // Fortnightly Thursdays, starting with the one the brief is written for.
+    // The 2026-07-09 steering is a hand-written note in the vault, so the
+    // series must not start there: a synced page would land beside it as
+    // `2026-07-09-steering-2.md`.
+    title: 'Steering',
+    date: '2026-07-23',
+    time: '10:00',
+    durationMin: 60,
+    attendees: [
+      'asa.lindgren@bord.example',
+      'rebecca.holm@bord.example',
+      'marcus.ek@bord.example',
+      'henrik.dahl@bord.example',
+    ],
+    description:
+      'Fortnightly steering. Standing items: the H2 order, what we can promise customers, ' +
+      'capacity.',
+    recurrence: ['RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=2'],
   },
 ];
 

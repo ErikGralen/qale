@@ -246,15 +246,15 @@ test('first launch answers the whole opening, once', async () => {
   assert.deepEqual(settings.getConnection('atlassian'), {
     providerId: 'atlassian',
     fields: {
-      siteUrl: 'https://rota.atlassian.net',
-      email: 'demo@rota.example',
+      siteUrl: 'https://bord.atlassian.net',
+      email: 'demo@bord.example',
       apiToken: 'demo',
     },
   });
   // The Google grant is written rather than granted: the demo build has no
   // OAuth client, and the fake answers the token refresh this stands in for.
   const google = settings.getGoogle();
-  assert.equal(google?.email, 'demo@rota.example');
+  assert.equal(google?.email, 'demo@bord.example');
   assert.ok(google?.scopes.includes('calendar.events'), 'the grant can write events');
   const onboarding = settings.getOnboarding();
   assert.ok(onboarding.finishedAt, 'the opening is finished, so it never renders');
@@ -358,9 +358,9 @@ test('reset leaves the rail empty, and the reloaded page gets the default pins',
 
   // Every launch runs it, and only the first one writes: a row the presenter
   // unpins during a demo stays unpinned until the next Reset.
-  store.set(key, JSON.stringify(['notes/h2-capacity.md']));
+  store.set(key, JSON.stringify(['notes/christmas-season-playbook.md']));
   await demo.seedPins(page.contents);
-  assert.deepEqual(JSON.parse(store.get(key) ?? 'null'), ['notes/h2-capacity.md']);
+  assert.deepEqual(JSON.parse(store.get(key) ?? 'null'), ['notes/christmas-season-playbook.md']);
   assert.equal(page.ran, 2);
 
   rmSync(root, { recursive: true, force: true });
@@ -439,12 +439,12 @@ function writeFixtures(assets: string): void {
     join(assets, 'demo', 'atlassian-fixture.json'),
     JSON.stringify({
       anchor: ANCHOR,
-      siteUrl: 'https://rota.atlassian.net',
-      self: { accountId: 'a1', displayName: 'Demo', emailAddress: 'demo@rota.example' },
+      siteUrl: 'https://bord.atlassian.net',
+      self: { accountId: 'a1', displayName: 'Demo', emailAddress: 'demo@bord.example' },
       projects: [
-        { id: '10000', key: 'SCH', name: 'Scheduling' },
-        { id: '10001', key: 'APP', name: 'Staff app' },
-        { id: '10002', key: 'PLT', name: 'Platform' },
+        { id: '10000', key: 'BOK', name: 'Bookings' },
+        { id: '10001', key: 'GST', name: 'Guest' },
+        { id: '10002', key: 'PAY', name: 'Payments' },
       ],
       spaces: [{ id: '65537', key: 'PROD', name: 'Product' }],
       issues: [],
@@ -456,10 +456,10 @@ function writeFixtures(assets: string): void {
     JSON.stringify({
       anchor: ANCHOR,
       timeZone: 'Europe/Stockholm',
-      self: { email: 'demo@rota.example', name: 'Demo' },
+      self: { email: 'demo@bord.example', name: 'Demo' },
       calendars: [
         {
-          id: 'demo@rota.example',
+          id: 'demo@bord.example',
           summary: 'Demo user',
           primary: true,
           accessRole: 'owner',
@@ -473,8 +473,8 @@ function writeFixtures(assets: string): void {
 
 /** What the fakes list: one calendar, three projects and one space. */
 const CATALOGUE = {
-  'google-calendar': ['demo@rota.example'],
-  atlassian: ['SCH', 'APP', 'PLT', 'PROD'],
+  'google-calendar': ['demo@bord.example'],
+  atlassian: ['BOK', 'GST', 'PAY', 'PROD'],
 };
 
 test('the demo follows the calendar, the projects and the space, once', async () => {
@@ -490,10 +490,10 @@ test('the demo follows the calendar, the projects and the space, once', async ()
     // Every container the fakes serve. Without the four Atlassian ones a ticket
     // card is refused: the workspace follows no tracker project.
     assert.deepEqual(sync.followed, [
-      'google-calendar:demo@rota.example',
-      'atlassian:SCH',
-      'atlassian:APP',
-      'atlassian:PLT',
+      'google-calendar:demo@bord.example',
+      'atlassian:BOK',
+      'atlassian:GST',
+      'atlassian:PAY',
       'atlassian:PROD',
     ]);
     // A second call changes nothing: what the presenter unfollowed during a

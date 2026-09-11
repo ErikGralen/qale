@@ -50,7 +50,7 @@ search tools, and search the workspace as well:
 Then make one `ask_user` call. Name the whole haul in one line, with the real names and the real
 numbers, and end your turn:
 
-"I read SCH and APP, 214 tickets and 40 pages, and a month of your calendar. Want to walk
+"I read BOK and GST, 214 tickets and 40 pages, and a month of your calendar. Want to walk
 through what I found?"
 
 Two options: yes, walk me through it / not now. Write nothing, propose nothing, say nothing else.
@@ -62,11 +62,11 @@ they meet most, which topics keep coming back. Every claim cites the ticket, the
 meeting it came from. A sentence with no citation does not belong in this part.
 
 Where two sources agree, say so. That is the line no single source can give you, so it is worth
-the most: "Checkout Rewrite is in 9 tickets and came up in 4 of your meetings this month." Where
+the most: "No-show fees is in 9 tickets and came up in 4 of your meetings this month." Where
 they disagree, say that too, and ask which one is current.
 
 Then work the areas below, hypothesis first. The sources propose and you put it as a question.
-"Checkout Rewrite looks like the main thing right now. Is it?" beats "what are you working on?",
+"No-show fees looks like the main thing right now. Is it?" beats "what are you working on?",
 because they can correct it in four words. Where the sources are thin, fall back to the open ask
 above. Never read the debrief back into a note: the picture that lasts is the area notes.
 

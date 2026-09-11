@@ -1,21 +1,24 @@
 ---
 type: 'person'
-summary: "Petra Alm: restaurant manager at Bruno's Burgers in Gothenburg, builds her own week"
-tags: ['scheduling']
-role: "Restaurant Manager, Bruno's Burgers (Gothenburg)"
-email: 'petra.alm@brunos.example'
-cares_about: ['building next week without redoing it', 'staff who cancel late']
-customer: "[[customers/brunos-burgers]]"
+title: 'Petra Alm'
+summary: 'Petra Alm: Customer success for Pizzeria Napoli and the smaller accounts'
+tags: ['reminders']
+role: 'Customer success, Pizzeria Napoli and smaller accounts'
+email: 'petra.alm@bord.example'
+cares_about: ['a line she is allowed to send', 'smaller accounts hearing the same as the big ones']
+last_told: '2026-06-26'
 ---
 
-Manages the Gothenburg restaurant for [[customers/brunos-burgers]], one of their three biggest
-sites. Mostly student staff, a lot of short shifts, and she builds the schedule herself every
-week rather than delegating it.
+Customer success for [[customers/pizzeria-napoli]] and about thirty smaller accounts. She
+does not get a seat in most product meetings, so she hears about releases from the changelog
+or from her restaurants, and the restaurants are usually first.
 
-She is the kind of user this product is actually for: in Rota daily, fluent in it, and quick to
-tell support when something makes her repeat work. [[people/ulrika-nystrom]] rates her as the
-most useful voice in the account and brings her along to the CS syncs.
+Pizzeria Napoli reported the double reminder to her on 2026-06-26, two days after Sjögatan
+([[tickets/jira/BOK-412]]). She sent them the same line support uses, "we are looking into it",
+and has had nothing better to send since.
 
-I have never spoken to her directly. Everything I know about how she schedules comes second
-hand through Ulrika, which is a gap worth closing before we design anything else that changes
-the manager's week ([[research/auto-schedule]], [[notes/auto-schedule-interviews]]).
+What she asks for is one sentence per release that she can forward as it is. She does not want
+the ticket key or the engineering reason. She wants to know what changed for the guest and from
+when.
+
+Last told 2026-06-26: we are looking into the double reminder; no date given.

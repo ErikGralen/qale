@@ -39,10 +39,10 @@ const ATLASSIAN_PROVIDER = 'atlassian';
 const GOOGLE_PROVIDER = 'google-calendar';
 
 /** The site the `vault-dev/` mirrors already name. It does not exist. */
-const DEMO_SITE_URL = 'https://rota.atlassian.net';
+const DEMO_SITE_URL = 'https://bord.atlassian.net';
 
 /** The account the fake calendar belongs to. It does not exist either. */
-const DEMO_ACCOUNT_EMAIL = 'demo@rota.example';
+const DEMO_ACCOUNT_EMAIL = 'demo@bord.example';
 
 /** Where the drag-in material lands so the presenter can find it. */
 const SAMPLES_FOLDER = 'Qale demo files';
@@ -57,7 +57,7 @@ const FAVORITES_KEY = 'qale.favorites.v1';
 
 /**
  * What the rail holds when a demo starts: two documents the scenarios argue
- * from, the two Jira epics they move, and the two Confluence pages they patch.
+ * from, the two Jira issues they move, and the two Confluence pages they patch.
  * The path decides the place, so each one lands under the row it names:
  * Documents reads `notes/`, and a mirror reads its own system's folder
  * (`renderer/lib/pins.ts`).
@@ -66,15 +66,15 @@ const FAVORITES_KEY = 'qale.favorites.v1';
  *
  * No meeting is here, and none can be. Calendar is a meeting's home and the
  * rail refuses the type (`isPinnable`, docs/sidebar-ia.md SB-1), so the
- * upcoming Café Nord QBR prep is opened from Calendar (docs/demo-runbook.md).
+ * upcoming steering is opened from Calendar (docs/demo-runbook.md).
  */
 export const DEFAULT_PINS: readonly string[] = [
-  'notes/h2-capacity.md',
-  'notes/swap-rules.md',
-  'tickets/jira/SCH-118.md',
-  'tickets/jira/SCH-231.md',
+  'notes/christmas-season-playbook.md',
+  'notes/fee-rules.md',
+  'tickets/jira/BOK-300.md',
+  'tickets/jira/BOK-412.md',
   'wikipages/confluence/roadmap-h2.md',
-  'wikipages/confluence/product-weekly-update.md',
+  'wikipages/confluence/changelog.md',
 ];
 
 /** The one thing the pin seed needs from a window: run a line in the page. */

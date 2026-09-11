@@ -29,7 +29,7 @@ test('the fixture validates and reads back as typed', () => {
   assert.deepEqual(summaryOf(scenario), {
     id: 's1',
     title: 'The meeting produced actions',
-    do: 'Drag steering-h2-priorities.vtt onto the window.',
+    do: 'Drag brasserie-lund-review.vtt onto the window.',
   });
   const drop = scenario.conversations[0]!;
   assert.deepEqual(drop.trigger, { kind: 'skill', skill: 'arrival' });
@@ -37,7 +37,7 @@ test('the fixture validates and reads back as typed', () => {
   // An array of lines is one text with newlines between the lines.
   assert.equal(
     turnText(drop.turns[2]!),
-    'Steering flipped the H2 order: shift swaps ships first.\n\nRebecca re-scopes SCH-240 by {{today+10}}.',
+    'No-show fees has a date now: the end of October.\n\nRebecca writes the BOK-300 stories by {{today+10}}.',
   );
   assert.equal(turnText(drop.turns[0]!), '');
 });
@@ -86,7 +86,7 @@ test('a typed trigger may name the skill in force and the words it needs', () =>
     (s['conversations'] as Record<string, unknown>[])[1]!['trigger'] = trigger;
     return validateScenario(s).errors;
   };
-  assert.deepEqual(withTrigger({ kind: 'typed', skill: 'ask', any: ['SCH-121', 'who'] }), []);
+  assert.deepEqual(withTrigger({ kind: 'typed', skill: 'ask', any: ['BOK-412', 'who'] }), []);
   assert.deepEqual(withTrigger({ kind: 'typed', skill: 'commitment-check' }), []);
   assert.match(withTrigger({ kind: 'typed', skill: '' }).join('\n'), /trigger\.skill must be a non-empty string/);
   assert.match(withTrigger({ kind: 'typed', any: [] }).join('\n'), /trigger\.any must be a non-empty array/);

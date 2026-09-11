@@ -18,7 +18,7 @@ const SYSTEM = 'You are the embedded agent inside "Qale".';
 const FIXTURE = join(import.meta.dirname, 'fixtures', 'scenario-s1.json');
 const KICKOFF = buildKickoff({
   skill: 'arrival',
-  instruction: '1 source just landed in your session folder, unfiled: steering.vtt.',
+  instruction: '1 source just landed in your session folder, unfiled: brasserie-lund-review.vtt.',
 });
 
 function said(text: string): WireMessage {
@@ -35,8 +35,8 @@ const S2: Scenario = {
     {
       id: 'ask',
       trigger: { kind: 'typed' },
-      title: 'Who is waiting on swaps',
-      turns: [{ text: 'Café Nord and Fjord Sports.' }],
+      title: 'Who is waiting on no-show fees',
+      turns: [{ text: 'Brasserie Lund and Nordic Steak.' }],
     },
   ],
 };
@@ -124,8 +124,8 @@ test('a streamed kickoff gets turn 0 of the skill conversation, dated for today'
     const input = events.find((e) => e.delta?.type === 'input_json_delta');
     // The anchor plus fifty days is 2026-09-05.
     assert.deepEqual(JSON.parse(input?.delta.partial_json), {
-      path: 'sources/2026-09-05-steering-transcript.md',
-      from: 'steering.vtt',
+      path: 'sources/2026-09-05-brasserie-lund-review.md',
+      from: 'brasserie-lund-review.vtt',
     });
     assert.equal(events.at(-2)?.delta.stop_reason, 'tool_use');
   });
@@ -141,7 +141,7 @@ test('the next turn is picked by the assistant count, and never by its text', as
     ]);
     assert.equal(
       text,
-      'Filed it as [[sources/2026-09-05-steering-transcript]]. The workshop is on 2026-09-13.',
+      'Filed it as [[sources/2026-09-05-brasserie-lund-review]]. Sprint planning is on 2026-09-10.',
     );
   });
 });
@@ -153,16 +153,16 @@ test('typed sessions bind in id order, and past every script the fallback answer
       ['s1', 's2'],
     );
     assert.equal(
-      await answerText(server.baseUrl, [said('SCH-231 is done. Who needs to know?')]),
-      'Three people need to know, and Oskar first.',
+      await answerText(server.baseUrl, [said('BOK-412 is done. Who needs to know?')]),
+      'Three people need to know, and Jonas first.',
     );
     assert.equal(
-      await answerText(server.baseUrl, [said('What did we tell Fjord Sports?')]),
-      'Oskar was told Q4 in May.',
+      await answerText(server.baseUrl, [said('What did we tell Nordic Steak?')]),
+      'Oskar was told "on the roadmap" in July.',
     );
     assert.equal(
-      await answerText(server.baseUrl, [said('Who is waiting on shift swaps?')]),
-      'Café Nord and Fjord Sports.',
+      await answerText(server.baseUrl, [said('Who is waiting on no-show fees?')]),
+      'Brasserie Lund and Nordic Steak.',
     );
     // Every typed conversation is taken and nothing is pinned, so the fallback answers.
     assert.equal(
@@ -197,13 +197,13 @@ test('a session past the end of its script gets its scenario’s off-script line
 
 test('reset re-reads the folder and clears the bindings, so a hand edit needs no relaunch', async () => {
   await withServer(async (server, scenariosDir) => {
-    await answerText(server.baseUrl, [said('SCH-231 is done. Who needs to know?')]);
+    await answerText(server.baseUrl, [said('BOK-412 is done. Who needs to know?')]);
     const s1 = JSON.parse(readFileSync(join(scenariosDir, 's1.json'), 'utf8')) as Scenario;
     s1.conversations[1]!.turns[0]!.text = 'Three people, and sharpened.';
     writeFileSync(join(scenariosDir, 's1.json'), JSON.stringify(s1));
     server.reset();
     assert.equal(
-      await answerText(server.baseUrl, [said('SCH-231 is done. Who needs to know?')]),
+      await answerText(server.baseUrl, [said('BOK-412 is done. Who needs to know?')]),
       'Three people, and sharpened.',
     );
   });

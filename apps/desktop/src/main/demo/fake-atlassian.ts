@@ -3,7 +3,7 @@
  * answers the REST endpoints the Atlassian connector uses from an in-memory
  * store seeded by a fixture. Nothing leaves the process.
  *
- * The store is the Rota cast: `demo/atlassian-fixture.json` is generated from
+ * The store is the Bord cast: `demo/atlassian-fixture.json` is generated from
  * scripts/lib/atlassian-cast.ts and the static mirrors in vault-dev/, so the
  * keys, page ids and site URL already match what the demo vault says. Dates in
  * the fixture are anchored on 2026-07-17 and slid by `dateOffsetDays` at load,
@@ -98,7 +98,7 @@ export interface FakePage {
   body: string;
   created: string;
   updated: string;
-  /** Site-relative link, e.g. `/spaces/PRODUCT/pages/910231`. */
+  /** Site-relative link, e.g. `/spaces/PROD/pages/4521985`. */
   webui: string;
 }
 

@@ -7,7 +7,7 @@
     {
       "id": "skill-then-track",
       "trigger": { "kind": "typed" },
-      "title": "Watch SCH-118 from a plain question",
+      "title": "Watch BOK-300 from a plain question",
       "turns": [
         {
           "text": "You are telling me what to watch, so I am pulling in Tell Qale.",
@@ -15,11 +15,11 @@
         },
         {
           "tools": [
-            { "name": "track_external", "input": { "kind": "ticket", "external_id": "SCH-118" } }
+            { "name": "track_external", "input": { "kind": "ticket", "external_id": "BOK-300" } }
           ]
         },
         {
-          "text": "SCH-118 is watched now. Nothing else changed."
+          "text": "BOK-300 is watched now. Nothing else changed."
         }
       ]
     }

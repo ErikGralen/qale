@@ -1,0 +1,1 @@
+Marcus Ek, #sales, 08:52. URGENT. Nordic Steak, 25 restaurants, are ready to sign this week. Their ops lead needs two things in the contract: group bookings with a set menu, and the Google "Book a table" button on every restaurant. Can I tell them both are coming this autumn? I NEED BOTH TO SIGN THEM.

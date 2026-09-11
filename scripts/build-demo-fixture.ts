@@ -1,15 +1,15 @@
 /**
- * Bake the Rota cast into `demo/atlassian-fixture.json`, the seed the demo
+ * Bake the Bord cast into `demo/atlassian-fixture.json`, the seed the demo
  * build's fake Atlassian serves (docs/demo-mode.md DM-8).
  *
  * Two sources, both git-tracked, both already the truth for something else:
- *  - scripts/lib/atlassian-cast.ts — descriptions, statuses, labels, comment
- *    seeds, issue links, page titles. The same cast `pnpm reset-atlassian`
- *    pushes to the live demo site.
+ *  - scripts/lib/atlassian-cast.ts — descriptions, statuses, labels, dates,
+ *    comment threads, issue links, page titles. The same cast
+ *    `pnpm reset-atlassian` pushes to the live demo site.
  *  - vault-dev/ — the static mirrors give each cast member its key
- *    (`tickets/jira/SCH-231.md`), its assignee and its last-updated stamp, and
- *    the wikipages give the canonical page bodies and version numbers. So the
- *    fake answers with exactly the ids the demo vault already names.
+ *    (`tickets/jira/BOK-300.md`), and the wikipages give the canonical page
+ *    bodies and version numbers. So the fake answers with exactly the ids the
+ *    demo vault already names.
  *
  * A mirror that carries a comment thread wins over the cast's seeds: the
  * mirrors are what the demo shows before the first sync, and the fake should
@@ -37,6 +37,7 @@ import {
   STATIC_TICKETS,
   markdownToStorage,
 } from './lib/atlassian-cast.ts';
+import type { CastComment } from './lib/atlassian-cast.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 const VAULT = join(ROOT, 'vault-dev');
@@ -48,7 +49,7 @@ const SITE_URL = `https://${STATIC_HOST}`;
 const SELF = {
   accountId: 'demo-pm',
   displayName: 'Demo user',
-  emailAddress: 'demo@rota.example',
+  emailAddress: 'demo@bord.example',
 };
 
 interface Comment {
@@ -58,10 +59,12 @@ interface Comment {
   body: string;
 }
 
-/** What the static mirror knows that the cast does not. */
+/** What the static mirror says. Every field is optional: a mirror that carries
+ *  one wins over the cast, because the mirror is what the demo shows before the
+ *  first sync and the fake should not rewrite it the moment it runs. */
 interface MirrorFacts {
-  assignee: string | null;
-  updated: string;
+  assignee?: string;
+  updated?: string;
   parentKey?: string;
   comments: Comment[];
 }
@@ -106,27 +109,29 @@ function readMirror(key: string): MirrorFacts {
   const frontmatter = FRONTMATTER_RE.exec(text)?.[0] ?? '';
   const body = text.replace(FRONTMATTER_RE, '');
   const parentKey = field(frontmatter, 'parent');
+  const assignee = field(frontmatter, 'assignee');
+  const updated = field(frontmatter, 'remote_updated');
   return {
-    assignee: field(frontmatter, 'assignee') ?? null,
-    updated: field(frontmatter, 'remote_updated') ?? `${ANCHOR}T09:00:00.000Z`,
+    ...(assignee ? { assignee } : {}),
+    ...(updated ? { updated } : {}),
     ...(parentKey ? { parentKey } : {}),
     comments: mirrorComments(body, key),
   };
 }
 
-/** Comment stamps when only the cast has the thread: one a week apart, the
- *  newest landing on the day the issue last moved. */
-function castComments(seeds: string[], updated: string, key: string): Comment[] {
-  return seeds.map((body, n) => {
-    const day = new Date(Date.parse(updated));
-    day.setUTCDate(day.getUTCDate() - (seeds.length - 1 - n) * 7);
-    return {
-      id: `${key.replace(/\D/g, '')}${n + 1}`,
-      author: SELF.displayName,
-      created: `${day.toISOString().slice(0, 10)}T09:30:00.000Z`,
-      body,
-    };
-  });
+/** The cast's own thread, stamped with the author and the day the cast names. */
+function castComments(seeds: CastComment[], key: string): Comment[] {
+  return seeds.map((seed, n) => ({
+    id: `${key.replace(/\D/g, '')}${n + 1}`,
+    author: seed.author,
+    created: `${seed.date}T09:30:00.000Z`,
+    body: seed.body,
+  }));
+}
+
+/** A cast date as the stamp the fixture carries. */
+function stamp(day: string): string {
+  return `${day}T09:00:00.000Z`;
 }
 
 function daysBefore(iso: string, days: number): string {
@@ -150,7 +155,7 @@ const issues = keys.map((key, index) => {
   const mirror = readMirror(key);
   const comments = mirror.comments.length
     ? mirror.comments
-    : castComments(member.comments ?? [], mirror.updated, key);
+    : castComments(member.comments ?? [], key);
   return {
     id: String(10_001 + index),
     key,
@@ -161,10 +166,10 @@ const issues = keys.map((key, index) => {
     status: member.status,
     statusCategory: categoryOf(member.status),
     labels: [member.label],
-    assignee: mirror.assignee,
+    assignee: mirror.assignee ?? member.assignee,
     reporter: SELF.displayName,
-    created: daysBefore(mirror.updated, 30),
-    updated: mirror.updated,
+    created: stamp(member.created),
+    updated: mirror.updated ?? stamp(member.updated),
     ...(mirror.parentKey ? { parentKey: mirror.parentKey } : {}),
     comments,
     links: [] as { type: string; key: string; outward: boolean }[],

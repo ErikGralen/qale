@@ -51,12 +51,12 @@ take the rule instead.
 A file Qale learns into starts with one line that says what Qale knows and where it came from.
 It has two forms.
 
-- No pick yet: "I do not know how you want exec updates to read yet. Until you pick, the first
-  update comes in these three styles:" with the styles listed under it.
-- Learned: "Read from your last thirty tickets in SCH, APP and PLT on 2 September. A guess from
-  your tickets, not a rule you gave me." Or: "Exec updates are one paragraph, result first.
-  Learned from the style you copied on 5 September. Change this line and the next update follows
-  it."
+- No pick yet: "I do not know how you want internal updates to read yet. Until you pick, the
+  first update comes in these three styles:" with the styles listed under it.
+- Learned: "Read from your last thirty tickets in BOK, GST and PAY on 2 September. A guess from
+  your tickets, not a rule you gave me." Or: "Internal updates are three labelled lines, a date on
+  each. Learned from the style you copied on 5 September. Change this line and the next update
+  follows it."
 
 When you learn something new, rewrite this line with the new source and date. Never add a second
 first line. When the material was thin, the line says so: "Only four recent tickets were written
@@ -67,7 +67,7 @@ here, so this is thin." When the material was not the PM's own, the line says wh
 
 Every rule is one bullet with its source and date. "Start summaries with a verb. From your edit
 on 2 September." A rule the PM said in chat cites the chat: "From what you said on 5 September."
-A rule read from material cites the material: "From your SCH stories, read on 2 September." The
+A rule read from material cites the material: "From your BOK stories, read on 2 September." The
 PM reads the file, sees where each line came from, and deletes any line they do not want.
 
 ## Styles that were not picked

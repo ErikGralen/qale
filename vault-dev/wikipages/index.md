@@ -8,5 +8,5 @@ mirrored living documents, never edited locally
 
 ## Gone through
 
-* [Product weekly update](wikipages/confluence/product-weekly-update.md) — Product weekly update: the Friday update page in the Product space, last published 2026-07-10
-* [Roadmap H2](wikipages/confluence/roadmap-h2.md) — Roadmap H2: the Confluence roadmap page in the Product space; still lists payroll export first, shift swaps second
+* [Changelog](wikipages/confluence/changelog.md) — Changelog: the public what-changed page in the Product space, last entry 2026-06-24
+* [Roadmap H2](wikipages/confluence/roadmap-h2.md) — Roadmap H2: the Confluence roadmap page in the Product space; no-show fees Q4, waitlist after, group bookings Q1 2027, gift cards not doing

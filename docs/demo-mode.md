@@ -151,7 +151,7 @@ ever runs. Bind to `127.0.0.1` only.
 **What:** The text-matcher below was replaced 2026-09-09 by a script engine
 (`docs/plan-demo-replay.md`), because a matcher that reads tool results breaks whenever the
 vault, a skill or a proposal id differs from the day something was recorded. A scenario is now
-data, `demo/scenarios/s1.json` to `s5.json`, not a bank of recordings to score. Nothing typed is
+data, `demo/scenarios/s1.json` to `s6.json`, not a bank of recordings to score. Nothing typed is
 compared, ever, so a typo or a paraphrase changes nothing.
 
 **Original change (superseded):** Each recording was one conversation. Requests were normalised
@@ -180,14 +180,16 @@ recorded turn at `assistantCount` served.
   returns to the same conversation. The turn served is `turns[n]`, `n` being the number of
   assistant messages the request already carries, same rule as before.
 
-  So the presenter picks the scenario by what he does. A drop is S1 (arrival), "Brief me" is
-  S1 (meeting-prep), a bare weekly-update pick is S5, a plain paste with "offline" in it is S3
-  (the script's first turn calls `use_skill` for `commitment-check`, a moment the `/` picker
-  does not offer), a line under Iterate on something is S4, and a plain question with
-  `SCH-121` or "who needs to know" in it is S2. One Reset before the demo (DM-9), then any
-  subset in any order, each once,
-  with no reset between. There is no Start button and nothing pinned. `ScriptEngine.pin()`
-  exists for the lint, which runs one scenario alone with it; nothing in the app calls it.
+  So the presenter picks the scenario by what he does. A drop is S1 (arrival), a line under
+  Iterate on something with `BOK-300` or "no-show" in it is S2, a plain question with `BOK-412`
+  or "who should know" in it is S3, a plain paste with "group bookings" or "Nordic Steak" in it
+  is S4 (the script's first turn calls `use_skill` for `commitment-check`, a moment the `/`
+  picker does not offer), a bare weekly-update pick is S5, and "Get the brief" on the Thursday
+  steering is S6 (meeting-prep). One Reset before the demo (DM-9), then S1 and S2 in that
+  order, then any subset of S3 to S6 in any order, each once, with no reset between
+  (`docs/plan-demo-bookings.md`). There is no Start button and nothing pinned.
+  `ScriptEngine.pin()` exists for the lint, which runs one scenario alone with it; nothing in
+  the app calls it.
 
 Beyond `trigger.any`, the typed text is fingerprinted (`normalise()`: UUIDs, dates, timestamps
 and long digit runs replaced) only so the same opening keeps returning to the same binding
@@ -241,8 +243,8 @@ then emit whole. The recording carries no timing.
 **Superseded 2026-09-09.** The fixed constants above are the pre-script-engine numbers. The
 script engine paces per turn instead (DM-4): 1500 ms before a tools-only turn, 2500 ms before a
 turn with text, 3000 ms for a conversation's first turn, unless the script's own `turn.pause`
-says otherwise. A scenario that should feel like a long think sets `pause` on its turns; S3 waits
-about five seconds before each of its turns. Text still streams at 400 characters a second, now with ±25% jitter on each
+says otherwise. A scenario that should feel like a long think sets `pause` on its turns; S4 waits
+up to five seconds before each of its turns. Text still streams at 400 characters a second, now with ±25% jitter on each
 delta so it does not read as a metronome (`DEFAULT_PACING` in `replay-server.ts`, the jitter in
 `replay-sse.ts`).
 
@@ -250,7 +252,7 @@ delta so it does not read as a metronome (`DEFAULT_PACING` in `replay-server.ts`
 
 ### DM-6. When nothing matches: off script
 
-**What:** The cofounder types, or the model goes, somewhere none of the five scripts covers.
+**What:** The cofounder types, or the model goes, somewhere none of the six scripts covers.
 
 **Change:** A request goes off script in two cases: no conversation's trigger fits and nothing
 is free to bind, or a session is already bound but has run past the last turn its conversation
@@ -258,8 +260,8 @@ defines. Either way the engine answers with one fixed text block, `end_turn`, an
 advances nothing, so the same opening asked again after a Reset is free to bind.
 
 The line it answers with: for a bound session past its script, the scenario's own `offScript`
-text if it has one (each of the five carries the same customer-safe line: "That is outside what
-this demo can show. The five things it can do are listed in Settings, under Demo."), templates
+text if it has one (each of the six carries the same customer-safe line: "That is outside what
+this demo can show. The six things it can do are listed in Settings, under Demo."), templates
 resolved the same as any turn; for an opening nothing fits, the line in
 `demo/recordings/_fallback.json` (the same sentence); failing that, one built into the server.
 
@@ -325,7 +327,7 @@ below.
 ## Google Calendar in demo builds
 
 The demo build's calendar is a fixture too, behind the same `fetchImpl` seam. `demo/google-fixture.json`
-holds the Rota week in Google's own event shape, generated from `scripts/lib/google-cast.ts` (the cast
+holds the Bord week in Google's own event shape, generated from `scripts/lib/google-cast.ts` (the cast
 `pnpm seed-google-calendar` pushes to a live account) by `pnpm build-demo-google-fixture`. Re-run that
 after a change to the cast; nothing runs it for you.
 
@@ -367,7 +369,7 @@ whatever he did in the last demo.
 
 **Decision:** build (Erik, 2026-09-05)
 
-**Notes:** Built: `DemoService.reset()`; Settings → Demo tab (`DemoSettings.tsx`) with Reset (inline confirm), a read-only list of the five scenarios (title and `do` line) as a reminder, and Open demo files (`~/Desktop/Qale demo files/`). The step buttons were deleted on 2026-09-08; the per-scenario Start button was added and deleted on 2026-09-09, because the engine picks the scenario from what the presenter does (DM-4) and Reset is pressed once before a demo. Shift logic now lives in `@qale/domain/demo` (`packages/domain/src/demo/shift.ts`), shared with `refresh-demo.ts` (dry output byte-identical). Unit-tested against temp dirs; the button was NOT clicked in a live window. Open point: the reset workspace has no `.git`, so "put it back" is unavailable during a demo. The demo files he drags in have to be somewhere he can find them. Reset also copies
+**Notes:** Built: `DemoService.reset()`; Settings → Demo tab (`DemoSettings.tsx`) with Reset (inline confirm), a read-only list of the six scenarios (title and `do` line, the first two marked as running first, in order) as a reminder, and Open demo files (`~/Desktop/Qale demo files/`). The step buttons were deleted on 2026-09-08; the per-scenario Start button was added and deleted on 2026-09-09, because the engine picks the scenario from what the presenter does (DM-4) and Reset is pressed once before a demo. Shift logic now lives in `@qale/domain/demo` (`packages/domain/src/demo/shift.ts`), shared with `refresh-demo.ts` (dry output byte-identical). Unit-tested against temp dirs; the button was NOT clicked in a live window. Open point: the reset workspace has no `.git`, so "put it back" is unavailable during a demo. The demo files he drags in have to be somewhere he can find them. Reset also copies
 `demo-samples/` to `~/Desktop/Qale demo files/`, and the Demo section has an "Open demo
 files" button.
 
@@ -376,10 +378,10 @@ files" button.
 about what the PO is working in, so `DemoService` writes that key from the main process on every
 `did-finish-load`, and only when the workspace has no pin set at all: six paths, in
 `DEFAULT_PINS`. That keeps one way to pin in the product. The list is two documents
-(`notes/h2-capacity`, `notes/swap-rules`), the two Jira epics (`SCH-118`, `SCH-231`) and the two
-Confluence pages (`roadmap-h2`, `product-weekly-update`). No meeting is on it: Calendar is a
+(`notes/christmas-season-playbook`, `notes/fee-rules`), two Jira tickets (`BOK-300`, `BOK-412`)
+and the two Confluence pages (`roadmap-h2`, `changelog`). No meeting is on it: Calendar is a
 meeting's home and the rail refuses the type (`isPinnable`, docs/sidebar-ia.md SB-1), so the
-upcoming Café Nord QBR prep is opened from Calendar (docs/demo-runbook.md).
+Thursday steering for S6 is opened from Calendar (docs/demo-runbook.md).
 
 ---
 
@@ -387,7 +389,7 @@ upcoming Café Nord QBR prep is opened from Calendar (docs/demo-runbook.md).
 
 ### DM-10. Author a script: record once, draft, edit, lint, run cold
 
-**What:** How the five files under `demo/scenarios/` get made and stay right. A script ships;
+**What:** How the six files under `demo/scenarios/` get made and stay right. A script ships;
 a recording is only ever a draft of one, and editing it costs minutes, not a re-record.
 
 **Change:**
@@ -414,11 +416,13 @@ a recording is only ever a draft of one, and editing it costs minutes, not a re-
    for real against it: a refusal, a throw, an unresolved template, an unknown tool or a schema
    mismatch is an error naming the scenario, the turn and the tool. It also drives one script
    engine over every scenario forwards and backwards, with nothing pinned, to prove `reset()`
-   leaves no binding behind. Then the sequence pass: for each of four orders it builds one
-   workspace, routes every scenario's opening through an unpinned engine (a real system prompt
-   with the `## Skill now in force:` line for S3 and S4) and runs every tool call, with no reset
-   between scenarios; a wrong binding or a call that fails because an earlier scenario changed
-   the workspace is an error naming the order. Fix until it prints `OK`.
+   leaves no binding behind. Then the sequence pass: four orders, each opening with S1 then S2
+   and ending with a different subset of S3 to S6 (all forwards, all backwards, S4 then S3, S6
+   alone). For each it builds one workspace, routes every scenario's opening through an
+   unpinned engine (a real system prompt with the `## Skill now in force:` line for S2) and
+   runs every tool call, with no reset between scenarios; a wrong binding or a call that fails
+   because an earlier scenario changed the workspace is an error naming the order. Fix until it
+   prints `OK`.
 5. `QALE_DEMO=1 QALE_DEMO_TODAY=2026-10-01 pnpm desktop`, Reset, run the scenario once cold on a
    day nobody drafted against, and look at the cards. Commit, with `draft: true` removed.
 
@@ -428,10 +432,10 @@ a recording is only ever a draft of one, and editing it costs minutes, not a re-
 **Notes:** Built: `demo-draft.ts` (`pnpm demo:draft`), `lint-scenarios.ts` (`pnpm demo:lint
 [--scenario s1] [--offsets 0,12,65]`). Not wired into CI; run it by hand before a demo day, and
 again after any merge from `main` that touches `packages/agent/src/tools.ts` or the proposals
-use case (`docs/demo-runbook.md`). The five scripts are `s1.json` "The meeting produced actions"
-through `s5.json` "The Friday update"; each carries the `do` line shown on its Settings row
+use case (`docs/demo-runbook.md`). The six scripts are `s1.json` "The meeting produced actions"
+through `s6.json` "The brief for Thursday"; each carries the `do` line shown on its Settings row
 (DM-9) and its own off-script line (DM-6). The recordings under `demo/recordings/` are removed
-once the lint is green on all five; `_fallback.json` stays.
+once the lint is green on all six; `_fallback.json` stays.
 
 ---
 

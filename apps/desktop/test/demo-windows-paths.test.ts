@@ -15,7 +15,7 @@ import type { ContentBlock, WireMessage } from '../src/main/demo/replay-recordin
  * Two kinds of path meet in the demo build and they must never be confused.
  * The folder the scripts are READ from is an OS path: on Windows it is
  * `C:\Users\...\resources\demo-assets\demo\scenarios`, with backslashes and a
- * drive letter. The paths INSIDE a script (`tickets/jira/SCH-118.md`) are
+ * drive letter. The paths INSIDE a script (`tickets/jira/BOK-300.md`) are
  * vault paths, which are posix on every platform — the invariant
  * `packages/vault/src/paths.ts` states, because the index, the wikilinks and
  * every writer in the app split on `/` and nothing else.
@@ -94,7 +94,7 @@ test('a Windows scenarios folder loads, and the vault paths inside it stay posix
   // Read back byte for byte from the file: the folder it came from left no mark.
   assert.equal(
     drop.turns[0]?.tools?.[0]?.input['path'],
-    'sources/{{today}}-steering-transcript.md',
+    'sources/{{today}}-brasserie-lund-review.md',
   );
   assert.equal(JSON.stringify(scenarios[0]), JSON.stringify(JSON.parse(readFileSync(FIXTURE, 'utf8'))));
 });
@@ -108,14 +108,19 @@ test('served tool calls carry posix vault paths, whatever the folder was called'
   const filed = first.response.content.find((b) => b.type === 'tool_use');
   assert.equal(filed?.['name'], 'file_source');
   // The template resolved to the demo day and nothing else about the path moved.
-  assert.equal(inputOf(filed)['path'], 'sources/2026-07-25-steering-transcript.md');
+  assert.equal(inputOf(filed)['path'], 'sources/2026-07-25-brasserie-lund-review.md');
 
   // Turn 1: a todo whose source is a wikilink and whose note names a decision.
   const second = engine.answer({ system: 'You are the embedded agent.', messages: arrival(1) });
   const todo = second.response.content.find((b) => b.type === 'tool_use');
   assert.equal(todo?.['name'], 'propose_todo');
-  assert.deepEqual(inputOf(todo)['sources'], ['[[meetings/2026-07-24-steering]]']);
-  assert.match(String(inputOf(todo)['note']), /decisions\/2026-05-18-h2-order-payroll-first\.md$/);
+  assert.deepEqual(inputOf(todo)['sources'], [
+    '[[meetings/2026-07-24-brasserie-lund-quarterly-review]]',
+  ]);
+  assert.match(
+    String(inputOf(todo)['note']),
+    /decisions\/2026-05-14-h2-order-no-show-fees-first\.md$/,
+  );
 
   // Nothing served for this conversation carries a backslash anywhere.
   for (const served of [first, second]) {

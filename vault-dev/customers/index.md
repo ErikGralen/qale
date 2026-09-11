@@ -8,10 +8,14 @@ customer hubs — who they are and where they stand
 
 ## Active
 
-* [Bruno's Burgers](customers/brunos-burgers.md) — Bruno's Burgers: 35 restaurants, steady account, quiet on product
-* [Café Nord](customers/cafe-nord.md) — Café Nord: 120 locations, our largest account, renews 2026-12-01
-* [Fjord Sports](customers/fjord-sports.md) — Fjord Sports: 60 sports-retail stores, waiting on the Q4 Visma payroll export
+* [Brasserie Lund](customers/brasserie-lund.md) — Brasserie Lund: 40 restaurants, our largest account, renews 2026-12-01, waiting on no-show fees before Christmas
+* [Pizzeria Napoli](customers/pizzeria-napoli.md) — Pizzeria Napoli: 12 restaurants, reported the double reminder on 2026-06-26
+* [Sjögatan](customers/sjogatan.md) — Sjögatan: 6 restaurants in Gothenburg, reported the double reminder through support on 2026-06-24
+
+## Prospect
+
+* [Nordic Steak](customers/nordic-steak.md) — Nordic Steak: prospect, 25 restaurants, close to signing, wants group bookings and the Google button in the contract
 
 ## Churned
 
-* [Kaffekopp](customers/kaffekopp.md) — Kaffekopp: 18 cafés, churned 2025-11 over a feature we had already shipped
+* [Kaffekopp](customers/kaffekopp.md) — Kaffekopp: café chain, churned 2025-11 over a feature we had already shipped

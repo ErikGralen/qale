@@ -6,13 +6,13 @@ description: People — people the work touches and what they were last told
 
 people the work touches and what they were last told
 
-* [Åsa Lindgren](people/asa-lindgren.md) — Åsa Lindgren: CPO, sets the H2 order and decides fast
-* [Henrik Dahl](people/henrik-dahl.md) — Henrik Dahl: Legal and GDPR, reviews anything that shows staff personal data
-* [Jonas Berg](people/jonas-berg.md) — Jonas Berg: Support Lead, wants to know what shipped before the tickets arrive
-* [Lena Strand](people/lena-strand.md) — Lena Strand: Head of Operations at Café Nord, owns the renewal and the September problem
-* [Malin Sjöberg](people/malin-sjoberg.md) — Malin Sjöberg: CS Lead, wants to hear about a slip before the customer does
-* [Marcus Ek](people/marcus-ek.md) — Marcus Ek: Head of Sales, owns Café Nord and the swap promise made at the QBR
-* [Oskar Lind](people/oskar-lind.md) — Oskar Lind: Store Operations Manager at Fjord Sports, planning Visma around our Q4 export
-* [Petra Alm](people/petra-alm.md) — Petra Alm: restaurant manager at Bruno's Burgers in Gothenburg, builds her own week
-* [Rebecca Holm](people/rebecca-holm.md) — Rebecca Holm: Tech Lead on Scheduling, owns both H2 epics
-* [Ulrika Nyström](people/ulrika-nystrom.md) — Ulrika Nyström: CS manager for Bruno's Burgers and Fjord Sports
+* [Amir Haddad](people/amir-haddad.md) — Amir Haddad: Developer on the Guest team, shipped Google bookings and table areas, fixed the double reminder
+* [Åsa Lindgren](people/asa-lindgren.md) — Åsa Lindgren: CPO, runs steering and sets the H2 order
+* [Henrik Dahl](people/henrik-dahl.md) — Henrik Dahl: Tech lead on Payments, owns the deposits work that group bookings waits on
+* [Jonas Berg](people/jonas-berg.md) — Jonas Berg: Support lead, four open tickets on the double reminder and a macro that says we are looking into it
+* [Lena Strand](people/lena-strand.md) — Lena Strand: Head of operations at Brasserie Lund, owns the renewal and the December no-show problem
+* [Marcus Ek](people/marcus-ek.md) — Marcus Ek: Head of Sales, owns Nordic Steak and Brasserie Lund, asks for dates he can put in a contract
+* [Oskar Lind](people/oskar-lind.md) — Oskar Lind: Operations lead at Nordic Steak, a prospect, wants group bookings and the Google button in the contract
+* [Petra Alm](people/petra-alm.md) — Petra Alm: Customer success for Pizzeria Napoli and the smaller accounts
+* [Rebecca Holm](people/rebecca-holm.md) — Rebecca Holm: Tech lead on Bookings, wants the BOK-300 stories before sprint planning
+* [Ulrika Nyström](people/ulrika-nystrom.md) — Ulrika Nyström: Customer success for Brasserie Lund and Sjögatan, wants to hear before her restaurants do

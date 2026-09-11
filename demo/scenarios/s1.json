@@ -2,15 +2,15 @@
   "version": 1,
   "id": "s1",
   "title": "The meeting produced actions",
-  "do": "Drag steering-h2-priorities.vtt from the Qale demo files folder into Home. It lands in the composer. Type: yesterday's steering, nobody wrote anything down. Send. On the question card, pick Same commitment.",
-  "offScript": "That is outside what this demo can show. The five things it can do are listed in Settings, under Demo.",
+  "do": "Drag brasserie-lund-review.vtt from the Qale demo files folder into Home. It lands in the composer. Type: yesterday's Brasserie Lund review, nobody wrote anything down. Send. On the question card, pick Yes, end of October and Yes, same bug.",
+  "offScript": "That is outside what this demo can show. The six things it can do are listed in Settings, under Demo.",
   "lookups": {
     "claims": {
-      "The PO opens a GDPR review with Henrik": "CONFLICT | todos/henrik-review-swap-notifications.md | GDPR review of swap notifications, open, due 2026-07-24, from the 1:1 on 2026-07-13",
-      "Marcus told Lena": "KNOWN | meetings/2026-06-05-cafe-nord-qbr.md | Marcus answered before I could: \"we'll have swaps for you before September.\""
+      "The PO told Lena": "CONFLICT | customers/brasserie-lund.md | - 2026-06-02: no-show fees in Q4, before the Christmas season ([[meetings/2026-06-02-brasserie-lund-review]]).",
+      "Lena said guests at Malmö and Lund": "KNOWN | tickets/jira/BOK-412.md | Fixed: one reminder per booking whatever the source. Released in the 09:10 deploy on 2026-07-17."
     },
     "summaries": {
-      "sources/{{today}}-steering-transcript.md": "Steering on 2026-07-16: Åsa flipped the H2 order, shift swaps first and payroll export to Q1, with a re-estimate of SCH-240 due 2026-07-24."
+      "sources/{{today}}-brasserie-lund-quarterly-review-transcript.md": "Brasserie Lund review, 2026-07-16: no-show fees by the end of October, told to Lena; guests at Malmö and Lund got the reminder text twice."
     }
   },
   "conversations": [
@@ -20,31 +20,33 @@
         "kind": "skill",
         "skill": "arrival"
       },
-      "title": "Steering: H2 priorities",
+      "title": "Brasserie Lund quarterly review",
       "turns": [
         {
-          "text": "This is yesterday's steering, so the transcript goes on that meeting page. The calendar holds it at 10:00 with Åsa, Rebecca and Marcus, and the transcript names the same four.",
+          "text": "The transcript is filed on yesterday's calendar page for the Brasserie Lund review ([[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]). The calendar has it at 10:00 with Lena and Marcus, and the transcript names the same three people.",
           "tools": [
             {
               "name": "file_source",
               "input": {
-                "files": ["source/steering-h2-priorities.vtt"],
+                "files": [
+                  "source/brasserie-lund-review.vtt"
+                ],
                 "as": "meeting",
-                "title": "Steering: H2 priorities",
+                "title": "Brasserie Lund quarterly review",
                 "date": "2026-07-16",
-                "attach_to": "meetings/{{date:2026-07-16}}-steering.md"
+                "attach_to": "meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review.md"
               }
             },
             {
               "name": "vault_read",
               "input": {
-                "path": "decisions/2026-05-18-h2-order-payroll-first.md"
+                "path": "customers/brasserie-lund.md"
               }
             },
             {
               "name": "vault_read",
               "input": {
-                "path": "todos/henrik-review-swap-notifications.md"
+                "path": "tickets/jira/BOK-412.md"
               }
             }
           ]
@@ -56,26 +58,32 @@
               "input": {
                 "claims": [
                   {
-                    "claim": "Åsa flipped the H2 order at steering on 2026-07-16: shift swaps ships first, payroll export moves to Q1.",
+                    "claim": "The PO told Lena no-show fees land by the end of October, before Christmas bookings open on 1 November.",
                     "about": [
-                      "[[decisions/2026-05-18-h2-order-payroll-first]]",
-                      "[[notes/h2-capacity]]"
+                      "[[customers/brasserie-lund]]",
+                      "[[people/lena-strand]]"
                     ]
                   },
                   {
-                    "claim": "The PO opens a GDPR review with Henrik of the swap notification today, 2026-07-17.",
+                    "claim": "Lena said guests at Malmö and Lund got the reminder text twice, a few minutes apart, since at least the end of June.",
                     "about": [
-                      "[[todos/henrik-review-swap-notifications]]",
-                      "[[people/henrik-dahl]]"
+                      "[[tickets/jira/BOK-412]]",
+                      "[[insights/double-reminder-makes-guests-doubt-the-booking]]"
                     ]
                   },
                   {
-                    "claim": "Rebecca re-scopes SCH-240 with the overtime check and gives a real estimate by 2026-07-24.",
-                    "about": ["[[tickets/jira/SCH-240]]", "[[people/rebecca-holm]]"]
+                    "claim": "Marcus sends Brasserie Lund the renewal paperwork by 2026-07-22, with the October line in it.",
+                    "about": [
+                      "[[people/marcus-ek]]",
+                      "[[customers/brasserie-lund]]"
+                    ]
                   },
                   {
-                    "claim": "Marcus told Lena \"before September\" at the Café Nord QBR on 2026-06-05 and stands by it.",
-                    "about": ["[[customers/cafe-nord]]", "[[meetings/2026-06-05-cafe-nord-qbr]]"]
+                    "claim": "The PO sends Lena the October plan in writing by 2026-07-24, one page.",
+                    "about": [
+                      "[[people/lena-strand]]",
+                      "[[customers/brasserie-lund]]"
+                    ]
                   }
                 ]
               }
@@ -89,16 +97,30 @@
               "input": {
                 "questions": [
                   {
-                    "header": "Henrik",
-                    "question": "You said in steering you'd ping Henrik today. The review with Henrik is already open, due 2026-07-24 ([[todos/henrik-review-swap-notifications]]). Same commitment?",
+                    "header": "The date",
+                    "question": "You told Lena no-show fees land by the end of October. The last thing on record is 'Q4, before the Christmas season', told on 2026-06-02 ([[customers/brasserie-lund]]). Is end of October the date now?",
                     "options": [
                       {
-                        "label": "Same commitment",
-                        "description": "Yesterday's line goes on the open review. Nothing new is filed."
+                        "label": "Yes, end of October",
+                        "description": "It goes on the record, the roadmap page and the epic, and Lena's page says what she was told."
                       },
                       {
-                        "label": "A new commitment",
-                        "description": "Today's ping becomes its own todo, beside the open review."
+                        "label": "No, I was thinking out loud",
+                        "description": "Nothing changes on the record. The todo to send Lena a plan still stands."
+                      }
+                    ]
+                  },
+                  {
+                    "header": "Reminders",
+                    "question": "Lena said guests at two restaurants got the reminder text twice. That is what BOK-412 describes, reminders sent twice for Google bookings, and the fix went out this morning ([[tickets/jira/BOK-412]]). Is Brasserie Lund the same bug?",
+                    "options": [
+                      {
+                        "label": "Yes, same bug",
+                        "description": "A comment on the ticket names Brasserie Lund, and Lena is told the fix is out."
+                      },
+                      {
+                        "label": "Not sure, keep it separate",
+                        "description": "The complaint goes on the customer page and nothing goes on the ticket."
                       }
                     ]
                   }
@@ -108,91 +130,124 @@
           ]
         },
         {
+          "text": "On the record now: the October date on the customer page and on Lena's page, the write-up, an insight on why 1 November is the real deadline, and three todos with owners and dates.",
           "tools": [
             {
-              "name": "propose_decision",
+              "name": "propose_note",
               "input": {
-                "path": "decisions/{{date:2026-07-16}}-h2-order-swaps-first.md",
+                "path": "insights/no-show-fees-has-a-hard-date-1-november.md",
                 "frontmatter": {
-                  "type": "decision",
-                  "summary": "H2 order flipped: shift swaps ships first, payroll export moves to Q1 2027",
-                  "tags": ["shift-swaps", "payroll-export"],
-                  "standing": "active",
-                  "date": "2026-07-16",
-                  "deciders": ["Åsa Lindgren"],
-                  "sources": ["[[meetings/{{date:2026-07-16}}-steering]]"]
+                  "type": "insight",
+                  "summary": "No-show fees has a hard date: Brasserie Lund opens Christmas bookings on 1 November, so end of October is the real deadline, not Q4",
+                  "tags": [
+                    "no-show-fees"
+                  ],
+                  "evidence": [
+                    "[[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]",
+                    "[[customers/brasserie-lund]]"
+                  ],
+                  "confidence": "high",
+                  "customer": "[[customers/brasserie-lund]]"
                 },
-                "body": "Åsa reversed the May order at steering on 2026-07-16: shift swaps ([[tickets/jira/SCH-231]]) ships first, payroll export ([[tickets/jira/SCH-118]]) moves to Q1 2027 ([[meetings/{{date:2026-07-16}}-steering]]).\n\nThe May reasoning was that two accounts had asked for the export with a date attached and nobody had a hard date on swaps ([[decisions/2026-05-18-h2-order-payroll-first]]). That no longer holds. Café Nord's QBR put a date on swaps that we did not choose: their staff turn over every September and managers rebuild the week by hand because staff cannot swap shifts themselves ([[insights/cafe-nord-september-turnover]]). Two more chain accounts in the pipeline asked the same question in the same week, one of them with over a hundred locations. Payroll export helps none of the three.\n\nBoth epics sit on one team, so the second one moves a full quarter, not a few weeks ([[notes/h2-capacity]]). Åsa took that cost on purpose: \"that's the whole point of doing this today instead of next month.\"\n\nNot decided here: a ship date for swaps. Rebecca re-estimates [[tickets/jira/SCH-240]] by 2026-07-24, and that number is an estimate, not a promise.",
-                "rationale": "Åsa decided it in the room with a named reason, and it reverses the May order, so it is a new decision that supersedes the old one.",
-                "supersedes": "decisions/2026-05-18-h2-order-payroll-first",
-                "sources": ["[[meetings/{{date:2026-07-16}}-steering]]"]
+                "body": "Brasserie Lund opens Christmas bookings on 1 November, at all 40 restaurants on the same day ([[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]). The good December dates are gone within the first week. A fee that is not on the booking from the day the guest books it does nothing for this December: \"Otherwise it's useless to me.\"\n\nSo the deadline for [[tickets/jira/BOK-300]] is the end of October, not Q4. Lena said what Q4 meant to her managers: \"Q4 could be the fifteenth of December. The fifteenth of December is no good to me.\" On 2026-07-16 she was told end of October, and that is the date on the record now ([[customers/brasserie-lund]]).\n\nThe cost of missing it is known: about one table a night per restaurant, every night in December ([[insights/brasserie-lund-december-no-shows]]). The big tables are the ones that do not come. The renewal is 2026-12-01, in the middle of that month.\n\nHigh confidence: the date comes from when their bookings open, not from a preference. It was said twice, in June and again on 2026-07-16.",
+                "rationale": "The record held \"Q4\" and \"before Christmas\" as if they were one date. They are not: 1 November is when the bookings open, so the deadline is the end of October, and nothing in the workspace said so.",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]",
+                  "[[customers/brasserie-lund]]"
+                ]
               }
             },
             {
               "name": "propose_update",
               "input": {
-                "path": "meetings/{{date:2026-07-16}}-steering.md",
-                "append": "## Summary\n\nÅsa flipped the H2 order: shift swaps ships first, payroll export moves to Q1 2027 ([[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]). The May reasoning was two accounts with a date on the export and nobody with a date on swaps ([[decisions/2026-05-18-h2-order-payroll-first]]). Since then Café Nord's QBR and two more chain accounts in the pipeline asked the same question, unprompted: can staff swap their own shifts. All three hit the September turnover, six weeks out, and payroll export helps none of them.\n\nRebecca's two conditions. The last swap story, manager approval with the overtime check, is a data problem, not a UI problem: it touches the same schedule-recalc path as payroll export. She re-scopes [[tickets/jira/SCH-240]] and gives a real estimate, not a ship date, by 2026-07-24. And the swap notification shows the requesting colleague's name and phone number, which Henrik has not seen. Åsa: \"that's not optional.\" I ping Henrik today ([[todos/henrik-review-swap-notifications]]).\n\nA fourth story nobody has written: when a swap is approved, the colleague who gave up the shift is not told by the app. Today that is a message the manager sends by hand. Åsa wants it filed under [[tickets/jira/SCH-231]] this week.\n\nFor Café Nord the line stays \"before September\", as Marcus said at the QBR, and nothing firmer until Rebecca's number lands. If Lena pushes: \"more in a couple of weeks\", not a new date.\n\n## Notes\n\n- Roadmap H2 still says export first, swaps second. Åsa wants it flipped today, and a comment on [[tickets/jira/SCH-118]] saying the export moves to Q1 and why.\n- Marcus: \"my slides already say September.\" Rebecca: \"then your slides are wrong.\"\n- Rebecca has the Fortnox connector demo on Wednesday, so the estimate is next Friday, not this one.",
+                "path": "meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review.md",
+                "append": "## Summary\n\nLena needs no-show fees live before Christmas bookings open on 1 November, at all 40 restaurants. December no-shows cost about one table a night per restaurant last year, and the big tables are the ones that do not come ([[insights/brasserie-lund-december-no-shows]]). \"Q4\" was not a date her managers could use: \"Q4 could be the fifteenth of December.\"\n\nI gave her a date: end of October, so it is live before 1 November. Marcus puts it in the renewal, and I see the wording first. Until today the record said \"Q4, before the Christmas season\" ([[customers/brasserie-lund]]). The October date is on the record now, and 1 November is a deadline we did not choose ([[insights/no-show-fees-has-a-hard-date-1-november]]).\n\nWhat the first release is, as I told her: one fee per restaurant, the amount theirs to set, a card held at booking, charged the morning after a no-show, receipt by text, no fee on phone bookings ([[notes/fee-rules]], [[tickets/jira/BOK-300]]). Lena asked again for a different fee for lunch and dinner. Not in the first release. It stays on the list for after ([[research/no-show-fees]]).\n\nLena raised the reminder text going out twice at two restaurants, Malmö and Lund, since at least the end of June. Guests ring to ask if the booking is wrong. That is [[tickets/jira/BOK-412]], reminders sent twice for Google bookings. The fix went out in the 09:10 deploy on 2026-07-17.\n\nWho owes what. I send Lena the October plan in writing by 2026-07-24, one page. Marcus sends the renewal paperwork by 2026-07-22, with the October line and the June price. Lena sends the names of the two restaurants. I tell Lena the reminder fix is out.\n\n## Notes\n\n- Table areas: one of the Malmö managers had it switched on by Tuesday. First customer to say so ([[tickets/jira/GST-140]]).\n- Marcus, on the date: \"It travels straight into my slides.\" The record and the slides now say the same thing.",
                 "frontmatter": {
                   "processing": "processed"
                 },
-                "rationale": "The write-up of yesterday's steering: the order flip, Rebecca's estimate date, the GDPR gap, the fourth story, and what Café Nord gets told.",
-                "sources": ["[[sources/{{today}}-steering-transcript]]"]
-              }
-            },
-            {
-              "name": "propose_todo",
-              "input": {
-                "title": "Re-scope SCH-240 with the overtime check and give a real estimate",
-                "due": "2026-07-24",
-                "owner": "[[people/rebecca-holm]]",
-                "quote": "I'll re-scope SCH-240 properly, overtime check included, and I'll have a real estimate by next Friday.",
-                "sources": ["[[meetings/{{date:2026-07-16}}-steering]]"],
-                "rationale": "Rebecca committed to the estimate in steering. Next Friday from 2026-07-16 is 2026-07-24, and Åsa confirmed it as a week from tomorrow."
-              }
-            },
-            {
-              "name": "propose_todo",
-              "input": {
-                "title": "Get the fourth swap story written and filed under SCH-231",
-                "due": "2026-07-17",
-                "owner": "[[people/rebecca-holm]]",
-                "quote": "I'll make sure it exists, whether I write it or someone on the team does.",
-                "sources": ["[[meetings/{{date:2026-07-16}}-steering]]"],
-                "rationale": "Åsa asked for the notify-the-affected-colleague story filed this week, and Rebecca took it."
+                "rationale": "The write-up of yesterday's review: the date Lena was given, what the first release is, the reminder complaint and the ticket it matches, and who owes what.",
+                "sources": [
+                  "[[sources/{{today}}-brasserie-lund-quarterly-review-transcript]]"
+                ]
               }
             },
             {
               "name": "propose_update",
               "input": {
-                "path": "todos/henrik-review-swap-notifications.md",
-                "append": "Raised again at steering on 2026-07-16 ([[meetings/{{date:2026-07-16}}-steering]]). Åsa: \"that's not optional. Henrik gets that today.\" Me: \"I'll ping Henrik today.\" Same review, now with the CPO behind it.",
-                "frontmatter": {
-                  "sources": [
-                    "[[meetings/2026-07-13-1-1-rebecca]]",
-                    "[[meetings/{{date:2026-07-16}}-steering]]"
-                  ]
-                },
-                "rationale": "You said yesterday's ping is this commitment, so the steering line goes on the open todo and nothing new is filed.",
-                "sources": ["[[meetings/{{date:2026-07-16}}-steering]]"],
+                "path": "customers/brasserie-lund.md",
+                "patch": [
+                  {
+                    "search": "- No-show fees in Q4, before the Christmas season ([[research/no-show-fees]],\n  [[tickets/jira/BOK-300]]). Said at the review on 2026-06-02\n  ([[decisions/2026-05-14-h2-order-no-show-fees-first]]).",
+                    "replace": "- No-show fees by the end of October, before Christmas bookings open on 1 November\n  ([[research/no-show-fees]], [[tickets/jira/BOK-300]]). Said at the review on 2026-07-16\n  ([[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]). Before that: Q4, said on\n  2026-06-02 ([[decisions/2026-05-14-h2-order-no-show-fees-first]])."
+                  },
+                  {
+                    "search": "1 November. The gap is the renewal conversation.",
+                    "replace": "1 November. The gap is the renewal conversation. Closed on 2026-07-16: the date is end of October\n  ([[insights/no-show-fees-has-a-hard-date-1-november]]).\n- Guests at two restaurants, Malmö and Lund, got the reminder text twice, raised 2026-07-16. It is\n  [[tickets/jira/BOK-412]], fixed 2026-07-17. Lena is being told\n  ([[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]])."
+                  },
+                  {
+                    "search": "- 2026-06-02: no-show fees in Q4, before the Christmas season ([[meetings/2026-06-02-brasserie-lund-review]]).",
+                    "replace": "- 2026-06-02: no-show fees in Q4, before the Christmas season ([[meetings/2026-06-02-brasserie-lund-review]]).\n- 2026-07-16: no-show fees by the end of October, before Christmas bookings open on 1 November ([[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]])."
+                  }
+                ],
+                "rationale": "You confirmed end of October is the date. The hub still said Q4, and the ledger stopped at June, so the commitment, the ledger and the watch list now say what Lena was told and what she raised.",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]",
+                  "[[tickets/jira/BOK-412]]"
+                ],
                 "asked": true
               }
             },
             {
               "name": "propose_update",
               "input": {
-                "path": "customers/cafe-nord.md",
-                "patch": [
-                  {
-                    "search": "holding the first one ([[meetings/2026-06-05-cafe-nord-qbr]]).",
-                    "replace": "holding the first one ([[meetings/2026-06-05-cafe-nord-qbr]]).\n- Steering flipped the order on 2026-07-16: swaps ships first, ahead of payroll export\n  ([[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]). Lena still gets \"before September\" and\n  nothing firmer until Rebecca's estimate lands on 2026-07-24 ([[meetings/{{date:2026-07-16}}-steering]])."
-                  }
-                ],
-                "rationale": "Café Nord is the account the flip was made for, and the hub still reads as if swaps sat behind payroll export.",
+                "path": "people/lena-strand.md",
+                "append": "Told 2026-07-16: no-show fees by the end of October, before Christmas bookings open on 1 November, at all 40 restaurants ([[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]). She wants it in writing for her regional managers, one page, by 2026-07-24. Marcus puts the October line in the renewal paperwork by 2026-07-22.\n\nShe asked again for a different fee for lunch and dinner. Told: not in the first release, on the list for after ([[research/no-show-fees]]).\n\nShe raised the reminder text going out twice at Malmö and Lund. It is [[tickets/jira/BOK-412]], fixed 2026-07-17, and she is being told.",
+                "frontmatter": {
+                  "last_told": "2026-07-16"
+                },
+                "rationale": "Lena's page said she was last told Q4 on 2026-06-02. She was told end of October yesterday, and she is the person who signs the renewal.",
                 "sources": [
-                  "[[meetings/{{date:2026-07-16}}-steering]]",
-                  "[[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]"
-                ]
+                  "[[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]"
+                ],
+                "asked": true
+              }
+            },
+            {
+              "name": "propose_todo",
+              "input": {
+                "title": "Send Lena the October plan in writing",
+                "due": "2026-07-24",
+                "quote": "I'll send you the October plan in writing by next Friday.",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]"
+                ],
+                "rationale": "You committed to it in the meeting: one page, what is in the first release, what is not, and the date. Next Friday from 2026-07-16 is 2026-07-24, and Lena confirmed the date."
+              }
+            },
+            {
+              "name": "propose_todo",
+              "input": {
+                "title": "Send Brasserie Lund the renewal paperwork with the October line",
+                "due": "2026-07-22",
+                "owner": "[[people/marcus-ek]]",
+                "quote": "And I'll send the renewal paperwork over by Wednesday.",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]"
+                ],
+                "rationale": "Marcus committed to it in the meeting. Wednesday from 2026-07-16 is 2026-07-22. You asked to see the wording before it goes in."
+              }
+            },
+            {
+              "name": "propose_todo",
+              "input": {
+                "title": "Tell Lena the reminder fix went out this morning",
+                "due": "2026-07-17",
+                "quote": "Thanks. I'll find out what's going on.",
+                "sources": [
+                  "[[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]",
+                  "[[tickets/jira/BOK-412]]"
+                ],
+                "rationale": "You told Lena \"I'll find out what's going on\". The answer is already there: BOK-412, fixed in the 09:10 deploy on 2026-07-17. She is owed that answer today."
               }
             },
             {
@@ -210,37 +265,34 @@
           ]
         },
         {
-          "text": "Three things leave the workspace, so they wait for you.",
+          "text": "Three cards wait for you, because they leave the workspace: the October target on BOK-300, Brasserie Lund on BOK-412, and Roadmap H2 from Q4 to end of October.",
           "tools": [
             {
               "name": "draft_ticket_comment",
               "input": {
-                "ticket": "tickets/jira/SCH-118",
-                "body": "Payroll export moves from Q3 to Q1 2027. Shift swaps (SCH-231) ships first. Åsa flipped the order at steering on 2026-07-16: three chain accounts hit the same September staff turnover and asked for swaps, and the export helps none of them.\n\nWhat happens next: Rebecca re-estimates SCH-240 by 2026-07-24, an estimate and not a ship date. The Roadmap H2 page is being flipped to match.\n\nSource: Steering, 2026-07-16",
+                "ticket": "tickets/jira/BOK-300",
+                "body": "Target: end of October, told Brasserie Lund on 2026-07-16. Their Christmas bookings open on 1 November at all 40 restaurants, so a fee that is not live by then does nothing for this December.\n\nWhat happens next: the stories get written before sprint planning on 2026-07-22. Brasserie Lund gets the first-release scope in writing by 2026-07-24. The first release stays one fee per restaurant.\n\nSource: Brasserie Lund quarterly review, 2026-07-16",
                 "sources": [
-                  "[[meetings/{{date:2026-07-16}}-steering]]",
-                  "[[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]",
-                  "[[tickets/jira/SCH-118]]"
+                  "[[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]",
+                  "[[tickets/jira/BOK-300]]",
+                  "[[customers/brasserie-lund]]"
                 ],
-                "linkBack": "meetings/{{date:2026-07-16}}-steering.md",
-                "rationale": "Åsa asked for a comment on the payroll epic saying it moves to Q1 and why, so nobody watching the ticket is surprised in three weeks."
+                "linkBack": "meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review.md",
+                "rationale": "The epic has no target date on it and the team reads the ticket, not the customer page. A date told to the largest account belongs where the work is."
               }
             },
             {
-              "name": "draft_ticket",
+              "name": "draft_ticket_comment",
               "input": {
-                "container": "SCH",
-                "kind": "Story",
-                "title": "Notify the affected colleague when a swap is approved",
-                "body": "Part of SCH-231. When a manager approves a swap, the colleague who gave up the shift hears about it from the app. Today that is a message the manager sends by hand, if they remember, and support will hear about it once swaps are live for real customers.\n\nNot one of the three stories in the epic. Raised by Rebecca at steering on 2026-07-16; Åsa asked for it filed this week.\n\nAcceptance:\n- [ ] When the manager approves, the colleague who gave up the shift gets a notification naming the shift and who took it.\n- [ ] The colleague who took the shift sees it on their published schedule at the same moment.\n- [ ] Nothing is sent while the request is still pending or after a rejection.\n\nSource: Steering, 2026-07-16",
-                "labels": ["shift-swaps"],
+                "ticket": "tickets/jira/BOK-412",
+                "body": "Brasserie Lund also saw this, at two restaurants, Malmö and Lund: the same reminder text twice, a few minutes apart, since at least the end of June. Raised by Lena Strand on 2026-07-16. Guests ring the restaurant to ask if the booking is wrong.\n\nThe fix released on 2026-07-17 covers it. Lena is being told today that it is out.\n\nSource: Brasserie Lund quarterly review, 2026-07-16",
                 "sources": [
-                  "[[meetings/{{date:2026-07-16}}-steering]]",
-                  "[[tickets/jira/SCH-231]]",
-                  "[[notes/swap-rules]]"
+                  "[[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]",
+                  "[[tickets/jira/BOK-412]]",
+                  "[[customers/brasserie-lund]]"
                 ],
-                "linkBack": "meetings/{{date:2026-07-16}}-steering.md",
-                "rationale": "Agreed work that nothing in the epic covers. Åsa: \"then write it.\""
+                "linkBack": "meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review.md",
+                "rationale": "You said it is the same bug. The ticket names Sjögatan and Pizzeria Napoli and not the largest account, and whoever closes the support tickets should know a third chain saw it."
               }
             },
             {
@@ -248,91 +300,29 @@
               "input": {
                 "page": "wikipages/confluence/roadmap-h2.md",
                 "patch": {
-                  "search": "First: payroll export (Fortnox first), in Q3.\n\nThen: shift swaps, in Q4.",
-                  "replace": "First: shift swaps, in Q3.\n\nThen: payroll export (Fortnox first), in Q1 2027."
+                  "search": "No-show fees: Q4. A card at booking, charged when the guest does not turn up. (BOK-300)",
+                  "replace": "No-show fees: end of October. A card at booking, charged when the guest does not turn up. (BOK-300)"
                 },
-                "provenance": "Source: Steering, 2026-07-16",
+                "provenance": "Source: Brasserie Lund quarterly review, 2026-07-16",
                 "sources": [
-                  "[[meetings/{{date:2026-07-16}}-steering]]",
-                  "[[decisions/{{date:2026-07-16}}-h2-order-swaps-first]]",
-                  "[[wikipages/confluence/roadmap-h2]]"
+                  "[[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]",
+                  "[[wikipages/confluence/roadmap-h2]]",
+                  "[[customers/brasserie-lund]]"
                 ],
-                "linkBack": "meetings/{{date:2026-07-16}}-steering.md",
-                "rationale": "The page still says export first, swaps second, and customers' champions see screenshots of it. Åsa: \"that's wrong as of today.\""
+                "linkBack": "meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review.md",
+                "rationale": "The page says Q4, and Q4 is what Lena's managers could not use. The date a customer was told and the date the roadmap shows should be the same date."
               }
             }
           ]
         },
         {
-          "pause": 1600,
+          "pause": 1500,
           "text": [
-            "Steering flipped the H2 order: shift swaps ships first, payroll export moves to Q1 2027. Åsa decided it, so it is filed as a decision that replaces the May one.",
+            "The date you gave Lena is on the record. You told her no-show fees land by the end of October, before Christmas bookings open on 1 November, and the record said \"Q4\". It is now on the customer page, on Lena's page and in an insight, because 1 November is a deadline you did not choose ([[customers/brasserie-lund]], [[people/lena-strand]], [[insights/no-show-fees-has-a-hard-date-1-november]]).",
             "",
-            "Also filed: the write-up on the meeting page, two todos for Rebecca (the SCH-240 estimate by 2026-07-24, the fourth swap story this week), yesterday's line on Henrik's review, and a line on Café Nord's page saying the order changed.",
+            "Also on the record: the write-up on the meeting page ([[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]), and three todos. You send Lena the October plan in writing by 2026-07-24. Marcus sends the renewal paperwork by 2026-07-22. You tell Lena the reminder fix went out this morning, due today.",
             "",
-            "Three cards wait for you, because they leave the workspace: a comment on SCH-118, a new story under SCH-231, and the Roadmap H2 page flipped."
-          ]
-        }
-      ]
-    },
-    {
-      "id": "brief",
-      "trigger": {
-        "kind": "skill",
-        "skill": "meeting-prep"
-      },
-      "title": "Café Nord QBR prep: brief",
-      "turns": [
-        {
-          "tools": [
-            {
-              "name": "vault_read",
-              "input": {
-                "path": "people/lena-strand.md"
-              }
-            },
-            {
-              "name": "vault_read",
-              "input": {
-                "path": "customers/cafe-nord.md"
-              }
-            },
-            {
-              "name": "vault_read",
-              "input": {
-                "path": "meetings/2026-06-05-cafe-nord-qbr.md"
-              }
-            },
-            {
-              "name": "vault_read",
-              "input": {
-                "path": "tickets/jira/SCH-240.md"
-              }
-            },
-            {
-              "name": "propose_update",
-              "input": {
-                "path": "meetings/{{date:2026-07-21}}-cafe-nord-qbr-prep.md",
-                "append": "## Prep\n\n- Last told, 2026-06-05: shift swaps in Q4, behind payroll export ([[meetings/2026-06-05-cafe-nord-qbr]], [[customers/cafe-nord]]).\n- What Lena left with is Marcus's \"before September\", said in the same hour. She wrote that down and has not chased it since ([[people/lena-strand]]). Say which number is true before she asks.\n- Marcus is in this meeting too, and he has asked three times this week for a swap ETA he can send ([[todos/reply-marcus-swap-eta]], [[people/marcus-ek]]). Agree one sentence with him first, or Lena hears two answers.\n- Give no month. Two of the three swap stories are done and [[tickets/jira/SCH-240]] is the one left; Rebecca asked on 2026-07-13 for a re-estimate before anyone quotes a date ([[tickets/jira/SCH-231]]). The deck says the same: no month on a slide before that estimate ([[todos/cafe-nord-qbr-prep-deck]], due 2026-07-21).\n- The H2 order is what she hears first. Åsa put payroll export in Q3 and swaps in Q4 on 2026-05-18 ([[decisions/2026-05-18-h2-order-payroll-first]]). If steering has moved it since, [[customers/cafe-nord]] says so, and that is the opening line.\n- What shipped since the Q2 QBR: shift reminders in the staff app on 2026-07-15 ([[tickets/jira/APP-54]]), and chain-level week templates, which Lena called the first thing that saved her regionals real time ([[decisions/2026-04-22-week-templates-chain-level]]).",
-                "rationale": "Lena and Marcus are both in this meeting, and the number Lena left the last QBR with is not the number on the record. The brief says what she was told, what not to promise, and what has shipped since.",
-                "sources": [
-                  "[[meetings/2026-06-05-cafe-nord-qbr]]",
-                  "[[customers/cafe-nord]]",
-                  "[[people/lena-strand]]",
-                  "[[people/marcus-ek]]",
-                  "[[decisions/2026-05-18-h2-order-payroll-first]]",
-                  "[[tickets/jira/SCH-231]]",
-                  "[[tickets/jira/SCH-240]]",
-                  "[[tickets/jira/APP-54]]"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "pause": 1400,
-          "text": [
-            "The brief is on the meeting page. One thing to settle before you walk in: Lena left the last QBR with Marcus's \"before September\", and there is no month to give her until Rebecca re-estimates SCH-240. Agree one sentence with Marcus first."
+            "Three cards wait for you, because they leave the workspace: a comment on BOK-300 with the October target, a comment on BOK-412 naming Brasserie Lund, and Roadmap H2 changed from Q4 to end of October. Nothing has gone to Jira or Confluence yet."
           ]
         }
       ]

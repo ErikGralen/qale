@@ -8,13 +8,15 @@ mirrored tracker items, never edited locally
 
 ## Not yet
 
-* [APP-54 · Push notification opt-in screen](tickets/jira/APP-54.md) — APP-54, push notification opt-in screen: done 2026-07-15, shift reminders on by default
-* [PLT-77 · OAuth token store for integrations](tickets/jira/PLT-77.md) — PLT-77, OAuth token store for integrations: in progress, blocks the Fortnox connector
-* [PLT-80 · Nightly schedule backup job](tickets/jira/PLT-80.md) — PLT-80, nightly schedule backup job: done 2026-06-12
-* [SCH-118 · Payroll export (epic)](tickets/jira/SCH-118.md) — SCH-118, payroll export (epic): in progress, CSV shipped and the Fortnox connector is next
-* [SCH-121 · Approved-hours export (CSV)](tickets/jira/SCH-121.md) — SCH-121, approved-hours export (CSV): done 2026-06-24, column set verified against Fortnox
-* [SCH-125 · Fortnox connector](tickets/jira/SCH-125.md) — SCH-125, Fortnox connector: in progress, waiting on PLT-77 for customer credentials
-* [SCH-231 · Shift swaps (epic)](tickets/jira/SCH-231.md) — SCH-231, shift swaps (epic): in progress, two of three stories done, SCH-240 is the one left
-* [SCH-232 · Swap request model and API](tickets/jira/SCH-232.md) — SCH-232, swap request model and API: done 2026-06-30, endpoints live behind the swaps flag
-* [SCH-236 · Swap request screen in staff app](tickets/jira/SCH-236.md) — SCH-236, swap request screen in the staff app: done 2026-07-08, behind the swaps flag
-* [SCH-240 · Manager approval flow and schedule update](tickets/jira/SCH-240.md) — SCH-240, manager approval flow and schedule update: in progress, Rebecca asked for a re-estimate on 2026-07-13
+* [BOK-260 · Waitlist (epic)](tickets/jira/BOK-260.md) — BOK-260, waitlist (epic): in progress, one story done and one in progress, Q4 after no-show fees
+* [BOK-262 · Join the waitlist from the booking page](tickets/jira/BOK-262.md) — BOK-262, join the waitlist from the booking page: done 2026-07-10, behind the waitlist flag
+* [BOK-265 · Text the first guest on the waitlist when a table frees](tickets/jira/BOK-265.md) — BOK-265, text the first guest on the waitlist when a table frees: in progress
+* [BOK-300 · No-show fees (epic)](tickets/jira/BOK-300.md) — BOK-300, no-show fees (epic): in progress, spike done, no stories yet
+* [BOK-301 · Spike: store a card through PAY-190](tickets/jira/BOK-301.md) — BOK-301, spike on storing a card through PAY-190: done 2026-07-03
+* [BOK-412 · Reminder SMS sent twice for Google bookings](tickets/jira/BOK-412.md) — BOK-412, reminder SMS sent twice for Google bookings: done, fix released in the 09:10 deploy on 2026-07-17
+* [BOK-520 · Group bookings (epic)](tickets/jira/BOK-520.md) — BOK-520, group bookings (epic): to do, Q1 2027, waits on PAY-210 (deposits)
+* [GST-140 · Table areas on the booking page](tickets/jira/GST-140.md) — GST-140, table areas on the booking page: done 2026-07-14, guests pick window, terrace or bar when they book
+* [GST-160 · Booking page in Finnish](tickets/jira/GST-160.md) — GST-160, booking page in Finnish: to do, created 2026-07-01
+* [GST-77 · "Book a table" button on Google](tickets/jira/GST-77.md) — GST-77, "Book a table" button on Google: done 2026-05-12, switched on per restaurant under Settings, Booking channels
+* [PAY-190 · Store a card for a later charge](tickets/jira/PAY-190.md) — PAY-190, store a card for a later charge: done 2026-06-30
+* [PAY-210 · Deposits: charge at booking, refund on cancellation](tickets/jira/PAY-210.md) — PAY-210, deposits (charge at booking, refund on cancellation): in progress, planned Q4, no date

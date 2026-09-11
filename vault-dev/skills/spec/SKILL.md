@@ -3,9 +3,9 @@ type: skill
 title: Write a spec
 summary: Turns a research page's insights and decisions into a document a team can build from.
 scenarios:
-  - turning a research page or a tag the workspace already backs into something a team can build ("write a spec for the pricing page")
-  - writing up what we are committing to, from insights and decisions already filed ("draft the PRD for scheduled exports")
-  - checking whether the evidence carries a spec yet ("is there enough here to spec onboarding")
+  - turning a research page or a tag the workspace already backs into something a team can build ("write a spec for the waitlist")
+  - writing up what we are committing to, from insights and decisions already filed ("draft the PRD for no-show fees")
+  - checking whether the evidence carries a spec yet ("is there enough here to spec group bookings")
 ---
 
 ## When

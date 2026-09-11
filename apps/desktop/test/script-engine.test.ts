@@ -50,8 +50,8 @@ function second(): Scenario {
       {
         id: 'ask',
         trigger: { kind: 'typed' },
-        title: 'Who is waiting on swaps',
-        turns: [{ text: 'Café Nord and Fjord Sports.' }],
+        title: 'Who is waiting on no-show fees',
+        turns: [{ text: 'Brasserie Lund and Nordic Steak.' }],
       },
       {
         id: 'child',
@@ -86,7 +86,7 @@ function toolResult(text: string): WireMessage {
 
 const KICKOFF = buildKickoff({
   skill: 'arrival',
-  instruction: '1 source just landed in your session folder, unfiled: steering.vtt.',
+  instruction: '1 source just landed in your session folder, unfiled: brasserie-lund-review.vtt.',
 });
 
 test('a kickoff binds by skill name and turn 0 is served as text then tool_use', () => {
@@ -105,8 +105,8 @@ test('a kickoff binds by skill name and turn 0 is served as text then tool_use',
   assert.match(String(tool.id), /^toolu_demo_[0-9a-f]{16}$/);
   // Templates are resolved for the demo day: the anchor plus twelve days.
   assert.deepEqual(tool.input, {
-    path: 'sources/2026-07-29-steering-transcript.md',
-    from: 'steering.vtt',
+    path: 'sources/2026-07-29-brasserie-lund-review.md',
+    from: 'brasserie-lund-review.vtt',
   });
 });
 
@@ -119,13 +119,13 @@ test('the turn is the assistant count, and a scripted pause wins over the defaul
   assert.equal(one.response.content[0]?.type, 'text');
   assert.equal(
     one.response.content[0]?.text,
-    'Filed it as [[sources/2026-07-29-steering-transcript]]. The workshop is on 2026-08-06.',
+    'Filed it as [[sources/2026-07-29-brasserie-lund-review]]. Sprint planning is on 2026-08-03.',
   );
   assert.equal(one.response.content[1]?.name, 'propose_todo');
   assert.deepEqual(one.response.content[1]?.input, {
     due: '2026-08-06',
-    sources: ['[[meetings/2026-07-28-steering]]'],
-    note: 'Decided on 2026-07-28, see decisions/2026-05-18-h2-order-payroll-first.md',
+    sources: ['[[meetings/2026-07-28-brasserie-lund-quarterly-review]]'],
+    note: 'Decided on 2026-07-28, see decisions/2026-05-14-h2-order-no-show-fees-first.md',
   });
   const two = e.answer({
     system: SYSTEM,
@@ -135,7 +135,7 @@ test('the turn is the assistant count, and a scripted pause wins over the defaul
   assert.equal(two.response.stop_reason, 'end_turn');
   assert.equal(
     two.response.content[0]?.text,
-    'Steering flipped the H2 order: shift swaps ships first.\n\nRebecca re-scopes SCH-240 by 2026-08-08.',
+    'No-show fees has a date now: the end of October.\n\nRebecca writes the BOK-300 stories by 2026-08-08.',
   );
   // Two tool_use ids in one run are never the same.
   const ids = new Set([
@@ -148,11 +148,11 @@ test('the turn is the assistant count, and a scripted pause wins over the defaul
 test('two typed openings in one pinned scenario bind in file order', () => {
   const e = engine();
   e.pin('s1');
-  const a = e.answer({ system: SYSTEM, messages: [said('SCH-231 is done. Who needs to know?')] });
-  const b = e.answer({ system: SYSTEM, messages: [said('What did we tell Fjord Sports?')] });
-  assert.equal(a.response.content[0]?.text, 'Three people need to know, and Oskar first.');
-  assert.equal(b.response.content[0]?.text, 'Oskar was told Q4 in May.');
-  assert.deepEqual(e.boundTo('SCH-231 is done. Who needs to know?'), {
+  const a = e.answer({ system: SYSTEM, messages: [said('BOK-412 is done. Who needs to know?')] });
+  const b = e.answer({ system: SYSTEM, messages: [said('What did we tell Nordic Steak?')] });
+  assert.equal(a.response.content[0]?.text, 'Three people need to know, and Jonas first.');
+  assert.equal(b.response.content[0]?.text, 'Oskar was told "on the roadmap" in July.');
+  assert.deepEqual(e.boundTo('BOK-412 is done. Who needs to know?'), {
     scenarioId: 's1',
     conversationId: 'who-to-tell',
   });
@@ -165,7 +165,7 @@ test('two typed openings in one pinned scenario bind in file order', () => {
 
 test('a typo in the typed text of turn 2 changes nothing', () => {
   const e = engine();
-  const opening = said('SCH-231 is done. Who needs to know?');
+  const opening = said('BOK-412 is done. Who needs to know?');
   e.answer({ system: SYSTEM, messages: [opening] });
   // The second turn carries the card-state envelope on the typed message, the
   // way `withCardState` in packages/agent/src/card-state.ts writes it.
@@ -186,7 +186,7 @@ test('a typo in the typed text of turn 2 changes nothing', () => {
   assert.equal(past.source, 'off-script');
   assert.equal(past.response.content[0]?.text, fixture().offScript);
   assert.equal(e.boundTo('Aprove the frist one'), undefined);
-  assert.equal(e.boundTo('SCH-231 is done. Who needs to know?')?.conversationId, 'who-to-tell');
+  assert.equal(e.boundTo('BOK-412 is done. Who needs to know?')?.conversationId, 'who-to-tell');
   assert.equal(firstUserText([said(wrapped)]), 'Aprove the frist one');
 
   // Where the script has a turn, the typed words do not pick it: the turn
@@ -218,7 +218,7 @@ test('with nothing pinned the scenarios are searched in id order', () => {
   assert.equal(e.boundTo('first question')?.scenarioId, 's1');
   assert.equal(e.boundTo('second question')?.scenarioId, 's1');
   assert.deepEqual(e.boundTo('third question'), { scenarioId: 's2', conversationId: 'ask' });
-  assert.equal(third.response.content[0]?.text, 'Café Nord and Fjord Sports.');
+  assert.equal(third.response.content[0]?.text, 'Brasserie Lund and Nordic Steak.');
   // A child is told apart by its system prompt, and typed text never reaches a child.
   const child = e.answer({ system: `${CHILD_PREAMBLE}\nRules.`, messages: [said('Write the brief.')] });
   assert.equal(child.response.content[0]?.name, 'write_result');
@@ -256,7 +256,7 @@ function typedUnderSkills(): Scenario {
     conversations: [
       typed('commitment', 'commitment-check'),
       typed('stories', 'iterate'),
-      typed('plain', 'ask', ['SCH-121', 'who needs to know']),
+      typed('plain', 'ask', ['BOK-412', 'who needs to know']),
     ],
   };
 }
@@ -268,7 +268,7 @@ function textOf(e: ScriptEngine, first: string, system: string): string {
 test('typed conversations bind by the skill in force, whatever was typed', () => {
   const e = engine([typedUnderSkills()]);
   // The words are the same three times; only the skill in force differs.
-  const words = 'SCH-121 shipped and nobody was told. Who needs to know?';
+  const words = 'BOK-412 shipped and nobody was told. Who needs to know?';
   assert.equal(textOf(e, `${words} (iterate)`, under('iterate')), 'bound to stories');
   assert.equal(textOf(e, `${words} (commitment)`, under('commitment-check')), 'bound to commitment');
   assert.equal(textOf(e, `${words} (plain)`, SYSTEM), 'bound to plain');
@@ -286,13 +286,13 @@ test('`any` rejects a message with none of the words, case-insensitively', () =>
   assert.equal(off.source, 'off-script');
   assert.equal(off.response.content[0]?.text, FALLBACK);
   assert.equal(e.boundTo('What is our ARR this quarter?'), undefined);
-  assert.equal(textOf(e, 'sch-121 went out. WHO NEEDS TO KNOW?', SYSTEM), 'bound to plain');
+  assert.equal(textOf(e, 'bok-412 went out. WHO NEEDS TO KNOW?', SYSTEM), 'bound to plain');
 });
 
 test('a plain ask binds to the `ask` conversation and never to a skill’s', () => {
   const e = engine([typedUnderSkills()]);
   // A paste that reads like a commitment, typed with nothing picked.
-  const pasted = 'Marcus here. A retail prospect wants offline mode. Who needs to know?';
+  const pasted = 'Marcus here. Nordic Steak wants group bookings. Who needs to know?';
   assert.equal(textOf(e, pasted, SYSTEM), 'bound to plain');
   assert.equal(e.boundTo(pasted)?.conversationId, 'plain');
   // With `plain` taken, the same opening again binds nothing rather than
@@ -302,7 +302,7 @@ test('a plain ask binds to the `ask` conversation and never to a skill’s', () 
   assert.equal(e.boundTo(`${pasted} Again.`), undefined);
 });
 
-/** The five shipped scripts, read from the repo. */
+/** The shipped scripts, read from the repo. */
 function shipped(): Scenario[] {
   return loadScenarios(join(import.meta.dirname, '..', '..', '..', 'demo', 'scenarios'));
 }
@@ -311,7 +311,7 @@ function shipped(): Scenario[] {
 function openingOf(scenario: Scenario, c: Conversation): { first: string; system: string } {
   if (c.trigger.kind === 'skill') {
     const skill = c.trigger.skill ?? 'ask';
-    const targets = skill === 'meeting-prep' ? ['meetings/2026-07-16-steering.md'] : undefined;
+    const targets = skill === 'meeting-prep' ? ['meetings/2026-07-23-steering.md'] : undefined;
     return {
       first: buildKickoff({ skill, ...(targets ? { targets } : {}), instruction: '' }),
       system: SYSTEM,
@@ -324,16 +324,11 @@ function openingOf(scenario: Scenario, c: Conversation): { first: string; system
   };
 }
 
-test('the five shipped scenarios bind with no pin, in id order and in a shuffled one', () => {
+test('every shipped scenario binds with no pin, in id order and backwards', () => {
   const all = shipped();
-  assert.deepEqual(
-    all.map((s) => s.id),
-    ['s1', 's2', 's3', 's4', 's5'],
-  );
-  const orders = [
-    ['s1', 's2', 's3', 's4', 's5'],
-    ['s4', 's2', 's5', 's1', 's3'],
-  ];
+  assert.ok(all.length > 0, 'the repo ships scenarios');
+  const ids = all.map((s) => s.id);
+  const orders = [ids, [...ids].reverse()];
   for (const order of orders) {
     const e = engine(all);
     for (const id of order) {
@@ -383,20 +378,25 @@ test('cheap calls are answered without binding, and read the bound titles', () =
   const e = engine();
   const claim = e.answer({
     system: MATCH_SYSTEM_PROMPT,
-    messages: [said('Claim: Åsa reverses H2 order, swaps first.\n\nExcerpts:\n(none)')],
+    messages: [
+      said('Claim: No-show fees live by the end of October.\n\nExcerpts:\n(none)'),
+    ],
   });
   assert.equal(claim.source, 'cheap');
   assert.equal(claim.pauseMs, 0);
-  assert.match(String(claim.response.content[0]?.text), /^CONFLICT \| decisions/);
-  assert.equal(e.boundTo('Claim: Åsa reverses H2 order, swaps first.\n\nExcerpts:\n(none)'), undefined);
+  assert.match(String(claim.response.content[0]?.text), /^CONFLICT \| customers/);
+  assert.equal(
+    e.boundTo('Claim: No-show fees live by the end of October.\n\nExcerpts:\n(none)'),
+    undefined,
+  );
 
-  const typed = 'SCH-231 is done. Who needs to know?';
+  const typed = 'BOK-412 is done. Who needs to know?';
   e.answer({ system: SYSTEM, messages: [said(typed)] });
   const name = e.answer({
     system: namingSystemPrompt(),
     messages: [said(`First message:\n${typed}`)],
   });
-  assert.equal(name.response.content[0]?.text, 'Who to tell about SCH-231');
+  assert.equal(name.response.content[0]?.text, 'Who to tell about BOK-412');
   // An unbound first message gets its first six words.
   const unnamed = e.answer({
     system: namingSystemPrompt(),

@@ -1,5 +1,5 @@
 /**
- * Seed (and reset) a live Google Calendar with the Rota demo scenario, the
+ * Seed (and reset) a live Google Calendar with the Bord demo scenario, the
  * calendar-side counterpart of scripts/reset-atlassian.ts. One command both
  * populates a fresh demo account and resets it after a run: it deletes every
  * event this script has ever seeded (tagged with a private `qaleDemo` property)
@@ -13,15 +13,15 @@
  * live features need this.
  *
  * What it seeds:
- *  - the **weekly steering** (recurring Thursdays) with the CPO, the tech lead
- *    and the head of sales: the star. Yesterday's instance is what the dropped
- *    steering transcript matches against, the next one is what before-meeting
- *    auto-prep reads, and the H2 order is what gets decided there;
- *  - the upcoming **1:1 with the tech lead**, where the re-estimate is owed;
- *  - three customer-facing meetings with no hand-authored vault twin (the Café
- *    Nord QBR prep, the Bruno's CS sync, the Fjord Sports call) so "the week
- *    fills itself in" is real and duplicate-free. Anything the vault already
- *    holds a hand-authored note for is NOT seeded: past = vault.
+ *  - yesterday's **Brasserie Lund quarterly review**: the star. It is what the
+ *    dropped transcript matches against;
+ *  - the **fortnightly steering** (Thursdays) with the CPO, the two tech leads
+ *    and the head of sales, which is what before-meeting auto-prep reads;
+ *  - the upcoming **1:1 with the Bookings tech lead**, where the no-show fees
+ *    stories are owed;
+ *  - the **Sjögatan check-in** and **sprint planning**, so "the week fills
+ *    itself in" is real and duplicate-free. Anything the vault already holds a
+ *    hand-authored note for is NOT seeded: past = vault.
  *  Every attendee email matches a vault person note's `email`, so participant
  *  resolution turns them into `[[people/…]]` links on sync.
  *
@@ -531,7 +531,7 @@ async function main(): Promise<void> {
   const created: { title: string; url?: string }[] = [];
   for (const m of CAST_MEETINGS) {
     const date = shiftDate(m.date, offset);
-    console.log(`  + create "${m.title}" on ${date} ${m.time}${m.recurrence ? ' (weekly)' : ''}`);
+    console.log(`  + create "${m.title}" on ${date} ${m.time}${m.recurrence ? ' (series)' : ''}`);
     if (args.dry) continue;
     const out = await cal.insert(eventBody(m, date, args.tz, accountEmail));
     created.push({ title: m.title, url: out.htmlLink });
@@ -545,7 +545,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `\n✓ "${targetName}" seeded with the Rota scenario.` +
+    `\n✓ "${targetName}" seeded with the Bord scenario.` +
       `\n  Next: in the app, connect Google Calendar (Settings → Connections) and follow "${targetName}".` +
       '\n  Within a tick the week fills itself in; before-meeting preps the next steering.' +
       '\n  Re-run this any time to reset — it deletes what it seeded and recreates it.',

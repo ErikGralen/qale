@@ -1,26 +1,27 @@
 ---
 type: 'person'
-summary: 'Oskar Lind: Store Operations Manager at Fjord Sports, planning Visma around our Q4 export'
-tags: ['payroll-export']
-role: 'Store Operations Manager, Fjord Sports'
-email: 'oskar.lind@fjordsports.example'
-cares_about: ['payroll export in Q4', 'seasonal staff', 'not doing the Visma migration twice']
-last_told: '2026-05-26'
-customer: '[[customers/fjord-sports]]'
+title: 'Oskar Lind'
+summary: 'Oskar Lind: Operations lead at Nordic Steak, a prospect, wants group bookings and the Google button in the contract'
+tags: ['group-bookings', 'booking-page']
+role: 'Operations lead, Nordic Steak'
+email: 'oskar.lind@nordicsteak.example'
+cares_about: ['group bookings in the contract', 'the Google button on every restaurant', 'what he can hold us to']
+last_told: '2026-07-09'
+customer: '[[customers/nordic-steak]]'
 ---
 
-Runs store operations for [[customers/fjord-sports]] — 60 stores, heavy seasonal hiring in
-autumn and again before Christmas.
+Operations lead at [[customers/nordic-steak]], a prospect with 25 restaurants. Marcus owns the
+deal ([[people/marcus-ek]]). I have not spoken to Oskar directly. Everything I know comes
+through Marcus.
 
-Calm, organised, and planning around us. On the call of 2026-05-26 I told him approved hours
-would export to Visma in Q4, and he built his own migration plan on top of that date
-([[meetings/2026-05-26-fjord-sports-payroll-call]],
-[[insights/fjord-sports-expects-payroll-q4]]). He repeated it back with a month attached, which
-is how I know it's load-bearing for him.
+He wants two things written into the contract. Group bookings: parties over eight, a set menu,
+a deposit. And the "Book a table" button on every restaurant's Google listing.
 
-He is not a chaser. If the date slips he will find out when his own migration window opens and
-we will have burned the goodwill quietly. That is exactly why
-[[todos/tell-fjord-sports-payroll-timeline]] is sitting overdue and bothering me.
+The second one has been live since 2026-05-12 ([[tickets/jira/GST-77]]). A restaurant switches
+it on under Settings, Booking channels. Nobody has told him or Marcus that in writing.
 
-Last told 2026-05-26: Visma payroll export in Q4, Fortnox first
-([[decisions/2026-05-20-fortnox-first-payroll-target]]).
+The first one is Q1 2027, because it waits on the Payments team's deposits work
+([[decisions/2026-06-18-group-bookings-after-deposits]], [[tickets/jira/BOK-520]]). Marcus
+told him "on the roadmap" on 2026-07-09 and gave no quarter.
+
+Last told 2026-07-09, through Marcus: group bookings is on the roadmap.

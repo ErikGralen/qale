@@ -4,12 +4,12 @@
  * store seeded by a fixture. Nothing leaves the process, and the demo build
  * needs no OAuth client and no browser round-trip.
  *
- * The store is the Rota week: `demo/google-fixture.json` is generated from
+ * The store is the Bord week: `demo/google-fixture.json` is generated from
  * scripts/lib/google-cast.ts, the same cast `pnpm seed-google-calendar` pushes
  * to a live account, so the attendee addresses already match the person notes
  * in `vault-dev/` and sync links them. Dates in the fixture are anchored on
  * 2026-07-17 and slid by `dateOffsetDays` at load, the same slide Reset gives
- * the vault: yesterday's Steering stays yesterday's.
+ * the vault: yesterday's Brasserie Lund review stays yesterday's.
  *
  * Writes (create an event, patch one, RSVP) mutate the store and persist to
  * `statePath`, so a relaunch keeps them until Reset.
@@ -415,7 +415,7 @@ export function createFakeGoogleCalendar(opts: FakeGoogleCalendarOptions): FakeG
         },
       ],
       eventType: 'default',
-      extendedProperties: { private: { qaleDemo: 'rota' } },
+      extendedProperties: { private: { qaleDemo: 'bord' } },
     };
     created.htmlLink = `https://www.google.com/calendar/event?eid=${created.id}`;
     store.events.push(created);

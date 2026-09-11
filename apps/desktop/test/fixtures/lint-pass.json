@@ -7,21 +7,21 @@
     {
       "id": "reads-and-writes",
       "trigger": { "kind": "typed" },
-      "title": "Fjord Sports timeline",
+      "title": "Nordic Steak timeline",
       "turns": [
         {
-          "tools": [{ "name": "vault_read", "input": { "path": "customers/fjord-sports.md" } }]
+          "tools": [{ "name": "vault_read", "input": { "path": "customers/nordic-steak.md" } }]
         },
         {
-          "text": "Oskar is still on the May timeline, so somebody has to tell him.",
+          "text": "Oskar has heard nothing but \"on the roadmap\", so somebody has to tell him.",
           "tools": [
             {
               "name": "propose_todo",
               "input": {
-                "title": "Give Oskar Lind the corrected payroll export timeline",
+                "title": "Give Oskar Lind the group bookings quarter",
                 "due": "2026-07-24",
-                "sources": ["[[customers/fjord-sports]]"],
-                "rationale": "The customer page says the timeline it owes him is already late."
+                "sources": ["[[customers/nordic-steak]]"],
+                "rationale": "The customer page says he was given no quarter at all."
               }
             }
           ]
@@ -30,7 +30,7 @@
           "text": [
             "Filed one todo.",
             "",
-            "Oskar hears the new date from you, not from the release."
+            "Oskar hears the quarter from you, not from the contract."
           ]
         }
       ]

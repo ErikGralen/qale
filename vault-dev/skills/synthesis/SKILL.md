@@ -4,7 +4,7 @@ title: Find the pattern
 summary: Reads a stack of interviews and says what they add up to.
 scenarios:
   - weighing a stack of material already in the workspace against one question ("what do these nine interviews add up to")
-  - counting how many accounts say the same thing ("who else has asked for shift swaps")
+  - counting how many accounts say the same thing ("who else has asked for group bookings")
   - reading a body of tagged material for whatever is in it ("read everything tagged onboarding and tell me what is there")
 can: [draft-outbound, keep-working-files]
 ---
@@ -12,7 +12,7 @@ can: [draft-outbound, keep-working-files]
 ## When
 
 You point at a body of material and ask what it adds up to. The question can be pointed
-("who wants scheduled exports?") or open ("read these and tell me what's there"). The material is
+("who wants a waitlist?") or open ("read these and tell me what's there"). The material is
 usually transcripts and sources, sometimes existing insights, sometimes one document read several
 ways. Nothing in the memory yet says which accounts said the same thing. Finding that is the work.
 

@@ -1,25 +1,28 @@
 ---
 type: 'person'
-summary: 'Lena Strand: Head of Operations at Café Nord, owns the renewal and the September problem'
-tags: ['shift-swaps']
-role: 'Head of Operations, Café Nord'
-email: 'lena.strand@cafenord.example'
-cares_about: ['September turnover', 'manager time', 'what her 120 managers have to do by hand']
-last_told: '2026-06-05'
-customer: '[[customers/cafe-nord]]'
+title: 'Lena Strand'
+summary: 'Lena Strand: Head of operations at Brasserie Lund, owns the renewal and the December no-show problem'
+tags: ['no-show-fees']
+role: 'Head of operations, Brasserie Lund'
+email: 'lena.strand@brasserielund.example'
+cares_about: ['December no-shows', 'Christmas bookings opening 1 November', 'what her 40 restaurants have to do by hand']
+last_told: '2026-06-02'
+customer: '[[customers/brasserie-lund]]'
 ---
 
-Head of Operations at [[customers/cafe-nord]] and the person who signs the renewal on
-2026-12-01. She has 120 locations and roughly 2,400 staff under her, most of them students.
+Head of operations at [[customers/brasserie-lund]] and the person who signs the renewal on
+2026-12-01. She has 40 restaurants under her.
 
-She doesn't ask for features, she describes her week. At the Q2 QBR on 2026-06-05 she walked
-through September: her student staff turn over all at once, and her managers rebuild the
-schedule by hand for two or three weeks straight
-([[meetings/2026-06-05-cafe-nord-qbr]], [[insights/cafe-nord-september-turnover]]). She said it
-without asking for anything, which is what made it land.
+She does not ask for features. She describes her December. At the review on 2026-06-02 she said
+that Christmas bookings open on 1 November, and that December no-shows cost them about one
+table a night per restaurant last year ([[meetings/2026-06-02-brasserie-lund-review]],
+[[insights/brasserie-lund-december-no-shows]]). She said it without asking for anything, which
+is what made it land.
 
-What she took away from that meeting is Marcus's "before September", not my Q4
-([[people/marcus-ek]]). She has not chased it yet. The QBR prep deck is where I have to fix
-that ([[todos/cafe-nord-qbr-prep-deck]]).
+In the same meeting she asked whether a restaurant could set a different fee for lunch and
+dinner. It was parked, not decided ([[research/no-show-fees]]).
 
-Last told 2026-06-05: swaps targeted at Q4, after payroll export.
+What she took away was "Q4, before the Christmas season". Marcus was in the room
+([[people/marcus-ek]]). She has not chased it yet.
+
+Last told 2026-06-02: no-show fees in Q4, before the Christmas season.

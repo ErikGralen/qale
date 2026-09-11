@@ -17,4 +17,4 @@ the written instructions the agent follows when you hand work over
 * [Tell Qale about something](skills/tell-qale/SKILL.md) — You talk about a topic, Qale asks until it has it, then writes it down.
 * [Tidy a rough note](skills/process-note/SKILL.md) — Turns a scratch dump into a clean page and updates what it touches.
 * [Write a spec](skills/spec/SKILL.md) — Turns a research page's insights and decisions into a document a team can build from.
-* [Write the weekly update](skills/weekly-update/SKILL.md) — Drafts this week's update for each audience, from what actually changed.
+* [Write the weekly update](skills/weekly-update/SKILL.md) — Drafts this week's news once, for the internal channel and the public changelog, from what actually changed.

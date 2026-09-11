@@ -1,5 +1,8 @@
 # Five demo scenarios, any one, any order
 
+**This file describes the Rota demo, replaced on 2026-09-10 by `docs/plan-demo-bookings.md`
+(Bord, six scenarios, S1 and S2 always first).** Kept for the history in it.
+
 The decisions this draft left open were made in `docs/plan-demo-scenarios.md` on 2026-09-09.
 The scenarios themselves live in `demo/scenarios/s1.json` to `s5.json`, run by the script engine
 in `docs/demo-mode.md` (DM-4). This file is now a pointer, kept for the history in it.

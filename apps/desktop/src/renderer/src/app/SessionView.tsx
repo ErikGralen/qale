@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useRef, useEffect, type ReactNode } from 'react';
+import { Fragment, useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { useStickToBottom } from 'use-stick-to-bottom';
@@ -31,7 +31,14 @@ import { readAppliedReceipt, titleFromSlug } from '@qale/domain';
 import { parseKickoff, type Kickoff } from '@qale/sessions';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { navFromEvent, type NavOpts } from '../lib/nav';
-import { draftTextShown } from '../lib/draft-text';
+import {
+  isActivityPart,
+  isToolPart,
+  toolInputOf,
+  toolNameOf,
+  turnBlocks,
+  type AnyPart,
+} from '../lib/turn-parts';
 import { noteTypeIcon } from '../lib/note-icons';
 import { fileIconFor } from '../lib/session-files';
 import { isPile, progressLine, receiptLine } from '../lib/source-batch';
@@ -72,34 +79,6 @@ import { linkifyNotePaths, outsideCode } from '../lib/note-links';
  */
 function messageMarkdown(text: string): string {
   return outsideCode(text, (chunk) => linkifyNotePaths(chunk).replace(/(?<=\S)\n(?!\n)/g, '  \n'));
-}
-
-interface AnyPart {
-  type: string;
-  text?: string;
-  toolName?: string;
-  state?: string;
-  input?: unknown;
-  output?: unknown;
-  errorText?: string;
-}
-
-function isActivityPart(part: AnyPart): boolean {
-  return part.type === 'reasoning' || part.type.startsWith('tool-') || part.type === 'dynamic-tool';
-}
-
-function isToolPart(part: AnyPart): boolean {
-  return part.type.startsWith('tool-') || part.type === 'dynamic-tool';
-}
-
-function toolNameOf(part: AnyPart): string {
-  return part.type.startsWith('tool-') ? part.type.slice(5) : (part.toolName ?? 'tool');
-}
-
-function toolInputOf(part: AnyPart): Record<string, unknown> {
-  return typeof part.input === 'object' && part.input !== null
-    ? (part.input as Record<string, unknown>)
-    : {};
 }
 
 /**
@@ -410,10 +389,13 @@ function ToolStep({ part }: { part: AnyPart }) {
 }
 
 /**
- * The whole working phase of an assistant turn — reasoning, vault reads,
- * searches, mid-work narration — folded into one quiet row. Collapsed it reads
- * as provenance ("Reasoning · 7 sources · 4 searches"); while streaming it
- * narrates the current step; expanded it shows the chronological trail.
+ * The working phase of an assistant turn (reasoning, vault reads, searches)
+ * folded into one quiet row. Collapsed it reads as provenance ("Reasoning · 7
+ * sources · 4 searches"); while streaming it narrates the current step;
+ * expanded it shows the chronological trail.
+ *
+ * What the assistant wrote is never in here. Text draws as prose where it was
+ * written (docs/chat-order.md).
  */
 function ActivityBlock({
   parts,
@@ -491,7 +473,7 @@ function ActivityBlock({
       {open && (
         <div className="mt-1 ml-2 flex flex-col border-l border-border pl-3">
           {parts.map((part, i) => {
-            if (part.type === 'reasoning' || part.type === 'text')
+            if (part.type === 'reasoning')
               return (
                 <div
                   key={i}
@@ -1229,40 +1211,16 @@ function SessionThread({
                   </div>
                 );
               }
-              // The working phase (reasoning, tool calls, mid-work narration)
-              // folds into an ActivityBlock; the last text renders as the
-              // answer.
+              // The turn in the order it happened (docs/chat-order.md). Work
+              // piles up into a folded trail until something the PM is meant to
+              // read interrupts it — a draft panel, a paragraph — and that
+              // flushes the pile. One block for the whole turn lost the order,
+              // so "a panel, then a paragraph, then another panel" came out as
+              // neither.
               //
-              // A text with a parking call after it ("let me check with you
-              // first", then ask_user) is the answer too. It used to fold into
-              // the trail so the card could take its place, which meant a
-              // paragraph the PM was reading vanished the moment the card
-              // arrived. The card draws at the foot of the transcript now, so
-              // the sentence leading into it keeps its spot above it.
-              let answerIdx = -1;
-              for (let i = parts.length - 1; i >= 0; i--) {
-                if (parts[i]!.type === 'text') {
-                  answerIdx = i;
-                  break;
-                }
-              }
-              // With one exception: a fenced block mid-work is not narration, it
-              // is something the PM is meant to copy and run somewhere else. The
-              // interview hands over a prompt for Claude Code that way, and folded
-              // into the trace it read as "you never gave me anything". Anything
-              // carrying a fence comes back out and renders in place.
-              const handover = (p: AnyPart, i: number) =>
-                p.type === 'text' && i !== answerIdx && (p.text ?? '').includes('```');
-              const isLastMessage = mi === messages.length - 1;
-              // Only the trail at the very end of a turn can still be running.
-              const tail = parts[parts.length - 1];
-              const liveTail = busy && isLastMessage && !!tail && isActivityPart(tail);
-
-              // The turn in the order it happened. Work piles up until something
-              // the PM is meant to read interrupts it — a draft panel, a handover,
-              // the answer — and that flushes the pile into one folded block. One
-              // block for the whole turn lost the order, so "a panel, then a
-              // paragraph, then another panel" came out as neither.
+              // Every text the assistant wrote draws as prose, in its place.
+              // Nothing the PM has read moves later: a text is never reclassified
+              // as narration by what arrives after it.
               //
               // A write that landed on its own flushes with the work that made
               // it (docs/fewer-approvals.md FA-4): the folded trail, then the
@@ -1270,74 +1228,53 @@ function SessionThread({
               // the whole turn's writes into one block at the answer put a row
               // for a write that happened later above a paragraph the PM had
               // already read.
-              const nodes: ReactNode[] = [];
-              let pending: AnyPart[] = [];
-              let pendingFrom = 0;
-              const flush = (live: boolean) => {
-                if (pending.length === 0) return;
-                const landed = landedWrites(pending);
-                nodes.push(
-                  <ActivityBlock
-                    key={`activity-${pendingFrom}`}
-                    parts={pending}
-                    live={live}
-                    onOpen={openDoc}
-                  />,
-                );
-                if (landed.length > 0)
-                  nodes.push(
-                    <LandedRows
-                      key={`landed-${pendingFrom}`}
-                      rows={landed}
-                      sessionId={boundSessionId ?? null}
-                      onOpen={openDoc}
-                    />,
-                  );
-                pending = [];
-              };
-              parts.forEach((part, i) => {
-                // A call still running, refused, or with no usable variants reads
-                // as null and folds into the trail like any other step.
-                const draft =
-                  isToolPart(part) && toolNameOf(part) === 'draft_text'
-                    ? draftTextShown(part)
-                    : null;
-                if (draft) {
-                  flush(false);
-                  nodes.push(
-                    <DraftTextPanel
-                      key={`draft-${i}`}
-                      draft={draft}
-                      voices={voices}
-                      onUse={send}
-                      onOpenNote={openDoc}
-                      disabled={busy || backgroundBusy || askPending}
-                      workspace={vault?.path ?? null}
-                      panelId={`${message.id}-${i}`}
-                    />,
-                  );
-                  return;
-                }
-                if (part.type === 'text' && (i === answerIdx || handover(part, i))) {
-                  flush(false);
-                  nodes.push(
-                    <Markdown
-                      key={`text-${i}`}
-                      content={outsideCode(part.text ?? '', linkifyNotePaths)}
-                      onOpenNote={openDoc}
-                    />,
-                  );
-                  return;
-                }
-                if (isActivityPart(part) || part.type === 'text') {
-                  if (pending.length === 0) pendingFrom = i;
-                  pending.push(part);
-                }
-              });
-              flush(liveTail);
+              const blocks = turnBlocks(parts);
+              const isLastMessage = mi === messages.length - 1;
+              // Only the trail at the very end of a turn can still be running.
+              const tail = parts[parts.length - 1];
+              const liveTail = busy && isLastMessage && !!tail && isActivityPart(tail);
               return (
                 <div key={message.id} className="w-full">
-                  {nodes}
+                  {blocks.map((block, bi) => {
+                    if (block.kind === 'panel')
+                      return (
+                        <DraftTextPanel
+                          key={`draft-${block.at}`}
+                          draft={block.draft}
+                          voices={voices}
+                          onUse={send}
+                          onOpenNote={openDoc}
+                          disabled={busy || backgroundBusy || askPending}
+                          workspace={vault?.path ?? null}
+                          panelId={`${message.id}-${block.at}`}
+                        />
+                      );
+                    if (block.kind === 'prose')
+                      return (
+                        <Markdown
+                          key={`text-${block.at}`}
+                          content={outsideCode(block.text, linkifyNotePaths)}
+                          onOpenNote={openDoc}
+                        />
+                      );
+                    const landed = landedWrites(block.parts);
+                    return (
+                      <Fragment key={`activity-${block.from}`}>
+                        <ActivityBlock
+                          parts={block.parts}
+                          live={liveTail && bi === blocks.length - 1}
+                          onOpen={openDoc}
+                        />
+                        {landed.length > 0 && (
+                          <LandedRows
+                            rows={landed}
+                            sessionId={boundSessionId ?? null}
+                            onOpen={openDoc}
+                          />
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </div>
               );
             })}

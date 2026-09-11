@@ -47,15 +47,32 @@ Approve all, and one keyboard cursor over the whole set.
 answer and draws above the card, because the card is at the foot now and no longer needs the
 space.
 
-## What did not change
+## The narration fold is gone (2026-09-11)
 
-The narration fold still decides by what follows a text part, so a text that was the answer a
-moment ago still folds into the trail when a later text arrives. That jump is inherent to the
-fold and was left alone.
+**Every text the assistant writes draws as prose, where it wrote it, and stays there.** The
+folded trail holds the thinking and the tool steps. Nothing else goes in it.
+
+Erik, on the fold: a paragraph the PM has read must not move. The old rule picked the last text
+in a turn as the answer and called every earlier text narration. So the PM watched a paragraph
+arrive, the turn carried on, a second text landed, and the paragraph they had just read jumped
+into the collapsed trail. Any rule that decides by what follows a text has that jump in it, so
+the fold was dropped rather than narrowed. A chatty "Let me read the check-in" now costs one
+quiet line in the transcript. That is cheaper than a paragraph that moves.
+
+The reading depends only on the parts so far, never on what comes after. A block on screen keeps
+its kind and its place as the rest of the turn arrives, so the streamed transcript and the
+replayed one draw the same thing. A text part with nothing in it yet draws nothing, because it
+has not been read.
+
+A sentence that leads into a card still keeps its spot, for the same reason it did before: the
+card is at the foot.
 
 ## Code
 
 - `apps/desktop/src/renderer/src/app/SessionView.tsx` — `SessionFoot` replaces `ReceiptBlock`;
-  `flush()` emits `LandedRows` with its own trail; `blockIdx` and the parked-answer rule are gone.
+  each trail block emits its own `LandedRows`; `blockIdx`, the parked-answer rule and `answerIdx`
+  are gone.
+- `apps/desktop/src/renderer/src/lib/turn-parts.ts` — `turnBlocks()` reads a turn's parts into
+  the blocks the chat draws. Tested in `apps/desktop/test/turn-parts.test.ts`.
 - `apps/desktop/src/renderer/src/lib/receipt-block.ts` — `blockRows` deleted with the mixed
   block it described.

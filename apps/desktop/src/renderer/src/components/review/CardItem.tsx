@@ -35,6 +35,7 @@ import {
 import { relativeTime } from '../../lib/dates';
 import { diffLines, withContext, type DiffRow, type DiffView } from '../../lib/diff';
 import { navFromEvent, type NavOpts } from '../../lib/nav';
+import type { SentCard } from '../../lib/sent-cards';
 import { Markdown } from '../Markdown';
 import { ExternalRefChip, ticketKeyNodes, TicketKeyText } from '../ExternalRef';
 import { splitTicketKeys } from '../../lib/ticket-keys';
@@ -86,6 +87,14 @@ export interface CardItemProps {
   /** The batch heading names one source for the whole list. When the cards came
    *  from more than one, each row names its own behind the chevron instead. */
   showSource?: boolean;
+  /**
+   * The send this card asked for has left. The card stays where it was and
+   * settles: the verb goes to past tense, the message folds behind the chevron,
+   * and the three controls become the one word the approve button promised.
+   * Nothing moves on the page, so the eye that watched the button sees the
+   * answer in the same place.
+   */
+  sent?: SentCard | null;
 }
 
 /** What an external evidence chip is, said from its path. A mirror path names
@@ -192,6 +201,62 @@ function RowControls({
   );
 }
 
+/** The time of day a send left, for the mark beside it. */
+function clock(at: number | null): string {
+  if (at === null) return '';
+  return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * What the controls become once a send has left: the word the approve button
+ * promised, in the ledger's green, and the time it left. The chevron stays in
+ * its place, because the message is still behind it.
+ *
+ * A card that settled in this sitting fades the word in, over the spot the
+ * buttons just left. A card read back from a reopened session draws it at once:
+ * nothing changed on screen, so nothing moves.
+ */
+function SentMark({
+  at,
+  fresh,
+  open,
+  onToggle,
+}: {
+  at: number | null;
+  fresh: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const time = clock(at);
+  return (
+    <div className="flex shrink-0 items-center gap-0.5">
+      <span
+        className={`inline-flex items-center gap-1 px-1.5 py-1.5 text-xs font-medium text-success ${
+          fresh ? 'animate-in duration-300 ease-out fade-in motion-reduce:animate-none' : ''
+        }`}
+        title={time ? `Approved at ${time}` : 'Approved'}
+      >
+        <Check className="size-3.5" strokeWidth={2.25} aria-hidden />
+        Approved
+        {time && (
+          <span className="font-normal text-muted-foreground tabular-nums">
+            <span className="sr-only"> at</span> {time}
+          </span>
+        )}
+      </span>
+      <button
+        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-label={open ? 'Hide what was sent' : 'Show what was sent'}
+        title={open ? 'Hide what was sent' : 'Show what was sent'}
+      >
+        <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+    </div>
+  );
+}
+
 /**
  * The change, kept to a few lines until the reader asks for the rest. A row is a
  * glance: a page-long redline inside one buries the eight rows under it. Nothing
@@ -226,10 +291,7 @@ function Clamped({
   }, [all]);
   return (
     <>
-      <div
-        ref={ref}
-        className={all ? '' : 'qale-scroll-fade max-h-44 overflow-hidden'}
-      >
+      <div ref={ref} className={all ? '' : 'qale-scroll-fade max-h-44 overflow-hidden'}>
         {children}
       </div>
       {(clipped || all) && (
@@ -259,6 +321,7 @@ export function CardItem({
   onOpen,
   inGroup,
   showSource,
+  sent = null,
 }: CardItemProps) {
   const { previewProposal, openSession, askInSession, sessions } = useApp();
   const [preview, setPreview] = useState<{
@@ -411,13 +474,31 @@ export function CardItem({
 
   const why = proposal.rationale.trim();
 
+  // The moment a send settles, the message folds and any edit in progress is
+  // moot: what left is what left. The chevron opens the message again.
+  const settled = sent !== null;
+  useEffect(() => {
+    if (settled) {
+      setOpen(false);
+      setEditing(false);
+    }
+  }, [settled]);
+  // The fold on a send: open while the card waits, closed once it has left,
+  // and back open on the chevron.
+  const folded = settled && !open;
+
   return (
     <li
       ref={ref}
-      tabIndex={-1}
-      onClick={onFocus}
-      onFocus={onFocus}
-      aria-label={headline}
+      // A settled card is not a stop for the roving cursor: there is nothing
+      // left to decide on it. Its chevron still takes focus on its own.
+      tabIndex={settled ? undefined : -1}
+      onClick={settled ? undefined : onFocus}
+      onFocus={settled ? undefined : onFocus}
+      aria-label={
+        settled ? `${sent.line.act} ${sent.line.name ?? sent.line.item ?? ''}`.trim() : headline
+      }
+      data-sent={settled ? '' : undefined}
       className={`overflow-hidden ${inGroup ? '' : 'rounded-lg bg-card'} ${rowFocusClass(!inGroup)}`}
     >
       <div className={`flex items-start gap-2.5 px-3 py-2.5 ${inGroup ? 'pl-9' : ''}`}>
@@ -427,10 +508,28 @@ export function CardItem({
             // glyph of the thing it touches. It used to say "Leaves your
             // workspace" on a tinted band, which restated what the arrow, the
             // chip and the control's own word already said.
-            <span className="mt-0.5 flex shrink-0 items-center" title="Leaves your workspace">
-              <ArrowUpRight className="size-4 text-brand" aria-hidden />
-              <Icon className="-ml-0.5 size-4 text-brand/70" aria-hidden />
-              <span className="sr-only">Leaves your workspace.</span>
+            // Once it has left, the arrow takes the ledger's green: the same
+            // mark a sent line wears, in the same place, and the only colour
+            // that changes on the card.
+            <span
+              className="mt-0.5 flex shrink-0 items-center"
+              title={settled ? 'Left your workspace' : 'Leaves your workspace'}
+            >
+              <ArrowUpRight
+                className={`size-4 transition-colors duration-200 motion-reduce:transition-none ${
+                  settled ? 'text-success' : 'text-brand'
+                }`}
+                aria-hidden
+              />
+              <Icon
+                className={`-ml-0.5 size-4 transition-colors duration-200 motion-reduce:transition-none ${
+                  settled ? 'text-muted-foreground/60' : 'text-brand/70'
+                }`}
+                aria-hidden
+              />
+              <span className="sr-only">
+                {settled ? 'Left your workspace.' : 'Leaves your workspace.'}
+              </span>
             </span>
           ) : (
             <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -438,7 +537,11 @@ export function CardItem({
         <div className="min-w-0 flex-1">
           {!inGroup &&
             (outbound ? (
-              <OutboundTargetLine payload={outbound} onOpen={onOpen} />
+              sent ? (
+                <SentTargetLine payload={outbound} line={sent.line} onOpen={onOpen} />
+              ) : (
+                <OutboundTargetLine payload={outbound} onOpen={onOpen} />
+              )
             ) : (
               <TargetTitle
                 leadIn={leadIn}
@@ -447,44 +550,61 @@ export function CardItem({
                 onOpen={onOpen}
               />
             ))}
-          {/* When a calendar card lands. This is the fact being approved: the
+          {/* Everything under the title folds once a send has left. A grid row
+              that goes to 0fr closes over content of any height, so the card
+              settles to one line in one motion and the chevron opens it again.
+              An internal card never folds, so it never wears the grid. */}
+          <div
+            className={
+              outbound
+                ? `grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${
+                    folded ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
+                  }`
+                : undefined
+            }
+            aria-hidden={folded || undefined}
+          >
+            <div className={outbound ? 'min-h-0 overflow-hidden' : undefined}>
+              {/* When a calendar card lands. This is the fact being approved: the
               line above named the event and the system and never once said
               which day or hour, which is the only thing a person checks. */}
-          {outbound && <EventWhenLine payload={outbound} />}
-          {/* The ticket fields the draft set, which land under the PM's name and
+              {outbound && <EventWhenLine payload={outbound} />}
+              {/* The ticket fields the draft set, which land under the PM's name and
               are nowhere in the body they are about to read. */}
-          {outbound && <TicketFieldsLine payload={outbound} />}
-          <div className={inGroup ? '' : 'mt-1'}>
-            {editing ? (
-              <EditFields
-                kind={proposal.kind}
-                draftBody={draftBody}
-                draftPatch={draftPatch}
-                draftAppend={draftAppend}
-                onBody={setDraftBody}
-                onPatch={setDraftPatch}
-                onAppend={setDraftAppend}
-              />
-            ) : outbound ? (
-              // A send cannot be taken back, so the whole message is on the row.
-              <OutboundDetail payload={outbound} onOpen={onOpen} />
-            ) : needsPreview ? (
-              preview ? (
-                <Clamped open={open}>
-                  <ChangePreview
+              {outbound && <TicketFieldsLine payload={outbound} />}
+              <div className={inGroup ? '' : 'mt-1'}>
+                {editing ? (
+                  <EditFields
                     kind={proposal.kind}
-                    preview={preview}
-                    onOpen={onOpen}
-                    context={0}
-                    inRow
+                    draftBody={draftBody}
+                    draftPatch={draftPatch}
+                    draftAppend={draftAppend}
+                    onBody={setDraftBody}
+                    onPatch={setDraftPatch}
+                    onAppend={setDraftAppend}
                   />
-                </Clamped>
-              ) : (
-                <PreviewSkeleton />
-              )
-            ) : (
-              <FactsLine facts={facts} fallback={headline} onOpen={onOpen} />
-            )}
+                ) : outbound ? (
+                  // A send cannot be taken back, so the whole message is on the row.
+                  <OutboundDetail payload={outbound} onOpen={onOpen} sent={settled} />
+                ) : needsPreview ? (
+                  preview ? (
+                    <Clamped open={open}>
+                      <ChangePreview
+                        kind={proposal.kind}
+                        preview={preview}
+                        onOpen={onOpen}
+                        context={0}
+                        inRow
+                      />
+                    </Clamped>
+                  ) : (
+                    <PreviewSkeleton />
+                  )
+                ) : (
+                  <FactsLine facts={facts} fallback={headline} onOpen={onOpen} />
+                )}
+              </div>
+            </div>
           </div>
           {proposal.selfStarted && (
             <span className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
@@ -550,12 +670,7 @@ export function CardItem({
                 </Button>
               ) : (
                 retryable && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onAccept()}
-                    disabled={busy}
-                  >
+                  <Button size="sm" variant="outline" onClick={() => onAccept()} disabled={busy}>
                     Retry
                   </Button>
                 )
@@ -576,19 +691,26 @@ export function CardItem({
           )}
         </div>
 
-        <RowControls
-          approveLabel={act ? act.word : removes ? 'Delete' : undefined}
-          approveTitle={
-            act ? `Approve & ${act.verb}` : removes ? 'Approve & delete' : 'Approve'
-          }
-          sendId={outbound ? proposal.id : undefined}
-          busy={busy}
-          blocked={!!preview?.stale || editing}
-          open={open}
-          onAccept={() => onAccept()}
-          onReject={onReject}
-          onToggle={() => setOpen((v) => !v)}
-        />
+        {sent ? (
+          <SentMark
+            at={sent.at}
+            fresh={sent.fresh}
+            open={open}
+            onToggle={() => setOpen((v) => !v)}
+          />
+        ) : (
+          <RowControls
+            approveLabel={act ? act.word : removes ? 'Delete' : undefined}
+            approveTitle={act ? `Approve & ${act.verb}` : removes ? 'Approve & delete' : 'Approve'}
+            sendId={outbound ? proposal.id : undefined}
+            busy={busy}
+            blocked={!!preview?.stale || editing}
+            open={open}
+            onAccept={() => onAccept()}
+            onReject={onReject}
+            onToggle={() => setOpen((v) => !v)}
+          />
+        )}
       </div>
 
       {open && (
@@ -596,7 +718,9 @@ export function CardItem({
           {/* What approving does and where it lands. It is one sentence per card
               kind, so on the row it read as boilerplate the eye skipped; here it
               is what the reader came for. */}
-          {effect && <p className="text-sm text-muted-foreground">{effect}</p>}
+          {/* What approving would do is moot once it did it: the line above
+              says what happened. */}
+          {effect && !settled && <p className="text-sm text-muted-foreground">{effect}</p>}
           {(replaces || retitle) && (
             <p className="mt-1 text-xs text-muted-foreground">
               {replaces && (
@@ -628,7 +752,7 @@ export function CardItem({
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {/* A deletion has no text to edit: the card is a path and a reason.
                 The two answers are yes and no. */}
-            {!removes && !editing && (
+            {!removes && !editing && !settled && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -1020,6 +1144,40 @@ function OutboundTargetLine({
 }
 
 /**
+ * The target line once the send has left: the same line, in past tense, with
+ * the same chip. The line comes off the receipt the accept stamped, so a ticket
+ * created a second ago wears the key it was given. A send whose item has no
+ * address keeps its whole sentence in `act` and draws no chip.
+ */
+function SentTargetLine({
+  payload,
+  line,
+  onOpen,
+}: {
+  payload: OutboundPayloadDTO;
+  line: SentCard['line'];
+  onOpen: (path: string, opts?: NavOpts) => void;
+}) {
+  const system = providerName(payload);
+  const cls = 'flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-medium text-foreground';
+  const quiet = 'text-muted-foreground';
+  if (!line.item) return <div className={`${cls} ${quiet}`}>{line.act}</div>;
+  return (
+    <div className={cls}>
+      <span className={quiet}>{line.act}</span>
+      <ExternalRefChip
+        target={line.item}
+        alias={line.name ?? null}
+        url={line.url}
+        onOpen={onOpen}
+        kind={payload.action === 'update_page' ? `${system ?? 'Wiki'} page` : null}
+      />
+      {line.tail && <span className={quiet}>{line.tail}</span>}
+    </div>
+  );
+}
+
+/**
  * The ticket fields a draft set: "Labels: scheduling · Priority: High". One
  * quiet line, and only the fields the draft filled in. They belong on the card
  * because nothing else says them: the body is the description, and a label the
@@ -1116,9 +1274,13 @@ function EventWhenLine({ payload }: { payload: OutboundPayloadDTO }) {
 function OutboundDetail({
   payload,
   onOpen,
+  sent = false,
 }: {
   payload: OutboundPayloadDTO;
   onOpen: (p: string) => void;
+  /** The message has left. What is drawn is the record of it, so the glance
+   *  before sending is over: no staleness banner. */
+  sent?: boolean;
 }) {
   const meta = useOutboundRefMeta(payload);
   const [pageBefore, setPageBefore] = useState<string | null>(null);
@@ -1154,6 +1316,7 @@ function OutboundDetail({
   // never a clock comparison between two machines. The time is read as an
   // instant, so the same moment in another ISO spelling is not a change.
   const changedSince =
+    !sent &&
     meta !== null &&
     ((payload.remote_updated !== undefined &&
       !sameInstant(meta.remoteUpdated, payload.remote_updated)) ||
@@ -1256,10 +1419,7 @@ function PreviewSurface({ children }: { children: ReactNode }) {
     return () => ro.disconnect();
   }, []);
   return (
-    <div
-      ref={ref}
-      className={`max-h-[26rem] overflow-y-auto ${clipped ? 'qale-scroll-fade' : ''}`}
-    >
+    <div ref={ref} className={`max-h-[26rem] overflow-y-auto ${clipped ? 'qale-scroll-fade' : ''}`}>
       {children}
     </div>
   );
@@ -1346,29 +1506,27 @@ export function ChangePreview({
     /* No caption. A redline looks like a redline and a page looks like a page;
        "What this changes" over a diff named what the eye had already read. */
     <div>
-      {(
-        kind === 'update' ? (
-          <div className="flex flex-col gap-3">
-            {fmChanges.length > 0 && <PropertyChanges changes={fmChanges} onOpen={onOpen} />}
-            {bodyChanged && (
-              <RenderedDiff
-                before={preview.before}
-                after={preview.after}
-                onOpen={onOpen}
-                context={context}
-                inRow={inRow}
-              />
-            )}
-          </div>
-        ) : kind === 'delete' ? (
-          empty ? (
-            <p className="text-sm text-muted-foreground">This page is empty.</p>
-          ) : (
-            <RenderedDiff before={preview.before} after="" onOpen={onOpen} context={context} />
-          )
+      {kind === 'update' ? (
+        <div className="flex flex-col gap-3">
+          {fmChanges.length > 0 && <PropertyChanges changes={fmChanges} onOpen={onOpen} />}
+          {bodyChanged && (
+            <RenderedDiff
+              before={preview.before}
+              after={preview.after}
+              onOpen={onOpen}
+              context={context}
+              inRow={inRow}
+            />
+          )}
+        </div>
+      ) : kind === 'delete' ? (
+        empty ? (
+          <p className="text-sm text-muted-foreground">This page is empty.</p>
         ) : (
-          <Markdown content={stripFrontmatter(preview.after)} onOpenNote={onOpen} compact />
+          <RenderedDiff before={preview.before} after="" onOpen={onOpen} context={context} />
         )
+      ) : (
+        <Markdown content={stripFrontmatter(preview.after)} onOpenNote={onOpen} compact />
       )}
     </div>
   );

@@ -160,6 +160,9 @@ RC-3 draws a put-back it cannot honour without RC-4. RC-5 last.
   says nothing the eye did not already get.
 - **A row for a write that failed.** The trail shows a failed step, and a failed write changes
   nothing for the PM. Left open below rather than built.
+- **A group container around approved sends.** Three sends collapsed into one green block above
+  the cards, so the answer to a press showed up somewhere other than the button that was pressed.
+  Each send keeps its own card.
 
 ## Open
 
@@ -276,6 +279,55 @@ body for an outbound card, so the full text sits behind the chevron.
 Checked: desktop 485 pass 0 fail (7 new tests), domain 303, application 313, vault 58 pass with the
 12 pre-existing skips; `pnpm check-types` 11 of 11; eslint 0 errors, 34 pre-existing warnings. Not
 run in the app.
+
+### RC-3, revised 2026-09-11: a send keeps its card
+
+Decision (Erik, 2026-09-11): the grouped green "Left your workspace" block is gone. An approved
+send keeps its own card, in the place it was judged, and settles there. Every send is its own
+card even after approval; nothing groups them. The card the PM just pressed is the card that
+answers.
+
+The settled card is the same shell: card white, hairline ring. The lead arrow turns ledger green
+(the only colour that changes) and the action glyph goes muted. The title goes to past tense off
+the same receipt line the old block used: "Comment on [BOK-300]" becomes "Commented on
+[BOK-300]", same chip. Everything under the title (the message, the event's day and time, the
+ticket fields) folds away. The three controls (approve, discard, chevron) become one mark: a
+green check, the word "Approved" and the time it left, with the chevron still in its place. The
+chevron opens the folded message again, with the rationale and evidence. No Edit and no "what
+approving does" sentence, because it did it.
+
+The motion is one authored moment. The fold is a CSS grid row going from 1fr to 0fr over 200ms
+ease-out, so it closes over content of any height. The mark fades in over 300ms only on a card
+that settled in this sitting (`fresh`); a card read back from a reopened session draws settled
+at once and nothing moves. Both respect prefers-reduced-motion (`motion-reduce:transition-none`,
+`motion-reduce:animate-none`).
+
+How it is built:
+
+- `lib/sent-cards.ts` (pure): `sentCards(sitting, stored)` merges the sends approved in this
+  sitting (their line carries the key and url a ticket was given on landing) with the accepted
+  outbound cards read back from `proposals:resolved`; the sitting copy wins by id, sorted by
+  created. `mergeReviewCards(pending, held, sent)` dedups by id, pending first, then held, then
+  sent. Five tests in `test/sent-cards.test.ts`.
+- `useApprovals` (`approvals.tsx`): `sent` is now `SittingSend[]` (card, line, time). New
+  `held: ProposalDTO[]`: a send card whose accept is in flight. The pending list drops the card
+  the moment main accepts it, a beat before the send's result is back, and a card that vanished
+  for one frame would flicker. Cleared in `finally`, batched with the result. `SentReceipts`,
+  `SentReceipt` and `sentReceiptOf` are deleted; `sentLineOf(ob, landed)` remains.
+- `SessionReview.tsx`: one `<section>` for both states (cards waiting, nothing waiting).
+  `data-queue`, `tabIndex`, the heading and the key handler go only while cards wait, so the
+  last card to settle keeps its DOM node and its fold can move. The list is
+  `orderCards(mergeReviewCards(cards, approvals.held, sent))`; the cursor still walks only the
+  pending rows. `LandedRows` for the internal approved writes draws under the cards once
+  nothing waits, as before.
+- `CardRows.tsx`: new `settled` map prop. A settled send is never grouped under a target header;
+  it keeps its own row where the order put it.
+- `CardItem.tsx`: new `sent?: SentCard | null` prop. When set: not a cursor stop (no tabIndex,
+  no focus handlers), `data-sent`, `SentTargetLine` (past tense, same chip, same `kind` label
+  for a page), the fold wrapper (only outbound cards wear the grid), `SentMark` in place of
+  `RowControls`, footnote without Edit or `effect`. On settle, `open` and `editing` reset.
+
+Not run in the app.
 
 ## Thinned to lines (2026-09-08, later the same day)
 

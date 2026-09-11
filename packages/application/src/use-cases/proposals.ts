@@ -87,13 +87,13 @@ export interface FiledWrite {
  * The receipt row for a write that just landed (docs/fewer-approvals.md FA-4).
  *
  * Composed here, at accept time, because this is the one moment both halves are
- * in hand: the payload that says what the write does, and the note as it read
- * before it. The chat reads it back off the tool result and draws one row.
+ * in hand: the payload that says what the write does, and the name the note
+ * already had. The chat reads it back off the tool result and draws one row.
  */
 function appliedRowFor(
   rec: ProposalRecord,
   path: string | undefined,
-  before: { frontmatter: Record<string, unknown>; title: string } | null,
+  before: { title: string } | null,
   activityId: string | undefined,
 ): AppliedRow {
   const payload = (rec.payload ?? {}) as {
@@ -111,7 +111,6 @@ function appliedRowFor(
     kind,
     targetPath: target,
     frontmatter: payload.frontmatter,
-    before: before?.frontmatter,
     append: payload.append,
     body: payload.body,
     patch: payload.patch,
@@ -180,8 +179,8 @@ export async function fileProposal(
     const reason = ruling.disposition === 'silent' ? SEND_WAITS_REASON : ruling.reason;
     return { rec, disposition: 'ask', reason };
   }
-  // The note as it read before, for the row the chat draws: a field that moved
-  // can only be said as a move by something that saw both ends of it (FA-4).
+  // The name the note already had, for the row the chat draws: an update's
+  // payload carries only the keys it sets, so the title comes off the file.
   const before = await noteBefore(ctx, input);
   const result = await acceptProposal(ctx, rec.id);
   if (!result.ok) {
@@ -203,21 +202,18 @@ export async function fileProposal(
   };
 }
 
-/** The note an update is about to change, as it reads now: its own title and
- *  the fields the write is about to move. Null for a write that makes a page. */
+/** The note an update is about to change, as it reads now, for its own title.
+ *  Null for a write that makes a page. */
 async function noteBefore(
   ctx: UseCaseContext,
   input: CreateProposalInput,
-): Promise<{ frontmatter: Record<string, unknown>; title: string } | null> {
+): Promise<{ title: string } | null> {
   if (input.kind !== 'update' || !input.targetPath) return null;
   try {
     const note = await ctx.vault.readNote(input.targetPath);
     if (!note) return null;
     const fm = note.frontmatter as Record<string, unknown>;
-    return {
-      frontmatter: fm,
-      title: typeof fm['title'] === 'string' ? fm['title'] : '',
-    };
+    return { title: typeof fm['title'] === 'string' ? fm['title'] : '' };
   } catch {
     return null;
   }

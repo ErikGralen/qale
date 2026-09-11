@@ -1,4 +1,12 @@
-import { Fragment, useCallback, useMemo, useState, useRef, useEffect } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useMemo,
+  useState,
+  useRef,
+  useEffect,
+  type MouseEvent,
+} from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { useStickToBottom } from 'use-stick-to-bottom';
@@ -8,7 +16,6 @@ import {
   ArrowDown,
   Square,
   Wrench,
-  Brain,
   ChevronDown,
   FileText,
   History,
@@ -27,18 +34,21 @@ import type {
   SessionScopeDTO,
   SpawnRequestDTO,
 } from '@qale/ipc';
-import { readAppliedReceipt, titleFromSlug } from '@qale/domain';
+import { titleFromSlug, typeForDir } from '@qale/domain';
 import { parseKickoff, type Kickoff } from '@qale/sessions';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { navFromEvent, type NavOpts } from '../lib/nav';
+import { isActivityPart, turnBlocks, type AnyPart } from '../lib/turn-parts';
 import {
-  isActivityPart,
-  isToolPart,
-  toolInputOf,
-  toolNameOf,
-  turnBlocks,
-  type AnyPart,
-} from '../lib/turn-parts';
+  failedSteps,
+  humanSeconds,
+  isFailedStep,
+  liveLabel,
+  showsInTrail,
+  stepLabel,
+  trailSteps,
+  trailSummary,
+} from '../lib/trail';
 import { noteTypeIcon } from '../lib/note-icons';
 import { fileIconFor } from '../lib/session-files';
 import { isPile, progressLine, receiptLine } from '../lib/source-batch';
@@ -79,222 +89,6 @@ import { linkifyNotePaths, outsideCode } from '../lib/note-links';
  */
 function messageMarkdown(text: string): string {
   return outsideCode(text, (chunk) => linkifyNotePaths(chunk).replace(/(?<=\S)\n(?!\n)/g, '  \n'));
-}
-
-/**
- * A step the agent gave up on. The bridge turns pi's `isError` result into a
- * `tool-output-error` chunk, which useChat lands on the part as that state plus
- * an `errorText`; either one is enough to call it failed.
- */
-function isFailedStep(part: AnyPart): boolean {
-  return part.state === 'output-error' || part.errorText !== undefined;
-}
-
-/**
- * Past tenses that don't take the -ed → -ing rule, plus the vague fallback:
- * "Tried a step" says more than "Tried working" would.
- */
-const GERUNDS: Record<string, string> = {
-  Read: 'reading',
-  Wrote: 'writing',
-  Ran: 'running',
-  Worked: 'a step',
-};
-
-/**
- * The third tense. A failed step reads "Tried reading", never "Read", so a run
- * that tried three times and gave up can't be mistaken for a run that did three
- * things. Derived from the past-tense verb rather than a third column in the
- * table below, so a new tool still only needs one entry.
- */
-function triedVerb(verb: string): string {
-  const [head = '', ...rest] = verb.split(' ');
-  const gerund =
-    GERUNDS[head] ?? (head.endsWith('ed') ? `${head.slice(0, -2)}ing` : head).toLowerCase();
-  return ['Tried', gerund, ...rest].join(' ');
-}
-
-/** Past-tense verb + the thing it acted on, for one step in the expanded trail. */
-function stepLabel(part: AnyPart): { verb: string; detail?: string } {
-  const label = doneLabel(part);
-  return isFailedStep(part) ? { ...label, verb: triedVerb(label.verb) } : label;
-}
-
-/**
- * The write that applied on its own, if this step was one, for the expanded
- * trail's own row: "Created the Nordkap write-up", "Added to rules". The block
- * above the closing line is what the PM reads; this keeps the trail from saying
- * "Proposed a note" about something already in the workspace.
- */
-function appliedLabel(part: AnyPart): { verb: string; detail?: string } | null {
-  if (isFailedStep(part) || typeof part.output !== 'string') return null;
-  const receipt = readAppliedReceipt(part.output);
-  if (!receipt) return null;
-  return receipt.detail ? { verb: receipt.verb, detail: receipt.detail } : { verb: receipt.verb };
-}
-
-/** The verb table: one entry per tool, past tense, plain and sentence case. */
-function doneLabel(part: AnyPart): { verb: string; detail?: string } {
-  const name = toolNameOf(part);
-  const input = toolInputOf(part);
-  const str = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : undefined);
-  switch (name) {
-    case 'vault_read':
-      // The note it read, by name. The trail is provenance the PM reads, so a
-      // path here would be the one place in the app that still spells storage.
-      return { verb: 'Read', detail: str('path') && titleFromSlug(str('path')!) };
-    case 'vault_outline':
-      return { verb: 'Skimmed', detail: str('path') && titleFromSlug(str('path')!) };
-    case 'search_vault':
-      return { verb: 'Searched', detail: str('query') && `“${str('query')}”` };
-    case 'vault_grep':
-      return { verb: 'Scanned for', detail: str('pattern') && `“${str('pattern')}”` };
-    case 'vault_backlinks':
-      return { verb: 'Followed links to', detail: str('path') && titleFromSlug(str('path')!) };
-    case 'vault_list':
-      return {
-        verb: 'Listed notes',
-        detail: [str('type'), str('lifecycle')].filter(Boolean).join('/') || undefined,
-      };
-    case 'jira_search':
-      return { verb: 'Searched Jira', detail: str('jql') ?? str('query') };
-    case 'jira_get_issue':
-      return { verb: 'Read Jira issue', detail: str('key') ?? str('issueKey') };
-    case 'confluence_search':
-      return { verb: 'Searched Confluence', detail: str('query') ?? str('cql') };
-    case 'confluence_get_page':
-      return { verb: 'Read Confluence page', detail: str('title') ?? str('id') };
-    case 'use_skill':
-      return { verb: 'Loaded skill', detail: str('name') };
-    case 'spawn':
-      return { verb: 'Split the work up' };
-    case 'ask_user': {
-      const questions = Array.isArray(input.questions)
-        ? (input.questions as { header?: string }[])
-        : [];
-      return {
-        verb: 'Raised a question',
-        detail:
-          questions
-            .map((q) => q.header)
-            .filter(Boolean)
-            .join(', ') || undefined,
-      };
-    }
-    case 'get_voice':
-      return { verb: 'Read a voice', detail: str('name') };
-    // Only ever seen here when the call had nothing to show (still streaming,
-    // or malformed) — a usable one renders as its own panel in the chat.
-    case 'draft_text':
-      return { verb: 'Wrote a draft', detail: str('title') };
-    // Only ever visible on a session a person started, where the tool is a
-    // no-op: a scheduled run that ends quietly leaves no session to open.
-    case 'end_quietly':
-      return { verb: 'Asked to end quietly' };
-    case 'files_write':
-    case 'write_result':
-      return { verb: 'Wrote', detail: str('path') };
-    case 'files_edit':
-      return { verb: 'Edited', detail: str('path') };
-    case 'files_read':
-      return { verb: 'Read session file', detail: str('path') };
-    case 'files_list':
-      return { verb: 'Listed session files' };
-    // The write tools name no system: the handler resolves the provider from
-    // the container or the mirror (PD-9).
-    case 'draft_ticket':
-      return { verb: 'Drafted a ticket', detail: str('title') };
-    case 'draft_ticket_comment':
-      return { verb: 'Drafted a comment', detail: str('ticket') };
-    case 'draft_page_update':
-      return { verb: 'Drafted a page update', detail: str('page') };
-    // Retired tool names, kept for replay: sessions filed before the write tools
-    // went provider-blind still carry these calls, and the trail is what the PM
-    // reads back months later.
-    case 'draft_jira_issue':
-      return { verb: 'Drafted a ticket', detail: str('summary') };
-    case 'draft_jira_comment':
-      return { verb: 'Drafted a comment', detail: str('issueKey') };
-    case 'draft_confluence_update':
-      return { verb: 'Drafted a page update', detail: str('pageId') };
-    // Retired tool. Kept for replay only: transcripts filed before checkpoints
-    // were removed still contain these calls, and an old session must not
-    // render a raw tool name.
-    case 'advance_checkpoint':
-      return { verb: 'Moved to the next step' };
-    default:
-      if (name.startsWith('propose_')) {
-        // Most writes land without a card now, so the step says what happened
-        // rather than what was asked for.
-        const landed = appliedLabel(part);
-        if (landed) return landed;
-        return {
-          verb: `Proposed a ${name.slice(8).replace(/_/g, ' ')}`,
-          detail: str('title') ?? (str('path') && titleFromSlug(str('path')!)),
-        };
-      }
-      if (name.startsWith('draft_'))
-        return {
-          verb: `Drafted a ${name.slice(6).replace(/_/g, ' ')}`,
-          // A message draft carries a `subject` rather than a title (SK-7), and
-          // it may be revising a card it already made.
-          detail: str('title') ?? str('subject') ?? str('summary'),
-        };
-      // A tool shipped without an entry above. Vague beats wrong: the PM should
-      // never be shown a raw tool name (`draft_calendar_rsvp`), and a machine
-      // name in the detail slot would be the same leak by another door.
-      return { verb: 'Worked' };
-  }
-}
-
-/** Present-tense label for the step currently running, shown on the collapsed row. */
-function liveLabel(part: AnyPart | undefined): string {
-  if (!part || part.type === 'reasoning') return 'Thinking…';
-  const name = toolNameOf(part);
-  const input = toolInputOf(part);
-  const str = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : undefined);
-  switch (name) {
-    case 'vault_read':
-      return str('path') ? `Reading ${titleFromSlug(str('path')!)}` : 'Reading the memory…';
-    case 'vault_outline':
-      return str('path') ? `Skimming ${titleFromSlug(str('path')!)}` : 'Skimming the memory…';
-    case 'search_vault':
-      return str('query') ? `Searching “${str('query')}”` : 'Searching the memory…';
-    case 'vault_grep':
-      return str('pattern') ? `Scanning for “${str('pattern')}”` : 'Scanning the memory…';
-    case 'vault_backlinks':
-      return str('path') ? `Following links to ${titleFromSlug(str('path')!)}` : 'Following links…';
-    case 'vault_list':
-      return 'Listing notes…';
-    case 'draft_text':
-      return 'Writing a draft…';
-    case 'spawn':
-      return 'Splitting the work up…';
-    case 'ask_user':
-      return 'Waiting on your answer…';
-    case 'files_write':
-    case 'files_edit':
-    case 'write_result':
-      return str('path') ? `Writing ${str('path')}` : 'Writing a session file…';
-    case 'files_read':
-    case 'files_list':
-      return 'Reading its own notes…';
-    case 'jira_search':
-    case 'jira_get_issue':
-      return 'Checking Jira…';
-    case 'confluence_search':
-    case 'confluence_get_page':
-      return 'Checking Confluence…';
-    default:
-      if (name.startsWith('propose_') || name.startsWith('draft_')) return 'Drafting a proposal…';
-      return 'Working…';
-  }
-}
-
-/** Seconds as the PM would say them: `8s`, `47s`, `2m 5s`. */
-function humanSeconds(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 /**
@@ -345,22 +139,65 @@ function useClock(since: number | undefined): string | null {
   return seconds >= 1 ? humanSeconds(seconds) : null;
 }
 
-/** One tool step inside the expanded trail — raw receipt stays one click away. */
-function ToolStep({ part }: { part: AnyPart }) {
-  const [open, setOpen] = useState(false);
-  const { verb, detail } = stepLabel(part);
+/**
+ * The note a step read, as the chip a page wears everywhere else in the app:
+ * the kind's icon, the title, and a click that opens it. Written out here
+ * rather than shared with the rows below, so the trail and the rows can each be
+ * read on their own.
+ */
+function NoteChip({
+  path,
+  title,
+  onOpen,
+}: {
+  path: string;
+  title: string;
+  onOpen: (path: string, opts?: NavOpts) => void;
+}) {
+  const type = typeForDir(path.split('/')[0] ?? '');
+  const Icon = type ? noteTypeIcon(type) : FileText;
+  const open = (e: MouseEvent) => {
+    e.stopPropagation();
+    onOpen(path, navFromEvent(e));
+  };
+  return (
+    <button
+      type="button"
+      className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-sm bg-brand/8 px-1 py-px font-medium text-brand transition-colors hover:bg-brand/15 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      onClick={open}
+      // Middle-click = open in background tab, as every other link in the app.
+      onAuxClick={(e) => e.button === 1 && open(e)}
+      title={`Open ${title}`}
+    >
+      <Icon className="size-3 shrink-0 opacity-70" aria-hidden />
+      <span className="truncate">{title}</span>
+    </button>
+  );
+}
+
+/**
+ * One step inside the expanded trail: what it did, and what it did it to.
+ *
+ * The raw result is never shown. What a tool hands back is written for the
+ * model, in the second person ("Say what you did in one short line"), with a
+ * machine-readable line under it. A person who opened that read a message that
+ * was never addressed to them (Erik, 2026-09-11). The useful half is the note,
+ * so the note is a chip that opens it, and the result stays with the model.
+ */
+function ToolStep({
+  part,
+  onOpen,
+}: {
+  part: AnyPart;
+  onOpen: (path: string, opts?: NavOpts) => void;
+}) {
+  const { verb, detail, path } = stepLabel(part);
   const done =
     part.state === 'output-available' || part.state === 'output-error' || part.output !== undefined;
-  const hasOutput = typeof part.output === 'string' && part.output.length > 0;
   const failed = isFailedStep(part);
   return (
-    <div>
-      <button
-        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-        onClick={() => hasOutput && setOpen((o) => !o)}
-        aria-expanded={open}
-        disabled={!hasOutput}
-      >
+    <div className="px-1.5 py-1 text-muted-foreground">
+      <div className="flex items-center gap-1.5">
         {/* The glyph carries the same three states as the verb: spinning,
             done, gave up. */}
         {!done ? (
@@ -371,31 +208,36 @@ function ToolStep({ part }: { part: AnyPart }) {
           <Wrench className="size-3 shrink-0" />
         )}
         <span className="shrink-0 font-medium">{verb}</span>
-        {detail && <span className="truncate">{detail}</span>}
-        {hasOutput && (
-          <ChevronDown
-            className={`ml-auto size-3 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
-          />
-        )}
-      </button>
-      {part.errorText && <div className="px-1.5 pb-1 text-destructive">{part.errorText}</div>}
-      {open && hasOutput && (
-        <pre className="mt-0.5 mb-1 max-h-48 overflow-y-auto rounded-md bg-muted/40 px-2 py-1.5 whitespace-pre-wrap text-muted-foreground">
-          {(part.output as string).slice(0, 2000)}
-        </pre>
+        {detail &&
+          (path ? (
+            <NoteChip path={path} title={detail} onOpen={onOpen} />
+          ) : (
+            <span className="truncate">{detail}</span>
+          ))}
+      </div>
+      {/* Why it gave up, in the one line the run itself gave. */}
+      {failed && part.errorText && (
+        <p className="truncate pl-4.5 text-destructive">{part.errorText}</p>
       )}
     </div>
   );
 }
 
 /**
- * The working phase of an assistant turn (reasoning, vault reads, searches)
- * folded into one quiet row. Collapsed it reads as provenance ("Reasoning · 7
- * sources · 4 searches"); while streaming it narrates the current step;
- * expanded it shows the chronological trail.
+ * The work behind one answer, folded into one quiet row (docs/chat-order.md).
+ *
+ * Collapsed it is a short sentence about what happened ("Read 2 notes ·
+ * searched twice · 12s"). While the run is going it narrates the step it is on.
+ * Expanded it is the trail in order, the thinking with it.
+ *
+ * Only work that nothing else on screen shows is in here. A write that landed
+ * draws as a row under this block, a proposal as a card at the foot of the
+ * session, a draft as its own panel, so none of the three is said twice
+ * (`lib/trail.ts`). A step that failed always stays: the trail is the only
+ * place it appears.
  *
  * What the assistant wrote is never in here. Text draws as prose where it was
- * written (docs/chat-order.md).
+ * written.
  */
 function ActivityBlock({
   parts,
@@ -404,86 +246,59 @@ function ActivityBlock({
 }: {
   parts: AnyPart[];
   live: boolean;
-  onOpen: (path: string) => void;
+  onOpen: (path: string, opts?: NavOpts) => void;
 }) {
   const [open, setOpen] = useState(false);
   const elapsed = useElapsed(live);
-  const sources = new Set<string>();
-  let searches = 0;
-  let actions = 0;
-  let failed = 0;
-  for (const part of parts) {
-    if (!isToolPart(part)) continue;
-    const name = toolNameOf(part);
-    const input = toolInputOf(part);
-    if (name === 'vault_read' && typeof input.path === 'string') sources.add(input.path);
-    else if (name === 'jira_get_issue' || name === 'confluence_get_page')
-      sources.add(`${name}:${JSON.stringify(input)}`);
-    else if (
-      // An outline is orientation, not content: it hands back a heading tree, and
-      // the note itself only counts as a source once a vault_read returns some of it.
-      [
-        'search_vault',
-        'vault_grep',
-        'vault_backlinks',
-        'vault_list',
-        'vault_outline',
-        'jira_search',
-        'confluence_search',
-      ].includes(name)
-    )
-      searches++;
-    else actions++;
-    if (isFailedStep(part)) failed++;
-  }
+  const steps = trailSteps(parts);
+  const failed = failedSteps(parts);
   // Under a second is noise, and a replayed transcript has no reading at all.
   const clock = elapsed !== null && elapsed >= 1 ? humanSeconds(elapsed) : null;
+  // Every step in this trail has a row or a card of its own, so the trail has
+  // nothing left to say and says nothing.
+  if (!live && steps.length === 0) return null;
   // The clock follows the label, so the label drops its trailing ellipsis to
   // make room for it: "Working…" alone, "Working for 12s" with a clock.
   const step = liveLabel(parts[parts.length - 1]);
   const running = clock ? step.replace(/…$/, '') : step;
-  const bits: string[] = [];
-  // How long it took, first: it is the thing the PM was watching a second ago.
-  if (!live && clock) bits.push(`worked for ${clock}`);
-  if (sources.size > 0) bits.push(`${sources.size} source${sources.size === 1 ? '' : 's'}`);
-  if (searches > 0) bits.push(`${searches} search${searches === 1 ? '' : 'es'}`);
-  if (actions > 0) bits.push(`${actions} action${actions === 1 ? '' : 's'}`);
   return (
     <div className="my-1 text-xs">
       <button
-        className="flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
+        disabled={steps.length === 0}
       >
-        {live ? (
-          <InkWriting small className="shrink-0 text-brand" />
-        ) : (
-          <Brain className="size-3.5 shrink-0" />
-        )}
-        <span className="truncate font-medium">{live ? running : 'Reasoning'}</span>
+        {live && <InkWriting small className="shrink-0 text-brand" />}
+        <span className="truncate font-medium">{live ? running : trailSummary(parts, clock)}</span>
         {/* The running row's own clock ("Working for 12s"), so a step that is
             taking a while reads as slow rather than as stuck. */}
         {live && clock && <span className="shrink-0">for {clock}</span>}
-        {!live && bits.length > 0 && <span className="shrink-0">· {bits.join(' · ')}</span>}
         {failed > 0 && <span className="shrink-0 text-destructive">· {failed} failed</span>}
-        <ChevronDown
-          className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
-        />
+        {steps.length > 0 && (
+          <ChevronDown
+            className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+          />
+        )}
       </button>
       {open && (
         <div className="mt-1 ml-2 flex flex-col border-l border-border pl-3">
-          {parts.map((part, i) => {
-            if (part.type === 'reasoning')
-              return (
-                <div
-                  key={i}
-                  className="px-1.5 py-1 leading-relaxed whitespace-pre-wrap text-muted-foreground"
-                >
-                  <WikiText text={linkifyNotePaths(part.text ?? '')} onOpen={onOpen} />
-                </div>
-              );
-            return <ToolStep key={i} part={part} />;
-          })}
+          {/* Keyed by where the part sits in the turn, not by where it sits in
+              the filtered list: a step that lands its write drops out of the
+              trail mid-stream, and an index over what is left would hand its
+              key to the step after it. */}
+          {parts.map((part, i) =>
+            !showsInTrail(part) ? null : part.type === 'reasoning' ? (
+              <div
+                key={i}
+                className="px-1.5 py-1 leading-relaxed whitespace-pre-wrap text-muted-foreground"
+              >
+                <WikiText text={linkifyNotePaths(part.text ?? '')} onOpen={onOpen} />
+              </div>
+            ) : (
+              <ToolStep key={i} part={part} onOpen={onOpen} />
+            ),
+          )}
         </div>
       )}
     </div>
@@ -1095,7 +910,12 @@ function SessionThread({
         setInput(text);
         return;
       }
-      send(attachedMessage(result.files.map((f) => f.file), text));
+      send(
+        attachedMessage(
+          result.files.map((f) => f.file),
+          text,
+        ),
+      );
       setPickedSkill(null);
     } catch {
       setAttached(batch);

@@ -45,8 +45,8 @@ function card(id: string, extra: Partial<ProposalDTO> = {}): ProposalDTO {
 // ---------------------------------------------------------------------------
 
 test('every kind of card lands as the row a silent write would have left', () => {
-  // A new page: the verb the landed rows use, the page's own title, and the
-  // sections it filled.
+  // A new page: the verb the landed rows use and the page's own title. Nothing
+  // after it, because the title is the whole change.
   assert.deepEqual(
     appliedRowForCard(
       card('a', {
@@ -63,7 +63,6 @@ test('every kind of card lands as the row a silent write would have left', () =>
       proposalId: 'a',
       path: 'research/pricing.md',
       title: 'Pricing tiers',
-      change: 'Summary',
     },
   );
   // An edit says what moved, and takes the page's real name from the workspace
@@ -101,7 +100,7 @@ test('every kind of card lands as the row a silent write would have left', () =>
     }),
   );
   assert.equal(decision.verb, 'New');
-  assert.equal(decision.change, 'We ship SCIM in Q2.');
+  assert.equal(decision.change, undefined);
   // A page that went has no change line: the row's own words are the whole
   // story, and there is nothing left to open.
   const removed = appliedRowForCard(
@@ -125,7 +124,10 @@ test('every kind of card lands as the row a silent write would have left', () =>
   );
 });
 
-test('an approved to-do says when, and nothing else', () => {
+test('an approved to-do is its own title and nothing else', () => {
+  // The date used to follow the title ("due 11 Sep"). The promise is the title,
+  // the date sits on the to-do, and a row that says both says one thing twice
+  // (Erik, 2026-09-09).
   const row = appliedRowForCard(
     card('a', {
       kind: 'note',
@@ -137,7 +139,7 @@ test('an approved to-do says when, and nothing else', () => {
     }),
   );
   assert.equal(row.verb, 'New todo');
-  assert.equal(row.change, 'due 11 Sep');
+  assert.equal(row.change, undefined);
 });
 
 test('the Activity row an approval left is the row’s way back', () => {

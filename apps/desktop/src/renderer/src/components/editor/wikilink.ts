@@ -1,6 +1,7 @@
 import { Node } from '@tiptap/core';
 import { linkTypeLabel, linkTypeToken, normalizeLinkTarget } from '@qale/domain';
 import { isExternalRef, refMetaCached } from '../../lib/connections';
+import { noteTitleFor, onNoteTitles } from '../../lib/note-titles';
 import { AMBIGUOUS_PILL_CLASS, pillClass } from '../ExternalRef';
 import { requestLinkTypeMenu } from './link-type';
 
@@ -75,6 +76,21 @@ export function retypeWikilink(
   return { ...next, raw: renderWikilink(next) };
 }
 
+/**
+ * What the chip prints. An alias wins, because it is what the author wrote to
+ * be read. An external reference keeps its written form until the mirror
+ * answers with the ticket key. Anything else reads as the note's name: the
+ * target is a storage path, and a path is not a thing to show a reader.
+ *
+ * The text being edited is untouched. The chip is a display of the link, and
+ * `renderMarkdown` still writes the original `[[...]]` source back.
+ */
+export function wikilinkLabel(attrs: Pick<WikiLinkAttrs, 'target' | 'alias'>): string {
+  if (attrs.alias) return attrs.alias;
+  if (isExternalRef(attrs.target)) return attrs.target;
+  return noteTitleFor(attrs.target);
+}
+
 export const WikiLink = Node.create({
   name: 'wikiLink',
   inline: true,
@@ -124,11 +140,13 @@ export const WikiLink = Node.create({
   },
 
   /**
-   * Display-only node view: an external reference (ticket/wikipage mirror)
-   * upgrades in place to a chip — key + raw-state pill from the local mirror —
-   * and stamps `data-external-ref` so the app-level hover layer serves it the
-   * same hover card as the read view. Serialization is untouched: the markdown
-   * round-trip still emits the original `[[...]]` source byte-exact.
+   * Display-only node view. A link to a note reads as the note's name, the
+   * same answer the read view prints, so the chip never shows a storage path.
+   * An external reference (ticket/wikipage mirror) upgrades in place to a chip
+   * (key + raw-state pill from the local mirror) and stamps `data-external-ref`
+   * so the app-level hover layer serves it the same hover card as the read
+   * view. Serialization is untouched: the markdown round-trip still emits the
+   * original `[[...]]` source byte-exact.
    *
    * The one interactive part is the relationship chevron: a click on the pill
    * navigates (that's the whole point of a link), so retyping needs its own
@@ -153,8 +171,17 @@ export const WikiLink = Node.create({
         dom.appendChild(typeChip);
       }
       const label = document.createElement('span');
-      label.textContent = attrs.alias ?? attrs.target;
+      label.textContent = wikilinkLabel(attrs);
       dom.appendChild(label);
+      // The tree can arrive after the note does (a fresh window, a workspace
+      // that just opened), so the chip follows it rather than keeping the
+      // first answer. An alias and an external reference never change.
+      const stopTitles =
+        attrs.alias || isExternalRef(attrs.target)
+          ? null
+          : onNoteTitles(() => {
+              label.textContent = wikilinkLabel(attrs);
+            });
 
       // The chevron always sits last, so anything appended later (the ticket
       // state pill, which arrives async) inserts before it.
@@ -216,7 +243,12 @@ export const WikiLink = Node.create({
           }
         });
       }
-      return { dom };
+      return {
+        dom,
+        destroy() {
+          stopTitles?.();
+        },
+      };
     };
   },
 

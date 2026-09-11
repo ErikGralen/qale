@@ -26,9 +26,7 @@ of it:
 Two things change under you between runs, so read them rather than remember them.
 
 - **Delivery comes from the ticket mirror.** What shipped, what is in flight, what is blocked: read
-  `state` and `remote_updated` off the mirror note in tickets/, never off your memory of it. The
-  mirrors come from the Jira projects `BOK` (Bookings), `GST` (Guest) and `PAY` (Payments), and
-  the pages from the Confluence space `PROD`.
+  `state` and `remote_updated` off the mirror note in tickets/, never off your memory of it.
 - **A decision means its live head.** Follow `supersedes` to the end of the chain before you use a
   decision. A superseded one is history, never a requirement today.
 
@@ -137,12 +135,11 @@ What you want from Qale. Qale reads this before every job and adds to it as it l
 ask for. Edit it any time. Keep it to about ten lines.
 
 - When a meeting ends, write the actions into Jira and Confluence for me.
-- When I say a date to a customer, put it on the record and tell me if it differs from what they
-  were told before.
-- When someone reports a problem, tell me if it matches an open ticket.
-- Tell me who is waiting for something before it ships, and what they were told.
 - Answer "when can we deliver this?" from the record, not from my memory.
-- Write the week's news once for the internal channel and the public changelog.
+- Tell me who is waiting for something before it ships, and what they were told.
+- When a priority changes in a room I was in, change the record so the team reads it.
+- Write the week's news once and give it to me in the words each group needs.
+- Keep track of what I promised and tell me before the date, not after.
 
 ## Your rules
 

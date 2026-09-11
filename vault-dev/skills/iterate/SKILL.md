@@ -34,16 +34,25 @@ Then ask for the round with ask_user. One call is one round.
 
 Two to six per round. One is not a round, and more than six is a card nobody finishes.
 
-Each idea is one question on the card:
+Each idea is one question on the card. A card is for glancing at, not for reading, so every part
+is short:
 
-- header: the idea's short name, a word or two.
-- question: the idea in one line.
-- body: the case for it in a few short paragraphs, and its cost in the same breath: what it gives
-  up, who has to do the work, what it makes harder later. An idea with no cost written down cannot
-  be weighed against the one next to it.
+- header: one or two words. The card cuts it at twelve characters.
+- question: one line, a real question, under about twelve words, with no citation in it.
+- body: one or two sentences, thirty words in all. Say where the idea comes from and what stands
+  against it, and name each source as a wikilink inside the sentence. A link draws as the note's
+  title, so write the sentence to read with a title in that place.
 - options: "Keep it" and "Cut it". Add a third when the idea has a natural variant ("Keep, but
-  smaller"). The card offers a written answer beside the options on its own, so never add an
-  "Other" option.
+  smaller"). A description is a few words, or nothing at all. The card offers a written answer
+  beside the options on its own, so never add an "Other" option.
+
+One idea, whole: header "Lunch fee", question "Is a different fee for lunch and dinner in scope?",
+body "Mentioned in [[meetings/2026-06-02-brasserie-lund-review]], but only one fee is in
+[[notes/fee-rules]].", options "Keep it" and "Cut it".
+
+A paragraph per idea is a form, and a form gets one answer at the bottom instead of six. The PM
+glances at the card, picks, and writes a line where they disagree. An argument that does not fit
+the rule above goes in the chat above the round, where the framing already is.
 
 Close the card with one written question, no options, header "Anything else": what is missing,
 what to merge, what you got wrong. That is where the reaction to the whole round lands.

@@ -9,19 +9,16 @@ scenarios:
 ---
 
 ## When
-
 You dumped rough text into a note (half-sentences from a call, a day's running log) and hit
 "Go through this document" on the document page. Re-runs are normal: yesterday's processed note with
 today's raw additions at the bottom.
 
 ## Read
-
 The note first. Then the memory it touches: search_vault for the people, customers, research pages, and
 decisions it mentions. Existing wikilinks mean an earlier run already handled those parts; leave
 them alone and work on what is new or still raw.
 
 ## Check what it claims
-
 Before you propose anything, write out what the dump asserts and call `check_claims` once: who
 committed to what, dates, owners, numbers, decisions. One claim per entry, in the words the dump
 used, each scoped to the pages it is about or to a tag.
@@ -30,14 +27,14 @@ Each one comes back as already known (do nothing), new (file it below as you wou
 conflict with a note we hold, implying something that is not there, or no answer. No answer means
 nothing was settled, so treat it as if you had never asked.
 
-A conflict is a question every time, asked before you write either side: what the material says,
-the note as a link, one question, and the two answers as options. Write what they chose and set
+A conflict is a question every time, asked before you write either side. Ask it in one line, under
+about twelve words, with no citation in it. What the material says and the note as a link go in
+the body, in one sentence. The two answers are the options. Write what they chose and set
 `asked`. A gap you can fill from the source is not a question at all; fill it. A gap only the PM
 can fill can earn one. Ask about their world, never about our filing. The answer says how many of
 them to ask.
 
 ## Produce
-
 Each piece its own write:
 - **The note itself**, as one propose_update: fix typos and half-sentences, group related lines
   under short headings, and turn plain-text mentions into wikilinks to pages that exist. This is
@@ -57,7 +54,6 @@ If a fragment is ambiguous, keep it verbatim and ask one concrete question. Gues
 meant puts words in your notes.
 
 ## Then
-
 Your writes clean the note and propagate it: hubs updated, loops closed, new todos, insights, and
 decisions filed. The todos, the hub edits, the insights and the decisions land as you write them,
 and the chat lists them. A rewrite of the lines you typed waits for you, because those are your

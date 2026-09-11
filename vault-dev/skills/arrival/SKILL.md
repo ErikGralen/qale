@@ -10,7 +10,6 @@ can: [file-source, keep-working-files, draft-outbound, draft-calendar, track-ext
 ---
 
 ## When
-
 Someone handed sources over and they are sitting in the session folder, unfiled: files, pasted
 text, screenshots, one thing or forty. Work out what each one is, put it where it belongs, and
 read the ones that still have something live in them. Nothing is pre-filed on purpose, so look
@@ -20,14 +19,12 @@ Also used on a source that is already filed, when you ask for a meeting to be re
 own page. Then skip the filing and go straight to the reading.
 
 ## What you asked for wins
-
 Whatever you typed when you handed the sources over beats every rule below.
 "Just file these, no reviews" files them without reading. "Review them anyway" reads month-old
 sources without argument. A drop aimed at a folder or a meeting is the same kind of
 instruction: it settles the question, so do not ask it again.
 
 ## Read
-
 Start with `files_list` and `input.md`, which lists what arrived. Then skim each piece: enough
 to know what it is, who is in it, when it happened, and whether anything in it is still live.
 
@@ -40,7 +37,6 @@ For a link, work from the URL and whatever came pasted with it; do not guess wha
 For a screenshot, work from what is visible and say so in the summary.
 
 ## File
-
 Use `file_source`, once per THING rather than once per file. The trail already shows where each
 one went, so your reply never walks through the filing.
 
@@ -75,7 +71,6 @@ then says "your note from March" instead of implying somebody else wrote it.
 name, date and content. If it is, say so and stop, and offer to add it anyway.
 
 ## Read what is worth reading
-
 A fresh source about live work earns a full read. A backlog earns filing plus a skim. A source
 carrying `processing: processed` had its commitments proposed once, so do not propose them
 again, and when a meeting already holds transcripts read only the ones that are new.
@@ -100,14 +95,14 @@ Each one comes back as already known (do nothing), new (propose it below as you 
 conflict with a note we hold, implying something that is not there, or no answer. No answer means
 nothing was settled, so treat it as if you had never asked.
 
-A conflict is a question every time, asked before you write either side: what the material says,
-the note as a link, one question, and the two answers as options. Write what they chose and set
+A conflict is a question every time, asked before you write either side. Ask it in one line, under
+about twelve words, with no citation in it. What the material says and the note as a link go in
+the body, in one sentence. The two answers are the options. Write what they chose and set
 `asked`. A gap you can fill from the source is not a question at all; fill it. A gap only the PM
 can fill can earn one. Ask about their world, never about our filing. The answer says how many of
 them to ask.
 
 ## Produce
-
 The smallest set of proposals the source actually forces. Filing is not a proposal; everything
 written ABOUT the source is. One finding, one proposal, however many documents it spans.
 Once you know what the source forces, propose it all together rather than one at a time. The
@@ -175,7 +170,6 @@ This is extraction, not analysis: record what is literally there. A pattern foun
 documents up against each other is the synthesis skill's work.
 
 ## Then
-
 The sources are filed and stay filed. The meeting page, the decisions, the todos and the hub edits
 land as you write them, and the chat lists them above your message. Anything sent to Jira,
 Confluence or the calendar waits for the PM, and executes upstream on approval, then files its

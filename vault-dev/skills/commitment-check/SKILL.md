@@ -12,7 +12,6 @@ scenarios:
 ---
 
 ## When
-
 One promise, and it runs in one of two directions. Work out which before anything else, because
 everything below branches on it.
 
@@ -26,7 +25,6 @@ The sender's message is the source. Where it arrived as a file instead, filing i
 skill's job and this one reads what got filed.
 
 ## Read: a commitment of yours
-
 The todo (title, due date, owner, the `sources` it cites), the meeting or note where the
 commitment was made, and the related customer, research and decision pages. Three checks change
 the answer, so make all three:
@@ -38,7 +36,6 @@ the answer, so make all three:
   `participants`. A conversation already on the calendar changes the best move.
 
 ## Read: a request that came in
-
 The message first, closely: what is literally asked for, by when, and what is only implied.
 
 Then the memory it touches:
@@ -53,18 +50,17 @@ Then the memory it touches:
   An ask we committed to in March is a different conversation from a new one.
 
 ## Check what it claims
-
 Before you close a todo, move its date, or write an owner or a number, call `check_claims` once
 with what you are about to write, the way the arrival skill does. Scope each claim to the pages it
 is about: the todo, the person, the customer.
 
-A conflict is a question every time, asked before the write: what you have, the note as a link, one
-question, and the two answers as options. Then write what they chose and set `asked`. A close the
+A conflict is a question every time, asked before the write. Ask it in one line, under about twelve
+words, with no citation in it. What you have and the note as a link go in the body, in one sentence.
+The two answers are the options. Then write what they chose and set `asked`. A close the
 PM said out loud in a source is theirs, so write it. A close you worked out yourself is a question
-("Åsa said the dates went out. Mark the send-Nordkap-the-dates todo done?").
+("Mark the send-Nordkap-the-dates todo done?", with what Åsa said about the dates in the body).
 
 ## Produce: a commitment of yours
-
 The right handling for this one commitment, each option as its own write. Pick what fits;
 do not produce all of them.
 - **A plan**, the default when it is live and just needs doing: a short `## Plan` section on the
@@ -86,7 +82,6 @@ do not produce all of them.
   send yourself, citing where the commitment was made. It is not a proposal, and nothing sends it.
 
 ## Produce: a request that came in
-
 One proposal, a short insight (propose_note, type `insight`, path `insights/<slug>.md`): what the
 ask tells us, in one claim, with the sender's own words quoted under it. The slug is the
 claim, not the sender. `evidence` lists the pages it rests on: the sender's page, the customer,
@@ -124,7 +119,6 @@ Saying no is a posture like any other and forces no proposal by itself. Recommen
 decision it rests on, and draft the reply only where it has to be said out loud.
 
 ## Then
-
 Your writes update this one commitment: the plan lands on the todo, a close flips `commitment`, a
 reschedule moves `due`. Nothing else in the memory is touched.
 
@@ -136,7 +130,6 @@ write no page there.
 A nudge and a reply are not proposals. Both wait in the chat for you to copy and send yourself.
 
 ## The shape of the insight
-
 ```
 [propose_note, type insight, insights/<slug>.md]
 [frontmatter: summary <the claim, in one line>, tags, evidence <the pages it rests on>,

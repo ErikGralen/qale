@@ -6,10 +6,11 @@ import {
   useRef,
   useState,
   type ComponentProps,
+  type ReactNode,
 } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { remarkPlugins } from '@qale/markdown';
-import { slugFromPath, titleForRef } from '@qale/domain';
+import { noteLinkTitle } from '../lib/note-links';
 import { invoke } from '../lib/ipc';
 import { isExternalRef } from '../lib/connections';
 import { navFromEvent, type NavOpts } from '../lib/nav';
@@ -201,10 +202,7 @@ function Anchor(
     // still proposing is not in the tree yet, and printing the whole
     // storage path there was the one place a slug reached the reader.
     const written = typeof props.children === 'string' ? props.children : null;
-    const title =
-      written && written === target
-        ? (titleBySlug.get(slugFromPath(target)) ?? titleForRef(target))
-        : undefined;
+    const title = written && written === target ? noteLinkTitle(target, titleBySlug) : undefined;
     return (
       <>
         <TypeChip label={linkType} />
@@ -226,6 +224,14 @@ function Anchor(
 
 const COMPONENTS = { pre: CodeBlock, span: TicketSpan, a: Anchor };
 
+/** An inline render has no block to draw, so the paragraph frame goes away and
+ *  the text joins the line it sits in. */
+function InlineParagraph({ children }: { children?: ReactNode }) {
+  return <>{children}</>;
+}
+
+const INLINE_COMPONENTS = { ...COMPONENTS, p: InlineParagraph };
+
 /**
  * Memoised on its props: a transcript re-renders on every streamed token, and
  * the answers above the live one have not changed.
@@ -234,6 +240,7 @@ export const Markdown = memo(function Markdown({
   content,
   onOpenNote,
   compact = false,
+  inline = false,
 }: {
   content: string;
   /** Optional — omit for read-only renders (e.g. a past version) where links don't navigate.
@@ -242,6 +249,13 @@ export const Markdown = memo(function Markdown({
   /** Draw at the size of the text around it, for a body quoted inside a card.
    *  The reading view keeps the full scale. */
   compact?: boolean;
+  /**
+   * Draw one line of text inside a line of the app's own: a question line, an
+   * option label. Same renderer, so a wikilink is the same chip with the same
+   * name on it and a ticket key is the same live chip. Only the block frame
+   * and the reading type go away — the line around it sets those.
+   */
+  inline?: boolean;
 }) {
   const { tree } = useApp();
   // A link the author wrote as `[[decisions/adopt-workos]]` reads as the note's
@@ -254,6 +268,18 @@ export const Markdown = memo(function Markdown({
     return m;
   }, [tree]);
   const links = useMemo(() => ({ onOpenNote, titleBySlug }), [onOpenNote, titleBySlug]);
+
+  if (inline) {
+    return (
+      <LinkCtx.Provider value={links}>
+        <span className="note-body-inline">
+          <ReactMarkdown remarkPlugins={PLUGINS} components={INLINE_COMPONENTS}>
+            {content}
+          </ReactMarkdown>
+        </span>
+      </LinkCtx.Provider>
+    );
+  }
 
   return (
     <LinkCtx.Provider value={links}>

@@ -307,6 +307,17 @@
     @apply my-1.5 text-xs;
   }
 
+  /* One line of markdown drawn inside a line of the app's own text: a question
+     line, an option label. The wikilink chip and the ticket chip carry their
+     own looks, so only a plain link and a code span need saying again here.
+     Nothing sets type: the line around it does that. */
+  .note-body-inline a {
+    @apply text-brand underline-offset-2 hover:underline;
+  }
+  .note-body-inline code {
+    @apply rounded bg-muted px-1 py-px font-mono text-[0.85em];
+  }
+
   /* WYSIWYG editor (TipTap) — same .note-body class as the read view. */
   .note-body p.is-editor-empty:first-child::before {
     content: attr(data-placeholder);

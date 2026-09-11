@@ -1,3 +1,5 @@
+import { slugFromPath, titleForRef } from '@qale/domain';
+
 const VAULT_FOLDERS = [
   'sources',
   'meetings',
@@ -38,4 +40,22 @@ export function outsideCode(text: string, rewrite: (chunk: string) => string): s
     .split(/(```[\s\S]*?```)/)
     .map((chunk, i) => (i % 2 === 1 ? chunk : rewrite(chunk)))
     .join('');
+}
+
+/**
+ * What a link with no alias prints: the note's own name, never its storage
+ * path. The tree is asked first, so the chip says word for word what the
+ * sidebar says.
+ *
+ * Two rows can't be used as a name, and both are real. A note the tree does
+ * not hold yet is one (a page a session is still proposing). A row whose title
+ * is blank or is the slug itself is the other: a calendar mirror has no
+ * `title:` in its frontmatter, so its name is derived rather than read. Either
+ * way the name comes off the slug, which is what the sidebar shows too.
+ */
+export function noteLinkTitle(target: string, titleBySlug: ReadonlyMap<string, string>): string {
+  const slug = slugFromPath(target);
+  const fromTree = titleBySlug.get(slug)?.trim();
+  if (fromTree && fromTree !== slug && fromTree !== target) return fromTree;
+  return titleForRef(target) || target;
 }

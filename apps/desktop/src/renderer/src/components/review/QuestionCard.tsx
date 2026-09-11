@@ -5,7 +5,7 @@ import type { AskAnswerDTO, AskQuestionDTO, AskRequestDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 import { Key, useAutoGrow } from '../Composer';
 import { Markdown } from '../Markdown';
-import { stripWikilinks, WikiText } from './shared';
+import { stripWikilinks } from './shared';
 import { linkifyNotePaths, outsideCode } from '../../lib/note-links';
 
 /**
@@ -423,10 +423,13 @@ function QuestionStep({
     >
       <p id={labelId} className="mb-1.5 text-body leading-snug text-pretty">
         <span className="mr-1.5 rounded-md bg-muted px-1.5 py-0.5 align-[0.08em] text-xs font-medium text-muted-foreground">
-          {question.header}
+          <Markdown inline content={linkifyNotePaths(question.header)} onOpenNote={onOpen} />
         </span>
+        {/* The same renderer the body uses, so one wikilink cannot read two
+            ways in one card: the chip says the note's name, and a ticket key
+            is the live chip with its state on it. */}
         <span className="font-medium text-foreground">
-          <WikiText text={linkifyNotePaths(question.question)} onOpen={onOpen} />
+          <Markdown inline content={linkifyNotePaths(question.question)} onOpenNote={onOpen} />
         </span>
         {question.multiSelect && (
           <span className="ml-1.5 text-xs text-muted-foreground">
@@ -460,6 +463,7 @@ function QuestionStep({
             inputRef={oi === 0 ? firstRef : undefined}
             label={opt.label}
             description={opt.description}
+            onOpen={onOpen}
             onSelect={() => onPick(opt.label)}
           />
         ))}
@@ -478,6 +482,7 @@ function QuestionStep({
             checked={writing}
             disabled={disabled}
             label={picked.length > 0 ? 'Add a comment' : 'Something else'}
+            onOpen={onOpen}
             onSelect={onToggleWriting}
           />
         )}
@@ -514,6 +519,7 @@ function OptionRow({
   inputRef,
   label,
   description,
+  onOpen,
   onSelect,
 }: {
   index: number;
@@ -524,6 +530,7 @@ function OptionRow({
   inputRef?: React.RefObject<HTMLInputElement | null>;
   label: string;
   description?: string;
+  onOpen: (path: string) => void;
   onSelect: () => void;
 }) {
   return (
@@ -555,17 +562,17 @@ function OptionRow({
       >
         {checked ? <Check className="size-3" strokeWidth={3} /> : index + 1}
       </span>
-      {/* An option's text is stripped of its link syntax rather than rendered as
-          links: the whole row is one hit target, and a link inside it would be a
-          second thing to click on the control you are trying to pick. The note
-          the question is about is named in the question, which does link. */}
+      {/* An option names notes and tickets as often as the question does, so it
+          reads them the same way: the body's renderer, the note's name in the
+          chip. The row stays the hit target — a chip is interactive content,
+          which the browser never counts as a click on the label. */}
       <span className="min-w-0">
         <span className="block text-sm leading-snug break-words text-foreground">
-          {stripWikilinks(label)}
+          <Markdown inline content={linkifyNotePaths(label)} onOpenNote={onOpen} />
         </span>
         {description && (
           <span className="mt-0.5 block text-xs leading-snug break-words text-muted-foreground">
-            {stripWikilinks(description)}
+            <Markdown inline content={linkifyNotePaths(description)} onOpenNote={onOpen} />
           </span>
         )}
       </span>

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useRef, useState, type MouseEvent } from 'react';
+import { Fragment, useCallback, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Spinner } from '@qale/ui';
 import {
   Check,
@@ -24,6 +24,7 @@ import {
   orderLanded,
   putRowBack,
   rowChange,
+  tierForRow,
   type LandedSummary,
   type SummaryChip,
 } from '../../lib/receipt-block';
@@ -43,6 +44,11 @@ import { ChangePreview } from './CardItem';
  * the PM scrolled past all of it (Erik, 2026-09-09). The line names pages
  * rather than counting them, because "changed 3 pages" answers nobody's
  * question and "did it touch the thing I care about" is the question.
+ *
+ * Qale's own record is the one tier that always folds, however few pages it
+ * touched (Erik, 2026-09-11): a memory write is not a promise or a document
+ * the PM acts on row by row, so it never needs more than "Updated memory" and
+ * a chevron, even when it is the only thing the turn did.
  *
  * The line and the rows read in one fixed order, by what the PM has to act on:
  * to-dos and meeting pages Qale made, then to-dos and meeting pages that moved,
@@ -77,6 +83,7 @@ export function LandedRows({
   const [undone, setUndone] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const cards = useCards(sessionId);
 
   if (rows.length === 0) return null;
@@ -99,40 +106,110 @@ export function LandedRows({
 
   const ordered = orderLanded(rows);
   const isUndone = (row: AppliedRow) => !!row.activityId && !!undone[row.activityId];
-  const list = (
+  let keyIndex = 0;
+  const renderRow = (row: AppliedRow): ReactNode => {
+    const i = keyIndex++;
+    return (
+      <LandedRow
+        key={row.activityId ?? row.proposalId ?? `${row.path ?? ''}-${i}`}
+        row={row}
+        busy={busy === row.activityId}
+        undone={isUndone(row)}
+        card={cards.get}
+        onOpen={onOpen}
+        onPutBack={() => row.activityId && void putBack(row.activityId)}
+      />
+    );
+  };
+
+  const memoryRows = ordered.filter((row) => tierForRow(row) === 'memory');
+  const otherRows = ordered.filter((row) => tierForRow(row) !== 'memory');
+
+  if (foldsLanded(otherRows)) {
+    // The line is built from what still stands, so a row put back from the
+    // open list takes itself out of the line rather than leaving it to lie.
+    const summary = landedSummary(ordered.filter((row) => !isUndone(row)));
+    return (
+      <div className="my-1 text-xs">
+        {/* The same shape and the same classes as the work trail above it: one
+            line, one button, the chevron at the end. The line's own words are its
+            label, so it needs no other one. */}
+        <button
+          className="flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          {/* One mark for the line, in ink: four marks over a fold would be a
+              legend for rows nobody has opened yet. A plus when the turn made a
+              to-do or a meeting page, a pencil when it only moved things that
+              were already there. */}
+          <LineMark mark={summary.mark} />
+          <span className="truncate">
+            {summary.text ? <SummaryLine summary={summary} /> : 'Undone'}
+          </span>
+          <ChevronDown
+            className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+            aria-hidden
+          />
+        </button>
+        {open && (
+          <ul aria-label={label ?? undefined} className="my-1 flex flex-col gap-0.5">
+            {ordered.map(renderRow)}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  // Below the fold: everything but memory draws as its own row. Memory always
+  // draws as one line, whatever it touched, between the documents and anything
+  // removed, which is where `orderLanded` puts it.
+  const removedRows = otherRows.filter((row) => tierForRow(row) === 'removed');
+  const shownRows = otherRows.filter((row) => tierForRow(row) !== 'removed');
+
+  return (
     <ul aria-label={label ?? undefined} className="my-1 flex flex-col gap-0.5">
-      {ordered.map((row, i) => (
-        <LandedRow
-          key={row.activityId ?? row.proposalId ?? `${row.path ?? ''}-${i}`}
-          row={row}
-          busy={busy === row.activityId}
-          undone={isUndone(row)}
-          card={cards.get}
-          onOpen={onOpen}
-          onPutBack={() => row.activityId && void putBack(row.activityId)}
+      {shownRows.map(renderRow)}
+      {memoryRows.length > 0 && (
+        <MemoryFold
+          rows={memoryRows}
+          standing={memoryRows.filter((row) => !isUndone(row))}
+          open={memoryOpen}
+          onToggle={() => setMemoryOpen((v) => !v)}
+          renderRow={renderRow}
         />
-      ))}
+      )}
+      {removedRows.map(renderRow)}
     </ul>
   );
-  if (!foldsLanded(ordered)) return list;
+}
 
-  // The line is built from what still stands, so a row put back from the open
-  // list takes itself out of the line rather than leaving it to lie.
-  const summary = landedSummary(ordered.filter((row) => !isUndone(row)));
+/**
+ * Qale's own record, always as one line: "Updated memory" and a chevron,
+ * whether it touched one page or ten (Erik, 2026-09-11). Open, it lists the
+ * pages the same way any other row does, each with its own diff and Undo.
+ */
+function MemoryFold({
+  rows,
+  standing,
+  open,
+  onToggle,
+  renderRow,
+}: {
+  rows: readonly AppliedRow[];
+  standing: readonly AppliedRow[];
+  open: boolean;
+  onToggle: () => void;
+  renderRow: (row: AppliedRow) => ReactNode;
+}) {
+  const summary = landedSummary(standing);
   return (
-    <div className="my-1 text-xs">
-      {/* The same shape and the same classes as the work trail above it: one
-          line, one button, the chevron at the end. The line's own words are its
-          label, so it needs no other one. */}
+    <li className="text-xs">
       <button
         className="flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-        onClick={() => setOpen((v) => !v)}
+        onClick={onToggle}
         aria-expanded={open}
       >
-        {/* One mark for the line, in ink: four marks over a fold would be a
-            legend for rows nobody has opened yet. A plus when the turn made a
-            to-do or a meeting page, a pencil when it only moved things that
-            were already there. */}
         <LineMark mark={summary.mark} />
         <span className="truncate">
           {summary.text ? <SummaryLine summary={summary} /> : 'Undone'}
@@ -142,8 +219,8 @@ export function LandedRows({
           aria-hidden
         />
       </button>
-      {open && list}
-    </div>
+      {open && <ul className="my-1 flex flex-col gap-0.5">{rows.map(renderRow)}</ul>}
+    </li>
   );
 }
 

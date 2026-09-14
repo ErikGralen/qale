@@ -492,6 +492,14 @@ export interface AgentRuntimeConfig {
    * stays out of `sameConfig` like the two callbacks above.
    */
   outboundContainers?: ListOutboundContainers;
+  /**
+   * Answer from here instead of the provider's own API (docs/demo-mode.md
+   * DM-3). The demo build points this at a local replay server, and every model
+   * this runtime hands to pi carries it. Absent means the provider's own URL,
+   * which is every build but the demo one. Part of {@link sameConfig}: it
+   * decides who answers, the way the key does.
+   */
+  baseUrl?: string;
 }
 
 export interface RunInput {
@@ -1139,6 +1147,15 @@ export class AgentRuntime {
   }
 
   /**
+   * The model, pointed at whoever answers. A copy: pi owns the catalogue
+   * objects, and writing into one would reroute every later call as well.
+   */
+  private routed<T extends { baseUrl: string }>(model: T): T {
+    const baseUrl = this.config?.baseUrl;
+    return baseUrl ? { ...model, baseUrl } : model;
+  }
+
+  /**
    * Which model this run uses. Four steps down, in order: the model the PM
    * pinned to this session, the workspace default, the provider's default, then
    * whatever that provider has at all. The later steps are what makes a
@@ -1155,7 +1172,10 @@ export class AgentRuntime {
     const runtime = await this.models();
     if (!this.config) throw new Error('agent runtime not configured');
     const provider = providerFor(this.config);
-    const available = runtime.getAvailableSnapshot().filter((m) => m.provider === provider);
+    const available = runtime
+      .getAvailableSnapshot()
+      .filter((m) => m.provider === provider)
+      .map((m) => this.routed(m));
     if (available.length === 0)
       throw new Error(`No model available. Set a ${providerName(provider)} API key in Settings.`);
     // The provider's own default is the last named step, ahead of "anything
@@ -1196,7 +1216,10 @@ export class AgentRuntime {
       // and this job never touches the workspace. Bounded by the provider for
       // the same reason `resolveModel` is: the key we hold is theirs alone.
       const provider = providerFor(this.config);
-      const catalogue = runtime.getAvailableSnapshot().filter((m) => m.provider === provider);
+      const catalogue = runtime
+        .getAvailableSnapshot()
+        .filter((m) => m.provider === provider)
+        .map((m) => this.routed(m));
       // Falls back to the session's own model rather than giving up: an
       // expensive name beats no name, and this is one sentence in either case.
       const model = pick(catalogue) ?? cheapestModel(catalogue) ?? (await this.resolveModel());
@@ -2837,6 +2860,7 @@ function sameConfig(a: AgentRuntimeConfig, b: AgentRuntimeConfig): boolean {
     providerFor(a) === providerFor(b) &&
     a.modelId === b.modelId &&
     a.apiKey === b.apiKey &&
+    (a.baseUrl ?? '') === (b.baseUrl ?? '') &&
     (a.language ?? DEFAULT_LANGUAGE) === (b.language ?? DEFAULT_LANGUAGE) &&
     (a.selfName ?? null) === (b.selfName ?? null) &&
     (a.codebase ?? '') === (b.codebase ?? '') &&

@@ -694,16 +694,25 @@ function retryAfterMs(header: string | null): number {
  * no XML or plumbing in the message.
  */
 function replaceInStorage(storage: string, search: string, replace: string): string {
-  const splice = (index: number, length: number): string =>
-    storage.slice(0, index) + escapeXml(replace) + storage.slice(index + length);
+  const splice = (index: number, length: number, replacement: string): string =>
+    storage.slice(0, index) + replacement + storage.slice(index + length);
 
   // Exact match first: cheap, and unambiguous when unique.
   const exact = storage.indexOf(search);
   if (exact !== -1 && storage.indexOf(search, exact + 1) === -1)
-    return splice(exact, search.length);
+    return splice(exact, search.length, escapeXml(replace));
   if (exact === -1) {
     const matches = [...storage.matchAll(tolerantPattern(search))];
-    if (matches.length === 1) return splice(matches[0]!.index, matches[0]![0].length);
+    if (matches.length === 1) {
+      // A passage the drafter read as two paragraphs is `</p><p>` in storage.
+      // When the match crossed that boundary, the replacement keeps its own
+      // paragraph breaks as paragraphs too, or two lines would land in one.
+      const crossed = /<\/p>\s*<p[^>]*>/.test(matches[0]![0]);
+      const replacement = crossed
+        ? escapeXml(replace).replace(/\n\s*\n/g, '</p><p>')
+        : escapeXml(replace);
+      return splice(matches[0]!.index, matches[0]![0].length, replacement);
+    }
     if (matches.length === 0) {
       throw new Error(
         "The page's text changed — the passage this edit targets couldn't be found. Re-sync and redraft.",
@@ -715,8 +724,13 @@ function replaceInStorage(storage: string, search: string, replace: string): str
   );
 }
 
-/** Whitespace runs → `\s+`; chars XML-escapes may have rewritten match either form. */
+/**
+ * Whitespace runs → whitespace or a paragraph boundary (`</p><p>`, which has no
+ * whitespace in it at all); chars XML-escapes may have rewritten match either
+ * form.
+ */
 function tolerantPattern(search: string): RegExp {
+  const GAP = '(?:\\s|</p>\\s*<p[^>]*>)+';
   const ENTITY: Record<string, string> = {
     '&': '(?:&amp;|&)',
     '<': '(?:&lt;|<)',
@@ -727,7 +741,7 @@ function tolerantPattern(search: string): RegExp {
   const parts: string[] = [];
   for (const ch of search.trim()) {
     if (/\s/.test(ch)) {
-      if (parts.at(-1) !== '\\s+') parts.push('\\s+');
+      if (parts.at(-1) !== GAP) parts.push(GAP);
     } else {
       parts.push(ENTITY[ch] ?? ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     }

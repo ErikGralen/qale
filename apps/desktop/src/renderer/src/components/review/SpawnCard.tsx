@@ -3,6 +3,8 @@ import { Button } from '@qale/ui';
 import { ChevronDown, Users, X } from 'lucide-react';
 import type { SpawnRequestDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
+import { linkifyNotePaths } from '../../lib/note-links';
+import { WikiText } from './shared';
 
 /**
  * The fan-out approval card (Sessions v2 Part 2) — the only moment the PM steers
@@ -21,7 +23,7 @@ import { useApp } from '../../state/app-state';
  *   rather than in your face.
  */
 export function SpawnCard({ request }: { request: SpawnRequestDTO }) {
-  const { resolveSpawn } = useApp();
+  const { resolveSpawn, openDoc } = useApp();
   const [modelId, setModelId] = useState(request.defaultModelId);
   const [briefOpen, setBriefOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -51,7 +53,9 @@ export function SpawnCard({ request }: { request: SpawnRequestDTO }) {
         {request.entries.map((entry, i) => (
           <li key={i} className="flex gap-1.5">
             <span className="shrink-0 tabular-nums">{entry.count} ×</span>
-            <span>{entry.label}</span>
+            <span>
+              <WikiText text={linkifyNotePaths(entry.label)} onOpen={(p) => void openDoc(p)} />
+            </span>
           </li>
         ))}
       </ul>

@@ -1,11 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type { NoteRefDTO, VaultTreeDTO } from '@qale/ipc';
 import {
   tokenizeWikilink,
   wikilinkAttrs,
   renderWikilink,
   retypeWikilink,
+  wikilinkLabel,
 } from '../src/renderer/src/components/editor/wikilink.js';
+import { setNoteTitles } from '../src/renderer/src/lib/note-titles.js';
 import { targetNoteType } from '../src/renderer/src/components/editor/link-type.js';
 import { splitTypePrefix } from '../src/renderer/src/components/editor/wikilink-suggest.js';
 
@@ -142,6 +145,76 @@ test('targetNoteType reads the kind of thing a link points at', () => {
   assert.equal(targetNoteType('tickets/PAY-142#scope'), 'ticket');
   // No folder = a note that doesn't exist yet: unknown, so offer everything.
   assert.equal(targetNoteType('nordkap'), null);
+});
+
+/** A workspace tree holding just the notes a test needs. */
+function tree(notes: [slug: string, title: string][]): VaultTreeDTO {
+  return {
+    groups: [
+      {
+        dir: 'notes',
+        type: 'note',
+        layer: 'work',
+        notes: notes.map(
+          ([slug, title]): NoteRefDTO => ({
+            path: `${slug}.md`,
+            slug,
+            type: 'note',
+            title,
+            summary: '',
+            mtime: 0,
+          }),
+        ),
+      },
+    ],
+  };
+}
+
+test('a wikilink chip prints the note title, never the storage path', () => {
+  setNoteTitles(
+    tree([
+      ['meetings/2026-09-10-brasserie-lund-quarterly-review', 'Brasserie Lund quarterly review'],
+      ['people/asa-lindgren', 'Åsa Lindgren'],
+    ]),
+  );
+  const label = (src: string): string => {
+    const token = tokenizeWikilink(src);
+    assert.ok(token, `expected a wikilink token at start of: ${src}`);
+    return wikilinkLabel(wikilinkAttrs(token.raw, token.text));
+  };
+
+  assert.equal(
+    label('[[meetings/2026-09-10-brasserie-lund-quarterly-review]]'),
+    'Brasserie Lund quarterly review',
+  );
+  assert.equal(label('[[people/asa-lindgren]]'), 'Åsa Lindgren');
+  // An alias is what the author wrote to be read, so it wins over the title.
+  assert.equal(label('[[people/asa-lindgren|Åsa]]'), 'Åsa');
+  // A page the workspace does not hold falls back to its own last segment,
+  // de-slugged and without the date prefix a calendar mirror carries.
+  assert.equal(label('[[meetings/2026-09-11-nordic-steak-weekly]]'), 'Nordic Steak Weekly');
+  // A ticket keeps its written form: the chip swaps in the key and the state
+  // pill when the local mirror answers.
+  assert.equal(label('[[tickets/jira/BOK-300]]'), 'tickets/jira/BOK-300');
+  assert.equal(label('[[BOK-300]]'), 'BOK-300');
+  setNoteTitles(null);
+});
+
+test('the chip title follows the tree, and the source it serializes does not', () => {
+  const attrs = wikilinkAttrs(
+    '[[todos/bok-300-stories-before-sprint-planning]]',
+    'todos/bok-300-stories-before-sprint-planning',
+  );
+  // Before the tree loads the chip still reads as words, not as a path.
+  setNoteTitles(null);
+  assert.equal(wikilinkLabel(attrs), 'Bok 300 Stories Before Sprint Planning');
+  setNoteTitles(
+    tree([['todos/bok-300-stories-before-sprint-planning', 'Write the BOK-300 stories']]),
+  );
+  assert.equal(wikilinkLabel(attrs), 'Write the BOK-300 stories');
+  // What the file holds is untouched: a save writes the link back as typed.
+  assert.equal(renderWikilink(attrs), '[[todos/bok-300-stories-before-sprint-planning]]');
+  setNoteTitles(null);
 });
 
 test('splitTypePrefix holds a usable type out of the picker query', () => {

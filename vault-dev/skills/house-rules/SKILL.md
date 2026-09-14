@@ -117,8 +117,9 @@ Where each kind of note lives. The librarian follows these when proposing paths 
 - **notes/**: the PM's own folder, behind the Documents screen: scratch notes, briefs, PRDs,
   specs, and every ⌘N capture. The folders in it are theirs, and they are the only structure in
   the workspace that a person made. Write here only when they asked for the page in this
-  conversation, and send `asked` when you do. Everything else you write goes in the memory
-  folder that owns the subject. Anything dropped in from outside goes to sources/ instead.
+  conversation, and a new page here always waits as a card, because the folder is theirs. You
+  take your own notes in the memory folder that owns the subject, never here. Anything dropped
+  in from outside goes to sources/ instead.
 - **attachments/**: dropped images and screenshots, each referenced by a capture note in
   sources/.
 - **sessions/**: replayable session receipts, written by the harness. Never hand-edited.

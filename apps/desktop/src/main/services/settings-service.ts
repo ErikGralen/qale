@@ -209,9 +209,10 @@ export interface PersistedSettings {
 const DEFAULTS: PersistedSettings = {
   vaultPath: null,
   provider: 'anthropic',
-  // The current Opus: the best of the shortlist at the long agentic work this
-  // product is. A settings file naming a model pi no longer carries still
-  // opens: `resolveModel` steps down to this default, then to anything.
+  // The fast, cheap model, not the strongest one: most runs are short, and the
+  // strongest is one pick away in the composer (see `defaultModel`). A settings
+  // file naming a model pi no longer carries still opens: `resolveModel` steps
+  // down to this default, then to anything.
   modelId: defaultModelId('anthropic'),
   anthropicKeyEnc: null,
   geminiKeyEnc: null,

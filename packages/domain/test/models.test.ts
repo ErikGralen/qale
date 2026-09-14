@@ -20,16 +20,29 @@ import {
  * until the first session, which then cannot start at all.
  */
 
-test('the shortlist stays short, and every provider has a best model first', () => {
+test('the shortlist stays short, and every provider offers the model it defaults to', () => {
   for (const id of LLM_PROVIDERS) {
     const info = LLM_PROVIDER_INFO[id];
     assert.ok(info.models.length >= 2, `${id} needs something to choose between`);
     // The point of the list is that it is not a catalogue.
     assert.ok(info.models.length <= 4, `${id} is drifting back into a catalogue`);
-    assert.equal(defaultModelId(id), info.models[0]!.id);
+    // The default is named, not positional, and it has to be a row you can see:
+    // a default missing from the picker is a model nobody can get back to.
+    assert.ok(
+      info.models.some((m) => m.id === defaultModelId(id)),
+      `${id} defaults to a model it does not offer`,
+    );
     // Every row says when to reach for it. A name and an id told nobody that.
     for (const model of info.models) assert.ok(model.note.trim().length > 0);
   }
+});
+
+test('new sessions open on the fast model, not the strongest one', () => {
+  // Named here because it is a cost decision, not a detail of the list: a run
+  // the PM never got to pick a model for (a page button, a scheduled tick)
+  // opens on this one.
+  assert.equal(defaultModelId('anthropic'), 'claude-sonnet-5');
+  assert.equal(defaultModelId('google'), 'gemini-3.6-flash');
 });
 
 test('ids are unique across providers, so one id can only mean one thing', () => {

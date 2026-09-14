@@ -14,6 +14,7 @@ import { AlertTriangle, Copy, ExternalLink, Folder, Plus, Search, X } from 'luci
 import type { NoteRefDTO, NoteType } from '@qale/ipc';
 import { useApp } from '../state/app-state';
 import { useAimedDrop } from '../lib/aimed-drop';
+import { DROP_OVER } from '../lib/file-drop';
 import { providerLabelOf } from '../lib/connections';
 import { shelfLabel } from '../lib/crumbs';
 import { mirrorFolder } from '../lib/providers';
@@ -503,7 +504,7 @@ export function FolderView({ dir }: { dir: string }) {
 
   return (
     <div
-      className={`flex h-full flex-col ${aimed.over ? 'bg-brand/5 ring-1 ring-brand/40 ring-inset' : ''}`}
+      className={`flex h-full flex-col ${aimed.over ? DROP_OVER : ''}`}
       {...aimed.handlers}
       onKeyDown={(e) => {
         // Esc drops the selection, ⌘A takes the whole filtered list. The rows

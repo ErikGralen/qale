@@ -165,6 +165,10 @@ export async function openExternalRef(
   target: string,
   meta: ExternalRefMetaDTO | null,
   onOpen?: (path: string) => void,
+  /** Where the item lives at the provider, when the caller knows an address the
+   *  workspace does not: a ticket created a second ago has no mirror to open,
+   *  and a chip that opens nothing is worse than the word it replaced. */
+  fallbackUrl?: string,
 ): Promise<void> {
   // Two trackers hold this id, so the reference names no one item. Opening
   // either would be a guess, and the wrong ticket looks like the right one.
@@ -178,7 +182,11 @@ export async function openExternalRef(
     return;
   }
   const path = await invoke['note:resolveLink'](target);
-  if (path && onOpen) onOpen(path);
+  if (path && onOpen) {
+    onOpen(path);
+    return;
+  }
+  if (fallbackUrl) window.open(fallbackUrl);
 }
 
 /** Small promise cache so a note full of chips fires one lookup per reference. */

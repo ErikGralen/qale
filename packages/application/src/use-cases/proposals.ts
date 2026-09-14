@@ -12,6 +12,7 @@ import {
   isBodyEditable,
   isFilingKey,
   refToSlug,
+  sameInstant,
   titleFromSlug,
   typeToWrite,
   writePolicy,
@@ -86,13 +87,13 @@ export interface FiledWrite {
  * The receipt row for a write that just landed (docs/fewer-approvals.md FA-4).
  *
  * Composed here, at accept time, because this is the one moment both halves are
- * in hand: the payload that says what the write does, and the note as it read
- * before it. The chat reads it back off the tool result and draws one row.
+ * in hand: the payload that says what the write does, and the name the note
+ * already had. The chat reads it back off the tool result and draws one row.
  */
 function appliedRowFor(
   rec: ProposalRecord,
   path: string | undefined,
-  before: { frontmatter: Record<string, unknown>; title: string } | null,
+  before: { title: string } | null,
   activityId: string | undefined,
 ): AppliedRow {
   const payload = (rec.payload ?? {}) as {
@@ -106,19 +107,13 @@ function appliedRowFor(
   // The store types a row's kind as a plain string; every one it can hold is a
   // proposal kind, which is what the card vocabulary asks for.
   const kind = rec.kind as ChangeLineInput['kind'];
-  // The card's own basis, carried onto the row: a to-do Qale worked out of a
-  // transcript wears the same mark in the chat that it wears in the Todos view
-  // (docs/receipt-redesign.md RC-2).
-  const inferred = rec.inference === true;
   const input = {
     kind,
     targetPath: target,
     frontmatter: payload.frontmatter,
-    before: before?.frontmatter,
     append: payload.append,
     body: payload.body,
     patch: payload.patch,
-    inferred,
   };
   const title =
     payload.title?.trim() ||
@@ -136,7 +131,6 @@ function appliedRowFor(
     ...(target ? { path: target } : {}),
     ...(title ? { title } : {}),
     ...(change ? { change } : {}),
-    ...(inferred ? { inferred } : {}),
   };
 }
 
@@ -185,8 +179,8 @@ export async function fileProposal(
     const reason = ruling.disposition === 'silent' ? SEND_WAITS_REASON : ruling.reason;
     return { rec, disposition: 'ask', reason };
   }
-  // The note as it read before, for the row the chat draws: a field that moved
-  // can only be said as a move by something that saw both ends of it (FA-4).
+  // The name the note already had, for the row the chat draws: an update's
+  // payload carries only the keys it sets, so the title comes off the file.
   const before = await noteBefore(ctx, input);
   const result = await acceptProposal(ctx, rec.id);
   if (!result.ok) {
@@ -208,21 +202,18 @@ export async function fileProposal(
   };
 }
 
-/** The note an update is about to change, as it reads now: its own title and
- *  the fields the write is about to move. Null for a write that makes a page. */
+/** The note an update is about to change, as it reads now, for its own title.
+ *  Null for a write that makes a page. */
 async function noteBefore(
   ctx: UseCaseContext,
   input: CreateProposalInput,
-): Promise<{ frontmatter: Record<string, unknown>; title: string } | null> {
+): Promise<{ title: string } | null> {
   if (input.kind !== 'update' || !input.targetPath) return null;
   try {
     const note = await ctx.vault.readNote(input.targetPath);
     if (!note) return null;
     const fm = note.frontmatter as Record<string, unknown>;
-    return {
-      frontmatter: fm,
-      title: typeof fm['title'] === 'string' ? fm['title'] : '',
-    };
+    return { title: typeof fm['title'] === 'string' ? fm['title'] : '' };
   } catch {
     return null;
   }
@@ -986,6 +977,10 @@ export interface AcceptResult {
   error?: string;
   /** Deterministic link produced by an outbound write, if any. */
   url?: string;
+  /** The provider's own id for what the send touched: the key of the ticket it
+   *  just created, the id of the event it added. The receipt draws it as a chip
+   *  (docs/receipt-redesign.md, fourth pass). */
+  externalId?: string;
   /** The vault note this accept wrote, after any rename it also made. The PM
    *  approved it, so the rail pins it — see docs/autopinning.md. */
   path?: string;
@@ -1375,16 +1370,21 @@ async function acceptOutbound(
   const mirror = findOutboundMirror(ctx, p);
   if (mirror) {
     const fm = mirror.frontmatter as Record<string, unknown>;
+    // The time is compared as an instant, never as text: one moment has several
+    // ISO spellings, and a mirror re-written in another spelling moved nothing.
     const changedSince =
       (p.remote_updated &&
         typeof fm['remote_updated'] === 'string' &&
-        fm['remote_updated'] !== p.remote_updated) ||
+        !sameInstant(fm['remote_updated'], p.remote_updated)) ||
       (p.version !== undefined && typeof fm['version'] === 'number' && fm['version'] !== p.version);
     if (changedSince) {
+      // The mirror's title names the item the way the PM reads it; a page id
+      // on its own says nothing. The id is the fallback for an unmirrored target.
+      const named = mirror.title || p.targetId;
       return {
         ok: false,
         stale: true,
-        error: `${p.targetId ?? mirror.title} changed since this was drafted. Review the change, then approve again to send anyway`,
+        error: `${named} changed since this was drafted. Review the change, then approve again to send anyway`,
       };
     }
   }
@@ -1402,6 +1402,23 @@ async function acceptOutbound(
   // The external write LANDED: record acceptance before any local garnish, so
   // a link-back failure can't leave the card pending and invite a double-post.
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
+
+  // Stamp where it landed onto the card. The card is the receipt for this send,
+  // and a receipt that cannot name the ticket it created is a sentence about
+  // something the PM has no way to. Stamped on the DRAFTED payload, not on
+  // `p`: an edited card keeps the difference between the two, which is how the
+  // session learns how the PM writes.
+  try {
+    const drafted = (rec.payload ?? {}) as Record<string, unknown>;
+    ctx.proposals.updatePayload(rec.id, {
+      ...drafted,
+      targetId: out.externalId,
+      ...(out.url ? { url: out.url } : {}),
+    });
+  } catch {
+    // Bookkeeping. The send happened; a store that cannot hold the address
+    // costs the receipt its link and nothing else.
+  }
 
   // Link-back: append the deterministic API link (the created key, e.g.
   // "PAY-171") to the spawning note. Best-effort — the push already happened.
@@ -1426,7 +1443,7 @@ async function acceptOutbound(
     }
   }
 
-  return { ok: true, url: out.url };
+  return { ok: true, url: out.url, externalId: out.externalId };
 }
 
 /**

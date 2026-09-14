@@ -119,7 +119,10 @@ function fakeContext(files: Record<string, Stored> = {}) {
         if (rec) rows.set(id, { ...rec, status });
       },
       setEditedPayload: () => {},
-      updatePayload: () => {},
+      updatePayload: (id: string, payload: unknown) => {
+        const rec = rows.get(id);
+        if (rec) rows.set(id, { ...rec, payload });
+      },
       pendingCount: () => [...rows.values()].filter((r) => r.status === 'pending').length,
     },
     activity: {
@@ -331,4 +334,32 @@ test('a silent write still records exactly one row, in the policy words', async 
   assert.equal(activity.length, 1);
   assert.equal(activity[0]!.id, filed.activityId);
   assert.notEqual(activity[0]!.reason, APPROVED_REASON);
+});
+
+test('an approved send stamps where it landed onto the card', async () => {
+  // The green receipt reads the card back a week later, so the card has to know
+  // which ticket it made. The drafted body stays exactly as it was.
+  const { ctx } = fakeContext();
+  const rec = createProposal(ctx, {
+    ...base,
+    kind: 'outbound',
+    targetPath: null,
+    payload: {
+      provider: 'jira',
+      action: 'create_ticket',
+      container: 'PAY',
+      title: 'SCIM group-mapping',
+      body: 'From the Nordkap QBR.',
+      rationale: 'Because.',
+    },
+  });
+
+  const result = await approveProposal(ctx, rec.id);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.externalId, 'PAY-171');
+  const stored = ctx.proposals.get(rec.id)!.payload as Record<string, unknown>;
+  assert.equal(stored['targetId'], 'PAY-171');
+  assert.equal(stored['url'], 'https://example.invalid/PAY-171');
+  assert.equal(stored['body'], 'From the Nordkap QBR.');
 });

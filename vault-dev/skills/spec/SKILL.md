@@ -55,8 +55,9 @@ confirm the claim. A run that ends there has done its job.
 
 One proposal, the spec (propose_note, type `note`, path `notes/spec-<slug>.md`), with `sources`
 citing the research page, the insights and the decisions it rests on. Take `tags` from the page,
-or the tag itself. Send `asked` with it: the spec is the document the PM pointed at a page and
-asked for, and `notes/` is their own folder, which nothing writes into unasked.
+or the tag itself. A spec is the PM's document, so it goes in their folder and it waits as a card:
+a new page in Documents always does. Say in the rationale what the spec covers, because that card
+is where they decide.
 
 One addition to the writing rules: no requirement without a trace. Every requirement names the
 insight, decision or ticket mirror behind it. One that cites nothing is not a requirement, it is
@@ -70,9 +71,9 @@ and accepted.
 
 ## Then
 
-The spec sits with the PM's own documents and cites its way back down: a reader follows a
-requirement to the insight, and the insight to the account that said it. A later run over the
-same page or tag extends this one instead of filing a rival.
+The spec waits as a card. Once the PM approves it, it sits with their own documents and cites its
+way back down: a reader follows a requirement to the insight, and the insight to the account that
+said it. A later run over the same page or tag extends this one instead of filing a rival.
 
 ## The shape of the spec
 

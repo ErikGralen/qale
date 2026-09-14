@@ -13,7 +13,9 @@ import { invoke } from '../lib/ipc';
 import { EXTERNAL_CHANGE_KEPT, resolveExternalChange, sameBody } from '../lib/merge-body';
 import { isExternalRef, openExternalRef, refMetaCached } from '../lib/connections';
 import { navFromEvent, type NavOpts } from '../lib/nav';
+import { setNoteTitles } from '../lib/note-titles';
 import { webUrl } from '../lib/urls';
+import { useApp } from '../state/app-state';
 import { useToast } from './toast';
 import { WikiLink } from './editor/wikilink';
 import { SlashCommand } from './editor/slash-command';
@@ -173,6 +175,13 @@ export function NoteEditor({
   searchNotes?: (query: string) => Promise<SearchHitDTO[]>;
 }) {
   const toast = useToast();
+  const { tree } = useApp();
+  // A wikilink chip prints the note's name, and the tree is where the names
+  // are. The chips are plain DOM inside a node view, so the tree is published
+  // to a module the node view can read (lib/note-titles).
+  useEffect(() => {
+    setNoteTitles(tree);
+  }, [tree]);
   // Callbacks live in refs so the editor (created once) never sees stale closures.
   const callbacks = useRef({ onSave, onOpenNote, onDirty, onAsk, searchNotes, toast });
   callbacks.current = { onSave, onOpenNote, onDirty, onAsk, searchNotes, toast };

@@ -18,6 +18,7 @@ import type {
   CaptureTodoInputDTO,
   ChatRefDTO,
   ArrivalCheckDTO,
+  ArrivalAttachDTO,
   ArrivalHandoffDTO,
   ArrivalItemInputDTO,
   ArrivalProgressDTO,
@@ -82,6 +83,11 @@ export type ViewBody = { title: string } &
         sessionId?: string;
         initialPrompt?: string;
         autoTitle?: boolean;
+        /** The model the composer that opened this was set to, when that was
+         *  not the workspace default. It has to travel with the start, because
+         *  the first turn goes before the session view has a composer of its
+         *  own to pick in. */
+        modelId?: string;
         /** The page a scoped Ask came from, as a filter (IM-13). The session is
          *  built with the matching notes already listed. */
         scope?: SessionScopeDTO;
@@ -353,6 +359,8 @@ interface AppState {
       title?: string;
       fresh?: boolean;
       scope?: SessionScopeDTO;
+      /** Run it on this model instead of the workspace default. */
+      modelId?: string;
     } & NavOpts,
   ) => void;
   /** Reopen a stored conversation (replayed from the pi JSONL). */
@@ -473,6 +481,9 @@ interface AppState {
     /** Which model reads the batch. The tray sends the one it is showing. */
     modelId?: string,
   ) => Promise<ArrivalHandoffDTO>;
+  /** Put files into a session that already exists. Nothing runs; the composer
+   *  that dropped them sends the message naming them. */
+  attachToSession: (sessionId: string, items: ArrivalItemInputDTO[]) => Promise<ArrivalAttachDTO>;
   previewProposal: (id: string) => Promise<{
     before: string;
     after: string;
@@ -1047,6 +1058,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         title?: string;
         fresh?: boolean;
         scope?: SessionScopeDTO;
+        modelId?: string;
       } & NavOpts,
     ) => {
       // No caller-supplied name means nobody has named this yet, and the skill's
@@ -1059,6 +1071,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           skill,
           initialPrompt: opts?.initialPrompt,
           ...(opts?.scope ? { scope: opts.scope } : {}),
+          ...(opts?.modelId ? { modelId: opts.modelId } : {}),
           title,
           // Nobody named this tab — the first message will (see the retitle effect).
           autoTitle: !opts?.title,
@@ -1476,6 +1489,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return result;
     },
     [refreshTree],
+  );
+
+  /**
+   * Put files into a session that is already open. They land in its `source/`
+   * folder and nothing runs: the composer that dropped them sends the message
+   * that names them, so the session reads them as part of what was said.
+   */
+  const attachToSession = useCallback(
+    (sessionId: string, items: ArrivalItemInputDTO[]) =>
+      invoke['arrival:attach'](sessionId, items),
+    [],
   );
 
   const previewProposal = useCallback((id: string) => invoke['proposals:preview'](id), []);
@@ -2370,6 +2394,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       pickSource,
       checkArrival,
       ingestArrival,
+      attachToSession,
       previewProposal,
       refreshProposals,
       acceptProposal,
@@ -2481,6 +2506,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       pickSource,
       checkArrival,
       ingestArrival,
+      attachToSession,
       previewProposal,
       refreshProposals,
       acceptProposal,

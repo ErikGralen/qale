@@ -147,8 +147,9 @@ Each one comes back as already known (do nothing), new (propose it below as you 
 conflict with a note we hold, implying something that is not there, or no answer. No answer means
 nothing was settled, so treat it as if you had never asked.
 
-A conflict is a question every time, asked before you write either side: what the material says,
-the note as a link, one question, and the two answers as options. Write what they chose and set
+A conflict is a question every time, asked before you write either side. Ask it in one line, under
+about twelve words, with no citation in it. What the material says and the note as a link go in
+the body, in one sentence. The two answers are the options. Write what they chose and set
 \`asked\`. A gap you can fill from the source is not a question at all; fill it. A gap only the PM
 can fill can earn one. Ask about their world, never about our filing. The answer says how many of
 them to ask.
@@ -322,8 +323,9 @@ plain line rather than guess one.
 
 Before you write a date, an owner, a number or a standing decision the workspace may already hold,
 call \`check_claims\` once with what you are about to write, the way the arrival skill does. Scope
-each claim to the pages it is about. A conflict is a question, asked before the write: what you
-have, the note as a link, one question, and the two answers as options. Then write what they chose
+each claim to the pages it is about. A conflict is a question, asked before the write. Ask it in
+one line, under about twelve words, with no citation in it. What you have and the note as a link go
+in the body, in one sentence. The two answers are the options. Then write what they chose
 and set \`asked\`.
 
 Nothing lands in the memory on its own, but you do have session files: a question too big for
@@ -373,8 +375,9 @@ Each one comes back as already known (do nothing), new (file it below as you wou
 conflict with a note we hold, implying something that is not there, or no answer. No answer means
 nothing was settled, so treat it as if you had never asked.
 
-A conflict is a question every time, asked before you write either side: what the material says,
-the note as a link, one question, and the two answers as options. Write what they chose and set
+A conflict is a question every time, asked before you write either side. Ask it in one line, under
+about twelve words, with no citation in it. What the material says and the note as a link go in
+the body, in one sentence. The two answers are the options. Write what they chose and set
 \`asked\`. A gap you can fill from the source is not a question at all; fill it. A gap only the PM
 can fill can earn one. Ask about their world, never about our filing. The answer says how many of
 them to ask.
@@ -866,8 +869,9 @@ Where each kind of note lives. The librarian follows these when proposing paths 
 - **notes/**: the PM's own folder, behind the Documents screen: scratch notes, briefs, PRDs,
   specs, and every ⌘N capture. The folders in it are theirs, and they are the only structure in
   the workspace that a person made. Write here only when they asked for the page in this
-  conversation, and send \`asked\` when you do. Everything else you write goes in the memory
-  folder that owns the subject. Anything dropped in from outside goes to sources/ instead.
+  conversation, and a new page here always waits as a card, because the folder is theirs. You
+  take your own notes in the memory folder that owns the subject, never here. Anything dropped
+  in from outside goes to sources/ instead.
 - **attachments/**: dropped images and screenshots, each referenced by a capture note in
   sources/.
 - **sessions/**: replayable session receipts, written by the harness. Never hand-edited.
@@ -1624,8 +1628,11 @@ send anything yourself.
  * decode a Slack ping; only this one can say the ask contradicts a decision made
  * in March.
  *
- * The decode lands as note type `note` for the same reason the spec does: the
- * type list is closed, and adding to it is a product call.
+ * The inbound half used to write its reading of the ask as a page in `notes/`.
+ * That folder is the PM's, and an agent takes its notes in Memory, so the page
+ * is an insight now: one claim, with the sender's words quoted under it. What
+ * the run worked out around the claim goes in the chat, which is where the PM
+ * reads it anyway.
  */
 export const COMMITMENT_CHECK_SKILL = `---
 type: skill
@@ -1683,10 +1690,11 @@ Before you close a todo, move its date, or write an owner or a number, call \`ch
 with what you are about to write, the way the arrival skill does. Scope each claim to the pages it
 is about: the todo, the person, the customer.
 
-A conflict is a question every time, asked before the write: what you have, the note as a link, one
-question, and the two answers as options. Then write what they chose and set \`asked\`. A close the
+A conflict is a question every time, asked before the write. Ask it in one line, under about twelve
+words, with no citation in it. What you have and the note as a link go in the body, in one sentence.
+The two answers are the options. Then write what they chose and set \`asked\`. A close the
 PM said out loud in a source is theirs, so write it. A close you worked out yourself is a question
-("Åsa said the dates went out. Mark [[todos/2026-07-09-send-nordkap-the-dates]] done?").
+("Mark the send-Nordkap-the-dates todo done?", with what Åsa said about the dates in the body).
 
 ## Produce: a commitment of yours
 The right handling for this one commitment, each option as its own write. Pick what fits;
@@ -1710,13 +1718,22 @@ do not produce all of them.
   send yourself, citing where the commitment was made. It is not a proposal, and nothing sends it.
 
 ## Produce: a request that came in
-One proposal, the decode (propose_note, type \`note\`, path \`notes/YYYY-MM-DD-<sender>-<ask>.md\`), with
-\`sources\` citing every note it rests on. Always send \`asked\`: the decode is the document the PM
-asked you for in this conversation, and \`notes/\` is their own folder, which nothing writes into
-unasked.
+One proposal, a short insight (propose_note, type \`insight\`, path \`insights/<slug>.md\`): what the
+ask tells us, in one claim, with the sender's own words quoted under it. The slug is the
+claim, not the sender. \`evidence\` lists the pages it rests on: the sender's page, the customer,
+and the decision or research page the ask runs into. Set \`confidence\` from how much backs the
+claim, and take \`tags\` from the contexts already in use. An insight is Qale's own record, so it
+lands without a card.
+
+Check insights/ first. A second person asking the same thing extends the insight already there
+rather than filing a near-copy: restate the whole \`evidence\` list with the new page added, and put
+the new quote in the body.
 
 One addition to the writing rules: quote the ask itself. The message lives nowhere else, and what
 somebody asked for, in their own words, is what they will hold you to later.
+
+Everything else you worked out is for the chat, not for a page: the job behind the ask, who is
+asking, what the memory holds, where it collides, and the posture you recommend.
 
 The job behind the ask is an inference, never what the sender stated. Label it **Inference** and
 say what would confirm it. The solution somebody names is not the job: "can we add a CSV export
@@ -1724,7 +1741,7 @@ button" is a request, "finance rebuilds that report by hand every month" is the 
 of the two has more than one answer.
 
 Then what the ask actually forces, and only that:
-- **A commitment you take on**: a todo (propose_todo) quoting the ask and citing this decode.
+- **A commitment you take on**: a todo (propose_todo) quoting the ask and citing this insight.
 - **A reply** (draft_text), where the posture is to answer now: cite the decisions and tickets it
   rests on, and follow the voice for that audience. It is text to copy, and nothing sends it.
 - **A signal worth keeping**: where the ask is evidence for a customer, extend that page
@@ -1741,40 +1758,22 @@ decision it rests on, and draft the reply only where it has to be said out loud.
 Your writes update this one commitment: the plan lands on the todo, a close flips \`commitment\`, a
 reschedule moves \`due\`. Nothing else in the memory is touched.
 
-The decode sits with the PM's own documents as the record of what was asked and what we said
-back, so the same ask arriving next month from somebody else lands on something. Todos join the
-commitment ledger as you write them. Anything sent to Jira, Confluence or the calendar waits for
-the PM.
+The insight joins Qale's memory as the record of what was asked, so the same ask arriving next
+month from somebody else lands on something. Todos join the commitment ledger as you write them.
+Anything sent to Jira, Confluence or the calendar waits for the PM. Documents stay the PM's: you
+write no page there.
 
 A nudge and a reply are not proposals. Both wait in the chat for you to copy and send yourself.
 
-## The shape of the decode
+## The shape of the insight
 \`\`\`
-[propose_note, type note, notes/YYYY-MM-DD-<sender>-<ask>.md]
-# <what was asked, in one line>
+[propose_note, type insight, insights/<slug>.md]
+[frontmatter: summary <the claim, in one line>, tags, evidence <the pages it rests on>,
+confidence <high, med or low>, customer where the ask is one account's]
 
-## The ask
-> <the sentence that asks it, verbatim>
-<who sent it, when, and by when they want it>
+<the claim, in your own voice: what was asked for, and what it tells us. Two or three sentences.>
 
-## The job behind it
-**Inference** <what they are trying to get done>. <What would confirm it.>
-
-## Who is asking
-<what they own, what they can decide on their own, what they were last told> ([[people/...]])
-
-## What we know that bears on it
-- **Fact** <the insight, decision or ticket, and what it says> ([[...]])
-
-## Where it collides
-<the live decision, the promise, or the ticket state it runs into, or "nothing found">
-
-## Posture
-<do it / do a smaller thing / not now / no / one answer needed first>: <why, in one sentence>
-Next move: <what this run proposed, or nothing>
-
-## What I could not check
-<what nothing in the workspace answers>
+<who sent it, when, and by when they want an answer>: "<the sentence that asks it, verbatim>"
 \`\`\`
 `;
 
@@ -1844,8 +1843,9 @@ confirm the claim. A run that ends there has done its job.
 ## Produce
 One proposal, the spec (propose_note, type \`note\`, path \`notes/spec-<slug>.md\`), with \`sources\`
 citing the research page, the insights and the decisions it rests on. Take \`tags\` from the page,
-or the tag itself. Send \`asked\` with it: the spec is the document the PM pointed at a page and
-asked for, and \`notes/\` is their own folder, which nothing writes into unasked.
+or the tag itself. A spec is the PM's document, so it goes in their folder and it waits as a card:
+a new page in Documents always does. Say in the rationale what the spec covers, because that card
+is where they decide.
 
 One addition to the writing rules: no requirement without a trace. Every requirement names the
 insight, decision or ticket mirror behind it. One that cites nothing is not a requirement, it is
@@ -1858,9 +1858,9 @@ Tickets are not this skill's work. Breaking a spec into tracked work comes after
 and accepted.
 
 ## Then
-The spec sits with the PM's own documents and cites its way back down: a reader follows a
-requirement to the insight, and the insight to the account that said it. A later run over the
-same page or tag extends this one instead of filing a rival.
+The spec waits as a card. Once the PM approves it, it sits with their own documents and cites its
+way back down: a reader follows a requirement to the insight, and the insight to the account that
+said it. A later run over the same page or tag extends this one instead of filing a rival.
 
 ## The shape of the spec
 \`\`\`
@@ -1903,10 +1903,14 @@ Out: <what it deliberately does not, and why>
 
 /**
  * Iterate (docs/iterate-in-chat.md): the draft-react-redraft loop, in the chat.
- * A round is one ask_user call: one question per idea, the case for the idea
- * in its body, "Keep it" / "Cut it" as the options, and a written question at
- * the end for whatever the rows did not catch. The PM reacts to each idea where
- * they read it, and the next round is written from what came back.
+ * A round is one ask_user call: one question per idea, a sentence of body under
+ * it, "Keep it" / "Cut it" as the options, and a written question at the end for
+ * whatever the rows did not catch. The PM reacts to each idea where they read
+ * it, and the next round is written from what came back.
+ *
+ * The card is glanced at, so the skill spends words on keeping each idea short.
+ * A paragraph per idea reads as a form, and a form gets one answer at the bottom
+ * instead of six reactions.
  *
  * The two rules the body spends its words on are the two that fail quietly.
  * Round one carries rough ideas as well as framing, because a framing form on
@@ -1951,16 +1955,25 @@ Then ask for the round with ask_user. One call is one round.
 
 Two to six per round. One is not a round, and more than six is a card nobody finishes.
 
-Each idea is one question on the card:
+Each idea is one question on the card. A card is for glancing at, not for reading, so every part
+is short:
 
-- header: the idea's short name, a word or two.
-- question: the idea in one line.
-- body: the case for it in a few short paragraphs, and its cost in the same breath: what it gives
-  up, who has to do the work, what it makes harder later. An idea with no cost written down cannot
-  be weighed against the one next to it.
+- header: one or two words. The card cuts it at twelve characters.
+- question: one line, a real question, under about twelve words, with no citation in it.
+- body: one or two sentences, thirty words in all. Say where the idea comes from and what stands
+  against it, and name each source as a wikilink inside the sentence. A link draws as the note's
+  title, so write the sentence to read with a title in that place.
 - options: "Keep it" and "Cut it". Add a third when the idea has a natural variant ("Keep, but
-  smaller"). The card offers a written answer beside the options on its own, so never add an
-  "Other" option.
+  smaller"). A description is a few words, or nothing at all. The card offers a written answer
+  beside the options on its own, so never add an "Other" option.
+
+One idea, whole: header "Lunch fee", question "Is a different fee for lunch and dinner in scope?",
+body "Mentioned in [[meetings/2026-06-02-brasserie-lund-review]], but only one fee is in
+[[notes/fee-rules]].", options "Keep it" and "Cut it".
+
+A paragraph per idea is a form, and a form gets one answer at the bottom instead of six. The PM
+glances at the card, picks, and writes a line where they disagree. An argument that does not fit
+the rule above goes in the chat above the round, where the framing already is.
 
 Close the card with one written question, no options, header "Anything else": what is missing,
 what to merge, what you got wrong. That is where the reaction to the whole round lands.

@@ -170,7 +170,7 @@ test('with no target and no house-rules file, the card writes the whole document
   const ctx = rulesCtx({});
   const said = await out(tool(ctx), { rule: RULE });
 
-  assert.match(said, /in house-rules now/);
+  assert.equal(readAppliedReceipt(said)?.row?.path, RULES);
   const card = ctx.filed[0]!;
   assert.equal(card.kind, 'note');
   assert.equal(card.targetPath, RULES);
@@ -213,7 +213,7 @@ test('a name nothing answers to falls back to the house rules, and says so', asy
   const said = await out(tool(ctx), { rule: RULE, target: 'meeting-prep' });
 
   assert.equal(ctx.filed[0]!.targetPath, RULES);
-  assert.match(said, /in house-rules now/);
+  assert.equal(readAppliedReceipt(said)?.row?.path, RULES);
   assert.match(said, /Nothing is called "meeting-prep" here/);
 });
 
@@ -234,7 +234,7 @@ test('an agent takes the rule when no skill of that name exists', async () => {
   const said = await out(tool(ctx), { rule: RULE, target: 'librarian' });
 
   assert.equal(ctx.filed[0]!.targetPath, 'agents/librarian/AGENT.md');
-  assert.match(said, /in librarian now/);
+  assert.equal(readAppliedReceipt(said)?.row?.path, 'agents/librarian/AGENT.md');
   assert.match(ctx.filed[0]!.rationale, /Goes into Librarian's standing instructions\./);
 });
 
@@ -318,7 +318,7 @@ test('a rule too long to be one sentence is refused with the cap in it', async (
   assert.equal(ctx.filed.length, 0);
 });
 
-test('the receipt says the rule landed and where it went', async () => {
+test('the receipt says the rule landed, and where it went rides in the row', async () => {
   const ctx = rulesCtx({ [ARRIVAL]: { title: 'Arrival', body: '# Arrival\n' } });
   const said = await out(tool(ctx), {
     rule: RULE,
@@ -333,8 +333,8 @@ test('the receipt says the rule landed and where it went', async () => {
   assert.equal(
     prose,
     `Applied: Added to rules "${RULE}".\n` +
-      'It is in arrival now, and every session that reads that file follows it. Nothing is ' +
-      'waiting on the PM: say you have noted it, in one short line, and carry on.',
+      'It is done and nobody has to click: the chat shows it as a row with its diff and an ' +
+      "undo. Don't say what you did; when you're done, say what it means.",
   );
   assert.equal(rest.length, 1);
   assert.deepEqual(readAppliedReceipt(said)?.row, {
@@ -342,7 +342,7 @@ test('the receipt says the rule landed and where it went', async () => {
     proposalId: 'p1',
     path: ARRIVAL,
     title: 'Arrival',
-    change: 'Standing instructions',
+    change: 'one line added',
   });
   assert.match(ctx.filed[0]!.rationale, /^Erik asked for it after the Nordkap call\./);
 });
@@ -374,7 +374,7 @@ test('a ticket rule with no conventions file yet creates it from the template', 
       `^Applied: Added to rules "${TICKET_RULE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\.`,
     ),
   );
-  assert.match(said, /It is in jira now/);
+  assert.equal(readAppliedReceipt(said)?.row?.path, JIRA);
   // Nothing is missing: "jira" resolved, to a file the card writes.
   assert.doesNotMatch(said, /Nothing is called/);
   const card = ctx.filed[0]!;
@@ -402,7 +402,7 @@ test('a page rule with no conventions file yet creates the Confluence one', asyn
   const ctx = rulesCtx({});
   const said = await out(tool(ctx), { rule: PAGE_RULE, target: 'confluence' });
 
-  assert.match(said, /in confluence now/);
+  assert.equal(readAppliedReceipt(said)?.row?.path, CONFLUENCE);
   const card = ctx.filed[0]!;
   assert.equal(card.targetPath, CONFLUENCE);
   const fm = (card.payload as unknown as { frontmatter: Record<string, unknown> }).frontmatter;
@@ -428,7 +428,7 @@ test('a conventions file that exists takes the bullet, with no new heading', asy
   });
   const said = await out(tool(ctx), { rule: PAGE_RULE, target: 'jira' });
 
-  assert.match(said, /in jira now/);
+  assert.equal(readAppliedReceipt(said)?.row?.path, JIRA);
   const card = ctx.filed[0]!;
   assert.equal(card.kind, 'update');
   assert.equal(card.targetPath, JIRA);
@@ -461,7 +461,7 @@ test('the name folds, so "Jira" is the same file as "jira"', async () => {
 
   assert.equal(ctx.filed[0]!.targetPath, JIRA);
   assert.equal(ctx.filed[0]!.kind, 'update');
-  assert.match(said, /in jira now/);
+  assert.equal(readAppliedReceipt(said)?.row?.path, JIRA);
 
   const empty = rulesCtx({});
   await out(tool(empty), { rule: TICKET_RULE, target: 'Confluence' });
@@ -475,7 +475,7 @@ test('a name that is not a conventions skill still falls back to the house rules
 
   assert.equal(ctx.filed[0]!.kind, 'update');
   assert.equal(ctx.filed[0]!.targetPath, RULES);
-  assert.match(said, /in house-rules now/);
+  assert.equal(readAppliedReceipt(said)?.row?.path, RULES);
   assert.match(said, /Nothing is called "zendesk" here/);
 });
 
@@ -556,7 +556,7 @@ test('a line the PM asked for lands on the list on the spot, above Your rules', 
   });
 
   assert.match(said, /^Applied: Learned "Tell me what changed in the API/);
-  assert.match(said, /under 'What you want from Qale' now/);
+  assert.match(readAppliedReceipt(said)?.row?.change ?? '', /under What you want from Qale/);
   const card = ctx.filed[0] as unknown as WantFiled;
   assert.equal(card.kind, 'update');
   // `target` says nothing here: the list has one home.
@@ -622,7 +622,7 @@ test('taking a line off is one patch, anchored on the section', async () => {
   const said = await out(tool(ctx), { rule: 'who is waiting for something', list: 'remove' });
 
   assert.match(said, /^Applied: Learned that "Tell me who is waiting/);
-  assert.match(said, /off the list of what you want from Qale/);
+  assert.match(readAppliedReceipt(said)?.row?.change ?? '', /What you want from Qale taken out/);
   const card = ctx.filed[0] as unknown as WantFiled;
   assert.equal(card.kind, 'update');
   assert.equal(card.asked, false);

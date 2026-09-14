@@ -135,12 +135,6 @@ export function describeCardEdit(before: unknown, after: unknown): string | null
     said.push(`The PM set the priority to ${str(now['priority'])}.`);
   }
 
-  // The question the card carried, and what they answered. It is on the same
-  // line because it is the same lesson: this is how they want the next one.
-  const asked = record(now['question']);
-  const answer = str(asked?.['answer']);
-  if (asked && answer) said.push(`The PM answered "${answer}" to "${quote(asked['text'])}"`);
-
   return said.length ? said.join(' ') : null;
 }
 

@@ -19,6 +19,7 @@ import { ageBand, countBand, durationBand, providerWord, skillWord, wantLineWord
 import {
   AgentRuntime,
   isOffered,
+  listSessionFiles,
   sessionFilesRoot,
   summaryPrompt,
   writeSessionBinary,
@@ -102,11 +103,13 @@ import {
   isProductPicturePath,
   unreadableReason,
   wantListChange,
+  APPROVED_REASON,
   type Frontmatter,
   type HandCreatableType,
 } from '@qale/domain';
 import { GitAdapter, gitInstallHint } from '@qale/vault';
 import { sourceName } from './source-name.js';
+import { arrivalKickoff, arrivalManifest } from './arrival.js';
 import {
   ARRIVAL_AGENT_NAME,
   buildKickoff,
@@ -2217,32 +2220,13 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
 
     // A manifest, so the agent starts from a list rather than a directory walk,
     // and so the PM opening the session folder tomorrow can see what arrived.
-    const manifest = [
-      `# What arrived`,
-      ``,
-      `${written.length} source${written.length === 1 ? '' : 's'}, handed over ${ctx.clock.now()}.`,
-      ``,
-      ...written.map((w) => `- \`${w.file}\` — dropped as "${w.original}", ${w.bytes} bytes`),
-      ...(refused.length
-        ? [
-            '',
-            'Could not be read, so they are not here:',
-            ...refused.map((r) => `- ${r.name}: ${r.error}`),
-          ]
-        : []),
-      ...(instruction?.trim() ? ['', '## What the PM asked for', '', instruction.trim()] : []),
-      ...(candidates.length
-        ? [
-            '',
-            '## Meetings on the calendar near now',
-            '',
-            'A hint and nothing more. Match a transcript on its own date, title and who speaks in it;',
-            'if the clock and the transcript disagree, the transcript is right.',
-            '',
-            ...candidates,
-          ]
-        : []),
-    ].join('\n');
+    const manifest = arrivalManifest({
+      written,
+      refused,
+      instruction,
+      candidates,
+      at: ctx.clock.now(),
+    });
     await writeSessionFile(root, 'input.md', `${manifest}\n`);
     pushEvent(getWindow(), { channel: 'session:files', sessionId });
 
@@ -2268,18 +2252,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
       };
     }
 
-    const prompt = buildKickoff({
-      skill: ARRIVAL_AGENT_NAME,
-      instruction: [
-        `${written.length} source${written.length === 1 ? '' : 's'} just landed in your session folder, unfiled.`,
-        `Read \`input.md\` for the list, work out what each thing is, file it, and read what is worth reading.`,
-        instruction?.trim()
-          ? `What I asked for when I handed them over, which takes precedence: ${instruction.trim()}`
-          : '',
-      ]
-        .filter(Boolean)
-        .join(' '),
-    });
+    const prompt = arrivalKickoff(instruction);
     // What reads the pile. The tray sends the model the PM chose; without one
     // (a drop from an older window, a path that never opened the tray) the
     // provider's own filing model is the default, so a Gemini workspace never
@@ -2329,6 +2302,41 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     return { sessionId, landed: written.length, refused, started: true };
   });
 
+  /**
+   * Files attached to a session that already exists: a drop on an open
+   * conversation rather than on Home.
+   *
+   * Same landing as `arrival:ingest` and deliberately nothing else: the bytes go
+   * into that session's `source/` folder and the renderer sends an ordinary
+   * message naming them. No skill is forced into a running session, because the
+   * session already has one and the person is talking to it. Somebody who wants
+   * the files filed picks "Handle new sources" in the composer, which is the
+   * control that already does that.
+   */
+  handle('arrival:attach', async (sessionId, items) => {
+    const ctx = vaultService.requireContext();
+    const landed = await resolveItems(items);
+    const refused = landed.flatMap((l) => (l.error ? [{ name: l.name, error: l.error }] : []));
+    const root = sessionFilesRoot(ctx.vault.root(), sessionId);
+    // Names already in the folder count as taken, so a second drop of the same
+    // file lands beside the first rather than over it.
+    const taken = new Set(
+      (await listSessionFiles(root))
+        .filter((f) => f.path.startsWith('source/'))
+        .map((f) => f.path.slice('source/'.length).toLowerCase()),
+    );
+    const files: { file: string; original: string }[] = [];
+    for (const piece of landed) {
+      if (piece.error) continue;
+      const file = `source/${sourceName(piece.name, taken)}`;
+      if (piece.data) await writeSessionBinary(root, file, piece.data);
+      else await writeSessionFile(root, file, piece.text ?? '');
+      files.push({ file, original: piece.name });
+    }
+    if (files.length > 0) pushEvent(getWindow(), { channel: 'session:files', sessionId });
+    return { files, refused };
+  });
+
   // What a window that missed the pushes needs: the batches this process knows,
   // running and settled alike.
   handle('arrival:batches', () => [...arrivalBatches.values()]);
@@ -2356,11 +2364,18 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const effectFacts = outboundEffectFacts(ctx, settings.selfEmails());
     return resolvedProposals(ctx, sessionId).map((rec) => {
       const dto = proposalToDTO(rec, ctx.checks?.get(selfPrepKey(rec.sessionId)), effectFacts);
-      // The Activity row the approval left (RC-4), read back by the card's own
-      // id so the receipt still offers Put back in a chat reopened next week.
-      // A row already put back is left off: the way back is gone with it.
+      // The Activity row the write left, read back by the card's own id so the
+      // receipt still offers Put back in a chat reopened next week. A row
+      // already put back is left off: the way back is gone with it. The row's
+      // reason says whether the PM approved the card or it landed on its own.
       const row = ctx.activity?.forProposal(rec.id);
-      return row && !row.reverted ? { ...dto, activityId: row.id } : dto;
+      if (!row) return dto;
+      const silent = row.reason !== APPROVED_REASON;
+      return {
+        ...dto,
+        ...(row.reverted ? {} : { activityId: row.id }),
+        ...(silent ? { silent: true } : {}),
+      };
     });
   });
   handle('proposals:preview', (id) => previewProposal(vaultService.requireContext(), id));
@@ -2559,9 +2574,9 @@ export function registerHandlers(getWindow: () => BrowserWindow | null): {
     const ctx = vaultService.requireContext();
     const row = ctx.activity?.get(id);
     if (!row) throw new Error('that row is no longer here');
-    if (row.reverted !== null) throw new Error('that one is already put back');
+    if (row.reverted !== null) throw new Error('that one is already undone');
     if (!row.path || !row.revert.commit)
-      throw new Error('this workspace kept no history of that write, so it cannot be put back');
+      throw new Error('this workspace kept no history of that write, so it cannot be undone');
     const result = await revertNoteChange(ctx, {
       path: row.path,
       hash: row.revert.commit,

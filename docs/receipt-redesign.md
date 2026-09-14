@@ -160,6 +160,9 @@ RC-3 draws a put-back it cannot honour without RC-4. RC-5 last.
   says nothing the eye did not already get.
 - **A row for a write that failed.** The trail shows a failed step, and a failed write changes
   nothing for the PM. Left open below rather than built.
+- **A group container around approved sends.** Three sends collapsed into one green block above
+  the cards, so the answer to a press showed up somewhere other than the button that was pressed.
+  Each send keeps its own card.
 
 ## Open
 
@@ -276,3 +279,133 @@ body for an outbound card, so the full text sits behind the chevron.
 Checked: desktop 485 pass 0 fail (7 new tests), domain 303, application 313, vault 58 pass with the
 12 pre-existing skips; `pnpm check-types` 11 of 11; eslint 0 errors, 34 pre-existing warnings. Not
 run in the app.
+
+### RC-3, revised 2026-09-11: a send keeps its card
+
+Decision (Erik, 2026-09-11): the grouped green "Left your workspace" block is gone. An approved
+send keeps its own card, in the place it was judged, and settles there. Every send is its own
+card even after approval; nothing groups them. The card the PM just pressed is the card that
+answers.
+
+The settled card is the same shell: card white, hairline ring. The lead arrow turns ledger green
+(the only colour that changes) and the action glyph goes muted. The title goes to past tense off
+the same receipt line the old block used: "Comment on [BOK-300]" becomes "Commented on
+[BOK-300]", same chip. Everything under the title (the message, the event's day and time, the
+ticket fields) folds away. The three controls (approve, discard, chevron) become one mark: a
+green check, the word "Approved" and the time it left, with the chevron still in its place. The
+chevron opens the folded message again, with the rationale and evidence. No Edit and no "what
+approving does" sentence, because it did it.
+
+The motion is one authored moment. The fold is a CSS grid row going from 1fr to 0fr over 200ms
+ease-out, so it closes over content of any height. The mark fades in over 300ms only on a card
+that settled in this sitting (`fresh`); a card read back from a reopened session draws settled
+at once and nothing moves. Both respect prefers-reduced-motion (`motion-reduce:transition-none`,
+`motion-reduce:animate-none`).
+
+How it is built:
+
+- `lib/sent-cards.ts` (pure): `sentCards(sitting, stored)` merges the sends approved in this
+  sitting (their line carries the key and url a ticket was given on landing) with the accepted
+  outbound cards read back from `proposals:resolved`; the sitting copy wins by id, sorted by
+  created. `mergeReviewCards(pending, held, sent)` dedups by id, pending first, then held, then
+  sent. Five tests in `test/sent-cards.test.ts`.
+- `useApprovals` (`approvals.tsx`): `sent` is now `SittingSend[]` (card, line, time). New
+  `held: ProposalDTO[]`: a send card whose accept is in flight. The pending list drops the card
+  the moment main accepts it, a beat before the send's result is back, and a card that vanished
+  for one frame would flicker. Cleared in `finally`, batched with the result. `SentReceipts`,
+  `SentReceipt` and `sentReceiptOf` are deleted; `sentLineOf(ob, landed)` remains.
+- `SessionReview.tsx`: one `<section>` for both states (cards waiting, nothing waiting).
+  `data-queue`, `tabIndex`, the heading and the key handler go only while cards wait, so the
+  last card to settle keeps its DOM node and its fold can move. The list is
+  `orderCards(mergeReviewCards(cards, approvals.held, sent))`; the cursor still walks only the
+  pending rows. `LandedRows` for the internal approved writes draws under the cards once
+  nothing waits, as before.
+- `CardRows.tsx`: new `settled` map prop. A settled send is never grouped under a target header;
+  it keeps its own row where the order put it.
+- `CardItem.tsx`: new `sent?: SentCard | null` prop. When set: not a cursor stop (no tabIndex,
+  no focus handlers), `data-sent`, `SentTargetLine` (past tense, same chip, same `kind` label
+  for a page), the fold wrapper (only outbound cards wear the grid), `SentMark` in place of
+  `RowControls`, footnote without Edit or `effect`. On settle, `open` and `editing` reset.
+
+Not run in the app.
+
+## Thinned to lines (2026-09-08, later the same day)
+
+Erik saw the built block in the app and it was worse: the landed rows wore the same chrome as an
+approval card, the same to-do drew twice (once in the turn, once under "Approved 2"), and the
+tally and the "3 more waiting in Sessions" door added weight to something that is not a decision.
+His rule: a landed write is a small line, "New todo: ABC", "Todo changed: XYZ · you · due moved
+12 to 24 Sep", expandable, and nothing more.
+
+What changed:
+
+- **One line per write.** `LandedRows` draws each write as one muted line: the verb, the title as
+  a link, the change line after a middle dot, and a small chevron. Open, it shows the diff and the
+  Put back button. No group words, no memory fold, no checkbox or type glyph, no card surface.
+  The order by sphere stays (`orderLanded`: todos, meeting, documents, sent, memory, then rows
+  with no path). `GROUP_WORD`, `groupLanded`, `memoryFold`, `revertableIds`, `putTurnBack` and
+  `turnBackMessage` are gone, and so is "Put this turn back": each line has its own way back.
+- **No tally, no door.** Once every card is judged, `SessionReview` draws only the approved
+  cards as the same lines, under the review ask if there is one. `receiptSummary` and
+  `waitingElsewhere` are deleted. What waits in other sessions is Home's job.
+- **A silent write is not an approval.** A write that landed on its own is an accepted card in
+  the store, so `receiptOf` counted it and drew it a second time under "Approved N". The
+  `proposals:resolved` handler now reads the write's Activity row and marks the card
+  `silent: true` when the row's reason is not `APPROVED_REASON`; `receiptOf` and
+  `receiptPaths` leave those out. A card approved before RC-4 has no row and still counts.
+
+Checked: `pnpm check-types` 11 of 11, `pnpm test` green in every package (desktop 478), eslint 0
+errors on the touched files. Not run in the app.
+
+Two more cuts the same evening, after Erik saw the lines: the to-do line no longer ends in
+"Qale heard this" (noise on a receipt; the Todos view keeps the mark), so `todoLine` takes no
+`inferred` and `AppliedRow.inferred` / `ChangeLineInput.inferred` are gone. And the control is
+"Undo", not "Put back", on the receipt line and in Activity, with "Undone" as the state and the
+toasts and errors reworded to match. A session recorded before this keeps the old change line
+in its transcript, because the line is packed into the tool result at write time.
+
+Third pass, same evening, after Erik saw the lines with a decision's whole body on one of them:
+"way too much text". The line is now a dot, a chip and, for a change, what moved. The dot says
+what happened (green new, amber changed, red removed). The chip is the thing it happened to,
+drawn the way a ticket is drawn inside a page: the kind's icon and the name, and it opens the
+page. A new page or a new todo says nothing after the chip. A to-do line never says who or when
+(`changeLine` for a to-do is now "due 11 Sep" / "no date" / "done" / "dropped" / what moved, with
+no owner in front), and hover shows the verb, the name and the full change. The chevron and Undo
+stay. Old transcripts keep the owner-first line they recorded.
+
+And the green "Left your workspace" card now stays for approved sends: once every card is judged,
+the closing branch draws the sends through `SentReceipts` from the stored cards (every send, not
+the last three) and only the other approved cards as lines. Before, the card turned into lines the
+moment the last card was judged, which read as a second thing happening.
+
+Checked: types 11 of 11, every package's tests green, eslint 0 errors, two screenshots on a scratch
+copy of the demo profile (copy the db's -wal and -shm too, or the stored cards are empty).
+
+Fourth pass, 2026-09-08. Two things Erik saw next.
+
+**The marks lost their colours.** Four verbs in four tones read as a chart with a legend nobody was
+given, and the tones quiet enough for a chat were too dim to tell apart at 14px ("one color is like
+dark red orange"). The shape carries the meaning now: plus, pencil, check, minus, all in one ink
+tone a shade darker than the line, at `size-4`. The one exception is a line that took something
+away, which stays red. `MARK` is a `Record<AppliedVerb, LucideIcon>` again, with no tone in it.
+
+**Every line on the green card opens its item.** "Created a task in Nordkap" said a ticket exists
+somewhere and gave no way to it. `sentLine(payload)` in `card-copy.ts` splits the receipt sentence
+into act, item, tail, so the card draws the item as the chip a ticket wears in a page: "Commented on
+[PAY-142]", "Created [PAY-171] in Nordkap", "Added [Kickoff] to your calendar". A send whose item has
+no address keeps the whole sentence and draws no chip.
+
+For that to work a week later the send stamps where it landed: `acceptOutbound` writes
+`targetId` and `url` onto the DRAFTED payload (never onto the edited one, which is the record of how
+the PM writes), and `AcceptResult` carries `externalId` so the line drawn the second after a send
+says the same thing as the line drawn when the session is reopened. `zOutboundPayload` and
+`OutboundPayloadDTO` gained `url`. A chip whose item has no mirror yet — a ticket created a second
+ago — opens the provider: `ExternalRefChip` takes a `url`, and `openExternalRef` uses it only after
+the mirror and the link lookup have both come up empty.
+
+Checked: types 11 of 11, every package's tests green (domain 297, application 314, desktop 478),
+eslint 0 errors, and one screenshot of the demo session that sent three things: the marks read at a
+glance in ink, and the green card says "Commented on SCH-118", "Commented on SCH-231", "Updated
+Roadmap H2", each one a chip that opens the item. A copied profile only finds its own cards when
+`vaultPath` still points at the workspace it was written under: the app db is named for a hash of
+that path, so pointing a scratch profile at a copied workspace hands you an empty store.

@@ -15,8 +15,8 @@ import {
 } from 'lucide-react';
 import type { ConnectionProgress, OnboardingDTO, SettingsDTO } from '@qale/ipc';
 import { connections, type ProviderDescriptorDTO } from '../lib/connections';
-import { requestCapture } from '../lib/capture-event';
 import { MEETING_TOOLS, firstStepsTally, stepRank } from '../lib/first-steps';
+import { requestCapture } from '../lib/capture-event';
 import { invoke } from '../lib/ipc';
 import type { SettingsSection } from '../lib/settings-sections';
 import { useApp } from '../state/app-state';

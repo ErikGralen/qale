@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@qale/ui';
-import { ArrowRight, Check } from 'lucide-react';
 import type { ProposalDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
-import { waitingElsewhere } from '../../lib/attention';
 import { invoke } from '../../lib/ipc';
+import { mergeReviewCards, sentCards } from '../../lib/sent-cards';
 import {
   batchCount,
   batchSource,
@@ -14,10 +13,9 @@ import {
   orderCards,
   receiptOf,
   receiptPaths,
-  receiptSummary,
 } from './cardMeta';
 import { useNoteName, useNoteNames } from './titles';
-import { ReviewAsks, SentReceipts, useApprovals } from './approvals';
+import { ReviewAsks, useApprovals } from './approvals';
 import { ApproveAll, CardRows } from './CardRows';
 import { LandedRows } from './LandedRows';
 
@@ -59,13 +57,21 @@ function SourceChip({ ref: source, onOpen }: { ref: string; onOpen: (path: strin
  * rows, the batch button, the keyboard pass over them, the question a fully
  * discarded pile leaves behind, and the banner for what left the workspace.
  *
- * Once every card is judged, the block does not vanish. It becomes the receipt
- * for what the session changed, and that receipt is built from the stored cards
+ * Once every card is judged, the block does not vanish. What was approved stays
+ * as the same small lines a silent write leaves, built from the stored cards
  * rather than from this sitting's state, so it is still there next week
- * (docs/closing-beat.md).
+ * (docs/closing-beat.md, thinned in docs/receipt-redesign.md).
+ *
+ * A send is the exception. Its card never leaves the list: the moment it is
+ * approved it settles where it stands, in past tense, with the message folded
+ * and the word the button promised in place of the controls. Three sends used
+ * to collapse into one green block above the cards, which took the answer away
+ * from the button that was just pressed (RC-3 revised, 2026-09-11). The whole
+ * block is one section whether cards are still waiting or not, so a settling
+ * card keeps its DOM node and its fold can move.
  */
 export function SessionReview({ sessionId }: { sessionId: string }) {
-  const { attention, proposals, openDoc, openChats } = useApp();
+  const { proposals, openDoc } = useApp();
   const approvals = useApprovals();
   // Where the roving cursor sits, by position. -1 is "nowhere yet": the block
   // sits under a composer the PO is probably typing in, so it paints no ring
@@ -80,6 +86,18 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
   );
 
   const rows = useMemo(() => rowsOf(cards), [cards]);
+
+  // The sends that already left, from this sitting first (their line carries
+  // the key a ticket was given on landing) and from the stored cards when the
+  // session is reopened.
+  const sent = useMemo(() => sentCards(approvals.sent, resolved), [approvals.sent, resolved]);
+  const settled = useMemo(() => new Map(sent.map((s) => [s.card.id, s])), [sent]);
+  // Every card the list draws, in the batch's one order: waiting, in flight,
+  // and settled sends in the places they were judged.
+  const all = useMemo(
+    () => orderCards(mergeReviewCards(cards, approvals.held, sent)),
+    [cards, approvals.held, sent],
+  );
 
   // A judged row leaves the list under the cursor. Clamp rather than let the
   // cursor point past the end, so the next key still acts on a real row.
@@ -165,71 +183,17 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
     () => receiptOf(resolved, (path) => names.get(path)?.title ?? null),
     [resolved, names],
   );
-  // The door counts what is waiting anywhere else, off the one attention list,
-  // never a fresh arithmetic. It drops this session's own cards, which are on the
-  // screen already.
-  const elsewhere = waitingElsewhere(
-    attention,
-    cards.map((c) => c.id),
-  );
 
-  if (cards.length === 0) {
-    const judged = receipt.accepted + receipt.rejected > 0;
-    // A session that never proposed anything gets no receipt. There is nothing
-    // to report, and a landing block would invent one. The review ask is the
-    // exception: a pile discarded down to zero leaves that question behind, and
-    // this is the spot its cards just vacated.
-    if (!judged && approvals.reviewAsks.length === 0) return null;
-    return (
-      /* The closing beat as one block on one left rail: a mark, what it came
-         to, what it touched, and the door. The tally used to sit as a bare bold
-         string among three other loose lines, and the door wore the same ink as
-         the note links, so a stack of four things read as four unrelated
-         fragments in three shades of blue. The check marks the close, the notes
-         keep the ink because opening one is the point, and the door steps back
-         to muted until the pointer is on it. */
-      <section
-        aria-label={judged ? 'What you approved' : 'Mark the meeting reviewed'}
-        className="mt-1 px-0.5"
-      >
-        <ReviewAsks approvals={approvals} />
-        {judged && (
-          <>
-            <div className="flex items-center gap-2">
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-brand/10">
-                <Check className="size-3.5 text-brand" />
-              </span>
-              <h3 className="text-sm font-semibold text-foreground">{receiptSummary(receipt)}</h3>
-            </div>
-            {/* Hung off the mark's column, so head and rows share one text edge.
-                An approved card is a landed write, so it draws as one: the same
-                groups, the same change line, the same way back (RC-3). A
-                discarded card draws nothing; the tally above counts it. */}
-            <div className="mt-1.5 pl-7">
-              <LandedRows
-                rows={receipt.rows}
-                sessionId={sessionId}
-                onOpen={openDoc}
-                // The block around it is already called "What you approved".
-                label={null}
-                // The rows are a sitting's approvals, not one turn's writes, so
-                // there is no turn to put back. Each row keeps its own control.
-                turnBack={false}
-              />
-            </div>
-            {elsewhere > 0 && (
-              <button
-                className="mt-2.5 ml-7 flex items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:text-brand focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                onClick={() => openChats()}
-              >
-                {elsewhere} more waiting in Sessions <ArrowRight className="size-3.5" />
-              </button>
-            )}
-          </>
-        )}
-      </section>
-    );
-  }
+  // The queue: cards still waiting on a decision. Without one there is no
+  // cursor, no heading and no key map, and the same section draws the receipt.
+  const queue = cards.length > 0;
+
+  // A session that never proposed anything, or whose cards were all
+  // discarded, gets no receipt: nothing changed, and a block would invent
+  // something. The review ask is the exception: a pile discarded down to zero
+  // leaves that question behind, and this is the spot its cards just vacated.
+  if (!queue && all.length === 0 && receipt.rows.length === 0 && approvals.reviewAsks.length === 0)
+    return null;
 
   // A sweep after a decision change: every card is an update citing the one
   // decision. The head says the cause, so the PO judges the premise once
@@ -255,22 +219,20 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
        `data-queue` marks the region the roving cursor lives in: rows take real
        focus while it holds focus, and never steal it from outside. It is
        tabbable but never focused on mount, so arriving here does not pull the
-       caret out of the composer. */
+       caret out of the composer. Once nothing waits, the same section stays
+       and only the queue attributes go, so the last card to settle settles in
+       place. */
     <section
       ref={listRef}
-      data-queue
-      tabIndex={0}
-      aria-label={heading}
+      data-queue={queue ? '' : undefined}
+      tabIndex={queue ? 0 : undefined}
+      aria-label={queue ? heading : 'What you approved'}
       className="mt-1 outline-none"
-      onKeyDown={onKeyDown}
+      onKeyDown={queue ? onKeyDown : undefined}
     >
-      {/* A send that just left needs its own banner while cards remain. Once
-          the last one is judged the receipt above says it, in the same words,
-          with everything else the sitting did. */}
-      <SentReceipts sent={approvals.sent} />
       <ReviewAsks approvals={approvals} />
 
-      {cause ? (
+      {!queue ? null : cause ? (
         /* Title flexes and wraps, actions shrink-0 and stay reachable. */
         <div className="mb-2 flex items-start gap-3 px-0.5">
           <div className="min-w-0 flex-1">
@@ -308,13 +270,25 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
         )
       )}
       <CardRows
-        cards={cards}
+        cards={all}
         approvals={approvals}
         focusedId={focusedId}
         onFocus={focusRow}
         onOpen={openDoc}
         showSource={!source}
+        settled={settled}
       />
+      {/* Every other approved card is a landed write and draws as one line
+          (RC-3), once nothing waits. No tally and no door to other sessions:
+          what waits elsewhere is Home's job. */}
+      {!queue && (
+        <LandedRows
+          rows={receipt.rows.filter((r) => r.verb !== 'Sent')}
+          sessionId={sessionId}
+          onOpen={openDoc}
+          label={null}
+        />
+      )}
     </section>
   );
 }

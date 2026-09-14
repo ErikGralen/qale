@@ -305,7 +305,7 @@ function ActivityRow() {
       }`}
       onClick={(e) => openActivity(navFromEvent(e))}
       onAuxClick={(e) => e.button === 1 && openActivity(navFromEvent(e))}
-      title="Activity: what I wrote on my own, newest first. Any of it can be put back."
+      title="Activity: what I wrote on my own, newest first. Any of it can be undone."
     >
       <ScrollText className="size-3.5 shrink-0 text-muted-foreground/80" aria-hidden />
       <span className="min-w-0 flex-1 truncate">Activity</span>

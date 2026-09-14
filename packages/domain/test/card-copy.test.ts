@@ -9,6 +9,7 @@ import {
   outboundVerb,
   proposalHeadline,
   proposalLeadIn,
+  sentLine,
   ticketFieldRows,
   vaultEffect,
   type HeadlineInput,
@@ -738,4 +739,73 @@ test('a line on the "What you want from Qale" list says the line, and which way 
     { op: 'add', line: 'Keep me posted.' },
   );
   assert.equal(wantListChange({ append: '\n- Keep me posted.' }), null);
+});
+
+test('sentLine: every send names an item the receipt can open', () => {
+  // The comment and the page edit address something that already exists.
+  assert.deepEqual(sentLine({ action: 'comment_ticket', targetId: 'PAY-142' }), {
+    act: 'Commented on',
+    item: 'PAY-142',
+    url: undefined,
+  });
+  assert.deepEqual(sentLine({ action: 'update_page', targetId: '98311', title: 'Rollout plan' }), {
+    act: 'Updated',
+    item: '98311',
+    name: 'Rollout plan',
+    url: undefined,
+  });
+  // A created ticket has no key until the send comes back with one, so the line
+  // names the key it made and says where it put it.
+  assert.deepEqual(
+    sentLine({
+      action: 'create_ticket',
+      container: 'Nordkap',
+      targetId: 'PAY-171',
+      url: 'https://example.atlassian.net/browse/PAY-171',
+    }),
+    {
+      act: 'Created',
+      item: 'PAY-171',
+      name: 'PAY-171',
+      url: 'https://example.atlassian.net/browse/PAY-171',
+      tail: 'in Nordkap',
+    },
+  );
+  assert.deepEqual(sentLine({ action: 'create_event', eventId: 'ev1', title: 'Nordkap sync' }), {
+    act: 'Added',
+    item: 'ev1',
+    name: 'Nordkap sync',
+    url: undefined,
+    tail: 'to your calendar',
+  });
+  assert.deepEqual(sentLine({ action: 'update_event', eventId: 'ev1', title: 'Nordkap sync' }), {
+    act: 'Changed',
+    item: 'ev1',
+    name: 'Nordkap sync',
+    url: undefined,
+    tail: 'in your calendar',
+  });
+  assert.deepEqual(
+    sentLine({
+      action: 'respond_to_event',
+      eventId: 'ev1',
+      responseStatus: 'declined',
+      title: 'Nordkap sync',
+    }),
+    { act: 'Replied no to', item: 'ev1', name: 'Nordkap sync', url: undefined },
+  );
+});
+
+test('sentLine: a send with nothing to open keeps the whole sentence', () => {
+  // A card accepted before the send stamped its result carries no id, so the
+  // line stays the flat receipt and draws no chip that opens nothing.
+  assert.deepEqual(sentLine({ action: 'create_ticket', container: 'PAY' }), {
+    act: 'Created a ticket in PAY',
+  });
+  assert.deepEqual(sentLine({ action: 'comment_ticket' }), { act: 'Commented on a ticket' });
+  assert.deepEqual(sentLine({ action: 'who_knows', targetId: 'X-1', title: 'Something' }), {
+    act: 'Applied Something',
+  });
+  // An empty address is no address: the chip would open a blank tab.
+  assert.equal(sentLine({ action: 'create_event', eventId: 'ev1', url: '  ' }).url, undefined);
 });

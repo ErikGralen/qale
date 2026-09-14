@@ -7,13 +7,15 @@ import {
   isMachineryField,
   isStyleFile,
   isUsersSphere,
+  NEW_DOCUMENT_WAITS_REASON,
   STYLE_FILES,
   type WriteFacts,
 } from '../src/index.js';
 
 // The write policy (docs/fewer-approvals.md FA-1). What a write DOES decides,
-// not where the file sits: a send, a delete, a rewrite of the PM's own prose
-// and anything Qale assumed wait for them. Everything else lands.
+// not where the file sits: a send, a delete, a rewrite of the PM's own prose,
+// anything Qale assumed, and a new page in Documents wait for them. Everything
+// else lands.
 
 // What lands.
 
@@ -50,14 +52,15 @@ test('asked says nothing about a todo any more', () => {
   }
 });
 
-test('a new document lands, and so does text added at the end of one', () => {
-  assert.equal(
-    writePolicy({ kind: 'note', targetPath: 'notes/spec-pricing.md' }).disposition,
-    'silent',
-  );
+test('text added at the end of a document lands', () => {
   assert.equal(
     writePolicy({ kind: 'update', appendOnly: true, targetPath: 'notes/spec-pricing.md' })
       .disposition,
+    'silent',
+  );
+  // An update that touches nothing the PM typed lands too, in their folder.
+  assert.equal(
+    writePolicy({ kind: 'update', targetPath: 'notes/spec-pricing.md' }).disposition,
     'silent',
   );
 });
@@ -158,6 +161,39 @@ test('a delete always waits', () => {
   assert.equal(writePolicy({ kind: 'delete', noteType: 'skill' }).disposition, 'ask');
 });
 
+test('a new document waits, and asked does not lift it', () => {
+  for (const asked of [true, false]) {
+    const ruling = writePolicy({ kind: 'note', targetPath: 'notes/spec-pricing.md', asked });
+    assert.equal(ruling.disposition, 'ask', String(asked));
+    assert.equal(ruling.reason, NEW_DOCUMENT_WAITS_REASON, String(asked));
+  }
+  // A folder the PM made under Documents is still Documents.
+  assert.equal(
+    writePolicy({ kind: 'note', targetPath: 'notes/pricing/brief.md' }).disposition,
+    'ask',
+  );
+});
+
+test('a new page Qale keeps for itself lands, because Documents is not its folder', () => {
+  for (const targetPath of ['research/offline-mode.md', 'insights/nordkap-needs-scim.md']) {
+    assert.equal(writePolicy({ kind: 'note', targetPath }).disposition, 'silent', targetPath);
+  }
+});
+
+test('an existing document keeps the old rules, so an append still lands', () => {
+  const page = { targetPath: 'notes/spec-pricing.md' };
+  assert.equal(writePolicy({ kind: 'update', appendOnly: true, ...page }).disposition, 'silent');
+  assert.equal(writePolicy({ kind: 'update', ...page }).disposition, 'silent');
+  assert.equal(
+    writePolicy({ kind: 'update', rewritesUserText: true, ...page }).disposition,
+    'ask',
+  );
+  assert.equal(
+    writePolicy({ kind: 'update', rewritesUserText: true, asked: true, ...page }).disposition,
+    'silent',
+  );
+});
+
 test('a rewrite of what the PM wrote waits, unless they asked for it', () => {
   const rewrite = { kind: 'update', rewritesUserText: true, targetPath: 'notes/runbook.md' };
   const ruling = writePolicy(rewrite);
@@ -250,7 +286,8 @@ test('every ruling says why, in one plain sentence', () => {
 test('appliesSilently agrees with the ruling', () => {
   assert.equal(appliesSilently({ kind: 'note' }), true);
   assert.equal(appliesSilently({ kind: 'outbound' }), false);
-  assert.equal(appliesSilently({ kind: 'note', targetPath: 'notes/brief.md' }), true);
+  assert.equal(appliesSilently({ kind: 'note', targetPath: 'notes/brief.md' }), false);
+  assert.equal(appliesSilently({ kind: 'note', targetPath: 'research/pricing.md' }), true);
   assert.equal(
     appliesSilently({ kind: 'update', rewritesUserText: true, targetPath: 'notes/brief.md' }),
     false,
@@ -311,11 +348,12 @@ test('every row is on the list its answer names', () => {
   }
 });
 
-test('the list that waits names the send, the delete, the rewrite and the assumption', () => {
+test('the list that waits names the send, the delete, the document, the rewrite and the assumption', () => {
   const waits = describeWritePolicy().find((p) => p.place === 'waits')!;
-  assert.equal(waits.rows.length, 4);
+  assert.equal(waits.rows.length, 5);
   assert.ok(waits.rows.some((r) => r.what.startsWith('Anything sent to')));
   assert.ok(waits.rows.some((r) => r.what.startsWith('Deleting a page')));
+  assert.ok(waits.rows.some((r) => r.what.startsWith('A new document')));
   assert.ok(waits.rows.some((r) => r.what.startsWith('A rewrite of something you wrote')));
   assert.ok(waits.rows.some((r) => r.what.startsWith('Anything Qale had to assume')));
 });
@@ -324,8 +362,10 @@ test('the list that lands names the meeting page, the to-do and the memory', () 
   const lands = describeWritePolicy().find((p) => p.place === 'lands')!;
   assert.ok(lands.rows.some((r) => r.what.startsWith('A meeting page')));
   assert.ok(lands.rows.some((r) => r.what.startsWith('A to-do,')));
-  assert.ok(lands.rows.some((r) => r.what.startsWith('A new document')));
+  assert.ok(lands.rows.some((r) => r.what.startsWith('A new page Qale keeps')));
   assert.ok(lands.rows.some((r) => r.what.startsWith('A decision written down')));
+  // The document moved to the other list, so nothing here may claim it lands.
+  assert.ok(!lands.rows.some((r) => r.what.startsWith('A new document')));
 });
 
 test('the two label rows sit with what lands', () => {

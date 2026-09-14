@@ -5,6 +5,7 @@ import type {
   AgentRunInput,
   AgentRunHandle,
   ArrivalCheckDTO,
+  ArrivalAttachDTO,
   ArrivalHandoffDTO,
   ArrivalItemInputDTO,
   ArrivalProgressDTO,
@@ -244,6 +245,16 @@ export interface InvokeMap {
     result: ArrivalHandoffDTO;
   };
   /**
+   * Files onto a session that already exists: a drop on an open conversation.
+   * `ingest` cannot carry this: it mints a new session every time. Nothing is
+   * started here, because the session is already running; the renderer sends an
+   * ordinary message naming the files it got back.
+   */
+  'arrival:attach': {
+    args: [sessionId: string, items: ArrivalItemInputDTO[]];
+    result: ArrivalAttachDTO;
+  };
+  /**
    * Batches that are still being read, or that settled while this window was
    * away (docs/critical-mass.md CM-2). The counts arrive as pushes; this is the
    * cold read a reopened tab needs so a run in flight is not a blank line.
@@ -274,6 +285,10 @@ export interface InvokeMap {
       staleReason?: 'unanchored' | 'duplicate' | 'missing';
       error?: string;
       url?: string;
+      /** What the send touched at the provider: the key of the ticket it just
+       *  created, the id of the event it added. The green receipt draws it as a
+       *  chip, so the line the PM reads is a way to the item itself. */
+      externalId?: string;
       review?: MeetingReviewAskDTO;
       /** The vault note the accept wrote, after any rename it also made — the
        *  rail pins what the PM approves (docs/autopinning.md). */
@@ -520,6 +535,7 @@ export const INVOKE_CHANNELS = [
   'arrival:pick',
   'arrival:check',
   'arrival:ingest',
+  'arrival:attach',
   'arrival:batches',
   'search:query',
   'proposals:list',

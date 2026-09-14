@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useApp, type SessionOverview } from '../state/app-state';
 import { useAimedDrop } from '../lib/aimed-drop';
+import { DROP_OVER } from '../lib/file-drop';
 import { requestCapture } from '../lib/capture-event';
 import { locationCrumbs } from '../lib/crumbs';
 import { navFromEvent, type NavOpts } from '../lib/nav';
@@ -471,7 +472,7 @@ export function NoteView({ path }: { path: string }) {
 
   return (
     <div
-      className={`flex h-full flex-col ${aimed.over ? 'bg-brand/5 ring-1 ring-brand/40 ring-inset' : ''}`}
+      className={`flex h-full flex-col ${aimed.over ? DROP_OVER : ''}`}
       {...aimed.handlers}
     >
       <PageHeader

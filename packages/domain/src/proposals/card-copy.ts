@@ -1,7 +1,6 @@
 import { refToSlug } from '../notes/decisions.js';
 import { dirForType, NOTE_TYPES, type NoteType } from '../notes/frontmatter.js';
 import { titleFromSlug } from '../notes/slug.js';
-import { INFERRED_TODO_MARK } from '../todos/index.js';
 import { formatStamp, parseEventStamp, rsvpAnswer } from './event-time.js';
 // activity.ts imports titleForRef from here, so the two lean on each other.
 // Both use the other's export inside a function only, never at load, which is
@@ -115,6 +114,12 @@ export interface OutboundCopyInput {
   labels?: string[];
   priority?: string;
   components?: string[];
+  /** google-calendar: the event the card addresses. */
+  eventId?: string;
+  /** Where the item lives at the provider, stamped on the payload once the send
+   *  landed. It is how a receipt line opens a ticket the workspace has not
+   *  mirrored yet. */
+  url?: string;
 }
 
 /**
@@ -508,14 +513,9 @@ export interface ChangeLineInput {
   targetPath?: string | null;
   /** A new page's frontmatter, or the keys an update sets. */
   frontmatter?: Record<string, unknown>;
-  /** The note's frontmatter before an update, so a field that moved says so. */
-  before?: Record<string, unknown>;
   body?: string;
   append?: string;
   patch?: readonly { search: string; replace: string }[];
-  /** Qale worked this out rather than heard it said, so the row wears the mark
-   *  the Todos view wears (docs/fewer-approvals.md FA-7). */
-  inferred?: boolean;
 }
 
 /** Whether a write is about a to-do. The folder decides, because an update's
@@ -549,24 +549,6 @@ export function appliedVerb(input: ChangeLineInput): AppliedVerb {
   return input.kind === 'update' ? 'Changed' : 'New';
 }
 
-/**
- * Who owes a to-do, in the word the row says: the person's name when somebody
- * else committed, "you" when the PM did. A to-do with no owner is the PM's own,
- * which is what the ledger already means by an empty owner.
- */
-function todoOwner(fm?: Record<string, unknown>): string {
-  return todoOwnerName(fm) ?? 'you';
-}
-
-/**
- * The line a to-do row says: who, when, and whether Qale heard it. The parts are
- * dotted apart because each one is a fact the PM checks on its own, and the mark
- * is the string the Todos view uses, so the two surfaces cannot drift.
- */
-function todoLine(parts: readonly string[], inferred?: boolean): string {
-  return [...parts, ...(inferred ? [INFERRED_TODO_MARK] : [])].join(' · ');
-}
-
 /** "one line", "3 lines". The count only appears when it is worth saying. */
 const lineCount = (n: number): string => (n === 1 ? 'one line' : `${n} lines`);
 
@@ -586,74 +568,6 @@ const headingText = (line: string): string =>
     .replace(/^#{1,6}\s+/, '')
     .trim();
 
-/** How deep a heading sits. 0 for a line that is not one. */
-const headingLevel = (line: string): number => /^(#{1,6})\s/.exec(line.trim())?.[1]?.length ?? 0;
-
-/**
- * The sections a piece of writing fills, named by their own headings:
- * "Summary, 3 Next steps". A section of bullets says how many; a section of
- * prose says only that it is there, because a count of paragraphs tells nobody
- * anything.
- *
- * A top-level heading is skipped: a page whose body opens with its own title is
- * not a page with a section called after itself.
- */
-function sectionsIn(text: string): string[] {
-  const lines = text.split('\n');
-  const out: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (headingLevel(line) < 2) continue;
-    const heading = headingText(line);
-    if (!heading) continue;
-    let bullets = 0;
-    let prose = 0;
-    for (let j = i + 1; j < lines.length && !isHeading(lines[j]!); j++) {
-      const body = lines[j]!.trim();
-      if (!body) continue;
-      if (/^[-*+]\s+/.test(body)) bullets++;
-      else prose++;
-    }
-    if (bullets > 1) out.push(`${bullets} ${heading}`);
-    else if (bullets + prose > 0) out.push(heading);
-  }
-  return out;
-}
-
-/** A day field said the way a person says a move: "12 to 24 Sep" keeps the
- *  month once when both days share it. */
-function dayMove(before: unknown, after: unknown): string | null {
-  const to = dayLabel(after);
-  if (!to) return null;
-  const from = dayLabel(before);
-  if (!from) return `set to ${to}`;
-  const month = to.slice(to.indexOf(' '));
-  const short = from.endsWith(month) ? from.slice(0, from.length - month.length) : from;
-  return `moved ${short} to ${to}`;
-}
-
-/** One field an update sets, said in the PM's words. Null for a field nobody
- *  reads (the filing keys) or a value too shapeless to print. */
-function fieldPhrase(key: string, before: unknown, after: unknown): string | null {
-  if (isFilingKey(key)) return null;
-  if (JSON.stringify(before) === JSON.stringify(after)) return null;
-  if (key === 'due') {
-    const move = dayMove(before, after);
-    return move ? `due ${move}` : null;
-  }
-  if (key === 'owner') {
-    const who = titleForRef(typeof after === 'string' ? after : '');
-    return who ? `waiting on ${who}` : null;
-  }
-  if (key === 'commitment' && after === 'done') return 'closed';
-  if (key === 'commitment' && after === 'dropped') return 'dropped';
-  if (typeof after === 'string' && after.trim() && after.trim().length <= 40) {
-    return `${key.replace(/_/g, ' ')} now ${after.trim()}`;
-  }
-  if (typeof after === 'number' || typeof after === 'boolean') return `${key} now ${after}`;
-  return null;
-}
-
 /** What one search/replace block did to the body. */
 function patchPhrase(block: { search: string; replace: string }): string {
   const before = contentLines(block.search);
@@ -670,72 +584,39 @@ function patchPhrase(block: { search: string; replace: string }): string {
   return `${lineCount(Math.max(added.length, 1))}${under} rewritten`;
 }
 
-/** What an update did to the body, or an empty string when it touched none. */
+/**
+ * What an update did to the body, or an empty string when it touched none.
+ *
+ * An append says how much it added and nothing else. It used to name the
+ * sections it filled ("Summary, 2 Notes"), which read as a table of contents
+ * for text the PM cannot see from here (Erik, 2026-09-09). The chevron opens
+ * the text itself, and that is the only place it belongs.
+ */
 function bodyPhrase(input: ChangeLineInput): string {
   const patch = input.patch ?? [];
   if (patch.length > 1) return `${patch.length} places changed`;
   if (patch.length === 1) return patchPhrase(patch[0]!);
   const append = input.append ?? '';
   if (!append.trim()) return '';
-  const sections = sectionsIn(append);
-  if (sections.length > 0) return sections.join(', ');
   return `${lineCount(contentLines(append).length)} added`;
 }
 
 /**
- * What one write changed, in one line: "summary, 3 next steps", "due moved 12 to
- * 24 Sep", "one line under Entra".
+ * What one update did to a page, in one short phrase: "3 places changed", "one
+ * line under Entra", "2 lines added". Empty for every other kind of write.
  *
  * The row above it already says the page and the act, so this says only the
- * thing neither of them can. Same two rules as the headline: nothing here is
- * authored by the model, and nothing here costs a lookup beyond the note's own
- * frontmatter as it read before the write.
+ * thing neither of them can. A new page, a to-do and a page that went all say
+ * nothing here: their title IS the change (Erik, 2026-09-09). Nor does the line
+ * say what moved in the properties. "processing now processed" and "last told
+ * now 2026-09-10" read as a properties diff said out loud, which is the one
+ * thing a row must not be. The chevron opens the diff.
  *
- * Empty is a real answer. A page that was removed, and a write whose whole story
- * is its title, both leave the line off rather than pad it.
+ * Same two rules as the headline: nothing here is authored by the model, and
+ * nothing here costs a lookup beyond the payload itself.
  */
 export function changeLine(input: ChangeLineInput): string {
-  if (input.kind === 'delete' || input.kind === 'outbound') return '';
-  const fm = input.frontmatter;
-
-  if (input.kind === 'note' || input.kind === 'decision') {
-    if (noteType(fm) === 'todo' || isTodoWrite(input)) {
-      const due = dayLabel(fmString(fm, 'due'));
-      return todoLine([todoOwner(fm), due ? `due ${due}` : 'no date'], input.inferred);
-    }
-    const sections = sectionsIn(input.body ?? '');
-    if (sections.length > 0) return sections.join(', ');
-    return firstProseLine(input.body).line;
-  }
-
-  // An update: what moved in the properties, then what moved in the body. Two
-  // phrases is the ceiling: a third is a diff, and the diff is one click away.
-  const fields: string[] = [];
-  const todo = isTodoWrite(input);
-  for (const [key, after] of Object.entries(fm ?? {})) {
-    // A to-do row leads with the owner, so "waiting on Åsa" behind it would say
-    // the same name twice in one line.
-    if (todo && key === 'owner') continue;
-    const phrase = fieldPhrase(key, input.before?.[key], after);
-    if (phrase) fields.push(phrase);
-  }
-  const body = bodyPhrase(input);
-  const parts = [...fields, ...(body ? [body] : [])];
-  const moved =
-    parts.length <= 2
-      ? parts.join(', ')
-      : `${parts.slice(0, 2).join(', ')}, and ${parts.length - 2} more`;
-  if (!todo) return moved;
-
-  // A to-do that was edited says the same three things a new one says, so the
-  // two rows read alike. The owner comes off the file as it stands, which is
-  // the note before the write with this write's own keys over it.
-  const owner = todoOwner({ ...input.before, ...fm, type: 'todo' });
-  if (closesTodo(input)) {
-    return todoLine([owner, fmString(fm, 'commitment') === 'dropped' ? 'dropped' : 'done']);
-  }
-  if (!moved) return '';
-  return todoLine([owner, moved], input.inferred);
+  return input.kind === 'update' ? bodyPhrase(input) : '';
 }
 
 /**
@@ -954,5 +835,61 @@ export function outboundReceipt(ob: OutboundCopyInput): string {
       return `Replied ${rsvpAnswer(ob.responseStatus)} to ${ob.title ?? 'an invite'}`;
     default:
       return `Applied ${ob.title ?? 'the change'}`;
+  }
+}
+
+/**
+ * One line on the green "Left your workspace" card, with the item split out of
+ * the sentence so the card can draw it as a chip.
+ *
+ * Every line names a real thing and every line opens it. A sentence that says
+ * "Created a task in Nordkap" tells the PM a ticket exists somewhere and gives
+ * them no way to it, which is the one thing they want the second after they
+ * approve a send. So the send stamps where it landed onto the card, and the
+ * line reads act, item, tail: "Commented on [PAY-142]", "Created [PAY-171] in
+ * Nordkap", "Added [Kickoff] to your calendar".
+ *
+ * A send whose item has no address keeps the whole sentence in `act` and draws
+ * no chip. Cards accepted before the stamp existed take that path.
+ */
+export interface SentLine {
+  /** The words before the item, or the whole sentence when there is no item. */
+  act: string;
+  /** The item, as a reference chip draws it: a ticket key, a page id, an event id. */
+  item?: string;
+  /** What to call the item until the workspace has its own copy. */
+  name?: string;
+  /** The item's address at the provider. */
+  url?: string;
+  /** The words after the item. */
+  tail?: string;
+}
+
+export function sentLine(ob: OutboundCopyInput): SentLine {
+  const url = ob.url?.trim() ? ob.url : undefined;
+  const sentence = { act: outboundReceipt(ob) };
+  const item = ob.targetId ?? ob.eventId;
+  if (!item) return sentence;
+  switch (ob.action) {
+    case 'comment_ticket':
+      return { act: 'Commented on', item, url };
+    case 'update_page':
+      return { act: 'Updated', item, name: ob.title, url };
+    case 'create_ticket':
+      return {
+        act: 'Created',
+        item,
+        name: item,
+        url,
+        ...(ob.container ? { tail: `in ${ob.container}` } : {}),
+      };
+    case 'create_event':
+      return { act: 'Added', item, name: ob.title, url, tail: 'to your calendar' };
+    case 'update_event':
+      return { act: 'Changed', item, name: ob.title, url, tail: 'in your calendar' };
+    case 'respond_to_event':
+      return { act: `Replied ${rsvpAnswer(ob.responseStatus)} to`, item, name: ob.title, url };
+    default:
+      return sentence;
   }
 }

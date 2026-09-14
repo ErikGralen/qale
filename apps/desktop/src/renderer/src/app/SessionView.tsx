@@ -1,4 +1,12 @@
-import { useMemo, useState, useRef, useEffect, type ReactNode } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useMemo,
+  useState,
+  useRef,
+  useEffect,
+  type MouseEvent,
+} from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { useStickToBottom } from 'use-stick-to-bottom';
@@ -8,7 +16,6 @@ import {
   ArrowDown,
   Square,
   Wrench,
-  Brain,
   ChevronDown,
   FileText,
   History,
@@ -18,16 +25,34 @@ import {
   RotateCcw,
   Wand2,
 } from 'lucide-react';
-import type { AskRequestDTO, NoteRefDTO, SessionFileDTO, SessionScopeDTO } from '@qale/ipc';
-import { readAppliedReceipt, titleFromSlug, type AppliedRow } from '@qale/domain';
+import type {
+  ArrivalItemInputDTO,
+  AskRequestDTO,
+  CodebaseRequestDTO,
+  NoteRefDTO,
+  SessionFileDTO,
+  SessionScopeDTO,
+  SpawnRequestDTO,
+} from '@qale/ipc';
+import { titleFromSlug, typeForDir } from '@qale/domain';
 import { parseKickoff, type Kickoff } from '@qale/sessions';
 import { IpcChatTransport } from '../lib/ipc-transport';
 import { navFromEvent, type NavOpts } from '../lib/nav';
-import { draftTextShown } from '../lib/draft-text';
+import { isActivityPart, turnBlocks, type AnyPart } from '../lib/turn-parts';
+import {
+  failedSteps,
+  humanSeconds,
+  isFailedStep,
+  liveLabel,
+  showsInTrail,
+  stepLabel,
+  trailSteps,
+  trailSummary,
+} from '../lib/trail';
 import { noteTypeIcon } from '../lib/note-icons';
 import { fileIconFor } from '../lib/session-files';
 import { isPile, progressLine, receiptLine } from '../lib/source-batch';
-import { blockRows, landedWrites } from '../lib/receipt-block';
+import { landedWrites } from '../lib/receipt-block';
 import { HeaderAction, HeaderActions, PageHeader } from '../components/PageHeader';
 import { InkWriting } from '../components/InkWriting';
 import { Markdown } from '../components/Markdown';
@@ -37,6 +62,7 @@ import { LandedRows } from '../components/review/LandedRows';
 import { SpawnCard } from '../components/review/SpawnCard';
 import { CodebaseCard } from '../components/review/CodebaseCard';
 import { QuestionCard } from '../components/review/QuestionCard';
+import { WikiText } from '../components/review/shared';
 import { useApp } from '../state/app-state';
 import { invoke } from '../lib/ipc';
 import { useChatMentions } from './ChatMentions';
@@ -50,24 +76,10 @@ import {
   SendButton,
   useAutoGrow,
 } from '../components/Composer';
-
-/**
- * Wrap bare note-path citations (decisions/adopt-workos.md) in wikilinks so they
- * render clickable. Skips paths already inside wikilinks or markdown link parens
- * (those are preceded by `[` / `(`, which the prefix class excludes).
- */
-function linkifyNotePaths(text: string): string {
-  return text.replace(/(^|[\s,;:])([a-z][\w-]*\/[\w./-]+\.md)\b/gim, '$1[[$2]]');
-}
-
-/** Rewrite prose only — a fenced block is data (a proposal payload, a diff) and
- *  stays exactly as written, paths and all. */
-function outsideCode(text: string, rewrite: (chunk: string) => string): string {
-  return text
-    .split(/(```[\s\S]*?```)/)
-    .map((chunk, i) => (i % 2 === 1 ? chunk : rewrite(chunk)))
-    .join('');
-}
+import { Attachments } from '../components/Attachments';
+import { attachedMessage } from '../lib/attachments';
+import { DROP_OVER, useFileDrop } from '../lib/file-drop';
+import { linkifyNotePaths, outsideCode } from '../lib/note-links';
 
 /**
  * What the PM sent, as markdown: the paths and `[[mentions]]` in it become
@@ -77,250 +89,6 @@ function outsideCode(text: string, rewrite: (chunk: string) => string): string {
  */
 function messageMarkdown(text: string): string {
   return outsideCode(text, (chunk) => linkifyNotePaths(chunk).replace(/(?<=\S)\n(?!\n)/g, '  \n'));
-}
-
-interface AnyPart {
-  type: string;
-  text?: string;
-  toolName?: string;
-  state?: string;
-  input?: unknown;
-  output?: unknown;
-  errorText?: string;
-}
-
-function isActivityPart(part: AnyPart): boolean {
-  return part.type === 'reasoning' || part.type.startsWith('tool-') || part.type === 'dynamic-tool';
-}
-
-function isToolPart(part: AnyPart): boolean {
-  return part.type.startsWith('tool-') || part.type === 'dynamic-tool';
-}
-
-function toolNameOf(part: AnyPart): string {
-  return part.type.startsWith('tool-') ? part.type.slice(5) : (part.toolName ?? 'tool');
-}
-
-function toolInputOf(part: AnyPart): Record<string, unknown> {
-  return typeof part.input === 'object' && part.input !== null
-    ? (part.input as Record<string, unknown>)
-    : {};
-}
-
-/**
- * A step the agent gave up on. The bridge turns pi's `isError` result into a
- * `tool-output-error` chunk, which useChat lands on the part as that state plus
- * an `errorText`; either one is enough to call it failed.
- */
-function isFailedStep(part: AnyPart): boolean {
-  return part.state === 'output-error' || part.errorText !== undefined;
-}
-
-/**
- * Past tenses that don't take the -ed → -ing rule, plus the vague fallback:
- * "Tried a step" says more than "Tried working" would.
- */
-const GERUNDS: Record<string, string> = {
-  Read: 'reading',
-  Wrote: 'writing',
-  Ran: 'running',
-  Worked: 'a step',
-};
-
-/**
- * The third tense. A failed step reads "Tried reading", never "Read", so a run
- * that tried three times and gave up can't be mistaken for a run that did three
- * things. Derived from the past-tense verb rather than a third column in the
- * table below, so a new tool still only needs one entry.
- */
-function triedVerb(verb: string): string {
-  const [head = '', ...rest] = verb.split(' ');
-  const gerund =
-    GERUNDS[head] ?? (head.endsWith('ed') ? `${head.slice(0, -2)}ing` : head).toLowerCase();
-  return ['Tried', gerund, ...rest].join(' ');
-}
-
-/** Past-tense verb + the thing it acted on, for one step in the expanded trail. */
-function stepLabel(part: AnyPart): { verb: string; detail?: string } {
-  const label = doneLabel(part);
-  return isFailedStep(part) ? { ...label, verb: triedVerb(label.verb) } : label;
-}
-
-/**
- * The write that applied on its own, if this step was one, for the expanded
- * trail's own row: "Created the Nordkap write-up", "Added to rules". The block
- * above the closing line is what the PM reads; this keeps the trail from saying
- * "Proposed a note" about something already in the workspace.
- */
-function appliedLabel(part: AnyPart): { verb: string; detail?: string } | null {
-  if (isFailedStep(part) || typeof part.output !== 'string') return null;
-  const receipt = readAppliedReceipt(part.output);
-  if (!receipt) return null;
-  return receipt.detail ? { verb: receipt.verb, detail: receipt.detail } : { verb: receipt.verb };
-}
-
-/** The verb table: one entry per tool, past tense, plain and sentence case. */
-function doneLabel(part: AnyPart): { verb: string; detail?: string } {
-  const name = toolNameOf(part);
-  const input = toolInputOf(part);
-  const str = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : undefined);
-  switch (name) {
-    case 'vault_read':
-      // The note it read, by name. The trail is provenance the PM reads, so a
-      // path here would be the one place in the app that still spells storage.
-      return { verb: 'Read', detail: str('path') && titleFromSlug(str('path')!) };
-    case 'vault_outline':
-      return { verb: 'Skimmed', detail: str('path') && titleFromSlug(str('path')!) };
-    case 'search_vault':
-      return { verb: 'Searched', detail: str('query') && `“${str('query')}”` };
-    case 'vault_grep':
-      return { verb: 'Scanned for', detail: str('pattern') && `“${str('pattern')}”` };
-    case 'vault_backlinks':
-      return { verb: 'Followed links to', detail: str('path') && titleFromSlug(str('path')!) };
-    case 'vault_list':
-      return {
-        verb: 'Listed notes',
-        detail: [str('type'), str('lifecycle')].filter(Boolean).join('/') || undefined,
-      };
-    case 'jira_search':
-      return { verb: 'Searched Jira', detail: str('jql') ?? str('query') };
-    case 'jira_get_issue':
-      return { verb: 'Read Jira issue', detail: str('key') ?? str('issueKey') };
-    case 'confluence_search':
-      return { verb: 'Searched Confluence', detail: str('query') ?? str('cql') };
-    case 'confluence_get_page':
-      return { verb: 'Read Confluence page', detail: str('title') ?? str('id') };
-    case 'use_skill':
-      return { verb: 'Loaded skill', detail: str('name') };
-    case 'spawn':
-      return { verb: 'Split the work up' };
-    case 'ask_user': {
-      const questions = Array.isArray(input.questions)
-        ? (input.questions as { header?: string }[])
-        : [];
-      return {
-        verb: 'Raised a question',
-        detail:
-          questions
-            .map((q) => q.header)
-            .filter(Boolean)
-            .join(', ') || undefined,
-      };
-    }
-    case 'get_voice':
-      return { verb: 'Read a voice', detail: str('name') };
-    // Only ever seen here when the call had nothing to show (still streaming,
-    // or malformed) — a usable one renders as its own panel in the chat.
-    case 'draft_text':
-      return { verb: 'Wrote a draft', detail: str('title') };
-    // Only ever visible on a session a person started, where the tool is a
-    // no-op: a scheduled run that ends quietly leaves no session to open.
-    case 'end_quietly':
-      return { verb: 'Asked to end quietly' };
-    case 'files_write':
-    case 'write_result':
-      return { verb: 'Wrote', detail: str('path') };
-    case 'files_edit':
-      return { verb: 'Edited', detail: str('path') };
-    case 'files_read':
-      return { verb: 'Read session file', detail: str('path') };
-    case 'files_list':
-      return { verb: 'Listed session files' };
-    // The write tools name no system: the handler resolves the provider from
-    // the container or the mirror (PD-9).
-    case 'draft_ticket':
-      return { verb: 'Drafted a ticket', detail: str('title') };
-    case 'draft_ticket_comment':
-      return { verb: 'Drafted a comment', detail: str('ticket') };
-    case 'draft_page_update':
-      return { verb: 'Drafted a page update', detail: str('page') };
-    // Retired tool names, kept for replay: sessions filed before the write tools
-    // went provider-blind still carry these calls, and the trail is what the PM
-    // reads back months later.
-    case 'draft_jira_issue':
-      return { verb: 'Drafted a ticket', detail: str('summary') };
-    case 'draft_jira_comment':
-      return { verb: 'Drafted a comment', detail: str('issueKey') };
-    case 'draft_confluence_update':
-      return { verb: 'Drafted a page update', detail: str('pageId') };
-    // Retired tool. Kept for replay only: transcripts filed before checkpoints
-    // were removed still contain these calls, and an old session must not
-    // render a raw tool name.
-    case 'advance_checkpoint':
-      return { verb: 'Moved to the next step' };
-    default:
-      if (name.startsWith('propose_')) {
-        // Most writes land without a card now, so the step says what happened
-        // rather than what was asked for.
-        const landed = appliedLabel(part);
-        if (landed) return landed;
-        return {
-          verb: `Proposed a ${name.slice(8).replace(/_/g, ' ')}`,
-          detail: str('title') ?? (str('path') && titleFromSlug(str('path')!)),
-        };
-      }
-      if (name.startsWith('draft_'))
-        return {
-          verb: `Drafted a ${name.slice(6).replace(/_/g, ' ')}`,
-          // A message draft carries a `subject` rather than a title (SK-7), and
-          // it may be revising a card it already made.
-          detail: str('title') ?? str('subject') ?? str('summary'),
-        };
-      // A tool shipped without an entry above. Vague beats wrong: the PM should
-      // never be shown a raw tool name (`draft_calendar_rsvp`), and a machine
-      // name in the detail slot would be the same leak by another door.
-      return { verb: 'Worked' };
-  }
-}
-
-/** Present-tense label for the step currently running, shown on the collapsed row. */
-function liveLabel(part: AnyPart | undefined): string {
-  if (!part || part.type === 'reasoning') return 'Thinking…';
-  const name = toolNameOf(part);
-  const input = toolInputOf(part);
-  const str = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : undefined);
-  switch (name) {
-    case 'vault_read':
-      return str('path') ? `Reading ${titleFromSlug(str('path')!)}` : 'Reading the memory…';
-    case 'vault_outline':
-      return str('path') ? `Skimming ${titleFromSlug(str('path')!)}` : 'Skimming the memory…';
-    case 'search_vault':
-      return str('query') ? `Searching “${str('query')}”` : 'Searching the memory…';
-    case 'vault_grep':
-      return str('pattern') ? `Scanning for “${str('pattern')}”` : 'Scanning the memory…';
-    case 'vault_backlinks':
-      return str('path') ? `Following links to ${titleFromSlug(str('path')!)}` : 'Following links…';
-    case 'vault_list':
-      return 'Listing notes…';
-    case 'draft_text':
-      return 'Writing a draft…';
-    case 'spawn':
-      return 'Splitting the work up…';
-    case 'ask_user':
-      return 'Waiting on your answer…';
-    case 'files_write':
-    case 'files_edit':
-    case 'write_result':
-      return str('path') ? `Writing ${str('path')}` : 'Writing a session file…';
-    case 'files_read':
-    case 'files_list':
-      return 'Reading its own notes…';
-    case 'jira_search':
-    case 'jira_get_issue':
-      return 'Checking Jira…';
-    case 'confluence_search':
-    case 'confluence_get_page':
-      return 'Checking Confluence…';
-    default:
-      if (name.startsWith('propose_') || name.startsWith('draft_')) return 'Drafting a proposal…';
-      return 'Working…';
-  }
-}
-
-/** Seconds as the PM would say them: `8s`, `47s`, `2m 5s`. */
-function humanSeconds(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 /**
@@ -371,22 +139,65 @@ function useClock(since: number | undefined): string | null {
   return seconds >= 1 ? humanSeconds(seconds) : null;
 }
 
-/** One tool step inside the expanded trail — raw receipt stays one click away. */
-function ToolStep({ part }: { part: AnyPart }) {
-  const [open, setOpen] = useState(false);
-  const { verb, detail } = stepLabel(part);
+/**
+ * The note a step read, as the chip a page wears everywhere else in the app:
+ * the kind's icon, the title, and a click that opens it. Written out here
+ * rather than shared with the rows below, so the trail and the rows can each be
+ * read on their own.
+ */
+function NoteChip({
+  path,
+  title,
+  onOpen,
+}: {
+  path: string;
+  title: string;
+  onOpen: (path: string, opts?: NavOpts) => void;
+}) {
+  const type = typeForDir(path.split('/')[0] ?? '');
+  const Icon = type ? noteTypeIcon(type) : FileText;
+  const open = (e: MouseEvent) => {
+    e.stopPropagation();
+    onOpen(path, navFromEvent(e));
+  };
+  return (
+    <button
+      type="button"
+      className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-sm bg-brand/8 px-1 py-px font-medium text-brand transition-colors hover:bg-brand/15 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      onClick={open}
+      // Middle-click = open in background tab, as every other link in the app.
+      onAuxClick={(e) => e.button === 1 && open(e)}
+      title={`Open ${title}`}
+    >
+      <Icon className="size-3 shrink-0 opacity-70" aria-hidden />
+      <span className="truncate">{title}</span>
+    </button>
+  );
+}
+
+/**
+ * One step inside the expanded trail: what it did, and what it did it to.
+ *
+ * The raw result is never shown. What a tool hands back is written for the
+ * model, in the second person ("Say what you did in one short line"), with a
+ * machine-readable line under it. A person who opened that read a message that
+ * was never addressed to them (Erik, 2026-09-11). The useful half is the note,
+ * so the note is a chip that opens it, and the result stays with the model.
+ */
+function ToolStep({
+  part,
+  onOpen,
+}: {
+  part: AnyPart;
+  onOpen: (path: string, opts?: NavOpts) => void;
+}) {
+  const { verb, detail, path } = stepLabel(part);
   const done =
     part.state === 'output-available' || part.state === 'output-error' || part.output !== undefined;
-  const hasOutput = typeof part.output === 'string' && part.output.length > 0;
   const failed = isFailedStep(part);
   return (
-    <div>
-      <button
-        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-        onClick={() => hasOutput && setOpen((o) => !o)}
-        aria-expanded={open}
-        disabled={!hasOutput}
-      >
+    <div className="px-1.5 py-1 text-muted-foreground">
+      <div className="flex items-center gap-1.5">
         {/* The glyph carries the same three states as the verb: spinning,
             done, gave up. */}
         {!done ? (
@@ -397,108 +208,97 @@ function ToolStep({ part }: { part: AnyPart }) {
           <Wrench className="size-3 shrink-0" />
         )}
         <span className="shrink-0 font-medium">{verb}</span>
-        {detail && <span className="truncate">{detail}</span>}
-        {hasOutput && (
-          <ChevronDown
-            className={`ml-auto size-3 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
-          />
-        )}
-      </button>
-      {part.errorText && <div className="px-1.5 pb-1 text-destructive">{part.errorText}</div>}
-      {open && hasOutput && (
-        <pre className="mt-0.5 mb-1 max-h-48 overflow-y-auto rounded-md bg-muted/40 px-2 py-1.5 whitespace-pre-wrap text-muted-foreground">
-          {(part.output as string).slice(0, 2000)}
-        </pre>
+        {detail &&
+          (path ? (
+            <NoteChip path={path} title={detail} onOpen={onOpen} />
+          ) : (
+            <span className="truncate">{detail}</span>
+          ))}
+      </div>
+      {/* Why it gave up, in the one line the run itself gave. */}
+      {failed && part.errorText && (
+        <p className="truncate pl-4.5 text-destructive">{part.errorText}</p>
       )}
     </div>
   );
 }
 
 /**
- * The whole working phase of an assistant turn — reasoning, vault reads,
- * searches, mid-work narration — folded into one quiet row. Collapsed it reads
- * as provenance ("Reasoning · 7 sources · 4 searches"); while streaming it
- * narrates the current step; expanded it shows the chronological trail.
+ * The work behind one answer, folded into one quiet row (docs/chat-order.md).
+ *
+ * Collapsed it is a short sentence about what happened ("Read 2 notes ·
+ * searched twice · 12s"). While the run is going it narrates the step it is on.
+ * Expanded it is the trail in order, the thinking with it.
+ *
+ * Only work that nothing else on screen shows is in here. A write that landed
+ * draws as a row under this block, a proposal as a card at the foot of the
+ * session, a draft as its own panel, so none of the three is said twice
+ * (`lib/trail.ts`). A step that failed always stays: the trail is the only
+ * place it appears.
+ *
+ * What the assistant wrote is never in here. Text draws as prose where it was
+ * written.
  */
-function ActivityBlock({ parts, live }: { parts: AnyPart[]; live: boolean }) {
+function ActivityBlock({
+  parts,
+  live,
+  onOpen,
+}: {
+  parts: AnyPart[];
+  live: boolean;
+  onOpen: (path: string, opts?: NavOpts) => void;
+}) {
   const [open, setOpen] = useState(false);
   const elapsed = useElapsed(live);
-  const sources = new Set<string>();
-  let searches = 0;
-  let actions = 0;
-  let failed = 0;
-  for (const part of parts) {
-    if (!isToolPart(part)) continue;
-    const name = toolNameOf(part);
-    const input = toolInputOf(part);
-    if (name === 'vault_read' && typeof input.path === 'string') sources.add(input.path);
-    else if (name === 'jira_get_issue' || name === 'confluence_get_page')
-      sources.add(`${name}:${JSON.stringify(input)}`);
-    else if (
-      // An outline is orientation, not content: it hands back a heading tree, and
-      // the note itself only counts as a source once a vault_read returns some of it.
-      [
-        'search_vault',
-        'vault_grep',
-        'vault_backlinks',
-        'vault_list',
-        'vault_outline',
-        'jira_search',
-        'confluence_search',
-      ].includes(name)
-    )
-      searches++;
-    else actions++;
-    if (isFailedStep(part)) failed++;
-  }
+  const steps = trailSteps(parts);
+  const failed = failedSteps(parts);
   // Under a second is noise, and a replayed transcript has no reading at all.
   const clock = elapsed !== null && elapsed >= 1 ? humanSeconds(elapsed) : null;
+  // Every step in this trail has a row or a card of its own, so the trail has
+  // nothing left to say and says nothing.
+  if (!live && steps.length === 0) return null;
   // The clock follows the label, so the label drops its trailing ellipsis to
   // make room for it: "Working…" alone, "Working for 12s" with a clock.
   const step = liveLabel(parts[parts.length - 1]);
   const running = clock ? step.replace(/…$/, '') : step;
-  const bits: string[] = [];
-  // How long it took, first: it is the thing the PM was watching a second ago.
-  if (!live && clock) bits.push(`worked for ${clock}`);
-  if (sources.size > 0) bits.push(`${sources.size} source${sources.size === 1 ? '' : 's'}`);
-  if (searches > 0) bits.push(`${searches} search${searches === 1 ? '' : 'es'}`);
-  if (actions > 0) bits.push(`${actions} action${actions === 1 ? '' : 's'}`);
   return (
     <div className="my-1 text-xs">
       <button
-        className="flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
+        disabled={steps.length === 0}
       >
-        {live ? (
-          <InkWriting small className="shrink-0 text-brand" />
-        ) : (
-          <Brain className="size-3.5 shrink-0" />
-        )}
-        <span className="truncate font-medium">{live ? running : 'Reasoning'}</span>
+        {live && <InkWriting small className="shrink-0 text-brand" />}
+        <span className="truncate font-medium">{live ? running : trailSummary(parts, clock)}</span>
         {/* The running row's own clock ("Working for 12s"), so a step that is
             taking a while reads as slow rather than as stuck. */}
         {live && clock && <span className="shrink-0">for {clock}</span>}
-        {!live && bits.length > 0 && <span className="shrink-0">· {bits.join(' · ')}</span>}
         {failed > 0 && <span className="shrink-0 text-destructive">· {failed} failed</span>}
-        <ChevronDown
-          className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
-        />
+        {steps.length > 0 && (
+          <ChevronDown
+            className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+          />
+        )}
       </button>
       {open && (
         <div className="mt-1 ml-2 flex flex-col border-l border-border pl-3">
-          {parts.map((part, i) => {
-            if (part.type === 'reasoning' || part.type === 'text')
-              return (
-                <div
-                  key={i}
-                  className="px-1.5 py-1 leading-relaxed whitespace-pre-wrap text-muted-foreground"
-                >
-                  {part.text}
-                </div>
-              );
-            return <ToolStep key={i} part={part} />;
-          })}
+          {/* Keyed by where the part sits in the turn, not by where it sits in
+              the filtered list: a step that lands its write drops out of the
+              trail mid-stream, and an index over what is left would hand its
+              key to the step after it. */}
+          {parts.map((part, i) =>
+            !showsInTrail(part) ? null : part.type === 'reasoning' ? (
+              <div
+                key={i}
+                className="px-1.5 py-1 leading-relaxed whitespace-pre-wrap text-muted-foreground"
+              >
+                <WikiText text={linkifyNotePaths(part.text ?? '')} onOpen={onOpen} />
+              </div>
+            ) : (
+              <ToolStep key={i} part={part} onOpen={onOpen} />
+            ),
+          )}
         </div>
       )}
     </div>
@@ -545,6 +345,11 @@ function RunRow({
 }) {
   const targets = kickoff.targets ?? [];
   const hasObjects = targets.length > 0 || sources.length > 0;
+  // A run carrying handed-over sources is a drop, and a drop's instruction is
+  // the sentence the PM typed beside the files. It is theirs, so it is shown.
+  // Every other kickoff's instruction is machine prose composed for the model,
+  // and stays off the screen.
+  const said = sources.length > 0 ? kickoff.instruction.trim() : '';
   return (
     <div className="rounded-xl border border-border bg-secondary/40 px-3 py-2.5 text-sm">
       <div className="flex items-start gap-2.5">
@@ -613,6 +418,7 @@ function RunRow({
               );
             })}
           </div>
+          {said && <p className="mt-1 leading-6 whitespace-pre-wrap">{said}</p>}
         </div>
       </div>
     </div>
@@ -620,45 +426,66 @@ function RunRow({
 }
 
 /**
- * The receipt for a turn (docs/fewer-approvals.md FA-4).
+ * Where the session stands, at the foot of the transcript.
  *
- * One block above the agent's closing sentences, in the order the PM reads it:
- * the question that holds the turn up, then what landed with a way back on each
- * row, then what still waits for a yes. A landed row and a waiting row are the
- * same shape with different controls, so the eye reads the set once instead of
- * learning two vocabularies.
+ * Everything here belongs to the session rather than to one turn: the question
+ * that holds the run up, a fan-out or a codebase read waiting on a yes, what a
+ * dropped pile came to, and the cards still waiting to be judged. They used to
+ * draw in three different places — the question spliced above the last turn's
+ * closing sentences, the fan-out and the codebase card under the whole
+ * transcript, the cards moving to whichever turn was newest. So a card could
+ * appear above a paragraph the PM had already read, and the same session drew
+ * its two approval cards in two different spots.
  *
- * The question and the waiting cards belong to the session rather than to one
- * turn, so only the last turn draws them (`hostsSession`).
+ * One block, always in the same place, always in the same order: what stops the
+ * run, then what it came to. Nothing above it ever moves once it is on screen.
  */
-function ReceiptBlock({
-  landed,
+function SessionFoot({
   sessionId,
   ask,
-  hostsSession,
-  onOpen,
+  spawn,
+  codebase,
+  pileReceipt,
 }: {
-  landed: readonly AppliedRow[];
   sessionId: string | null;
-  /** The parked question, when this block hosts it. */
+  /** The parked question, while the run waits on it. */
   ask: AskRequestDTO | null;
-  hostsSession: boolean;
-  onOpen: (path: string, opts?: NavOpts) => void;
+  spawn: SpawnRequestDTO | null;
+  codebase: CodebaseRequestDTO | null;
+  /** What a dropped pile came to, in one sentence (CM-2). */
+  pileReceipt: string | null;
 }) {
-  const { proposals } = useApp();
-  const waiting = hostsSession
-    ? proposals.filter((p) => p.status === 'pending' && p.sessionId === sessionId).length
-    : 0;
-  const rows = blockRows({ question: !!ask, landed, waiting });
-  if (rows.length === 0 && !hostsSession) return null;
+  if (!sessionId) return null;
   return (
-    <div className="my-2 flex flex-col gap-2">
-      {rows[0]?.kind === 'question' && ask && <QuestionCard request={ask} />}
-      <LandedRows rows={landed} sessionId={sessionId} onOpen={onOpen} />
-      {/* SessionReview draws the waiting rows, and stays the one place a card
+    // `empty:hidden` so a session with nothing waiting takes no room: an empty
+    // box would still draw the transcript's 16px gap under the last turn.
+    <div className="flex flex-col gap-1 empty:hidden">
+      {/* The three cards that hold the run. Only one is ever up at a time, and
+          while one is the session cannot move, so it leads the block. */}
+      {ask && <QuestionCard request={ask} />}
+      {spawn && <SpawnCard request={spawn} />}
+      {codebase && <CodebaseCard request={codebase} />}
+
+      {/* What the pile came to, in one sentence (CM-2). It sums a batch the
+          reply above describes piece by piece, and every number in it was
+          counted from a filing that happened.
+
+          It wears the same 20px mark column as the approval receipt under it,
+          because the two are one closing moment: what was read, then what was
+          approved. */}
+      {pileReceipt && (
+        <p className="flex items-center gap-2 px-0.5 text-sm text-muted-foreground">
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            <FileText className="size-3.5" />
+          </span>
+          {pileReceipt}
+        </p>
+      )}
+
+      {/* SessionReview draws the waiting cards, and stays the one place a card
           is judged. It also carries the closing beat once every card is judged,
           which is why it renders even when nothing is waiting. */}
-      {hostsSession && sessionId && <SessionReview sessionId={sessionId} />}
+      <SessionReview sessionId={sessionId} />
     </div>
   );
 }
@@ -686,6 +513,13 @@ interface SessionViewProps {
   /** Shows a "New session" button in the header wired to this. */
   onNewSession?: () => void;
   initialPrompt?: string;
+  /**
+   * The model the composer that opened this session was set to. A session
+   * started from Home or a browse page sends its first message before this view
+   * has a composer to pick in, so the pick travels with the start and is in
+   * force from that first turn.
+   */
+  initialModel?: string;
   /**
    * The page a scoped Ask was started from, as a filter (IM-13). It travels as
    * data, not as words: the session is built with the matching notes listed in
@@ -726,8 +560,13 @@ export function SessionView({ sessionId, draftKey, ...props }: SessionViewProps)
 
   const overview = initialSessionId ? sessions.find((s) => s.id === initialSessionId) : undefined;
   const backgroundRunning = !!overview?.running;
-  // True while THIS view's composer drives the stream — its useChat already
-  // renders the live turn, so the settle refresh must not remount it.
+  // True once THIS view's composer has started a run: its useChat already
+  // renders the turn, so the settle refresh below must not remount it. Set
+  // when a turn starts here and spent by the settle that follows, not mirrored
+  // from `busy`. The finish chunk closes the stream a beat before main reports
+  // the settle, so a mirror already read false when the check ran, and every
+  // turn ended with the transcript unmounting into "Opening the session…" and
+  // mounting again.
   const ownStream = useRef(false);
   const wasRunning = useRef(backgroundRunning);
 
@@ -753,10 +592,14 @@ export function SessionView({ sessionId, draftKey, ...props }: SessionViewProps)
 
   // A background run settled while this tab watched — replay the full transcript.
   useEffect(() => {
-    if (wasRunning.current && !backgroundRunning && !ownStream.current && initialSessionId) {
-      setHistory(null);
-      setReloadKey((k) => k + 1);
-      markSessionSeen(initialSessionId);
+    if (wasRunning.current && !backgroundRunning && initialSessionId) {
+      if (ownStream.current) {
+        ownStream.current = false;
+      } else {
+        setHistory(null);
+        setReloadKey((k) => k + 1);
+        markSessionSeen(initialSessionId);
+      }
     }
     wasRunning.current = backgroundRunning;
   }, [backgroundRunning, initialSessionId, markSessionSeen]);
@@ -777,7 +620,10 @@ export function SessionView({ sessionId, draftKey, ...props }: SessionViewProps)
       initialMessages={history}
       backgroundStreamId={backgroundRunning ? overview?.streamId : undefined}
       onOwnStream={(busy) => {
-        ownStream.current = busy;
+        if (busy) ownStream.current = true;
+        // A turn that ended before main ever reported it running (refused
+        // before it started) has no settle coming to spend the flag.
+        else if (!wasRunning.current) ownStream.current = false;
       }}
     />
   );
@@ -790,6 +636,7 @@ function SessionThread({
   onSessionId,
   onNewSession,
   initialPrompt,
+  initialModel,
   scope,
   scopeHint,
   embedded,
@@ -824,6 +671,7 @@ function SessionThread({
     openSessionFile,
     sessionSeeds,
     takeSessionSeed,
+    attachToSession,
     vault,
   } = useApp();
   const [needsKey, setNeedsKey] = useState(false);
@@ -843,9 +691,11 @@ function SessionThread({
   };
   // The model this session runs on, once the PM has moved it off the workspace
   // default. Unlike the skill it is not spent on one turn: it belongs to the
-  // session, so it rides along with every message from here on.
-  const [pickedModel, setPickedModel] = useState<string | null>(null);
-  const pickedModelRef = useRef<string | null>(null);
+  // session, so it rides along with every message from here on. A pick made in
+  // the composer that opened the session starts it off, so the very first turn
+  // runs on it too.
+  const [pickedModel, setPickedModel] = useState<string | null>(initialModel ?? null);
+  const pickedModelRef = useRef<string | null>(initialModel ?? null);
   const pickModel = (modelId: string) => {
     pickedModelRef.current = modelId;
     setPickedModel(modelId);
@@ -951,18 +801,6 @@ function SessionThread({
     }
   }
 
-  // The turn that hosts the session's own block: the question waiting on the PM
-  // and the cards still waiting for a yes (FA-4). They belong to the session
-  // rather than to one turn, so they hang off the last turn there is. A session
-  // that has not answered yet has none, and they draw under the transcript.
-  let blockIdx = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]!.role !== 'user') {
-      blockIdx = i;
-      break;
-    }
-  }
-
   // Voices ride the same roster as skills, told apart by the folder they sit in
   // (SkillDTO.kind). A draft panel offers them so a take the PM does not like
   // can be asked for again in another tone without typing the sentence out.
@@ -1027,16 +865,83 @@ function SessionThread({
     if (status === 'streaming') setNeedsKey(false);
   }, [status]);
 
+  /**
+   * Files dropped on this session, waiting in the composer. They are attached to
+   * the session when the message goes, never before: a file dropped by mistake
+   * costs one X and nothing is written.
+   *
+   * A session with no id yet has no folder to put them in, so it claims no
+   * drops and the Shell takes them to the Add source tray instead.
+   */
+  const [attached, setAttached] = useState<ArrivalItemInputDTO[]>([]);
+  const [attaching, setAttaching] = useState(false);
+  const takeFiles = useCallback(
+    (items: ArrivalItemInputDTO[]) => {
+      if (items.length === 0) return;
+      setAttached((prev) => [...prev, ...items]);
+      inputRef.current?.focus();
+    },
+    [inputRef],
+  );
+  const drop = useFileDrop(boundSessionId && !backgroundBusy && !askPending ? takeFiles : null);
+
+  const canSend = !busy && !backgroundBusy && !askPending && !attaching;
+
+  /**
+   * Put the attached files in this session's folder, then send the message that
+   * names them. Nothing else runs: the session already has a skill and the PM is
+   * talking to it, so forcing "Handle new sources" over the top would answer a
+   * question nobody asked. Somebody who wants the files filed picks that skill
+   * in the composer, which is the control that already does it.
+   */
+  const sendWithFiles = async (text: string) => {
+    if (!boundSessionId) return;
+    const batch = attached;
+    setAttaching(true);
+    setInput('');
+    setAttached([]);
+    try {
+      const result = await attachToSession(boundSessionId, batch);
+      if (result.files.length === 0) {
+        // Every file was refused, so there is nothing to talk about. Put them
+        // back with what was typed rather than sending a message about files
+        // that are not there.
+        setAttached(batch);
+        setInput(text);
+        return;
+      }
+      send(
+        attachedMessage(
+          result.files.map((f) => f.file),
+          text,
+        ),
+      );
+      setPickedSkill(null);
+    } catch {
+      setAttached(batch);
+      setInput(text);
+    } finally {
+      setAttaching(false);
+    }
+  };
+
   const submit = () => {
+    if (!canSend) return;
     const text = input.trim();
-    if (!text || busy || backgroundBusy || askPending) return;
+    // Files alone are enough to send: the message names them and says nothing
+    // else, which is what dropping a file into a conversation means.
+    if (attached.length > 0) {
+      void sendWithFiles(text);
+      return;
+    }
+    if (!text) return;
     setInput('');
     send(text);
     setPickedSkill(null);
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className={`flex h-full flex-col ${drop.over ? DROP_OVER : ''}`} {...drop.handlers}>
       {!embedded && (
         // A session states its location exactly as a note does: glyph, the list
         // it belongs to, then its own name — quiet, truncating, tooltipped. The
@@ -1126,127 +1031,70 @@ function SessionThread({
                   </div>
                 );
               }
-              // The working phase (reasoning, tool calls, mid-work narration)
-              // folds into an ActivityBlock; only the final text renders as the
-              // answer. While streaming, a trailing text is treated as the answer
-              // until a later tool call proves it was narration.
-              let lastTextIdx = -1;
-              for (let i = parts.length - 1; i >= 0; i--) {
-                if (parts[i]!.type === 'text') {
-                  lastTextIdx = i;
-                  break;
-                }
-              }
-              // A text with a parking call after it ("let me check with the
-              // PM", then ask_user) is narration on the way to the card below,
-              // not the answer. It folds into the trail; the card is what the
-              // PM reads. Once the turn carries on past the card, a later text
-              // becomes the answer again.
-              const parked = parts.some(
-                (p, i) =>
-                  i > lastTextIdx &&
-                  isToolPart(p) &&
-                  ['ask_user', 'spawn', 'ask_codebase'].includes(toolNameOf(p)),
-              );
-              const answerIdx = parked ? -1 : lastTextIdx;
-              // With one exception: a fenced block mid-work is not narration, it
-              // is something the PM is meant to copy and run somewhere else. The
-              // interview hands over a prompt for Claude Code that way, and folded
-              // into the trace it read as "you never gave me anything". Anything
-              // carrying a fence comes back out and renders in place.
-              const handover = (p: AnyPart, i: number) =>
-                p.type === 'text' && i !== answerIdx && (p.text ?? '').includes('```');
+              // The turn in the order it happened (docs/chat-order.md). Work
+              // piles up into a folded trail until something the PM is meant to
+              // read interrupts it — a draft panel, a paragraph — and that
+              // flushes the pile. One block for the whole turn lost the order,
+              // so "a panel, then a paragraph, then another panel" came out as
+              // neither.
+              //
+              // Every text the assistant wrote draws as prose, in its place.
+              // Nothing the PM has read moves later: a text is never reclassified
+              // as narration by what arrives after it.
+              //
+              // A write that landed on its own flushes with the work that made
+              // it (docs/fewer-approvals.md FA-4): the folded trail, then the
+              // rows for what it wrote, then whatever interrupted it. Gathering
+              // the whole turn's writes into one block at the answer put a row
+              // for a write that happened later above a paragraph the PM had
+              // already read.
+              const blocks = turnBlocks(parts);
               const isLastMessage = mi === messages.length - 1;
               // Only the trail at the very end of a turn can still be running.
               const tail = parts[parts.length - 1];
               const liveTail = busy && isLastMessage && !!tail && isActivityPart(tail);
-
-              // The turn in the order it happened. Work piles up until something
-              // the PM is meant to read interrupts it — a draft panel, a handover,
-              // the answer — and that flushes the pile into one folded block. One
-              // block for the whole turn lost the order, so "a panel, then a
-              // paragraph, then another panel" came out as neither.
-              const nodes: ReactNode[] = [];
-              let pending: AnyPart[] = [];
-              let pendingFrom = 0;
-              const flush = (live: boolean) => {
-                if (pending.length === 0) return;
-                nodes.push(
-                  <ActivityBlock key={`activity-${pendingFrom}`} parts={pending} live={live} />,
-                );
-                pending = [];
-              };
-              // The receipt for this turn, above its closing sentences: what
-              // landed, what waits, and the question that holds the turn up
-              // (docs/fewer-approvals.md FA-4). One key wherever it goes, so it
-              // moves when the answer arrives instead of being built again.
-              const landed = landedWrites(parts);
-              const hostsSession = mi === blockIdx;
-              let receipted = false;
-              const receipt = () => {
-                if (receipted) return;
-                receipted = true;
-                if (landed.length === 0 && !hostsSession) return;
-                nodes.push(
-                  <ReceiptBlock
-                    key="receipt"
-                    landed={landed}
-                    sessionId={boundSessionId ?? null}
-                    ask={
-                      hostsSession && boundSessionId ? (askRequests[boundSessionId] ?? null) : null
-                    }
-                    hostsSession={hostsSession}
-                    onOpen={openDoc}
-                  />,
-                );
-              };
-              parts.forEach((part, i) => {
-                // A call still running, refused, or with no usable variants reads
-                // as null and folds into the trail like any other step.
-                const draft =
-                  isToolPart(part) && toolNameOf(part) === 'draft_text'
-                    ? draftTextShown(part)
-                    : null;
-                if (draft) {
-                  flush(false);
-                  nodes.push(
-                    <DraftTextPanel
-                      key={`draft-${i}`}
-                      draft={draft}
-                      voices={voices}
-                      onUse={send}
-                      onOpenNote={openDoc}
-                      disabled={busy || backgroundBusy || askPending}
-                      workspace={vault?.path ?? null}
-                      panelId={`${message.id}-${i}`}
-                    />,
-                  );
-                  return;
-                }
-                if (part.type === 'text' && (i === answerIdx || handover(part, i))) {
-                  flush(false);
-                  if (i === answerIdx) receipt();
-                  nodes.push(
-                    <Markdown
-                      key={`text-${i}`}
-                      content={outsideCode(part.text ?? '', linkifyNotePaths)}
-                      onOpenNote={openDoc}
-                    />,
-                  );
-                  return;
-                }
-                if (isActivityPart(part) || part.type === 'text') {
-                  if (pending.length === 0) pendingFrom = i;
-                  pending.push(part);
-                }
-              });
-              flush(liveTail);
-              // A turn with no closing sentences yet (still running, or one that
-              // only wrote) ends on its receipt instead.
-              receipt();
               return (
                 <div key={message.id} className="w-full">
-                  {nodes}
+                  {blocks.map((block, bi) => {
+                    if (block.kind === 'panel')
+                      return (
+                        <DraftTextPanel
+                          key={`draft-${block.at}`}
+                          draft={block.draft}
+                          voices={voices}
+                          onUse={send}
+                          onOpenNote={openDoc}
+                          disabled={busy || backgroundBusy || askPending}
+                          workspace={vault?.path ?? null}
+                          panelId={`${message.id}-${block.at}`}
+                        />
+                      );
+                    if (block.kind === 'prose')
+                      return (
+                        <Markdown
+                          key={`text-${block.at}`}
+                          content={outsideCode(block.text, linkifyNotePaths)}
+                          onOpenNote={openDoc}
+                        />
+                      );
+                    const landed = landedWrites(block.parts);
+                    return (
+                      <Fragment key={`activity-${block.from}`}>
+                        <ActivityBlock
+                          parts={block.parts}
+                          live={liveTail && bi === blocks.length - 1}
+                          onOpen={openDoc}
+                        />
+                        {landed.length > 0 && (
+                          <LandedRows
+                            rows={landed}
+                            sessionId={boundSessionId ?? null}
+                            onOpen={openDoc}
+                          />
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </div>
               );
             })}
@@ -1304,47 +1152,16 @@ function SessionThread({
               </div>
             )}
 
-            {/* What the pile came to, in one sentence (CM-2). It sums a batch
-              the reply above describes piece by piece, and every number in it
-              was counted from a filing that happened.
-
-              It wears the same 20px mark column as the approval receipt below
-              it, because the two are one closing moment: what was read, then
-              what was approved. Naked, the sentence floated between them as a
-              third unrelated line. */}
-            {pile?.done && (
-              <p className="flex items-center gap-2 px-0.5 text-sm text-muted-foreground">
-                <span className="flex size-5 shrink-0 items-center justify-center">
-                  <FileText className="size-3.5" />
-                </span>
-                {receiptLine(pile)}
-              </p>
-            )}
-
-            {/* A fan-out waiting on approval. Above the proposal cards: nothing
-              else in this session can move until it settles. */}
-            {boundSessionId && spawnRequests[boundSessionId] && (
-              <SpawnCard request={spawnRequests[boundSessionId]!} />
-            )}
-
-            {/* A codebase question waiting on approval, in the same place and for
-              the same reason: the turn is parked until it settles. */}
-            {boundSessionId && codebaseRequests[boundSessionId] && (
-              <CodebaseCard request={codebaseRequests[boundSessionId]!} />
-            )}
-
-            {/* The block hangs off the last turn, above its closing sentences.
-              A session with no turn yet has nowhere to hang it, so the question
-              and the cards draw here instead. */}
-            {blockIdx === -1 && boundSessionId && (
-              <ReceiptBlock
-                landed={[]}
-                sessionId={boundSessionId}
-                ask={askRequests[boundSessionId] ?? null}
-                hostsSession
-                onOpen={openDoc}
-              />
-            )}
+            {/* Where the session stands, always at the foot: the card that
+              holds the run, what a pile came to, and the cards waiting for a
+              yes. One place, one order, whatever the turns above did. */}
+            <SessionFoot
+              sessionId={boundSessionId ?? null}
+              ask={(boundSessionId && askRequests[boundSessionId]) || null}
+              spawn={(boundSessionId && spawnRequests[boundSessionId]) || null}
+              codebase={(boundSessionId && codebaseRequests[boundSessionId]) || null}
+              pileReceipt={pile?.done ? receiptLine(pile) : null}
+            />
           </div>
         </div>
 
@@ -1380,6 +1197,13 @@ function SessionThread({
       <div className="px-6 pb-5">
         <div className={COMPOSER_SHELL}>
           {mentions.menu}
+          <Attachments
+            items={attached}
+            onRemove={(i) => {
+              setAttached((prev) => prev.filter((_, n) => n !== i));
+              inputRef.current?.focus();
+            }}
+          />
           <textarea
             ref={inputRef}
             value={input}
@@ -1408,9 +1232,11 @@ function SessionThread({
                 ? 'Answer the question above to carry on…'
                 : backgroundBusy
                   ? 'Waiting for the running turn to finish…'
-                  : pickedSkill
-                    ? `What should “${skills.find((s) => s.name === pickedSkill)?.title ?? pickedSkill}” work on?`
-                    : 'Ask your product memory…'
+                  : attached.length > 0
+                    ? 'Anything I should know about these? (optional)'
+                    : pickedSkill
+                      ? `What should “${skills.find((s) => s.name === pickedSkill)?.title ?? pickedSkill}” work on?`
+                      : 'Ask your product memory…'
             }
             rows={1}
             disabled={backgroundBusy || askPending}
@@ -1433,7 +1259,9 @@ function SessionThread({
               onClosed={() => inputRef.current?.focus()}
               disabled={backgroundBusy || askPending}
             />
-            <MentionHint show={!input.trim() && !backgroundBusy && !askPending} />
+            <MentionHint
+              show={!input.trim() && !backgroundBusy && !askPending && attached.length === 0}
+            />
             {busy ? (
               <Button
                 size="icon-sm"
@@ -1446,7 +1274,7 @@ function SessionThread({
               </Button>
             ) : (
               <SendButton
-                ready={!!input.trim() && !backgroundBusy && !askPending}
+                ready={(!!input.trim() || attached.length > 0) && canSend}
                 onClick={submit}
                 label="Send"
               />

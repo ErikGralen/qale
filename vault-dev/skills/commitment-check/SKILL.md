@@ -12,7 +12,6 @@ scenarios:
 ---
 
 ## When
-
 One promise, and it runs in one of two directions. Work out which before anything else, because
 everything below branches on it.
 
@@ -26,7 +25,6 @@ The sender's message is the source. Where it arrived as a file instead, filing i
 skill's job and this one reads what got filed.
 
 ## Read: a commitment of yours
-
 The todo (title, due date, owner, the `sources` it cites), the meeting or note where the
 commitment was made, and the related customer, research and decision pages. Three checks change
 the answer, so make all three:
@@ -38,7 +36,6 @@ the answer, so make all three:
   `participants`. A conversation already on the calendar changes the best move.
 
 ## Read: a request that came in
-
 The message first, closely: what is literally asked for, by when, and what is only implied.
 
 Then the memory it touches:
@@ -53,18 +50,17 @@ Then the memory it touches:
   An ask we committed to in March is a different conversation from a new one.
 
 ## Check what it claims
-
 Before you close a todo, move its date, or write an owner or a number, call `check_claims` once
 with what you are about to write, the way the arrival skill does. Scope each claim to the pages it
 is about: the todo, the person, the customer.
 
-A conflict is a question every time, asked before the write: what you have, the note as a link, one
-question, and the two answers as options. Then write what they chose and set `asked`. A close the
+A conflict is a question every time, asked before the write. Ask it in one line, under about twelve
+words, with no citation in it. What you have and the note as a link go in the body, in one sentence.
+The two answers are the options. Then write what they chose and set `asked`. A close the
 PM said out loud in a source is theirs, so write it. A close you worked out yourself is a question
-("Åsa said the dates went out. Mark [[todos/2026-07-09-send-nordkap-the-dates]] done?").
+("Mark the send-Nordkap-the-dates todo done?", with what Åsa said about the dates in the body).
 
 ## Produce: a commitment of yours
-
 The right handling for this one commitment, each option as its own write. Pick what fits;
 do not produce all of them.
 - **A plan**, the default when it is live and just needs doing: a short `## Plan` section on the
@@ -86,14 +82,22 @@ do not produce all of them.
   send yourself, citing where the commitment was made. It is not a proposal, and nothing sends it.
 
 ## Produce: a request that came in
+One proposal, a short insight (propose_note, type `insight`, path `insights/<slug>.md`): what the
+ask tells us, in one claim, with the sender's own words quoted under it. The slug is the
+claim, not the sender. `evidence` lists the pages it rests on: the sender's page, the customer,
+and the decision or research page the ask runs into. Set `confidence` from how much backs the
+claim, and take `tags` from the contexts already in use. An insight is Qale's own record, so it
+lands without a card.
 
-One proposal, the decode (propose_note, type `note`, path `notes/YYYY-MM-DD-<sender>-<ask>.md`), with
-`sources` citing every note it rests on. Always send `asked`: the decode is the document the PM
-asked you for in this conversation, and `notes/` is their own folder, which nothing writes into
-unasked.
+Check insights/ first. A second person asking the same thing extends the insight already there
+rather than filing a near-copy: restate the whole `evidence` list with the new page added, and put
+the new quote in the body.
 
 One addition to the writing rules: quote the ask itself. The message lives nowhere else, and what
 somebody asked for, in their own words, is what they will hold you to later.
+
+Everything else you worked out is for the chat, not for a page: the job behind the ask, who is
+asking, what the memory holds, where it collides, and the posture you recommend.
 
 The job behind the ask is an inference, never what the sender stated. Label it **Inference** and
 say what would confirm it. The solution somebody names is not the job: "can we add a CSV export
@@ -101,7 +105,7 @@ button" is a request, "finance rebuilds that report by hand every month" is the 
 of the two has more than one answer.
 
 Then what the ask actually forces, and only that:
-- **A commitment you take on**: a todo (propose_todo) quoting the ask and citing this decode.
+- **A commitment you take on**: a todo (propose_todo) quoting the ask and citing this insight.
 - **A reply** (draft_text), where the posture is to answer now: cite the decisions and tickets it
   rests on, and follow the voice for that audience. It is text to copy, and nothing sends it.
 - **A signal worth keeping**: where the ask is evidence for a customer, extend that page
@@ -115,43 +119,23 @@ Saying no is a posture like any other and forces no proposal by itself. Recommen
 decision it rests on, and draft the reply only where it has to be said out loud.
 
 ## Then
-
 Your writes update this one commitment: the plan lands on the todo, a close flips `commitment`, a
 reschedule moves `due`. Nothing else in the memory is touched.
 
-The decode sits with the PM's own documents as the record of what was asked and what we said
-back, so the same ask arriving next month from somebody else lands on something. Todos join the
-commitment ledger as you write them. Anything sent to Jira, Confluence or the calendar waits for
-the PM.
+The insight joins Qale's memory as the record of what was asked, so the same ask arriving next
+month from somebody else lands on something. Todos join the commitment ledger as you write them.
+Anything sent to Jira, Confluence or the calendar waits for the PM. Documents stay the PM's: you
+write no page there.
 
 A nudge and a reply are not proposals. Both wait in the chat for you to copy and send yourself.
 
-## The shape of the decode
-
+## The shape of the insight
 ```
-[propose_note, type note, notes/YYYY-MM-DD-<sender>-<ask>.md]
-# <what was asked, in one line>
+[propose_note, type insight, insights/<slug>.md]
+[frontmatter: summary <the claim, in one line>, tags, evidence <the pages it rests on>,
+confidence <high, med or low>, customer where the ask is one account's]
 
-## The ask
-> <the sentence that asks it, verbatim>
-<who sent it, when, and by when they want it>
+<the claim, in your own voice: what was asked for, and what it tells us. Two or three sentences.>
 
-## The job behind it
-**Inference** <what they are trying to get done>. <What would confirm it.>
-
-## Who is asking
-<what they own, what they can decide on their own, what they were last told> ([[people/...]])
-
-## What we know that bears on it
-- **Fact** <the insight, decision or ticket, and what it says> ([[...]])
-
-## Where it collides
-<the live decision, the promise, or the ticket state it runs into, or "nothing found">
-
-## Posture
-<do it / do a smaller thing / not now / no / one answer needed first>: <why, in one sentence>
-Next move: <what this run proposed, or nothing>
-
-## What I could not check
-<what nothing in the workspace answers>
+<who sent it, when, and by when they want an answer>: "<the sentence that asks it, verbatim>"
 ```

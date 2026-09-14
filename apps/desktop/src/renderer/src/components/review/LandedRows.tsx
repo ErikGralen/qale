@@ -1,78 +1,90 @@
-import {
-  Fragment,
-  useCallback,
-  useId,
-  useRef,
-  useState,
-  type MouseEvent,
-  type ReactNode,
-} from 'react';
+import { Fragment, useCallback, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Spinner } from '@qale/ui';
-import { ArrowUpRight, Check, ChevronDown, FileText, Undo2 } from 'lucide-react';
-import { typeForDir, type AppliedRow } from '@qale/domain';
-import type { OutboundPayloadDTO, ProposalDTO, UpdatePayloadDTO } from '@qale/ipc';
+import {
+  Check,
+  ChevronDown,
+  FileText,
+  Minus,
+  Pencil,
+  Plus,
+  Undo2,
+  type LucideIcon,
+} from 'lucide-react';
+import type { AppliedRow, AppliedVerb } from '@qale/domain';
+import type { ProposalDTO, UpdatePayloadDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 import { invoke } from '../../lib/ipc';
 import { navFromEvent, type NavOpts } from '../../lib/nav';
 import { noteTypeIcon } from '../../lib/note-icons';
 import { useToast } from '../toast';
 import {
-  GROUP_WORD,
-  groupLanded,
-  memoryFold,
+  chipForRow,
+  foldsLanded,
+  landedSummary,
+  orderLanded,
   putRowBack,
-  putTurnBack,
-  revertableIds,
-  turnBackMessage,
+  rowChange,
+  tierForRow,
+  type LandedSummary,
+  type SummaryChip,
 } from '../../lib/receipt-block';
-import { ChangePreview, TargetTitle } from './CardItem';
+import { ChangePreview } from './CardItem';
 
 /**
- * What one turn wrote, as rows (docs/fewer-approvals.md FA-4).
+ * What one turn wrote (docs/fewer-approvals.md FA-4).
  *
  * A write that needs no card still has to be seen, and seen where the PM is
- * already looking. Each row is the same shape a waiting card draws: the glyph
- * for the kind of thing, the page by its real name as a link, the change in one
- * line, controls on the right, and the diff behind the chevron. The controls
- * are the only difference: a waiting row asks, this one offers the way back.
+ * already looking. But it is not a decision they have to make, so it must not
+ * look like one: a card asks, and this only reports.
  *
- * The rows sit in groups, by what they change for the PM rather than by the
- * order the tools ran (docs/receipt-redesign.md RC-1). Todos, the meeting and
- * the PM's documents draw full rows under the sidebar's own word. Qale's own
- * record is one folded line, because it only has to be findable.
+ * One to three writes draw as rows: a mark for what happened (plus, pencil,
+ * check, minus) and the thing it happened to, as the chip a ticket wears in a
+ * page. From four, the rows fold behind one line that says what the turn
+ * touched, and the chevron opens them. Seven rows in a row read as a wall and
+ * the PM scrolled past all of it (Erik, 2026-09-09). The line names pages
+ * rather than counting them, because "changed 3 pages" answers nobody's
+ * question and "did it touch the thing I care about" is the question.
+ *
+ * Qale's own record is the one tier that always folds, however few pages it
+ * touched (Erik, 2026-09-11): a memory write is not a promise or a document
+ * the PM acts on row by row, so it never needs more than "Updated memory" and
+ * a chevron, even when it is the only thing the turn did.
+ *
+ * The line and the rows read in one fixed order, by what the PM has to act on:
+ * to-dos and meeting pages Qale made, then to-dos and meeting pages that moved,
+ * then their documents, then everything Qale filed for itself, then anything
+ * that went (`orderLanded`). No word over a tier and no control for the whole
+ * turn (docs/receipt-redesign.md, notes at the bottom). The chevron on a row
+ * opens the diff and the Undo.
  *
  * Activity stays the long-term ledger with the same mechanism. This is the same
- * put-back, said at the moment it is cheapest to use.
+ * undo, said at the moment it is cheapest to use.
  *
  * The session review draws its approved cards through here too, once every card
- * is judged: an approved card is a landed write from the moment it is approved,
- * so it reads the same way (docs/receipt-redesign.md RC-3).
+ * is judged, apart from a send: what left the workspace keeps the green card it
+ * was given the moment it left (docs/receipt-redesign.md RC-3, revised).
  */
 export function LandedRows({
   rows,
   sessionId,
   onOpen,
   label = 'What I wrote',
-  turnBack = true,
 }: {
   rows: readonly AppliedRow[];
   /** The session the writes came out of, for reading their cards back. */
   sessionId: string | null;
   onOpen: (path: string, opts?: NavOpts) => void;
-  /** What the list is called. Null where the surface around it already says so,
-   *  because two names for one list is one name too many. */
+  /** What the list is called, for a screen reader. Null where the surface
+   *  around it already says so. */
   label?: string | null;
-  /** Offer "Put this turn back". Off where the rows are not one turn's writes:
-   *  the receipt's rows are a whole sitting's approvals. */
-  turnBack?: boolean;
 }) {
   const { revertActivity } = useApp();
   const toast = useToast();
   const [undone, setUndone] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string | null>(null);
-  const [turnBusy, setTurnBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const cards = useCards(sessionId);
-  const headingId = useId();
 
   if (rows.length === 0) return null;
 
@@ -81,7 +93,7 @@ export function LandedRows({
     const result = await putRowBack(id, revertActivity);
     setBusy(null);
     if (!result.ok) {
-      toast(result.error ?? 'That could not be put back.');
+      toast(result.error ?? 'That could not be undone.');
       return;
     }
     setUndone((was) => ({ ...was, [id]: true }));
@@ -89,161 +101,158 @@ export function LandedRows({
     // typed since. When it cannot, the whole page goes back and those later
     // edits go with it, which the PM has to hear the moment it happens.
     if (result.snapshot)
-      toast('Put back as a whole page. Anything you wrote after this went with it.');
+      toast('Undone as a whole page. Anything you wrote after this went with it.');
   };
 
-  // Everything this turn wrote that is still there. A row already put back is
-  // not offered again, and a row with no Activity behind it has no handle.
-  const left = revertableIds(rows).filter((id) => !undone[id]);
-
-  const putTheTurnBack = async () => {
-    setTurnBusy(true);
-    try {
-      const result = await putTurnBack(left, revertActivity);
-      setUndone((was) => ({ ...was, ...Object.fromEntries(result.done.map((id) => [id, true])) }));
-      const said = turnBackMessage(result);
-      if (said) toast(said);
-    } finally {
-      setTurnBusy(false);
-    }
+  const ordered = orderLanded(rows);
+  const isUndone = (row: AppliedRow) => !!row.activityId && !!undone[row.activityId];
+  let keyIndex = 0;
+  const renderRow = (row: AppliedRow): ReactNode => {
+    const i = keyIndex++;
+    return (
+      <LandedRow
+        key={row.activityId ?? row.proposalId ?? `${row.path ?? ''}-${i}`}
+        row={row}
+        busy={busy === row.activityId}
+        undone={isUndone(row)}
+        card={cards.get}
+        onOpen={onOpen}
+        onPutBack={() => row.activityId && void putBack(row.activityId)}
+      />
+    );
   };
 
-  // One row, wherever it is drawn: in its group, or under the memory line once
-  // that is opened. The controls are the same either way.
-  const drawRow = (row: AppliedRow, i: number) => (
-    <LandedRow
-      key={row.activityId ?? row.proposalId ?? `${row.path ?? ''}-${i}`}
-      row={row}
-      busy={busy === row.activityId || turnBusy}
-      undone={!!row.activityId && !!undone[row.activityId]}
-      card={cards.get}
-      onOpen={onOpen}
-      onPutBack={() => row.activityId && void putBack(row.activityId)}
-    />
-  );
+  const memoryRows = ordered.filter((row) => tierForRow(row) === 'memory');
+  const otherRows = ordered.filter((row) => tierForRow(row) !== 'memory');
+
+  if (foldsLanded(otherRows)) {
+    // The line is built from what still stands, so a row put back from the
+    // open list takes itself out of the line rather than leaving it to lie.
+    const summary = landedSummary(ordered.filter((row) => !isUndone(row)));
+    return (
+      <div className="my-1 text-xs">
+        {/* The same shape and the same classes as the work trail above it: one
+            line, one button, the chevron at the end. The line's own words are its
+            label, so it needs no other one. */}
+        <button
+          className="flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          {/* One mark for the line, in ink: four marks over a fold would be a
+              legend for rows nobody has opened yet. A plus when the turn made a
+              to-do or a meeting page, a pencil when it only moved things that
+              were already there. */}
+          <LineMark mark={summary.mark} />
+          <span className="truncate">
+            {summary.text ? <SummaryLine summary={summary} /> : 'Undone'}
+          </span>
+          <ChevronDown
+            className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+            aria-hidden
+          />
+        </button>
+        {open && (
+          <ul aria-label={label ?? undefined} className="my-1 flex flex-col gap-0.5">
+            {ordered.map(renderRow)}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  // Below the fold: everything but memory draws as its own row. Memory always
+  // draws as one line, whatever it touched, between the documents and anything
+  // removed, which is where `orderLanded` puts it.
+  const removedRows = otherRows.filter((row) => tierForRow(row) === 'removed');
+  const shownRows = otherRows.filter((row) => tierForRow(row) !== 'removed');
 
   return (
-    <section aria-label={label ?? undefined} className="mt-1">
-      <div className="flex flex-col gap-3">
-        {groupLanded(rows).map(({ group, rows: inGroup }) => {
-          if (group === 'memory')
-            return <MemoryLine key={group} rows={inGroup} onOpen={onOpen} drawRow={drawRow} />;
-          const word = GROUP_WORD[group];
-          return (
-            <div key={group}>
-              {/* The word names the group and nothing else. It is not a stop for
-                  the keyboard: the rows are what a person moves between. */}
-              {word && (
-                <p
-                  id={`${headingId}-${group}`}
-                  className="mb-1.5 ml-1 text-xs font-medium text-muted-foreground"
-                >
-                  {word}
-                </p>
-              )}
-              <ul
-                className="flex flex-col gap-2"
-                aria-labelledby={word ? `${headingId}-${group}` : undefined}
-              >
-                {inGroup.map(drawRow)}
-              </ul>
-            </div>
-          );
-        })}
-      </div>
-      {/* One control for the whole turn, and only when there is more than one
-          row to put back. On a single row the row's own button is the shorter
-          way to the same place. */}
-      {turnBack && left.length > 1 && (
-        <button
-          className="mt-1.5 ml-1 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
-          onClick={() => void putTheTurnBack()}
-          disabled={turnBusy}
-          title="Put every change from this turn back, newest first."
-        >
-          {turnBusy ? <Spinner className="size-3" /> : <Undo2 className="size-3" aria-hidden />}
-          Put this turn back
-        </button>
+    <ul aria-label={label ?? undefined} className="my-1 flex flex-col gap-0.5">
+      {shownRows.map(renderRow)}
+      {memoryRows.length > 0 && (
+        <MemoryFold
+          rows={memoryRows}
+          standing={memoryRows.filter((row) => !isUndone(row))}
+          open={memoryOpen}
+          onToggle={() => setMemoryOpen((v) => !v)}
+          renderRow={renderRow}
+        />
       )}
-    </section>
+      {removedRows.map(renderRow)}
+    </ul>
   );
 }
 
 /**
- * Qale's own record, in one line (docs/receipt-redesign.md RC-1).
- *
- * A decision, a hub edit or a person page is Qale's memory, not the PM's work.
- * It lands, Activity keeps it, and a wrong one is put back. In the chat it only
- * has to be findable, so it is one muted line of titles that open the pages.
- * The chevron opens the same rows the other groups draw, Put back and all, and
- * "Put this turn back" covers them whether the line is open or folded.
+ * Qale's own record, always as one line: "Updated memory" and a chevron,
+ * whether it touched one page or ten (Erik, 2026-09-11). Open, it lists the
+ * pages the same way any other row does, each with its own diff and Undo.
  */
-function MemoryLine({
+function MemoryFold({
   rows,
-  onOpen,
-  drawRow,
+  standing,
+  open,
+  onToggle,
+  renderRow,
 }: {
   rows: readonly AppliedRow[];
-  onOpen: (path: string, opts?: NavOpts) => void;
-  drawRow: (row: AppliedRow, i: number) => ReactNode;
+  standing: readonly AppliedRow[];
+  open: boolean;
+  onToggle: () => void;
+  renderRow: (row: AppliedRow) => ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  const { shown, more } = memoryFold(rows);
-
+  const summary = landedSummary(standing);
   return (
-    <div>
-      <div className="flex items-start gap-1">
-        <p className="mt-0.5 min-w-0 flex-1 text-sm text-muted-foreground">
-          {GROUP_WORD.memory}:{' '}
-          {shown.map((row, i) => (
-            <Fragment key={row.activityId ?? row.path ?? i}>
-              {i > 0 && <span aria-hidden> · </span>}
-              <MemoryTitle row={row} onOpen={onOpen} />
-            </Fragment>
-          ))}
-          {more > 0 && <span> · {more} more</span>}
-        </p>
-        <button
-          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          aria-label={open ? 'Hide the memory writes' : 'Show the memory writes'}
-          title={open ? 'Hide the memory writes' : 'Show the memory writes'}
-        >
-          <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
-        </button>
-      </div>
-      {open && <ul className="mt-2 flex flex-col gap-2">{rows.map(drawRow)}</ul>}
-    </div>
+    <li className="text-xs">
+      <button
+        className="flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <LineMark mark={summary.mark} />
+        <span className="truncate">
+          {summary.text ? <SummaryLine summary={summary} /> : 'Undone'}
+        </span>
+        <ChevronDown
+          className={`size-3.5 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+          aria-hidden
+        />
+      </button>
+      {open && <ul className="my-1 flex flex-col gap-0.5">{rows.map(renderRow)}</ul>}
+    </li>
   );
 }
 
-/** One title on the memory line. A page that was removed, and a row from a
- *  session filed before this block existed, have nothing to open. */
-function MemoryTitle({
-  row,
-  onOpen,
-}: {
-  row: AppliedRow;
-  onOpen: (path: string, opts?: NavOpts) => void;
-}) {
-  const title = row.title ?? 'a page';
-  const path = row.verb === 'Removed' ? null : (row.path ?? null);
-  if (!path) return <span>{title}</span>;
-  const open = (e: MouseEvent) => {
-    e.stopPropagation();
-    onOpen(path, navFromEvent(e));
-  };
+/** The one mark over a folded line. It follows the line's first tier: a plus
+ *  when the turn made a to-do or a meeting page, a pencil otherwise. */
+function LineMark({ mark }: { mark: LandedSummary['mark'] }) {
+  const Mark = mark === 'new' ? Plus : Pencil;
+  return <Mark className="size-3.5 shrink-0 text-foreground/70" strokeWidth={2.25} aria-hidden />;
+}
+
+/**
+ * The folded line itself: one clause per tier, with a dot between them.
+ *
+ * Words only. Naming every page made the line longer than the rows it stands
+ * for, and a name that matters is one chevron away on its own row, where it
+ * opens (Erik, 2026-09-11). A page that went keeps its name and its colour:
+ * nothing else on screen says it is gone.
+ */
+function SummaryLine({ summary }: { summary: LandedSummary }) {
   return (
-    <button
-      className="rounded text-left text-brand underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-      onClick={open}
-      // Middle-click = open in background tab, as every other link in the app.
-      onAuxClick={(e) => e.button === 1 && open(e)}
-      title={`Open ${title}`}
-    >
-      {title}
-    </button>
+    <>
+      {summary.clauses.map((clause, i) => (
+        <Fragment key={`${clause.tier}-${i}`}>
+          {i > 0 && ' · '}
+          {clause.tier === 'removed' ? (
+            <span className="text-destructive">{clause.text}</span>
+          ) : (
+            clause.text
+          )}
+        </Fragment>
+      ))}
+    </>
   );
 }
 
@@ -279,17 +288,11 @@ function useCards(sessionId: string | null) {
  * The preview a waiting card uses re-places its change against the file, which
  * a landed write is already part of. So the row draws the write's own diff, the
  * same one the undo reverses: what the patch replaced, and what the append
- * added. Null when nothing but the properties moved, which the change line on
- * the row already says in words.
+ * added. Null when nothing but the properties moved, which the open row says in
+ * words.
  */
 function landedPreview(card: ProposalDTO): { before: string; after: string } | null {
   if (card.kind === 'delete') return null;
-  // A send cannot be taken back, so the whole message stays readable: what left
-  // the workspace in the PM's name is the one thing they may need to answer for.
-  if (card.kind === 'outbound') {
-    const body = (card.payload as OutboundPayloadDTO).body ?? '';
-    return body.trim() ? { before: '', after: body } : null;
-  }
   if (card.kind !== 'update') {
     const body = (card.payload as { body?: string }).body ?? '';
     return body.trim() ? { before: '', after: body } : null;
@@ -304,26 +307,74 @@ function landedPreview(card: ProposalDTO): { before: string; after: string } | n
 }
 
 /**
- * The to-do's own glyph: the checkbox the Todos view draws, filled once the
- * commitment closed. It does nothing here on purpose. The row is a receipt, and
- * the Todos view is where a to-do is worked (docs/receipt-redesign.md RC-2).
+ * The mark in front of the row, by what happened: plus for new, a pencil for
+ * changed, a check for done, minus for removed.
+ *
+ * The shape carries the meaning, not the colour. Colour-coding four verbs made
+ * a stack of rows read as a chart with a legend nobody was handed, and the
+ * tones quiet enough to sit in a chat were too dim to tell apart at this size
+ * (Erik, 2026-09-08). So every mark is ink, one tone, a shade darker than the
+ * row it stands in front of, and big enough to read. The one exception is a row
+ * that took something away: that one stays red, because it is the row you must
+ * not miss. A send never draws here.
  */
-function TodoBox({ done }: { done: boolean }) {
+const MARK: Record<AppliedVerb, LucideIcon> = {
+  New: Plus,
+  'New todo': Plus,
+  Changed: Pencil,
+  'Todo changed': Pencil,
+  Done: Check,
+  'Todo done': Check,
+  Removed: Minus,
+  Sent: Plus,
+};
+
+/**
+ * The thing a write touched, drawn the way a ticket is drawn inside a page:
+ * a small chip with the kind's icon and the name, that opens it. A removed
+ * page, and a row from before this block existed, have nothing to open and
+ * draw as plain words.
+ */
+function Chip({
+  chip,
+  onOpen,
+}: {
+  chip: SummaryChip;
+  onOpen: (path: string, opts?: NavOpts) => void;
+}) {
+  const { path, label, type } = chip;
+  const Icon = type ? noteTypeIcon(type) : FileText;
+  const open = (e: MouseEvent) => {
+    if (!path) return;
+    e.stopPropagation();
+    onOpen(path, navFromEvent(e));
+  };
+  const shape =
+    'inline-flex max-w-full min-w-0 items-center gap-1 rounded-sm px-1 py-px font-medium';
+  if (!path)
+    return (
+      <span className={`${shape} bg-muted text-muted-foreground`}>
+        <Icon className="size-3 shrink-0 opacity-70" aria-hidden />
+        <span className="truncate">{label}</span>
+      </span>
+    );
   return (
-    <span
-      className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border ${
-        done
-          ? 'border-transparent bg-muted text-muted-foreground'
-          : 'border-border text-transparent'
-      }`}
-      aria-hidden
+    <button
+      type="button"
+      className={`${shape} bg-brand/8 text-brand transition-colors hover:bg-brand/15 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none`}
+      onClick={open}
+      // Middle-click = open in background tab, as every other link in the app.
+      onAuxClick={(e) => e.button === 1 && open(e)}
+      title={`Open ${label}`}
     >
-      <Check className="size-2.5" />
-    </span>
+      <Icon className="size-3 shrink-0 opacity-70" aria-hidden />
+      <span className="truncate">{label}</span>
+    </button>
   );
 }
 
-/** One landed write. */
+/** One landed write, on one line: the mark, the page, and for a page that
+ *  changed, how much of its body moved. */
 function LandedRow({
   row,
   busy,
@@ -345,81 +396,72 @@ function LandedRow({
 }) {
   const [open, setOpen] = useState(false);
   const { load, loading, card: stored } = card(row.proposalId);
-  const dir = (row.path ?? '').split('/')[0] ?? '';
-  const type = typeForDir(dir);
-  const Icon = type ? noteTypeIcon(type) : FileText;
-  const todo = row.verb === 'New todo' || row.verb === 'Todo changed' || row.verb === 'Todo done';
-  // What left the workspace wears the ink arrow the send card wears. The card's
-  // own glyph rides on the card, which the row only reads when asked, so the
-  // arrow stands alone rather than appearing a second later.
-  const sent = row.verb === 'Sent';
-  const title = row.title ?? 'a page';
-  // A page that was removed has nothing to open, and neither has a row from a
-  // session filed before this block existed.
-  const path = row.verb === 'Removed' ? null : (row.path ?? null);
   const preview = stored ? landedPreview(stored) : null;
+  // The chevron has something to show only when the card is still there to read.
+  const canOpen = !!row.proposalId;
+  const change = rowChange(row);
+  const Mark = MARK[row.verb];
+  // The whole story on hover, for the one row in ten where the mark and the
+  // name are not enough.
+  const hover = [row.verb, row.title, row.change].filter(Boolean).join(' · ');
 
   return (
-    <li className="overflow-hidden rounded-lg bg-card ring-1 ring-foreground/10">
-      <div className="flex items-start gap-2.5 px-3 py-2.5">
-        {sent ? (
-          <span className="mt-0.5 flex shrink-0 items-center" title="Left your workspace">
-            <ArrowUpRight className="size-4 text-brand" aria-hidden />
-            <span className="sr-only">Left your workspace.</span>
-          </span>
-        ) : todo ? (
-          <TodoBox done={row.verb === 'Todo done'} />
-        ) : (
-          <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+    <li className="text-sm text-muted-foreground">
+      <div className="flex min-w-0 items-center gap-1.5" title={hover}>
+        <Mark
+          className={`size-4 shrink-0 ${row.verb === 'Removed' ? 'text-destructive' : 'text-foreground/70'}`}
+          strokeWidth={2.25}
+          aria-hidden
+        />
+        <span className="sr-only">{row.verb}: </span>
+        <p
+          className={`flex min-w-0 flex-1 items-center gap-1.5 ${undone ? 'line-through opacity-60' : ''}`}
+        >
+          <Chip chip={chipForRow(row)} onOpen={onOpen} />
+          {change && <span className="truncate">{change}</span>}
+        </p>
+        {undone && (
+          // The same word Activity uses once a row has gone back, so the two
+          // surfaces never describe one undo two ways.
+          <span className="shrink-0 text-xs">Undone</span>
         )}
-        <div className="min-w-0 flex-1">
-          <TargetTitle leadIn={row.verb} title={title} path={path} onOpen={onOpen} />
-          {row.change && <p className="mt-1 text-sm text-muted-foreground">{row.change}</p>}
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          {undone ? (
-            // The same word Activity uses once a row has gone back, so the two
-            // surfaces never describe one undo two ways.
-            <span className="px-1.5 py-1 text-xs text-muted-foreground">Put back</span>
-          ) : (
-            row.activityId && (
-              <button
-                className="inline-flex items-center gap-1 rounded-md px-1.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
-                onClick={onPutBack}
-                disabled={busy}
-                title="Put it back the way it was. The undo is itself undoable."
-              >
-                {busy ? <Spinner className="size-3" /> : <Undo2 className="size-3.5" aria-hidden />}
-                Put back
-              </button>
-            )
-          )}
-          {row.proposalId && (
-            <button
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-              onClick={() => {
-                load();
-                setOpen((v) => !v);
-              }}
-              aria-expanded={open}
-              aria-label={open ? 'Hide the change' : 'Show the change'}
-              title={open ? 'Hide the change' : 'Show the change'}
-            >
-              <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
-            </button>
-          )}
-        </div>
+        {canOpen && (
+          <button
+            className="shrink-0 rounded-md p-0.5 transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            onClick={() => {
+              load();
+              setOpen((v) => !v);
+            }}
+            aria-expanded={open}
+            aria-label={open ? 'Hide the change' : 'Show the change'}
+            title={open ? 'Hide the change' : 'Show the change'}
+          >
+            <ChevronDown
+              className={`size-3.5 transition-transform ${open ? 'rotate-180' : ''}`}
+              aria-hidden
+            />
+          </button>
+        )}
       </div>
       {open && (
-        <div className="border-t border-border/60 px-3 py-2.5 pl-9">
+        <div className="my-1.5 ml-3 border-l border-border/60 pl-3">
           {loading ? (
-            <p className="text-sm text-muted-foreground">Reading the change…</p>
+            <p>Reading the change…</p>
           ) : preview && stored ? (
             <ChangePreview kind={stored.kind} preview={preview} onOpen={onOpen} context={0} />
           ) : (
-            <p className="text-sm text-muted-foreground">
-              {sent ? 'It carried no message.' : 'Only the properties changed.'}
-            </p>
+            <p>Only the properties changed.</p>
+          )}
+          {row.activityId && !undone && (
+            <button
+              className="mt-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
+              onClick={onPutBack}
+              disabled={busy}
+              title="Undo this write. The undo is itself undoable."
+            >
+              {busy ? <Spinner className="size-3" /> : <Undo2 className="size-3" aria-hidden />}
+              Undo
+            </button>
           )}
         </div>
       )}

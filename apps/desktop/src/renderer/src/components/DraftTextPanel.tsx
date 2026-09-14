@@ -21,6 +21,8 @@ import {
   type DraftText,
 } from '../lib/draft-text';
 import { Markdown } from './Markdown';
+import { WikiText } from './review/shared';
+import { linkifyNotePaths } from '../lib/note-links';
 import type { NavOpts } from '../lib/nav';
 import { trackStylePick } from '../lib/telemetry-style';
 
@@ -386,7 +388,12 @@ export function DraftTextPanel({
           buttons, not a form. */}
       {draft.ask && asking && copied && (
         <div className="flex flex-wrap items-center gap-2 border-t border-border/60 px-3.5 py-2.5">
-          <span className="min-w-0 text-xs text-muted-foreground">{draft.ask.text}</span>
+          <span className="min-w-0 text-xs text-muted-foreground">
+            <WikiText
+              text={linkifyNotePaths(draft.ask.text)}
+              onOpen={(p) => onOpenNote?.(p)}
+            />
+          </span>
           <span className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
             {draft.ask.options.map((option) => (
               <Button

@@ -340,6 +340,19 @@ export interface ArrivalHandoffDTO {
   reason?: string;
 }
 
+/** What a drop onto an open session gets back: where the files now sit. */
+export interface ArrivalAttachDTO {
+  /** One per file that landed, in the order it was handed over. */
+  files: {
+    /** Where it sits in the session folder, e.g. `source/notes.md`. */
+    file: string;
+    /** What it was called when it was handed over. */
+    original: string;
+  }[];
+  /** Files that could not be read, so never made it in. */
+  refused: { name: string; error: string }[];
+}
+
 /**
  * How a batch of dropped sources is going (docs/critical-mass.md CM-2). A pile
  * takes minutes, so the one line the PM is watching counts instead of spinning.
@@ -554,14 +567,6 @@ export interface OutboundPayloadDTO {
   labels?: string[];
   priority?: string;
   components?: string[];
-  /** The one thing the draft could not work out, asked on the card above the
-   *  button. Picking an option adds what it carries and records the answer;
-   *  approving without picking leaves the draft as drafted. */
-  question?: {
-    text: string;
-    options: { label: string; labels?: string[]; priority?: string; components?: string[] }[];
-    answer?: string;
-  };
   /** The provider's own id for the item addressed: a ticket key, a page id.
    *  Main parses every payload through the domain schema, so rows filed under
    *  the old `issueKey`/`pageId` names arrive here as `targetId`. */
@@ -586,6 +591,9 @@ export interface OutboundPayloadDTO {
   attendeeEmail?: string;
   responseStatus?: 'accepted' | 'declined' | 'tentative';
   linkBackPath?: string;
+  /** Where the item landed at the provider, stamped on once the send went
+   *  through. A draft never carries it. */
+  url?: string;
   rationale: string;
 }
 
@@ -647,6 +655,12 @@ export interface ProposalDTO {
    * no row at all (docs/receipt-redesign.md RC-3).
    */
   activityId?: string;
+  /**
+   * The write landed on its own, because the policy said it needed no card.
+   * Only ever on an accepted card. The chat draws it once, off the tool result
+   * that landed it, so the list of what the PM judged leaves it out.
+   */
+  silent?: boolean;
 }
 
 /**

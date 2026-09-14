@@ -48,10 +48,21 @@ export interface LlmProviderInfo {
   /** What a key from there looks like, as the field's placeholder. */
   keyPlaceholder: string;
   /**
-   * What the picker offers, best first. The first entry is the default for the
-   * provider: what new sessions open on until somebody changes it.
+   * What the picker offers, best first.
    */
   models: LlmModel[];
+  /**
+   * What new sessions open on until somebody changes it, by id. It is the fast
+   * and cheap model, not the strongest one, and it is named here rather than
+   * taken from the top of the list because those are two different questions.
+   *
+   * Most of what runs in a day is short: read this todo, file this note, answer
+   * this question. Opening all of it on the strongest model spends the most
+   * money on the least work, and a run that starts on its own (a page button, a
+   * scheduled tick) never gave anyone the chance to say otherwise. The strongest
+   * model is one pick away in the composer, and one setting away for good.
+   */
+  defaultModel: string;
 }
 
 export const LLM_PROVIDER_INFO: Record<LlmProvider, LlmProviderInfo> = {
@@ -78,6 +89,7 @@ export const LLM_PROVIDER_INFO: Record<LlmProvider, LlmProviderInfo> = {
         note: 'Tuned for writing. Worth it when the session drafts prose someone reads.',
       },
     ],
+    defaultModel: 'claude-sonnet-5',
   },
   google: {
     id: 'google',
@@ -97,6 +109,7 @@ export const LLM_PROVIDER_INFO: Record<LlmProvider, LlmProviderInfo> = {
         note: 'Faster and much cheaper. Good for tidying, filing and short questions.',
       },
     ],
+    defaultModel: 'gemini-3.6-flash',
   },
 };
 
@@ -112,7 +125,7 @@ export function providerName(id: string | null | undefined): string {
 
 /** What new sessions open on for this provider. */
 export function defaultModelId(id: string | null | undefined): string {
-  return LLM_PROVIDER_INFO[llmProvider(id)].models[0]!.id;
+  return LLM_PROVIDER_INFO[llmProvider(id)].defaultModel;
 }
 
 /** The models this provider offers, best first. */
@@ -125,6 +138,10 @@ export function providerModels(id: string | null | undefined): LlmModel[] {
  * backlog is long, shallow work over many files, so the tray starts on the
  * faster and cheaper model rather than the strongest one. That is the second
  * row of each provider's list; a provider with one model uses it.
+ *
+ * Usually the same id as {@link defaultModelId}, and deliberately not the same
+ * rule: this one holds even in a workspace whose default has been moved up to
+ * the strongest model, because a fifty-file backlog is where that costs most.
  */
 export function sourceModelId(id: string | null | undefined): string {
   const models = providerModels(id);

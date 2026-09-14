@@ -5,7 +5,9 @@ import type { AskAnswerDTO, AskQuestionDTO, AskRequestDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
 import { Key, useAutoGrow } from '../Composer';
 import { Markdown } from '../Markdown';
-import { stripWikilinks, WikiText } from './shared';
+import { stripWikilinks } from './shared';
+import { linkifyNotePaths, outsideCode } from '../../lib/note-links';
+import { isAnswered, isBatch, isWritten } from '../../lib/ask-card';
 
 /**
  * The agent asking the PO something mid-turn (the `ask_user` tool). Inline in
@@ -32,7 +34,8 @@ import { stripWikilinks, WikiText } from './shared';
  * idea, a few paragraphs, rendered under the question line. And a question may
  * carry no options at all: then the box is open from the start and the answer
  * is what gets written in it. ↵ is a new line in the box and ⌘↵ moves on, the
- * way the composer sends.
+ * way the composer sends. Answer is live there from the first frame: an empty
+ * box says "nothing to add", which is an answer the PM is entitled to give.
  *
  * Two things it refuses to be:
  * - **A modal.** Skip is on every step and skipping does not stop the run: an
@@ -103,17 +106,8 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
     return { selected: picked[qi] ?? [], ...(text ? { written: text } : {}) };
   };
 
-  const isAnswered = (qi: number): boolean => {
-    const a = answerFor(qi);
-    if (a.selected.length > 0 || !!a.written) return true;
-    // Clearing every box on a batch is a decision, so the confirm stays live.
-    // Forcing "none of these" out through Skip would tell the agent to decide
-    // for itself, which is the opposite of what they just did.
-    return isBatch(request.questions[qi]!);
-  };
-
   const question = request.questions[step]!;
-  const answeredHere = isAnswered(step);
+  const answeredHere = isAnswered(question, answerFor(step));
   const last = step === total - 1;
 
   const finish = (answers: AskAnswerDTO[]) => {
@@ -258,7 +252,8 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
           </Button>
           {/* An inactive control never wears the accent (DESIGN §6): the accent
               arrives the moment the step is answered, and that arrival is the
-              only colour event in the component. */}
+              only colour event in the component. A written step is answerable
+              from the start, so it arrives already wearing it. */}
           <Button
             size="sm"
             variant={answeredHere ? 'default' : 'secondary'}
@@ -271,20 +266,6 @@ export function QuestionCard({ request }: { request: AskRequestDTO }) {
       </div>
     </div>
   );
-}
-
-/**
- * Is this question a batch to review rather than a choice to make? One ticked
- * row is enough: the agent is saying "here is what I would do", and the whole
- * step reads differently from that point on.
- */
-function isBatch(question: AskQuestionDTO): boolean {
-  return question.options.some((o) => o.checked);
-}
-
-/** A question with no rows: the answer is what gets written. */
-function isWritten(question: AskQuestionDTO): boolean {
-  return question.options.length === 0;
 }
 
 /** What each question starts with ticked, by question index. */
@@ -422,10 +403,13 @@ function QuestionStep({
     >
       <p id={labelId} className="mb-1.5 text-body leading-snug text-pretty">
         <span className="mr-1.5 rounded-md bg-muted px-1.5 py-0.5 align-[0.08em] text-xs font-medium text-muted-foreground">
-          {question.header}
+          <Markdown inline content={linkifyNotePaths(question.header)} onOpenNote={onOpen} />
         </span>
+        {/* The same renderer the body uses, so one wikilink cannot read two
+            ways in one card: the chip says the note's name, and a ticket key
+            is the live chip with its state on it. */}
         <span className="font-medium text-foreground">
-          <WikiText text={question.question} onOpen={onOpen} />
+          <Markdown inline content={linkifyNotePaths(question.question)} onOpenNote={onOpen} />
         </span>
         {question.multiSelect && (
           <span className="ml-1.5 text-xs text-muted-foreground">
@@ -440,7 +424,10 @@ function QuestionStep({
           few paragraphs at most and never a document. */}
       {question.body && (
         <div className="mb-3 max-w-[64ch]">
-          <Markdown content={question.body} onOpenNote={(p) => onOpen(p)} />
+          <Markdown
+            content={outsideCode(question.body, linkifyNotePaths)}
+            onOpenNote={(p) => onOpen(p)}
+          />
         </div>
       )}
 
@@ -456,6 +443,7 @@ function QuestionStep({
             inputRef={oi === 0 ? firstRef : undefined}
             label={opt.label}
             description={opt.description}
+            onOpen={onOpen}
             onSelect={() => onPick(opt.label)}
           />
         ))}
@@ -474,6 +462,7 @@ function QuestionStep({
             checked={writing}
             disabled={disabled}
             label={picked.length > 0 ? 'Add a comment' : 'Something else'}
+            onOpen={onOpen}
             onSelect={onToggleWriting}
           />
         )}
@@ -510,6 +499,7 @@ function OptionRow({
   inputRef,
   label,
   description,
+  onOpen,
   onSelect,
 }: {
   index: number;
@@ -520,6 +510,7 @@ function OptionRow({
   inputRef?: React.RefObject<HTMLInputElement | null>;
   label: string;
   description?: string;
+  onOpen: (path: string) => void;
   onSelect: () => void;
 }) {
   return (
@@ -551,17 +542,17 @@ function OptionRow({
       >
         {checked ? <Check className="size-3" strokeWidth={3} /> : index + 1}
       </span>
-      {/* An option's text is stripped of its link syntax rather than rendered as
-          links: the whole row is one hit target, and a link inside it would be a
-          second thing to click on the control you are trying to pick. The note
-          the question is about is named in the question, which does link. */}
+      {/* An option names notes and tickets as often as the question does, so it
+          reads them the same way: the body's renderer, the note's name in the
+          chip. The row stays the hit target — a chip is interactive content,
+          which the browser never counts as a click on the label. */}
       <span className="min-w-0">
         <span className="block text-sm leading-snug break-words text-foreground">
-          {stripWikilinks(label)}
+          <Markdown inline content={linkifyNotePaths(label)} onOpenNote={onOpen} />
         </span>
         {description && (
           <span className="mt-0.5 block text-xs leading-snug break-words text-muted-foreground">
-            {stripWikilinks(description)}
+            <Markdown inline content={linkifyNotePaths(description)} onOpenNote={onOpen} />
           </span>
         )}
       </span>

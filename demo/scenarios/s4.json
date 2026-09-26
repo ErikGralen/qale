@@ -2,7 +2,7 @@
   "version": 1,
   "id": "s4",
   "title": "Sales needs it to sign",
-  "do": "In Home, paste the message from marcus-group-bookings.md in the Qale demo files folder (Marcus, about Nordic Steak) and send. Pick no skill. On the question card, pick No, Q1 stands.",
+  "do": "In Home, paste the message from marcus-group-bookings.md in the Qale demo files folder (Marcus, about Nordic Steak) and send. Pick no skill. On the question card, pick No, keep Q1 2027.",
   "offScript": "That is outside what this demo can show. The six things it can do are listed in Settings, under Demo.",
   "lookups": {
     "claims": {
@@ -21,7 +21,6 @@
       "title": "Marcus: Nordic Steak wants two things in the contract",
       "turns": [
         {
-          "text": "Two things Marcus wants to promise Nordic Steak this week, both checked against the record before he gets an answer.",
           "tools": [
             {
               "name": "use_skill",
@@ -98,16 +97,16 @@
                 "questions": [
                   {
                     "header": "Q1 2027",
-                    "question": "Do you want to move group bookings up?",
-                    "body": "The record says Q1 2027, after deposits: [[decisions/2026-06-18-group-bookings-after-deposits]], kept at [[meetings/2026-07-09-steering]]. Marcus says Nordic Steak needs it this autumn to sign.",
+                    "question": "Move group bookings earlier on the roadmap, from Q1 2027 to this autumn?",
+                    "body": "The decision is Q1 2027, after deposits: [[decisions/2026-06-18-group-bookings-after-deposits]], and [[meetings/2026-07-09-steering]] kept it. Marcus says Nordic Steak needs it this autumn to sign.",
                     "options": [
                       {
-                        "label": "No, Q1 stands",
-                        "description": "Marcus gets the reason; the ask becomes an insight."
+                        "label": "No, keep Q1 2027",
+                        "description": "Marcus gets the reason. The ask is kept as an insight."
                       },
                       {
-                        "label": "Yes, I'll raise it at steering",
-                        "description": "Open until steering on Thursday; on the brief."
+                        "label": "Yes, put it on Thursday's steering agenda",
+                        "description": "The date stays open until steering decides on Thursday."
                       }
                     ]
                   }
@@ -203,11 +202,7 @@
         },
         {
           "pause": 4000,
-          "text": [
-            "One yes and one no. The yes, [[tickets/jira/GST-77]], shipped on 2026-05-12 and sales was not told. The no was decided on 2026-06-18, [[decisions/2026-06-18-group-bookings-after-deposits]], and nothing since has changed it: the [[meetings/2026-07-09-steering]] took no decisions.",
-            "",
-            "On the record: the third ask as an insight, so the next one lands on it. Also what [[customers/nordic-steak]] and [[people/marcus-ek|Marcus]] are told today. Nothing waits for approval. Nothing was sent: the reply is above in the sales voice, copy the tab you want and send it yourself."
-          ]
+          "text": "One yes and one no. The yes, [[tickets/jira/GST-77]], shipped on 2026-05-12 and sales was not told. The no is the decision of 2026-06-18, [[decisions/2026-06-18-group-bookings-after-deposits]], and nothing since has changed it."
         }
       ]
     }

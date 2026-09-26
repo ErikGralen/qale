@@ -7,6 +7,9 @@ from this plan:
 
 - S2's first-round chips are **Per sitting**, **Online only**, **A/B test**, **Anything else**,
   not the longer names in section 4. The picks are the same: Cut it, Keep it, Keep it, skip.
+  On 2026-09-26 the agent's text was cut to a quarter and every pick renamed to say what it does
+  ("No, leave it out", "Yes, online and Google only", "Yes, make this a Jira story", "No, keep Q1
+  2027"). `docs/demo-runbook.md` has the current labels; the ones quoted below are the originals.
 - S4's `do` line names Marcus and Nordic Steak ("paste the message from
   `marcus-group-bookings.md` ... (Marcus, about Nordic Steak)"). The lint checks that a typed
   conversation's `do` line carries one of its `trigger.any` words, and a bare "paste the

@@ -66,16 +66,18 @@ Open BOK-300 under Jira and show the comment.
 fees moved up to end of October. Help me refine BOK-300 so Rebecca's team can start at sprint
 planning on Wednesday." Send.
 
-1. Framing in three lines (deciding, out of scope, done looks like), then one card with four
-   chips: **Per sitting**, **Online only**, **A/B test**, **Anything else**. Pick **Cut it**,
-   **Keep it**, **Keep it**, skip.
-2. "Fee per sitting is cut, so one fee per restaurant." A second card: Story 1 (card on file at
-   booking), Story 2 (charge the fee after a no-show), Story 3 (fee notice wording test), Anything
-   else. Keep all three, skip.
-3. Waits: three ticket cards under BOK-300, label `no-show-fees`, Brasserie Lund in the first
-   line, three checks each. The epic is named in the body ("Part of BOK-300"). Lands: the seed
-   todo "Get the BOK-300 stories written before sprint planning" flips to done.
-4. Closing text: three cards wait, the todo is closed, no date on any card.
+1. One line ("Three ideas. Say yes or no to each."), then one card with four chips: **Per
+   sitting**, **Online only**, **A/B test**, **Anything else**. Pick **No, leave it out** on Per
+   sitting, **Yes, online and Google only** on Online only, **Yes, add a story for it** on A/B
+   test, skip Anything else.
+2. A second card, no text: Story 1 (card on file at booking), Story 2 (charge the fee after a
+   no-show), Story 3 (fee notice A/B test), Anything else. Pick **Yes, make this a Jira story**
+   on all three, skip Anything else.
+3. Waits, no text: three ticket cards under BOK-300, label `no-show-fees`, Brasserie Lund in the
+   first line, three checks each. The epic is named in the body ("Part of BOK-300"). Lands: the
+   seed todo "Get the BOK-300 stories written before sprint planning" flips to done.
+4. Closing text, two sentences: the stories are drafted before sprint planning and the todo is
+   closed; Rebecca estimates once they are written.
 
 Approve one ticket card and open its mirror to show the label and the three checks.
 
@@ -83,42 +85,40 @@ Approve one ticket card and open its mirror to show the label and the three chec
 know?" Send.
 
 1. Two quiet turns: the reads and a claim check.
-2. The reply: three accounts and one colleague. Ulrika (Sjögatan and Brasserie Lund), Petra
-   (Pizzeria Napoli), Jonas (four open tickets, a macro that still says we are looking into it).
-   Kaffekopp is named as the account that left over this shape. Two `draft_text` panels: **For
-   Ulrika and Petra to forward** (Short, With what to do) and **For Jonas** (To close the four
-   tickets, Macro replacement). Lands: ledger lines on Sjögatan and Pizzeria Napoli, `last_told`
-   on Ulrika, Petra and Jonas.
-3. Closing text: each page now says what its person was told; copy and send yourself.
+2. The reply, three sentences: Ulrika and Petra, whose restaurants asked in June, Jonas with
+   four open tickets, and Kaffekopp as the account that left over this shape. Two `draft_text`
+   panels: **For Ulrika and Petra to forward** (Short, With what to do) and **For Jonas** (To
+   close the four tickets, Macro replacement). Lands: ledger lines on Sjögatan and Pizzeria
+   Napoli, `last_told` on Ulrika, Petra and Jonas.
+3. Closing line: Ulrika and Petra hear first, because their restaurants asked.
 4. Same session, type "From now on, when a fix ships, tell the CSMs before the changelog." One
-   `propose_instruction`, then "Added to your rules" with a link to House rules.
+   `propose_instruction`, then "Every session reads it from now on" with a link to House rules.
 
 Open House rules and show the line.
 
 **S4, sales needs it to sign.** Paste `marcus-group-bookings.md` from the Qale demo files folder
 into Home and send. Pick no skill.
 
-1. "Marcus wants a yes on two things by this week. I am checking both against the record."
-   Qale pulls in Handle a commitment itself (`use_skill`), reads the 2026-06-18 decision, the
-   2026-07-09 steering page, GST-77, BOK-520, Nordic Steak and Marcus, and runs one claim check.
-   This turn pauses a few seconds on purpose.
+1. A quiet turn. Qale pulls in Handle a commitment itself (`use_skill`), reads the 2026-06-18
+   decision, the 2026-07-09 steering page, GST-77, BOK-520, Nordic Steak and Marcus, and runs
+   one claim check. This turn pauses a few seconds on purpose.
 2. Question card, Q1 2027: the Google button has been live since 2026-05-12, group bookings
-   waits on the deposits work Payments has planned for Q4. Pick **No, Q1 stands**.
+   waits on the deposits work Payments has planned for Q4. Pick **No, keep Q1 2027**.
 3. Lands: an insight (group bookings asked a third time through sales), a ledger line on Nordic
    Steak, `last_told` on Marcus. One `draft_text` panel, **Reply to Marcus**, sales voice, tabs
    **One message to forward** and **What you can tell them**.
-4. Closing text: "One yes and one no." Nothing was sent and nothing waits.
+4. Closing text: "One yes and one no."
 
 Open Memory, Insights, and show the new note.
 
 **S5, the Friday update.** Type `/`, pick **Write the weekly update**, send with no text.
 
 1. A quiet turn: the reads and the internal voice.
-2. "Two things shipped this week, one date changed, two things to watch." One `draft_text`
-   panel for `#product-updates`, tabs **Full** and **Short**. Waits: one card, this week's
-   section on the public Changelog (table areas, one reminder for Google bookings; no ticket
-   keys, no customer names, no target dates).
-3. Closing text: copy and post yourself; one card waits.
+2. No text. One `draft_text` panel for `#product-updates`, tabs **Full** and **Short**. Waits:
+   one card, this week's section on the public Changelog (table areas, one reminder for Google
+   bookings; no ticket keys, no customer names, no target dates).
+3. Closing text, one line: two things shipped, the no-show fee date moved, group bookings still
+   waits on Payments.
 
 Copy the Full tab. Approve the card. Open the Changelog mirror and scroll to the end: the new
 section appends at the end of the page, not on top, and the synced mirror shows it one heading

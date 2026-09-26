@@ -107,15 +107,9 @@
         },
         {
           "text": [
-            "Three people have been waiting for this, in this order: two CSMs and the support lead.",
+            "Three people have waited for this. [[people/ulrika-nystrom]] and [[people/petra-alm]]: their restaurants asked in June and got no date. [[people/jonas-berg]]: four open tickets and a macro that still says we are looking into it.",
             "",
-            "- [[people/ulrika-nystrom]], CS for Sjögatan and Brasserie Lund. [[customers/sjogatan]] reported it through support on 2026-06-24 and was told we are looking into it. [[customers/brasserie-lund]] raised it in yesterday's review, and Lena is being told today.",
-            "- [[people/petra-alm]], CS for [[customers/pizzeria-napoli]]. They reported it on 2026-06-26 and got the same answer.",
-            "- [[people/jonas-berg]], support. Four open tickets, and a macro that still says we are looking into it.",
-            "",
-            "What they hear: [[tickets/jira/BOK-412]] is fixed. Since the 09:10 deploy on 2026-07-17, a guest gets one reminder per booking, whatever the source.",
-            "",
-            "[[customers/kaffekopp]] left in 2025 after asking for something that had already shipped, because nobody told them. Sjögatan has been waiting three weeks for this one. Two notes below, ready to copy."
+            "[[customers/kaffekopp]] left in 2025 because nobody told them a fix had shipped."
           ],
           "tools": [
             {
@@ -224,11 +218,7 @@
         },
         {
           "pause": 1500,
-          "text": [
-            "On the record: what Sjögatan, Pizzeria Napoli, Ulrika, Petra and Jonas hear today, on each of their pages. Nothing waits for approval.",
-            "",
-            "Nothing was sent. Copy the note you want and send it yourself, Ulrika and Petra first. Their restaurants asked for this, and the changelog is for everyone else."
-          ]
+          "text": "Ulrika and Petra hear first, because their restaurants asked."
         },
         {
           "tools": [
@@ -243,9 +233,7 @@
         },
         {
           "pause": 1200,
-          "text": [
-            "Added to your rules: when a fix ships, tell the CSMs before the changelog. Every session reads it from now on. [[skills/house-rules/SKILL|House rules]]"
-          ]
+          "text": "Every session reads the [[skills/house-rules/SKILL|house rules]] from now on."
         }
       ]
     }

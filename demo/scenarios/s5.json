@@ -23,7 +23,6 @@
           ]
         },
         {
-          "text": "The Friday update, written from what changed: two things shipped, one date moved, two things to watch. One panel for #product-updates below, and one card for the public Changelog.",
           "tools": [
             {
               "name": "draft_text",
@@ -59,13 +58,7 @@
         },
         {
           "pause": 1500,
-          "text": [
-            "The update is above, and every line stands on a ticket or a page you can open.",
-            "",
-            "One card waits: this week's section on the public Changelog. It says what a restaurant can use now, table areas and one reminder for Google bookings. It leaves out the October date, the ticket keys and the customer names, because every restaurant reads that page.",
-            "",
-            "Nothing was sent. Copy the tab you want and post it yourself."
-          ]
+          "text": "Two things shipped this week, the no-show fee date moved to end of October, and group bookings still waits on Payments."
         }
       ]
     }

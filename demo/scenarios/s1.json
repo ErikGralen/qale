@@ -23,7 +23,7 @@
       "title": "Brasserie Lund quarterly review",
       "turns": [
         {
-          "text": "The transcript is filed on yesterday's calendar page, [[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]. The calendar has it at 10:00 with Lena and Marcus, and the transcript names the same three people.",
+          "text": "The transcript is filed on yesterday's calendar page, [[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]].",
           "tools": [
             {
               "name": "file_source",
@@ -98,31 +98,31 @@
                 "questions": [
                   {
                     "header": "The date",
-                    "question": "Is end of October the date for no-show fees now?",
-                    "body": "The [[customers/brasserie-lund]] page says Q4, told on 2026-06-02. You told Lena end of October yesterday.",
+                    "question": "Is end of October the new date for no-show fees?",
+                    "body": "The [[customers/brasserie-lund]] page says Q4, told on 2026-06-02. Yesterday you told Lena end of October.",
                     "options": [
                       {
                         "label": "Yes, end of October",
-                        "description": "Record, roadmap and epic get the date."
+                        "description": "The customer page, the roadmap and BOK-300 get the October date."
                       },
                       {
                         "label": "No, I was thinking out loud",
-                        "description": "Nothing changes on the record."
+                        "description": "Nothing changes. The customer page keeps Q4."
                       }
                     ]
                   },
                   {
                     "header": "Reminders",
-                    "question": "Is Brasserie Lund's double reminder the same bug?",
-                    "body": "Lena said two restaurants got the text twice. [[tickets/jira/BOK-412]], reminders sent twice for Google bookings, was fixed this morning.",
+                    "question": "Is Brasserie Lund's double reminder text the same bug as BOK-412?",
+                    "body": "Lena said two restaurants got the reminder text twice. [[tickets/jira/BOK-412]], reminder text sent twice for Google bookings, was fixed this morning.",
                     "options": [
                       {
                         "label": "Yes, same bug",
-                        "description": "The ticket names Brasserie Lund; Lena is told."
+                        "description": "BOK-412 gets a comment naming Brasserie Lund, and Lena is told the fix is out."
                       },
                       {
                         "label": "Not sure, keep it separate",
-                        "description": "Customer page only; nothing on the ticket."
+                        "description": "The customer page notes the complaint. BOK-412 is not touched."
                       }
                     ]
                   }
@@ -132,7 +132,6 @@
           ]
         },
         {
-          "text": "On the record now: the October date on the customer page and on Lena's page, and the write-up. Also an insight on why 1 November is the real deadline, and three todos with owners and dates.",
           "tools": [
             {
               "name": "propose_note",
@@ -163,7 +162,7 @@
               "name": "propose_update",
               "input": {
                 "path": "meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review.md",
-                "append": "## Summary\n\nLena needs no-show fees live before Christmas bookings open on 1 November, at all 40 restaurants. As [[insights/brasserie-lund-december-no-shows]] says, December no-shows cost about one table a night per restaurant last year, and the big tables are the ones that do not come. \"Q4\" was not a date her managers could use: \"Q4 could be the fifteenth of December.\"\n\nI gave her a date: end of October, so it is live before 1 November. Marcus puts it in the renewal, and I see the wording first. Until today the [[customers/brasserie-lund]] page said \"Q4, before the Christmas season\". The October date is on the record now, with an insight on why 1 November is a deadline we did not choose: [[insights/no-show-fees-has-a-hard-date-1-november]].\n\nWhat the first release is, as I told her: one fee per restaurant, the amount theirs to set, a card held at booking, charged the morning after a no-show, receipt by text, no fee on phone bookings. That is what [[notes/fee-rules]] and [[tickets/jira/BOK-300]] say. Lena asked again for a different fee for lunch and dinner. Not in the first release. It stays on the open list in [[research/no-show-fees]].\n\nLena raised the reminder text going out twice at two restaurants, Malmö and Lund, since at least the end of June. Guests ring to ask if the booking is wrong. That is [[tickets/jira/BOK-412]], reminders sent twice for Google bookings. The fix went out in the 09:10 deploy on 2026-07-17.\n\nWho owes what. I send Lena the October plan in writing by 2026-07-24, one page. Marcus sends the renewal paperwork by 2026-07-22, with the October line and the June price. Lena sends the names of the two restaurants. I tell Lena the reminder fix is out.\n\n## Notes\n\n- [[tickets/jira/GST-140]], table areas: one of the Malmö managers had it switched on by Tuesday. First customer to say so.\n- Marcus, on the date: \"It travels straight into my slides.\" The record and the slides now say the same thing.",
+                "append": "## Summary\n\nLena needs no-show fees live before Christmas bookings open on 1 November, at all 40 restaurants. As [[insights/brasserie-lund-december-no-shows]] says, December no-shows cost about one table a night per restaurant last year, and the big tables are the ones that do not come. \"Q4\" was not a date her managers could use: \"Q4 could be the fifteenth of December.\"\n\nI gave her a date: end of October, so it is live before 1 November. Marcus puts it in the renewal, and I see the wording first. Until today the [[customers/brasserie-lund]] page said \"Q4, before the Christmas season\". The October date is on the customer page now, with an insight on why 1 November is a deadline we did not choose: [[insights/no-show-fees-has-a-hard-date-1-november]].\n\nWhat the first release is, as I told her: one fee per restaurant, the amount theirs to set, a card held at booking, charged the morning after a no-show, receipt by text, no fee on phone bookings. That is what [[notes/fee-rules]] and [[tickets/jira/BOK-300]] say. Lena asked again for a different fee for lunch and dinner. Not in the first release. It stays on the open list in [[research/no-show-fees]].\n\nLena raised the reminder text going out twice at two restaurants, Malmö and Lund, since at least the end of June. Guests ring to ask if the booking is wrong. That is [[tickets/jira/BOK-412]], reminders sent twice for Google bookings. The fix went out in the 09:10 deploy on 2026-07-17.\n\nWho owes what. I send Lena the October plan in writing by 2026-07-24, one page. Marcus sends the renewal paperwork by 2026-07-22, with the October line and the June price. Lena sends the names of the two restaurants. I tell Lena the reminder fix is out.\n\n## Notes\n\n- [[tickets/jira/GST-140]], table areas: one of the Malmö managers had it switched on by Tuesday. First customer to say so.\n- Marcus, on the date: \"It travels straight into my slides.\" The record and the slides now say the same thing.",
                 "frontmatter": {
                   "processing": "processed"
                 },
@@ -191,7 +190,7 @@
                     "replace": "- 2026-06-02: no-show fees in Q4, before the Christmas season ([[meetings/2026-06-02-brasserie-lund-review]]).\n- 2026-07-16: no-show fees by the end of October, before Christmas bookings open on 1 November ([[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]])."
                   }
                 ],
-                "rationale": "You confirmed end of October is the date. The hub still said Q4, and the ledger stopped at June, so the commitment, the ledger and the watch list now say what Lena was told and what she raised.",
+                "rationale": "You confirmed end of October is the date. The customer page still said Q4, and its history stopped at June. The commitment, the Watch list and what Lena has been told now say the October date and the reminder complaint.",
                 "sources": [
                   "[[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]]",
                   "[[tickets/jira/BOK-412]]"
@@ -267,7 +266,6 @@
           ]
         },
         {
-          "text": "Three cards wait for you, because they leave the workspace. The October target on BOK-300, Brasserie Lund on BOK-412, and Roadmap H2 from Q4 to end of October.",
           "tools": [
             {
               "name": "draft_ticket_comment",
@@ -319,13 +317,7 @@
         },
         {
           "pause": 1500,
-          "text": [
-            "The date you gave Lena is on the record. You told her no-show fees land by the end of October, before Christmas bookings open on 1 November, and the record said \"Q4\". It is now on the [[customers/brasserie-lund]] page and on the page for [[people/lena-strand|Lena]]. An insight says why 1 November is a deadline you did not choose: [[insights/no-show-fees-has-a-hard-date-1-november]].",
-            "",
-            "Also on the record: the write-up on [[meetings/{{date:2026-07-16}}-brasserie-lund-quarterly-review]], and three todos. You send Lena the October plan in writing by 2026-07-24. Marcus sends the renewal paperwork by 2026-07-22. You tell Lena the reminder fix went out this morning, due today.",
-            "",
-            "Three cards wait for you, because they leave the workspace. One is a comment on BOK-300 with the October target. One is a comment on BOK-412 naming Brasserie Lund. One is Roadmap H2, changed from Q4 to end of October. Nothing has gone to Jira or Confluence yet."
-          ]
+          "text": "The date you gave Lena is a deadline, not a preference. Brasserie Lund opens Christmas bookings on 1 November at all 40 restaurants, so end of October is the real date and Q4 never was. The insight [[insights/no-show-fees-has-a-hard-date-1-november]] says why."
         }
       ]
     }

@@ -42,10 +42,10 @@ Bookings and Guest teams, and no-show fees is the big thing in flight.
    ```
 
 2. Round one, four chips: **Per sitting**, **Online only**, **A/B test**, **Anything else**. Pick
-   **Cut it** on Per sitting, **Keep it** on Online only, **Keep it** on A/B test, skip Anything
-   else.
+   **No, leave it out** on Per sitting, **Yes, online and Google only** on Online only, **Yes, add
+   a story for it** on A/B test, skip Anything else.
 3. Round two, three stories (card on file at booking, charge the fee after a no-show, fee notice
-   wording test). **Keep it** on all three, skip Anything else.
+   A/B test). **Yes, make this a Jira story** on all three, skip Anything else.
 4. Three ticket cards wait under BOK-300. Approve one. The todo from the 1:1 with Rebecca closes
    on its own.
 5. Show: the new ticket under Jira, with the `no-show-fees` label, Brasserie Lund in the first
@@ -90,9 +90,9 @@ decided."**
    Marcus Ek, #sales, 08:52. URGENT. Nordic Steak, 25 restaurants, are ready to sign this week. Their ops lead needs two things in the contract: group bookings with a set menu, and the Google "Book a table" button on every restaurant. Can I tell them both are coming this autumn? I NEED BOTH TO SIGN THEM.
    ```
 
-2. The first turn says Qale is checking both things against the record. It takes a few seconds.
+2. The first turn is quiet: the reads and one claim check. It takes a few seconds.
 3. Question card, Q1 2027: the Google button has been live since May, group bookings waits on
-   deposits. Pick **No, Q1 stands**.
+   deposits. Pick **No, keep Q1 2027**.
 4. One panel, **Reply to Marcus**, in the sales voice: tabs **One message to forward** and **What
    you can tell them**. Copy the first tab. An insight and the ledger lines on Nordic Steak and
    Marcus land on their own. No card waits.

@@ -122,6 +122,39 @@ export interface OutboundCopyInput {
   url?: string;
 }
 
+/** The ticket's kind as one lowercase word: "story", "bug". A draft that named
+ *  no type is a "ticket". */
+export function ticketKind(ob: OutboundCopyInput): string {
+  return ob.issueType?.trim().toLowerCase() || 'ticket';
+}
+
+/** "a story", "an epic". */
+const withArticle = (noun: string): string => (/^[aeiou]/i.test(noun) ? `an ${noun}` : `a ${noun}`);
+
+/**
+ * The first part of the quiet line under a new ticket's head: what kind of
+ * thing it is and where it lands. "Jira story in BOK". The head is the title
+ * alone, so this line is the only place the card says the system, the type and
+ * the project.
+ *
+ * The system name is passed in, because the renderer owns the provider labels.
+ * A missing fact shortens the line: "Story in BOK", "Jira story", "Story".
+ * Returns null for any card that is not a new ticket.
+ */
+export function ticketKindLine(ob: OutboundCopyInput, system: string | null): string | null {
+  if (ob.action !== 'create_ticket') return null;
+  const kind = ticketKind(ob);
+  const container = ob.container?.trim();
+  const words = system ? `${system} ${kind}` : kind.charAt(0).toUpperCase() + kind.slice(1);
+  return container ? `${words} in ${container}` : words;
+}
+
+/** The head of a new ticket card: its title, or "New story" when the draft
+ *  has none, so the head is never blank. */
+export function ticketHead(ob: OutboundCopyInput): string {
+  return ob.title?.trim() || `New ${ticketKind(ob)}`;
+}
+
 /**
  * The ticket fields a draft set beyond its summary and body: labels, priority,
  * components. They go on the card because they land in Jira under the PM's
@@ -654,8 +687,8 @@ export function proposalHeadline(input: HeadlineInput): string {
     return rule ? `Remember this: ${rule}` : 'A new standing instruction';
   }
 
-  // "Comment on PAY-142" / "File a ticket in PAY: SCIM group-mapping" — the
-  // outbound line names its own target and already folds the title in.
+  // "Comment on PAY-142" / "Create a story: SCIM group-mapping". The outbound
+  // line names its own target and already folds the title in.
   if (input.kind === 'outbound') return outboundTarget(input.outbound ?? {});
 
   if (input.kind === 'decision') {
@@ -786,11 +819,14 @@ export function outboundVerb(action: string | undefined): string {
 
 /**
  * The whole outbound act as the PO says it, in plain text: "Comment on PAY-142",
- * "File a ticket in PAY: SCIM group-mapping", "Add “Erik x Daniel: sync” to your
- * calendar". The reference itself renders as a live chip in the card; this
+ * "Create a story: SCIM group-mapping", "Add “Erik x Daniel: sync” to your
+ * calendar". The reference itself renders as a live chip in the card. This
  * string is the flat form for headlines and aria labels, so it names the thing
- * itself — a calendar event reading "Send an update" told the PO about a
+ * itself. A calendar event reading "Send an update" told the PO about a
  * delivery that never happens.
+ *
+ * A new ticket uses the same verb as its approve button, "Create", and leaves
+ * out the project: the card's quiet line says where it lands.
  */
 export function outboundTarget(ob: OutboundCopyInput): string {
   const named = (s: string): string => `“${s}”`;
@@ -798,8 +834,9 @@ export function outboundTarget(ob: OutboundCopyInput): string {
     case 'comment_ticket':
       return ob.targetId ? `Comment on ${ob.targetId}` : 'Comment on a ticket';
     case 'create_ticket': {
-      const file = `File a ${ob.issueType?.toLowerCase() ?? 'ticket'}${ob.container ? ` in ${ob.container}` : ''}`;
-      return ob.title ? `${file}: ${ob.title}` : file;
+      const create = `Create ${withArticle(ticketKind(ob))}`;
+      const title = ob.title?.trim();
+      return title ? `${create}: ${title}` : create;
     }
     case 'update_page':
       return ob.title ? `Update ${named(ob.title)}` : 'Update a page';
@@ -815,9 +852,10 @@ export function outboundTarget(ob: OutboundCopyInput): string {
 }
 
 /**
- * The receipt line after a card lands — past tense, and naming the thing it
+ * The receipt line after a card lands: past tense, and naming the thing it
  * touched. "Update a page" told the PO nothing about which page just changed
- * under their name.
+ * under their name. A new ticket says its kind and its title, "Created a
+ * story: Card on file at booking", and not its project.
  */
 export function outboundReceipt(ob: OutboundCopyInput): string {
   switch (ob.action) {
@@ -825,8 +863,11 @@ export function outboundReceipt(ob: OutboundCopyInput): string {
       return `Updated ${ob.title ?? 'a page'}`;
     case 'comment_ticket':
       return `Commented on ${ob.targetId ?? 'a ticket'}`;
-    case 'create_ticket':
-      return `Created a ${ob.issueType?.toLowerCase() ?? 'ticket'}${ob.container ? ` in ${ob.container}` : ''}`;
+    case 'create_ticket': {
+      const created = `Created ${withArticle(ticketKind(ob))}`;
+      const title = ob.title?.trim();
+      return title ? `${created}: ${title}` : created;
+    }
     case 'create_event':
       return `Added ${ob.title ?? 'an event'} to your calendar`;
     case 'update_event':
@@ -846,8 +887,12 @@ export function outboundReceipt(ob: OutboundCopyInput): string {
  * "Created a task in Nordkap" tells the PM a ticket exists somewhere and gives
  * them no way to it, which is the one thing they want the second after they
  * approve a send. So the send stamps where it landed onto the card, and the
- * line reads act, item, tail: "Commented on [PAY-142]", "Created [PAY-171] in
- * Nordkap", "Added [Kickoff] to your calendar".
+ * line reads act, item, tail: "Commented on [PAY-142]", "Created [PAY-171]
+ * Card on file at booking", "Added [Kickoff] to your calendar".
+ *
+ * A new ticket's line carries its title as the tail and no project. The key
+ * already says the project. It has no `name` either, so the chip shows the key
+ * and the ticket's live state by itself.
  *
  * A send whose item has no address keeps the whole sentence in `act` and draws
  * no chip. Cards accepted before the stamp existed take that path.
@@ -879,9 +924,8 @@ export function sentLine(ob: OutboundCopyInput): SentLine {
       return {
         act: 'Created',
         item,
-        name: item,
         url,
-        ...(ob.container ? { tail: `in ${ob.container}` } : {}),
+        ...(ob.title?.trim() ? { tail: ob.title.trim() } : {}),
       };
     case 'create_event':
       return { act: 'Added', item, name: ob.title, url, tail: 'to your calendar' };

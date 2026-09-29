@@ -47,18 +47,19 @@ review, nobody wrote anything down" and send.
 
 1. One line: the transcript goes on yesterday's calendar page, which holds the review at 10:00
    with Lena and Marcus. Then a quiet claim check.
-2. One question card, two questions. The date: you told Lena end of October, the record says
+2. One question card, two questions. The date: you told Lena end of October, the memory says
    "Q4, before the Christmas season" from 2026-06-02. Pick **Yes, end of October**. Reminders:
    Lena said guests at two restaurants got the text twice, which is BOK-412, fixed this morning.
    Pick **Yes, same bug**.
 3. Lands: an insight (no-show fees has a hard date, 1 November), the meeting write-up, the
-   Brasserie Lund page (commitment, watch list, ledger line for 2026-07-16), Lena's page with
-   `last_told`, three todos (send Lena the plan by 2026-07-24; Marcus sends the renewal paperwork
+   Brasserie Lund page (commitment, Watch list, what they were told on 2026-07-16), Lena's page
+   (last told), three todos (send Lena the plan by 2026-07-24; Marcus sends the renewal paperwork
    by 2026-07-22; tell Lena the fix went out, due today).
-4. "Three things leave the workspace, so they wait for you." Waits: a comment on BOK-300
+4. No text. Waits: a comment on BOK-300
    (target end of October, told Brasserie Lund), a comment on BOK-412 (Brasserie Lund saw it at
    Malmö and Lund), a Roadmap H2 patch (Q4 becomes end of October). Approve one at a time.
-5. Closing text: what Lena was told, where it now is, the three todos, the three cards.
+5. Closing text: the date you gave Lena is a deadline, not a preference, with a link to the
+   insight.
 
 Open BOK-300 under Jira and show the comment.
 
@@ -86,13 +87,13 @@ know?" Send.
 
 1. Two quiet turns: the reads and a claim check.
 2. The reply, three sentences: Ulrika and Petra, whose restaurants asked in June, Jonas with
-   four open tickets, and Kaffekopp as the account that left over this shape. Two `draft_text`
+   four open tickets, and Kaffekopp as the account that left over the same thing. Two `draft_text`
    panels: **For Ulrika and Petra to forward** (Short, With what to do) and **For Jonas** (To
-   close the four tickets, Macro replacement). Lands: ledger lines on Sjögatan and Pizzeria
-   Napoli, `last_told` on Ulrika, Petra and Jonas.
+   close the four tickets, Macro replacement). Lands: a "what they were told" line on Sjögatan
+   and Pizzeria Napoli, and a "last told" line on Ulrika, Petra and Jonas.
 3. Closing line: Ulrika and Petra hear first, because their restaurants asked.
 4. Same session, type "From now on, when a fix ships, tell the CSMs before the changelog." One
-   `propose_instruction`, then "Every session reads it from now on" with a link to House rules.
+   `propose_instruction`, then "Every session reads the house rules from now on", with a link.
 
 Open House rules and show the line.
 
@@ -104,8 +105,8 @@ into Home and send. Pick no skill.
    one claim check. This turn pauses a few seconds on purpose.
 2. Question card, Q1 2027: the Google button has been live since 2026-05-12, group bookings
    waits on the deposits work Payments has planned for Q4. Pick **No, keep Q1 2027**.
-3. Lands: an insight (group bookings asked a third time through sales), a ledger line on Nordic
-   Steak, `last_told` on Marcus. One `draft_text` panel, **Reply to Marcus**, sales voice, tabs
+3. Lands: an insight (group bookings asked a third time through sales), a "what they were told"
+   line on Nordic Steak, a "last told" line on Marcus. One `draft_text` panel, **Reply to Marcus**, sales voice, tabs
    **One message to forward** and **What you can tell them**.
 4. Closing text: "One yes and one no."
 
@@ -129,9 +130,9 @@ the brief**.
 
 1. The reads, then one `propose_update` that appends a `## Prep` section to the steering page:
    since last time (the October date, which Åsa has not heard; the BOK-300 stories are drafted),
-   delivery (BOK-412 fixed, GST-140 shipped, PAY-210 still no date), loose ends (Henrik owes a
-   PAY-210 date), landmines (Marcus will push group bookings again; sales has not been told the
-   Google button is live). It lands with no card: an append on a calendar page rewrites nothing
+   tickets (BOK-412 fixed, GST-140 shipped, PAY-210 still no date), who owes an answer (Henrik, a
+   PAY-210 date), what will come up (Marcus will push group bookings again; sales has not been
+   told the Google button is live). It lands with no card: an append on a calendar page rewrites nothing
    of yours.
 2. Closing text: Åsa hears the October date from you, not from Marcus.
 

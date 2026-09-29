@@ -17,7 +17,7 @@
         "content": [
           {
             "type": "text",
-            "text": "That is outside what this demo can show. The five things it can do are listed in Settings, under Demo."
+            "text": "That is outside what this demo can show. The six things it can do are listed in Settings, under Demo."
           }
         ],
         "stop_reason": "end_turn",

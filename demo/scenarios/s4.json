@@ -102,7 +102,7 @@
                     "options": [
                       {
                         "label": "No, keep Q1 2027",
-                        "description": "Marcus gets the reason. The ask is kept as an insight."
+                        "description": "Marcus gets the reason. The request is written down, so the next one finds it."
                       },
                       {
                         "label": "Yes, put it on Thursday's steering agenda",
@@ -142,8 +142,8 @@
                   "confidence": "high",
                   "customer": "[[customers/nordic-steak]]"
                 },
-                "body": "[[customers/nordic-steak]] wants group bookings in the contract before they sign. The ask reached me through [[people/marcus-ek|Marcus]] as a contract line, not as a problem a restaurant has had. That is the third time, after June and the [[meetings/2026-07-09-steering]], and the shape is the same. The answer has not moved: group bookings waits on the deposits work, so Q1 2027, as [[decisions/2026-06-18-group-bookings-after-deposits]] says. The same message asks for the Google button as if it were coming. [[tickets/jira/GST-77]] has been live since 2026-05-12, and sales was not told.\n\nMarcus Ek, in #sales at 08:52 on 2026-07-17, wants an answer this week: \"Their ops lead needs two things in the contract: group bookings with a set menu, and the Google \"Book a table\" button on every restaurant. Can I tell them both are coming this autumn? I NEED BOTH TO SIGN THEM.\"",
-                "rationale": "The record of what was asked, so the next group bookings question from sales lands on it instead of starting over.",
+                "body": "[[customers/nordic-steak]] wants group bookings in the contract before they sign. The request came through [[people/marcus-ek|Marcus]] as a contract line, not as a problem a restaurant has had. It is the third time, after June and the [[meetings/2026-07-09-steering]], in the same form. The answer has not moved: group bookings waits on deposits, so Q1 2027 ([[decisions/2026-06-18-group-bookings-after-deposits]]).\n\nThe same message asks for the Google button as if it were coming. [[tickets/jira/GST-77]] has been live since 2026-05-12, and sales was not told.\n\nMarcus Ek, in #sales at 08:52 on 2026-07-17, wants an answer this week: \"Their ops lead needs two things in the contract: group bookings with a set menu, and the Google \"Book a table\" button on every restaurant. Can I tell them both are coming this autumn? I NEED BOTH TO SIGN THEM.\"",
+                "rationale": "A note of what was asked, so the next group bookings question from sales finds it instead of starting over.",
                 "sources": [
                   "[[decisions/2026-06-18-group-bookings-after-deposits]]",
                   "[[people/marcus-ek]]",
@@ -158,7 +158,7 @@
               "input": {
                 "path": "customers/nordic-steak.md",
                 "append": "- 2026-07-17: told through Marcus: the Google button, [[tickets/jira/GST-77]], is live now, switched on under Settings, Booking channels. Group bookings is Q1 2027, after deposits, per [[decisions/2026-06-18-group-bookings-after-deposits]].",
-                "rationale": "The ledger's last line is \"on the roadmap\" with no quarter. Today Marcus gets a date for the button and a quarter for group bookings, and this is what Oskar hears.",
+                "rationale": "Nordic Steak was last told \"on the roadmap\", with no quarter. Today Marcus gets a date for the button and a quarter for group bookings, and this is what Oskar hears.",
                 "sources": [
                   "[[tickets/jira/GST-77]]",
                   "[[decisions/2026-06-18-group-bookings-after-deposits]]"
@@ -188,7 +188,7 @@
                 "variants": [
                   {
                     "label": "One message to forward",
-                    "body": "Live since 2026-05-12: the Book a table button on Google, for every restaurant. Each restaurant switches it on under Settings, Booking channels. That one goes in the contract as done.\n\nQ1 2027: group bookings, parties over eight with a set menu and a deposit. It needs deposits at booking first, and those come in Q4. There is no earlier date.\n\nWhat Nordic Steak can put in the contract now: the Google button, live today; one text reminder per booking, the day before at 17:00; table areas, live since 2026-07-14. A month inside Q1 2027 for group bookings is not one of them."
+                    "body": "Live since May: the Book a table button on Google, for every restaurant. Each restaurant switches it on under Settings, Booking channels. That one goes in the contract as done.\n\nQ1 2027: group bookings, parties over eight with a set menu and a deposit. It needs deposits at booking first, and those come in Q4. There is no earlier date.\n\nWhat you can put in the contract now: the Google button, one text reminder per booking the day before at 17:00, and table areas (live since July). Group bookings goes in as Q1 2027, with no month yet."
                   },
                   {
                     "label": "What you can tell them",

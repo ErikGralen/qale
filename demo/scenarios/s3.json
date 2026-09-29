@@ -6,7 +6,7 @@
   "offScript": "That is outside what this demo can show. The six things it can do are listed in Settings, under Demo.",
   "lookups": {
     "claims": {
-      "The fix for BOK-412": "KNOWN | tickets/jira/BOK-412.md | Fixed: one reminder per booking whatever the source. Released in the 09:10 deploy on 2026-07-17.",
+      "The fix for BOK-412": "KNOWN | tickets/jira/BOK-412.md | Fixed: one reminder per booking whatever the source. Released this morning, 2026-07-17.",
       "Sjögatan reported the double reminder": "KNOWN | customers/sjogatan.md | 2026-06-24: we are looking into the double reminder; no date given.",
       "Pizzeria Napoli reported the double reminder": "KNOWN | customers/pizzeria-napoli.md | 2026-06-26: we are looking into the double reminder; no date given.",
       "Jonas has four open": "KNOWN | people/jonas-berg.md | His macro says \"we are looking into it\", and he asked for a date he can give instead. He has not had one."
@@ -69,7 +69,7 @@
               "input": {
                 "claims": [
                   {
-                    "claim": "The fix for BOK-412 has been live since the 09:10 deploy on 2026-07-17: one reminder per booking, whatever the source.",
+                    "claim": "The fix for BOK-412 has been live since this morning, 2026-07-17: one reminder per booking, whatever the source.",
                     "about": [
                       "[[tickets/jira/BOK-412]]"
                     ]
@@ -123,7 +123,7 @@
                     "body": "Hi,\n\nSince this morning, guests who book through Google get one reminder, the day before at 17:00. Before today some of them got two. Sorry for the noise."
                   },
                   {
-                    "label": "With what to do",
+                    "label": "Longer, with what to tell guests",
                     "body": "Hi,\n\nSince this morning, guests who book through Google get one reminder, the day before at 17:00. Before today some of them got two, and we are sorry for the noise. If a guest still asks whether their booking is right, the answer is yes: one text means one booking. If a guest gets two texts for a booking made after this morning, send us the booking and we will look at it."
                   }
                 ]
@@ -149,8 +149,8 @@
               "name": "propose_update",
               "input": {
                 "path": "customers/sjogatan.md",
-                "append": "- 2026-07-17: [[tickets/jira/BOK-412]] is fixed, one reminder per booking since 2026-07-17. Ulrika is telling them today.",
-                "rationale": "The ledger stops at 2026-06-24 with no date. The fix shipped this morning and Ulrika has the note to forward, so the line says what they are told today.",
+                "append": "- 2026-07-17: [[tickets/jira/BOK-412]] is fixed, one reminder per booking since 2026-07-17. Ulrika tells them today.",
+                "rationale": "Sjögatan was last told \"we are looking into it\" on 2026-06-24, with no date. The fix shipped this morning and Ulrika has the note to forward, so the page says what they hear today.",
                 "sources": [
                   "[[tickets/jira/BOK-412]]",
                   "[[customers/sjogatan]]"
@@ -161,8 +161,8 @@
               "name": "propose_update",
               "input": {
                 "path": "customers/pizzeria-napoli.md",
-                "append": "- 2026-07-17: [[tickets/jira/BOK-412]] is fixed, one reminder per booking since 2026-07-17. Petra is telling them today.",
-                "rationale": "The ledger stops at 2026-06-26 with no date. The fix shipped this morning and Petra has the note to forward, so the line says what they are told today.",
+                "append": "- 2026-07-17: [[tickets/jira/BOK-412]] is fixed, one reminder per booking since 2026-07-17. Petra tells them today.",
+                "rationale": "Pizzeria Napoli was last told \"we are looking into it\" on 2026-06-26, with no date. The fix shipped this morning and Petra has the note to forward, so the page says what they hear today.",
                 "sources": [
                   "[[tickets/jira/BOK-412]]",
                   "[[customers/pizzeria-napoli]]"
@@ -177,7 +177,7 @@
                 "frontmatter": {
                   "last_told": "2026-07-17"
                 },
-                "rationale": "She asked to hear before her restaurants do. The note is drafted today, so her line is dated before it goes out.",
+                "rationale": "She asked to hear before her restaurants do. The note is drafted today, so she is told today.",
                 "sources": [
                   "[[tickets/jira/BOK-412]]",
                   "[[people/ulrika-nystrom]]"
@@ -192,7 +192,7 @@
                 "frontmatter": {
                   "last_told": "2026-07-17"
                 },
-                "rationale": "She asks for a line per release that she can forward as it is, with no ticket key in it. This is that line for the double reminder.",
+                "rationale": "She asks for one line per release that she can forward with no ticket key in it. The note for Pizzeria Napoli is that line, and this dates when she got it.",
                 "sources": [
                   "[[tickets/jira/BOK-412]]",
                   "[[people/petra-alm]]"
@@ -203,7 +203,7 @@
               "name": "propose_update",
               "input": {
                 "path": "people/jonas-berg.md",
-                "append": "Last told 2026-07-17: [[tickets/jira/BOK-412]], the double reminder, is fixed since the 09:10 deploy. He has the line that closes the four tickets and a macro replacement.",
+                "append": "Last told 2026-07-17: [[tickets/jira/BOK-412]], the double reminder, is fixed since this morning. He has the line that closes the four tickets and a macro replacement.",
                 "frontmatter": {
                   "last_told": "2026-07-17"
                 },

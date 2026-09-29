@@ -32,11 +32,11 @@
                 "variants": [
                   {
                     "label": "Full",
-                    "body": "Shipped: [[tickets/jira/GST-140]], table areas on the booking page, live since 2026-07-14, guests pick window, terrace or bar when they book; [[tickets/jira/BOK-412]], one reminder per booking whatever the source, fixed 2026-07-17 after four support tickets.\nChanged: no-show fees is now aimed at end of October, told to [[customers/brasserie-lund]] on 2026-07-16; the [[tickets/jira/BOK-300]] stories go to sprint planning on 2026-07-22.\nWatch: group bookings still waits on [[tickets/jira/PAY-210]], the deposits work, and Payments has given no date; [[tickets/jira/BOK-265]], the waitlist text story, is in progress, and the 15-minute window and the hand-off to the next guest are what is left."
+                    "body": "Shipped\n- Table areas on the booking page ([[tickets/jira/GST-140]]), live since 2026-07-14. Guests pick window, terrace or bar when they book.\n- One reminder per booking, whatever the source ([[tickets/jira/BOK-412]]), fixed 2026-07-17 after four support tickets.\n\nChanged\n- No-show fees is now aimed at end of October, told to [[customers/brasserie-lund]] on 2026-07-16. The [[tickets/jira/BOK-300]] stories go to sprint planning on 2026-07-22.\n\nWatch\n- Group bookings still waits on deposits ([[tickets/jira/PAY-210]]), and Payments has given no date.\n- Waitlist text ([[tickets/jira/BOK-265]]) is in progress. Left: the 15-minute window and the hand-off to the next guest."
                   },
                   {
                     "label": "Short",
-                    "body": "Shipped: [[tickets/jira/GST-140]], table areas on the booking page (2026-07-14), and [[tickets/jira/BOK-412]], the reminder fix (2026-07-17), so guests who book through Google get one reminder, not two.\nChanged: [[tickets/jira/BOK-300]], no-show fees, is now aimed at end of October, told to Brasserie Lund on 2026-07-16.\nWatch: group bookings still waits on [[tickets/jira/PAY-210]], the deposits work, and Payments has given no date."
+                    "body": "Shipped: table areas on the booking page ([[tickets/jira/GST-140]], 2026-07-14) and the reminder fix ([[tickets/jira/BOK-412]], 2026-07-17), so guests who book through Google get one reminder, not two.\nChanged: no-show fees ([[tickets/jira/BOK-300]]) is now aimed at end of October, told to Brasserie Lund on 2026-07-16.\nWatch: group bookings still waits on deposits ([[tickets/jira/PAY-210]]), and Payments has given no date."
                   }
                 ]
               }
@@ -45,7 +45,7 @@
               "name": "draft_page_update",
               "input": {
                 "page": "wikipages/confluence/changelog.md",
-                "body": "## 2026-07-17\n\nTable areas. Guests can pick a table area (window, terrace or bar) when they book. Name your areas once, and the booking list shows the area next to the table. A restaurant with no areas set sees no change.\n\nOne reminder for Google bookings. Guests who book through Google now get one reminder, the day before.\n\nSource: weekly update, 2026-07-17",
+                "body": "## 2026-07-17\n\nTable areas. Guests can pick a table area (window, terrace or bar) when they book. Name your areas once, and the booking list shows the area next to the table. A restaurant with no areas set sees no change.\n\nOne reminder for Google bookings. Guests who book through Google now get one reminder, the day before.",
                 "sources": [
                   "[[wikipages/confluence/changelog]]",
                   "[[tickets/jira/GST-140]]",

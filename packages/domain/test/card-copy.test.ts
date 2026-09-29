@@ -11,6 +11,8 @@ import {
   proposalLeadIn,
   sentLine,
   ticketFieldRows,
+  ticketHead,
+  ticketKindLine,
   vaultEffect,
   type HeadlineInput,
   type VaultEffectInput,
@@ -536,6 +538,47 @@ test('ticketFieldRows: a row per field the draft set, and nothing for the rest',
   assert.deepEqual(ticketFieldRows({ action: 'create_ticket' }), []);
 });
 
+test('ticketKindLine: system, kind and project on one quiet line', () => {
+  const ticket = { action: 'create_ticket', issueType: 'Story', container: 'BOK' };
+  assert.equal(ticketKindLine(ticket, 'Jira'), 'Jira story in BOK');
+  assert.equal(ticketKindLine(ticket, null), 'Story in BOK');
+  // No project: the line shortens and never says "in undefined".
+  assert.equal(
+    ticketKindLine({ action: 'create_ticket', issueType: 'Story' }, 'Jira'),
+    'Jira story',
+  );
+  assert.equal(ticketKindLine({ action: 'create_ticket', issueType: 'Story' }, null), 'Story');
+  // No type: the word is "ticket".
+  assert.equal(ticketKindLine({ action: 'create_ticket' }, null), 'Ticket');
+  assert.equal(ticketKindLine({ action: 'create_ticket', container: ' ' }, 'Jira'), 'Jira ticket');
+  // Only a new ticket has this line.
+  assert.equal(ticketKindLine({ action: 'comment_ticket', targetId: 'PAY-142' }, 'Jira'), null);
+  assert.equal(ticketKindLine({ action: 'update_page', title: 'Roadmap' }, 'Confluence'), null);
+});
+
+test('ticketKindLine + ticketFieldRows: a ticket with no fields is the kind line alone', () => {
+  const ticket = { action: 'create_ticket', issueType: 'Bug', container: 'PAY' };
+  assert.equal(ticketKindLine(ticket, 'Jira'), 'Jira bug in PAY');
+  assert.deepEqual(ticketFieldRows(ticket), []);
+});
+
+test('ticketHead: the title alone, or "New <kind>" so the head is never blank', () => {
+  assert.equal(
+    ticketHead({
+      action: 'create_ticket',
+      issueType: 'Story',
+      container: 'BOK',
+      title: 'Card on file at booking',
+    }),
+    'Card on file at booking',
+  );
+  assert.equal(
+    ticketHead({ action: 'create_ticket', issueType: 'Story', title: '  ' }),
+    'New story',
+  );
+  assert.equal(ticketHead({ action: 'create_ticket' }), 'New ticket');
+});
+
 test('outboundTarget: the same strings the renderer returned', () => {
   assert.equal(
     outboundTarget({ action: 'comment_ticket', targetId: 'PAY-142' }),
@@ -543,14 +586,24 @@ test('outboundTarget: the same strings the renderer returned', () => {
   );
   assert.equal(outboundTarget({ action: 'comment_ticket' }), 'Comment on a ticket');
   assert.equal(
+    outboundTarget({
+      action: 'create_ticket',
+      container: 'BOK',
+      issueType: 'Story',
+      title: 'Card on file at booking',
+    }),
+    'Create a story: Card on file at booking',
+  );
+  // The project is on the card's quiet line, not in the verb.
+  assert.equal(
     outboundTarget({ action: 'create_ticket', container: 'PAY', title: 'SCIM group-mapping' }),
-    'File a ticket in PAY: SCIM group-mapping',
+    'Create a ticket: SCIM group-mapping',
   );
   assert.equal(
     outboundTarget({ action: 'create_ticket', container: 'PAY', issueType: 'Epic' }),
-    'File a epic in PAY',
+    'Create an epic',
   );
-  assert.equal(outboundTarget({ action: 'create_ticket' }), 'File a ticket');
+  assert.equal(outboundTarget({ action: 'create_ticket' }), 'Create a ticket');
   assert.equal(
     outboundTarget({ action: 'update_page', title: 'Rollout plan' }),
     'Update “Rollout plan”',
@@ -595,8 +648,17 @@ test('outboundReceipt: the same strings the renderer returned', () => {
   );
   assert.equal(outboundReceipt({ action: 'comment_ticket' }), 'Commented on a ticket');
   assert.equal(
+    outboundReceipt({
+      action: 'create_ticket',
+      container: 'BOK',
+      issueType: 'Story',
+      title: 'Card on file at booking',
+    }),
+    'Created a story: Card on file at booking',
+  );
+  assert.equal(
     outboundReceipt({ action: 'create_ticket', container: 'PAY', issueType: 'Epic' }),
-    'Created a epic in PAY',
+    'Created an epic',
   );
   assert.equal(outboundReceipt({ action: 'create_ticket' }), 'Created a ticket');
   assert.equal(
@@ -754,23 +816,30 @@ test('sentLine: every send names an item the receipt can open', () => {
     name: 'Rollout plan',
     url: undefined,
   });
-  // A created ticket has no key until the send comes back with one, so the line
-  // names the key it made and says where it put it.
+  // A created ticket has no key until the send comes back with one. The line
+  // names the key it made and keeps the title. The key says the project, so
+  // the line does not.
   assert.deepEqual(
     sentLine({
       action: 'create_ticket',
-      container: 'Nordkap',
+      container: 'PAY',
       targetId: 'PAY-171',
+      title: 'Card on file at booking',
       url: 'https://example.atlassian.net/browse/PAY-171',
     }),
     {
       act: 'Created',
       item: 'PAY-171',
-      name: 'PAY-171',
       url: 'https://example.atlassian.net/browse/PAY-171',
-      tail: 'in Nordkap',
+      tail: 'Card on file at booking',
     },
   );
+  // No title: no tail.
+  assert.deepEqual(sentLine({ action: 'create_ticket', container: 'PAY', targetId: 'PAY-172' }), {
+    act: 'Created',
+    item: 'PAY-172',
+    url: undefined,
+  });
   assert.deepEqual(sentLine({ action: 'create_event', eventId: 'ev1', title: 'Nordkap sync' }), {
     act: 'Added',
     item: 'ev1',
@@ -800,7 +869,7 @@ test('sentLine: a send with nothing to open keeps the whole sentence', () => {
   // A card accepted before the send stamped its result carries no id, so the
   // line stays the flat receipt and draws no chip that opens nothing.
   assert.deepEqual(sentLine({ action: 'create_ticket', container: 'PAY' }), {
-    act: 'Created a ticket in PAY',
+    act: 'Created a ticket',
   });
   assert.deepEqual(sentLine({ action: 'comment_ticket' }), { act: 'Commented on a ticket' });
   assert.deepEqual(sentLine({ action: 'who_knows', targetId: 'X-1', title: 'Something' }), {

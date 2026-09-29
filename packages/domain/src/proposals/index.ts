@@ -18,6 +18,8 @@ export {
   outboundVerb,
   sentLine,
   ticketFieldRows,
+  ticketHead,
+  ticketKindLine,
   bareRef,
   titleForRef,
   nounForDir,

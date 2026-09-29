@@ -21,6 +21,8 @@ import {
   rsvpAnswer,
   sameInstant,
   ticketFieldRows,
+  ticketHead,
+  ticketKindLine,
   type NewPageFacts,
 } from '@qale/domain';
 import { useApp } from '../../state/app-state';
@@ -496,7 +498,11 @@ export function CardItem({
       onClick={settled ? undefined : onFocus}
       onFocus={settled ? undefined : onFocus}
       aria-label={
-        settled ? `${sent.line.act} ${sent.line.name ?? sent.line.item ?? ''}`.trim() : headline
+        settled
+          ? [sent.line.act, sent.line.name ?? sent.line.item, sent.line.tail]
+              .filter(Boolean)
+              .join(' ')
+          : headline
       }
       data-sent={settled ? '' : undefined}
       className={`overflow-hidden ${inGroup ? '' : 'rounded-lg bg-card'} ${rowFocusClass(!inGroup)}`}
@@ -538,7 +544,7 @@ export function CardItem({
           {!inGroup &&
             (outbound ? (
               sent ? (
-                <SentTargetLine payload={outbound} line={sent.line} onOpen={onOpen} />
+                <SentTargetLine line={sent.line} onOpen={onOpen} />
               ) : (
                 <OutboundTargetLine payload={outbound} onOpen={onOpen} />
               )
@@ -569,9 +575,10 @@ export function CardItem({
               line above named the event and the system and never once said
               which day or hour, which is the only thing a person checks. */}
               {outbound && <EventWhenLine payload={outbound} />}
-              {/* The ticket fields the draft set, which land under the PM's name and
-              are nowhere in the body they are about to read. */}
-              {outbound && <TicketFieldsLine payload={outbound} />}
+              {/* What kind of thing a ticket or a page is, where it lands, and
+              the ticket fields the draft set. The head is the thing, so these
+              facts sit on one quiet line under it. */}
+              {outbound && <OutboundKindLine payload={outbound} />}
               <div className={inGroup ? '' : 'mt-1'}>
                 {editing ? (
                   <EditFields
@@ -1062,13 +1069,16 @@ function useOutboundRefMeta(ob: OutboundPayloadDTO | null): ExternalRefMetaDTO |
 }
 
 /**
- * The target line under the outbound banner: what happens, to what, in the
- * PO's words, with the touched item as a live chip. A ticket chip carries its
- * key, its status and its kind, so the comment line is just "Comment on
- * [PAY-142 · Blocked]": no system, no ticket name. A page is addressed by an
- * opaque id, so its title is what identifies it and stays on the line. Every
- * branch without a chip (a new ticket, a calendar event) names the system,
- * because nothing else on the card says where it lands.
+ * The head of an outbound card: the thing the PO approves, at full ink. The
+ * button is the act, so the head says only what the button cannot.
+ *
+ * A new ticket's head is its title alone. Its system, type and project go on
+ * the quiet line under it (`OutboundKindLine`). A comment reads "Comment on
+ * [PAY-142 · Blocked]": the chip's state pill says what it is. A page reads
+ * "Update [Roadmap H2]", with the draft's title as the chip's fallback label
+ * because a page is addressed by an opaque id. A calendar card has no chip, so
+ * its sentence names the event and the system, because nothing else on the
+ * card says where it lands.
  */
 function OutboundTargetLine({
   payload,
@@ -1084,15 +1094,7 @@ function OutboundTargetLine({
   const quiet = 'text-muted-foreground';
 
   if (payload.action === 'create_ticket') {
-    return (
-      <div className={line}>
-        <span>
-          Create a{system ? ` ${system}` : ''} {payload.issueType?.toLowerCase() ?? 'ticket'}
-          {payload.container && <span className={quiet}> in {payload.container}</span>}
-        </span>
-        {payload.title && <span className={quiet}>: {payload.title}</span>}
-      </div>
-    );
+    return <div className={line}>{ticketHead(payload)}</div>;
   }
 
   // A calendar card touches no mirrored record, so the sentence is the whole
@@ -1137,7 +1139,6 @@ function OutboundTargetLine({
         target={ref}
         alias={payload.action === 'update_page' ? (payload.title ?? null) : null}
         onOpen={onOpen}
-        kind={payload.action === 'update_page' ? `${system ?? 'Wiki'} page` : null}
       />
     </div>
   );
@@ -1146,19 +1147,18 @@ function OutboundTargetLine({
 /**
  * The target line once the send has left: the same line, in past tense, with
  * the same chip. The line comes off the receipt the accept stamped, so a ticket
- * created a second ago wears the key it was given. A send whose item has no
- * address keeps its whole sentence in `act` and draws no chip.
+ * created a second ago wears the key it was given: "Created [BOK-431 · To Do]
+ * Card on file at booking". A send whose item has no address keeps its whole
+ * sentence in `act` and draws no chip. The chip carries no kind pill, as on
+ * the open card.
  */
 function SentTargetLine({
-  payload,
   line,
   onOpen,
 }: {
-  payload: OutboundPayloadDTO;
   line: SentCard['line'];
   onOpen: (path: string, opts?: NavOpts) => void;
 }) {
-  const system = providerName(payload);
   const cls = 'flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-medium text-foreground';
   const quiet = 'text-muted-foreground';
   if (!line.item) return <div className={`${cls} ${quiet}`}>{line.act}</div>;
@@ -1170,7 +1170,6 @@ function SentTargetLine({
         alias={line.name ?? null}
         url={line.url}
         onOpen={onOpen}
-        kind={payload.action === 'update_page' ? `${system ?? 'Wiki'} page` : null}
       />
       {line.tail && <span className={quiet}>{line.tail}</span>}
     </div>
@@ -1178,26 +1177,42 @@ function SentTargetLine({
 }
 
 /**
- * The ticket fields a draft set: "Labels: scheduling · Priority: High". One
- * quiet line, and only the fields the draft filled in. They belong on the card
- * because nothing else says them: the body is the description, and a label the
- * team does not use is caught here or not at all.
+ * The quiet line under an outbound head: what kind of thing it is, where it
+ * lands, and for a new ticket the fields the draft set. "Jira story in BOK ·
+ * Labels: scheduling · Priority: High", or "Confluence page".
+ *
+ * The fields belong on the card because nothing else says them: the body is
+ * the description, and a label the team does not use is caught here or not at
+ * all. A missing fact shortens the line and never leaves a stray separator. A
+ * comment gets no line, because its chip's state pill already says what it is.
  */
-function TicketFieldsLine({ payload }: { payload: OutboundPayloadDTO }) {
-  const rows = useMemo(() => ticketFieldRows(payload), [payload]);
-  if (payload.action !== 'create_ticket' || rows.length === 0) return null;
+function OutboundKindLine({ payload }: { payload: OutboundPayloadDTO }) {
+  const system = providerName(payload);
+  const kind =
+    payload.action === 'update_page' ? `${system ?? 'Wiki'} page` : ticketKindLine(payload, system);
+  const rows = useMemo(
+    () => (payload.action === 'create_ticket' ? ticketFieldRows(payload) : []),
+    [payload],
+  );
+  if (!kind && rows.length === 0) return null;
+  const parts: ReactNode[] = [
+    ...(kind ? [<span key="kind">{kind}</span>] : []),
+    ...rows.map((row) => (
+      <span key={row.label}>
+        {row.label}: <span className="text-foreground">{row.value}</span>
+      </span>
+    )),
+  ];
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-      {rows.map((row, i) => (
-        <span key={row.label} className="inline-flex items-center gap-2">
+      {parts.map((part, i) => (
+        <span key={i} className="inline-flex items-center gap-2">
           {i > 0 && (
             <span className="text-muted-foreground/50" aria-hidden>
               ·
             </span>
           )}
-          <span>
-            {row.label}: <span className="text-foreground">{row.value}</span>
-          </span>
+          {part}
         </span>
       ))}
     </div>

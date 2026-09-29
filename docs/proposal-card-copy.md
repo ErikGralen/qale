@@ -91,7 +91,9 @@ before you change a line. The table is a map, not a copy.
 | Update                            | `Update <title>`              | None. See below.                                                                           |
 | Standing instruction              | `Remember this: <rule>`       | Adds the rule to `<file>`. Every session reads it from now on.                             |
 | Standing instruction, conventions | `Remember this: <rule>`       | Adds the rule to How you write tickets. Read whenever it drafts for Jira.                        |
-| Outbound                          | `Comment on PAY-142`          | See `outboundEffect` in `effect.ts`.                                                       |
+| Outbound, comment                 | `Comment on PAY-142`          | See `outboundEffect` in `effect.ts`.                                                       |
+| Outbound, new ticket              | `Card on file at booking`     | Quiet line: `Jira story in BOK · Labels: no-show-fees`. See below.                        |
+| Outbound, page                    | `Update Roadmap H2`           | Quiet line: `Confluence page`.                                                             |
 
 ## Two rules it inherits
 
@@ -122,3 +124,21 @@ changes what every later session reads.
 the kinds with a real-world twin: a meeting, a person, a customer, a commitment
 someone else owes. On every card the clause becomes boilerplate the reader
 learns to skip, and a warning nobody reads protects nobody.
+
+## Why a send's head is the thing, not the act
+
+A new ticket used to read "Create a Jira story in BOK: Card on file at
+booking". Four things on one line at one weight: the act, the system, the
+project key and the title. The title is what the PO approves, and it came last,
+in grey. The act was already on the button.
+
+So the head of a send is the thing at full ink: the ticket's title, or the page
+as a chip. The button is the act. One quiet line under the head says where and
+what kind: "Jira story in BOK · Labels: no-show-fees" for a ticket, "Confluence
+page" for a page. A comment has no quiet line, because the ticket chip's state
+pill already says what it is. A missing fact shortens the quiet line; it never
+pads it.
+
+Once a ticket has left, the line reads "Created [BOK-431] Card on file at
+booking". The key carries the project, so "in BOK" is gone, and the title stays
+so the reader knows which ticket that key is.

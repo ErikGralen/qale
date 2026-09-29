@@ -53,7 +53,7 @@ export function DemoSettings({ info }: { info: DemoInfoDTO }) {
             <p>
               Press Reset once before a demo. It puts the workspace, Jira, Confluence and the
               calendar back to the start, dated today. Every scenario below is then available, with
-              no reset between them. Anything you did in the last demo goes.
+              no reset between them. Anything you did in the last demo is deleted.
             </p>
           </>
         }

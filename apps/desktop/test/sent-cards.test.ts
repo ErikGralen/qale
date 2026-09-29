@@ -69,7 +69,7 @@ test('a sitting send wins over the stored copy of the same id', () => {
   assert.equal(fresh.card, landed);
   assert.equal(old.fresh, false);
   assert.equal(old.at, T0 + 5);
-  assert.equal(old.line.act, 'Created a ticket in Nordkap');
+  assert.equal(old.line.act, 'Created a ticket');
 });
 
 test('a stored send takes its line from its payload', () => {

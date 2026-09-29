@@ -25,11 +25,11 @@ screen; every line cites its source.
 - **Since last time**: what changed that these participants have not been told. Compare their
   `last_told` entries against the decision spine and shipped tickets, and flag decisions they may
   still know only in the superseded version.
-- **Delivery**: ticket movement since the previous meeting, straight from the mirror notes
+- **Tickets**: ticket movement since the previous meeting, straight from the mirror notes
   ("Since 2026-07-09: BOK-412 In Progress → Done"). Leave out tickets that did not move.
 - **Open questions**: from the hubs' open-question lists, as checkboxes.
-- **Loose ends**: unresolved actions and commitments from the previous meeting in the series.
-- **Landmines**: anything promised externally that a current decision contradicts, or whose linked
+- **Who owes an answer**: unresolved actions and commitments from the previous meeting in the series.
+- **What will come up**: anything promised externally that a current decision contradicts, or whose linked
   ticket is blocked.
 
 A "last told" line with no ledger entry behind it is a guess; write that the ledger is empty

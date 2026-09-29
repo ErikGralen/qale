@@ -36,7 +36,7 @@
                   {
                     "header": "Online only",
                     "question": "Charge the no-show fee on online and Google bookings only, never on phone bookings?",
-                    "body": "A phone guest never saw the fee notice. [[notes/fee-rules]] and [[tickets/jira/BOK-300]] both say no fee on phone bookings.",
+                    "body": "[[notes/fee-rules]] and [[tickets/jira/BOK-300]] say no fee on phone bookings, because a phone guest never saw the fee notice. The stories will say so in plain words, so say now if that has changed.",
                     "options": [
                       { "label": "Yes, online and Google only", "description": "The stories say in plain words that phone bookings get no fee." },
                       { "label": "No, phone bookings too", "description": "Staff need a way to take a card over the phone, which is more work." }
@@ -45,7 +45,7 @@
                   {
                     "header": "A/B test",
                     "question": "Test two wordings of the fee notice before every restaurant sees it?",
-                    "body": "[[notes/fee-rules]] says the wording may cost bookings. An A/B test on a few restaurants first, before [[customers/brasserie-lund]] gets it.",
+                    "body": "[[notes/fee-rules]] says the wording may cost bookings. A test on a few restaurants first would show that before [[customers/brasserie-lund]] gets it.",
                     "options": [
                       { "label": "Yes, add a story for it", "description": "A third story: an A/B test and a report." },
                       { "label": "No, leave it out", "description": "One wording for every restaurant. We find out in December whether it costs bookings." }
@@ -53,7 +53,7 @@
                   },
                   {
                     "header": "Anything else",
-                    "question": "What is missing, what should merge, and what did I get wrong?"
+                    "question": "Anything else?"
                   }
                 ]
               }
@@ -110,7 +110,7 @@
                 "container": "BOK",
                 "kind": "Story",
                 "title": "Card on file at booking",
-                "body": "Brasserie Lund needs this before their Christmas bookings open on 1 November: a card on file at booking, so a no-show can be charged.\n\nPart of BOK-300 (no-show fees), first release. One fee per restaurant. Online and Google bookings only; a booking a member of staff takes by phone gets no fee. Card storage through PAY-190, which is done.\n\nAcceptance:\n- [ ] The guest enters a card on the booking page when the restaurant has fees on.\n- [ ] The card is stored through PAY-190 and never in the bookings service.\n- [ ] The confirmation says a fee applies and how much.\n\nSource: story round in Qale, 2026-07-17",
+                "body": "Brasserie Lund needs this before their Christmas bookings open on 1 November: a card on file at booking, so a no-show can be charged.\n\nPart of BOK-300 (no-show fees), first release. One fee per restaurant. Online and Google bookings only; a booking a member of staff takes by phone gets no fee. Card storage through PAY-190, which is done.\n\nAcceptance:\n- [ ] The guest enters a card on the booking page when the restaurant has fees on.\n- [ ] The card is stored through PAY-190 and never in the bookings service.\n- [ ] The confirmation says a fee applies and how much.\n\nSource: the fee rules and the Brasserie Lund reviews, drafted with Qale on 2026-07-17",
                 "labels": ["no-show-fees"],
                 "sources": [
                   "[[tickets/jira/BOK-300]]",
@@ -127,7 +127,7 @@
                 "container": "BOK",
                 "kind": "Story",
                 "title": "Charge the fee after a no-show",
-                "body": "Brasserie Lund lost about one table a night per restaurant to no-shows last December: this is the charge that makes the card on file worth taking.\n\nPart of BOK-300 (no-show fees), first release. The restaurant decides from the booking list; the charge runs the next morning, so a manager can undo a mistake the same evening. Uses the token PAY-190 stores.\n\nAcceptance:\n- [ ] The restaurant marks the booking as a no-show from the booking list.\n- [ ] The charge goes through the next morning, not on the spot.\n- [ ] The guest gets a receipt by text.\n\nSource: story round in Qale, 2026-07-17",
+                "body": "Brasserie Lund lost about one table a night per restaurant to no-shows last December: this is the charge that makes the card on file worth taking.\n\nPart of BOK-300 (no-show fees), first release. The restaurant decides from the booking list; the charge runs the next morning, so a manager can undo a mistake the same evening. Uses the token PAY-190 stores.\n\nAcceptance:\n- [ ] The restaurant marks the booking as a no-show from the booking list.\n- [ ] The charge goes through the next morning, not on the spot.\n- [ ] The guest gets a receipt by text.\n\nSource: the fee rules and the Brasserie Lund reviews, drafted with Qale on 2026-07-17",
                 "labels": ["no-show-fees"],
                 "sources": [
                   "[[tickets/jira/BOK-300]]",
@@ -144,7 +144,7 @@
                 "container": "BOK",
                 "kind": "Story",
                 "title": "Fee notice A/B test",
-                "body": "Brasserie Lund's 40 restaurants get the fee first, so the notice wording gets an A/B test on a few restaurants before every restaurant sees it.\n\nPart of BOK-300 (no-show fees), first release. An A/B test of two wordings of the notice on the booking page, a switch per restaurant, and a report, so we know before December whether the notice costs bookings.\n\nAcceptance:\n- [ ] Two wordings of the notice, tested as an A/B test.\n- [ ] A restaurant gets one or the other.\n- [ ] The report shows completed bookings per wording.\n\nSource: story round in Qale, 2026-07-17",
+                "body": "Brasserie Lund's 40 restaurants get the fee first, so the notice wording gets an A/B test on a few restaurants before every restaurant sees it.\n\nPart of BOK-300 (no-show fees), first release. An A/B test of two wordings of the notice on the booking page, a switch per restaurant, and a report, so we know before December whether the notice costs bookings.\n\nAcceptance:\n- [ ] Two wordings of the notice, tested as an A/B test.\n- [ ] A restaurant gets one or the other.\n- [ ] The report shows completed bookings per wording.\n\nSource: the fee rules and the Brasserie Lund reviews, drafted with Qale on 2026-07-17",
                 "labels": ["no-show-fees"],
                 "sources": [
                   "[[tickets/jira/BOK-300]]",
@@ -174,7 +174,7 @@
         },
         {
           "pause": 1500,
-          "text": "The stories are drafted before sprint planning on 2026-07-22, and the todo from the 1:1 is closed. Rebecca estimates once the stories are written, so no story carries a date."
+          "text": "The stories are drafted before sprint planning on 2026-07-22, and the todo from the 1:1 is closed. Rebecca estimates once the stories are written, so the stories have no dates yet."
         }
       ]
     }

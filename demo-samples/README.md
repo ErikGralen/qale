@@ -7,6 +7,9 @@ Bord makes table-booking software for restaurants: a guest books on the restaura
 through Google, and a text reminder goes out the day before. You are the product owner for the
 Bookings and Guest teams, and no-show fees is the big thing in flight.
 
+Two words below. A write that **lands** happens with no card. One that **waits** is a card you
+approve before anything leaves the workspace.
+
 ## Always first, in this order
 
 ### 1. The meeting produced actions
@@ -23,9 +26,12 @@ Bookings and Guest teams, and no-show fees is the big thing in flight.
 
 3. Qale files the transcript on yesterday's calendar page, then asks two questions on one card.
    Pick **Yes, end of October** on The date, and **Yes, same bug** on Reminders.
-4. These land on their own: the meeting write-up, an insight (no-show fees has a hard date, 1
-   November), the Brasserie Lund page, Lena's page, and three todos (you send Lena the plan by
-   next Friday, Marcus sends the renewal paperwork by Wednesday, you tell Lena the fix is out).
+4. These land on their own:
+   - the meeting write-up
+   - an insight: no-show fees has a hard date, 1 November
+   - the Brasserie Lund page and Lena's page
+   - three todos: you send Lena the plan by next Friday, Marcus sends the renewal paperwork by
+     Wednesday, you tell Lena the fix is out
 5. Three cards wait. Approve them one at a time: the comment on BOK-300 (target end of October),
    the comment on BOK-412 (Brasserie Lund saw the double reminder too), the Roadmap H2 patch (Q4
    becomes end of October).
@@ -68,15 +74,16 @@ Bookings and Guest teams, and no-show fees is the big thing in flight.
    names Kaffekopp as the account that left over exactly this.
 3. Two panels to copy: **For Ulrika and Petra to forward** (tabs Short, With what to do) and
    **For Jonas** (tabs To close the four tickets, Macro replacement). Copy the Short tab. Nothing
-   sends; the ledger lines on Sjögatan, Pizzeria Napoli, Ulrika, Petra and Jonas land on their
-   own.
+   sends. The pages for Sjögatan, Pizzeria Napoli, Ulrika, Petra and Jonas get a line saying what
+   they were told today. Those land.
 4. Same session, type this and send:
 
    ```
    From now on, when a fix ships, tell the CSMs before the changelog.
    ```
 
-5. Show: the reply says "Added to your rules". Open House rules and show the new line.
+5. Show: the reply says "Every session reads the house rules from now on". Open House rules and
+   show the new line.
 
 ### 4. Sales needs it to sign
 
@@ -90,14 +97,14 @@ decided."**
    Marcus Ek, #sales, 08:52. URGENT. Nordic Steak, 25 restaurants, are ready to sign this week. Their ops lead needs two things in the contract: group bookings with a set menu, and the Google "Book a table" button on every restaurant. Can I tell them both are coming this autumn? I NEED BOTH TO SIGN THEM.
    ```
 
-2. The first turn is quiet: the reads and one claim check. It takes a few seconds.
+2. Qale shows nothing for a few seconds while it reads.
 3. Question card, Q1 2027: the Google button has been live since May, group bookings waits on
    deposits. Pick **No, keep Q1 2027**.
 4. One panel, **Reply to Marcus**, in the sales voice: tabs **One message to forward** and **What
-   you can tell them**. Copy the first tab. An insight and the ledger lines on Nordic Steak and
-   Marcus land on their own. No card waits.
+   you can tell them**. Copy the first tab. An insight lands, and the Nordic Steak and Marcus pages
+   get a line saying what they were told. No card waits.
 5. Show: the closing line, "One yes and one no. The yes shipped on 2026-05-12 and sales was not
-   told." Memory, Insights, the new note on the third ask.
+   told." Then Memory, Insights, and the new note: sales has asked for group bookings three times.
 
 ### 5. The Friday update
 
@@ -117,10 +124,12 @@ decided."**
 **"I walk into steering not knowing what each person in the room has and has not heard."**
 
 1. Open **Calendar**, click **Steering** on Thursday, press **Get the brief**.
-2. The Prep section lands on the page, no card. It says: since last time (Åsa has not heard the October date, the
-   BOK-300 stories are drafted), delivery (BOK-412 fixed, table areas shipped, PAY-210 still has
-   no date), loose ends (Henrik owes a date), landmines (Marcus will push group bookings again,
-   and sales has not been told the Google button is live).
+2. The Prep section lands on the page, no card. Four parts:
+   - Since last time: Åsa has not heard the October date, and the BOK-300 stories are drafted.
+   - Tickets: BOK-412 fixed, table areas shipped, PAY-210 still has no date.
+   - Who owes an answer: Henrik, a date for PAY-210.
+   - What will come up: Marcus will push group bookings again, and sales has not been told the
+     Google button is live.
 3. Show: the Prep section on the meeting page, and the closing line: Åsa hears the October date
    from you, not from Marcus.
 

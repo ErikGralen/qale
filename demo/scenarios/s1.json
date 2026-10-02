@@ -2,7 +2,7 @@
   "version": 1,
   "id": "s1",
   "title": "The meeting produced actions",
-  "do": "Drag brasserie-lund-review.vtt from the Qale demo files folder into Home. It lands in the composer. Type: yesterday's Brasserie Lund review, nobody wrote anything down. Send. On the question card, pick Yes, end of October and Yes, same bug.",
+  "do": "Drag brasserie-lund-review.vtt from the Qale demo files folder into Home, then send with no typed text. Accept the question card and the proposal cards that follow.",
   "offScript": "That is outside what this demo can show. The six things it can do are listed in Settings, under Demo.",
   "lookups": {
     "claims": {
@@ -98,8 +98,8 @@
                 "questions": [
                   {
                     "header": "The date",
-                    "question": "Is end of October the new date for no-show fees?",
-                    "body": "The [[customers/brasserie-lund]] page says Q4, told on 2026-06-02. Yesterday you told Lena end of October.",
+                    "question": "Is end of October the new date for No-show Fees?",
+                    "body": "The [[customers/brasserie-lund]] page says Q4. Yesterday you told Lena end of October.",
                     "options": [
                       {
                         "label": "Yes, end of October",

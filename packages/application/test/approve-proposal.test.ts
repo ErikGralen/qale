@@ -13,7 +13,7 @@ import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../src
 // A card the PM approved leaves the same Activity row a silent write leaves
 // (docs/receipt-redesign.md RC-4), so the chat and Activity can put it back
 // through the one revert path. Only the reason differs: "You approved it."
-// A send records nothing, because nothing that has left the machine comes back.
+// An outbound update records nothing, because nothing that has left the machine comes back.
 
 interface Stored {
   frontmatter: Frontmatter;
@@ -271,7 +271,7 @@ test('an approved delete card leaves a row whose undo is a restore', async () =>
   assert.deepEqual(activity[0]!.revert, { commit: 'c0ffee', undo: 'restore' });
 });
 
-test('an approved send leaves no row, because nothing sent can be put back', async () => {
+test('an approved outbound update leaves no row, because nothing sent can be put back', async () => {
   const { ctx, activity, sent } = fakeContext();
   const rec = createProposal(ctx, {
     ...base,
@@ -289,7 +289,7 @@ test('an approved send leaves no row, because nothing sent can be put back', asy
   const result = await approveProposal(ctx, rec.id);
 
   assert.equal(result.ok, true);
-  assert.equal(sent.length, 1, 'the send went out');
+  assert.equal(sent.length, 1, 'the outbound update went out');
   assert.equal(activity.length, 0);
   assert.equal(result.activityId, undefined);
 });
@@ -336,7 +336,7 @@ test('a silent write still records exactly one row, in the policy words', async 
   assert.notEqual(activity[0]!.reason, APPROVED_REASON);
 });
 
-test('an approved send stamps where it landed onto the card', async () => {
+test('an approved outbound update stamps where it landed onto the card', async () => {
   // The green receipt reads the card back a week later, so the card has to know
   // which ticket it made. The drafted body stays exactly as it was.
   const { ctx } = fakeContext();

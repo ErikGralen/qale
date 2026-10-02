@@ -90,12 +90,12 @@ Memory: SCIM ships in Q2 · Nordkap · Åsa Lind                                
 
 Then the agent's two sentences on what the meeting meant.
 
-The H2 steering batch: one Memory line, two sends waiting under it in `SessionReview` as
-today. After the PM approves both: the two sends draw as "Sent" rows under a "Sent" group, the
+The H2 steering batch: one Memory line, two outbound updates waiting under it in `SessionReview` as
+today. After the PM approves both: the two outbound updates draw as "Sent" rows under a "Sent" group, the
 tally reads "Approved 2", and the door points at Sessions if another session has cards.
 
 Rules the sketch keeps from RR-3 and FA-4: the change is always on screen, the diff sits behind
-the chevron, a group heading is not a cursor stop, every row is, and a send keeps its full text
+the chevron, a group heading is not a cursor stop, every row is, and an outbound update keeps its full text
 behind the chevron because it cannot be taken back.
 
 ## Tickets
@@ -127,8 +127,8 @@ Decision: build (Erik, 2026-09-08).
 
 **RC-4 An approved write leaves an Activity row.** `acceptProposal` reached from the UI's
 approve records an Activity row with the reason "you approved it", so the chat and Activity can
-put it back with the one existing `activity:revert`. A send records no row (nothing to put
-back). Tests: approve then revert; a send leaves no row.
+put it back with the one existing `activity:revert`. An outbound update records no row (nothing to put
+back). Tests: approve then revert; an outbound update leaves no row.
 Decision: build (Erik, 2026-09-08).
 
 **RC-5 Old sessions.** A row from before FA-4 has no fields, so RC-1 cannot place it by path. It
@@ -160,9 +160,9 @@ RC-3 draws a put-back it cannot honour without RC-4. RC-5 last.
   says nothing the eye did not already get.
 - **A row for a write that failed.** The trail shows a failed step, and a failed write changes
   nothing for the PM. Left open below rather than built.
-- **A group container around approved sends.** Three sends collapsed into one green block above
+- **A group container around approved outbound updates.** Three outbound updates collapsed into one green block above
   the cards, so the answer to a press showed up somewhere other than the button that was pressed.
-  Each send keeps its own card.
+  Each outbound update keeps its own card.
 
 ## Open
 
@@ -176,7 +176,7 @@ RC-3 draws a put-back it cannot honour without RC-4. RC-5 last.
 Unit tests beside `receipt-block.test.ts` and `change-line.test.ts` for each ticket. Then the
 Nordkap transcript through the real app on a scratch userData (the session UI screenshot
 recipe), looked at: the group order, the todo lines, the folded memory line, and the approved
-block after judging the H2 sends. `pnpm test` and `pnpm check-types` from the root. Copy per
+block after judging the H2 outbound updates. `pnpm test` and `pnpm check-types` from the root. Copy per
 CLAUDE.md: STE, Zinsser, no em dashes.
 
 ## Notes
@@ -216,8 +216,8 @@ Not run in the app.
 Built 2026-09-08. `approveProposal(ctx, id, edited?)` in `packages/application/src/use-cases/proposals.ts`
 sits beside `acceptProposal`: it reads the card, accepts it, and records the Activity row through
 the existing `recordActivity`. `fileProposal` and `applyAndRecord` still call the bare
-`acceptProposal`, so nothing records twice. A send records nothing. The reason is one exported
-string, `APPROVED_REASON` ("You approved it.") in `policy.ts` beside `SEND_WAITS_REASON`. The line
+`acceptProposal`, so nothing records twice. An outbound update records nothing. The reason is one exported
+string, `APPROVED_REASON` ("You approved it.") in `policy.ts` beside `OUTBOUND_WAITS_REASON`. The line
 is `activityLine`, unchanged, so an approved write reads like a silent one and only the reason
 differs. `recordActivity` now says `restore` for a delete card as well as an update; that branch
 had never run because deletes always waited. `AcceptResult`, the `proposals:accept` IPC result and
@@ -225,7 +225,7 @@ the renderer's `acceptProposal` gained an optional `activityId`, filled only by 
 The `proposals:accept` handler calls `approveProposal`.
 
 Checked: `approve-proposal.test.ts` (7 tests: note, update, decision and delete each leave one row
-with the reason, the commit and the right undo; a send leaves none; a failed apply leaves none; the
+with the reason, the commit and the right undo; an outbound update leaves none; a failed apply leaves none; the
 silent path still records exactly one) and `restore-version.test.ts` (an approved note put back is
 gone, an approved update goes back byte for byte). application 313, desktop 477, vault 58 (12
 skipped, pre-existing), domain 303, agent 367, 0 fail; `pnpm check-types --force` 11 of 11. Not run
@@ -260,7 +260,7 @@ Built 2026-09-08. `AppliedVerb` gained "Sent" and `appliedVerb` returns it for a
 builds in the application layer, off the same payload: verb, title (the update's own retitle first,
 then `cardTargetTitle`), `changeLine`, path, proposalId, inferred. It cannot fill `before`, because
 the note as it read before the write is gone by the time a card is judged, so an update's line says
-what moved without what it moved from. A send gets verb "Sent", the thing it touched as the title,
+what moved without what it moved from. An outbound update gets verb "Sent", the thing it touched as the title,
 the receipt sentence as the change line, no path and no way back. `receiptOf` returns
 `{accepted, rejected, rows}`; `receiptPaths` names the files the caller looks up. `receiptEntry`,
 `ReceiptEntry`, `ReceiptLines`, `Receipt.tsx` and the dead `touched` array in `useApprovals` are gone.
@@ -273,17 +273,17 @@ fake ports in the application and vault tests gained the method.
 `SessionReview`'s closing branch draws `LandedRows` under the tally and above the door, with real
 titles from a new `useNoteNames` hook. `LandedRows` gained `label` (null where the block already
 names the list) and `turnBack` (off here, because the rows are a sitting's approvals, not one
-turn's writes). A Sent row wears the send card's ink arrow. `landedPreview` returns the message
+turn's writes). A Sent row wears the outbound card's ink arrow. `landedPreview` returns the message
 body for an outbound card, so the full text sits behind the chevron.
 
 Checked: desktop 485 pass 0 fail (7 new tests), domain 303, application 313, vault 58 pass with the
 12 pre-existing skips; `pnpm check-types` 11 of 11; eslint 0 errors, 34 pre-existing warnings. Not
 run in the app.
 
-### RC-3, revised 2026-09-11: a send keeps its card
+### RC-3, revised 2026-09-11: an outbound update keeps its card
 
 Decision (Erik, 2026-09-11): the grouped green "Left your workspace" block is gone. An approved
-send keeps its own card, in the place it was judged, and settles there. Every send is its own
+outbound update keeps its own card, in the place it was judged, and settles there. Every outbound update is its own
 card even after approval; nothing groups them. The card the PM just pressed is the card that
 answers.
 
@@ -304,14 +304,14 @@ at once and nothing moves. Both respect prefers-reduced-motion (`motion-reduce:t
 
 How it is built:
 
-- `lib/sent-cards.ts` (pure): `sentCards(sitting, stored)` merges the sends approved in this
+- `lib/sent-cards.ts` (pure): `sentCards(sitting, stored)` merges the outbound updates approved in this
   sitting (their line carries the key and url a ticket was given on landing) with the accepted
   outbound cards read back from `proposals:resolved`; the sitting copy wins by id, sorted by
   created. `mergeReviewCards(pending, held, sent)` dedups by id, pending first, then held, then
   sent. Five tests in `test/sent-cards.test.ts`.
-- `useApprovals` (`approvals.tsx`): `sent` is now `SittingSend[]` (card, line, time). New
-  `held: ProposalDTO[]`: a send card whose accept is in flight. The pending list drops the card
-  the moment main accepts it, a beat before the send's result is back, and a card that vanished
+- `useApprovals` (`approvals.tsx`): `sent` is now `SittingOutbound[]` (card, line, time). New
+  `held: ProposalDTO[]`: an outbound card whose accept is in flight. The pending list drops the card
+  the moment main accepts it, a beat before the outbound update's result is back, and a card that vanished
   for one frame would flicker. Cleared in `finally`, batched with the result. `SentReceipts`,
   `SentReceipt` and `sentReceiptOf` are deleted; `sentLineOf(ob, landed)` remains.
 - `SessionReview.tsx`: one `<section>` for both states (cards waiting, nothing waiting).
@@ -320,7 +320,7 @@ How it is built:
   `orderCards(mergeReviewCards(cards, approvals.held, sent))`; the cursor still walks only the
   pending rows. `LandedRows` for the internal approved writes draws under the cards once
   nothing waits, as before.
-- `CardRows.tsx`: new `settled` map prop. A settled send is never grouped under a target header;
+- `CardRows.tsx`: new `settled` map prop. A settled outbound update is never grouped under a target header;
   it keeps its own row where the order put it.
 - `CardItem.tsx`: new `sent?: SentCard | null` prop. When set: not a cursor stop (no tabIndex,
   no focus handlers), `data-sent`, `SentTargetLine` (past tense, same chip, same `kind` label
@@ -373,8 +373,8 @@ page. A new page or a new todo says nothing after the chip. A to-do line never s
 no owner in front), and hover shows the verb, the name and the full change. The chevron and Undo
 stay. Old transcripts keep the owner-first line they recorded.
 
-And the green "Left your workspace" card now stays for approved sends: once every card is judged,
-the closing branch draws the sends through `SentReceipts` from the stored cards (every send, not
+And the green "Left your workspace" card now stays for approved outbound updates: once every card is judged,
+the closing branch draws the outbound updates through `SentReceipts` from the stored cards (every outbound update, not
 the last three) and only the other approved cards as lines. Before, the card turned into lines the
 moment the last card was judged, which read as a second thing happening.
 
@@ -392,12 +392,12 @@ away, which stays red. `MARK` is a `Record<AppliedVerb, LucideIcon>` again, with
 **Every line on the green card opens its item.** "Created a task in Nordkap" said a ticket exists
 somewhere and gave no way to it. `sentLine(payload)` in `card-copy.ts` splits the receipt sentence
 into act, item, tail, so the card draws the item as the chip a ticket wears in a page: "Commented on
-[PAY-142]", "Created [PAY-171] in Nordkap", "Added [Kickoff] to your calendar". A send whose item has
+[PAY-142]", "Created [PAY-171] in Nordkap", "Added [Kickoff] to your calendar". An outbound update whose item has
 no address keeps the whole sentence and draws no chip.
 
-For that to work a week later the send stamps where it landed: `acceptOutbound` writes
+For that to work a week later the outbound update stamps where it landed: `acceptOutbound` writes
 `targetId` and `url` onto the DRAFTED payload (never onto the edited one, which is the record of how
-the PM writes), and `AcceptResult` carries `externalId` so the line drawn the second after a send
+the PM writes), and `AcceptResult` carries `externalId` so the line drawn the second after an outbound update
 says the same thing as the line drawn when the session is reopened. `zOutboundPayload` and
 `OutboundPayloadDTO` gained `url`. A chip whose item has no mirror yet — a ticket created a second
 ago — opens the provider: `ExternalRefChip` takes a `url`, and `openExternalRef` uses it only after
@@ -409,3 +409,37 @@ glance in ink, and the green card says "Commented on SCH-118", "Commented on SCH
 Roadmap H2", each one a chip that opens the item. A copied profile only finds its own cards when
 `vaultPath` still points at the workspace it was written under: the app db is named for a hash of
 that path, so pointing a scratch profile at a copied workspace hands you an empty store.
+
+### Several updates open one at a time (2026-09-30)
+
+Decision (Erik, 2026-09-30): when a session has two or more outbound updates, they show one by one, and the
+ones that left stay in the chat. It uses the question card's design so it looks familiar. The same day
+he chose the word "update" for what these docs used to call a "send". The app says "update", and
+code and docs say "outbound update", because `outbound` is the kind's name and `update` is already
+the card that edits a note.
+
+Three tickets used to draw as three full cards, each with its whole message on it. Now the outbound updates
+share one card. It has the ring the question card has, which says the session waits here. Each
+outbound update is one row in it. One row is open, with the message and the usual three controls. An outbound update
+that waits shows its head alone, and a click on the row opens it. An outbound update that left settles on its
+own row, as RC-3 says, and the next waiting outbound update opens under it in the same motion. The rows
+never reorder. The foot has the count ("2 of 3") and Back and Skip. Skip sends nothing and
+discards nothing: it leaves the open outbound update waiting and opens the next one. When the last outbound update
+leaves, the foot folds away and the ring goes back to the hairline. A reopened session draws the
+same card with every row settled. One outbound update alone is still an ordinary card.
+
+The motion is the RC-3 fold, used for every row: grid row 1fr to 0fr over 250ms on
+`cubic-bezier(0.16, 1, 0.3, 1)`, with the message fading over 200ms. The controls fade in on a
+row that opens after it was closed. All of it respects prefers-reduced-motion.
+
+How it is built:
+
+- `lib/outbound-steps.ts` (pure): `currentOutbound(ids, waiting, picked)` says which row is open, and
+  `stepOutbound` finds the waiting row one step away. Seven tests in `test/outbound-steps.test.ts`.
+- `CardRows.tsx`: `OutboundSteps` draws the outbound updates when there are two or more, counting the settled
+  ones. The roving cursor opens the outbound update it lands on, so the arrow keys step through them.
+- `CardItem.tsx`: new `step` prop (`open` or `closed`). A closed row folds its message, drops
+  the controls for one chevron, and is inert under the fold.
+- `proposal-store.ts`: `created` is now unique. Three tickets drafted in one turn shared a
+  millisecond, every list sorts on `created`, and two rows could swap places between renders.
+

@@ -3,16 +3,16 @@ import { Button } from '@qale/ui';
 import { Check } from 'lucide-react';
 import type { MeetingReviewAskDTO, OutboundPayloadDTO, ProposalDTO } from '@qale/ipc';
 import { useApp } from '../../state/app-state';
-import type { SittingSend } from '../../lib/sent-cards';
+import type { SittingOutbound } from '../../lib/sent-cards';
 import { useToast } from '../toast';
 import { outboundAct, sentLine, staleAcceptMessage, type SentLine } from './shared';
 
 /**
- * The receipt line for one send: the sentence, with the item split out so the
+ * The receipt line for one outbound update: the sentence, with the item split out so the
  * card can draw it as the chip a ticket wears in a page.
  *
- * The send's own result is folded in, because the card in memory was written
- * before the send and a ticket created a second ago has no key on it yet. Once
+ * The outbound update's own result is folded in, because the card in memory was written
+ * before the outbound update and a ticket created a second ago has no key on it yet. Once
  * a session is reopened the same line comes off the stored card, which the
  * accept stamped with the same two facts.
  */
@@ -41,15 +41,15 @@ export interface Approvals {
   busy: boolean;
   /** Per card: why the last accept or discard did not land. */
   errors: Record<string, string>;
-  /** Outbound sends refused because the target moved after drafting. */
-  staleSends: Record<string, boolean>;
+  /** Outbound updates refused because the target moved after drafting. */
+  staleOutbound: Record<string, boolean>;
   receipt: { accepted: number; rejected: number };
-  /** The sends that left in this sitting. Each keeps its card on screen,
+  /** The outbound updates that left in this sitting. Each keeps its card on screen,
    *  settled (docs/receipt-redesign.md, RC-3 revised 2026-09-11). */
-  sent: SittingSend[];
+  sent: SittingOutbound[];
   /**
    * Send cards whose accept is in flight. The pending list drops a card the
-   * moment main accepts it, a beat before the send's result is back, and a
+   * moment main accepts it, a beat before the outbound update's result is back, and a
    * card that vanished for one frame and came back settled would flicker. So
    * the review keeps drawing these until the result lands, one way or the
    * other.
@@ -71,9 +71,9 @@ export function useApprovals(): Approvals {
   // boolean would go false between two cards and re-arm every button mid-run.
   const [busyCount, setBusyCount] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [staleSends, setStaleSends] = useState<Record<string, boolean>>({});
+  const [staleOutbound, setStaleOutbound] = useState<Record<string, boolean>>({});
   const [receipt, setReceipt] = useState({ accepted: 0, rejected: 0 });
-  const [sent, setSent] = useState<SittingSend[]>([]);
+  const [sent, setSent] = useState<SittingOutbound[]>([]);
   const [held, setHeld] = useState<ProposalDTO[]>([]);
   const [reviewAsks, setReviewAsks] = useState<MeetingReviewAskDTO[]>([]);
   const toast = useToast();
@@ -136,7 +136,7 @@ export function useApprovals(): Approvals {
         noteReviewAsk(r.review);
         if (r.ok) {
           setReceipt((x) => ({ ...x, accepted: x.accepted + 1 }));
-          setStaleSends((s) => {
+          setStaleOutbound((s) => {
             const next = { ...s };
             delete next[p.id];
             return next;
@@ -148,10 +148,10 @@ export function useApprovals(): Approvals {
           return true;
         }
         if (r.stale && p.kind === 'outbound') {
-          // The target moved after this was drafted; main refused the send and
+          // The target moved after this was drafted; main refused the outbound update and
           // the card stays pending. The card's error row grows an explicit
           // "Approve anyway" that re-accepts with a refreshed snapshot.
-          setStaleSends((s) => ({ ...s, [p.id]: true }));
+          setStaleOutbound((s) => ({ ...s, [p.id]: true }));
           setError(
             p.id,
             r.error ??
@@ -208,7 +208,7 @@ export function useApprovals(): Approvals {
 
   const acceptAll = useCallback(
     async (cards: ProposalDTO[]) => {
-      // Outbound never rides along in a batch — each send is its own decision.
+      // Outbound never rides along in a batch — each outbound update is its own decision.
       const batch = cards.filter((c) => c.kind !== 'outbound');
       const release = hold();
       try {
@@ -247,7 +247,7 @@ export function useApprovals(): Approvals {
   return {
     busy: busyCount > 0,
     errors,
-    staleSends,
+    staleOutbound,
     receipt,
     sent,
     held,

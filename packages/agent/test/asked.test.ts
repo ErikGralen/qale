@@ -15,7 +15,7 @@ import { createDraftTools, createProposeTools } from '../src/tools.js';
  * it keeps the flag, a run with nobody in it loses it whatever the call says,
  * and an answered question is as good as a message.
  *
- * A send is not in this: the draft tools set no flag at all, and the last test
+ * An outbound update is not in this: the draft tools set no flag at all, and the last test
  * holds that line.
  */
 
@@ -40,7 +40,13 @@ const BODY = '# Rollout runbook\n\nEntra goes first, then the pilot.\n';
  * card (`rewritesUserText` in the application package).
  */
 function docCtx(filed: Record<string, unknown>[]): UseCaseContext {
-  const note = { path: DOC, slug: DOC.replace(/\.md$/, ''), type: 'note', frontmatter: {}, body: BODY };
+  const note = {
+    path: DOC,
+    slug: DOC.replace(/\.md$/, ''),
+    type: 'note',
+    frontmatter: {},
+    body: BODY,
+  };
   const rows = new Map<string, Record<string, unknown>>();
   return {
     vault: {
@@ -73,10 +79,7 @@ function docCtx(filed: Record<string, unknown>[]): UseCaseContext {
   } as unknown as UseCaseContext;
 }
 
-const updateTool = (
-  ctx: UseCaseContext,
-  facts?: { pmTurn: boolean; askAnswered: boolean },
-) =>
+const updateTool = (ctx: UseCaseContext, facts?: { pmTurn: boolean; askAnswered: boolean }) =>
   createProposeTools(ctx, 'session-1', undefined, undefined, facts ? () => facts : undefined).find(
     (t) => t.name === 'propose_update',
   )!;
@@ -183,14 +186,18 @@ function ticketCtx(filed: Record<string, unknown>[]): UseCaseContext {
 }
 
 /**
- * The constraint above every ticket in the doc: a send waits for the PM, and no
+ * The constraint above every ticket in the doc: an outbound update waits for the PM, and no
  * flag reaches it. The draft tools take no `asked` parameter, so a caller that
  * passes one is passing a field nothing reads.
  */
 test('a draft never carries the flag, even when the caller sends one', async () => {
   const filed: Record<string, unknown>[] = [];
-  const tool = createDraftTools(ticketCtx(filed), 'session-1', undefined, undefined, () =>
-    CONTAINERS,
+  const tool = createDraftTools(
+    ticketCtx(filed),
+    'session-1',
+    undefined,
+    undefined,
+    () => CONTAINERS,
   ).find((t) => t.name === 'draft_ticket')!;
 
   const said = await out(tool, {

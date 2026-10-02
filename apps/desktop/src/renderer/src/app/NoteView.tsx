@@ -341,6 +341,10 @@ export function NoteView({ path }: { path: string }) {
   }
 
   const editable = currentNote.bodyEditable;
+  // Null for an editable note and for a mirror (its live page chip already
+  // says where the text lives) — a sentence appears only when there is
+  // something left to explain.
+  const readOnlyReasonText = editable ? null : readOnlyReason(currentNote.type);
   // The ticket's key upstream (PAY-142) — what a PO pastes into standups and
   // Slack, so the ⋯ menu offers it without a trip to the tracker.
   const ticketKey =
@@ -471,10 +475,7 @@ export function NoteView({ path }: { path: string }) {
   const TypeIcon = noteTypeIcon(currentNote.type);
 
   return (
-    <div
-      className={`flex h-full flex-col ${aimed.over ? DROP_OVER : ''}`}
-      {...aimed.handlers}
-    >
+    <div className={`flex h-full flex-col ${aimed.over ? DROP_OVER : ''}`} {...aimed.handlers}>
       <PageHeader
         icon={TypeIcon}
         crumbs={crumbs.length > 0 ? crumbs : undefined}
@@ -755,11 +756,11 @@ export function NoteView({ path }: { path: string }) {
               readOnlyReason), so every read-only surface says the same thing.
               The way there is the fact strip's "Open in Jira" door above — the
               sentence does not repeat it. */}
-          {!editable && (
+          {readOnlyReasonText && (
             <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <Lock className="size-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
-                {readOnlyReason(currentNote.type, currentNote.frontmatter)}
+                {readOnlyReasonText}
               </span>
             </p>
           )}

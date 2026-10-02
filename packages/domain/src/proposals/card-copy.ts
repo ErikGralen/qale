@@ -116,7 +116,7 @@ export interface OutboundCopyInput {
   components?: string[];
   /** google-calendar: the event the card addresses. */
   eventId?: string;
-  /** Where the item lives at the provider, stamped on the payload once the send
+  /** Where the item lives at the provider, stamped on the payload once the outbound update
    *  landed. It is how a receipt line opens a ticket the workspace has not
    *  mirrored yet. */
   url?: string;
@@ -130,24 +130,6 @@ export function ticketKind(ob: OutboundCopyInput): string {
 
 /** "a story", "an epic". */
 const withArticle = (noun: string): string => (/^[aeiou]/i.test(noun) ? `an ${noun}` : `a ${noun}`);
-
-/**
- * The first part of the quiet line under a new ticket's head: what kind of
- * thing it is and where it lands. "Jira story in BOK". The head is the title
- * alone, so this line is the only place the card says the system, the type and
- * the project.
- *
- * The system name is passed in, because the renderer owns the provider labels.
- * A missing fact shortens the line: "Story in BOK", "Jira story", "Story".
- * Returns null for any card that is not a new ticket.
- */
-export function ticketKindLine(ob: OutboundCopyInput, system: string | null): string | null {
-  if (ob.action !== 'create_ticket') return null;
-  const kind = ticketKind(ob);
-  const container = ob.container?.trim();
-  const words = system ? `${system} ${kind}` : kind.charAt(0).toUpperCase() + kind.slice(1);
-  return container ? `${words} in ${container}` : words;
-}
 
 /** The head of a new ticket card: its title, or "New story" when the draft
  *  has none, so the head is never blank. */
@@ -886,7 +868,7 @@ export function outboundReceipt(ob: OutboundCopyInput): string {
  * Every line names a real thing and every line opens it. A sentence that says
  * "Created a task in Nordkap" tells the PM a ticket exists somewhere and gives
  * them no way to it, which is the one thing they want the second after they
- * approve a send. So the send stamps where it landed onto the card, and the
+ * approve an outbound update. So the outbound update stamps where it landed onto the card, and the
  * line reads act, item, tail: "Commented on [PAY-142]", "Created [PAY-171]
  * Card on file at booking", "Added [Kickoff] to your calendar".
  *
@@ -894,7 +876,7 @@ export function outboundReceipt(ob: OutboundCopyInput): string {
  * already says the project. It has no `name` either, so the chip shows the key
  * and the ticket's live state by itself.
  *
- * A send whose item has no address keeps the whole sentence in `act` and draws
+ * An outbound update whose item has no address keeps the whole sentence in `act` and draws
  * no chip. Cards accepted before the stamp existed take that path.
  */
 export interface SentLine {

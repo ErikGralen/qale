@@ -14,8 +14,8 @@
  * have neither, so the flag is cleared there whatever the call says. The
  * parameter stays a hint the model writes; this decides.
  *
- * A send is not this file's business and never needs to be. The draft tools set
- * no flag, and a send waits for the PM whatever any flag says (FA-1).
+ * An outbound update is not this file's business and never needs to be. The draft tools set
+ * no flag, and an outbound update waits for the PM whatever any flag says (FA-1).
  */
 
 /** What the runtime knows about who was in this session. */

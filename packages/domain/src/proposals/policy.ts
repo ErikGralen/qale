@@ -1,8 +1,8 @@
 /**
  * The write policy: which writes wait for the PM (docs/fewer-approvals.md FA-1).
  *
- * The rule is what a write DOES, not where the file sits. Five things wait: a
- * send out of the workspace, a delete, a rewrite of prose the PM typed,
+ * The rule is what a write DOES, not where the file sits. Five things wait: an
+ * outbound update that leaves the workspace, a delete, a rewrite of prose the PM typed,
  * anything Qale had to assume, and a new page in Documents. Everything else
  * lands as it is written: a meeting page from a transcript, a todo, text added
  * at the end, and all of Qale's memory. Git commits every landed write,
@@ -196,11 +196,11 @@ export function isMachineryField(field: string): boolean {
 }
 
 /**
- * Why a send waits. Written down once, because two pieces of code say it: the
- * rule below, and the guard in `fileProposal` that refuses to apply a send even
+ * Why an outbound update waits. Written down once, because two pieces of code say it: the
+ * rule below, and the guard in `fileProposal` that refuses to apply an outbound update even
  * when the rule somehow answers otherwise.
  */
-export const SEND_WAITS_REASON = 'Nothing sent to another system can be taken back.';
+export const OUTBOUND_WAITS_REASON = 'Nothing sent to another system can be taken back.';
 
 /**
  * Why a write that came off a card needed no card: it had one, and the PM said
@@ -234,10 +234,10 @@ function isNewUserDocument(facts: WriteFacts): boolean {
 /**
  * The five writes that wait, wherever they point. First rule that matches wins.
  *
- * 1. A send goes to Jira, Confluence, a calendar or mail, and the code has no
- *    compensating action for it. One card per send, every time (E-7). No flag
+ * 1. An outbound update goes to Jira, Confluence, a calendar or mail, and the code has no
+ *    compensating action for it. One card per outbound update, every time (E-7). No flag
  *    and no other rule can reach past this one: `fileProposal` refuses the
- *    silent branch for a send as well, so two pieces of code have to be wrong
+ *    silent branch for an outbound update as well, so two pieces of code have to be wrong
  *    before something leaves on its own.
  * 2. A delete takes a page away. Git can put the file back, but the links to it
  *    break the moment it goes, and one quiet line in the chat is too little for
@@ -256,7 +256,7 @@ function isNewUserDocument(facts: WriteFacts): boolean {
  */
 function rulingThatWaits(facts: WriteFacts): WriteRuling | null {
   if (facts.kind === 'outbound') {
-    return { disposition: 'ask', reason: SEND_WAITS_REASON };
+    return { disposition: 'ask', reason: OUTBOUND_WAITS_REASON };
   }
   if (facts.kind === 'delete') {
     return { disposition: 'ask', reason: 'A deleted page cannot be put back.' };

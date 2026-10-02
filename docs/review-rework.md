@@ -30,7 +30,7 @@ sets `asked`, so it never comes back as a second question.
 **One row shape.** Every card is the same row: the thing that changes, then the change. The
 effect line, the source, the rationale and Edit sit behind the chevron. The batch says its
 source once, in the heading. There is one Approve all with one count, and the heading says
-in a few words why the count is smaller than the list when sends are in it.
+in a few words why the count is smaller than the list when outbound updates are in it.
 
 **Rows group by target.** Two changes to the same todo, or a todo and a hub edit about the same
 customer, sit together under the target's real title. Grouping keys on the target path, never on
@@ -51,7 +51,7 @@ the most interesting changes in the batch (a todo's new due date and a worse cus
 - RR-2 Prompts: ask_user answer counts as `asked`; the closing wrap is one or two sentences and
   never lists the proposals.
 - RR-3 Review surface: one row component; target + change; detail behind the chevron; group by
-  target; source in the heading; one Approve all; sends keep their full text but the same chrome;
+  target; source in the heading; one Approve all; outbound updates keep their full text but the same chrome;
   housekeeping fold and IntentRow deleted; real titles; tests.
 
 ## Notes
@@ -130,7 +130,7 @@ export block and the `groupByTarget` block are both in it.
 Built: one row for every card, in `apps/desktop/src/renderer/src/components/review/`.
 
 The row: the glyph of the thing that changes, its real title, the change, and the same three
-controls (approve, discard, chevron) in the same place at the same size. A send keeps the ink arrow
+controls (approve, discard, chevron) in the same place at the same size. An outbound update keeps the ink arrow
 beside the glyph and names its act on the approve control ("Post", "Update", "Reply"); a delete says
 "Delete". Everything else sits behind the chevron: the effect line, the rationale, "Based on", the
 source when the heading does not name it, and Edit.
@@ -138,16 +138,16 @@ source when the heading does not name it, and Edit.
 - **The change is always on screen.** A new to-do says "Rebecca Holm · due 24 Sep · <first line>"; a
   new meeting page says the day, how many sat in it, and its first line. An update draws the
   property changes (`due: 4 Sep → 11 Sep`) and the redline, clamped to about six lines with
-  "Show all". A send draws the whole message, scrollable, because a send cannot be taken back.
+  "Show all". An outbound update draws the whole message, scrollable, because an outbound update cannot be taken back.
   The row's diff carries no unchanged context and puts the new text above the text it replaces:
   clamped, a paragraph rewrite showed only the version that was going away.
 - **Real titles.** `titles.ts` asks the workspace what a page is called and caches it per file,
   dropped on `vault:changed`. `cardTargetTitle` in the domain decides: the workspace's title for a
   page that exists, the payload's own for a page being created, the de-slugged filename last.
 - **Group by target.** `intent.ts` is now `groupByTarget`/`targetKey` on the file path, or the
-  external id for a send. Two changes to one to-do draw under one name, each keeping its own three
+  external id for an outbound update. Two changes to one to-do draw under one name, each keeping its own three
   controls. A group header is not a cursor stop; every row is.
-- **One count.** The heading reads "8 changes and 2 sends from <source>", the button "Approve all 8".
+- **One count.** The heading reads "8 changes and 2 updates from <source>", the button "Approve all 8".
   The source is named once, as an openable chip with the page's real title.
 
 Deleted: `HousekeepingItem`, `IntentRow.tsx`, `HOUSEKEEPING_RANK` and the housekeeping fold,
@@ -164,7 +164,7 @@ Two places where this brief and `docs/proposal-card-copy.md` disagreed, and this
 
 - The row leads with the target's title, not the composed verb-first headline. The headline is still
   composed, still the aria label for the row, and still what the detail says.
-- The approve control on a send says the act in one word rather than "Send". That keeps
+- The approve control on an outbound update says the act in one word rather than "Send". That keeps
   proposal-card-copy's rule that only a message is sent and a page is updated in place.
 
 Rendered and looked at: the real batch from the H2 steering demo (the "Qale Demo Dev" profile, nine
@@ -175,7 +175,7 @@ diffs opening on removed text only, which is what led to the no-context, result-
 second showed the raw ISO dates in the property line, now "4 Sep → 11 Sep"; the third showed the
 batch source repeated as a "Based on" chip behind every chevron, now dropped when the heading names
 it. Screenshots: `review-top.png` (heading, expanded row, the group) and `review-bottom.png` (the two
-sends) in this session's scratch directory.
+outbound updates) in this session's scratch directory.
 
 Checks: `pnpm test` 1509 tests, 1497 pass, 0 fail (12 skipped in `@qale/vault`); `@qale/domain` 278
 pass, `@qale/desktop` 446 pass. `pnpm check-types` clean. `pnpm --filter @qale/desktop lint` 0
@@ -189,5 +189,5 @@ row and the Marcus group: `review-inline-swap.png` and `review-inline-swap-top.p
 
 **Left:** the "Based on" chips still name a note by its de-slugged filename (`EvidenceChip` →
 `titleForRef`); giving them real titles means a lookup per chip and was out of scope here. The delete
-row, the stale "Fix this" banner and the send-refused "Approve anyway" path were read and carried
+row, the stale "Fix this" banner and the "Approve anyway" path for a refused outbound update were read and carried
 over, but this batch had none of them, so they are not screenshot-verified.

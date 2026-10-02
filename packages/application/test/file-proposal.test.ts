@@ -11,8 +11,8 @@ import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../src
 
 // Filing a write: the policy decides, one place, and a silent one lands on the
 // spot with an Activity row behind it (docs/easier-tickets.md E-3, E-9). Since
-// docs/fewer-approvals.md FA-1 the answer comes from what the write does: a
-// send, a delete, a rewrite of the PM's own prose and anything Qale assumed
+// docs/fewer-approvals.md FA-1 the answer comes from what the write does: an
+// outbound update, a delete, a rewrite of the PM's own prose and anything Qale assumed
 // wait, and this is where the last two facts are worked out.
 
 interface Stored {
@@ -444,7 +444,7 @@ test('a write the run had to assume waits, wherever it points', async () => {
   assert.equal(rows.get(filed.rec.id)!.status, 'pending');
 });
 
-test('a send waits, and writes nothing', async () => {
+test('an outbound update waits, and writes nothing', async () => {
   const { ctx, rows, activity } = fakeContext();
   const filed = await fileProposal(ctx, {
     ...base,

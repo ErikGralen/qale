@@ -93,21 +93,18 @@ test('reads, searches and the odd step in between all stay', () => {
   assert.equal(showsInTrail(think('')), false);
 });
 
-test('one or two notes are named, three are counted', () => {
-  assert.equal(
-    trailSummary([read('meetings/2026-07-17-the-transcript.md')], null),
-    'Read The Transcript',
-  );
+test('any note read, one or a crowd, folds into one "read memory" clause', () => {
+  assert.equal(trailSummary([read('meetings/2026-07-17-the-transcript.md')], null), 'Read memory');
   assert.equal(
     trailSummary([read('notes/nordkap.md'), read('notes/bord-weekly.md')], null),
-    'Read Nordkap and Bord Weekly',
+    'Read memory',
   );
   assert.equal(
     trailSummary([read('notes/a.md'), read('notes/b.md'), read('notes/c.md')], null),
-    'Read 3 notes',
+    'Read memory',
   );
-  // The same note twice is one note.
-  assert.equal(trailSummary([read('notes/a.md'), read('notes/a.md')], null), 'Read A');
+  // The same note twice is still one clause.
+  assert.equal(trailSummary([read('notes/a.md'), read('notes/a.md')], null), 'Read memory');
 });
 
 test('the summary is a sentence, and the clock is the last thing in it', () => {
@@ -119,11 +116,11 @@ test('the summary is a sentence, and the clock is the last thing in it', () => {
     search('booking'),
     search('sync'),
   ];
-  assert.equal(trailSummary(parts, '12s'), 'Read 3 notes · searched twice · 12s');
-  assert.equal(trailSummary(parts, null), 'Read 3 notes · searched twice');
+  assert.equal(trailSummary(parts, '12s'), 'Read memory · searched twice · 12s');
+  assert.equal(trailSummary(parts, null), 'Read memory · searched twice');
 });
 
-test('a search of Jira says which system it checked', () => {
+test('a search of Jira says which system it checked, a read ticket joins "read memory"', () => {
   const jira: AnyPart = {
     type: 'tool-jira_search',
     state: 'output-available',
@@ -137,7 +134,28 @@ test('a search of Jira says which system it checked', () => {
     input: { key: 'PAY-12' },
     output: 'PAY-12',
   };
-  assert.equal(trailSummary([ticket], null), 'Read PAY-12');
+  assert.equal(trailSummary([ticket], null), 'Read memory');
+});
+
+test('check_claims and get_voice join the reads clause, not a clause of their own', () => {
+  const checkClaims: AnyPart = {
+    type: 'tool-check_claims',
+    state: 'output-available',
+    input: { claims: ['Nordkap renewed in June'] },
+    output: 'Checked.',
+  };
+  const voice: AnyPart = {
+    type: 'tool-get_voice',
+    state: 'output-available',
+    input: { name: 'internal' },
+    output: 'Short sentences.',
+  };
+  // Nothing else read: the clause says it checked, not that it read something.
+  assert.equal(trailSummary([checkClaims], null), 'Checked memory');
+  assert.equal(trailSummary([voice], null), 'Checked memory');
+  assert.equal(trailSummary([checkClaims, voice], null), 'Checked memory');
+  // A note read alongside either call still reads as one "read memory" clause.
+  assert.equal(trailSummary([read('notes/nordkap.md'), checkClaims], null), 'Read memory');
 });
 
 test('nothing but thinking reads as thinking', () => {

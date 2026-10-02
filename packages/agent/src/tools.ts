@@ -3117,7 +3117,7 @@ export function createDraftTools(
    * the constraint above the tickets). Most writes land now, so every tool that
    * can reach outside the workspace says the opposite in the same words.
    */
-  const sendWaitsNote = 'This waits for the PM. Nothing is sent until they approve it.';
+  const outboundWaitsNote = 'This waits for the PM. Nothing is sent until they approve it.';
 
   /**
    * Drafted-against snapshot (the staleness baseline): when the target has a
@@ -3211,7 +3211,7 @@ export function createDraftTools(
     return out;
   };
   /**
-   * One card per send, full text, never batched (docs/easier-tickets.md E-7).
+   * One card per outbound update, full text, never batched (docs/easier-tickets.md E-7).
    *
    * Outbound is the one kind the write policy grades `ask` unconditionally, and
    * it is also the one kind that never groups: nothing sent to Jira, Confluence
@@ -3245,7 +3245,7 @@ export function createDraftTools(
     name: 'draft_ticket',
     label: 'Draft a tracker ticket',
     description:
-      sendWaitsNote +
+      outboundWaitsNote +
       ' Draft a NEW ticket as a proposal. `container` is the project or team it goes in, named by its key; the proposal shows which tracker that is. Give a title and a markdown body ending with a provenance line ("Source: <meeting>, <date>"). Cite sources[] (the meeting or decision it came from). Optionally linkBack: a workspace note path to append the created ticket\'s link to on approval. Labels, priority and components go on the ticket only when the Jira file (skills/jira/SKILL.md) or the tickets you read show this team uses them. Never invent a label. ' +
       conventionsNote('skills/jira/SKILL.md') +
       ' ' +
@@ -3336,7 +3336,7 @@ export function createDraftTools(
     name: 'draft_ticket_comment',
     label: 'Draft a ticket comment',
     description:
-      sendWaitsNote +
+      outboundWaitsNote +
       ' Draft a comment on an existing ticket as a proposal. `ticket` is the item itself: its key (PAY-142) or its mirror note (tickets/PAY-142). Take the key from the mirror note (tickets/, frontmatter external_id) when one exists, and cite that mirror in sources[] alongside the meeting or decision. The proposal shows which tracker it goes to. End the body with a provenance line ("Source: <meeting>, <date>"). ' +
       conventionsNote('skills/jira/SKILL.md') +
       ' ' +
@@ -3400,7 +3400,7 @@ export function createDraftTools(
     name: 'draft_page_update',
     label: 'Draft a page update',
     description:
-      sendWaitsNote +
+      outboundWaitsNote +
       ' Draft a change to a wikipage as a proposal. There are two ways to change a page; pick the one that fits. With `patch` (search + replace) that ONE passage is rewritten in place on the live page and the rest of it is left untouched, which is what you want when the page now says something wrong. The search text must be copied word for word from the page as it stands, with enough of it around the change that it appears only once. Anchor it on a plain run of prose, never on a line carrying markup (a **bold** span, a `- ` bullet, a `## ` heading, a [text](url) link): here it is checked against the page\'s mirror note, which is markdown, but on approval it is matched against the live page, where that markup is not written the same way, and the edit fails then with "the page\'s text changed". Give `provenance` with a patch: the redline is only the corrected sentence, so that one line ("Source: <origin>, <date>") is how the page says where the change came from. Without a patch, `body` is appended to the page as a new section, which is what you want when you are adding something the page does not say yet; end it with a provenance line of its own and leave the `provenance` field out, because the page gets that line as written and a second one would be added underneath. `page` is the page itself: its id, or its mirror note (wikipages/…). Cite that mirror in sources[] when one exists. The proposal shows which wiki it goes to. ' +
       conventionsNote('skills/confluence/SKILL.md') +
       ' ' +
@@ -3515,7 +3515,7 @@ export function createDraftTools(
     name: 'draft_calendar_event',
     label: 'Draft calendar event',
     description:
-      sendWaitsNote +
+      outboundWaitsNote +
       ' Draft a NEW Google Calendar event as a proposal: a follow-up meeting, a booked slot. Give a title (the invite summary), a start as RFC3339 with offset (e.g. 2026-08-04T15:00:00+02:00), optionally an end (defaults to +30 min) and attendee emails, and a body used as the invite description ending with a provenance line ("Source: <meeting>, <date>"). calendarId defaults to the primary calendar. Cite sources[]. linkBack: the meeting/todo note to append the created event\'s link to on approval. ' +
       voiceNote,
     parameters: Type.Object({
@@ -3578,7 +3578,7 @@ export function createDraftTools(
     name: 'draft_calendar_reschedule',
     label: 'Draft calendar reschedule',
     description:
-      sendWaitsNote +
+      outboundWaitsNote +
       " Draft a change to an EXISTING calendar event as a proposal: a new time, a new title. eventId is the event's id. Take it from the synced meeting note (meetings/, frontmatter external_id) and cite that note in sources[]. Give the new start/end (RFC3339 with offset) and/or title, and a body describing the change. linkBack: the meeting note to append the confirmation to.",
     parameters: Type.Object({
       eventId: Type.String(),
@@ -3634,7 +3634,7 @@ export function createDraftTools(
     name: 'draft_calendar_rsvp',
     label: 'Draft calendar RSVP',
     description:
-      sendWaitsNote +
+      outboundWaitsNote +
       " Draft an RSVP to a calendar event on your behalf as a proposal. eventId is the event's id (from the synced meeting note's external_id; cite that note). attendeeEmail is your own calendar email; responseStatus is accepted/declined/tentative. Give a short body explaining the response. linkBack: the meeting note to note the RSVP on.",
     parameters: Type.Object({
       eventId: Type.String(),

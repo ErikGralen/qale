@@ -115,7 +115,7 @@ export function ExternalRefChip({
   kind?: string | null;
   /**
    * The item's address at the provider, for a chip drawn before the workspace
-   * has a copy of it: the ticket a send made a second ago. The mirror wins the
+   * has a copy of it: the ticket an outbound update made a second ago. The mirror wins the
    * moment it exists; this is only what the click falls back to.
    */
   url?: string | null;

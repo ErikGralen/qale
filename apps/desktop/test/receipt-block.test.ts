@@ -144,7 +144,7 @@ test('a to-do is placed by what happened to it, not by its folder', () => {
   assert.equal(tierForRow({ verb: 'Changed', path: 'meetings/m.md', title: 'm' }), 'promise-moved');
 });
 
-test('an approved send sits between the documents and the memory', () => {
+test('an approved outbound update sits between the documents and the memory', () => {
   const rows = orderLanded([
     { verb: 'Sent', title: 'PAY-142', change: 'Commented on PAY-142' },
     at('decisions/scim-q2.md', 'SCIM ships in Q2'),
@@ -154,7 +154,7 @@ test('an approved send sits between the documents and the memory', () => {
     rows.map((r) => r.title),
     ['Rollout runbook', 'PAY-142', 'SCIM ships in Q2'],
   );
-  // A send writes no file, so it is placed by its verb and not by a path.
+  // An outbound update writes no file, so it is placed by its verb and not by a path.
   assert.equal(tierForRow({ verb: 'Sent', title: 'PAY-142' }), 'sent');
 });
 

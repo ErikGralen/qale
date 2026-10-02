@@ -99,7 +99,7 @@ test('a property that moved is never read out on the row', () => {
   );
 });
 
-test('a page that is new, or gone, or a send, says nothing here', () => {
+test('a page that is new, or gone, or an outbound update, says nothing here', () => {
   // The title IS the change on every one of these.
   assert.equal(
     changeLine({

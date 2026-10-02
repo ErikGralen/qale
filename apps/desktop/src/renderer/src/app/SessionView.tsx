@@ -326,6 +326,7 @@ function RunRow({
   kickoff,
   notes,
   skillTitle,
+  skillPath,
   live,
   sources = [],
   onOpen,
@@ -335,6 +336,9 @@ function RunRow({
   /** Each target's tree entry, keyed by path, for the ones the workspace knows. */
   notes: Map<string, NoteRefDTO>;
   skillTitle: string;
+  /** The skill file's note path, for the clickable skill name. Missing skill
+   *  metadata falls back to plain text rather than a link to nowhere. */
+  skillPath?: string;
   /** True while this kickoff's turn is the one in flight. */
   live?: boolean;
   /** Session files handed over with this run (`source/…`) — what an arrival ran on. */
@@ -362,7 +366,26 @@ function RunRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 leading-6">
             <span className="text-muted-foreground">{live ? 'Running' : 'Ran'}</span>
-            <span className="font-medium">{skillTitle}</span>
+            {skillPath ? (
+              <a
+                href="#"
+                className="font-medium text-brand underline decoration-brand/30 underline-offset-2 transition-colors hover:decoration-brand focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                title={`Open ${skillTitle}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onOpen(skillPath, navFromEvent(e));
+                }}
+                onAuxClick={(e) => {
+                  if (e.button !== 1) return;
+                  e.preventDefault();
+                  onOpen(skillPath, navFromEvent(e));
+                }}
+              >
+                {skillTitle}
+              </a>
+            ) : (
+              <span className="font-medium">{skillTitle}</span>
+            )}
             {hasObjects && <span className="text-muted-foreground">on</span>}
             {/* Every page, each its own link. A run over three documents that
                 named only the first would read as a run over only the first,
@@ -1012,6 +1035,7 @@ function SessionThread({
                       kickoff={kickoff}
                       notes={noteByPath}
                       skillTitle={skillMeta?.title ?? kickoff.skill}
+                      skillPath={skillMeta?.path}
                       live={mi === lastUserIdx && (busy || backgroundBusy)}
                       // The opening kickoff of a drop ran on the handed-over
                       // files; naming them here is the row's whole point.

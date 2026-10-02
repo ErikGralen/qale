@@ -309,7 +309,7 @@ export interface ActivityPort {
    */
   latestLearned(): { path: string; line: string; at: number }[];
   /**
-   * The row one card left, or null when it left none: a send writes nothing, and
+   * The row one card left, or null when it left none: an outbound update writes nothing, and
    * a card approved before RC-4 recorded nothing either.
    *
    * Its own query rather than a filter over {@link list}: the receipt in a chat

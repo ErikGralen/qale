@@ -173,5 +173,5 @@ The repairs land as you write them, each with its reason on the Activity row: li
 they were meant to, stray notes join the hubs they belong to. A repair to a to-do or a meeting page
 lands too, and the chat names it. Three things still wait for the PM: a repair inside a document
 they wrote, because it rewrites their words; a delete; and the redline that brings a mirrored page
-back to the decision. That redline is a send, and you never
+back to the decision. That redline is an update to Confluence, and you never
 send anything yourself.

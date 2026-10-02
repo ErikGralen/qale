@@ -286,7 +286,7 @@ export interface InvokeMap {
       staleReason?: 'unanchored' | 'duplicate' | 'missing';
       error?: string;
       url?: string;
-      /** What the send touched at the provider: the key of the ticket it just
+      /** What the outbound update touched at the provider: the key of the ticket it just
        *  created, the id of the event it added. The green receipt draws it as a
        *  chip, so the line the PM reads is a way to the item itself. */
       externalId?: string;
@@ -296,7 +296,7 @@ export interface InvokeMap {
       path?: string;
       /** The Activity row the approved write left, so the chat can draw it as a
        *  landed row with a put-back (docs/receipt-redesign.md RC-4). Absent for
-       *  a send, and for a workspace that kept no history. */
+       *  an outbound update, and for a workspace that kept no history. */
       activityId?: string;
     };
   };

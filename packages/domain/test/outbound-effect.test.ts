@@ -10,7 +10,7 @@ import {
 /**
  * The effect line: what approving an outbound card DOES, and who it reaches.
  * These pin two things — the exact sentence per card kind (it is a contract, the
- * PO reads it before every send) and the way it degrades when a fact is missing,
+ * PO reads it before every outbound update) and the way it degrades when a fact is missing,
  * which must always be a SHORTER true line and never a guess.
  */
 

@@ -28,11 +28,16 @@ test('every type lands in the layer its rules imply', () => {
   assert.equal(editLayerForType('wikipage'), 'mirror');
 });
 
-test('the layer tracks editability: a sentence appears exactly when the cursor does not', () => {
+test('the layer tracks editability: a sentence appears only where the cursor does not and there is something to say', () => {
   for (const type of NOTE_TYPES) {
-    const open = editLayerForType(type) === 'open';
+    const layer = editLayerForType(type);
+    const open = layer === 'open';
     assert.equal(open, isBodyEditable(type), `${type}: layer disagrees with TYPE_RULES`);
-    assert.equal(readOnlyReason(type) === null, open, `${type}: sentence disagrees with layer`);
+    // `open` and `mirror` both take no sentence: an editable note explains
+    // itself by taking the cursor, and a mirror note explains itself by
+    // showing the live page it copies.
+    const hasSentence = layer !== 'open' && layer !== 'mirror';
+    assert.equal(readOnlyReason(type) !== null, hasSentence, `${type}: sentence disagrees with layer`);
   }
 });
 
@@ -49,8 +54,10 @@ test('mirrors name the system they copy, not our folder', () => {
   assert.equal(noteTypeLabel('wikipage'), 'Confluence mirror');
   assert.equal(noteTypeLabel('decision'), 'Decision');
 
-  assert.equal(readOnlyReason('ticket'), 'Mirrored from Jira. Edits happen there.');
-  assert.equal(readOnlyReason('wikipage'), 'Mirrored from Confluence. Edits happen there.');
+  // A mirror shows no read-only sentence: the live page chip already says
+  // where the text lives, so there is nothing left to explain in prose.
+  assert.equal(readOnlyReason('ticket'), null);
+  assert.equal(readOnlyReason('wikipage'), null);
 });
 
 test("a mirror's own provider field wins over the type default", () => {

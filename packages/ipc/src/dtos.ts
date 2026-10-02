@@ -591,7 +591,7 @@ export interface OutboundPayloadDTO {
   attendeeEmail?: string;
   responseStatus?: 'accepted' | 'declined' | 'tentative';
   linkBackPath?: string;
-  /** Where the item landed at the provider, stamped on once the send went
+  /** Where the item landed at the provider, stamped on once the outbound update went
    *  through. A draft never carries it. */
   url?: string;
   rationale: string;
@@ -651,7 +651,7 @@ export interface ProposalDTO {
   /**
    * The Activity row this card left when the PM approved it (RC-4), so the
    * receipt in the chat can put it back. Only ever on a resolved card: a card
-   * still waiting has written nothing, and a send writes no file, so it leaves
+   * still waiting has written nothing, and an outbound update writes no file, so it leaves
    * no row at all (docs/receipt-redesign.md RC-3).
    */
   activityId?: string;

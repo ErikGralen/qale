@@ -100,7 +100,7 @@ The rows (`lib/receipt-block.ts`, `LandedRows.tsx`):
   A to-do always carries its number; a meeting page or a document carries one only when there is
   more than one. Clauses join with " · " and the first word is capitalised, because the line
   otherwise opens mid-sentence ("Updated memory"). Two writes to one page count as one page. An
-  approved send keeps its green card and does not draw here, but it holds a place between
+  approved outbound update keeps its green card and does not draw here, but it holds a place between
   documents and memory for the one case that reaches this block.
 
 - The mark over the line follows the first tier: a plus when the turn made a to-do or a meeting

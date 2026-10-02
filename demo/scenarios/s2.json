@@ -2,7 +2,7 @@
   "version": 1,
   "id": "s2",
   "title": "Refine the epic",
-  "do": "In Home, type /, pick Iterate on something, type: No-show fees moved up to end of October. Help me refine BOK-300 so Rebecca's team can start at sprint planning on Wednesday. Round one: No, leave it out on Per sitting, Yes, online and Google only on Online only, Yes, add a story for it on A/B test, skip Anything else. Round two: Yes, make this a Jira story on all three, skip Anything else.",
+  "do": "In Home, type /, pick Iterate on something, type: Help me refine BOK-300. Round one: no on Per sitting, yes on Online only, yes on A/B test, skip Anything else. Round two: yes on all three stories, skip Anything else.",
   "offScript": "That is outside what this demo can show. The six things it can do are listed in Settings, under Demo.",
   "conversations": [
     {
@@ -36,7 +36,7 @@
                   {
                     "header": "Online only",
                     "question": "Charge the no-show fee on online and Google bookings only, never on phone bookings?",
-                    "body": "[[notes/fee-rules]] and [[tickets/jira/BOK-300]] say no fee on phone bookings, because a phone guest never saw the fee notice. The stories will say so in plain words, so say now if that has changed.",
+                    "body": "[[notes/fee-rules]] and [[tickets/jira/BOK-300]] say no fee on phone bookings.",
                     "options": [
                       { "label": "Yes, online and Google only", "description": "The stories say in plain words that phone bookings get no fee." },
                       { "label": "No, phone bookings too", "description": "Staff need a way to take a card over the phone, which is more work." }

@@ -20,7 +20,7 @@ independent. D is the deletion itself and goes last.
 ### RI-1. The review ask and the sent banner move into the session
 
 **What:** After a fully discarded pile, the Inbox asks "Nothing kept from <meeting>. Mark it
-reviewed?" (`ReviewAsks`). After an outbound send it shows "Left your workspace" (`SentReceipts`).
+reviewed?" (`ReviewAsks`). After an outbound update it shows "Left your workspace" (`SentReceipts`).
 Both are rendered only in `InboxView.tsx`. `useApprovals` already produces both; `SessionReview`
 ignores them.
 
@@ -53,7 +53,7 @@ already open).
 **Notes:** Built 2026-09-05. The block is now a `data-queue` region with `tabIndex={0}` and an
 `onKeyDown`. Rows are `cardIntents(cards)`, one stop per grouped intent, same shape as the
 Inbox's `rowsOf`. ↑↓/j/k walk, ↵/a approve (a group takes all, an outbound card only moves focus
-to its `[data-send]` button), ⌫/x discard, `o` is gone. The cursor starts at -1 rather than 0 and
+to its `[data-outbound]` button), ⌫/x discard, `o` is gone. The cursor starts at -1 rather than 0 and
 the block never focuses itself on mount, so arriving in a session leaves the caret in the
 composer; the first arrow key enters at the top row. A focused button, link or textarea still
 owns its own keys.
@@ -96,7 +96,7 @@ invisible.
 step, so Qale does not ask twice. `log_decision` writes the decision file directly through the
 same path a silent write takes (`fileProposal` → `acceptProposal` → `recordActivity`) and lands
 as a row in Activity, first person, with the revert handle. The tool result tells the client
-where the file is. `draft_writeback` is deleted: an outbound send from a foreign client with no
+where the file is. `draft_writeback` is deleted: an outbound update from a foreign client with no
 card and no staleness check is not something Activity can put back. `ask_product` stays. The
 tool descriptions and result strings drop "the PM approves" and "filed to the Inbox".
 

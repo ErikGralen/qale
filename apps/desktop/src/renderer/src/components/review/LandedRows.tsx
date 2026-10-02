@@ -61,7 +61,7 @@ import { ChangePreview } from './CardItem';
  * undo, said at the moment it is cheapest to use.
  *
  * The session review draws its approved cards through here too, once every card
- * is judged, apart from a send: what left the workspace keeps the green card it
+ * is judged, apart from an outbound update: what left the workspace keeps the green card it
  * was given the moment it left (docs/receipt-redesign.md RC-3, revised).
  */
 export function LandedRows({
@@ -316,7 +316,7 @@ function landedPreview(card: ProposalDTO): { before: string; after: string } | n
  * (Erik, 2026-09-08). So every mark is ink, one tone, a shade darker than the
  * row it stands in front of, and big enough to read. The one exception is a row
  * that took something away: that one stays red, because it is the row you must
- * not miss. A send never draws here.
+ * not miss. An outbound update never draws here.
  */
 const MARK: Record<AppliedVerb, LucideIcon> = {
   New: Plus,

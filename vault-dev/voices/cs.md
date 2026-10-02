@@ -6,15 +6,16 @@ summary: For restaurants, forwarded by the CSMs. Warm, plain, says what changed 
 
 # CS voice
 
-CS messages are a short note: what changed for the restaurant, and since when. Set on 2026-07-10. Change this line and the next message follows it.
+CS messages are a short message to the CSM, with a note to forward: what changed for the restaurant, and since when. Set on 2026-07-10. Change this line and the next message follows it.
 
-### A short note
-One warm paragraph the CSM forwards as it is: a one-line greeting, what the restaurant can use and since when, then the open part said plainly.
-Five sentences at most. Every change carries a date.
+### A message with a note to forward
+Open with a greeting and two or three sentences to the CSM: what shipped, which of their restaurants asked, and why they hear it today.
+Then the note, as a quote the CSM forwards as it is: a one-line greeting, what the restaurant can use and since when, then the open part said plainly.
+The note is five sentences at most. Every change carries a date.
 
 ## How it sounds
 
-The reader is a CSM who forwards this to a restaurant word for word.
+The reader is a CSM. They read the message, then forward the note to a restaurant word for word.
 
 - Warm and direct. A one-line greeting is fine, then say the thing.
 - Everyday words. No ticket keys, no team names, no internal names for features or projects.

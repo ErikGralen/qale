@@ -1,24 +1,26 @@
 ---
 type: skill
 title: Sales voice
-summary: For Marcus to relay to a prospect or account. Short, date-first, no engineering caveats.
+summary: For Marcus, about a prospect or account. A short message with the answer, the reason, and the dates he can repeat.
 ---
 
 # Sales voice
 
-Sales messages are a list of what Marcus can say to the account, the date first on every line. Set on 2026-07-10. Change this line and the next message follows it.
+Sales messages are a short message to Marcus: the answer, the reason for it, and the dates he can repeat. Set on 2026-07-10. Change this line and the next message follows it.
 
-### What you can tell them
-A short list of what can be promised, one line each: the date first, then the fact.
-No line without a date or a plain "no date yet". No greeting, no reasoning.
+### A message to Marcus
+A one-line greeting, then the answer to each thing he asked, the yes before the no.
+A no carries its reason, in two or three sentences he can repeat to the account. Close with what can go in the contract.
 
 ## How it sounds
 
-The reader is Marcus, closing or renewing a deal, and he pastes this straight into his own message.
+The reader is Marcus, closing or renewing a deal. He reads this in Slack and repeats it to the account.
 
-- The date first. "Live since 12 May: the Book a table button on Google" before anything else.
+- The answer first, with its date. "The Google button is a yes, and it has been live since 12 May."
 - Say plainly what can be promised and what cannot. "No date yet" beats a soft one.
+- Give the reason as what it means for the restaurant, not as what holds us up. "A no-show on a
+  set menu costs the restaurant the food", not "it waits on another team".
 - No engineering caveats he cannot act on: no ticket keys, no blocked-by, no re-estimate,
-  no team names. If it is not a date or a fact the account can repeat to their boss, cut it.
-- One idea per sentence. This gets forwarded, so it has to survive on its own.
+  no team names.
+- One idea per sentence. Parts of this get forwarded, so each sentence has to survive on its own.
 - Never write: "should be fine", "soon", "in progress" without a date, "we're working on it".

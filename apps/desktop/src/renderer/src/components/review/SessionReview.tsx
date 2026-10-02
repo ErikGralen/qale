@@ -14,7 +14,7 @@ import {
   receiptOf,
   receiptPaths,
 } from './cardMeta';
-import { useNoteName, useNoteNames } from './titles';
+import { useNoteNames } from './titles';
 import { ReviewAsks, useApprovals } from './approvals';
 import { ApproveAll, CardRows } from './CardRows';
 import { LandedRows } from './LandedRows';
@@ -24,28 +24,6 @@ import { LandedRows } from './LandedRows';
  *  the reader sees, so grouping never hides a card from it. */
 function rowsOf(cards: ProposalDTO[]): ProposalDTO[] {
   return cardGroups(cards).flatMap((g) => g.cards);
-}
-
-/**
- * The batch's one source, as an openable chip with the page's real name. Nine
- * cards from one transcript said "from Steering H2 Priorities" nine times, in a
- * prettified filename that was not even the page's title.
- */
-function SourceChip({ ref: source, onOpen }: { ref: string; onOpen: (path: string) => void }) {
-  const known = useNoteName(source);
-  if (!known) return null;
-  return (
-    <>
-      {' from '}
-      <button
-        className="rounded-md text-brand underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-        onClick={() => onOpen(known.path)}
-        title={`Open ${known.title}`}
-      >
-        {known.title}
-      </button>
-    </>
-  );
 }
 
 /**
@@ -62,9 +40,9 @@ function SourceChip({ ref: source, onOpen }: { ref: string; onOpen: (path: strin
  * rather than from this sitting's state, so it is still there next week
  * (docs/closing-beat.md, thinned in docs/receipt-redesign.md).
  *
- * A send is the exception. Its card never leaves the list: the moment it is
+ * An outbound update is the exception. Its card never leaves the list: the moment it is
  * approved it settles where it stands, in past tense, with the message folded
- * and the word the button promised in place of the controls. Three sends used
+ * and the word the button promised in place of the controls. Three outbound updates used
  * to collapse into one green block above the cards, which took the answer away
  * from the button that was just pressed (RC-3 revised, 2026-09-11). The whole
  * block is one section whether cards are still waiting or not, so a settling
@@ -87,13 +65,13 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
 
   const rows = useMemo(() => rowsOf(cards), [cards]);
 
-  // The sends that already left, from this sitting first (their line carries
+  // The outbound updates that already left, from this sitting first (their line carries
   // the key a ticket was given on landing) and from the stored cards when the
   // session is reopened.
   const sent = useMemo(() => sentCards(approvals.sent, resolved), [approvals.sent, resolved]);
   const settled = useMemo(() => new Map(sent.map((s) => [s.card.id, s])), [sent]);
   // Every card the list draws, in the batch's one order: waiting, in flight,
-  // and settled sends in the places they were judged.
+  // and settled outbound updates in the places they were judged.
   const all = useMemo(
     () => orderCards(mergeReviewCards(cards, approvals.held, sent)),
     [cards, approvals.held, sent],
@@ -123,10 +101,12 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
   const current = focusIdx >= 0 ? (rows[focusIdx] ?? null) : null;
   const focusedId = current?.id ?? null;
 
-  /** The focused outbound card's send button. ↵ moves to it instead of pressing
+  /** The focused outbound card's approve button. ↵ moves to it instead of pressing
    *  it for you. */
-  const focusSend = (id: string): void => {
-    listRef.current?.querySelector<HTMLButtonElement>(`[data-send="${CSS.escape(id)}"]`)?.focus();
+  const focusOutbound = (id: string): void => {
+    listRef.current
+      ?.querySelector<HTMLButtonElement>(`[data-outbound="${CSS.escape(id)}"]`)
+      ?.focus();
   };
 
   // Full keyboard path over this session's rows: walk them, approve, discard,
@@ -152,11 +132,11 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
       return;
     } else if ((e.key === 'Enter' || e.key === 'a') && current && !approvals.busy) {
       e.preventDefault();
-      // A send leaves the workspace, so the one-tap approve never fires one:
-      // the same rule the batch path keeps. ↵ carries you to the send control,
+      // An outbound update leaves the workspace, so the one-tap approve never fires one:
+      // the same rule the batch path keeps. ↵ carries you to its approve control,
       // and pressing it there is the decision. Everything internal stays one
       // tap.
-      if (current.kind === 'outbound') focusSend(current.id);
+      if (current.kind === 'outbound') focusOutbound(current.id);
       else approvals.accept(current);
     } else if ((e.key === 'Backspace' || e.key === 'x') && current && !approvals.busy) {
       e.preventDefault();
@@ -199,16 +179,17 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
   // decision. The head says the cause, so the PO judges the premise once
   // instead of reading the same edit N times.
   const cause = groupCause(cards);
-  // One count for one list. A send is its own decision and never rides along in
+  // One count for one list. An outbound update is its own decision and never rides along in
   // the batch, so the heading says how many of each are waiting rather than
   // leaving "9 changes" to explain a button that says 7.
-  const sends = cards.filter((c) => c.kind === 'outbound').length;
+  const outbound = cards.filter((c) => c.kind === 'outbound').length;
   const heading = cause
     ? causeSentence(cause, cards.length)
-    : batchCount(cards.length - sends, sends);
-  // The one source the whole batch came from, said once in the heading. When
-  // they came from several, or when there is no heading because one card needs
-  // no announcement, each row names its own behind its chevron.
+    : batchCount(cards.length - outbound, outbound);
+  // The one source the whole batch came from. Only used to fold a shared
+  // source's evidence chip out of every row (`showSource` below) — the row
+  // still names its own source behind its chevron when the batch came from
+  // several, or has no single one.
   const source = cause || cards.length < 2 ? null : batchSource(cards);
 
   return (
@@ -261,10 +242,7 @@ export function SessionReview({ sessionId }: { sessionId: string }) {
         // and the batch button earn a header row only on a pile.
         cards.length > 1 && (
           <div className="mb-1.5 flex items-center gap-3 px-0.5">
-            <h3 className="min-w-0 flex-1 text-sm font-semibold text-foreground">
-              {heading}
-              {source && <SourceChip ref={source} onOpen={openDoc} />}
-            </h3>
+            <h3 className="min-w-0 flex-1 text-sm font-semibold text-foreground">{heading}</h3>
             <ApproveAll cards={cards} approvals={approvals} className="shrink-0" />
           </div>
         )

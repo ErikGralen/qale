@@ -16,7 +16,7 @@ import {
   titleFromSlug,
   typeToWrite,
   writePolicy,
-  SEND_WAITS_REASON,
+  OUTBOUND_WAITS_REASON,
   APPROVED_REASON,
   USER_DOCUMENTS_DIR,
   activityAction,
@@ -168,15 +168,15 @@ export async function fileProposal(
     rewritesUserText: await rewritesUserText(ctx, input),
     assumed: isAssumed(input.rationale),
   });
-  // A send never lands, whatever the ruling says (docs/fewer-approvals.md, the
-  // constraint above the tickets). The policy grades a send as waiting before
+  // An outbound update never lands, whatever the ruling says (docs/fewer-approvals.md, the
+  // constraint above the tickets). The policy grades an outbound update as waiting before
   // it reads anything else, so this second guard is here to make a future rule
   // that gets it wrong harmless: two pieces of code have to fail before
   // something leaves the machine unseen.
   if (ruling.disposition !== 'silent' || input.kind === 'outbound') {
-    // A guarded send says why a send waits, never the "this landed" line the
+    // A guarded outbound update says why an outbound update waits, never the "this landed" line the
     // wrong ruling came with.
-    const reason = ruling.disposition === 'silent' ? SEND_WAITS_REASON : ruling.reason;
+    const reason = ruling.disposition === 'silent' ? OUTBOUND_WAITS_REASON : ruling.reason;
     return { rec, disposition: 'ask', reason };
   }
   // The name the note already had, for the row the chat draws: an update's
@@ -977,7 +977,7 @@ export interface AcceptResult {
   error?: string;
   /** Deterministic link produced by an outbound write, if any. */
   url?: string;
-  /** The provider's own id for what the send touched: the key of the ticket it
+  /** The provider's own id for what the outbound update touched: the key of the ticket it
    *  just created, the id of the event it added. The receipt draws it as a chip
    *  (docs/receipt-redesign.md, fourth pass). */
   externalId?: string;
@@ -985,7 +985,7 @@ export interface AcceptResult {
    *  approved it, so the rail pins it — see docs/autopinning.md. */
   path?: string;
   /** The Activity row the write left, when it left one. Only {@link
-   *  approveProposal} fills it: a send leaves no row, and neither does a
+   *  approveProposal} fills it: an outbound update leaves no row, and neither does a
    *  workspace that kept no history. */
   activityId?: string;
 }
@@ -1051,7 +1051,7 @@ export async function acceptProposal(
  * hardest the only one with no way back. Same row, same revert, different
  * reason: "You approved it."
  *
- * A send records nothing. The row exists to put a write back, and nothing that
+ * An outbound update records nothing. The row exists to put a write back, and nothing that
  * has left the machine can be put back.
  *
  * The row is bookkeeping: it is written after the file, and a store that
@@ -1403,7 +1403,7 @@ async function acceptOutbound(
   // a link-back failure can't leave the card pending and invite a double-post.
   ctx.proposals.setStatus(rec.id, 'accepted', Date.now());
 
-  // Stamp where it landed onto the card. The card is the receipt for this send,
+  // Stamp where it landed onto the card. The card is the receipt for this outbound update,
   // and a receipt that cannot name the ticket it created is a sentence about
   // something the PM has no way to. Stamped on the DRAFTED payload, not on
   // `p`: an edited card keeps the difference between the two, which is how the
@@ -1416,7 +1416,7 @@ async function acceptOutbound(
       ...(out.url ? { url: out.url } : {}),
     });
   } catch {
-    // Bookkeeping. The send happened; a store that cannot hold the address
+    // Bookkeeping. The outbound update happened; a store that cannot hold the address
     // costs the receipt its link and nothing else.
   }
 

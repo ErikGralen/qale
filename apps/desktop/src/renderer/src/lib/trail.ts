@@ -349,6 +349,10 @@ interface TrailWork {
   searches: number;
   /** The connected systems it searched, in the order it touched them. */
   checked: string[];
+  /** A `check_claims` or `get_voice` call fired. Both consult the memory
+   *  without naming a note, so they join the reads clause rather than getting
+   *  a clause of their own ("checked claims", "read a voice"). */
+  memoryOp: boolean;
   /** Everything else, one short verb each, in order and without repeats. */
   others: string[];
   thought: boolean;
@@ -361,6 +365,7 @@ function countWork(parts: readonly AnyPart[]): TrailWork {
     pages: [],
     searches: 0,
     checked: [],
+    memoryOp: false,
     others: [],
     thought: false,
   };
@@ -385,6 +390,7 @@ function countWork(parts: readonly AnyPart[]): TrailWork {
     else if (name === 'jira_search') add(work.checked, 'Jira');
     else if (name === 'confluence_search') add(work.checked, 'Confluence');
     else if (SEARCHES.has(name)) work.searches += 1;
+    else if (name === 'check_claims' || name === 'get_voice') work.memoryOp = true;
     else {
       const other = otherVerb(part);
       if (other) add(work.others, other);
@@ -407,13 +413,6 @@ function andList(items: readonly string[]): string {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
-/** A handful of things by name, a crowd by number. Two names still read as
- *  names; three start to read as a list nobody asked for. */
-function namedOrCounted(items: readonly string[], noun: string): string {
-  if (items.length <= 2) return andList(items);
-  return `${items.length} ${noun}s`;
-}
-
 /** "once" reads as a correction, so one search is just "searched". */
 function times(count: number): string {
   if (count === 1) return 'searched';
@@ -428,16 +427,19 @@ function times(count: number): string {
  * The clauses come in the order the PM cares about them: what it read, what it
  * checked outside the workspace, what it searched for, anything else, and how
  * long it took. A trail with nothing but thinking in it says so.
+ *
+ * The reads clause is one word, not an inventory: any note, ticket or page it
+ * read, plus a `check_claims` or `get_voice` call, all fold into "read memory".
+ * If nothing was actually read and only a `check_claims` or `get_voice` call
+ * fired, the clause says "checked memory" instead. Naming five notes and a
+ * ticket by title told the PM less than the write below the row already does.
  */
 export function trailSummary(parts: readonly AnyPart[], clock: string | null): string {
   const work = countWork(parts);
   const clauses: string[] = [];
-  const reads = [
-    work.notes.length > 0 ? namedOrCounted(work.notes, 'note') : '',
-    work.tickets.length > 0 ? namedOrCounted(work.tickets, 'ticket') : '',
-    work.pages.length > 0 ? namedOrCounted(work.pages, 'page') : '',
-  ].filter(Boolean);
-  if (reads.length > 0) clauses.push(`read ${andList(reads)}`);
+  const readCount = work.notes.length + work.tickets.length + work.pages.length;
+  if (readCount > 0) clauses.push('read memory');
+  else if (work.memoryOp) clauses.push('checked memory');
   if (work.checked.length > 0) clauses.push(`checked ${andList(work.checked)}`);
   if (work.searches > 0) clauses.push(times(work.searches));
   // Three unnamed steps in a row is a list, and the expanded trail is where a

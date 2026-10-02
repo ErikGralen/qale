@@ -3,12 +3,12 @@
 Date: 2026-09-08. Status: FA-1..8 BUILT 2026-09-08, all suites green, not live-verified, not committed. Notes at the bottom.
 
 **One constraint above the rest.** The agent can never send anything to Jira, Confluence, a
-calendar or mail on its own. A send waits for the PM every time, and no flag (`asked`, derived or
-declared), no skill text and no sphere changes that. Today the only path to a send is
+calendar or mail on its own. An outbound update waits for the PM every time, and no flag (`asked`, derived or
+declared), no skill text and no sphere changes that. Today the only path to an outbound update is
 `acceptOutbound`, reached from `acceptProposal` after the PM approves, and the policy grades
 `outbound` as waiting before it reads anything else (`policy.ts:184`). FA-1 adds a second guard in
 `fileProposal` that refuses the silent branch for `outbound` whatever the ruling says, and a test
-that runs `writePolicy` over every combination of facts and asserts a send never lands.
+that runs `writePolicy` over every combination of facts and asserts an outbound update never lands.
 
 Trigger: Erik wants the agent to stop asking for approval and to ask a clarifying question
 instead when something is unclear or in conflict ("You said X. That conflicts with Y. Is X the
@@ -35,7 +35,7 @@ five silent writes. The recorded H2 steering batch produced nine cards
 
 Todos are the bulk: five of seven on Nordkap, three of nine on H2. The meeting page is one card
 per transcript, every transcript. Take todos and the meeting page out and an after-meeting session
-goes from seven cards to zero, plus any sends.
+goes from seven cards to zero, plus any outbound updates.
 
 Three of those cards ask the PM to confirm their own words. The transcript has them saying "I'll
 put it in writing this week" and the card asks whether they will. The `notes/` edit is worse: the
@@ -62,7 +62,7 @@ follows carries `asked` and lands. The question comes before the write, never af
 
 **Waits.** Three things, and only these:
 
-- A send to Jira, Confluence, a calendar or mail. No way back.
+- An outbound update to Jira, Confluence, a calendar or mail. No way back.
 - A delete. Git can put it back now (`restore.ts:86-89`), but backlinks break the moment it lands
   and the chat line for a deletion is too quiet to carry it.
 - A rewrite of prose the PM typed: a patch into a `notes/` body, or into `## Notes` on a meeting
@@ -207,7 +207,7 @@ Nordkap, today: seven cards, one Approve all, a chat line that says the rest wen
 
 Nordkap, after: one question at the top ("'Send Nordkap the SSO dates': you, or Åsa?"), a block of
 six rows that landed with Put back on each, the agent's two sentences on what the meeting meant,
-and nothing to approve. H2 steering: two sends wait, seven rows landed.
+and nothing to approve. H2 steering: two outbound updates wait, seven rows landed.
 
 ## Tickets
 
@@ -219,8 +219,8 @@ a patch into a `notes/` body or a meeting `## Notes` section waits. Needs `patch
 as a fact on `WriteFacts`, computed by `fileProposal` from the placement. `USERS_SPHERE_TYPES`
 stays for the sidebar. `describeWritePolicy`, Settings copy, Hello screen, PRODUCT.md, tests.
 `fileProposal` refuses the silent branch for `outbound` whatever the ruling, and a test asserts
-`writePolicy` never grades a send silent for any combination of facts.
-Decision: build (Erik, 2026-09-08). A send waits, always.
+`writePolicy` never grades an outbound update silent for any combination of facts.
+Decision: build (Erik, 2026-09-08). An outbound update waits, always.
 
 **FA-2 Undo as a reverse patch.** `restore.ts`: apply the write's own diff in reverse against the
 current file; snapshot fallback when it does not apply, said on the row. Side-effect flips get
@@ -239,7 +239,7 @@ Decision: build (Erik, 2026-09-08).
 
 **FA-5 `asked` is derived.** Runtime sets `asked` from the session's ask answers and PM turns; the
 parameter is a hint. A write with "Assumed:" in its rationale waits. Derivation never touches
-`outbound`: a send waits whatever `asked` says.
+`outbound`: an outbound update waits whatever `asked` says.
 Decision: build (Erik, 2026-09-08).
 
 **FA-6 The question, in the prompts.** SHARED_PREAMBLE gets the decide/ask/wait bullet with the
@@ -249,7 +249,7 @@ conflict shape and one example. `ask_user` description rewritten. Tool descripti
 librarian "## Then" sections say what lands and what waits, in `defaults.ts` and `vault-dev/`
 together. The arrival skill's `check_claims` paragraph says a conflict is a question every time,
 asked before either write. The after-meeting path and the ask skill get a `check_claims` call.
-Every prompt and skill keeps saying that a send waits for the PM.
+Every prompt and skill keeps saying that an outbound update waits for the PM.
 Decision: build (Erik, 2026-09-08).
 
 **FA-7 Inferred todos wear a mark.** `inference` travels into the todo frontmatter. Todos and Home
@@ -273,13 +273,13 @@ Erik took the recommendations on 2026-09-08.
    second paragraph of the runbook?"), which is a card with worse controls.
 3. **Delete keeps asking** though git can undelete now, for the backlinks.
 4. **Waiting-on todos land.** A claim about someone else's promise, but nobody else sees it.
-5. **A send never lands.** Stated above the tickets. Not a decision to revisit.
+5. **An outbound update never lands.** Stated above the tickets. Not a decision to revisit.
 
 ## Rejected
 
 - **A per-session trust switch** ("this session may write anywhere"). Claude Code's auto-accept.
   Fails the ninety-second test: the PM has to remember which mode is on, and one mode covers a
-  send and a typo fix alike.
+  outbound update and a typo fix alike.
 - **A diff in the chat for every landed edit.** A PM reading "Rebecca Holm · owns the rollout"
   already knows if that is wrong. The diff sits one chevron away.
 - **The six-second undo strip for a session's writes.** A session is not one click.
@@ -295,7 +295,7 @@ One fix outside the tickets: the librarian agent said a repair to a document lan
 ### FA-1
 
 The policy now decides by what a write does, not by which folder it lands in. Four writes wait: a
-send, a delete, anything Qale assumed, and a patch over prose the PM typed. Everything else lands,
+outbound update, a delete, anything Qale assumed, and a patch over prose the PM typed. Everything else lands,
 including a meeting page from a transcript and every todo.
 
 **What I built**
@@ -309,7 +309,7 @@ including a meeting page from a transcript and every todo.
   updates, decisions, and the ungraded-kind fallback that still asks.
 - Rule 3 (`isTodo` asks) is gone. `asked` no longer changes a todo's answer either way. I did not
   touch the FA-7 inference mark.
-- `SEND_WAITS_REASON` is now an exported constant, because two pieces of code say that sentence:
+- `OUTBOUND_WAITS_REASON` is now an exported constant, because two pieces of code say that sentence:
   the rule, and the guard in `fileProposal`. Re-exported from `packages/domain/src/proposals/index.ts`.
 - `isUsersSphere`, `USERS_SPHERE_DIRS`, `USERS_SPHERE_TYPES` stay exported, with a comment saying
   the policy no longer reads them. Nothing in the app imports them today; the sidebar draws the
@@ -331,7 +331,7 @@ including a meeting page from a transcript and every todo.
 - `isAssumed(rationale)`: any line that starts "Assumed:" (case-insensitive). The unattended rules
   ask for a line in the rationale, not for an opening, so I match any line.
 - The guard: `if (ruling.disposition !== 'silent' || input.kind === 'outbound')` returns a waiting
-  card, and on the guarded path the reason is `SEND_WAITS_REASON`, never the wrong ruling's
+  card, and on the guarded path the reason is `OUTBOUND_WAITS_REASON`, never the wrong ruling's
   "this landed" line.
 
 **Copy**
@@ -343,7 +343,7 @@ including a meeting page from a transcript and every todo.
   land and names the four that wait.
 - `apps/desktop/PRODUCT.md`: Product Purpose, "A session holds what needs a decision", "A write
   waits for the PO when it changes their words or cannot be taken back" (renamed from "when it is
-  theirs to make"), and "Nothing lands unseen". "A send and a delete wait everywhere" is kept.
+  theirs to make"), and "Nothing lands unseen". The sentence that an update to Jira, Confluence or a calendar waits everywhere, and so does a delete, is kept.
 - Comment pointers moved from `docs/review-rework.md RR-1` to `docs/fewer-approvals.md FA-1` in the
   files I own, plus `write-policy-copy.ts` where the doc comment said "sphere".
 
@@ -356,10 +356,10 @@ including a meeting page from a transcript and every todo.
 - `packages/application/test/file-proposal.test.ts`: todo lands; write-up appended to a meeting page
   lands; a patch into a meeting's `## Notes` waits; a patch into `## Summary` lands; a patch into a
   document waits and an append to it lands; a rewrite the PM asked for lands; an "Assumed:"
-  rationale waits; a send waits and writes nothing.
+  rationale waits; an outbound update waits and writes nothing.
 - `packages/application/test/outbound-guard.test.ts` (new): stubs `@qale/domain`'s `writePolicy`
-  with one that says every write lands, and asserts a send still comes back waiting, never applies,
-  and carries the send sentence. This needs module mocking, so I added
+  with one that says every write lands, and asserts an outbound update still comes back waiting, never applies,
+  and carries the outbound update sentence. This needs module mocking, so I added
   `--experimental-test-module-mocks --disable-warning=ExperimentalWarning` to the `test` script in
   `packages/application/package.json`, the same flags `@qale/desktop` already uses.
 - `apps/desktop/test/write-policy-copy.test.ts`: places are now `lands`/`waits`, and each block has
@@ -782,7 +782,7 @@ ASKED_PARAM)
 - `propose_skill`: nothing to do. Its description already said the skill lands as you write it. The
   "nothing can run it until the PM approves it" string at the old line 2490 is the result of the
   `else` branch that only runs when the write waited, so I left it.
-- A new shared `sendWaitsNote` ("This waits for the PM. Nothing is sent until they approve it.")
+- A new shared `outboundWaitsNote` ("This waits for the PM. Nothing is sent until they approve it.")
   opens all six outbound draft descriptions: `draft_ticket`, `draft_ticket_comment`,
   `draft_page_update`, `draft_calendar_event`, `draft_calendar_reschedule`, `draft_calendar_rsvp`.
   `draft_text` is deliberately not in that set: it sends nothing and already says so.
@@ -804,7 +804,7 @@ sync test in packages/sessions/test/defaults-sync.test.ts checks this and passes
   Jira, Confluence or the calendar waits; say what the source meant in two or three sentences and
   name any assumption.
 - Process-note: "Each piece its own write". Same check_claims paragraph. "## Then" says the todos,
-  hub edits, insights and decisions land, a rewrite of the PM's own lines waits, and a send waits.
+  hub edits, insights and decisions land, a rewrite of the PM's own lines waits, and an outbound update waits.
 - Librarian: repairs land with the reason on the Activity row; a repair to a document, to-do or
   meeting lands too and the chat names it; a delete and the mirrored-page redline still wait, and
   "you never send anything yourself". "If a repair would change what a claim means, stop and ask"
@@ -817,10 +817,10 @@ sync test in packages/sessions/test/defaults-sync.test.ts checks this and passes
 
 **Tests**
 
-New file packages/agent/test/send-waits.test.ts, four tests:
-- every tool `createDraftTools` returns carries the send-waits sentence, and the tool list has to
+New file packages/agent/test/outbound-waits.test.ts, four tests:
+- every tool `createDraftTools` returns carries the sentence that says it waits, and the tool list has to
   equal DRAFT_TOOL_NAMES + CALENDAR_TOOL_NAMES so a seventh draft tool cannot slip past unchecked;
-- SHARED_PREAMBLE says a send waits and no longer says "Two spheres";
+- SHARED_PREAMBLE says an outbound update waits and no longer says "Two spheres";
 - SHARED_PREAMBLE carries the conflict question, the worked example, "read, ask, write" and the cost
   line;
 - UNATTENDED_RULES says an "Assumed:" write waits.
@@ -839,7 +839,7 @@ pnpm check-types                    ->  Tasks: 11 successful, 11 total
 ```
 
 Mid-run I saw up to 23 failing agent files and then 11 failing tests, all of them from the other
-FA agents working in the same tree: `@qale/domain` had not yet exported `SEND_WAITS_REASON` that
+FA agents working in the same tree: `@qale/domain` had not yet exported `OUTBOUND_WAITS_REASON` that
 `proposals.ts` imports, and tools.test.ts / withdraw.test.ts still expected "Proposed meeting" and
 "Proposed todo" where FA-1 now lands them. None of those assertions named a string I edited, and the
 final run above is green.

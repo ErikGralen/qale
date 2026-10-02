@@ -13,7 +13,7 @@ import {
 } from '../src/index.js';
 
 // The write policy (docs/fewer-approvals.md FA-1). What a write DOES decides,
-// not where the file sits: a send, a delete, a rewrite of the PM's own prose,
+// not where the file sits: an outbound update, a delete, a rewrite of the PM's own prose,
 // anything Qale assumed, and a new page in Documents wait for them. Everything
 // else lands.
 
@@ -141,7 +141,7 @@ test('what the PM asked for in the chat lands, wherever it goes', () => {
 
 // What waits.
 
-test('a send always waits', () => {
+test('an outbound update always waits', () => {
   for (const asked of [true, false]) {
     assert.equal(writePolicy({ kind: 'outbound', asked }).disposition, 'ask');
   }
@@ -184,10 +184,7 @@ test('an existing document keeps the old rules, so an append still lands', () =>
   const page = { targetPath: 'notes/spec-pricing.md' };
   assert.equal(writePolicy({ kind: 'update', appendOnly: true, ...page }).disposition, 'silent');
   assert.equal(writePolicy({ kind: 'update', ...page }).disposition, 'silent');
-  assert.equal(
-    writePolicy({ kind: 'update', rewritesUserText: true, ...page }).disposition,
-    'ask',
-  );
+  assert.equal(writePolicy({ kind: 'update', rewritesUserText: true, ...page }).disposition, 'ask');
   assert.equal(
     writePolicy({ kind: 'update', rewritesUserText: true, asked: true, ...page }).disposition,
     'silent',
@@ -225,11 +222,11 @@ test('a kind nobody has graded waits, because asking cannot surprise anyone', ()
   assert.equal(writePolicy({ kind: 'something-new' }).disposition, 'ask');
 });
 
-// A send and a delete never land, whatever else is true (docs/fewer-approvals.md,
+// An outbound update and a delete never land, whatever else is true (docs/fewer-approvals.md,
 // the constraint above the tickets). This walks every combination of facts the
 // policy reads.
 
-test('no combination of facts makes a send or a delete land', () => {
+test('no combination of facts makes an outbound update or a delete land', () => {
   const kinds = ['note', 'update', 'decision', 'outbound', 'delete'];
   const noteTypes = [undefined, 'note', 'todo', 'meeting', 'skill', 'agent', 'customer'];
   const paths = [
@@ -348,7 +345,7 @@ test('every row is on the list its answer names', () => {
   }
 });
 
-test('the list that waits names the send, the delete, the document, the rewrite and the assumption', () => {
+test('the list that waits names the outbound update, the delete, the document, the rewrite and the assumption', () => {
   const waits = describeWritePolicy().find((p) => p.place === 'waits')!;
   assert.equal(waits.rows.length, 5);
   assert.ok(waits.rows.some((r) => r.what.startsWith('Anything sent to')));

@@ -88,8 +88,8 @@ know?" Send.
 1. Two quiet turns: the reads and a claim check.
 2. The reply, three sentences: Ulrika and Petra, whose restaurants asked in June, Jonas with
    four open tickets, and Kaffekopp as the account that left over the same thing. Two `draft_text`
-   panels: **For Ulrika and Petra to forward** (Short, With what to do) and **For Jonas** (To
-   close the four tickets, Macro replacement). Lands: a "what they were told" line on Sjögatan
+   panels: **To Ulrika and Petra** (Short, With what to tell guests) and **To Jonas** (Short,
+   With the new macro). Each is a message to the person, with the text to forward quoted inside. Lands: a "what they were told" line on Sjögatan
    and Pizzeria Napoli, and a "last told" line on Ulrika, Petra and Jonas.
 3. Closing line: Ulrika and Petra hear first, because their restaurants asked.
 4. Same session, type "From now on, when a fix ships, tell the CSMs before the changelog." One
@@ -107,7 +107,7 @@ into Home and send. Pick no skill.
    waits on the deposits work Payments has planned for Q4. Pick **No, keep Q1 2027**.
 3. Lands: an insight (group bookings asked a third time through sales), a "what they were told"
    line on Nordic Steak, a "last told" line on Marcus. One `draft_text` panel, **Reply to Marcus**, sales voice, tabs
-   **One message to forward** and **What you can tell them**.
+   **Short** and **With lines for Oskar**. Both are a message to Marcus: the answer, then the reason.
 4. Closing text: "One yes and one no."
 
 Open Memory, Insights, and show the new note.

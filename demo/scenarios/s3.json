@@ -2,7 +2,7 @@
   "version": 1,
   "id": "s3",
   "title": "Who should know",
-  "do": "In Home, type: The fix for BOK-412 went out this morning. Who should know? Then, in the same session, type: From now on, when a fix ships, tell the CSMs before the changelog.",
+  "do": "In Home, type: The fix for BOK-412 went out this morning. Who should know?",
   "offScript": "That is outside what this demo can show. The six things it can do are listed in Settings, under Demo.",
   "lookups": {
     "claims": {
@@ -109,22 +109,22 @@
           "text": [
             "Three people have waited for this. [[people/ulrika-nystrom]] and [[people/petra-alm]]: their restaurants asked in June and got no date. [[people/jonas-berg]]: four open tickets and a macro that still says we are looking into it.",
             "",
-            "[[customers/kaffekopp]] left in 2025 because nobody told them a fix had shipped."
+            "[[customers/kaffekopp]] churned in 2025. Not hearing that a fix had shipped was a reason they gave."
           ],
           "tools": [
             {
               "name": "draft_text",
               "input": {
-                "title": "For Ulrika and Petra to forward",
+                "title": "To Ulrika and Petra",
                 "voice": "cs",
                 "variants": [
                   {
                     "label": "Short",
-                    "body": "Hi,\n\nSince this morning, guests who book through Google get one reminder, the day before at 17:00. Before today some of them got two. Sorry for the noise."
+                    "body": "Hey Ulrika and Petra,\n\nThe double reminder is fixed. Since this morning, guests who book through Google get one reminder text, the day before at 17:00.\n\nSjögatan reported it on 2026-06-24 and Pizzeria Napoli on 2026-06-26. Both have had \"we are looking into it\" since, so you hear it before they do, and they should hear it from you today.\n\nHere is a note you can forward as it is:\n\n> Hi,\n>\n> You told us that guests who book through Google got the reminder text twice. That is fixed since this morning: guests now get one reminder, the day before at 17:00. Sorry for the noise."
                   },
                   {
-                    "label": "Longer, with what to tell guests",
-                    "body": "Hi,\n\nSince this morning, guests who book through Google get one reminder, the day before at 17:00. Before today some of them got two, and we are sorry for the noise. If a guest still asks whether their booking is right, the answer is yes: one text means one booking. If a guest gets two texts for a booking made after this morning, send us the booking and we will look at it."
+                    "label": "With what to tell guests",
+                    "body": "Hey Ulrika and Petra,\n\nThe double reminder is fixed. Since this morning, guests who book through Google get one reminder text, the day before at 17:00.\n\nSjögatan reported it on 2026-06-24 and Pizzeria Napoli on 2026-06-26. Both have had \"we are looking into it\" since, so you hear it before they do, and they should hear it from you today.\n\nHere is a note you can forward as it is:\n\n> Hi,\n>\n> You told us that guests who book through Google got the reminder text twice. That is fixed since this morning: guests now get one reminder, the day before at 17:00. We are sorry for the noise.\n>\n> If a guest still asks whether their booking is right, the answer is yes: one text means one booking. If a guest gets two texts for a booking made after this morning, send us the booking and we will look at it."
                   }
                 ]
               }
@@ -132,15 +132,15 @@
             {
               "name": "draft_text",
               "input": {
-                "title": "For Jonas",
+                "title": "To Jonas",
                 "variants": [
                   {
-                    "label": "To close the four tickets",
-                    "body": "Fixed this morning. Guests who book through Google now get one reminder, the day before at 17:00. Sorry for the delay and for the noise. If a booking made after today gets two texts, reply here and we will look at it."
+                    "label": "Short",
+                    "body": "Hey Jonas,\n\nThe double reminder is fixed. The fix went out this morning: guests who book through Google now get one reminder, the day before at 17:00.\n\nYou asked on 2026-07-06 for a sentence you are allowed to send, and you did not get one. Sorry it took this long. Here is a reply that closes the four tickets:\n\n> Fixed this morning. Guests who book through Google now get one reminder, the day before at 17:00. Sorry for the delay and for the noise. If a booking made after today gets two texts, reply here and we will look at it."
                   },
                   {
-                    "label": "Macro replacement",
-                    "body": "Fixed on 2026-07-17: guests who book through Google get one reminder, the day before at 17:00. If a booking made after that date gets two texts, send us the booking."
+                    "label": "With the new macro",
+                    "body": "Hey Jonas,\n\nThe double reminder is fixed. The fix went out this morning: guests who book through Google now get one reminder, the day before at 17:00.\n\nYou asked on 2026-07-06 for a sentence you are allowed to send, and you did not get one. Sorry it took this long. Here is a reply that closes the four tickets:\n\n> Fixed this morning. Guests who book through Google now get one reminder, the day before at 17:00. Sorry for the delay and for the noise. If a booking made after today gets two texts, reply here and we will look at it.\n\nAnd a replacement for the macro that says \"we are looking into it\":\n\n> Fixed on 2026-07-17: guests who book through Google get one reminder, the day before at 17:00. If a booking made after that date gets two texts, send us the booking."
                   }
                 ]
               }
@@ -219,21 +219,6 @@
         {
           "pause": 1500,
           "text": "Ulrika and Petra hear first, because their restaurants asked."
-        },
-        {
-          "tools": [
-            {
-              "name": "propose_instruction",
-              "input": {
-                "rule": "When a fix ships, tell the CSMs before the changelog.",
-                "why": "The CSMs hear what shipped from their restaurants or from the changelog. Kaffekopp is what that costs."
-              }
-            }
-          ]
-        },
-        {
-          "pause": 1200,
-          "text": "Every session reads the [[skills/house-rules/SKILL|house rules]] from now on."
         }
       ]
     }

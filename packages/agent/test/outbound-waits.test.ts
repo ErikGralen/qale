@@ -10,8 +10,8 @@ import { CALENDAR_TOOL_NAMES, DRAFT_TOOL_NAMES, createDraftTools } from '../src/
  * Confluence, a calendar or mail on its own.
  *
  * FA-6 turned most writes into writes that land, which makes the prompts the
- * only place the model reads that a send is different. So every string it can
- * read on the way to a send says so, in the same words. A tool whose
+ * only place the model reads that an outbound update is different. So every string it can
+ * read on the way to an outbound update says so, in the same words. A tool whose
  * description loses that sentence is how the rule gets read as advice.
  */
 
@@ -24,7 +24,7 @@ function emptyCtx(): UseCaseContext {
   } as unknown as UseCaseContext;
 }
 
-test('every draft tool says the send waits for the PM', () => {
+test('every draft tool says the outbound update waits for the PM', () => {
   const tools = createDraftTools(emptyCtx(), 'session-1');
   const outbound = [...DRAFT_TOOL_NAMES, ...CALENDAR_TOOL_NAMES];
 
@@ -42,12 +42,12 @@ test('every draft tool says the send waits for the PM', () => {
     assert.match(
       tool.description,
       /This waits for the PM\. Nothing is sent until they approve it\./,
-      `${name} no longer says the send waits for the PM`,
+      `${name} no longer says the outbound update waits for the PM`,
     );
   }
 });
 
-test('the shared preamble says a send waits, whatever else lands', () => {
+test('the shared preamble says an outbound update waits, whatever else lands', () => {
   assert.match(SHARED_PREAMBLE, /Decide, ask, or wait/);
   assert.match(SHARED_PREAMBLE, /it leaves the workspace \(Jira, Confluence, a calendar, mail\)/);
   assert.match(SHARED_PREAMBLE, /Anything sent waits every time, whatever else is\s+true/);

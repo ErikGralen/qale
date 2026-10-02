@@ -53,7 +53,7 @@ function patch(path: string, from = MEETING): ProposalDTO {
   });
 }
 
-function send(targetId?: string): ProposalDTO {
+function outboundCard(targetId?: string): ProposalDTO {
   return card({
     kind: 'outbound',
     evidence: [{ ref: MEETING, resolved: true }],
@@ -95,21 +95,25 @@ test('cards about different pages never group, however alike they are', () => {
   );
 });
 
-test('a send groups with the page edit about the same item, never with anything else', () => {
-  const groups = cardGroups([patch('customers/cafe-nord.md'), send('SCH-118'), send()]);
+test('an outbound update groups with the page edit about the same item, never with anything else', () => {
+  const groups = cardGroups([
+    patch('customers/cafe-nord.md'),
+    outboundCard('SCH-118'),
+    outboundCard(),
+  ]);
   assert.deepEqual(
     groups.map((g) => g.cards.length),
     [1, 1, 1],
   );
 });
 
-test('the batch reads in one order: the meeting, the promises, the documents, then the sends', () => {
+test('the batch reads in one order: the meeting, the promises, the documents, then the outbound updates', () => {
   const meeting = patch('meetings/2026-09-07-steering-h2-priorities.md');
   const todo = patch('todos/reply-marcus-swap-eta.md');
   const doc = patch('notes/h2-capacity.md');
   const hub = patch('customers/cafe-nord.md');
   const gone = card({ kind: 'delete', targetPath: 'notes/old.md' });
-  const posted = send('SCH-118');
+  const posted = outboundCard('SCH-118');
   const order = orderCards([posted, gone, hub, doc, todo, meeting]);
   assert.deepEqual(
     order.map((p) => p.targetPath),
@@ -124,17 +128,20 @@ test('the batch reads in one order: the meeting, the promises, the documents, th
   );
 });
 
-test('the heading counts the changes and the sends apart', () => {
+test('the heading counts the changes and the outbound updates apart', () => {
   assert.equal(batchCount(6, 0), '6 changes');
   assert.equal(batchCount(1, 0), '1 change');
-  assert.equal(batchCount(4, 2), '4 changes and 2 sends');
-  assert.equal(batchCount(0, 1), '1 send');
+  assert.equal(batchCount(4, 2), '4 changes and 2 updates');
+  assert.equal(batchCount(0, 1), '1 update');
 });
 
 test('one source for the whole batch is named once; two are named by nobody', () => {
-  const one = [patch('customers/cafe-nord.md'), send('SCH-118')];
+  const one = [patch('customers/cafe-nord.md'), outboundCard('SCH-118')];
   assert.equal(batchSource(one), 'meetings/2026-09-07-steering-h2-priorities');
-  const two = [patch('customers/cafe-nord.md'), patch('notes/h2.md', '[[sources/2026-08-01-call]]')];
+  const two = [
+    patch('customers/cafe-nord.md'),
+    patch('notes/h2.md', '[[sources/2026-08-01-call]]'),
+  ];
   assert.equal(batchSource(two), null);
   // One card read out of nothing: the heading would be claiming a source that
   // card does not have.
@@ -143,13 +150,19 @@ test('one source for the whole batch is named once; two are named by nobody', ()
 });
 
 test('the source is the material, never the page being written', () => {
-  assert.equal(sourceRefOf(patch('customers/cafe-nord.md')), 'meetings/2026-09-07-steering-h2-priorities');
+  assert.equal(
+    sourceRefOf(patch('customers/cafe-nord.md')),
+    'meetings/2026-09-07-steering-h2-priorities',
+  );
   assert.equal(sourceRefOf(card({ kind: 'decision', targetPath: 'decisions/x.md' })), '');
 });
 
 test('a row leads with the real title, and falls back to the filename', () => {
   const todo = patch('todos/tell-fjord-sports-payroll-timeline.md');
-  assert.equal(cardTitle(todo, 'Tell Fjord Sports the payroll timeline'), 'Tell Fjord Sports the payroll timeline');
+  assert.equal(
+    cardTitle(todo, 'Tell Fjord Sports the payroll timeline'),
+    'Tell Fjord Sports the payroll timeline',
+  );
   assert.equal(cardTitle(todo), 'Tell Fjord Sports Payroll Timeline');
 });
 

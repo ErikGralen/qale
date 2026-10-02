@@ -22,7 +22,6 @@ import {
   sameInstant,
   ticketFieldRows,
   ticketHead,
-  ticketKindLine,
   type NewPageFacts,
 } from '@qale/domain';
 import { useApp } from '../../state/app-state';
@@ -76,9 +75,9 @@ export interface CardItemProps {
   busy: boolean;
   focused: boolean;
   error: string | null;
-  /** An outbound send was refused because the target moved after drafting —
+  /** An outbound update was refused because the target moved after drafting —
    *  the card stays pending and grows an explicit "Approve anyway". */
-  staleSend?: boolean;
+  staleOutbound?: boolean;
   onFocus: () => void;
   onAccept: (edited?: unknown) => void;
   onReject: () => void;
@@ -90,13 +89,21 @@ export interface CardItemProps {
    *  from more than one, each row names its own behind the chevron instead. */
   showSource?: boolean;
   /**
-   * The send this card asked for has left. The card stays where it was and
+   * The outbound update this card asked for has left. The card stays where it was and
    * settles: the verb goes to past tense, the message folds behind the chevron,
    * and the three controls become the one word the approve button promised.
    * Nothing moves on the page, so the eye that watched the button sees the
    * answer in the same place.
    */
   sent?: SentCard | null;
+  /**
+   * The row is one of several outbound updates that open one at a time (`OutboundSteps` in
+   * CardRows). It sits on the shared card, so it draws no surface of its own.
+   * `closed` is an outbound update that still waits while another one is open: the head
+   * stays, the message folds, and one control opens it. A settled outbound update ignores
+   * this, because it folds on its own.
+   */
+  step?: 'open' | 'closed';
 }
 
 /** What an external evidence chip is, said from its path. A mirror path names
@@ -138,7 +145,7 @@ function AskedLine() {
 /**
  * The three controls, on every row, in one order: approve, discard, detail.
  *
- * A send and a delete name the act on the approve control, because "Approve" on
+ * An outbound update and a delete name the act on the approve control, because "Approve" on
  * a row that posts a comment or removes a page is a word a person can click
  * without knowing what they agreed to. It is still the same control, in the same
  * place, at the same size. The label sits beside the check rather than
@@ -147,19 +154,22 @@ function AskedLine() {
 function RowControls({
   approveLabel,
   approveTitle,
-  sendId,
+  outboundId,
   busy,
   blocked,
   open,
   onAccept,
   onReject,
   onToggle,
+  fadeIn,
 }: {
+  /** The row just opened in place of another, so the controls arrive with it. */
+  fadeIn?: boolean;
   /** The word beside the check, for a row whose act is not "approve". */
   approveLabel?: string;
   approveTitle: string;
-  /** A send's handle: ↵ moves the caret here rather than firing it. */
-  sendId?: string;
+  /** An outbound update's handle: ↵ moves the caret here rather than firing it. */
+  outboundId?: string;
   busy: boolean;
   /** The change has nowhere to land, so approving it would do nothing. */
   blocked: boolean;
@@ -169,10 +179,14 @@ function RowControls({
   onToggle: () => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-0.5">
+    <div
+      className={`flex shrink-0 items-center gap-0.5 ${
+        fadeIn ? 'animate-in duration-200 ease-out fade-in motion-reduce:animate-none' : ''
+      }`}
+    >
       <button
         className="inline-flex items-center gap-1 rounded-md px-1.5 py-1.5 text-sm font-medium text-brand transition-colors hover:bg-brand/10 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-        data-send={sendId}
+        data-outbound={outboundId}
         onClick={onAccept}
         disabled={busy || blocked}
         aria-label={approveTitle}
@@ -203,14 +217,21 @@ function RowControls({
   );
 }
 
-/** The time of day a send left, for the mark beside it. */
+/**
+ * How an outbound update folds and opens: a fast start and a long, soft landing. One curve
+ * for every fold on the card, so an outbound update that settles and the next one that
+ * opens under it move as one.
+ */
+const FOLD_EASE = 'ease-[cubic-bezier(0.16,1,0.3,1)]';
+
+/** The time of day an outbound update left, for the mark beside it. */
 function clock(at: number | null): string {
   if (at === null) return '';
   return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
 /**
- * What the controls become once a send has left: the word the approve button
+ * What the controls become once an outbound update has left: the word the approve button
  * promised, in the ledger's green, and the time it left. The chevron stays in
  * its place, because the message is still behind it.
  *
@@ -316,7 +337,7 @@ export function CardItem({
   busy,
   focused,
   error,
-  staleSend,
+  staleOutbound,
   onFocus,
   onAccept,
   onReject,
@@ -324,6 +345,7 @@ export function CardItem({
   inGroup,
   showSource,
   sent = null,
+  step,
 }: CardItemProps) {
   const { previewProposal, openSession, askInSession, sessions } = useApp();
   const [preview, setPreview] = useState<{
@@ -476,7 +498,7 @@ export function CardItem({
 
   const why = proposal.rationale.trim();
 
-  // The moment a send settles, the message folds and any edit in progress is
+  // The moment an outbound update settles, the message folds and any edit in progress is
   // moot: what left is what left. The chevron opens the message again.
   const settled = sent !== null;
   useEffect(() => {
@@ -485,9 +507,19 @@ export function CardItem({
       setEditing(false);
     }
   }, [settled]);
-  // The fold on a send: open while the card waits, closed once it has left,
-  // and back open on the chevron.
-  const folded = settled && !open;
+  // An outbound update that waits its turn while another one is open.
+  const closed = step === 'closed' && !settled;
+  // The controls fade in on a row that opens after it was closed. A row that
+  // draws open from the start shows them at once: nothing changed on screen.
+  const [wasClosed, setWasClosed] = useState(false);
+  useEffect(() => {
+    if (closed) setWasClosed(true);
+  }, [closed]);
+  // The fold on an outbound update: open while the card waits, closed once it has left,
+  // and back open on the chevron. An outbound update that waits its turn folds too.
+  const folded = closed || (settled && !open);
+  // The row sits on a surface another component draws.
+  const bare = inGroup || step !== undefined;
 
   return (
     <li
@@ -505,7 +537,10 @@ export function CardItem({
           : headline
       }
       data-sent={settled ? '' : undefined}
-      className={`overflow-hidden ${inGroup ? '' : 'rounded-lg bg-card'} ${rowFocusClass(!inGroup)}`}
+      data-step={step}
+      className={`overflow-hidden ${bare ? '' : 'rounded-lg bg-card'} ${rowFocusClass(!bare)} ${
+        closed ? 'cursor-pointer transition-colors hover:bg-accent/50' : ''
+      }`}
     >
       <div className={`flex items-start gap-2.5 px-3 py-2.5 ${inGroup ? 'pl-9' : ''}`}>
         {!inGroup &&
@@ -556,21 +591,33 @@ export function CardItem({
                 onOpen={onOpen}
               />
             ))}
-          {/* Everything under the title folds once a send has left. A grid row
+          {/* Everything under the title folds once an outbound update has left. A grid row
               that goes to 0fr closes over content of any height, so the card
               settles to one line in one motion and the chevron opens it again.
               An internal card never folds, so it never wears the grid. */}
           <div
             className={
               outbound
-                ? `grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${
+                ? `grid transition-[grid-template-rows] duration-[250ms] ${FOLD_EASE} motion-reduce:transition-none ${
                     folded ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
                   }`
                 : undefined
             }
             aria-hidden={folded || undefined}
+            // Folded content takes no click and no Tab stop.
+            inert={folded}
           >
-            <div className={outbound ? 'min-h-0 overflow-hidden' : undefined}>
+            {/* The message fades as the row closes over it, so the fold never
+                shows a line of text cut in half at full ink. */}
+            <div
+              className={
+                outbound
+                  ? `min-h-0 overflow-hidden transition-opacity duration-200 motion-reduce:transition-none ${
+                      folded ? 'opacity-0' : 'opacity-100'
+                    }`
+                  : undefined
+              }
+            >
               {/* When a calendar card lands. This is the fact being approved: the
               line above named the event and the system and never once said
               which day or hour, which is the only thing a person checks. */}
@@ -591,7 +638,7 @@ export function CardItem({
                     onAppend={setDraftAppend}
                   />
                 ) : outbound ? (
-                  // A send cannot be taken back, so the whole message is on the row.
+                  // An outbound update cannot be taken back, so the whole message is on the row.
                   <OutboundDetail payload={outbound} onOpen={onOpen} sent={settled} />
                 ) : needsPreview ? (
                   preview ? (
@@ -662,8 +709,8 @@ export function CardItem({
               className="mt-2 flex items-center gap-3 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive"
             >
               <span className="flex-1">{error}</span>
-              {outbound && staleSend ? (
-                // Main refused the send because the target moved after drafting.
+              {outbound && staleOutbound ? (
+                // Main refused the outbound update because the target moved after drafting.
                 // Approving anyway re-accepts with the snapshot refreshed to the
                 // mirror's current state — an explicit decision, never a silent
                 // retry loop.
@@ -705,11 +752,24 @@ export function CardItem({
             open={open}
             onToggle={() => setOpen((v) => !v)}
           />
+        ) : closed ? (
+          // The one control a waiting outbound update keeps. The whole row opens it too,
+          // and this is the way in for a keyboard.
+          <button
+            className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            onClick={onFocus}
+            aria-expanded={false}
+            aria-label="Show this update"
+            title="Show this update"
+          >
+            <ChevronDown className="size-4" />
+          </button>
         ) : (
           <RowControls
+            fadeIn={wasClosed}
             approveLabel={act ? act.word : removes ? 'Delete' : undefined}
             approveTitle={act ? `Approve & ${act.verb}` : removes ? 'Approve & delete' : 'Approve'}
-            sendId={outbound ? proposal.id : undefined}
+            outboundId={outbound ? proposal.id : undefined}
             busy={busy}
             blocked={!!preview?.stale || editing}
             open={open}
@@ -720,7 +780,7 @@ export function CardItem({
         )}
       </div>
 
-      {open && (
+      {open && !closed && (
         <div className="border-t border-border/60 px-3 py-2.5 pl-9">
           {/* What approving does and where it lands. It is one sentence per card
               kind, so on the row it read as boilerplate the eye skipped; here it
@@ -1033,7 +1093,7 @@ function outboundRef(ob: OutboundPayloadDTO): string | null {
  * The payload re-approved after a stale refusal: the drafted-against snapshot
  * (`remote_updated`/`version`) refreshed to the mirror's current values, so the
  * accept-time check passes deliberately. When the mirror can't say, the
- * snapshot is stripped and the send proceeds unchecked — the PO chose that
+ * snapshot is stripped and the outbound update proceeds unchecked — the PO chose that
  * with the banner in view.
  */
 async function withFreshSnapshot(payload: OutboundPayloadDTO): Promise<OutboundPayloadDTO> {
@@ -1145,10 +1205,10 @@ function OutboundTargetLine({
 }
 
 /**
- * The target line once the send has left: the same line, in past tense, with
+ * The target line once the outbound update has left: the same line, in past tense, with
  * the same chip. The line comes off the receipt the accept stamped, so a ticket
  * created a second ago wears the key it was given: "Created [BOK-431 · To Do]
- * Card on file at booking". A send whose item has no address keeps its whole
+ * Card on file at booking". An outbound update whose item has no address keeps its whole
  * sentence in `act` and draws no chip. The chip carries no kind pill, as on
  * the open card.
  */
@@ -1177,9 +1237,10 @@ function SentTargetLine({
 }
 
 /**
- * The quiet line under an outbound head: what kind of thing it is, where it
- * lands, and for a new ticket the fields the draft set. "Jira story in BOK ·
- * Labels: scheduling · Priority: High", or "Confluence page".
+ * The quiet line under an outbound head: the fields a new ticket's draft set.
+ * "Labels: scheduling · Priority: High". Where the ticket or page lands is
+ * already on the target line above, as the live chip's title and provider
+ * icon, so this line never repeats it.
  *
  * The fields belong on the card because nothing else says them: the body is
  * the description, and a label the team does not use is caught here or not at
@@ -1187,22 +1248,16 @@ function SentTargetLine({
  * comment gets no line, because its chip's state pill already says what it is.
  */
 function OutboundKindLine({ payload }: { payload: OutboundPayloadDTO }) {
-  const system = providerName(payload);
-  const kind =
-    payload.action === 'update_page' ? `${system ?? 'Wiki'} page` : ticketKindLine(payload, system);
   const rows = useMemo(
     () => (payload.action === 'create_ticket' ? ticketFieldRows(payload) : []),
     [payload],
   );
-  if (!kind && rows.length === 0) return null;
-  const parts: ReactNode[] = [
-    ...(kind ? [<span key="kind">{kind}</span>] : []),
-    ...rows.map((row) => (
-      <span key={row.label}>
-        {row.label}: <span className="text-foreground">{row.value}</span>
-      </span>
-    )),
-  ];
+  if (rows.length === 0) return null;
+  const parts: ReactNode[] = rows.map((row) => (
+    <span key={row.label}>
+      {row.label}: <span className="text-foreground">{row.value}</span>
+    </span>
+  ));
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
       {parts.map((part, i) => (
@@ -1381,7 +1436,11 @@ function OutboundDetail({
       <PreviewSurface>
         {redline && diffPair ? (
           <RenderedDiff before={diffPair.before} after={diffPair.after} onOpen={onOpen} />
-        ) : payload.action === 'comment_ticket' ? (
+        ) : payload.action === 'comment_ticket' || payload.action === 'update_page' ? (
+          // A ticket comment and a fresh page (no redline yet, nothing to
+          // diff against) are both text pulled onto the card rather than
+          // written on it, so both sit in the same quoted box. A redline
+          // already reads as page content on its own.
           <div className="rounded-md bg-muted/40 px-3 py-2">
             <Markdown content={payload.body} onOpenNote={onOpen} compact />
           </div>
@@ -1410,7 +1469,7 @@ function PreviewSkeleton() {
 }
 
 /**
- * The surface a send's own text sits on. A send cannot be taken back, so the
+ * The surface an outbound update's own text sits on. An outbound update cannot be taken back, so the
  * whole message is on the row rather than clamped: the box scrolls at 26rem so
  * a long redline does not bury the rows under it, and every word is still
  * reachable. The cap has to be legible, so content taller than the box fades at

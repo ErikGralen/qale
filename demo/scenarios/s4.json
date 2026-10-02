@@ -2,7 +2,7 @@
   "version": 1,
   "id": "s4",
   "title": "Sales needs it to sign",
-  "do": "In Home, paste the message from marcus-group-bookings.md in the Qale demo files folder (Marcus, about Nordic Steak) and send. Pick no skill. On the question card, pick No, keep Q1 2027.",
+  "do": "In Home, type: Help me respond to this. Paste the message from marcus-group-bookings.txt in the Qale demo files folder (Marcus, about Nordic Steak), and send. Pick no skill. On the question card, pick No, keep Q1 2027.",
   "offScript": "That is outside what this demo can show. The six things it can do are listed in Settings, under Demo.",
   "lookups": {
     "claims": {
@@ -78,10 +78,7 @@
                   },
                   {
                     "claim": "The Google Book a table button is coming for every restaurant.",
-                    "about": [
-                      "[[tickets/jira/GST-77]]",
-                      "[[customers/nordic-steak]]"
-                    ]
+                    "about": ["[[tickets/jira/GST-77]]", "[[customers/nordic-steak]]"]
                   }
                 ]
               }
@@ -187,12 +184,12 @@
                 "voice": "sales",
                 "variants": [
                   {
-                    "label": "One message to forward",
-                    "body": "Live since May: the Book a table button on Google, for every restaurant. Each restaurant switches it on under Settings, Booking channels. That one goes in the contract as done.\n\nQ1 2027: group bookings, parties over eight with a set menu and a deposit. It needs deposits at booking first, and those come in Q4. There is no earlier date.\n\nWhat you can put in the contract now: the Google button, one text reminder per booking the day before at 17:00, and table areas (live since July). Group bookings goes in as Q1 2027, with no month yet."
+                    "label": "Short",
+                    "body": "Hey Marcus,\n\nThe Google button is a yes, and it is already live. It shipped on 2026-05-12 for every restaurant. Each restaurant switches it on under Settings, Booking channels. Put it in the contract as done.\n\nGroup bookings is a no for this autumn. It stays at Q1 2027.\n\nThe reason is the deposit. A party of twelve that books a set menu and does not turn up costs the restaurant the food as well as the table. Group bookings with no deposit gives Nordic Steak a bigger no-show problem, not a smaller one. Deposits are planned for Q4, and group bookings follows in Q1 2027.\n\nSo the contract can say Q1 2027 for group bookings. I can't give you a month yet."
                   },
                   {
-                    "label": "What you can tell them",
-                    "body": "- Live since 2026-05-12: the Book a table button on Google, for every restaurant.\n- Q1 2027: group bookings, with a set menu and a deposit.\n- No date this autumn for group bookings, and no month yet inside Q1 2027."
+                    "label": "With lines for Oskar",
+                    "body": "Hey Marcus,\n\nThe Google button is a yes, and it is already live. It shipped on 2026-05-12 for every restaurant. Each restaurant switches it on under Settings, Booking channels. Put it in the contract as done.\n\nGroup bookings is a no for this autumn. It stays at Q1 2027.\n\nThe reason is the deposit. A party of twelve that books a set menu and does not turn up costs the restaurant the food as well as the table. Group bookings with no deposit gives Nordic Steak a bigger no-show problem, not a smaller one. Deposits are planned for Q4, and group bookings follows in Q1 2027.\n\nLines you can paste to Oskar:\n\n- Live since 2026-05-12: the Book a table button on Google, for every restaurant.\n- Q1 2027: group bookings, with a set menu and a deposit at booking. The deposit covers the restaurant if the group does not turn up.\n- No month yet inside Q1 2027."
                   }
                 ]
               }

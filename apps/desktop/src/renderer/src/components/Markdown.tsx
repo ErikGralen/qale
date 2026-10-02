@@ -10,6 +10,8 @@ import {
 } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { remarkPlugins } from '@qale/markdown';
+import { slugFromPath } from '@qale/domain';
+import type { NoteType } from '@qale/ipc';
 import { noteLinkTitle } from '../lib/note-links';
 import { invoke } from '../lib/ipc';
 import { isExternalRef } from '../lib/connections';
@@ -18,6 +20,7 @@ import { webUrl } from '../lib/urls';
 import { useApp } from '../state/app-state';
 import { ExternalRefChip, TicketKeyText } from './ExternalRef';
 import { splitTicketKeys } from '../lib/ticket-keys';
+import { noteTypeIcon } from '../lib/note-icons';
 
 /**
  * Read-only note renderer. Uses the SAME remark plugin array as the indexer
@@ -133,8 +136,11 @@ const PLUGINS = [...remarkPlugins, remarkTicketKeys];
 interface LinkContext {
   onOpenNote?: (path: string, opts?: NavOpts) => void;
   titleBySlug: Map<string, string>;
+  /** The note's type, for the icon beside a plain wikilink. Set only for
+   *  slugs the tree actually knows, same as `titleBySlug`. */
+  typeBySlug: Map<string, NoteType>;
 }
-const LinkCtx = createContext<LinkContext>({ titleBySlug: new Map() });
+const LinkCtx = createContext<LinkContext>({ titleBySlug: new Map(), typeBySlug: new Map() });
 
 function TicketSpan({
   node: _node,
@@ -148,7 +154,7 @@ function TicketSpan({
 function Anchor(
   props: ComponentProps<'a'> & { 'data-target'?: string; 'data-link-type'?: string },
 ) {
-  const { onOpenNote, titleBySlug } = useContext(LinkCtx);
+  const { onOpenNote, titleBySlug, typeBySlug } = useContext(LinkCtx);
   // Wikilinks carry data-target; a relative href is a note path too
   // (e.g. a session answer's [label](decisions/x.md)). Both route in-app.
   const dataTarget = props['data-target'];
@@ -203,9 +209,19 @@ function Anchor(
     // storage path there was the one place a slug reached the reader.
     const written = typeof props.children === 'string' ? props.children : null;
     const title = written && written === target ? noteLinkTitle(target, titleBySlug) : undefined;
+    // Only a note the tree actually holds gets an icon. A page a session is
+    // still proposing has no type to show yet, same as it has no title.
+    const noteType = typeBySlug.get(slugFromPath(target));
+    const TypeIcon = noteType ? noteTypeIcon(noteType) : null;
     return (
       <>
         <TypeChip label={linkType} />
+        {TypeIcon && (
+          <TypeIcon
+            className="mr-0.5 -mt-0.5 inline-block size-3.5 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+        )}
         <a
           {...props}
           href="#"
@@ -267,7 +283,16 @@ export const Markdown = memo(function Markdown({
     for (const g of tree?.groups ?? []) for (const n of g.notes) m.set(n.slug, n.title);
     return m;
   }, [tree]);
-  const links = useMemo(() => ({ onOpenNote, titleBySlug }), [onOpenNote, titleBySlug]);
+  // Same walk, for the icon that sits beside a plain wikilink.
+  const typeBySlug = useMemo(() => {
+    const m = new Map<string, NoteType>();
+    for (const g of tree?.groups ?? []) for (const n of g.notes) m.set(n.slug, n.type);
+    return m;
+  }, [tree]);
+  const links = useMemo(
+    () => ({ onOpenNote, titleBySlug, typeBySlug }),
+    [onOpenNote, titleBySlug, typeBySlug],
+  );
 
   if (inline) {
     return (

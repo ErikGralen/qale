@@ -140,7 +140,7 @@ above the reply. "Waits" means a card. Dates are anchor dates; Reset slides them
 ### S1. The meeting produced actions (always first)
 
 **Value:** the meeting ends, and the agent catches the date you gave and the complaint you
-missed, then updates Jira, Confluence and the record with your approval on every send.
+missed, then updates Jira, Confluence and the record with your approval on every outbound update.
 
 **Do:** drag `brasserie-lund-review.vtt` from the demo files folder into Home. Type: "yesterday's
 Brasserie Lund review, nobody wrote anything down". Send.
@@ -251,10 +251,10 @@ and drafts what each one gets.
 Kaffekopp is cited as the lesson: they churned after asking for something that had already
 shipped.
 
-**Lands:** two `draft_text` panels to copy. One in the cs voice for Ulrika and Petra to forward
-to their restaurants ("Since this morning, guests who book through Google get one reminder, the
-day before at 17:00. Sorry for the noise."). One plain line for Jonas to close the four tickets
-with. Ledger lines land on Sjögatan and Pizzeria Napoli and `last_told` on Ulrika, Petra and
+**Lands:** two `draft_text` panels to copy, each a message to the person. One in the cs voice
+to Ulrika and Petra: what is fixed, which of their restaurants asked, then a quoted note they
+forward to the restaurants. One to Jonas: what is fixed, then a quoted reply that closes the four
+tickets, and a replacement for the macro. Ledger lines land on Sjögatan and Pizzeria Napoli and `last_told` on Ulrika, Petra and
 Jonas.
 
 The Brasserie Lund line in the text is true because S1 always ran. No tool call in S3 touches
@@ -292,10 +292,11 @@ planned for Q4 ([[decisions/2026-06-18-group-bookings-after-deposits]],
 [[meetings/2026-07-09-steering]]). Do you want to move group bookings up?" Options: **No, Q1
 stands** / **Yes, I'll raise it at steering**. Pick **No**.
 
-**Turn two:** a `draft_text` panel in the sales voice, two tabs. **One message to forward**: the
-Google button is live today and how to switch it on; group bookings is Q1 2027 because it needs
-the deposit piece Payments delivers in Q4; what Nordic Steak can put in the contract now (a
-named date is not one of them). **What you can tell them**: three lines. An insight lands
+**Turn two:** a `draft_text` panel in the sales voice, two tabs. Both are a message to Marcus
+that opens "Hey Marcus,". **Short**: the Google button is live and how to switch it on; group
+bookings stays at Q1 2027, and why (a set menu with no deposit is a bigger no-show); what can go
+in the contract. **With lines for Oskar**: the same message, then three lines Marcus can paste to
+the account. An insight lands
 ("Group bookings asked for a third time through sales, for a contract line") and a ledger line on
 Nordic Steak's prospect page and `last_told` on Marcus.
 

@@ -18,12 +18,7 @@ approve before anything leaves the workspace.
 
 1. Drag `brasserie-lund-review.vtt` from the Qale demo files folder into Home. It lands in the
    composer.
-2. Type this and send:
-
-   ```
-   yesterday's Brasserie Lund review, nobody wrote anything down
-   ```
-
+2. Send with no typed text.
 3. Qale files the transcript on yesterday's calendar page, then asks two questions on one card.
    Pick **Yes, end of October** on The date, and **Yes, same bug** on Reminders.
 4. These land on their own:
@@ -54,8 +49,6 @@ approve before anything leaves the workspace.
    A/B test). **Yes, make this a Jira story** on all three, skip Anything else.
 4. Three ticket cards wait under BOK-300. Approve one. The todo from the 1:1 with Rebecca closes
    on its own.
-5. Show: the new ticket under Jira, with the `no-show-fees` label, Brasserie Lund in the first
-   line, and three checks.
 
 ## Then any of these, in any order, each once
 
@@ -72,26 +65,20 @@ approve before anything leaves the workspace.
 2. The reply names three people: Ulrika (Sjögatan and Brasserie Lund), Petra (Pizzeria Napoli),
    Jonas (four open support tickets and a macro that still says "we are looking into it"). It
    names Kaffekopp as the account that left over exactly this.
-3. Two panels to copy: **For Ulrika and Petra to forward** (tabs Short, With what to do) and
-   **For Jonas** (tabs To close the four tickets, Macro replacement). Copy the Short tab. Nothing
-   sends. The pages for Sjögatan, Pizzeria Napoli, Ulrika, Petra and Jonas get a line saying what
-   they were told today. Those land.
-4. Same session, type this and send:
-
-   ```
-   From now on, when a fix ships, tell the CSMs before the changelog.
-   ```
-
-5. Show: the reply says "Every session reads the house rules from now on". Open House rules and
-   show the new line.
+3. Two panels to copy: **To Ulrika and Petra** (tabs Short, With what to tell guests) and
+   **To Jonas** (tabs Short, With the new macro). Each is a message to the person: what is fixed,
+   why they hear it today, then the text they can forward. Copy the Short tab. Nothing sends.
+   The pages for Sjögatan, Pizzeria Napoli, Ulrika, Petra and Jonas get a line saying what they
+   were told today. Those land.
 
 ### 4. Sales needs it to sign
 
 **"Sales pings me for a yes because I am the only one who knows what is live and what was
 decided."**
 
-1. Paste this into Home and send. Pick no skill; Qale pulls in Handle a commitment itself. The
-   text is `marcus-group-bookings.md` in the Qale demo files folder.
+1. In Home, type `Help me respond to this`, then paste the message below and send. Pick no skill;
+   Qale pulls in Handle a commitment itself. The text is `marcus-group-bookings.txt` in the Qale
+   demo files folder.
 
    ```
    Marcus Ek, #sales, 08:52. URGENT. Nordic Steak, 25 restaurants, are ready to sign this week. Their ops lead needs two things in the contract: group bookings with a set menu, and the Google "Book a table" button on every restaurant. Can I tell them both are coming this autumn? I NEED BOTH TO SIGN THEM.
@@ -100,9 +87,10 @@ decided."**
 2. Qale shows nothing for a few seconds while it reads.
 3. Question card, Q1 2027: the Google button has been live since May, group bookings waits on
    deposits. Pick **No, keep Q1 2027**.
-4. One panel, **Reply to Marcus**, in the sales voice: tabs **One message to forward** and **What
-   you can tell them**. Copy the first tab. An insight lands, and the Nordic Steak and Marcus pages
-   get a line saying what they were told. No card waits.
+4. One panel, **Reply to Marcus**, in the sales voice: tabs **Short** and **With lines for Oskar**.
+   Both open with "Hey Marcus," and give the answer and the reason: no group bookings without a
+   deposit. Copy the first tab. An insight lands, and the Nordic Steak and Marcus pages get a line
+   saying what they were told. No card waits.
 5. Show: the closing line, "One yes and one no. The yes shipped on 2026-05-12 and sales was not
    told." Then Memory, Insights, and the new note: sales has asked for group bookings three times.
 
@@ -116,15 +104,14 @@ decided."**
    Payments). Copy the Full tab.
 3. One card waits: this week's section on the public Changelog, table areas and one reminder for
    Google bookings, with no ticket keys, no customer names and no target dates. Approve it.
-4. Show: open the Changelog mirror and scroll to the end. The new section is there, one heading
-   level smaller than the older entries.
 
 ### 6. The brief for Thursday
 
 **"I walk into steering not knowing what each person in the room has and has not heard."**
 
 1. Open **Calendar**, click **Steering** on Thursday, press **Get the brief**.
-2. The Prep section lands on the page, no card. Four parts:
+2. The brief appears in the chat as Qale writes it, no card, and lands on the meeting page too.
+   Four parts:
    - Since last time: Åsa has not heard the October date, and the BOK-300 stories are drafted.
    - Tickets: BOK-412 fixed, table areas shipped, PAY-210 still has no date.
    - Who owes an answer: Henrik, a date for PAY-210.

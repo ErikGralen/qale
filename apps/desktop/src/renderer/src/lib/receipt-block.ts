@@ -89,7 +89,7 @@ export type LandedTier =
   | 'promise-moved'
   /** A page in Documents. */
   | 'documents'
-  /** An approved send. It writes no page and keeps its own green card
+  /** An approved outbound update. It writes no page and keeps its own green card
    *  (docs/receipt-redesign.md RC-3), so it draws here only if one ever
    *  reaches this block. */
   | 'sent'
@@ -248,7 +248,7 @@ export function landedSummary(rows: readonly AppliedRow[]): LandedSummary {
   let newDocs = 0;
   let changedDocs = 0;
   let memory = 0;
-  let sends = 0;
+  let outbound = 0;
   const removed: string[] = [];
   const seen = new Set<string>();
 
@@ -259,7 +259,7 @@ export function landedSummary(rows: readonly AppliedRow[]): LandedSummary {
       continue;
     }
     if (tier === 'sent') {
-      sends++;
+      outbound++;
       continue;
     }
     // Two writes to one page are one page, or the line counts the work and not
@@ -301,7 +301,7 @@ export function landedSummary(rows: readonly AppliedRow[]): LandedSummary {
   if (newDocs > 0) say('documents', some(newDocs, 'new document', 'new documents'));
   if (changedDocs > 0) say('documents', `${some(changedDocs, 'document', 'documents')} updated`);
 
-  if (sends > 0) say('sent', plural(sends, 'send', 'sends'));
+  if (outbound > 0) say('sent', `${plural(outbound, 'update', 'updates')} sent`);
 
   // Tier four: everything Qale filed for itself, in two words. What it wrote
   // there is its own record, and the rows say which pages.

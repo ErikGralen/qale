@@ -36,9 +36,13 @@ function card(over: Partial<ProposalDTO> = {}): ProposalDTO {
   };
 }
 
-test('stored cards that are not accepted sends are dropped', () => {
+test('stored cards that are not accepted outbound updates are dropped', () => {
   const stored = [
-    card({ id: 'note', kind: 'note', payload: { title: 'A note', body: '', rationale: '' } as never }),
+    card({
+      id: 'note',
+      kind: 'note',
+      payload: { title: 'A note', body: '', rationale: '' } as never,
+    }),
     card({ id: 'rejected', status: 'rejected' }),
     card({ id: 'pending', status: 'pending', resolved: null }),
     card({ id: 'sent' }),
@@ -49,7 +53,7 @@ test('stored cards that are not accepted sends are dropped', () => {
   );
 });
 
-test('a sitting send wins over the stored copy of the same id', () => {
+test('a sitting outbound update wins over the stored copy of the same id', () => {
   const stored = card({ id: 'same', payload: outbound({ targetId: undefined }) });
   const landed = card({
     id: 'same',
@@ -60,7 +64,10 @@ test('a sitting send wins over the stored copy of the same id', () => {
 
   const out = sentCards([{ card: landed, line, at: T0 + 2000 }], [stored, other]);
 
-  assert.deepEqual(out.map((s) => s.card.id), ['other', 'same']);
+  assert.deepEqual(
+    out.map((s) => s.card.id),
+    ['other', 'same'],
+  );
   const [old, fresh] = out;
   assert.equal(fresh.fresh, true);
   assert.equal(fresh.at, T0 + 2000);
@@ -72,7 +79,7 @@ test('a sitting send wins over the stored copy of the same id', () => {
   assert.equal(old.line.act, 'Created a ticket');
 });
 
-test('a stored send takes its line from its payload', () => {
+test('a stored outbound update takes its line from its payload', () => {
   const stored = card({
     payload: outbound({ action: 'comment_ticket', targetId: 'PAY-142', url: 'https://x/PAY-142' }),
   });
@@ -85,7 +92,10 @@ test('output is sorted by created, oldest first', () => {
   const early = card({ id: 'early', created: T0 + 1 });
   const middle = card({ id: 'middle', created: T0 + 2 });
   const out = sentCards([{ card: middle, line: { act: 'Created' }, at: T0 + 9 }], [late, early]);
-  assert.deepEqual(out.map((s) => s.card.id), ['early', 'middle', 'late']);
+  assert.deepEqual(
+    out.map((s) => s.card.id),
+    ['early', 'middle', 'late'],
+  );
 });
 
 test('mergeReviewCards keeps pending first, then held, then sent, one card per id', () => {
@@ -99,7 +109,10 @@ test('mergeReviewCards keeps pending first, then held, then sent, one card per i
 
   const out = mergeReviewCards([pendingA, pendingB], [heldB, heldC], [sentA, sentC, sentD]);
 
-  assert.deepEqual(out.map((c) => c.id), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(
+    out.map((c) => c.id),
+    ['a', 'b', 'c', 'd'],
+  );
   assert.equal(out[0], pendingA);
   assert.equal(out[0].status, 'pending');
   assert.equal(out[1], pendingB);

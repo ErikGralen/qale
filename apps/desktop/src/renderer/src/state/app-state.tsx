@@ -505,7 +505,7 @@ interface AppState {
     url?: string;
     review?: MeetingReviewAskDTO;
     /** The Activity row the approved write left, so the chat can offer a put
-     *  back on it (docs/receipt-redesign.md RC-4). A send leaves none. */
+     *  back on it (docs/receipt-redesign.md RC-4). An outbound update leaves none. */
     activityId?: string;
   }>;
   rejectProposal: (id: string) => Promise<{ ok: boolean; review?: MeetingReviewAskDTO }>;
@@ -1497,8 +1497,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
    * that names them, so the session reads them as part of what was said.
    */
   const attachToSession = useCallback(
-    (sessionId: string, items: ArrivalItemInputDTO[]) =>
-      invoke['arrival:attach'](sessionId, items),
+    (sessionId: string, items: ArrivalItemInputDTO[]) => invoke['arrival:attach'](sessionId, items),
     [],
   );
 

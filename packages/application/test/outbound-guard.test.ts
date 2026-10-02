@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import type { CreateProposalInput, ProposalRecord, UseCaseContext } from '../src/ports.js';
 
 /**
- * A send never lands, whatever the policy answers (docs/fewer-approvals.md, the
+ * An outbound update never lands, whatever the policy answers (docs/fewer-approvals.md, the
  * constraint above the tickets).
  *
- * The policy already grades a send as waiting, so the guard in `fileProposal`
+ * The policy already grades an outbound update as waiting, so the guard in `fileProposal`
  * only earns its place when the policy is wrong. That is what this file makes
  * happen: `writePolicy` is replaced with one that says every write lands, and
- * the send still waits. Its own file, because the stub has to be in place
+ * the outbound update still waits. Its own file, because the stub has to be in place
  * before `fileProposal` is imported.
  */
 
@@ -24,7 +24,7 @@ mock.module('@qale/domain', {
 
 const { fileProposal } = await import('../src/index.js');
 
-test('a send waits even when the policy says it lands', async () => {
+test('an outbound update waits even when the policy says it lands', async () => {
   const rows = new Map<string, ProposalRecord>();
   let applied = 0;
   const ctx = {
@@ -67,6 +67,6 @@ test('a send waits even when the policy says it lands', async () => {
   assert.equal(filed.disposition, 'ask');
   assert.equal(rows.get(filed.rec.id)!.status, 'pending');
   assert.equal(applied, 0);
-  // The sentence stays the policy's own one for a send, never the broken rule's.
+  // The sentence stays the policy's own one for an outbound update, never the broken rule's.
   assert.equal(filed.reason, 'Nothing sent to another system can be taken back.');
 });

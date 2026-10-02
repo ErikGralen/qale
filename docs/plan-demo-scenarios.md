@@ -51,13 +51,13 @@ Not demoable offline: ask the codebase (`codebase.ts`), the MCP server, onboardi
 
 ## 2. The five scenarios
 
-One shared baseline (section 4). Each starts from the Start button. Turns are counted as things Erik does. "Lands" means the write happened and is listed above the reply, per the policy in `apps/desktop/PRODUCT.md`: only a send, a delete, a rewrite of his own prose, or an assumed fact waits as a card.
+One shared baseline (section 4). Each starts from the Start button. Turns are counted as things Erik does. "Lands" means the write happened and is listed above the reply, per the policy in `apps/desktop/PRODUCT.md`: only an outbound update, a delete, a rewrite of his own prose, or an assumed fact waits as a card.
 
 The dates below are anchor dates (`2026-07-17` is today in the seed). The reset slides them.
 
 ### S1. The meeting produced actions
 
-**Value for a prospect:** the meeting ends and Jira, Confluence and the record are updated, with his approval on every send.
+**Value for a prospect:** the meeting ends and Jira, Confluence and the record are updated, with his approval on every outbound update.
 
 **Features:** F1 drop and file, F3 supersede, F4 owned todos, F5 one question, F6 three outbound cards, F19 the brief (optional last turn).
 

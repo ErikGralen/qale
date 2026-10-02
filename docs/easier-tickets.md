@@ -76,7 +76,7 @@ always-ask.
 | Material arrived: a new note, or an append | Applied, no card |
 | Material arrived: a patch over existing text, or a decision | One grouped card per intent |
 | A todo is created, or its status changes | Always asks |
-| Anything outbound: Jira, Confluence, a calendar invite | Always asks, one card per send |
+| Anything outbound: Jira, Confluence, a calendar invite | Always asks, one card per outbound update |
 | A delete | Always asks |
 | The user stated a standing rule | Remembered, no card, shown in Activity |
 
@@ -162,19 +162,19 @@ on a group and never descends into it; members are reached with the mouse or Tab
 
 ---
 
-### E-7. Outbound: one card per send, full text, never batched
+### E-7. Outbound: one card per outbound update, full text, never batched
 
 **What:** Nothing the agent sends to Jira, Confluence or a calendar can be taken back.
 
-**Change:** Every send is its own card with the full text shown. E-6's grouping never applies here.
+**Change:** Every outbound update is its own card with the full text shown. E-6's grouping never applies here.
 
 **Decision:**
 Yes lets keep it like this, but in the future we might want to be able to group some stuff ehre as wel.. 
 **Notes:**
 No code changed. The path was checked instead: outbound cards are made by `mkCard`, one card per
-draft call and one send per accept, and `writePolicy` can only return `ask` for `kind: 'outbound'`.
-E-6's grouping only ever joins a card whose ruling is `grouped`, so a send cannot be batched by
-accident and needed no second rule. The full text was already on the card. Grouping sends later is
+draft call and one outbound update per accept, and `writePolicy` can only return `ask` for `kind: 'outbound'`.
+E-6's grouping only ever joins a card whose ruling is `grouped`, so an outbound update cannot be batched by
+accident and needed no second rule. The full text was already on the card. Grouping outbound updates later is
 not built and nothing in the code prepares for it.
 
 ---

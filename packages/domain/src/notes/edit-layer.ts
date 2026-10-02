@@ -94,17 +94,13 @@ const LAYER_SENTENCE: Record<Exclude<EditLayer, 'open' | 'mirror'>, string> = {
 
 /**
  * The one line to show on a note the user cannot type in. Null when they can —
- * an editable note explains itself by taking the cursor.
+ * an editable note explains itself by taking the cursor. Also null for a
+ * mirror: the live page chip already says where the text lives, so there is
+ * nothing left to explain in a sentence.
  */
-export function readOnlyReason(
-  type: NoteType,
-  frontmatter?: Readonly<Record<string, unknown>> | null,
-): string | null {
+export function readOnlyReason(type: NoteType): string | null {
   const layer = editLayerForType(type);
-  if (layer === 'open') return null;
-  if (layer === 'mirror') {
-    return `Mirrored from ${mirrorSource(type, frontmatter)}. Edits happen there.`;
-  }
+  if (layer === 'open' || layer === 'mirror') return null;
   return LAYER_SENTENCE[layer];
 }
 

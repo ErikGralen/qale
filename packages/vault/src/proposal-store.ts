@@ -83,7 +83,7 @@ export class ProposalStore implements ProposalPort {
       inference: input.inference ? 1 : 0,
       asked: input.asked ? 1 : 0,
       status: 'pending',
-      created: now,
+      created: this.nextCreated(now),
       resolved: null,
     };
     this.db
@@ -97,12 +97,28 @@ export class ProposalStore implements ProposalPort {
     return this.toRecord(row);
   }
 
+  /**
+   * The stamp a new card gets: `now`, or one millisecond past the newest card
+   * when two land in the same millisecond. Every list sorts on `created`, and
+   * three tickets drafted in one turn often shared a stamp. Their order then
+   * depended on the read, so two cards could swap places on screen between one
+   * render and the next.
+   */
+  private nextCreated(now: number): number {
+    const { newest } = this.db.prepare('SELECT MAX(created) AS newest FROM proposals').get() as {
+      newest: number | null;
+    };
+    return newest !== null && newest >= now ? newest + 1 : now;
+  }
+
   list(status?: string): ProposalRecord[] {
     const rows = status
       ? (this.db
-          .prepare('SELECT * FROM proposals WHERE status = ? ORDER BY created DESC')
+          .prepare('SELECT * FROM proposals WHERE status = ? ORDER BY created DESC, rowid DESC')
           .all(status) as Row[])
-      : (this.db.prepare('SELECT * FROM proposals ORDER BY created DESC').all() as Row[]);
+      : (this.db
+          .prepare('SELECT * FROM proposals ORDER BY created DESC, rowid DESC')
+          .all() as Row[]);
     return rows.map((r) => this.toRecord(r));
   }
 

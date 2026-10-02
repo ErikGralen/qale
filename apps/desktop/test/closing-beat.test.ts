@@ -108,7 +108,7 @@ test('every kind of card lands as the row a silent write would have left', () =>
   );
   assert.equal(removed.verb, 'Removed');
   assert.equal(removed.change, undefined);
-  // A send writes no file, so it carries the thing it touched and the sentence
+  // An outbound update writes no file, so it carries the thing it touched and the sentence
   // for what happened to it, and no path and no way back.
   assert.deepEqual(
     appliedRowForCard(
@@ -147,7 +147,7 @@ test('the Activity row an approval left is the row’s way back', () => {
     card('a', { kind: 'update', targetPath: 'notes/runbook.md', activityId: 'a_7' }),
   );
   assert.equal(row.activityId, 'a_7');
-  // A send leaves no Activity row, so the receipt offers nothing to press.
+  // An outbound update leaves no Activity row, so the receipt offers nothing to press.
   const sent = appliedRowForCard(
     card('b', {
       kind: 'outbound',

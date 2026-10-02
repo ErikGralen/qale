@@ -29,7 +29,7 @@ test('the key is the file, whatever the card does to it', () => {
   );
 });
 
-test('a send keys on the item it touches, so it never joins a page edit', () => {
+test('an outbound update keys on the item it touches, so it never joins a page edit', () => {
   const comment: TargetCard = {
     id: 'x',
     kind: 'outbound',
@@ -187,7 +187,11 @@ test('a new meeting page says only the day, nothing about who sat in it or what 
 
 test('a page with nothing but prose says its first line, never as a quote', () => {
   assert.deepEqual(
-    newPageFacts({ kind: 'decision', frontmatter: { type: 'decision' }, body: 'Swaps ship first.' }),
+    newPageFacts({
+      kind: 'decision',
+      frontmatter: { type: 'decision' },
+      body: 'Swaps ship first.',
+    }),
     { facts: [], line: 'Swaps ship first.', quoted: false },
   );
   assert.deepEqual(

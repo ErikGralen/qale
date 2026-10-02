@@ -147,7 +147,7 @@ export function cardLeadIn(p: ProposalDTO): string {
  * update, so two changes to one to-do looked like two different subjects.
  */
 function iconFor(p: ProposalDTO): LucideIcon {
-  // A send names the item it touches in the system it lives in. The ink arrow
+  // An outbound update names the item it touches in the system it lives in. The ink arrow
   // beside this says it leaves the workspace.
   if (p.kind === 'outbound') {
     const ob = p.payload as OutboundPayloadDTO;
@@ -232,7 +232,7 @@ export function cardFacts(p: ProposalDTO): NewPageFacts {
  */
 export function appliedRowForCard(p: ProposalDTO, knownTitle?: string | null): AppliedRow {
   const target = targetOf(p);
-  // A send writes no file. It has no page to open and no way back, so the row
+  // An outbound update writes no file. It has no page to open and no way back, so the row
   // carries the thing it touched and the sentence for what happened to it.
   if (p.kind === 'outbound') {
     const ob = p.payload as OutboundPayloadDTO;
@@ -269,7 +269,7 @@ export function appliedRowForCard(p: ProposalDTO, knownTitle?: string | null): A
   };
 }
 
-/** The thing a send touched, as the row names it: the page or event by its own
+/** The thing an outbound update touched, as the row names it: the page or event by its own
  *  title, else the ticket by its key. The sentence under it says what happened
  *  to it. */
 function outboundSubject(ob: OutboundPayloadDTO): string {
@@ -367,14 +367,14 @@ export function batchSource(cards: readonly ProposalDTO[]): string | null {
 
 /**
  * The heading over a batch: what is waiting, and what the Approve all button
- * will not touch. A send is its own decision and never rides along in a batch,
+ * will not touch. An outbound update is its own decision and never rides along in a batch,
  * so it is counted apart rather than left to explain why "9 changes" sits above
  * a button that says 7.
  */
-export function batchCount(changes: number, sends: number): string {
+export function batchCount(changes: number, outbound: number): string {
   const c = `${changes} change${changes === 1 ? '' : 's'}`;
-  const s = `${sends} send${sends === 1 ? '' : 's'}`;
-  if (sends === 0) return c;
+  const s = `${outbound} update${outbound === 1 ? '' : 's'}`;
+  if (outbound === 0) return c;
   if (changes === 0) return s;
   return `${c} and ${s}`;
 }

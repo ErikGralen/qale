@@ -18,7 +18,7 @@ export function WritePolicySetting() {
   return (
     <Setting
       title="What Qale does on its own"
-      description="What a write does decides, not where the file sits. A send, a delete, a rewrite of something you wrote, and anything Qale had to assume all wait for you. The rest lands, listed in Activity, where one press puts it back."
+      description="What a write does decides, not where the file sits. An update to Jira, Confluence or your calendar, a delete, a rewrite of something you wrote, and anything Qale had to assume all wait for you. The rest lands, listed in Activity, where one press puts it back."
     >
       <div className="grid gap-x-6 gap-y-5 rounded-xl bg-card p-4 ring-1 ring-border sm:grid-cols-2">
         {writePolicyBlocks().map((block) => (

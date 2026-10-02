@@ -125,14 +125,14 @@ the kinds with a real-world twin: a meeting, a person, a customer, a commitment
 someone else owes. On every card the clause becomes boilerplate the reader
 learns to skip, and a warning nobody reads protects nobody.
 
-## Why a send's head is the thing, not the act
+## Why an outbound update's head is the thing, not the act
 
 A new ticket used to read "Create a Jira story in BOK: Card on file at
 booking". Four things on one line at one weight: the act, the system, the
 project key and the title. The title is what the PO approves, and it came last,
 in grey. The act was already on the button.
 
-So the head of a send is the thing at full ink: the ticket's title, or the page
+So the head of an outbound update is the thing at full ink: the ticket's title, or the page
 as a chip. The button is the act. One quiet line under the head says where and
 what kind: "Jira story in BOK · Labels: no-show-fees" for a ticket, "Confluence
 page" for a page. A comment has no quiet line, because the ticket chip's state

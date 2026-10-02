@@ -129,3 +129,17 @@ test('a queue written before the column reads back with no edit on it', { skip }
   store.setEditedPayload(fresh.id, { title: 'theirs' });
   assert.deepEqual(store.get(fresh.id)?.editedPayload, { title: 'theirs' });
 });
+
+test('cards made in the same millisecond keep the order they were made in', { skip }, () => {
+  const store = new ProposalStore(new Database(':memory:'));
+
+  const first = store.create({ ...CARD, payload: { path: 'a.md' } }, 5);
+  const second = store.create({ ...CARD, payload: { path: 'b.md' } }, 5);
+  const third = store.create({ ...CARD, payload: { path: 'c.md' } }, 5);
+
+  assert.deepEqual([first.created, second.created, third.created], [5, 6, 7]);
+  assert.deepEqual(
+    store.list('pending').map((p) => p.id),
+    [third.id, second.id, first.id],
+  );
+});

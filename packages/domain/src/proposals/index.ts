@@ -19,7 +19,6 @@ export {
   sentLine,
   ticketFieldRows,
   ticketHead,
-  ticketKindLine,
   bareRef,
   titleForRef,
   nounForDir,
@@ -46,11 +45,11 @@ export {
   type SentLine,
 } from './card-copy.js';
 
-/** Which writes wait for the PM: a send, a delete, a rewrite of their own prose
+/** Which writes wait for the PM: an outbound update, a delete, a rewrite of their own prose
  *  and anything Qale assumed. Everything else lands. */
 export {
   writePolicy,
-  SEND_WAITS_REASON,
+  OUTBOUND_WAITS_REASON,
   NEW_DOCUMENT_WAITS_REASON,
   APPROVED_REASON,
   appliesSilently,
@@ -276,7 +275,7 @@ export const zOutboundPayload = z.preprocess(
       linkBackPath: z.string().optional(),
       /**
        * Where the item landed at the provider, stamped onto the card once the
-       * send went through. Never something a draft sets: it is the receipt's
+       * outbound update went through. Never something a draft sets: it is the receipt's
        * way to the ticket it just made, for the week before the mirror has one.
        */
       url: z.string().optional(),

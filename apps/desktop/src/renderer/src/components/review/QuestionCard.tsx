@@ -402,12 +402,8 @@ function QuestionStep({
       }}
     >
       <p id={labelId} className="mb-1.5 text-body leading-snug text-pretty">
-        <span className="mr-1.5 rounded-md bg-muted px-1.5 py-0.5 align-[0.08em] text-xs font-medium text-muted-foreground">
-          <Markdown inline content={linkifyNotePaths(question.header)} onOpenNote={onOpen} />
-        </span>
-        {/* The same renderer the body uses, so one wikilink cannot read two
-            ways in one card: the chip says the note's name, and a ticket key
-            is the live chip with its state on it. */}
+        {/* The same renderer the body uses, so a wikilink in the question
+            reads as the live chip it is everywhere else in the card. */}
         <span className="font-medium text-foreground">
           <Markdown inline content={linkifyNotePaths(question.question)} onOpenNote={onOpen} />
         </span>

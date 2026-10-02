@@ -2,7 +2,7 @@
   "version": 1,
   "id": "s6",
   "title": "The brief for Thursday",
-  "do": "Open Calendar, click Steering on Thursday, press Get the brief. The Prep section lands on the page; scroll to it.",
+  "do": "Open Calendar, click Steering on Thursday, press Get the brief. Read it in the chat that opens; it lands on the meeting page too.",
   "offScript": "That is outside what this demo can show. The six things it can do are listed in Settings, under Demo.",
   "conversations": [
     {
@@ -11,6 +11,19 @@
       "title": "Steering prep: brief",
       "turns": [
         {
+          "text": [
+            "Here's your brief for Thursday's steering.",
+            "",
+            "Since last time (2026-07-09): no-show fees now has a date, end of October. Brasserie Lund heard it on 2026-07-16, but [[people/asa-lindgren|Åsa]] hasn't. Tell her before Marcus does. The [[tickets/jira/BOK-300]] stories are drafted too, three of them with three checks each, ready for sprint planning on 2026-07-22.",
+            "",
+            "Tickets since 2026-07-09: [[tickets/jira/BOK-412]] (the double reminder) is fixed. [[tickets/jira/GST-140]] (table areas) shipped. [[tickets/jira/PAY-210]] (deposits) is still in progress, with no date.",
+            "",
+            "Who owes an answer: [[people/henrik-dahl|Henrik]] owes a date for PAY-210. Ask him again in the room, because group bookings can't start until he gives one.",
+            "",
+            "What will come up: [[people/marcus-ek|Marcus]] will push to move group bookings up for [[customers/nordic-steak]] again. The answer stays Q1 2027, per [[decisions/2026-06-18-group-bookings-after-deposits]]. And [[tickets/jira/GST-77]], the Google button, has been live since 2026-05-12 with sales never told. One message to Marcus settles that.",
+            "",
+            "This is on the meeting page too."
+          ],
           "tools": [
             { "name": "vault_read", "input": { "path": "people/asa-lindgren.md" } },
             { "name": "vault_read", "input": { "path": "people/rebecca-holm.md" } },
